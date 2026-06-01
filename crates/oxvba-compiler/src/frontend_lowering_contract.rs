@@ -435,7 +435,7 @@ mod tests {
         let contracts = collect_lowering_contracts_from_typed_hir(&typed_hir);
         assert_eq!(contracts.len(), 1);
         let contract = &contracts[0];
-        assert_eq!(contract.frame_overlay.locals.len(), 2);
+        assert_eq!(contract.frame_overlay.locals.len(), 3);
         assert_eq!(contract.returns.len(), 1);
         assert!(!contract.uses_legacy_intrinsic_names());
         assert!(!contract.assumes_flat_slots());
@@ -451,5 +451,6 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(local_names.contains(&"seed"));
         assert!(local_names.contains(&"total"));
+        assert!(local_names.contains(&"main"));
     }
 }

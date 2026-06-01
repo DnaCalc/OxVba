@@ -8,7 +8,9 @@ use crate::frontend_hir::{
 };
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::{SymbolId, SymbolNamespace};
-use crate::frontend_type_hooks::{TypedHirModule, collect_type_hooks_from_source};
+use crate::frontend_type_hooks::{
+    HirAssignmentIntent, TypedHirModule, collect_type_hooks_from_source,
+};
 use crate::optimize::optimize_module;
 use crate::resolve::{
     ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause, BoundCompareMode,
@@ -39,6 +41,7 @@ pub fn compile_source_with_runtime_metadata_via_hir(
     reject_unsupported_production_syntax(source)?;
     let typed_hir = collect_type_hooks_from_source("Main", source)
         .map_err(|err| HirProductionLoweringError::Unsupported(err.to_string()))?;
+    validate_hir_assignment_diagnostics(&typed_hir)?;
     let bound = lower_typed_hir_to_bound_module(source, &typed_hir)?;
     let checked = check_types(bound).map_err(CompileError::TypeError)?;
     let optimized = if std::env::var("OXVBA_DISABLE_OPT").ok().as_deref() == Some("1") {
@@ -47,6 +50,78 @@ pub fn compile_source_with_runtime_metadata_via_hir(
         optimize_module(checked)
     };
     Ok(emit_bytecode_with_runtime_metadata(&optimized))
+}
+
+fn validate_hir_assignment_diagnostics(
+    typed_hir: &TypedHirModule,
+) -> Result<(), HirProductionLoweringError> {
+    for (stmt, intent) in typed_hir.hooks.assignment_intents() {
+        let Some(stmt_data) = typed_hir.module.arenas.stmt(stmt) else {
+            continue;
+        };
+        let (HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value }) =
+            stmt_data.kind
+        else {
+            continue;
+        };
+        let Some(target_name) = hir_name_expr(typed_hir, target)? else {
+            continue;
+        };
+        let target_type = hir_expr_bound_type(typed_hir, target).unwrap_or(BoundType::Variant);
+        let value_type = hir_expr_bound_type(typed_hir, value).unwrap_or(BoundType::Variant);
+        let explicit_let = stmt_data.cst.syntax_kind == "LetStmt";
+        if matches!(intent, HirAssignmentIntent::Let)
+            && explicit_let
+            && target_type == BoundType::Object
+        {
+            return Err(HirProductionLoweringError::Compile(
+                CompileError::TypeError(format!(
+                    "type mismatch in assignment: Let cannot assign to Object variable {target_name}"
+                )),
+            ));
+        }
+        if matches!(intent, HirAssignmentIntent::Let)
+            && !explicit_let
+            && target_type == BoundType::Object
+            && value_type == BoundType::Object
+        {
+            return Err(HirProductionLoweringError::Compile(
+                CompileError::TypeError(format!(
+                    "type mismatch in assignment: Set required for Object variable {target_name}"
+                )),
+            ));
+        }
+        if matches!(intent, HirAssignmentIntent::Let)
+            && !explicit_let
+            && target_type == BoundType::Object
+            && !matches!(value_type, BoundType::Object | BoundType::Variant)
+        {
+            return Err(HirProductionLoweringError::Compile(
+                CompileError::TypeError(format!(
+                    "type mismatch in assignment: cannot assign {value_type:?} to Object variable {target_name}"
+                )),
+            ));
+        }
+        if matches!(intent, HirAssignmentIntent::Set)
+            && !matches!(target_type, BoundType::Object | BoundType::Variant)
+        {
+            return Err(HirProductionLoweringError::Compile(
+                CompileError::TypeError(format!(
+                    "type mismatch in assignment: Set requires Object or Variant target, got {target_type:?} variable {target_name}"
+                )),
+            ));
+        }
+        if matches!(intent, HirAssignmentIntent::Set)
+            && !matches!(value_type, BoundType::Object | BoundType::Variant)
+        {
+            return Err(HirProductionLoweringError::Compile(
+                CompileError::TypeError(format!(
+                    "type mismatch in assignment: Set requires object value for variable {target_name}"
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductionLoweringError> {
@@ -175,8 +250,9 @@ fn lower_procedure(
     }
 
     if is_function {
+        let return_type = declared_bound_type(typed_hir, decl.symbol).unwrap_or(BoundType::Variant);
         declarations.push(name.clone());
-        declaration_types.insert(name.clone(), BoundType::Variant);
+        declaration_types.insert(name.clone(), return_type);
     }
 
     let mut stmts = Vec::new();
@@ -211,7 +287,11 @@ fn lower_procedure(
         source_line_start,
         source_line_end,
         statement_line_numbers,
-        return_type: BoundType::Variant,
+        return_type: if is_function {
+            declared_bound_type(typed_hir, decl.symbol).unwrap_or(BoundType::Variant)
+        } else {
+            BoundType::Variant
+        },
         params: bound_params,
         module_scope_names: Vec::new(),
         declarations,
@@ -705,6 +785,29 @@ fn declared_bound_type(typed_hir: &TypedHirModule, symbol: SymbolId) -> Option<B
         .map(|hook| bound_type_from_vba_type_id(hook.runtime_type))
 }
 
+fn hir_name_expr(
+    typed_hir: &TypedHirModule,
+    expr: HirExprId,
+) -> Result<Option<String>, HirProductionLoweringError> {
+    match typed_hir.module.arenas.expr(expr).map(|expr| &expr.kind) {
+        Some(HirExprKind::Name(symbol)) => symbol_name(typed_hir, *symbol).map(Some),
+        _ => Ok(None),
+    }
+}
+
+fn hir_expr_bound_type(typed_hir: &TypedHirModule, expr: HirExprId) -> Option<BoundType> {
+    match typed_hir.module.arenas.expr(expr).map(|expr| &expr.kind)? {
+        HirExprKind::Name(symbol) => declared_bound_type(typed_hir, *symbol),
+        HirExprKind::Literal(HirLiteral::Bool(_)) => Some(BoundType::Boolean),
+        HirExprKind::Literal(HirLiteral::Int(_)) => Some(BoundType::Long),
+        HirExprKind::Literal(HirLiteral::String(_)) => Some(BoundType::String),
+        HirExprKind::Literal(HirLiteral::Nothing) => Some(BoundType::Object),
+        HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(BoundType::Variant),
+        HirExprKind::Binary { .. } | HirExprKind::Unary { .. } => Some(BoundType::Variant),
+        _ => None,
+    }
+}
+
 fn bound_type_from_vba_type_id(ty: VbaTypeId) -> BoundType {
     match ty {
         VbaTypeId::Integer => BoundType::Integer,
@@ -842,6 +945,24 @@ mod tests {
         assert_eq!(
             use_metadata.signature.parameters[0].passing_mode,
             ParameterPassingMode::ByVal
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_projects_function_return_type() {
+        let source = "Function Alpha() As Long\nAlpha = 1\nEnd Function\nSub Main()\nEnd Sub\n";
+        let (_, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let alpha = metadata.get("alpha").expect("alpha metadata");
+        assert_eq!(
+            alpha.return_slot.map(|slot| {
+                alpha.legacy_declared_type_for_slot(
+                    slot,
+                    crate::ProcedureRuntimeSlotKind::ReturnValue,
+                )
+            }),
+            Some(VbaTypeId::Long),
+            "{alpha:#?}"
         );
     }
 

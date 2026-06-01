@@ -871,6 +871,9 @@ Candidate bead units:
   Nineteenth reopened continuation adds `GoSub` and `Return` lowering over the same label model.
   Twentieth reopened continuation adds label-targeted `On Error GoTo` and `Resume` lowering.
   Twenty-first reopened continuation adds a typed HIR route for `Erase` statements.
+  Twenty-second reopened continuation adds declared function return-type projection into HIR,
+  function return-slot metadata, function type-suffix parsing, and basic object assignment
+  diagnostics on the HIR production route, allowing simple functions to leave the residual path.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
@@ -892,11 +895,12 @@ Candidate bead units:
   `CompileOptions::default()` to use the frontend-v2 route for completed constructs. Follow-up
   continuation also flips the ordinary lightweight single-source `compile()` /
   `compile_with_runtime_metadata()` route to try HIR production before legacy resolution for
-  eligible completed constructs. The eligibility guard deliberately excludes surfaces whose HIR
-  semantics are partial, including DefType, functions/properties, optional/default/ParamArray
-  parameters, project rewrites, and class/object-local compatibility contexts. The legacy baseline
-  remains available through an explicit comparison helper, and fallback is preserved only for
-  unsupported residual constructs.
+  eligible completed constructs. Follow-up continuation removes simple functions from the
+  residual set after declared return-slot facts are projected through HIR. The eligibility guard
+  deliberately still excludes surfaces whose HIR semantics are partial, including DefType,
+  properties, optional/default/ParamArray parameters, project rewrites, and class/object-local
+  compatibility contexts. The legacy baseline remains available through an explicit comparison
+  helper, and fallback is preserved only for unsupported residual constructs.
   Evidence: `docs/evidence/frontend_rework/PER_CONSTRUCT_ROUTE_POLICY_2026-06-01.md`.
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
   splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
@@ -919,8 +923,8 @@ Candidate bead units:
   completed lightweight compile fixtures use the HIR runtime-metadata route. Follow-up continuation
   expands the audit with multiline `If/ElseIf`, single-line If, basic `Exit`, and non-label
   error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
-  label-targeted error-control fixtures, plus `Erase`. The workset remains open for broader
-  terminal evidence and expanded route-audit coverage.
+  label-targeted error-control fixtures, plus `Erase` and simple function declaration coverage. The
+  workset remains open for broader terminal evidence and expanded route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

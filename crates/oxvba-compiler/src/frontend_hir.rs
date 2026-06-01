@@ -314,6 +314,10 @@ impl HirArenas {
         self.decls.get(id.0)
     }
 
+    pub fn decl_mut(&mut self, id: HirDeclId) -> Option<&mut HirDecl> {
+        self.decls.get_mut(id.0)
+    }
+
     pub fn alloc_call(&mut self, call: HirCall) -> HirCallId {
         let id = HirCallId(self.calls.len());
         self.calls.push(call);
@@ -1134,12 +1138,14 @@ fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
                     || (node.kind() == SyntaxKind::IdentExpr && token.kind.is_keyword()) =>
             {
                 return Some(
-                    token
-                        .text
-                        .strip_prefix('[')
-                        .and_then(|value| value.strip_suffix(']'))
-                        .unwrap_or(token.text)
-                        .to_string(),
+                    normalize_ident(
+                        token
+                            .text
+                            .strip_prefix('[')
+                            .and_then(|value| value.strip_suffix(']'))
+                            .unwrap_or(token.text),
+                    )
+                    .unwrap_or_else(|| token.text.to_string()),
                 );
             }
             SyntaxElement::Node(child) => {
@@ -1150,18 +1156,19 @@ fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
             _ => {}
         }
     }
-    (node.kind() == SyntaxKind::IdentExpr)
-        .then(|| node.text())
-        .and_then(|text| {
-            let trimmed = text.trim();
-            (!trimmed.is_empty()).then_some(trimmed.to_string())
-        })
-        .map(|text| {
-            text.strip_prefix('[')
-                .and_then(|value| value.strip_suffix(']'))
-                .unwrap_or(&text)
-                .to_string()
-        })
+    if node.kind() != SyntaxKind::IdentExpr {
+        return None;
+    }
+    let text = node.text();
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let name = trimmed
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(trimmed);
+    normalize_ident(name)
 }
 
 fn property_kind(node: SyntaxNode<'_>) -> HirPropertyKind {

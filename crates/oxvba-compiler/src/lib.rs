@@ -342,7 +342,6 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     !syntax_tree_has_any_kind(
         parsed.syntax(),
         &[
-            oxvba_syntax::SyntaxKind::FunctionDecl,
             oxvba_syntax::SyntaxKind::PropertyDecl,
             oxvba_syntax::SyntaxKind::OptionStmt,
             oxvba_syntax::SyntaxKind::KwOptional,

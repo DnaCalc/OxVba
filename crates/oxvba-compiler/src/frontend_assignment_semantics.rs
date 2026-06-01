@@ -139,9 +139,35 @@ fn infer_expr_type(typed: &TypedHirModule, expr: HirExprId) -> Option<VbaTypeId>
         HirExprKind::Literal(HirLiteral::String(_)) => Some(VbaTypeId::String),
         HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(VbaTypeId::Variant),
         HirExprKind::Literal(HirLiteral::Nothing) => Some(VbaTypeId::Object),
-        HirExprKind::Binary { lhs, .. } => infer_expr_type(typed, *lhs),
+        HirExprKind::Binary { lhs, rhs, .. } => {
+            let lhs_type = infer_expr_type(typed, *lhs)?;
+            let rhs_type = infer_expr_type(typed, *rhs)?;
+            Some(binary_result_type(lhs_type, rhs_type))
+        }
         _ => None,
     }
+}
+
+fn binary_result_type(lhs: VbaTypeId, rhs: VbaTypeId) -> VbaTypeId {
+    if lhs == VbaTypeId::Variant || rhs == VbaTypeId::Variant {
+        return VbaTypeId::Variant;
+    }
+    if lhs == VbaTypeId::String || rhs == VbaTypeId::String {
+        return VbaTypeId::String;
+    }
+    if lhs == VbaTypeId::Double || rhs == VbaTypeId::Double {
+        return VbaTypeId::Double;
+    }
+    if lhs == VbaTypeId::Single || rhs == VbaTypeId::Single {
+        return VbaTypeId::Single;
+    }
+    if lhs == VbaTypeId::LongLong || rhs == VbaTypeId::LongLong {
+        return VbaTypeId::LongLong;
+    }
+    if lhs == VbaTypeId::Long || rhs == VbaTypeId::Long {
+        return VbaTypeId::Long;
+    }
+    lhs
 }
 
 fn assignment_diagnostic(

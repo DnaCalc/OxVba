@@ -175,6 +175,27 @@ parse some sources whose semantics are not yet fully represented, including DefT
 optional/default parameters, function return types, and project-rewritten modules. The lightweight
 default gate now excludes those surfaces and leaves them on the tracked residual path.
 
+## Function Return-Type Continuation
+
+The twenty-second FE-8.5/FE-9.1 slice removes the simple function-declaration residual from the
+lightweight HIR route:
+
+- `oxvba-syntax` now keeps declaration type suffixes (`Function Alpha%() As ...`) inside function
+  declaration nodes instead of treating the suffix as leftover line text;
+- typed HIR hooks record declared function/property return types on the procedure symbol and project
+  them into the HIR declaration;
+- HIR production lowering uses that return type for the function return slot, procedure signature,
+  and runtime metadata instead of defaulting every function to `Variant`;
+- HIR production now performs the same basic object-assignment intent checks for the scoped route,
+  so `Function alpha%() As Object: alpha = 1` fails instead of compiling through a partial HIR
+  return slot; and
+- the ordinary lightweight `compile()` / `compile_with_runtime_metadata()` eligibility guard now
+  allows simple functions after that return-slot projection.
+
+DefType defaults, optional/default/ParamArray parameters, properties, project rewrites, and
+class/object-local compatibility contexts remain tracked residuals until their HIR facts and route
+proofs are complete.
+
 ## ElseIf Continuation
 
 The fourteenth FE-8.5 slice widens block-If coverage:
@@ -277,7 +298,7 @@ The twenty-first FE-8.5 slice adds the simplest array/reset statement route:
 
 - This bead does not remove the fallback bridge; FE-9 default-route and audit beads must decide which
   construct families are flipped and which residuals remain tracked.
-- Call-site descriptors, object/member bindings, and writebacks remain out of the initial HIR
+- Call-site descriptors, object/member bindings, and writebacks remain out of the current HIR
   production scope beyond the simple same-module call route above. Broader argument binding,
   optional/default, ParamArray, member dispatch, and writeback semantics remain open FE-8.5/FE-7
   delivery work.

@@ -52,6 +52,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let function_statement =
+        "Function Alpha() As Long\nAlpha = 1\nEnd Function\nSub Main()\nEnd Sub\n";
+    findings.push(route_finding(
+        "function declaration fixture",
+        function_statement,
+        "bd-aprs.9.5",
+    ));
+
     let if_statement = "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nEnd If\nEnd Sub\n";
     findings.push(route_finding(
         "if statement fixture",
@@ -303,6 +311,13 @@ mod tests {
                 .iter()
                 .any(|finding| finding.area.contains("call statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction),
+            "{report:#?}"
+        );
+        assert!(
+            report.findings.iter().any(|finding| {
+                finding.area.contains("function declaration")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }),
             "{report:#?}"
         );
         assert!(

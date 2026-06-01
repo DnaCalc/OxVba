@@ -7,6 +7,7 @@ use crate::frontend_hir::{
 };
 use crate::frontend_symbols::{FrontendSourceSpan, SymbolId, SymbolNamespace};
 use crate::{CoercionKindDescriptor, OptionalDefaultValue, ParameterPassingMode, VbaTypeId};
+use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HirAssignmentIntent {
@@ -163,6 +164,11 @@ pub fn collect_type_hooks_from_source(
         symbol_types.insert(symbol.id, runtime_type);
     }
 
+    let parsed = oxvba_syntax::parse(source);
+    for node in parsed.syntax().child_nodes() {
+        collect_procedure_return_type_hooks(&mut module, &mut hooks, &mut symbol_types, node);
+    }
+
     for decl in module.declarations.clone() {
         let Some(decl) = module.arenas.decl(decl).cloned() else {
             continue;
@@ -175,6 +181,101 @@ pub fn collect_type_hooks_from_source(
     }
 
     Ok(TypedHirModule { module, hooks })
+}
+
+fn collect_procedure_return_type_hooks(
+    module: &mut BoundHirModule,
+    hooks: &mut HirTypeHooks,
+    symbol_types: &mut BTreeMap<SymbolId, VbaTypeId>,
+    node: SyntaxNode<'_>,
+) {
+    if node.kind() == SyntaxKind::FunctionDecl || node.kind() == SyntaxKind::PropertyDecl {
+        record_procedure_return_type_hook(module, hooks, symbol_types, node);
+    }
+
+    for child in node.child_nodes() {
+        collect_procedure_return_type_hooks(module, hooks, symbol_types, child);
+    }
+}
+
+fn record_procedure_return_type_hook(
+    module: &mut BoundHirModule,
+    hooks: &mut HirTypeHooks,
+    symbol_types: &mut BTreeMap<SymbolId, VbaTypeId>,
+    node: SyntaxNode<'_>,
+) {
+    let (Some(name), Some(type_ref)) = (node.name_token(), node.return_type()) else {
+        return;
+    };
+    let symbol_name = procedure_symbol_lookup_name(node, name.text);
+    let Some(symbol) = module
+        .symbols
+        .lookup_name(&symbol_name)
+        .and_then(|name_id| {
+            module
+                .symbols
+                .symbols()
+                .iter()
+                .find(|symbol| {
+                    symbol.name == name_id && symbol.namespace == SymbolNamespace::Procedure
+                })
+                .map(|symbol| symbol.id)
+        })
+    else {
+        return;
+    };
+    let Some(runtime_type) = parse_runtime_type(type_ref.text().trim()) else {
+        return;
+    };
+
+    let (start, end) = type_ref.text_range();
+    let hir_type = module.arenas.alloc_type(HirType {
+        cst: CstBackpointer {
+            syntax_kind: "TypeRef".to_string(),
+            span: FrontendSourceSpan {
+                start: start as usize,
+                end: end as usize,
+            },
+        },
+        kind: HirTypeKind::Builtin(hir_builtin_type(runtime_type)),
+    });
+    hooks.record_declared_type(HirDeclaredTypeHook {
+        symbol,
+        hir_type,
+        runtime_type,
+    });
+    symbol_types.insert(symbol, runtime_type);
+    set_decl_return_type(module, symbol, hir_type);
+}
+
+fn set_decl_return_type(module: &mut BoundHirModule, symbol: SymbolId, hir_type: HirTypeId) {
+    for decl_id in module.declarations.clone() {
+        let Some(decl) = module.arenas.decl_mut(decl_id) else {
+            continue;
+        };
+        if decl.symbol != symbol {
+            continue;
+        }
+        if let HirDeclKind::Procedure { return_type, .. } = &mut decl.kind {
+            *return_type = Some(hir_type);
+        }
+    }
+}
+
+fn procedure_symbol_lookup_name(node: SyntaxNode<'_>, name: &str) -> String {
+    let name = normalize_identifier_token(name);
+    if node.kind() != SyntaxKind::PropertyDecl {
+        return name.to_string();
+    }
+    let lower = node.text().to_ascii_lowercase();
+    let prefix = if lower.contains("property let") {
+        "property_let"
+    } else if lower.contains("property set") {
+        "property_set"
+    } else {
+        "property_get"
+    };
+    format!("{prefix}_{name}")
 }
 
 fn collect_stmt_type_hooks(
@@ -297,9 +398,35 @@ fn infer_expr_type(
         HirExprKind::Literal(HirLiteral::String(_)) => Some(VbaTypeId::String),
         HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(VbaTypeId::Variant),
         HirExprKind::Literal(HirLiteral::Nothing) => Some(VbaTypeId::Object),
-        HirExprKind::Binary { lhs, .. } => infer_expr_type(hir, symbol_types, *lhs),
+        HirExprKind::Binary { lhs, rhs, .. } => {
+            let lhs_type = infer_expr_type(hir, symbol_types, *lhs)?;
+            let rhs_type = infer_expr_type(hir, symbol_types, *rhs)?;
+            Some(binary_result_type(lhs_type, rhs_type))
+        }
         _ => None,
     }
+}
+
+fn binary_result_type(lhs: VbaTypeId, rhs: VbaTypeId) -> VbaTypeId {
+    if lhs == VbaTypeId::Variant || rhs == VbaTypeId::Variant {
+        return VbaTypeId::Variant;
+    }
+    if lhs == VbaTypeId::String || rhs == VbaTypeId::String {
+        return VbaTypeId::String;
+    }
+    if lhs == VbaTypeId::Double || rhs == VbaTypeId::Double {
+        return VbaTypeId::Double;
+    }
+    if lhs == VbaTypeId::Single || rhs == VbaTypeId::Single {
+        return VbaTypeId::Single;
+    }
+    if lhs == VbaTypeId::LongLong || rhs == VbaTypeId::LongLong {
+        return VbaTypeId::LongLong;
+    }
+    if lhs == VbaTypeId::Long || rhs == VbaTypeId::Long {
+        return VbaTypeId::Long;
+    }
+    lhs
 }
 
 fn declared_type_after_span(
@@ -334,14 +461,26 @@ fn declared_type_after_span(
 fn parse_runtime_type(text: &str) -> Option<VbaTypeId> {
     match text.to_ascii_lowercase().as_str() {
         "boolean" => Some(VbaTypeId::Boolean),
+        "byte" => Some(VbaTypeId::Byte),
         "integer" => Some(VbaTypeId::Integer),
         "long" => Some(VbaTypeId::Long),
+        "longlong" => Some(VbaTypeId::LongLong),
+        "longptr" => Some(VbaTypeId::LongPtr),
+        "single" => Some(VbaTypeId::Single),
         "double" => Some(VbaTypeId::Double),
+        "currency" => Some(VbaTypeId::Currency),
+        "date" => Some(VbaTypeId::Date),
         "string" => Some(VbaTypeId::String),
         "variant" => Some(VbaTypeId::Variant),
         "object" => Some(VbaTypeId::Object),
         _ => None,
     }
+}
+
+fn normalize_identifier_token(text: &str) -> &str {
+    text.strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(text)
 }
 
 fn hir_builtin_type(runtime_type: VbaTypeId) -> HirBuiltinType {
@@ -605,6 +744,34 @@ mod tests {
                 .declared_type(local.id)
                 .map(|hook| hook.runtime_type),
             Some(VbaTypeId::String)
+        );
+    }
+
+    #[test]
+    fn type_hooks_collect_function_return_type_from_source_backed_hir() {
+        let source = "Function Alpha() As Object\nAlpha = Nothing\nEnd Function\n";
+        let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
+        let function = typed
+            .module
+            .symbols
+            .symbols()
+            .iter()
+            .find(|symbol| {
+                symbol.namespace == SymbolNamespace::Procedure
+                    && typed
+                        .module
+                        .symbols
+                        .name(symbol.name)
+                        .is_some_and(|name| name.folded == "alpha")
+            })
+            .expect("alpha function");
+
+        assert_eq!(
+            typed
+                .hooks
+                .declared_type(function.id)
+                .map(|hook| hook.runtime_type),
+            Some(VbaTypeId::Object)
         );
     }
 

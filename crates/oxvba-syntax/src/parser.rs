@@ -829,6 +829,9 @@ impl<'a> Parser<'a> {
         // Name
         if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
             self.bump();
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
         }
         self.eat_whitespace();
 
@@ -880,6 +883,9 @@ impl<'a> Parser<'a> {
         // Name
         if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
             self.bump();
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
         }
         self.eat_whitespace();
 
@@ -1907,6 +1913,21 @@ mod tests {
             "Public Function GetValue(x As Long) As Double\n    GetValue = x * 1.5\nEnd Function\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+    }
+
+    #[test]
+    fn round_trip_function_type_suffix_with_return_type() {
+        let src = "Function alpha%() As Object\nalpha = Nothing\nEnd Function\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "{:?}", p.errors());
+        let func = p
+            .syntax()
+            .child_nodes()
+            .into_iter()
+            .find(|n| n.kind() == SyntaxKind::FunctionDecl)
+            .expect("expected FunctionDecl");
+        assert!(func.return_type().is_some(), "expected return type");
     }
 
     #[test]
