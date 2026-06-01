@@ -448,10 +448,33 @@ Remaining production residuals after this slice:
 - `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
   construction interactions, and assignment/writeback behavior.
 
+## New Expression Shape Continuation
+
+The latest FE-8.5 slice moves `New` from a raw CST syntax guard into the frontend expression model:
+
+- `HirExprKind::New { type_name }` now records the normalized constructor type name, including
+  qualified names such as `Foo.Bar`.
+- SemanticModel indexes `New` as a leaf expression, so IDE/compiler callers can see the same HIR
+  shape instead of losing the construct before semantic indexing.
+- HIR production lowering now rejects `New` at the exact missing semantic boundary:
+  `New expression '<type>' requires project-aware construction binding`.
+- This is intentionally not closure for object construction. The remaining delivery step is a
+  project-aware HIR lowering path that binds the constructor type to active-project classes,
+  imported/COM activation metadata, generated instance handles, `Class_Initialize`, and `As New`
+  lazy construction semantics without relying on `project.rs` source-text rewrites.
+
+Remaining production residuals after this slice:
+
+- `Set obj = New Widget` and `Dim obj As New Widget` still need project-aware construction facts
+  and handle allocation on the HIR production path.
+- Existing project rewrite behavior remains compatibility/parity scaffolding until that route is
+  replaced or quarantined by the construction-lowering continuation.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
+- `cargo test -p oxvba-compiler new_expression --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_enum_member_constants --quiet`
 - `cargo test -p oxvba-compiler compile_enum_member_usage_is_supported --quiet`
