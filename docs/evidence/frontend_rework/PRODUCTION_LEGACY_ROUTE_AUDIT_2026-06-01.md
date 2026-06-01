@@ -17,6 +17,7 @@ The audit proves the good path and exposes the remaining production residuals:
 - simple same-module procedure call statement fixtures now reach `HirProduction`; the remaining
   call/coercion seed-row delta is a documented source-map metadata improvement, not a syntax-route
   residual or bytecode/call-descriptor bug;
+- same-module statement-form procedure calls with bare arguments now reach `HirProduction`;
 - simple multiline `If ... Then ... End If` fixtures now reach `HirProduction`;
 - multiline `If ... Else ... End If` and `If ... ElseIf ... Else ... End If` fixtures now reach
   `HirProduction`;
@@ -85,12 +86,13 @@ The audit result records completed reopened delivery work and remaining broader 
 - The audit previously proved HIR reachability but not the plain `compile()` entry point. The
   lightweight compile path now has an executable route check for completed constructs, while project
   compile and broader unsupported surfaces remain separate workset scope.
-- Procedure-call syntax, multiline and single-line If/ElseIf syntax, front-checked Do While syntax,
-  basic Exit and error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`,
-  `Erase`, one-dimensional dynamic-array runtime `ReDim`, simple function declarations with
-  declared return slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and
-  single- or multi-declarator literal `Const`, and explicit-receiver value-side dot-member
-  read/call syntax are no longer themselves route blockers. The call/coercion fixture now has matching
+- Procedure-call syntax, including same-module statement-form procedure calls with bare arguments,
+  multiline and single-line If/ElseIf syntax, front-checked Do While syntax, basic Exit and
+  error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,
+  one-dimensional dynamic-array runtime `ReDim`, simple function declarations with declared return
+  slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
+  multi-declarator literal `Const`, and explicit-receiver value-side dot-member read/call syntax
+  are no longer themselves route blockers. The call/coercion fixture now has matching
   bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage for language surfaces
   outside this route-audited subset, but the audited fixtures in this file now classify as
   `HirProduction`.

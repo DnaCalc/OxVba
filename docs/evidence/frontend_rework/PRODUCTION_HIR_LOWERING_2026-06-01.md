@@ -63,6 +63,12 @@ second procedure: HIR reports the actual `Sub Use` line after the blank line, wh
 projection maps the procedure one line early. The diff classifier now records that as a documented
 metadata improvement instead of a bug.
 
+Follow-up continuation on the call slice preserves bare argument lists for same-module statement
+calls without parentheses, so `Use 1, 2` now lowers through `HirCall` and produces a call-site
+descriptor with both arguments. Statement-form member calls such as `obj.Method 1, 2` remain
+fallback-eligible because the current backend has no expression-statement discard form for
+receiver-based `BoundExpr::Member` calls.
+
 This is still not blanket FE-8.5 closure. Broader HIR production lowering remains open for language
 surfaces outside this simple same-module call subset, especially optional/default arguments,
 ParamArray, member/index dispatch, control flow, and project/class paths owned jointly with FE-7.
