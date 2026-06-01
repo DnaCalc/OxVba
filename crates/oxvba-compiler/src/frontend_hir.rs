@@ -146,6 +146,13 @@ pub enum HirStmtKind {
         arms: Vec<(Vec<HirExprId>, Vec<HirStmtId>)>,
         else_body: Vec<HirStmtId>,
     },
+    ForRange {
+        var: SymbolId,
+        start: HirExprId,
+        end: HirExprId,
+        step: Option<HirExprId>,
+        body: Vec<HirStmtId>,
+    },
     Block(Vec<HirStmtId>),
 }
 
@@ -591,6 +598,59 @@ impl HirBuilder {
                         body,
                         post_check: false,
                         until: false,
+                    },
+                })))
+            }
+            SyntaxKind::ForStmt => {
+                if node
+                    .child_tokens()
+                    .iter()
+                    .any(|token| token.kind == SyntaxKind::KwEach)
+                {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "For Each is not yet supported by HIR lowering: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                let var_name = first_identifier_text(node).ok_or_else(|| {
+                    HirBuildError::Unsupported(format!(
+                        "For statement without counter variable: `{}`",
+                        node.text().trim()
+                    ))
+                })?;
+                let var = self.resolve_name(scope, &var_name)?;
+                let exprs = expression_children(node);
+                if exprs.len() < 2 {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "For statement without start/end expressions: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                let start = self.lower_expr(scope, exprs[0])?;
+                let end = self.lower_expr(scope, exprs[1])?;
+                let step = exprs
+                    .get(2)
+                    .map(|expr| self.lower_expr(scope, *expr))
+                    .transpose()?;
+                let block = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::Block)
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "For statement without body block: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                let body = self.collect_stmt_block(scope, block)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::ForRange {
+                        var,
+                        start,
+                        end,
+                        step,
+                        body,
                     },
                 })))
             }
@@ -1462,6 +1522,54 @@ mod tests {
     }
 
     #[test]
+    fn hir_builder_lowers_simple_for_range_statement() {
+        let source = "Sub Main()\nDim i As Long\nFor i = 1 To 3\ni = i + 1\nNext\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let for_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_for_range_stmt(&module.arenas, *stmt))
+            .expect("for range statement");
+        let Some(HirStmt {
+            kind:
+                HirStmtKind::ForRange {
+                    start,
+                    end,
+                    step,
+                    body,
+                    ..
+                },
+            ..
+        }) = module.arenas.stmt(for_stmt)
+        else {
+            panic!("expected for range statement");
+        };
+
+        assert!(matches!(
+            module.arenas.expr(*start).map(|expr| &expr.kind),
+            Some(HirExprKind::Literal(HirLiteral::Int(1)))
+        ));
+        assert!(matches!(
+            module.arenas.expr(*end).map(|expr| &expr.kind),
+            Some(HirExprKind::Literal(HirLiteral::Int(3)))
+        ));
+        assert!(step.is_none());
+        assert!(
+            body.iter()
+                .any(|stmt| find_let_stmt(&module.arenas, *stmt).is_some()),
+            "expected assignment in for body: {module:#?}"
+        );
+    }
+
+    #[test]
     fn hir_builder_lowers_simple_select_case_statement() {
         let source =
             "Sub Main()\nDim x As Long\nSelect Case x\nCase 1\nx = 2\nEnd Select\nEnd Sub\n";
@@ -1598,6 +1706,16 @@ mod tests {
             Some(HirStmtKind::Block(children)) => children
                 .iter()
                 .find_map(|child| find_select_case_stmt(hir, *child)),
+            _ => None,
+        }
+    }
+
+    fn find_for_range_stmt(hir: &HirArenas, stmt: HirStmtId) -> Option<HirStmtId> {
+        match hir.stmt(stmt).map(|stmt| &stmt.kind) {
+            Some(HirStmtKind::ForRange { .. }) => Some(stmt),
+            Some(HirStmtKind::Block(children)) => children
+                .iter()
+                .find_map(|child| find_for_range_stmt(hir, *child)),
             _ => None,
         }
     }

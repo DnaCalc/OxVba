@@ -238,6 +238,28 @@ fn collect_stmt_contract_facts(
                 );
             }
         }
+        HirStmtKind::ForRange {
+            start,
+            end,
+            step,
+            body,
+            ..
+        } => {
+            collect_expr_structural_intrinsics(typed_hir, *start, structural_intrinsics);
+            collect_expr_structural_intrinsics(typed_hir, *end, structural_intrinsics);
+            if let Some(step) = step {
+                collect_expr_structural_intrinsics(typed_hir, *step, structural_intrinsics);
+            }
+            for child in body {
+                collect_stmt_contract_facts(
+                    typed_hir,
+                    proc_symbol,
+                    *child,
+                    returns,
+                    structural_intrinsics,
+                );
+            }
+        }
         HirStmtKind::Block(children) => {
             for child in children {
                 collect_stmt_contract_facts(

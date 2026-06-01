@@ -211,6 +211,9 @@ mod tests {
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("while wend statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("for statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"
         );
@@ -223,9 +226,10 @@ mod tests {
             "{report:#?}"
         );
         assert!(
-            report.residuals().iter().any(|finding| {
-                finding.area.contains("for statement") || finding.area.contains("select case range")
-            }),
+            report
+                .residuals()
+                .iter()
+                .any(|finding| { finding.area.contains("select case range") }),
             "{report:#?}"
         );
         assert!(

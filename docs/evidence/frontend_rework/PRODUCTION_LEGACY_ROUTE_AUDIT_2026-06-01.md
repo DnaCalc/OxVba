@@ -21,9 +21,10 @@ The audit proves the good path and exposes the remaining production residuals:
 - simple front-checked `Do While ... Loop`, `Do Until`, and post-check loop fixtures now reach
   `HirProduction`;
 - `While`/`Wend` fixtures now reach `HirProduction`;
+- simple `For` range fixtures now reach `HirProduction`;
 - simple single-value `Select Case` fixtures now reach `HirProduction`;
-- `For` and `Select Case` range fixtures remain explicit `LegacyFallbackResidual` entries owned by
-  FE-8.5 rather than being hidden under a generic "control flow" note;
+- `Select Case` range fixtures remain explicit `LegacyFallbackResidual` entries owned by FE-8.5
+  rather than being hidden under a generic "control flow" note;
 - project compilation now selects `ModuleAwareBindPlan` unconditionally; the old
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
@@ -68,7 +69,6 @@ The audit result requires reopened delivery work rather than terminal closure:
 - Procedure-call syntax, simple multiline If syntax, front-checked Do While syntax, and simple
   single-value Select Case syntax are no longer themselves route blockers. The call/coercion
   fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering
-  coverage, starting with the now-audited `For` and Select Case range variants outside this narrow
-  slice.
+  coverage, starting with the now-audited Select Case range variant outside this narrow slice.
 - The right next step is reopened delivery work on the owning beads, not another evidence-only
   closure pass.

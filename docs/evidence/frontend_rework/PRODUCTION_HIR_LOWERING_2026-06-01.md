@@ -22,6 +22,7 @@ The initial production scope is intentionally narrow and explicit:
 - simple multiline `If ... Then ... End If` statements without `ElseIf`,
 - `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
 - `While` / `Wend` loops,
+- simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
 - simple `Select Case` statements with single integer-value `Case` clauses and optional
   `Case Else`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
@@ -68,7 +69,7 @@ The third FE-8.5 slice removes the simplest control-flow route residual:
   `If x = 0 Then ... End If` fixture; and
 - the route audit classifies the simple If fixture as `HirProduction`.
 
-This is intentionally not full control-flow closure. `ElseIf`, bare `Do` loops, `Exit Do`, `For`,
+This is intentionally not full control-flow closure. `ElseIf`, bare `Do` loops, `Exit Do`,
 `For Each`, richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain
 tracked FE-8.5 residuals until each has HIR shape, lowering tests, bytecode/metadata parity or
 documented improvement classification, and route-audit coverage.
@@ -98,6 +99,13 @@ requires a condition and exit-stack semantics need direct coverage.
 The seventh FE-8.5 slice maps `While ... Wend` into the same front-checked conditional loop HIR
 shape used by `Do While`; the route audit now classifies the `While/Wend` fixture as
 `HirProduction`.
+
+The eighth FE-8.5 slice adds simple range `For` loops:
+
+- `ForStmt` nodes lower into `HirStmtKind::ForRange` when they are not `For Each`;
+- the loop counter resolves through the HIR symbol model instead of string-only lowering;
+- omitted `Step` lowers to the existing backend default of `1`; and
+- the route audit now classifies the simple `For i = 1 To 3 ... Next` fixture as `HirProduction`.
 
 ## Select Continuation
 

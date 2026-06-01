@@ -208,6 +208,22 @@ impl SemanticModel {
                     self.index_stmt_tree(stmt);
                 }
             }
+            HirStmtKind::ForRange {
+                start,
+                end,
+                step,
+                body,
+                ..
+            } => {
+                self.index_expr_tree(start);
+                self.index_expr_tree(end);
+                if let Some(step) = step {
+                    self.index_expr_tree(step);
+                }
+                for stmt in body {
+                    self.index_stmt_tree(stmt);
+                }
+            }
             HirStmtKind::Block(stmts) => {
                 for stmt in stmts {
                     self.index_stmt_tree(stmt);
