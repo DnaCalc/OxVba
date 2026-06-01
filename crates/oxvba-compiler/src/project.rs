@@ -1740,6 +1740,8 @@ fn record_internal_class_object_local(
     active_procedure_name: &Option<String>,
     line: &str,
     manifest: &ProjectManifest,
+    active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     current_project: &str,
     reference_order: &BTreeMap<String, usize>,
 ) -> Result<(), ProjectCompileError> {
@@ -1752,8 +1754,10 @@ fn record_internal_class_object_local(
     let Some(dim_decl) = parse_internal_class_dim_declaration(line) else {
         return Ok(());
     };
-    if resolve_interface_module(
+    if resolve_class_construction_module(
         manifest,
+        active_project,
+        project_symbol_index,
         current_project,
         &dim_decl.type_name,
         reference_order,
@@ -3339,6 +3343,8 @@ fn lower_module_source_module_aware(
             &active_procedure_name,
             line,
             manifest,
+            active_project,
+            Some(project_symbol_index),
             current_project,
             reference_order,
         )?;
@@ -9159,6 +9165,8 @@ fn rewrite_module_source(
             &active_procedure_name,
             line,
             manifest,
+            active_project,
+            None,
             current_project,
             reference_order,
         )?;
@@ -10662,7 +10670,7 @@ fn normalize_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CallingShape, ExportKind, InvocationLane, ModuleAttributes, ModuleKind,
+        CallingShape, ExportKind, InvocationLane, ModuleAttributes, ModuleKind, ModuleUnit,
         PROJECTED_TYPELIB_REFERENCE_MARKER, PassingMode, ProcedureKind, ProjectComWithEventsRoute,
         ProjectCompileError, ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy,
         ProjectManifest, ProjectReference, ReferenceKind, ReferencedProjectManifest,
@@ -18901,6 +18909,47 @@ mod tests {
                 .get("other")
                 .map(|binding| binding.module_name.as_str()),
             Some("widgetfile")
+        );
+    }
+
+    #[test]
+    fn record_internal_class_object_local_uses_frontend_class_route() {
+        let widget = ModuleUnit {
+            module_name: "WidgetFile".to_string(),
+            module_kind: ModuleKind::Class,
+            attributes: ModuleAttributes {
+                vb_name: "Widget".to_string(),
+                ..Default::default()
+            },
+            source: "Public Sub Ping()\nEnd Sub".to_string(),
+        };
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let project_symbol_index =
+            build_project_symbol_index_from_manifest(&manifest).expect("index should build");
+        let mut forced = BTreeMap::new();
+
+        super::record_internal_class_object_local(
+            &mut forced,
+            &Some("main".to_string()),
+            "Dim widget As Widget",
+            &manifest,
+            "projecta",
+            Some(&project_symbol_index),
+            "projecta",
+            &BTreeMap::new(),
+        )
+        .expect("frontend class route should classify typed class local");
+
+        assert_eq!(
+            forced.get("main"),
+            Some(&BTreeSet::from(["widget".to_string()]))
         );
     }
 

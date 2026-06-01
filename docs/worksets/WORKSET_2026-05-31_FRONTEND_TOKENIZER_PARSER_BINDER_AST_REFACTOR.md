@@ -767,8 +767,9 @@ Candidate bead units:
   progress wires active-project `New`/`As New` class construction through `ProjectSymbolIndex`
   class routes, gates active-project predeclared Property Get rewrite routes through frontend
   class/property routes, splits ordinary fields from `WithEvents` fields in the frontend project
-  symbol table, and emits active-project dynamic object field-token metadata from frontend
-  ordinary-field routes. Remaining fallback routes are explicitly bounded to referenced-project
+  symbol table, emits active-project dynamic object field-token metadata from frontend
+  ordinary-field routes, and classifies active-project typed class locals through the same
+  frontend class route. Remaining fallback routes are explicitly bounded to referenced-project
   class/predeclared roots, imported COM activation metadata, and parser-incomplete compatibility
   enumeration outside the active-project symbol-index route.
   Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
