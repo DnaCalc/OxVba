@@ -640,6 +640,7 @@ semantics.
 Candidate bead units:
 - FE-7.1 Qualified names and project/module lookup: move module, class, procedure, field, and
   public symbol resolution into binder-owned tables.
+  Evidence: `docs/evidence/frontend_rework/QUALIFIED_NAME_PROJECT_LOOKUP_2026-06-01.md`.
 - FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
   members, late-bound dispatch, default members, and host-provided globals.
 - FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
