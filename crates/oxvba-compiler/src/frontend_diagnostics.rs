@@ -42,6 +42,19 @@ pub struct FrontendDiagnosticMapper {
 }
 
 impl FrontendDiagnosticMapper {
+    pub fn from_parse_errors(errors: &[oxvba_syntax::ParseError]) -> Self {
+        let mut mapper = Self::default();
+        for error in errors {
+            mapper.push_parser_error(error.offset, error.message.clone());
+        }
+        mapper
+    }
+
+    pub fn from_source_parse(source: &str) -> Self {
+        let parsed = oxvba_syntax::parse(source);
+        Self::from_parse_errors(parsed.errors())
+    }
+
     pub fn push_parser_error(&mut self, offset: u32, message: impl Into<String>) {
         let start = offset as usize;
         self.diagnostics.push(FrontendDiagnostic {
@@ -199,5 +212,34 @@ mod tests {
         let diagnostics = model.diagnostics_for_span(FrontendSourceSpan { start: 12, end: 13 });
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "TYPE-E-MISMATCH");
+    }
+
+    #[test]
+    fn diagnostic_mapper_routes_real_parser_errors_from_source() {
+        let source = "Sub Main()\n    x = \nEnd Sub\n";
+        let mapper = FrontendDiagnosticMapper::from_source_parse(source);
+        assert!(
+            mapper.diagnostics().iter().any(|diagnostic| {
+                diagnostic.family == FrontendDiagnosticFamily::Parser
+                    && diagnostic.code == "PARSE-E-SYNTAX"
+                    && diagnostic.message.contains("expected expression after `=`")
+                    && diagnostic.span.start < source.len()
+                    && diagnostic.span.end <= source.len()
+            }),
+            "expected mapped parser diagnostic: {:#?}",
+            mapper.diagnostics()
+        );
+
+        let mut model = SemanticModel::new(SymbolModel::default(), HirArenas::default());
+        for diagnostic in mapper.semantic_diagnostics() {
+            model.push_diagnostic(diagnostic);
+        }
+        assert!(
+            model
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code == "PARSE-E-SYNTAX"),
+            "expected SemanticModel parse diagnostic"
+        );
     }
 }
