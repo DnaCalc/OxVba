@@ -159,7 +159,13 @@ pub fn compile_with_options(
         return syntax_bridge::compile_source_via_syntax_bridge(source)
             .map_err(|err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")));
     }
-    compile(source)
+    match syntax_bridge::compile_source_via_syntax_bridge(source) {
+        Ok(bytecode) => Ok(bytecode),
+        Err(syntax_bridge::SyntaxBridgeError::Unsupported(_)) => compile(source),
+        Err(err) => Err(CompileError::ResolveError(format!(
+            "frontend_v2 default route error: {err}"
+        ))),
+    }
 }
 
 pub fn compile_with_runtime_metadata(
@@ -625,15 +631,17 @@ mod tests {
     }
 
     #[test]
-    fn compile_options_default_keeps_legacy_path() {
+    fn compile_options_default_uses_frontend_v2_for_completed_constructs() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
-        let legacy = compile(source).expect("legacy compile should succeed");
+        let frontend =
+            super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+                .expect("frontend_v2 compile should succeed");
         let defaulted = super::compile_with_options(source, super::CompileOptions::default())
             .expect("default compile");
         assert_eq!(
-            format!("{:?}", legacy.instructions),
+            format!("{:?}", frontend.instructions),
             format!("{:?}", defaulted.instructions),
-            "default compile options must not change bytecode route"
+            "default compile options should route completed constructs through frontend_v2"
         );
     }
 
@@ -691,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_options_frontend_v2_enables_completed_bridge_construct_without_default_flip() {
+    fn compile_options_default_enables_completed_bridge_construct() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
         let legacy_err =
             compile(source).expect_err("legacy path should not accept inline sequence");
@@ -700,9 +708,9 @@ mod tests {
             "unexpected legacy error: {legacy_err}"
         );
 
-        let default_err = super::compile_with_options(source, super::CompileOptions::default())
-            .expect_err("default options must stay on legacy route");
-        assert_eq!(legacy_err.to_string(), default_err.to_string());
+        let defaulted = super::compile_with_options(source, super::CompileOptions::default())
+            .expect("default route should compile completed inline construct");
+        assert!(!defaulted.instructions.is_empty());
 
         let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
             .expect("frontend_v2 bridge should compile completed inline construct");

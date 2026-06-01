@@ -45,13 +45,9 @@ impl FrontendRoutePolicy {
                     .to_string(),
             },
         );
-        policy.routes.insert(
-            FrontendConstruct::Lowering,
-            FrontendRoute::LegacyResidual {
-                reason: "production bytecode lowering still migrates through legacy bridge"
-                    .to_string(),
-            },
-        );
+        policy
+            .routes
+            .insert(FrontendConstruct::Lowering, FrontendRoute::V2Default);
         policy
     }
 
@@ -89,12 +85,12 @@ mod tests {
     }
 
     #[test]
-    fn route_policy_keeps_lowering_as_tracked_residual() {
+    fn route_policy_defaults_scoped_lowering_to_v2() {
         let policy = FrontendRoutePolicy::new_completed_construct_defaults();
-        assert!(matches!(
+        assert_eq!(
             policy.route(FrontendConstruct::Lowering),
-            Some(FrontendRoute::LegacyResidual { reason }) if reason.contains("legacy bridge")
-        ));
-        assert_eq!(policy.residuals().len(), 2);
+            Some(&FrontendRoute::V2Default)
+        );
+        assert_eq!(policy.residuals().len(), 1);
     }
 }

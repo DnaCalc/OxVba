@@ -855,7 +855,10 @@ semantic substrate.
 
 Candidate bead units:
 - FE-9.1 Per-construct default flip: route completed construct families through frontend v2 by
-  default while retaining fallback only for tracked residuals.
+  default while retaining fallback only for tracked residuals. Reopened continuation flips
+  `CompileOptions::default()` to use the frontend-v2 route for completed constructs while keeping
+  `compile()` as the legacy comparison route and preserving fallback only for unsupported residual
+  constructs.
   Evidence: `docs/evidence/frontend_rework/PER_CONSTRUCT_ROUTE_POLICY_2026-06-01.md`.
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
   splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
