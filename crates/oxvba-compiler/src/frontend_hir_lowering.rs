@@ -134,26 +134,12 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
             parsed.errors()
         )));
     }
-    if let Some(kind) = first_unsupported_production_syntax(parsed.syntax()) {
-        return Err(HirProductionLoweringError::Unsupported(format!(
-            "syntax kind {kind:?}"
-        )));
-    }
     if let Some(text) = first_unsupported_const_stmt(parsed.syntax()) {
         return Err(HirProductionLoweringError::Unsupported(format!(
             "const statement {text:?}"
         )));
     }
     Ok(())
-}
-
-fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Option<SyntaxKind> {
-    if matches!(node.kind(), SyntaxKind::NewExpr) {
-        return Some(node.kind());
-    }
-    node.child_nodes()
-        .into_iter()
-        .find_map(first_unsupported_production_syntax)
 }
 
 fn first_unsupported_const_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> Option<String> {
@@ -880,6 +866,9 @@ fn lower_expr(
                 symbol_name(typed_hir, *symbol).map(BoundExpr::Var)
             }
         }
+        HirExprKind::New { type_name } => Err(HirProductionLoweringError::Unsupported(format!(
+            "New expression `{type_name}` requires project-aware construction binding"
+        ))),
         HirExprKind::Unary { op, expr } => match op {
             HirUnaryOp::Negate => Ok(BoundExpr::UnaryOp {
                 op: ArithOp::Neg,
@@ -1697,6 +1686,7 @@ fn hir_expr_bound_type(typed_hir: &TypedHirModule, expr: HirExprId) -> Option<Bo
         HirExprKind::Literal(HirLiteral::Nothing) => Some(BoundType::Object),
         HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(BoundType::Variant),
         HirExprKind::Binary { .. } | HirExprKind::Unary { .. } => Some(BoundType::Variant),
+        HirExprKind::New { .. } => Some(BoundType::Object),
         _ => None,
     }
 }
@@ -2384,6 +2374,25 @@ mod tests {
             matches!(err, HirProductionLoweringError::Unsupported(_)),
             "bang member access must remain fallback-eligible, got {err:?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_new_expression_until_project_binding_is_available() {
+        let source = "Sub Main()\nDim obj As Object\nSet obj = New Widget\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("New expression needs project-aware construction binding");
+
+        match err {
+            HirProductionLoweringError::Unsupported(reason) => {
+                assert!(
+                    reason.contains(
+                        "New expression `widget` requires project-aware construction binding"
+                    ),
+                    "unexpected New residual reason: {reason}"
+                );
+            }
+            other => panic!("New expression must remain fallback-eligible, got {other:?}"),
+        }
     }
 
     #[test]

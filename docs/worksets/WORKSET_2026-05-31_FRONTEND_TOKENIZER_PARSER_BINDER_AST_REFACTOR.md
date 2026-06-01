@@ -929,9 +929,12 @@ Candidate bead units:
   declarations such as `Dim p As Point`. Follow-up UDT continuation maps simple field reads/writes
   such as `p.X = 1` and `y = p.X + 2` to flattened aliases, and preserves same-shape whole-UDT
   assignment as field-wise `UdtAssign` copy lowering.
-  `New` remains an explicit production residual because object construction requires project class
-  handles, imported/COM activation, and `As New` lazy-construction semantics that cannot be no-op
-  routed.
+  Follow-up continuation gives `New` a first-class HIR expression shape carrying the normalized
+  constructor type name, and moves the residual from a raw CST syntax guard to a precise
+  project-aware construction-binding error. `New` remains an explicit production residual because
+  object construction still requires active-project class handles, imported/COM activation,
+  generated instance metadata, `Class_Initialize`, and `As New` lazy-construction semantics without
+  relying on `project.rs` source-text rewrites.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 

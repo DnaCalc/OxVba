@@ -304,7 +304,7 @@ impl SemanticModel {
                     self.index_expr_tree(receiver);
                 }
             }
-            HirExprKind::Missing | HirExprKind::Literal(_) => {}
+            HirExprKind::New { .. } | HirExprKind::Missing | HirExprKind::Literal(_) => {}
         }
     }
 }

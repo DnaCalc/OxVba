@@ -381,6 +381,7 @@ fn collect_expr_structural_intrinsics(
         | HirExprKind::Literal(HirLiteral::Bool(_))
         | HirExprKind::Literal(HirLiteral::Int(_))
         | HirExprKind::Literal(HirLiteral::String(_))
+        | HirExprKind::New { .. }
         | HirExprKind::Name(_) => {}
     }
 }

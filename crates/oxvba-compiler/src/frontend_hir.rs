@@ -65,6 +65,9 @@ pub enum HirExprKind {
     Missing,
     Literal(HirLiteral),
     Name(SymbolId),
+    New {
+        type_name: String,
+    },
     Unary {
         op: HirUnaryOp,
         expr: HirExprId,
@@ -1128,6 +1131,14 @@ impl HirBuilder {
                 HirExprKind::Name(self.resolve_name(scope, &name)?)
             }
             SyntaxKind::LiteralExpr => HirExprKind::Literal(lower_literal(node)?),
+            SyntaxKind::NewExpr => HirExprKind::New {
+                type_name: new_expr_type_name(node).ok_or_else(|| {
+                    HirBuildError::Unsupported(format!(
+                        "New expression without type name: `{}`",
+                        node.text().trim()
+                    ))
+                })?,
+            },
             SyntaxKind::ParenExpr => {
                 let inner = expression_children(node)
                     .into_iter()
@@ -1404,6 +1415,47 @@ fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
         .and_then(|value| value.strip_suffix(']'))
         .unwrap_or(trimmed);
     normalize_ident(name)
+}
+
+fn new_expr_type_name(node: SyntaxNode<'_>) -> Option<String> {
+    if node.kind() != SyntaxKind::NewExpr {
+        return None;
+    }
+    let mut parts = Vec::new();
+    let mut expect_name = false;
+    for token in node.child_tokens() {
+        if token.kind.is_trivia() {
+            continue;
+        }
+        if token.kind == SyntaxKind::KwNew {
+            expect_name = true;
+            continue;
+        }
+        if token.kind == SyntaxKind::Dot {
+            expect_name = true;
+            continue;
+        }
+        if expect_name
+            && (token.kind == SyntaxKind::Ident
+                || token.kind == SyntaxKind::BracketedIdent
+                || token.kind.is_keyword())
+        {
+            let text = token
+                .text
+                .strip_prefix('[')
+                .and_then(|value| value.strip_suffix(']'))
+                .unwrap_or(token.text);
+            parts.push(normalize_ident(text)?);
+            expect_name = false;
+            continue;
+        }
+        return None;
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("."))
+    }
 }
 
 fn direct_member_name(node: SyntaxNode<'_>) -> Option<String> {
@@ -1954,6 +2006,29 @@ mod tests {
     }
 
     #[test]
+    fn hir_builder_preserves_new_expression_type_name() {
+        let source = "Sub Main()\nDim obj As Object\nSet obj = New Foo.Bar\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let procedure = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("procedure declaration");
+        let set_stmt = procedure
+            .iter()
+            .find_map(|stmt| find_set_stmt(&module.arenas, *stmt))
+            .expect("set statement");
+        assert!(matches!(
+            module.arenas.expr(set_stmt.1).map(|expr| &expr.kind),
+            Some(HirExprKind::New { type_name }) if type_name == "foo.bar"
+        ));
+    }
+
+    #[test]
     fn hir_builder_lowers_call_statement_to_call_expression() {
         let source = "Sub Main()\nCall Use(5)\nEnd Sub\nSub Use(ByVal x As Long)\nEnd Sub\n";
         let module = build_hir_from_source("Module1", source).expect("HIR module");
@@ -2444,6 +2519,16 @@ mod tests {
             Some(HirStmtKind::Let { target, value }) => Some((*target, *value)),
             Some(HirStmtKind::Block(children)) => {
                 children.iter().find_map(|child| find_let_stmt(hir, *child))
+            }
+            _ => None,
+        }
+    }
+
+    fn find_set_stmt(hir: &HirArenas, stmt: HirStmtId) -> Option<(HirExprId, HirExprId)> {
+        match hir.stmt(stmt).map(|stmt| &stmt.kind) {
+            Some(HirStmtKind::Set { target, value }) => Some((*target, *value)),
+            Some(HirStmtKind::Block(children)) => {
+                children.iter().find_map(|child| find_set_stmt(hir, *child))
             }
             _ => None,
         }
