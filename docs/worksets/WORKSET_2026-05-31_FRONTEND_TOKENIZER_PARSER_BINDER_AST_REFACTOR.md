@@ -703,6 +703,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/LANGUAGE_SERVICE_RECONCILIATION_2026-06-01.md`.
 - FE-9.5 Terminal evidence and closure: run full compiler, VM, host, conformance, syntax, and
   selected Excel oracle checks; archive the legacy comparison harness when no longer needed.
+  Evidence: `docs/evidence/frontend_rework/TERMINAL_CLOSURE_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is

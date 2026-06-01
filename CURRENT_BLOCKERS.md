@@ -51,6 +51,38 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
+### FE-TERM-001: Frontend rework terminal evidence blocked by compiler metadata failure
+- Status: open blocking issue for `bd-aprs.10.5` terminal closure.
+- Impact:
+  - Blocks truthful closure of
+    `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_REFACTOR.md`.
+  - Prevents claiming full compiler parity for the frontend rework workset.
+  - Does not invalidate the focused frontend module checks or syntax checks, which pass.
+- Current state:
+  - Passing checks:
+    - `cargo test -p oxvba-compiler frontend_ --quiet` (60 passed)
+    - `cargo test -p oxvba-syntax --quiet` (79 unit tests plus 2 integration/doc-style tests passed)
+    - `cargo fmt --check -p oxvba-compiler`
+    - `git diff --check`
+  - Failing check:
+    - `cargo test -p oxvba-compiler --quiet` (923 passed, 1 failed)
+    - failing test:
+      `tests::procedure_runtime_metadata_carries_expression_operator_and_coercion_descriptors`
+    - failing assertion expects `COERCE-CALL-BYVAL-DECLARED-TARGET` with `CallLet`, `Long` source,
+      and `Double` target.
+    - filtered rerun of the test fails deterministically.
+  - Broad VM, host, conformance, and Excel oracle checks were not run after the compiler failure.
+- Exact unblocking steps:
+  - debug call-site metadata/coercion descriptor collection for `Call TakeDouble(x)` where
+    `x As Long` and `TakeDouble(ByVal value As Double)`;
+  - restore or intentionally reclassify the missing `COERCE-CALL-BYVAL-DECLARED-TARGET`
+    descriptor;
+  - rerun `cargo test -p oxvba-compiler --quiet`;
+  - then run or explicitly scope the VM/host/conformance/oracle terminal checks before closing
+    `bd-aprs.10.5`.
+- Evidence:
+  - `docs/evidence/frontend_rework/TERMINAL_CLOSURE_2026-06-01.md`
+
 ### RV-BRIDGE-001..004: resolved by RuntimeValue source-carrier removal
 - Status: resolved in recovery run.
 - Resolution summary:
@@ -873,7 +905,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
 
