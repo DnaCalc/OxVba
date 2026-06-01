@@ -697,6 +697,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/LEGACY_RETIREMENT_INVENTORY_2026-06-01.md`.
 - FE-9.3 Salsa/query integration: wrap parse, bind, typecheck, diagnostics, and SemanticModel
   queries for incremental recompute.
+  Evidence: `docs/evidence/frontend_rework/QUERY_INTEGRATION_2026-06-01.md`.
 - FE-9.4 Language-service reconciliation: replace duplicate `oxvba-languageservice` semantic
   logic with shared SemanticModel/HIR-backed queries.
 - FE-9.5 Terminal evidence and closure: run full compiler, VM, host, conformance, syntax, and
