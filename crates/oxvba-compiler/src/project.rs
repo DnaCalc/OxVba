@@ -1017,7 +1017,12 @@ fn compile_project_with_strategy(
                 message: format!("FE7-E-PROJECT-SYMBOL-INDEX: {error}"),
             }
         })?;
-    validate_event_semantics(manifest, &procedure_index, &reference_order)?;
+    validate_event_semantics(
+        manifest,
+        &project_symbol_index,
+        &procedure_index,
+        &reference_order,
+    )?;
     validate_imported_module_scope_declarations(manifest, &reference_order)?;
     validate_imported_procedure_signatures(manifest, &reference_order)?;
     validate_imported_event_declarations(manifest, &reference_order)?;
@@ -1072,8 +1077,12 @@ fn compile_project_with_strategy(
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
     let project_com_withevents_routes =
         build_project_com_withevents_routes(manifest, &event_dispatch_plan);
-    let implements_map =
-        collect_class_implements_map(manifest, &procedure_index, &reference_order)?;
+    let implements_map = collect_class_implements_map(
+        manifest,
+        &project_symbol_index,
+        &procedure_index,
+        &reference_order,
+    )?;
     let project_dynamic_objects = build_project_dynamic_object_routes(
         manifest,
         &project_symbol_index,
@@ -1947,6 +1956,7 @@ fn is_typelib_binding_diagnostic_module(module: &ModuleUnit) -> bool {
 
 fn validate_event_semantics(
     manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
 ) -> Result<(), ProjectCompileError> {
@@ -2007,8 +2017,9 @@ fn validate_event_semantics(
                     });
                 };
 
-                let Some((iface_project, iface_module)) = resolve_interface_module(
+                let Some((iface_project, iface_module)) = resolve_implements_interface_module(
                     manifest,
+                    project_symbol_index,
                     &project_key,
                     &interface_name,
                     reference_order,
@@ -2045,7 +2056,15 @@ fn validate_event_semantics(
                 let iface_prefix = normalize_identifier(&interface_name);
                 for member in required_members {
                     let expected = format!("{iface_prefix}_{member}");
-                    if !implemented_members.contains(&expected) {
+                    if !implemented_members.contains(&expected)
+                        || !frontend_implements_member_route_exists(
+                            manifest,
+                            project_symbol_index,
+                            &project_key,
+                            &module_key,
+                            &expected,
+                        )
+                    {
                         return Err(ProjectCompileError::ImplementsMemberMissing {
                             module_name: module_name.clone(),
                             interface_name: iface_prefix.clone(),
@@ -2061,9 +2080,18 @@ fn validate_event_semantics(
                         module_name: module_name.clone(),
                     });
                 }
-                let key = (project_key.clone(), module_key.clone());
-                let declared = class_declared_events.get(&key).cloned().unwrap_or_default();
-                if !declared.contains(&event_name) {
+                let declared = if project_key == normalize_identifier(&manifest.project_name) {
+                    project_symbol_index
+                        .tables
+                        .resolve_event(&module_key, &event_name)
+                        .is_some()
+                } else {
+                    let key = (project_key.clone(), module_key.clone());
+                    class_declared_events
+                        .get(&key)
+                        .is_some_and(|declared| declared.contains(&event_name))
+                };
+                if !declared {
                     return Err(ProjectCompileError::RaiseEventUndeclared {
                         module_name: module_name.clone(),
                         event_name,
@@ -2281,6 +2309,57 @@ fn resolve_class_construction_module(
     resolve_interface_module(manifest, current_project, type_name, reference_order)
 }
 
+fn resolve_implements_interface_module(
+    manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
+    current_project: &str,
+    interface_name: &str,
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let active_project_key = normalize_identifier(&manifest.project_name);
+    if normalize_identifier(current_project) == active_project_key
+        && project_symbol_index
+            .resolve_class_route(interface_name)
+            .is_some()
+    {
+        let requested = normalize_identifier(interface_name);
+        for module in &manifest.modules {
+            if module.module_kind == ModuleKind::Class
+                && (normalize_identifier(&module.module_name) == requested
+                    || (!module.attributes.vb_name.trim().is_empty()
+                        && normalize_identifier(&module.attributes.vb_name) == requested))
+            {
+                return Ok(Some((
+                    active_project_key,
+                    normalize_identifier(&module.module_name),
+                )));
+            }
+        }
+    }
+
+    resolve_interface_module(manifest, current_project, interface_name, reference_order)
+}
+
+fn frontend_implements_member_route_exists(
+    manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
+    project_name: &str,
+    module_name: &str,
+    implementation_name: &str,
+) -> bool {
+    if normalize_identifier(project_name) != normalize_identifier(&manifest.project_name) {
+        return true;
+    }
+    project_symbol_index
+        .tables
+        .resolve_owner_member_of_kind(
+            module_name,
+            implementation_name,
+            ProjectSymbolKind::Procedure,
+        )
+        .is_some()
+}
+
 fn reference_kind_resolution_priority(manifest: &ProjectManifest, project_name: &str) -> usize {
     manifest
         .references
@@ -2326,6 +2405,7 @@ type ClassImplementsMap = BTreeMap<(String, String), ClassImplementsEntry>;
 
 fn collect_class_implements_map(
     manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
 ) -> Result<ClassImplementsMap, ProjectCompileError> {
@@ -2355,8 +2435,9 @@ fn collect_class_implements_map(
                 let Some(interface_name) = normalize_procedure_name(&interface_target) else {
                     continue;
                 };
-                let Some((iface_project, iface_module)) = resolve_interface_module(
+                let Some((iface_project, iface_module)) = resolve_implements_interface_module(
                     manifest,
+                    project_symbol_index,
                     &project_key,
                     &interface_name,
                     reference_order,
@@ -3613,9 +3694,14 @@ fn expand_bound_source_line(
     }
 
     if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line) {
-        if let Some((target_project, target_module)) =
-            resolve_event_source_module(manifest, current_project, &source_type, reference_order)?
-        {
+        if let Some((target_project, target_module)) = resolve_event_source_module_for_binding(
+            manifest,
+            active_project,
+            project_symbol_index,
+            current_project,
+            &source_type,
+            reference_order,
+        )? {
             internal_class_bindings.insert(
                 normalize_identifier(&withevents_var),
                 InternalClassBinding {
@@ -7927,14 +8013,20 @@ fn collect_event_dispatch_plan(
             else {
                 continue;
             };
-            let internal_source =
-                resolve_event_source_module(manifest, &project_key, &source_type, reference_order)?
-                    .and_then(|(source_project, source_module)| {
-                        declared_events
-                            .get(&(source_project.clone(), source_module.clone()))
-                            .cloned()
-                            .map(|events| (source_project, source_module, events))
-                    });
+            let internal_source = resolve_event_source_module_for_binding(
+                manifest,
+                &normalize_identifier(&manifest.project_name),
+                Some(project_symbol_index),
+                &project_key,
+                &source_type,
+                reference_order,
+            )?
+            .and_then(|(source_project, source_module)| {
+                declared_events
+                    .get(&(source_project.clone(), source_module.clone()))
+                    .cloned()
+                    .map(|events| (source_project, source_module, events))
+            });
             let typelib_source = referenced_typelib_event_source(manifest, &source_type)?;
             let Some((source_project, source_module, available_events)) =
                 internal_source.or(typelib_source)
@@ -8345,6 +8437,42 @@ fn resolve_event_source_module(
         &normalized_source_type,
         reference_order,
     )
+}
+
+fn resolve_event_source_module_for_binding(
+    manifest: &ProjectManifest,
+    active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    current_project: &str,
+    source_type: &str,
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let active_project_key = normalize_identifier(active_project);
+    if normalize_identifier(current_project) == active_project_key
+        && normalize_identifier(&manifest.project_name) == active_project_key
+        && let Some(index) = project_symbol_index
+    {
+        let normalized_source_type = parse_qualified_type_reference(source_type)
+            .map(|(_, normalized)| normalized)
+            .unwrap_or_else(|| normalize_identifier(source_type));
+        if index.resolve_class_route(&normalized_source_type).is_some() {
+            for module in &manifest.modules {
+                if module.module_kind == ModuleKind::Class
+                    && (normalize_identifier(&module.module_name) == normalized_source_type
+                        || (!module.attributes.vb_name.trim().is_empty()
+                            && normalize_identifier(&module.attributes.vb_name)
+                                == normalized_source_type))
+                {
+                    return Ok(Some((
+                        active_project_key,
+                        normalize_identifier(&module.module_name),
+                    )));
+                }
+            }
+        }
+    }
+
+    resolve_event_source_module(manifest, current_project, source_type, reference_order)
 }
 
 fn parse_withevents_declaration_binding(line: &str) -> Option<(String, String)> {
@@ -17957,6 +18085,58 @@ mod tests {
         };
         let err = compile_project(&manifest).expect_err("unknown interface should fail");
         assert_eq!(err.code(), "PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND");
+    }
+
+    #[test]
+    fn implements_validation_uses_frontend_interface_and_member_routes() {
+        let iface = module_unit_from_source(
+            "IThing",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("interface parses");
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub IThing_Ping()\nEnd Sub",
+        )
+        .expect("implementation parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![iface, class_impl],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let project_symbol_index =
+            build_project_symbol_index_from_manifest(&manifest).expect("index should build");
+        let resolved = super::resolve_implements_interface_module(
+            &manifest,
+            &project_symbol_index,
+            "projecta",
+            "IThing",
+            &BTreeMap::new(),
+        )
+        .expect("interface resolution should not fail");
+        assert_eq!(
+            resolved,
+            Some(("projecta".to_string(), "ithing".to_string()))
+        );
+        assert!(super::frontend_implements_member_route_exists(
+            &manifest,
+            &project_symbol_index,
+            "projecta",
+            "thingimpl",
+            "ithing_ping",
+        ));
+        assert!(!super::frontend_implements_member_route_exists(
+            &manifest,
+            &project_symbol_index,
+            "projecta",
+            "thingimpl",
+            "ithing_missing",
+        ));
     }
 
     #[test]

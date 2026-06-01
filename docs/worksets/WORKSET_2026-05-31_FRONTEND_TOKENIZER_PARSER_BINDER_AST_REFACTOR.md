@@ -773,10 +773,12 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
   and related diagnostics out of string rewriting. Current continuation progress makes
-  active-project event dispatch planning consume frontend `Event` and handler procedure routes
-  before emitting guard wrappers; WithEvents declaration binding, RaiseEvent diagnostics/rewrites,
-  Implements coverage, and reference/imported event sources still need production-route migration
-  or explicit compatibility quarantine.
+  active-project WithEvents source binding consume frontend class routes, makes event dispatch
+  planning consume frontend `Event` and handler procedure routes before emitting guard wrappers,
+  and makes active-project Implements lookup/coverage consume frontend class/procedure routes.
+  Active-project `RaiseEvent` declared-event validation also consumes frontend event routes.
+  Remaining fallback is explicitly bounded to reference/imported event and Implements sources plus
+  text-shaped statement lowering glue.
   Evidence: `docs/evidence/frontend_rework/EVENTS_IMPLEMENTS_SEMANTICS_2026-06-01.md`.
 - FE-7.6 External references: bind typelib/project/native references through descriptor-backed
   symbols without dependency-specific routing.
