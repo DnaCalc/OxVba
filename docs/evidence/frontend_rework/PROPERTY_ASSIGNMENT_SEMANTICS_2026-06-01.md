@@ -54,6 +54,9 @@ The 2026-06-01 continuation added:
   all accessors named `Value` as the same `Procedure/Value` declaration. Accessor declarations now
   use canonical `property_get_`, `property_let_`, and `property_set_` symbol names while preserving
   `HirPropertyKind`.
+- A follow-up cross-bead review found that canonical accessor symbols hid user-facing property names
+  from project/class lookup. `ProjectSymbolIndex` now records both the canonical accessor route and
+  the property-group alias, so `Customer.DisplayName` still resolves after the accessor-symbol fix.
 - Production metadata now has a front-end consistency check: compiled property procedure metadata
   must agree with HIR property accessor kind and property group facts for sources the front-end can
   parse.

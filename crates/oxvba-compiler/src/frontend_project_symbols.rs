@@ -275,6 +275,14 @@ fn index_module(
                     ProjectSymbolKind::Procedure,
                     symbol_id,
                 );
+                if let Some(alias) = property_group_alias(&name) {
+                    tables.record_module_member(
+                        &module_name,
+                        alias,
+                        ProjectSymbolKind::Procedure,
+                        symbol_id,
+                    );
+                }
                 if class_symbol.is_some() {
                     tables.record_class_member(
                         &module_name,
@@ -282,9 +290,20 @@ fn index_module(
                         ProjectSymbolKind::Procedure,
                         symbol_id,
                     );
+                    if let Some(alias) = property_group_alias(&name) {
+                        tables.record_class_member(
+                            &module_name,
+                            alias,
+                            ProjectSymbolKind::Procedure,
+                            symbol_id,
+                        );
+                    }
                 }
                 if is_unqualified_public_symbol_candidate(module) {
                     tables.record_public_route(&name, symbol_id, ProjectSymbolKind::Procedure);
+                    if let Some(alias) = property_group_alias(&name) {
+                        tables.record_public_route(alias, symbol_id, ProjectSymbolKind::Procedure);
+                    }
                 }
             }
             SymbolNamespace::Local | SymbolNamespace::Member => {
@@ -330,6 +349,12 @@ fn manifest_module_name(module: &ModuleUnit) -> String {
 
 fn is_unqualified_public_symbol_candidate(module: &ModuleUnit) -> bool {
     module.module_kind == ModuleKind::Procedural && !module.attributes.option_private_module
+}
+
+fn property_group_alias(name: &str) -> Option<&str> {
+    name.strip_prefix("property_get_")
+        .or_else(|| name.strip_prefix("property_let_"))
+        .or_else(|| name.strip_prefix("property_set_"))
 }
 
 pub fn seed_project_symbol_table_from_symbols(
