@@ -588,6 +588,49 @@ mod tests {
     }
 
     #[test]
+    fn bridge_validates_statement_coverage_corpus_with_cst() {
+        let sources = [
+            "Attribute VB_Name = \"Module1\"\nSub T()\nEnd Sub\n",
+            "Sub T()\n    x = 1: y = 2: RaiseEvent Tick\nEnd Sub\n",
+            "Sub T()\n    On Error Resume Next: Resume Next\nEnd Sub\n",
+            "Sub T()\n    With obj\n        .Value = 1\n    End With\nEnd Sub\n",
+            "Public Property Get Value() As Long\n    Value = 1\nEnd Property\n",
+            "Declare PtrSafe Function GetTickCount Lib \"kernel32\" () As Long\n",
+            "Type Point\n    X As Long\n    Y As Long\nEnd Type\n",
+            "Enum Color\n    Red = 1\n    Blue = 2\nEnd Enum\n",
+        ];
+
+        for source in sources {
+            validate_source_with_cst(source).unwrap_or_else(|err| {
+                panic!("statement corpus should validate: {source:?}: {err}")
+            });
+        }
+    }
+
+    #[test]
+    fn bridge_compiles_supported_statement_sequence_after_cst_validation() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1\n    x = x + 1\nEnd Sub\n";
+        let bytecode = compile_source_via_syntax_bridge(source)
+            .expect("multiline assignment sequence should compile through bridge");
+        assert!(
+            !bytecode.instructions.is_empty(),
+            "expected bytecode for assignment sequence"
+        );
+    }
+
+    #[test]
+    fn bridge_records_inline_statement_lowering_as_legacy_residual() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
+        validate_source_with_cst(source).expect("CST parser should accept inline statements");
+        let err = compile_source_via_syntax_bridge(source)
+            .expect_err("legacy compiler still treats colon sequence as one unsupported statement");
+        assert!(
+            err.to_string().contains("unsupported statement"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn bridge_compiles_supported_assignment_family_through_legacy_lowering() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let bytecode =
