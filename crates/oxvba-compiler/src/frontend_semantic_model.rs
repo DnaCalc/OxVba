@@ -244,7 +244,9 @@ impl SemanticModel {
             | HirStmtKind::ResumeNext
             | HirStmtKind::Resume
             | HirStmtKind::Label { .. }
-            | HirStmtKind::GoTo { .. } => {}
+            | HirStmtKind::GoTo { .. }
+            | HirStmtKind::GoSub { .. }
+            | HirStmtKind::Return => {}
         }
     }
 

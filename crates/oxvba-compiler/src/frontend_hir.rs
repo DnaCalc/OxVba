@@ -172,6 +172,10 @@ pub enum HirStmtKind {
     GoTo {
         label: String,
     },
+    GoSub {
+        label: String,
+    },
+    Return,
     Block(Vec<HirStmtId>),
 }
 
@@ -745,6 +749,17 @@ impl HirBuilder {
                     kind: HirStmtKind::GoTo { label },
                 })))
             }
+            SyntaxKind::GoSubStmt => {
+                let label = jump_label_from_stmt(node, SyntaxKind::KwGoSub)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::GoSub { label },
+                })))
+            }
+            SyntaxKind::ReturnStmt => Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                cst: cst(node),
+                kind: HirStmtKind::Return,
+            }))),
             SyntaxKind::SelectStmt => {
                 let expr = expression_children(node)
                     .into_iter()

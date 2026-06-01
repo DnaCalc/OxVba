@@ -243,7 +243,9 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::ResumeNext
         | HirStmtKind::Resume
         | HirStmtKind::Label { .. }
-        | HirStmtKind::GoTo { .. } => {}
+        | HirStmtKind::GoTo { .. }
+        | HirStmtKind::GoSub { .. }
+        | HirStmtKind::Return => {}
     }
 }
 

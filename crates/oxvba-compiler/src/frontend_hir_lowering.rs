@@ -75,8 +75,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::WithStmt
             | SyntaxKind::ReDimStmt
             | SyntaxKind::EraseStmt
-            | SyntaxKind::GoSubStmt
-            | SyntaxKind::ReturnStmt
             | SyntaxKind::RaiseEventStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::EventDecl
@@ -381,6 +379,10 @@ fn lower_stmt(
         HirStmtKind::GoTo { label } => out.push(BoundStmt::GoTo {
             label: label.clone(),
         }),
+        HirStmtKind::GoSub { label } => out.push(BoundStmt::GoSub {
+            label: label.clone(),
+        }),
+        HirStmtKind::Return => out.push(BoundStmt::Return),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -1113,6 +1115,30 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::Jump { .. })),
             "expected GoTo jump bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_gosub_and_return() {
+        let source = "Sub Main()\nGoSub helper\nhelper:\nReturn\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected GoSub call bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Return)),
+            "expected Return bytecode: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

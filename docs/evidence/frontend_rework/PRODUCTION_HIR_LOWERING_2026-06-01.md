@@ -28,6 +28,7 @@ The initial production scope is intentionally narrow and explicit:
 - `Exit Do`, `Exit For`, and `Exit Sub` statements through HIR statement nodes,
 - `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume` statements,
 - identifier/numeric labels and `GoTo` statements,
+- `GoSub` and `Return` statements,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
@@ -227,8 +228,17 @@ The eighteenth FE-8.5 slice adds the first label-targeted control-flow route:
 - HIR lowers labels and `GoTo` targets into typed statement variants, normalizing numeric labels to
   the existing backend `__line_N` key shape;
 - production HIR lowering maps those variants to `BoundStmt::Label` and `BoundStmt::GoTo`; and
-- `GoSub`, `Return`, `On Error GoTo label`, and `Resume label` remain residuals until their label
-  target behavior is audited separately.
+- `On Error GoTo label` and `Resume label` remain residuals until their label target behavior is
+  audited separately.
+
+## GoSub Continuation
+
+The nineteenth FE-8.5 slice widens label-targeted control flow:
+
+- `GoSubStmt` nodes lower through the same HIR label normalization used by `GoTo`;
+- `ReturnStmt` nodes lower into a typed HIR leaf statement; and
+- production HIR lowering maps them to the existing `BoundStmt::GoSub` and `BoundStmt::Return`
+  backend forms.
 
 ## Checks
 
