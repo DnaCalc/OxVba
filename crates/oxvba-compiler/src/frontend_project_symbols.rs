@@ -43,7 +43,7 @@ pub struct ProjectSymbolTables {
     project_name: Option<String>,
     modules: BTreeMap<String, ProjectSymbolRoute>,
     classes: BTreeMap<String, ProjectSymbolRoute>,
-    public_symbols: BTreeMap<String, ProjectSymbolRoute>,
+    public_symbols: BTreeMap<String, Vec<ProjectSymbolRoute>>,
     module_members: BTreeMap<(String, String), ProjectSymbolRoute>,
     class_members: BTreeMap<(String, String), ProjectSymbolRoute>,
 }
@@ -95,7 +95,9 @@ impl ProjectSymbolTables {
 
     pub fn record_public_route(&mut self, name: &str, symbol: SymbolId, kind: ProjectSymbolKind) {
         self.public_symbols
-            .insert(fold_identifier(name), ProjectSymbolRoute { symbol, kind });
+            .entry(fold_identifier(name))
+            .or_default()
+            .push(ProjectSymbolRoute { symbol, kind });
     }
 
     pub fn record_module_member(
@@ -128,9 +130,16 @@ impl ProjectSymbolTables {
         let name = fold_identifier(name);
         self.public_symbols
             .get(&name)
-            .or_else(|| self.modules.get(&name))
-            .or_else(|| self.classes.get(&name))
-            .copied()
+            .and_then(|routes| unique_route(routes))
+            .or_else(|| self.modules.get(&name).copied())
+            .or_else(|| self.classes.get(&name).copied())
+    }
+
+    pub fn resolve_public_candidates(&self, name: &str) -> Vec<ProjectSymbolRoute> {
+        self.public_symbols
+            .get(&fold_identifier(name))
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn resolve_qualified(&self, name: &QualifiedName) -> Option<ProjectSymbolRoute> {
@@ -157,6 +166,13 @@ impl ProjectSymbolTables {
             .get(&(owner.clone(), member.clone()))
             .or_else(|| self.class_members.get(&(owner, member)))
             .copied()
+    }
+}
+
+fn unique_route(routes: &[ProjectSymbolRoute]) -> Option<ProjectSymbolRoute> {
+    match routes {
+        [route] => Some(*route),
+        _ => None,
     }
 }
 

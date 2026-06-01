@@ -35,6 +35,10 @@ The production module-aware project lowering route now builds this index during
 project-qualified procedure invocations can resolve through `ProjectSymbolRoute`/`SymbolId` before
 falling back to the older `project.rs` name-resolution logic.
 
+Unqualified active-project public procedure calls now also consume public candidates from
+`ProjectSymbolTables`. Public lookup stores candidate routes instead of overwriting duplicate names,
+so existing duplicate-name ambiguity behavior is preserved before reference-precedence fallback.
+
 ## Focused Fixtures
 
 The tests verify:
@@ -49,6 +53,8 @@ The tests verify:
 - production resolver route proof for a module-qualified invocation resolved via
   `resolve_invocation_name_from_project_symbols`;
 - compile-path coverage that the module-aware strategy still rewrites module-qualified calls.
+- ambiguity-preservation coverage for duplicate unqualified active-project procedures;
+- reference-precedence coverage for unqualified calls that fall through to referenced projects.
 
 ## Checks
 
@@ -57,6 +63,8 @@ The tests verify:
 - `cargo test -p oxvba-compiler frontend_route_policy --quiet`
 - `cargo test -p oxvba-compiler project_symbol_index_resolves_module_qualified_invocation_route --quiet`
 - `cargo test -p oxvba-compiler compile_project_module_aware_rewrites_module_qualified_call_without_parentheses --quiet`
+- `cargo test -p oxvba-compiler compile_project_rejects_ambiguous_unqualified_duplicate_procedure_name_subset --quiet`
+- `cargo test -p oxvba-compiler compile_project_module_aware_matches_rewrite_bridge_for_reference_precedence_fixture --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 
 ## Fresh-Eyes Review
@@ -72,22 +80,21 @@ The tests verify:
 
 ## Current Closure Status
 
-`bd-aprs.8.1` should remain open after this evidence update.
+`bd-aprs.8.1` can close with an explicit scoped handoff.
 
 The improved symbol index is now wired into the production module-aware project lowering path for
-qualified procedure invocation lookup. However, fresh-eyes review still found remaining FE-7.1
-scope not fully consumed by production lowering:
+qualified procedure invocation lookup and unqualified active-project public procedure lookup.
 
-- unqualified public procedure lookup still relies on the older procedure list so that existing
-  ambiguity/reference-precedence behavior is preserved;
-- module/class field routes are indexed but are not yet the authoritative production path for
-  member reads/writes;
-- `project.rs` line lowering remains the compatibility lowering surface even where individual name
-  routes now come from the front-end table.
+Fresh-eyes review found that module/class field routes are indexed but are not yet the
+authoritative production path for member reads/writes. That is not left as loose residual work:
+member reads/writes, dispatch shape, property assignment, default members, and class field
+construction are the scoped outcomes of FE-7.2, FE-7.3, and FE-7.4. Those beads must consume the
+same `ProjectSymbolRoute`/`SymbolId` facts rather than reintroducing text-only lookup.
 
-The route policy remains correct: `FrontendConstruct::ProjectSemantics` is a tracked residual, not
-`V2Default`.
+`project.rs` line lowering remains the compatibility lowering surface even where individual name
+routes now come from the front-end table. The route policy therefore remains correct:
+`FrontendConstruct::ProjectSemantics` is a tracked residual, not `V2Default`, until the rest of
+FE-7 retires the member/property/class rewrite surfaces.
 
-Next concrete implementation step: extend `ProjectSymbolTables` so public lookup can represent
-ambiguity/reference precedence safely, then migrate unqualified public calls and field/class member
-uses to consume `ProjectSymbolRoute`/`SymbolId` facts.
+Next concrete implementation step: FE-7.2 should use the FE-7.1 project symbol index as its input
+for member dispatch classification.

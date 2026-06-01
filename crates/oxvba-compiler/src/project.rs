@@ -8848,6 +8848,35 @@ fn resolve_invocation_name(
             return Ok(local);
         }
 
+        if let Some(project_symbol_index) = project_symbol_index
+            && current_project == active_project
+        {
+            let mut candidates = project_symbol_index
+                .tables
+                .resolve_public_candidates(proc)
+                .into_iter()
+                .filter(|route| route.kind == ProjectSymbolKind::Procedure)
+                .filter_map(|route| {
+                    procedure_decl_for_project_symbol_route(
+                        manifest,
+                        active_project,
+                        project_symbol_index,
+                        route,
+                        procedures,
+                    )
+                })
+                .filter(|decl| decl.module_name != current_module && decl.is_public)
+                .collect::<Vec<_>>();
+            candidates.sort_by_key(|decl| decl.lowered_name.as_str());
+            candidates.dedup_by_key(|decl| decl.lowered_name.as_str());
+            if candidates.len() > 1 {
+                return Err(ProjectCompileError::NameQualificationRequired { name: proc.clone() });
+            }
+            if let Some(decl) = candidates.first() {
+                return Ok(Some(decl.lowered_name.clone()));
+            }
+        }
+
         let active_candidates = procedures
             .iter()
             .filter(|decl| {
