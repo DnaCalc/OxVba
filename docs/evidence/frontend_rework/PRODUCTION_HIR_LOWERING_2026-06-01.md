@@ -594,6 +594,29 @@ Remaining construction residuals after this slice are explicitly not closed: `As
 construction beyond the existing temporary workaround remain owned by `bd-aprs.9.7` /
 `bd-aprs.8.8`.
 
+## As New Construction HIR Continuation
+
+The first `bd-aprs.9.7` continuation moves active-project `Dim x As New <Class>` off the
+project-instance helper-source compile artifact for the eager declaration-time construction route:
+
+- Active-project construction bindings now include both explicit `Set x = New <Class>` and
+  `Dim x As New <Class>` source kinds when deriving `HirNewExpressionBinding` facts.
+- `compile_project(...)` reconstructs generated `Set x = __oxvba_project_instance(handle)` carriers
+  back to `Set x = New <constructor-type>` for those accepted active-project construction facts.
+- HIR symbol binding now declares the typed structural-intrinsic prelude from
+  `StructuralIntrinsic`, and HIR lowering maps those call targets back to typed structural
+  intrinsic calls. This lets generated field-storage helper calls in `Class_Initialize` bodies stay
+  on the HIR route instead of failing name binding.
+- The focused `As New` regression covers a field-mutating `Class_Initialize` body, verifies that
+  the compiled artifact no longer contains `__oxvba_project_instance(...)`, checks
+  `LoadProjectObjectRef` bytecode, confirms dynamic route metadata still retains the initializer
+  member, and checks the original module source line remains mapped.
+
+This is still not `bd-aprs.9.7` closure. The implementation remains eager at declaration time for
+`Dim x As New T`; true VBA lazy construction on first dereference/assignment after `Nothing` is not
+implemented yet. Broader WithEvents construction interactions, imported/COM construction, and the
+full object-lifetime/source-map story still need closure evidence before the bead can close.
+
 ## Const Expression Continuation
 
 The latest FE-8.5 slice widens the HIR `Const` route from literal-only substitution to simple
@@ -632,7 +655,8 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
 - `cargo test -p oxvba-compiler project_hir_construction_source_restores_new_expression_from_binding_facts --quiet`
 - `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_active_project_set_new --quiet`
-- `cargo test -p oxvba-compiler compile_project_keeps_as_new_on_construction_residual_path --quiet`
+- `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_as_new_and_initializer --quiet`
+- `cargo test -p oxvba-compiler hir_lowering_lowers_structural_intrinsic_call_targets --quiet`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_rewrites_module_qualified_calls_for_unique_names --quiet`
 - `cargo test -p oxvba-compiler withevents --quiet`
