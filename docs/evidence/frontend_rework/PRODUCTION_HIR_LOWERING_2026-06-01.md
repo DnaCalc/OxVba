@@ -267,9 +267,12 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 
 This is intentionally not full `ReDim` parity. Lower-bound forms such as `1 To n`,
 multi-dimensional resizes, fixed-array alias materialization, project/class array fields, and
-array element read/write migration remain broader HIR and project-semantics work. The ordinary
-lightweight default route still excludes `OptionStmt`, so `Option Base` sources remain outside this
-default-routed ReDim subset.
+array element read/write migration remain broader HIR and project-semantics work.
+
+Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0` and
+`Option Base 1` no longer disqualify otherwise completed HIR-default sources, so the HIR route can
+carry the lower-bound policy it already records. Other `Option` forms remain outside the lightweight
+default route until HIR owns their semantics (`Option Explicit`, compare mode, and module privacy).
 
 ## Member Expression Continuation
 

@@ -73,6 +73,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       earlier declarators in the same `Const` statement;
     - read-side bang member access such as `obj!Field` now reaches HIR production lowering through
       the existing member-expression dispatch route;
+    - `Option Base 0` and `Option Base 1` no longer disqualify otherwise completed lightweight HIR
+      default-route sources; other `Option` forms remain fallback-only until HIR owns explicit
+      declaration enforcement, compare mode, and module privacy semantics;
     - `New <Class>` is represented as first-class HIR and can lower through typed
       `StructuralIntrinsic::ProjectInstance(handle)` when supplied with
       `HirNewExpressionBinding` facts;
@@ -971,6 +974,5 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
