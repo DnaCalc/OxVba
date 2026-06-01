@@ -741,6 +741,10 @@ coercions through `SymbolId`/HIR/SemanticModel rather than reconstructing them l
 Outcome: source-text rewriting is retired construct by construct and replaced by resolver/HIR
 semantics.
 
+Status: scoped epic closed. FE-7.1 through FE-7.6 are closed with route proof and explicit
+compatibility classifications; remaining production-lowering and terminal legacy-route concerns
+belong to FE-8 and FE-9.
+
 Candidate bead units:
 - FE-7.1 Qualified names and project/module lookup: move module, class, procedure, field, and
   public symbol resolution into binder-owned tables. Partial work has already been done: a
@@ -797,6 +801,8 @@ Candidate bead units:
   qualification, reference-project ordering, and host-injected/native implicit receiver
   classification. Existing typelib metadata helpers remain as compatibility lowering after the
   frontend route accepts the declared reference.
+  Status: scoped delivery bead closed after imported/reference/host route proof and compatibility
+  classification for post-acceptance metadata materialisation.
   Evidence: `docs/evidence/frontend_rework/EXTERNAL_REFERENCES_BINDING_2026-06-01.md`.
 
 Evidence gate: each migrated construct has before/after fixtures, semantic diff classification,
