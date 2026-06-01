@@ -646,6 +646,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/MEMBER_DISPATCH_CLASSIFICATION_2026-06-01.md`.
 - FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
   write/invoke, Let vs Set coercion, and object/scalar assignment diagnostics.
+  Evidence: `docs/evidence/frontend_rework/PROPERTY_ASSIGNMENT_SEMANTICS_2026-06-01.md`.
 - FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
   ordinary fields, WithEvents fields, and runtime object-field metadata.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
