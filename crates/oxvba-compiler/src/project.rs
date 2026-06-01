@@ -813,6 +813,8 @@ struct ProjectDynamicInstanceBindingDraft {
     project_name: String,
     module_name: String,
     constructor_type_name: String,
+    variable_name: Option<String>,
+    initializer_lowered_name: Option<String>,
     source_kind: ProjectDynamicInstanceSourceKind,
 }
 
@@ -823,6 +825,7 @@ type LoweredProjectSource = (
     ForcedObjectLocalsByProc,
 );
 
+#[cfg(test)]
 fn hir_new_expression_bindings_from_dynamic_instances(
     bindings: &[ProjectDynamicInstanceBindingDraft],
 ) -> Vec<HirNewExpressionBinding> {
@@ -836,27 +839,11 @@ fn hir_new_expression_bindings_from_dynamic_instances(
         .collect()
 }
 
-fn hir_new_expression_bindings_from_active_project_construction_instances(
-    bindings: &[ProjectDynamicInstanceBindingDraft],
-) -> Vec<HirNewExpressionBinding> {
-    let construction_bindings = bindings
-        .iter()
-        .filter(|binding| {
-            matches!(
-                binding.source_kind,
-                ProjectDynamicInstanceSourceKind::AsNewDeclaration
-                    | ProjectDynamicInstanceSourceKind::SetNewExpression
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    hir_new_expression_bindings_from_dynamic_instances(&construction_bindings)
-}
-
+#[cfg(test)]
 fn source_with_hir_new_expressions(
     source: &str,
     bindings: &[HirNewExpressionBinding],
-) -> Option<String> {
+) -> Option<(String, Vec<HirNewExpressionBinding>)> {
     if bindings.is_empty() {
         return None;
     }
@@ -865,6 +852,7 @@ fn source_with_hir_new_expressions(
         .map(|binding| (binding.object_handle, binding.type_name.as_str()))
         .collect::<BTreeMap<_, _>>();
     let mut changed = false;
+    let mut consumed_bindings = Vec::new();
     let lines = source
         .lines()
         .map(|line| {
@@ -875,10 +863,14 @@ fn source_with_hir_new_expressions(
                 return line.to_string();
             };
             changed = true;
+            consumed_bindings.push(HirNewExpressionBinding {
+                type_name: (*type_name).to_string(),
+                object_handle: handle,
+            });
             format!("{prefix}New {type_name}{suffix}")
         })
         .collect::<Vec<_>>();
-    changed.then(|| lines.join("\n"))
+    changed.then(|| (lines.join("\n"), consumed_bindings))
 }
 
 fn split_project_instance_assignment(line: &str) -> Option<(&str, i32, &str)> {
@@ -898,6 +890,115 @@ fn split_project_instance_assignment(line: &str) -> Option<(&str, i32, &str)> {
     let handle = rest[..close_offset].trim().parse::<i32>().ok()?;
     let suffix = &rest[close_offset + 1..];
     Some((prefix, handle, suffix))
+}
+
+fn hir_construction_source_from_project_rewrites(
+    source: &str,
+    bindings: &[ProjectDynamicInstanceBindingDraft],
+) -> Option<(String, Vec<HirNewExpressionBinding>)> {
+    let construction_by_handle = bindings
+        .iter()
+        .filter(|binding| {
+            matches!(
+                binding.source_kind,
+                ProjectDynamicInstanceSourceKind::AsNewDeclaration
+                    | ProjectDynamicInstanceSourceKind::SetNewExpression
+            )
+        })
+        .map(|binding| (binding.object_handle, binding))
+        .collect::<BTreeMap<_, _>>();
+    if construction_by_handle.is_empty() {
+        return None;
+    }
+
+    let lazy_by_var = construction_by_handle
+        .values()
+        .filter(|binding| binding.source_kind == ProjectDynamicInstanceSourceKind::AsNewDeclaration)
+        .filter_map(|binding| {
+            binding
+                .variable_name
+                .as_ref()
+                .map(|var| (var.clone(), *binding))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let mut changed = false;
+    let mut consumed_bindings = Vec::new();
+    let mut pending_initializer_skip: Option<(String, String)> = None;
+    let mut out = Vec::new();
+
+    for line in source.lines() {
+        if let Some((initializer, var_name)) = pending_initializer_skip.take() {
+            if line_is_initializer_call(line, &initializer, &var_name) {
+                changed = true;
+                continue;
+            }
+        }
+
+        if let Some((prefix, handle, suffix)) = split_project_instance_assignment(line)
+            && let Some(binding) = construction_by_handle.get(&handle)
+        {
+            match binding.source_kind {
+                ProjectDynamicInstanceSourceKind::AsNewDeclaration => {
+                    changed = true;
+                    if let (Some(initializer), Some(var_name)) = (
+                        binding.initializer_lowered_name.clone(),
+                        binding.variable_name.clone(),
+                    ) {
+                        pending_initializer_skip = Some((initializer, var_name));
+                    }
+                    continue;
+                }
+                ProjectDynamicInstanceSourceKind::SetNewExpression => {
+                    changed = true;
+                    consumed_bindings.push(HirNewExpressionBinding {
+                        type_name: binding.constructor_type_name.clone(),
+                        object_handle: handle,
+                    });
+                    out.push(format!(
+                        "{prefix}New {}{suffix}",
+                        binding.constructor_type_name
+                    ));
+                    continue;
+                }
+                ProjectDynamicInstanceSourceKind::WithEventsSetNewTemporary
+                | ProjectDynamicInstanceSourceKind::ExportOnly => {}
+            }
+        }
+
+        for (var_name, binding) in &lazy_by_var {
+            if lazy_as_new_line_needs_guard(line, var_name) {
+                changed = true;
+                let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+                let leading_ws = &line[..leading_ws_len];
+                out.push(format!("{leading_ws}If {var_name} Is Nothing Then"));
+                out.push(format!(
+                    "{leading_ws}Set {var_name} = New {}",
+                    binding.constructor_type_name
+                ));
+                consumed_bindings.push(HirNewExpressionBinding {
+                    type_name: binding.constructor_type_name.clone(),
+                    object_handle: binding.object_handle,
+                });
+                if let Some(initializer) = &binding.initializer_lowered_name {
+                    out.push(format!("{leading_ws}Call {initializer}({var_name})"));
+                }
+                out.push(format!("{leading_ws}End If"));
+            }
+        }
+        out.push(line.to_string());
+    }
+
+    changed.then(|| (out.join("\n"), consumed_bindings))
+}
+
+fn line_is_initializer_call(line: &str, initializer: &str, var_name: &str) -> bool {
+    let expected = format!(
+        "call {}({})",
+        initializer.to_ascii_lowercase(),
+        var_name.to_ascii_lowercase()
+    );
+    line.trim().to_ascii_lowercase() == expected
 }
 
 pub fn module_unit_from_source(
@@ -1158,24 +1259,25 @@ fn compile_project_with_strategy(
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let use_hir_capable_project_boundary =
         project_source_is_single_procedural_module_without_references(manifest);
-    let direct_project_construction_hir_bindings =
-        hir_new_expression_bindings_from_active_project_construction_instances(
-            &dynamic_instance_bindings,
-        );
-    let hir_construction_source = source_with_hir_new_expressions(
+    let hir_construction_candidate = hir_construction_source_from_project_rewrites(
         &rewritten_source,
-        &direct_project_construction_hir_bindings,
+        &dynamic_instance_bindings,
     );
-    let hir_construction_compile = hir_construction_source.as_ref().and_then(|source| {
-        match compile_source_with_runtime_metadata_via_hir_with_new_bindings(
-            source,
-            &direct_project_construction_hir_bindings,
-        ) {
-            Ok(compiled) => Some((source.clone(), Ok(compiled))),
-            Err(HirProductionLoweringError::Unsupported(_)) => None,
-            Err(HirProductionLoweringError::Compile(err)) => Some((source.clone(), Err(err))),
-        }
-    });
+    let hir_construction_compile =
+        hir_construction_candidate
+            .as_ref()
+            .and_then(|(source, new_bindings)| {
+                match compile_source_with_runtime_metadata_via_hir_with_new_bindings(
+                    source,
+                    new_bindings,
+                ) {
+                    Ok(compiled) => Some((source.clone(), Ok(compiled))),
+                    Err(HirProductionLoweringError::Unsupported(_)) => None,
+                    Err(HirProductionLoweringError::Compile(err)) => {
+                        Some((source.clone(), Err(err)))
+                    }
+                }
+            });
     let (compiled_source, compile_result) =
         if let Some((compiled_source, compiled)) = hir_construction_compile {
             (compiled_source, compiled)
@@ -3655,6 +3757,83 @@ fn lower_module_source_module_aware(
     Ok((out.join("\n"), forced_object_locals_by_proc))
 }
 
+fn lazy_as_new_line_needs_guard(line: &str, var_name: &str) -> bool {
+    if class_state_line_is_non_executable(line) {
+        return false;
+    }
+    let trimmed = line.trim_start();
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered.starts_with("dim ")
+        || lowered.starts_with("const ")
+        || lowered.starts_with("sub ")
+        || lowered.starts_with("function ")
+        || lowered.starts_with("property ")
+        || lowered.starts_with("end ")
+    {
+        return false;
+    }
+    let set_target = parse_bare_set_assignment_target(trimmed);
+    let let_target = parse_bare_let_assignment_target(trimmed);
+    if set_target.as_deref() == Some(var_name) || let_target.as_deref() == Some(var_name) {
+        return false;
+    }
+    lazy_as_new_line_references_variable(trimmed, var_name)
+}
+
+fn parse_bare_set_assignment_target(trimmed: &str) -> Option<String> {
+    if !trimmed
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("set "))
+    {
+        return None;
+    }
+    parse_bare_assignment_target(trimmed[4..].trim_start())
+}
+
+fn parse_bare_let_assignment_target(trimmed: &str) -> Option<String> {
+    let payload = if trimmed
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("let "))
+    {
+        trimmed[4..].trim_start()
+    } else {
+        trimmed
+    };
+    parse_bare_assignment_target(payload)
+}
+
+fn parse_bare_assignment_target(payload: &str) -> Option<String> {
+    let eq_idx = find_top_level_assignment_eq(payload)?;
+    let target = payload[..eq_idx].trim();
+    if is_valid_vba_identifier(target) {
+        Some(normalize_identifier(target))
+    } else {
+        None
+    }
+}
+
+fn lazy_as_new_line_references_variable(line: &str, var_name: &str) -> bool {
+    let mut idx = 0usize;
+    let lower = line.to_ascii_lowercase();
+    while let Some(offset) = lower[idx..].find(var_name) {
+        let start = idx + offset;
+        let end = start + var_name.len();
+        let before = lower[..start].chars().next_back();
+        let after = lower[end..].chars().next();
+        let before_is_ident = before.is_some_and(is_identifier_continue_char);
+        let after_is_ident = after.is_some_and(is_identifier_continue_char);
+        if !before_is_ident && !after_is_ident {
+            return true;
+        }
+        idx = end;
+    }
+    false
+}
+
+fn is_identifier_continue_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
 fn module_source_lines_with_class_terminate_cleanup(module: &ModuleUnit) -> Vec<String> {
     if module.module_kind != ModuleKind::Class {
         return module.source.lines().map(|line| line.to_string()).collect();
@@ -3767,29 +3946,33 @@ fn expand_bound_source_line(
         let mut out = vec![format!("{}Dim {}", dim_decl.leading_ws, dim_decl.var_name)];
         if dim_decl.as_new {
             let object_handle = *next_internal_instance_id;
+            let class_initialize = find_decl_by_signature(
+                procedures,
+                &target_project,
+                &target_module,
+                "class_initialize",
+                ProcedureDeclKind::Sub,
+            )
+            .map(|decl| decl.lowered_name.clone());
             dynamic_instance_bindings.push(ProjectDynamicInstanceBindingDraft {
                 object_handle,
                 project_name: target_project.clone(),
                 module_name: target_module.clone(),
                 constructor_type_name: normalize_identifier(&dim_decl.type_name),
+                variable_name: Some(normalize_identifier(&dim_decl.var_name)),
+                initializer_lowered_name: class_initialize.clone(),
                 source_kind: ProjectDynamicInstanceSourceKind::AsNewDeclaration,
             });
             out.push(format!(
                 "{}Set {} = __oxvba_project_instance({})",
                 dim_decl.leading_ws, dim_decl.var_name, object_handle
             ));
-            if let Some(class_initialize) = find_decl_by_signature(
-                procedures,
-                &target_project,
-                &target_module,
-                "class_initialize",
-                ProcedureDeclKind::Sub,
-            ) {
+            if let Some(class_initialize) = class_initialize {
                 // Pass the freshly-instantiated object (not the route handle) so
                 // Class_Initialize keys per-instance state by the same identity members use.
                 out.push(format!(
                     "{}Call {}({})",
-                    dim_decl.leading_ws, class_initialize.lowered_name, dim_decl.var_name
+                    dim_decl.leading_ws, class_initialize, dim_decl.var_name
                 ));
             }
             *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
@@ -3893,6 +4076,15 @@ fn expand_bound_source_line(
             project_name: target_project.clone(),
             module_name: target_module.clone(),
             constructor_type_name: normalize_identifier(&type_name),
+            variable_name: Some(normalize_identifier(&var_name)),
+            initializer_lowered_name: find_decl_by_signature(
+                procedures,
+                &target_project,
+                &target_module,
+                "class_initialize",
+                ProcedureDeclKind::Sub,
+            )
+            .map(|decl| decl.lowered_name.clone()),
             source_kind: ProjectDynamicInstanceSourceKind::SetNewExpression,
         });
         internal_class_bindings.insert(
@@ -6454,6 +6646,15 @@ fn lower_withevents_project_new_expression(
         project_name: target_project.clone(),
         module_name: target_module.clone(),
         constructor_type_name: normalize_identifier(&type_name),
+        variable_name: Some(format!("__oxvba_withevents_new_instance_{object_handle}")),
+        initializer_lowered_name: find_decl_by_signature(
+            procedures,
+            &target_project,
+            &target_module,
+            "class_initialize",
+            ProcedureDeclKind::Sub,
+        )
+        .map(|decl| decl.lowered_name.clone()),
         source_kind: ProjectDynamicInstanceSourceKind::WithEventsSetNewTemporary,
     });
     let temp_name = format!("__oxvba_withevents_new_instance_{object_handle}");
@@ -8601,6 +8802,8 @@ fn build_project_dynamic_object_routes(
                 project_name: current_project.clone(),
                 module_name: module_name.clone(),
                 constructor_type_name: module_name,
+                variable_name: None,
+                initializer_lowered_name: None,
                 source_kind: ProjectDynamicInstanceSourceKind::ExportOnly,
             });
             next_export_only_handle -= 1;
@@ -11105,7 +11308,7 @@ mod tests {
     fn project_hir_construction_source_restores_new_expression_from_binding_facts() {
         let source =
             "Public Sub Main()\nDim obj As Object\nSet obj = __oxvba_project_instance(7)\nEnd Sub";
-        let restored = super::source_with_hir_new_expressions(
+        let (restored, consumed_bindings) = super::source_with_hir_new_expressions(
             source,
             &[super::HirNewExpressionBinding {
                 type_name: "widget".to_string(),
@@ -11116,6 +11319,13 @@ mod tests {
 
         assert!(restored.contains("Set obj = New widget"), "{restored}");
         assert!(!restored.contains("__oxvba_project_instance"), "{restored}");
+        assert_eq!(
+            consumed_bindings,
+            vec![super::HirNewExpressionBinding {
+                type_name: "widget".to_string(),
+                object_handle: 7,
+            }]
+        );
         assert!(
             super::source_with_hir_new_expressions(
                 "Call Initialize(__oxvba_project_instance(7))",
@@ -11187,7 +11397,7 @@ mod tests {
         let main = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New Widget\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New Widget\nDim ready\nready = obj.IsInitialized()\nEnd Sub",
         )
         .expect("main module parses");
         let widget = module_unit_from_source(
@@ -11205,9 +11415,13 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
 
-        let compiled = compile_project(&manifest).expect("As New residual should still compile");
+        let compiled = compile_project(&manifest).expect("As New lazy construction should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
 
+        assert!(
+            lowered.contains("if obj is nothing then"),
+            "expected As New construction to be guarded at first use: {lowered}"
+        );
         assert!(
             lowered.contains("set obj = new widget"),
             "expected As New construction to compile from HIR New source: {lowered}"
@@ -11247,6 +11461,54 @@ mod tests {
                 .and_then(|map| map.file_to_runtime(3)),
             Some(2),
             "expected As New source line to remain mapped to the user module"
+        );
+    }
+
+    #[test]
+    fn compile_project_lazily_reconstructs_as_new_after_set_nothing() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New Widget\nDim first\nDim second\nfirst = obj.IsInitialized()\nSet obj = Nothing\nsecond = obj.IsInitialized()\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate initialized\nPublic Sub Class_Initialize()\ninitialized = 1\nEnd Sub\nPublic Function IsInitialized()\nIsInitialized = initialized\nEnd Function",
+        )
+        .expect("class module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled =
+            compile_project(&manifest).expect("As New reset reconstruction should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        let guard_count = lowered.matches("if obj is nothing then").count();
+        let new_count = lowered.matches("set obj = new widget").count();
+        let project_load_count = compiled
+            .bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, Instruction::LoadProjectObjectRef { .. }))
+            .count();
+
+        assert_eq!(guard_count, 2, "{lowered}");
+        assert_eq!(new_count, 2, "{lowered}");
+        assert!(
+            !lowered.contains("__oxvba_project_instance("),
+            "lazy As New reset path must not expose helper-source construction: {lowered}"
+        );
+        assert_eq!(
+            project_load_count, 2,
+            "{:#?}",
+            compiled.bytecode.instructions
         );
     }
 

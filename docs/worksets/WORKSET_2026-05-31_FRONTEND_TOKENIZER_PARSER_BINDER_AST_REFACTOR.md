@@ -1078,12 +1078,13 @@ Candidate bead units:
 - FE-8.5.b `As New`, initializer, and construction metadata: extend direct-HIR project
   construction to `Dim x As New T`, `Class_Initialize`, object lifetime/source-map metadata, and
   WithEvents construction interactions. Partial work has already been done: active-project
-  construction analysis and the targeted WithEvents direct-source workaround. First continuation
-  progress now routes the existing eager declaration-time active-project `Dim x As New T`
-  construction through HIR `New` facts, including field-mutating `Class_Initialize` bodies and
-  source-map/dynamic-route checks. This bead remains open because true VBA `As New` lazy
-  construction on first dereference/after reset to `Nothing`, broader WithEvents construction
-  interactions, and the full lifetime/source-map closure story are not yet proven.
+  construction analysis and the targeted WithEvents direct-source workaround. Continuation progress
+  now derives a separate HIR construction candidate for active-project `Dim x As New T`: fallback
+  source remains eager/legacy-compatible, while the accepted HIR route removes declaration-time
+  helper construction and inserts guarded first-use/after-`Nothing` `New` sites, including
+  field-mutating `Class_Initialize` bodies and source-map/dynamic-route checks. This bead remains
+  open because broader WithEvents construction interactions, imported/COM construction, unsupported
+  fallback project shapes, and the full lifetime/source-map closure story are not yet proven.
 - FE-8.5.c Property/default-member/writeback lowering: finish the semantic and lowering route for
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
   indexed/named writeback, and overload validation. Partial work has already been done: simple
