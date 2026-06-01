@@ -269,10 +269,11 @@ This is intentionally not full `ReDim` parity. Lower-bound forms such as `1 To n
 multi-dimensional resizes, fixed-array alias materialization, project/class array fields, and
 array element read/write migration remain broader HIR and project-semantics work.
 
-Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0` and
-`Option Base 1` no longer disqualify otherwise completed HIR-default sources, so the HIR route can
-carry the lower-bound policy it already records. Other `Option` forms remain outside the lightweight
-default route until HIR owns their semantics (`Option Explicit`, compare mode, and module privacy).
+Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
+`Option Base 1`, and default-equivalent `Option Compare Binary` no longer disqualify otherwise
+completed HIR-default sources, so the HIR route can carry the lower-bound and compare policy it
+already records. Other `Option` forms remain outside the lightweight default route until HIR owns
+their semantics (`Option Explicit`, text/database compare mode, and module privacy).
 
 ## Member Expression Continuation
 

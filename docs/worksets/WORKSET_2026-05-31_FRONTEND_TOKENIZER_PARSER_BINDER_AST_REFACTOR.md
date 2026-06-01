@@ -912,9 +912,10 @@ Candidate bead units:
   module/procedure-scoped constant evaluation remains broader FE-8.5 work.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
-  metadata. Follow-up default-route correction allows `Option Base 0` and `Option Base 1` on
-  otherwise completed lightweight HIR sources, while leaving `Option Explicit`, `Option Compare`,
-  and `Option Private Module` outside the default route until their semantics are owned by HIR.
+  metadata. Follow-up default-route correction allows `Option Base 0`, `Option Base 1`, and
+  default-equivalent `Option Compare Binary` on otherwise completed lightweight HIR sources, while
+  leaving `Option Explicit`, `Option Compare Text`/`Database`, and `Option Private Module` outside
+  the default route until their semantics are owned by HIR.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
   Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
