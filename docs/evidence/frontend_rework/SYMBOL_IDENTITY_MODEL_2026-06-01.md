@@ -22,9 +22,19 @@ The model defines:
 Lookup and resolution are immutable operations. Unknown names do not mutate the interner, which
 keeps SemanticModel query behavior predictable.
 
+Reopened update: the model now has an executable CST-fed collection route:
+`build_symbol_model_from_source(module_name, source)`.
+
+That route parses with `oxvba-syntax`, rejects recovered syntax errors before binding, declares a
+module symbol/scope, and collects procedure, parameter, local, declare, event, type, and enum
+symbols from CST nodes with source spans. This is still the FE-6.1 symbol identity slice, not the
+full production binder, but symbol identities are no longer only hand-constructed test data.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_symbols --quiet`
+- `cargo test -p oxvba-compiler frontend_hir --quiet`
+- `cargo test -p oxvba-compiler frontend_semantic_model --quiet`
 - `cargo fmt -p oxvba-compiler`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -37,6 +47,11 @@ keeps SemanticModel query behavior predictable.
   without colliding, while duplicates in the same namespace and scope are rejected.
 - Source provenance is stored on every symbol now, before diagnostics and SemanticModel queries
   depend on it.
+- The new CST collection tests prove case-insensitive lookup, bracketed identifier normalization,
+  duplicate detection, and byte-span provenance using real parser output.
+- The route intentionally covers declarations needed to seed FE-6.2/FE-6.3. It does not yet bind
+  expression references, member/default-member semantics, or production lowering; those remain
+  owned by later FE-6/FE-7 beads.
 - Non-ASCII/VBA locale-specific case folding is not solved here; the current compiler already
   operates on ASCII-oriented identifier handling. If broader identifier folding becomes required,
   the change is localized to `fold_identifier`.

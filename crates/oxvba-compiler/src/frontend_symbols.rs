@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
+use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolId(pub usize);
 
@@ -70,6 +72,8 @@ pub struct Symbol {
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum SymbolModelError {
+    #[error("syntax parse failed: {0}")]
+    Syntax(String),
     #[error("duplicate symbol `{name}` in {namespace:?} namespace")]
     DuplicateSymbol {
         name: String,
@@ -203,6 +207,24 @@ impl SymbolModel {
         self.symbols.get(id.0)
     }
 
+    pub fn symbols(&self) -> &[Symbol] {
+        &self.symbols
+    }
+
+    pub fn scopes(&self) -> &[Scope] {
+        &self.scopes
+    }
+
+    pub fn symbols_in_scope(&self, scope: ScopeId) -> Result<Vec<SymbolId>, SymbolModelError> {
+        self.scope(scope)?;
+        Ok(self
+            .symbols
+            .iter()
+            .filter(|symbol| symbol.scope == scope)
+            .map(|symbol| symbol.id)
+            .collect())
+    }
+
     pub fn find_in_scope(
         &self,
         scope: ScopeId,
@@ -254,6 +276,196 @@ impl SymbolModel {
 
 pub fn fold_identifier(name: &str) -> String {
     name.to_ascii_lowercase()
+}
+
+pub fn build_symbol_model_from_source(
+    module_name: &str,
+    source: &str,
+) -> Result<SymbolModel, SymbolModelError> {
+    let parsed = oxvba_syntax::parse(source);
+    if !parsed.errors().is_empty() {
+        return Err(SymbolModelError::Syntax(format!("{:?}", parsed.errors())));
+    }
+
+    let mut model = SymbolModel::default();
+    model.declare_symbol(
+        model.global_scope(),
+        SymbolNamespace::Module,
+        module_name,
+        SourceProvenance {
+            module_name: Some(module_name.to_string()),
+            span: None,
+        },
+    )?;
+    let module_scope =
+        model.add_scope(ScopeKind::Module, model.global_scope(), Some(module_name))?;
+    collect_symbols_from_node(&mut model, module_name, module_scope, parsed.syntax())?;
+    Ok(model)
+}
+
+fn collect_symbols_from_node(
+    model: &mut SymbolModel,
+    module_name: &str,
+    scope: ScopeId,
+    node: SyntaxNode<'_>,
+) -> Result<(), SymbolModelError> {
+    match node.kind() {
+        SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl => {
+            collect_procedure_symbols(model, module_name, scope, node)?;
+            return Ok(());
+        }
+        SyntaxKind::DeclareStmt => {
+            declare_named_node(model, module_name, scope, SymbolNamespace::Procedure, node)?;
+        }
+        SyntaxKind::EventDecl => {
+            declare_named_node(model, module_name, scope, SymbolNamespace::Member, node)?;
+        }
+        SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
+            declare_named_node(model, module_name, scope, SymbolNamespace::Type, node)?;
+        }
+        SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
+            for token in declaration_name_tokens(node) {
+                model.declare_symbol(
+                    scope,
+                    SymbolNamespace::Local,
+                    normalize_identifier_token(token.text),
+                    provenance_for_token(module_name, token),
+                )?;
+            }
+        }
+        _ => {}
+    }
+
+    for child in node.child_nodes() {
+        collect_symbols_from_node(model, module_name, scope, child)?;
+    }
+    Ok(())
+}
+
+fn collect_procedure_symbols(
+    model: &mut SymbolModel,
+    module_name: &str,
+    parent_scope: ScopeId,
+    node: SyntaxNode<'_>,
+) -> Result<(), SymbolModelError> {
+    let Some(name_token) = first_identifier_token(node) else {
+        return Ok(());
+    };
+    model.declare_symbol(
+        parent_scope,
+        SymbolNamespace::Procedure,
+        normalize_identifier_token(name_token.text),
+        provenance_for_token(module_name, name_token),
+    )?;
+    let procedure_scope = model.add_scope(
+        ScopeKind::Procedure,
+        parent_scope,
+        Some(normalize_identifier_token(name_token.text)),
+    )?;
+
+    if let Some(param_list) = node.param_list() {
+        for param in param_list.params() {
+            if let Some(param_name) = first_identifier_token(param) {
+                model.declare_symbol(
+                    procedure_scope,
+                    SymbolNamespace::Parameter,
+                    normalize_identifier_token(param_name.text),
+                    provenance_for_token(module_name, param_name),
+                )?;
+            }
+        }
+    }
+
+    if let Some(body) = node.body_block() {
+        collect_symbols_from_node(model, module_name, procedure_scope, body)?;
+    }
+    Ok(())
+}
+
+fn declare_named_node(
+    model: &mut SymbolModel,
+    module_name: &str,
+    scope: ScopeId,
+    namespace: SymbolNamespace,
+    node: SyntaxNode<'_>,
+) -> Result<Option<SymbolId>, SymbolModelError> {
+    let Some(name_token) = first_identifier_token(node) else {
+        return Ok(None);
+    };
+    model
+        .declare_symbol(
+            scope,
+            namespace,
+            normalize_identifier_token(name_token.text),
+            provenance_for_token(module_name, name_token),
+        )
+        .map(Some)
+}
+
+fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
+    let mut names = Vec::new();
+    let mut expect_name = false;
+    let mut in_type_ref = false;
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if token.kind == SyntaxKind::KwDim || token.kind == SyntaxKind::KwConst =>
+            {
+                expect_name = true;
+                in_type_ref = false;
+            }
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::Comma => {
+                expect_name = true;
+                in_type_ref = false;
+            }
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::KwAs => {
+                expect_name = false;
+                in_type_ref = true;
+            }
+            SyntaxElement::Token(token)
+                if expect_name && !in_type_ref && is_identifier_like(token.kind) =>
+            {
+                names.push(token);
+                expect_name = false;
+            }
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
+                if token.kind != SyntaxKind::TypeSuffix {
+                    expect_name = false;
+                }
+            }
+            SyntaxElement::Node(child) if child.kind() == SyntaxKind::TypeRef => {
+                in_type_ref = false;
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+fn first_identifier_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    node.child_tokens()
+        .into_iter()
+        .find(|token| is_identifier_like(token.kind))
+}
+
+fn is_identifier_like(kind: SyntaxKind) -> bool {
+    kind == SyntaxKind::Ident || kind == SyntaxKind::BracketedIdent
+}
+
+fn normalize_identifier_token(text: &str) -> &str {
+    text.strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(text)
+}
+
+fn provenance_for_token(module_name: &str, token: SyntaxToken<'_>) -> SourceProvenance {
+    SourceProvenance {
+        module_name: Some(module_name.to_string()),
+        span: Some(FrontendSourceSpan {
+            start: token.offset as usize,
+            end: token.offset as usize + token.text.len(),
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -375,5 +587,93 @@ mod tests {
                 span: Some(FrontendSourceSpan { start: 3, end: 8 }),
             })
         );
+    }
+
+    #[test]
+    fn symbol_model_collects_procedure_params_and_locals_from_cst() {
+        let source = "Sub Main(ByVal Value As Long)\n    Dim Result As Long\nEnd Sub\n";
+        let model = build_symbol_model_from_source("Module1", source).expect("symbol model");
+        let module_scope = model
+            .scopes()
+            .iter()
+            .find(|scope| scope.kind == ScopeKind::Module)
+            .map(|scope| scope.id)
+            .expect("module scope");
+        let procedure_scope = model
+            .scopes()
+            .iter()
+            .find(|scope| scope.kind == ScopeKind::Procedure)
+            .map(|scope| scope.id)
+            .expect("procedure scope");
+
+        assert!(
+            model
+                .find_in_scope(module_scope, SymbolNamespace::Procedure, "main")
+                .expect("lookup")
+                .is_some(),
+            "expected procedure symbol from CST"
+        );
+        assert!(
+            model
+                .find_in_scope(procedure_scope, SymbolNamespace::Parameter, "value")
+                .expect("lookup")
+                .is_some(),
+            "expected parameter symbol from CST"
+        );
+        assert!(
+            model
+                .find_in_scope(procedure_scope, SymbolNamespace::Local, "result")
+                .expect("lookup")
+                .is_some(),
+            "expected local symbol from CST"
+        );
+    }
+
+    #[test]
+    fn symbol_model_cst_collection_preserves_spans_and_case_folding() {
+        let source = "Function AddItem(ByVal ITEM As Long) As Long\n    Dim [Total Value] As Long\nEnd Function\n";
+        let model = build_symbol_model_from_source("MathModule", source).expect("symbol model");
+        let proc_scope = model
+            .scopes()
+            .iter()
+            .find(|scope| scope.kind == ScopeKind::Procedure)
+            .map(|scope| scope.id)
+            .expect("procedure scope");
+
+        let param = model
+            .resolve_in_scope_chain(proc_scope, SymbolNamespace::Parameter, "item")
+            .expect("resolve")
+            .expect("parameter");
+        let local = model
+            .resolve_in_scope_chain(proc_scope, SymbolNamespace::Local, "TOTAL VALUE")
+            .expect("resolve")
+            .expect("bracketed local");
+
+        assert_eq!(
+            model
+                .symbol(param)
+                .and_then(|symbol| symbol.provenance.span),
+            Some(FrontendSourceSpan { start: 23, end: 27 })
+        );
+        assert_eq!(
+            model
+                .symbol(local)
+                .and_then(|symbol| symbol.provenance.span),
+            Some(FrontendSourceSpan { start: 53, end: 66 })
+        );
+    }
+
+    #[test]
+    fn symbol_model_cst_collection_rejects_duplicate_locals() {
+        let source = "Sub Main()\n    Dim Value As Long\n    Dim value As Long\nEnd Sub\n";
+        let err = build_symbol_model_from_source("Module1", source)
+            .expect_err("duplicate local should be reported");
+        assert!(matches!(
+            err,
+            SymbolModelError::DuplicateSymbol {
+                namespace: SymbolNamespace::Local,
+                ..
+            }
+        ));
     }
 }
