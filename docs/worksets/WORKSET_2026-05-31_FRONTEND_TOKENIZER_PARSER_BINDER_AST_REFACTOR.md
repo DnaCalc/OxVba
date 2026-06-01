@@ -678,6 +678,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/HIR_LOWERING_CONTRACT_2026-06-01.md`.
 - FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
   descriptors, source maps, and diagnostics.
+  Evidence: `docs/evidence/frontend_rework/METADATA_NORMALIZATION_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

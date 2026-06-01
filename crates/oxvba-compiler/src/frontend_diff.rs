@@ -675,6 +675,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn frontend_diff_metadata_projection_exposes_stable_descriptor_fields() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
+        let report = compare_legacy_to_frontend_v2(source);
+        let MetadataSummaryStatus::Available(metadata) = &report.left.metadata else {
+            panic!("expected metadata summary: {report:#?}");
+        };
+        let main = metadata
+            .procedures
+            .values()
+            .find(|procedure| procedure.procedure_name.eq_ignore_ascii_case("main"))
+            .expect("main procedure metadata");
+        assert!(!main.signature.is_empty(), "{main:#?}");
+        let _stable_projection_fields = (
+            &main.call_sites,
+            &main.array_shapes,
+            &main.udt_types,
+            &main.object_types,
+            &main.carrier_layouts,
+            &main.value_states,
+            &main.expression_semantics,
+            &main.operator_semantics,
+            &main.coercions,
+            &main.name_bindings,
+            &main.object_member_bindings,
+        );
+    }
+
     fn bytecode_drift_report() -> FrontendDiffReport {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let mut report = compare_legacy_to_frontend_v2(source);
