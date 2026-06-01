@@ -21,6 +21,8 @@ The initial production scope is intentionally narrow and explicit:
 - implicit/explicit `Let` and `Set` assignments,
 - simple multiline `If ... Then ... End If` statements without `ElseIf`,
 - front-checked `Do While ... Loop` statements without `Exit Do` or post-check loop conditions,
+- simple `Select Case` statements with single integer-value `Case` clauses and optional
+  `Case Else`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
 - typed structural `Null`/`Nothing` literals,
 - same-module procedure call statements whose targets bind to procedure symbols and whose arguments
@@ -85,6 +87,21 @@ The fourth FE-8.5 slice removes the simplest loop route residual:
 This slice deliberately rejects `Do Until`, bare `Do`, and post-check `Loop While`/`Loop Until`
 forms from HIR production lowering. Those routes still fall back as tracked residuals until their
 condition polarity and exit semantics are covered directly.
+
+## Select Continuation
+
+The fifth FE-8.5 slice removes the simplest `Select Case` route residual:
+
+- the syntax parser now creates expression nodes for `Select Case <expr>` selectors and simple
+  `Case <expr>` values instead of leaving the header as unparsed line text;
+- simple `Select Case` statements lower into `HirStmtKind::SelectCase`;
+- production HIR lowering converts single integer-value case clauses into `BoundCaseClause::Value`;
+  and
+- HIR production bytecode emission now reaches branch bytecode for the
+  `Select Case x / Case 1` fixture.
+
+This is not full `Select Case` closure. Multiple case values, `Case Is`, `Case A To B`, non-integer
+case expressions, and richer clause parsing remain explicit route-audit residuals.
 
 ## Checks
 

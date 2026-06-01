@@ -211,6 +211,18 @@ fn collect_stmt_type_hooks(
                 collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
             }
         }
+        HirStmtKind::SelectCase {
+            arms, else_body, ..
+        } => {
+            for (_, body) in arms {
+                for stmt in body {
+                    collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
+                }
+            }
+            for stmt in else_body {
+                collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
+            }
+        }
         HirStmtKind::Empty | HirStmtKind::Expr(_) => {}
     }
 }

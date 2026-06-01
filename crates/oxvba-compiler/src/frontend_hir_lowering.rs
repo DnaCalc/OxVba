@@ -11,9 +11,9 @@ use crate::frontend_symbols::{SymbolId, SymbolNamespace};
 use crate::frontend_type_hooks::{TypedHirModule, collect_type_hooks_from_source};
 use crate::optimize::optimize_module;
 use crate::resolve::{
-    ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCompareMode, BoundCond,
-    BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
-    BoundType, CompareOp, LogicalBinOp,
+    ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause, BoundCompareMode,
+    BoundCond, BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure,
+    BoundStmt, BoundType, CompareOp, LogicalBinOp,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -75,7 +75,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::ForStmt
             | SyntaxKind::ForEachStmt
             | SyntaxKind::WhileStmt
-            | SyntaxKind::SelectStmt
             | SyntaxKind::WithStmt
             | SyntaxKind::OnErrorStmt
             | SyntaxKind::ResumeStmt
@@ -308,6 +307,33 @@ fn lower_stmt(
                 post_check: *post_check,
             });
         }
+        HirStmtKind::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            let mut lowered_arms = Vec::new();
+            for (clauses, body) in arms {
+                let clauses = clauses
+                    .iter()
+                    .map(|clause| lower_case_clause(typed_hir, *clause))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut lowered_body = Vec::new();
+                for stmt in body {
+                    lower_stmt(typed_hir, *stmt, &mut lowered_body)?;
+                }
+                lowered_arms.push((clauses, lowered_body));
+            }
+            let mut lowered_else = Vec::new();
+            for stmt in else_body {
+                lower_stmt(typed_hir, *stmt, &mut lowered_else)?;
+            }
+            out.push(BoundStmt::SelectCase {
+                expr: lower_expr(typed_hir, *expr)?,
+                arms: lowered_arms,
+                else_body: lowered_else,
+            });
+        }
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -450,6 +476,31 @@ fn lower_call_expr(
         BoundExpr::Var(name) => Ok(BoundExpr::ProcCall { name, args }),
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "call target {other:?}"
+        ))),
+    }
+}
+
+fn lower_case_clause(
+    typed_hir: &TypedHirModule,
+    expr: HirExprId,
+) -> Result<BoundCaseClause, HirProductionLoweringError> {
+    let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
+        return Err(HirProductionLoweringError::Unsupported(
+            "missing Select Case clause expression".to_string(),
+        ));
+    };
+    match expr_data.kind {
+        HirExprKind::Literal(HirLiteral::Int(value)) => {
+            let value = i32::try_from(value).map_err(|_| {
+                HirProductionLoweringError::Unsupported(format!(
+                    "Select Case integer literal {value}"
+                ))
+            })?;
+            Ok(BoundCaseClause::Value(value))
+        }
+        _ => Err(HirProductionLoweringError::Unsupported(format!(
+            "Select Case clause {:?}",
+            expr_data.kind
         ))),
     }
 }
@@ -774,6 +825,28 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::Jump { .. })),
             "expected loop backedge bytecode: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Long
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_branch_bytecode_for_select_case() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase 1\nx = 2\nEnd Select\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected case branch bytecode: {:?}",
             bytecode.instructions
         );
         let main = metadata.get("main").expect("main metadata");

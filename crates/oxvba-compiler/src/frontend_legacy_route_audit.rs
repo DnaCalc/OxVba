@@ -75,6 +75,44 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let do_until_statement =
+        "Sub Main()\nDim x As Long\nDo Until x = 3\nx = x + 1\nLoop\nEnd Sub\n";
+    findings.push(route_finding(
+        "do until statement fixture",
+        do_until_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let post_check_loop_statement =
+        "Sub Main()\nDim x As Long\nDo\nx = x + 1\nLoop Until x = 3\nEnd Sub\n";
+    findings.push(route_finding(
+        "post-check loop statement fixture",
+        post_check_loop_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let while_wend_statement = "Sub Main()\nDim x As Long\nWhile x < 3\nx = x + 1\nWend\nEnd Sub\n";
+    findings.push(route_finding(
+        "while wend statement fixture",
+        while_wend_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let for_statement = "Sub Main()\nDim i As Long\nFor i = 1 To 3\ni = i + 1\nNext\nEnd Sub\n";
+    findings.push(route_finding(
+        "for statement fixture",
+        for_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let select_range_statement =
+        "Sub Main()\nDim x As Long\nSelect Case x\nCase 1 To 3\nx = 2\nEnd Select\nEnd Sub\n";
+    findings.push(route_finding(
+        "select case range fixture",
+        select_range_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
@@ -165,8 +203,19 @@ mod tests {
         );
         assert!(
             report.residuals().iter().any(|finding| {
-                finding.area.contains("do while statement")
-                    || finding.area.contains("select case statement")
+                finding
+                    .area
+                    .contains("language-service legacy BoundModule compatibility")
+            }),
+            "{report:#?}"
+        );
+        assert!(
+            report.residuals().iter().any(|finding| {
+                finding.area.contains("do until statement")
+                    || finding.area.contains("post-check loop statement")
+                    || finding.area.contains("while wend statement")
+                    || finding.area.contains("for statement")
+                    || finding.area.contains("select case range")
             }),
             "{report:#?}"
         );

@@ -1504,6 +1504,14 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::SelectStmt);
         self.eat_trivia();
         self.bump(); // Select
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwCase) {
+            self.bump(); // Case
+            self.eat_whitespace();
+            if self.is_expr_start() {
+                self.parse_expr();
+            }
+        }
         self.eat_to_eol();
 
         // Case clauses
@@ -1516,6 +1524,12 @@ impl<'a> Parser<'a> {
             if self.at(SyntaxKind::KwCase) {
                 self.start_node(SyntaxKind::CaseClause);
                 self.bump(); // Case
+                self.eat_whitespace();
+                if self.at(SyntaxKind::KwElse) {
+                    self.bump();
+                } else if self.is_expr_start() {
+                    self.parse_expr();
+                }
                 self.eat_to_eol();
                 self.parse_block(&[SyntaxKind::KwCase, SyntaxKind::KwEnd]);
                 self.finish_node();

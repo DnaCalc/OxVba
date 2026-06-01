@@ -190,6 +190,24 @@ impl SemanticModel {
                     self.index_stmt_tree(stmt);
                 }
             }
+            HirStmtKind::SelectCase {
+                expr,
+                arms,
+                else_body,
+            } => {
+                self.index_expr_tree(expr);
+                for (clauses, body) in arms {
+                    for clause in clauses {
+                        self.index_expr_tree(clause);
+                    }
+                    for stmt in body {
+                        self.index_stmt_tree(stmt);
+                    }
+                }
+                for stmt in else_body {
+                    self.index_stmt_tree(stmt);
+                }
+            }
             HirStmtKind::Block(stmts) => {
                 for stmt in stmts {
                     self.index_stmt_tree(stmt);

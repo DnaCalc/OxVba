@@ -208,6 +208,36 @@ fn collect_stmt_contract_facts(
                 );
             }
         }
+        HirStmtKind::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            collect_expr_structural_intrinsics(typed_hir, *expr, structural_intrinsics);
+            for (clauses, body) in arms {
+                for clause in clauses {
+                    collect_expr_structural_intrinsics(typed_hir, *clause, structural_intrinsics);
+                }
+                for child in body {
+                    collect_stmt_contract_facts(
+                        typed_hir,
+                        proc_symbol,
+                        *child,
+                        returns,
+                        structural_intrinsics,
+                    );
+                }
+            }
+            for child in else_body {
+                collect_stmt_contract_facts(
+                    typed_hir,
+                    proc_symbol,
+                    *child,
+                    returns,
+                    structural_intrinsics,
+                );
+            }
+        }
         HirStmtKind::Block(children) => {
             for child in children {
                 collect_stmt_contract_facts(
