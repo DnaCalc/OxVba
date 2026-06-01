@@ -5,6 +5,7 @@ pub mod bytecode;
 pub mod descriptor_identity;
 pub mod emit;
 pub mod frontend_assignment_semantics;
+pub mod frontend_class_semantics;
 pub mod frontend_diagnostics;
 pub mod frontend_diff;
 pub mod frontend_hir;

@@ -649,6 +649,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/PROPERTY_ASSIGNMENT_SEMANTICS_2026-06-01.md`.
 - FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
   ordinary fields, WithEvents fields, and runtime object-field metadata.
+  Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
   and related diagnostics out of string rewriting.
 - FE-7.6 External references: bind typelib/project/native references through descriptor-backed
