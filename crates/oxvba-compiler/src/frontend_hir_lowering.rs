@@ -16,8 +16,8 @@ use crate::resolve::{
     ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
     BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
     BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
-    BoundType, CompareOp, LogicalBinOp, RuntimeArrayDimExpr, collect_declared_external_procedures,
-    collect_option_base,
+    BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp,
+    RuntimeArrayDimExpr, collect_declared_external_procedures, collect_option_base,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -139,6 +139,13 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
             "syntax kind {kind:?}"
         )));
     }
+    if contains_syntax_kind(parsed.syntax(), SyntaxKind::TypeBlock)
+        && contains_syntax_kind(parsed.syntax(), SyntaxKind::MemberExpr)
+    {
+        return Err(HirProductionLoweringError::Unsupported(
+            "UDT member syntax remains a tracked residual".to_string(),
+        ));
+    }
     if let Some(text) = first_unsupported_const_stmt(parsed.syntax()) {
         return Err(HirProductionLoweringError::Unsupported(format!(
             "const statement {text:?}"
@@ -148,12 +155,20 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
 }
 
 fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Option<SyntaxKind> {
-    if matches!(node.kind(), SyntaxKind::TypeBlock | SyntaxKind::NewExpr) {
+    if matches!(node.kind(), SyntaxKind::NewExpr) {
         return Some(node.kind());
     }
     node.child_nodes()
         .into_iter()
         .find_map(first_unsupported_production_syntax)
+}
+
+fn contains_syntax_kind(node: oxvba_syntax::SyntaxNode<'_>, kind: SyntaxKind) -> bool {
+    node.kind() == kind
+        || node
+            .child_nodes()
+            .into_iter()
+            .any(|child| contains_syntax_kind(child, kind))
 }
 
 fn first_unsupported_const_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> Option<String> {
@@ -250,6 +265,8 @@ fn lower_procedure(
     let mut array_descriptors = HashMap::new();
     let mut dynamic_array_names = HashSet::new();
     let mut bound_params = Vec::new();
+    let udt_defs = collect_hir_udt_definitions(source);
+    let mut udt_instances = HashMap::<String, String>::new();
 
     for param in params {
         let param_name = symbol_name(typed_hir, *param)?;
@@ -298,6 +315,23 @@ fn lower_procedure(
                     option_base,
                 },
             );
+        } else if let Some(udt_name) =
+            declared_udt_type_name(source, symbol.id, typed_hir, &udt_defs)
+        {
+            declaration_types.insert(local_name.clone(), BoundType::Variant);
+            udt_instances.insert(local_name.clone(), udt_name.clone());
+            if let Some(fields) = udt_defs.get(&udt_name) {
+                for field in fields {
+                    let alias = format!("{local_name}_{}", field.name);
+                    if !declarations
+                        .iter()
+                        .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                    {
+                        declarations.push(alias.clone());
+                    }
+                    declaration_types.insert(alias, field.bound_type);
+                }
+            }
         } else {
             declaration_types.insert(
                 local_name,
@@ -362,7 +396,7 @@ fn lower_procedure(
         declarations,
         declaration_types,
         array_descriptors,
-        udt_descriptors: Vec::new(),
+        udt_descriptors: build_hir_udt_descriptors(&udt_defs, &udt_instances),
         duplicate_declarations: Vec::new(),
         body: stmts,
     }))
@@ -1131,6 +1165,122 @@ fn collect_hir_enum_constants(source: &str) -> HashMap<String, BoundExpr> {
     constants
 }
 
+#[derive(Debug, Clone)]
+struct HirUdtFieldDef {
+    name: String,
+    bound_type: BoundType,
+}
+
+type HirUdtDefMap = HashMap<String, Vec<HirUdtFieldDef>>;
+
+fn collect_hir_udt_definitions(source: &str) -> HirUdtDefMap {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut defs = HashMap::new();
+    let mut index = 0usize;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        let Some(type_name) = strip_keyword_prefix_ci(line, "type").and_then(normalize_hir_ident)
+        else {
+            index += 1;
+            continue;
+        };
+        index += 1;
+        let mut fields = Vec::new();
+        while index < lines.len() {
+            let line = lines[index].trim();
+            if line.eq_ignore_ascii_case("end type") {
+                break;
+            }
+            if let Some(field) = parse_hir_udt_field(line) {
+                fields.push(field);
+            }
+            index += 1;
+        }
+        defs.insert(type_name, fields);
+        index += 1;
+    }
+    defs
+}
+
+fn parse_hir_udt_field(line: &str) -> Option<HirUdtFieldDef> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('\'') {
+        return None;
+    }
+    let (name_part, type_part) = split_keyword_ci(trimmed, "as").unwrap_or((trimmed, "Variant"));
+    let name = normalize_hir_ident(name_part.split('(').next().unwrap_or(name_part).trim())?;
+    let bound_type = parse_hir_bound_type(type_part.trim()).unwrap_or(BoundType::Variant);
+    Some(HirUdtFieldDef { name, bound_type })
+}
+
+fn declared_udt_type_name(
+    source: &str,
+    symbol: SymbolId,
+    typed_hir: &TypedHirModule,
+    udt_defs: &HirUdtDefMap,
+) -> Option<String> {
+    let span = typed_hir.module.symbols.symbol(symbol)?.provenance.span?;
+    let type_name = declared_type_name_after_span(source, span)?;
+    udt_defs.contains_key(&type_name).then_some(type_name)
+}
+
+fn declared_type_name_after_span(
+    source: &str,
+    span: crate::frontend_symbols::FrontendSourceSpan,
+) -> Option<String> {
+    let suffix = source.get(span.end..)?;
+    let line_end = span.end + suffix.find('\n').unwrap_or(suffix.len());
+    let segment = source.get(span.end..line_end)?;
+    let lower = segment.to_ascii_lowercase();
+    let as_pos = lower.find(" as ")?;
+    let after_as = span.end + as_pos + " as ".len();
+    let ty_text = source
+        .get(after_as..line_end)?
+        .trim_start()
+        .split(|ch: char| ch == ',' || ch == ')' || ch.is_whitespace())
+        .next()?;
+    normalize_hir_ident(ty_text)
+}
+
+fn build_hir_udt_descriptors(
+    udt_defs: &HirUdtDefMap,
+    instances: &HashMap<String, String>,
+) -> Vec<BoundUdtDescriptor> {
+    let mut grouped = HashMap::<String, Vec<String>>::new();
+    for (instance, type_name) in instances {
+        grouped
+            .entry(type_name.clone())
+            .or_default()
+            .push(instance.clone());
+    }
+    let mut descriptors = grouped
+        .into_iter()
+        .filter_map(|(type_name, mut variable_names)| {
+            variable_names.sort();
+            variable_names.dedup();
+            let fields = udt_defs.get(&type_name)?;
+            Some(BoundUdtDescriptor {
+                type_name,
+                variable_names,
+                fields: fields
+                    .iter()
+                    .enumerate()
+                    .map(|(index, field)| BoundUdtFieldDescriptor {
+                        index,
+                        name: field.name.clone(),
+                        bound_type: field.bound_type,
+                        nested_udt_name: None,
+                        array_bounds: None,
+                        fixed_string_len: None,
+                    })
+                    .collect(),
+            })
+        })
+        .collect::<Vec<_>>();
+    descriptors.sort_by(|left, right| left.type_name.cmp(&right.type_name));
+    descriptors
+}
+
 fn collect_hir_enum_descriptors(source: &str) -> Vec<BoundEnumDescriptor> {
     let lines = source.lines().collect::<Vec<_>>();
     let mut descriptors = Vec::new();
@@ -1212,6 +1362,13 @@ fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> 
     Some(rest.trim())
 }
 
+fn split_keyword_ci<'a>(text: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let needle = format!(" {} ", keyword.to_ascii_lowercase());
+    let pos = lower.find(&needle)?;
+    Some((&text[..pos], &text[pos + needle.len()..]))
+}
+
 fn normalize_hir_ident(text: &str) -> Option<String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -1223,6 +1380,25 @@ fn normalize_hir_ident(text: &str) -> Option<String> {
     }
     let name = trimmed.split_whitespace().next().unwrap_or_default();
     is_valid_hir_identifier(name).then(|| name.to_ascii_lowercase())
+}
+
+fn parse_hir_bound_type(text: &str) -> Option<BoundType> {
+    match text.to_ascii_lowercase().as_str() {
+        "boolean" => Some(BoundType::Boolean),
+        "byte" => Some(BoundType::Byte),
+        "integer" => Some(BoundType::Integer),
+        "long" => Some(BoundType::Long),
+        "longlong" => Some(BoundType::LongLong),
+        "longptr" => Some(BoundType::LongPtr),
+        "single" => Some(BoundType::Single),
+        "double" => Some(BoundType::Double),
+        "currency" => Some(BoundType::Currency),
+        "date" => Some(BoundType::Date),
+        "string" => Some(BoundType::String),
+        "object" => Some(BoundType::Object),
+        "variant" => Some(BoundType::Variant),
+        _ => None,
+    }
 }
 
 fn is_valid_hir_identifier(text: &str) -> bool {
@@ -2140,6 +2316,34 @@ mod tests {
             matches!(err, HirProductionLoweringError::Unsupported(_)),
             "Declare diagnostics must remain fallback-eligible, got {err:?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_udt_layout_descriptors() {
+        let source =
+            "Type Point\nX As Long\nY As String\nEnd Type\nSub Main()\nDim p As Point\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let point = main
+            .udt_types
+            .iter()
+            .find(|descriptor| descriptor.type_name.eq_ignore_ascii_case("point"))
+            .expect("point UDT descriptor");
+        assert!(point.instances.iter().any(|instance| instance.name == "p"));
+        assert!(point.fields.iter().any(|field| field.name == "x"));
+        assert!(point.fields.iter().any(|field| field.name == "y"));
+        assert!(main.slots.iter().any(|slot| slot.name == "p_x"));
+        assert!(main.slots.iter().any(|slot| slot.name == "p_y"));
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_udt_member_syntax_for_fallback() {
+        let source =
+            "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\np.X = 1\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("UDT member syntax remains residual");
+        assert!(matches!(err, HirProductionLoweringError::Unsupported(_)));
     }
 
     #[test]

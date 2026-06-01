@@ -907,8 +907,13 @@ Candidate bead units:
   declarations and calls to the HIR production route by projecting the existing external
   declaration descriptors into the lowered module and preserving `IntrinsicInvokeSymbolHost`
   bytecode emission. Unsupported declare signatures still return HIR `Unsupported` and remain
-  fallback-eligible. `Type` and `New` remain explicit production residuals because they carry UDT
-  layout/lifetime and object-construction semantics that cannot be no-op routed.
+  fallback-eligible. Follow-up continuation adds simple module-level `Type` block layout projection
+  for local UDT variables: HIR production now emits UDT descriptors and flattened field slots for
+  declarations such as `Dim p As Point`. UDT member syntax like `p.X` remains HIR `Unsupported`
+  until field read/write lowering maps it to aliases instead of late-bound object dispatch.
+  `New` remains an explicit production residual because object construction requires project class
+  handles, imported/COM activation, and `As New` lazy-construction semantics that cannot be no-op
+  routed.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
