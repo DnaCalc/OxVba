@@ -31,6 +31,7 @@ pub enum ProjectSymbolKind {
     PropertyGet,
     PropertyLet,
     PropertySet,
+    Event,
     Field,
     Public,
 }
@@ -247,6 +248,21 @@ impl ProjectSymbolTables {
             })
     }
 
+    pub fn resolve_event(&self, owner: &str, event: &str) -> Option<ProjectSymbolRoute> {
+        self.resolve_owner_member_of_kind(owner, event, ProjectSymbolKind::Event)
+    }
+
+    pub fn resolve_owner_member_of_kind(
+        &self,
+        owner: &str,
+        member: &str,
+        kind: ProjectSymbolKind,
+    ) -> Option<ProjectSymbolRoute> {
+        self.resolve_owner_member_candidates(owner, member)
+            .into_iter()
+            .find(|route| route.kind == kind)
+    }
+
     fn owner_member_routes(&self, owner: &str) -> Vec<ProjectSymbolRoute> {
         let owner = fold_identifier(owner);
         let mut routes = Vec::new();
@@ -330,8 +346,9 @@ fn route_kind_order(kind: ProjectSymbolKind) -> u8 {
         ProjectSymbolKind::PropertyGet => 4,
         ProjectSymbolKind::PropertyLet => 5,
         ProjectSymbolKind::PropertySet => 6,
-        ProjectSymbolKind::Field => 7,
-        ProjectSymbolKind::Public => 8,
+        ProjectSymbolKind::Event => 7,
+        ProjectSymbolKind::Field => 8,
+        ProjectSymbolKind::Public => 9,
     }
 }
 
@@ -415,6 +432,7 @@ fn index_module(
         None
     };
     let default_member_names = collect_default_member_attribute_names(&module.source);
+    let declared_event_names = collect_declared_event_names(&module.source);
 
     match collect_symbols_from_source_into_model(
         symbols,
@@ -470,19 +488,14 @@ fn index_module(
                 }
             }
             SymbolNamespace::Local | SymbolNamespace::Member => {
-                tables.record_module_member(
-                    &module_name,
-                    &name,
-                    ProjectSymbolKind::Field,
-                    symbol_id,
-                );
+                let kind = if declared_event_names.contains_key(&fold_identifier(&name)) {
+                    ProjectSymbolKind::Event
+                } else {
+                    ProjectSymbolKind::Field
+                };
+                tables.record_module_member(&module_name, &name, kind, symbol_id);
                 if class_symbol.is_some() {
-                    tables.record_class_member(
-                        &module_name,
-                        &name,
-                        ProjectSymbolKind::Field,
-                        symbol_id,
-                    );
+                    tables.record_class_member(&module_name, &name, kind, symbol_id);
                 }
             }
             SymbolNamespace::Type => {
@@ -553,6 +566,33 @@ fn default_member_attribute_name(line: &str) -> Option<&str> {
     let eq = payload.find('=')?;
     let value = payload[eq + 1..].trim();
     (value == "0" && !name.is_empty()).then_some(name)
+}
+
+fn collect_declared_event_names(source: &str) -> BTreeMap<String, ()> {
+    normalize_source_lines(source)
+        .into_iter()
+        .filter_map(|line| declared_event_name(&line).map(|name| (fold_identifier(name), ())))
+        .collect()
+}
+
+fn declared_event_name(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("event ") {
+        trimmed[6..].trim()
+    } else if lower.starts_with("public event ") {
+        trimmed[13..].trim()
+    } else if lower.starts_with("private event ") {
+        trimmed[14..].trim()
+    } else {
+        return None;
+    };
+    let name = payload
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    (!name.is_empty()).then_some(name)
 }
 
 fn collect_legacy_line_symbols_into_model(
@@ -889,6 +929,37 @@ mod tests {
         assert_eq!(
             index.resolve_class_field_names("widget"),
             vec!["score".to_string()]
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_distinguishes_class_events_from_fields() {
+        let module = ModuleUnit {
+            module_name: "Emitter".to_string(),
+            module_kind: ModuleKind::Class,
+            attributes: Default::default(),
+            source: "Public Event Changed(ByVal value As Long)\nPrivate value As Long".to_string(),
+        };
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: crate::project::ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let index =
+            build_project_symbol_index_from_manifest(&manifest).expect("index should build");
+        assert_eq!(
+            index
+                .tables
+                .resolve_event("Emitter", "Changed")
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::Event)
+        );
+        assert_eq!(
+            index.resolve_class_field_names("Emitter"),
+            vec!["value".to_string()]
         );
     }
 

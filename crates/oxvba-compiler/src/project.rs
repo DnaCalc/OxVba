@@ -1011,18 +1011,22 @@ fn compile_project_with_strategy(
     let procedure_index = collect_project_procedures(manifest);
     let reference_order = build_reference_order_map(manifest);
     let active_project = normalize_identifier(&manifest.project_name);
-    validate_event_semantics(manifest, &procedure_index, &reference_order)?;
-    validate_imported_module_scope_declarations(manifest, &reference_order)?;
-    validate_imported_procedure_signatures(manifest, &reference_order)?;
-    validate_imported_event_declarations(manifest, &reference_order)?;
-    let event_dispatch_plan =
-        collect_event_dispatch_plan(manifest, &procedure_index, &reference_order)?;
     let project_symbol_index =
         build_project_symbol_index_from_manifest(manifest).map_err(|error| {
             ProjectCompileError::BackendCompile {
                 message: format!("FE7-E-PROJECT-SYMBOL-INDEX: {error}"),
             }
         })?;
+    validate_event_semantics(manifest, &procedure_index, &reference_order)?;
+    validate_imported_module_scope_declarations(manifest, &reference_order)?;
+    validate_imported_procedure_signatures(manifest, &reference_order)?;
+    validate_imported_event_declarations(manifest, &reference_order)?;
+    let event_dispatch_plan = collect_event_dispatch_plan(
+        manifest,
+        &project_symbol_index,
+        &procedure_index,
+        &reference_order,
+    )?;
     validate_active_project_property_symbol_routes(
         manifest,
         &procedure_index,
@@ -7885,6 +7889,7 @@ fn known_typelib_member_token_and_arity(
 
 fn collect_event_dispatch_plan(
     manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
 ) -> Result<EventDispatchPlan, ProjectCompileError> {
@@ -7944,6 +7949,18 @@ fn collect_event_dispatch_plan(
                 if event_name.is_empty() || !available_events.contains(event_name) {
                     continue;
                 }
+                if !frontend_event_dispatch_route_exists(
+                    manifest,
+                    project_symbol_index,
+                    &source_project,
+                    &source_module,
+                    event_name,
+                    &project_key,
+                    &module_key,
+                    &handler.procedure_name,
+                ) {
+                    continue;
+                }
                 let key = (
                     source_project.clone(),
                     source_module.clone(),
@@ -7965,6 +7982,34 @@ fn collect_event_dispatch_plan(
     }
 
     Ok(plan)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn frontend_event_dispatch_route_exists(
+    manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
+    source_project: &str,
+    source_module: &str,
+    event_name: &str,
+    sink_project: &str,
+    sink_module: &str,
+    handler_name: &str,
+) -> bool {
+    let active_project = normalize_identifier(&manifest.project_name);
+    if normalize_identifier(source_project) != active_project
+        || normalize_identifier(sink_project) != active_project
+    {
+        return true;
+    }
+
+    project_symbol_index
+        .tables
+        .resolve_event(source_module, event_name)
+        .is_some()
+        && project_symbol_index
+            .tables
+            .resolve_owner_member_of_kind(sink_module, handler_name, ProjectSymbolKind::Procedure)
+            .is_some()
 }
 
 fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDispatchBinding> {
@@ -17829,6 +17874,63 @@ mod tests {
                 "pmr_projecta_sinkb_emb_changed".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn event_dispatch_plan_requires_frontend_event_and_handler_routes() {
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\nPublic Sub Fire()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("emitter parses");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As Emitter\nPrivate Sub src_changed()\nEnd Sub",
+        )
+        .expect("sink parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let project_symbol_index =
+            build_project_symbol_index_from_manifest(&manifest).expect("index should build");
+
+        assert!(super::frontend_event_dispatch_route_exists(
+            &manifest,
+            &project_symbol_index,
+            "projecta",
+            "emitter",
+            "changed",
+            "projecta",
+            "sink",
+            "src_changed",
+        ));
+        assert!(!super::frontend_event_dispatch_route_exists(
+            &manifest,
+            &project_symbol_index,
+            "projecta",
+            "emitter",
+            "missing",
+            "projecta",
+            "sink",
+            "src_changed",
+        ));
+        assert!(!super::frontend_event_dispatch_route_exists(
+            &manifest,
+            &project_symbol_index,
+            "projecta",
+            "emitter",
+            "changed",
+            "projecta",
+            "sink",
+            "src_missing",
+        ));
     }
 
     #[test]
@@ -28095,9 +28197,13 @@ mod tests {
         let project_symbol_index =
             crate::frontend_project_symbols::build_project_symbol_index_from_manifest(&manifest)
                 .expect("project symbol index");
-        let event_dispatch_plan =
-            super::collect_event_dispatch_plan(&manifest, &procedure_index, &reference_order)
-                .expect("event plan");
+        let event_dispatch_plan = super::collect_event_dispatch_plan(
+            &manifest,
+            &project_symbol_index,
+            &procedure_index,
+            &reference_order,
+        )
+        .expect("event plan");
 
         for (label, strategy) in [
             ("module-aware", ProjectLoweringStrategy::ModuleAwareBindPlan),

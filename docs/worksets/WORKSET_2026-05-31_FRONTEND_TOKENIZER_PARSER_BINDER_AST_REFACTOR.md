@@ -772,7 +772,11 @@ Candidate bead units:
   enumeration.
   Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
-  and related diagnostics out of string rewriting.
+  and related diagnostics out of string rewriting. Current continuation progress makes
+  active-project event dispatch planning consume frontend `Event` and handler procedure routes
+  before emitting guard wrappers; WithEvents declaration binding, RaiseEvent diagnostics/rewrites,
+  Implements coverage, and reference/imported event sources still need production-route migration
+  or explicit compatibility quarantine.
   Evidence: `docs/evidence/frontend_rework/EVENTS_IMPLEMENTS_SEMANTICS_2026-06-01.md`.
 - FE-7.6 External references: bind typelib/project/native references through descriptor-backed
   symbols without dependency-specific routing.
