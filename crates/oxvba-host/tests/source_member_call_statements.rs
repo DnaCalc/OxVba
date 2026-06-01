@@ -2,12 +2,12 @@
 //! no-arg `obj.Method` (without the `Call` keyword). Before the fix these failed
 //! to compile ("call to unknown procedure: <flattened name>"); they must now
 //! compile and dispatch through the same path as the `Call obj.Method(args)`
-//! form. (Public-field instance-state read like `c.Total` is a separate
-//! pre-existing object-semantics limitation tracked elsewhere; this test asserts
-//! the statement-form calls compile and execute, not field-state accumulation.)
+//! form. The same fixture also reads a public field afterward so the dispatch
+//! path proves it preserved per-instance public-field state.
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
 use oxvba_host::{Engine, HostConfig};
+use oxvba_runtime::Variant;
 
 #[test]
 fn statement_form_member_calls_compile_and_dispatch() {
@@ -32,6 +32,8 @@ fn statement_form_member_calls_compile_and_dispatch() {
          c.Add 5\n\
          c.Reset\n\
          c.Add 7\n\
+         Dim result\n\
+         result = c.Total\n\
          End Sub\n",
     )
     .expect("main module");
@@ -48,7 +50,11 @@ fn statement_form_member_calls_compile_and_dispatch() {
     let engine = Engine::new(HostConfig { enable_jit: false });
     // Before the fix this returned a CompileTime error ("unknown procedure
     // c_add" / "unsupported statement"). It must now compile and execute.
-    engine
+    let out = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("bare statement-form member calls should compile and dispatch");
+    assert!(
+        out.contains(&Variant::from_i32(7)),
+        "public-field read should observe per-instance state after bare statement-form calls; out={out:?}"
+    );
 }

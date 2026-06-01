@@ -5277,6 +5277,19 @@ fn rewrite_internal_class_property_expression_reads(
                 member_end,
                 format!("{}({})", target, instance_arg),
             ));
+        } else if let Some(replacement) = resolve_internal_class_field_read(
+            manifest,
+            project_symbol_index,
+            &receiver,
+            &member,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            shadowed_identifiers,
+        )? {
+            replacements.push((receiver_start, member_end, replacement));
         } else if read_is_value_context(text, receiver_start)
             && let Some(error) = internal_class_value_read_edge_diagnostic(
                 &receiver,
@@ -5308,6 +5321,115 @@ fn rewrite_internal_class_property_expression_reads(
     }
     out.push_str(&text[previous..]);
     Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_internal_class_field_read(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    receiver: &str,
+    member: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
+) -> Result<Option<String>, ProjectCompileError> {
+    let Some((target_project, target_module, instance_arg)) =
+        resolve_internal_class_receiver_target(
+            receiver,
+            procedures,
+            internal_class_bindings,
+            shadowed_identifiers,
+        )?
+    else {
+        return Ok(None);
+    };
+    if target_project != active_project || current_project != active_project {
+        return Ok(None);
+    }
+    let Some(module) = find_project_module(manifest, &target_project, &target_module) else {
+        return Ok(None);
+    };
+    let require_public = normalize_identifier(current_module) != target_module;
+    let Some(binding_token) = class_state_field_read_token(
+        module,
+        &target_project,
+        &target_module,
+        member,
+        require_public,
+        project_symbol_index,
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(format!(
+        "__oxvba_withevents_get({}, {})",
+        instance_arg, binding_token
+    )))
+}
+
+fn class_state_field_read_token(
+    module: &ModuleUnit,
+    project_name: &str,
+    module_name: &str,
+    field_name: &str,
+    require_public: bool,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+) -> Option<i32> {
+    if module.module_kind != ModuleKind::Class {
+        return None;
+    }
+    let field_name = normalize_identifier(field_name);
+    let frontend_fields = project_symbol_index.map(|index| {
+        let mut names = index.resolve_class_field_names(module_name);
+        if names.is_empty() && !module.attributes.vb_name.trim().is_empty() {
+            names = index.resolve_class_field_names(&module.attributes.vb_name);
+        }
+        names.into_iter().collect::<BTreeSet<_>>()
+    });
+    let mut in_procedure = false;
+    for line in module.source.lines() {
+        let normalized = normalize_visibility_prefixed_procedure_signature(line);
+        if parse_procedure_signature_line(&normalized).is_some() {
+            in_procedure = true;
+            continue;
+        }
+        let lower = line.trim().to_ascii_lowercase();
+        if lower == "end sub" || lower == "end function" || lower == "end property" {
+            in_procedure = false;
+            continue;
+        }
+        if in_procedure {
+            continue;
+        }
+        if require_public
+            && !line
+                .trim_start()
+                .to_ascii_lowercase()
+                .starts_with("public ")
+        {
+            continue;
+        }
+        for candidate in parse_class_state_field_names(line) {
+            let candidate = normalize_identifier(&candidate);
+            if candidate != field_name {
+                continue;
+            }
+            if let Some(frontend_fields) = &frontend_fields
+                && !frontend_fields.is_empty()
+                && !frontend_fields.contains(&candidate)
+            {
+                continue;
+            }
+            return Some(class_state_binding_token(
+                project_name,
+                module_name,
+                &candidate,
+            ));
+        }
+    }
+    None
 }
 
 /// A procedure is callable with no supplied arguments when every parameter is `Optional`
