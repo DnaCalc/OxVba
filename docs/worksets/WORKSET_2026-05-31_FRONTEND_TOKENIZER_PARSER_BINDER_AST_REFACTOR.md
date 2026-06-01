@@ -788,6 +788,8 @@ Candidate bead units:
   Active-project `RaiseEvent` declared-event validation also consumes frontend event routes.
   Remaining fallback is explicitly bounded to reference/imported event and Implements sources plus
   text-shaped statement lowering glue.
+  Status: scoped delivery bead closed for active-project event/Implements route decisions, with
+  referenced/imported event sources classified to FE-7.6/reference composition.
   Evidence: `docs/evidence/frontend_rework/EVENTS_IMPLEMENTS_SEMANTICS_2026-06-01.md`.
 - FE-7.6 External references: bind typelib/project/native references through descriptor-backed
   symbols without dependency-specific routing. Current continuation progress moves reference-kind
