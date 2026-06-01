@@ -554,9 +554,11 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/LEXER_IDENTIFIER_KEYWORD_COMPLETION_2026-06-01.md`.
 - FE-3.4 Lexer snapshot corpus: add token snapshots and round-trip tests across the grammar
   matrix and existing project fixtures.
+  Evidence: `docs/evidence/frontend_rework/LEXER_SNAPSHOT_CORPUS_2026-06-01.md`.
 
-Evidence gate: accepted corpus tokenizes losslessly, lexical residuals are matrixed, and lexer
-diagnostics carry stable spans.
+Evidence gate: accepted corpus tokenizes losslessly, lexical residuals are matrixed, and any future
+lexer diagnostics API must carry stable spans. FE-3 itself does not require a separate lexer
+diagnostics surface.
 
 ### Epic FE-4 — Parser Completion and CST-to-Legacy Bridge
 
