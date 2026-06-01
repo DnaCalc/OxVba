@@ -652,6 +652,33 @@ mod tests {
     }
 
     #[test]
+    fn bridge_rejects_recovered_syntax_errors_before_legacy_lowering() {
+        let source = "Sub Main()\n    x = \n    y = 2\nEnd Sub\n";
+        let parsed = oxvba_syntax::parse(source);
+        assert_eq!(parsed.syntax().text(), source);
+        assert!(
+            parsed
+                .errors()
+                .iter()
+                .any(|error| error.message == "expected expression after `=`"),
+            "expected missing-expression parse diagnostic, got {:?}",
+            parsed.errors()
+        );
+        assert!(
+            has_node_kind(&parsed.syntax(), SyntaxKind::ErrorNode),
+            "expected recovery ErrorNode"
+        );
+
+        let err = compile_source_via_syntax_bridge(source)
+            .expect_err("CST diagnostics should stop bridge before legacy lowering");
+        assert!(
+            err.to_string().contains("syntax parse failed")
+                && err.to_string().contains("expected expression after `=`"),
+            "unexpected bridge error: {err}"
+        );
+    }
+
+    #[test]
     fn bridge_compiles_supported_assignment_family_through_legacy_lowering() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let bytecode =

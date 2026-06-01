@@ -31,6 +31,10 @@ fixtures. FE-4.4 then added a selected legacy bridge for colon statement separat
 validation, `compile_source_via_syntax_bridge` lowers `Colon` tokens to line breaks before calling
 the legacy compiler.
 
+FE-4.5 added diagnostic-route proof: recovered CST parse errors stop
+`compile_source_via_syntax_bridge` before legacy lowering, while the partial tree remains lossless
+and contains an `ErrorNode`.
+
 ## Verification
 
 Commands run from repository root:
@@ -41,6 +45,7 @@ Commands run from repository root:
   - FE-4.2 reopen result: passed, 4 tests after adding CST postfix lowering coverage.
   - FE-4.3/FE-4.4 reopen result: passed, 7 tests after adding statement coverage validation and
     selected colon-separator bridge lowering.
+  - FE-4.5 reopen result: passed, 8 tests after adding recovered-syntax diagnostic route proof.
 - `cargo test -p oxvba-syntax --quiet`
   - First-run result: passed, 78 unit tests plus 2 integration tests.
   - Reopen result: passed, 79 unit tests plus 2 integration tests.
@@ -57,7 +62,8 @@ forms are now lowered from the CST rather than reparsed from source text by the 
 parser. FE-4.2 postfix forms are also lowered from CST for the scoped bridge tests. FE-4.3
 statement forms are validated by CST first, and FE-4.4 lowers selected colon-separated statement
 sequences for legacy compilation. Full statement/source compilation still uses the legacy compiler
-after CST validation until later HIR/binder/lowering beads replace that path.
+after CST validation until later HIR/binder/lowering beads replace that path. FE-4.5 confirms that
+sources with parser recovery diagnostics do not reach that legacy lowering path.
 
 The test assertion initially referenced a nonexistent `StoreSlot` bytecode instruction. The final
 test checks the actual instruction family emitted by this compiler for the assignment/arithmetic
