@@ -575,6 +575,7 @@ Candidate bead units:
 - FE-4.3 Statement parser coverage: harden declarations, blocks, inline statements, `With`,
   `On Error`/`Resume`, `RaiseEvent`, `Property`, `Declare`, `Type`, `Enum`, attributes, and
   statement separators.
+  Evidence: `docs/evidence/frontend_rework/PARSER_STATEMENT_COVERAGE_2026-06-01.md`.
 - FE-4.4 CST-to-legacy bridge: lower selected CST nodes into current `BoundExpr`/`BoundStmt`
   forms so syntax migration can proceed before HIR is complete.
 - FE-4.5 Parser diagnostic recovery: verify partial trees under common incomplete edit states.

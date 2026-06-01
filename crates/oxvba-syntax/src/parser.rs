@@ -149,6 +149,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn eat_to_statement_end(&mut self) {
+        while !self.at_eof()
+            && !self.at(SyntaxKind::Newline)
+            && !self.at(SyntaxKind::Comment)
+            && !self.at(SyntaxKind::Colon)
+        {
+            self.bump();
+        }
+    }
+
     // ── Error handling ──────────────────────────────────────
 
     fn error(&mut self, message: String) {
@@ -663,6 +673,7 @@ impl<'a> Parser<'a> {
 
         match kind {
             SyntaxKind::KwOption => self.parse_option_stmt(),
+            SyntaxKind::KwAttribute => self.parse_attribute_stmt(),
             SyntaxKind::KwImplements => self.parse_implements_stmt(),
             SyntaxKind::KwPublic | SyntaxKind::KwPrivate | SyntaxKind::KwFriend => {
                 // Peek past the modifier to see what follows
@@ -762,6 +773,16 @@ impl<'a> Parser<'a> {
         self.bump(); // Option
         self.eat_whitespace();
         // Consume the rest of the line (Explicit, Base 1, Compare Text, etc.)
+        self.eat_to_eol();
+        self.finish_node();
+    }
+
+    // ── Attribute statement (exported module metadata) ──────
+
+    fn parse_attribute_stmt(&mut self) {
+        self.start_node(SyntaxKind::AttributeStmt);
+        self.eat_trivia();
+        self.bump(); // Attribute
         self.eat_to_eol();
         self.finish_node();
     }
@@ -1207,6 +1228,10 @@ impl<'a> Parser<'a> {
                 // No progress — consume one token to avoid infinite loop
                 self.bump();
             }
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Colon) {
+                self.bump();
+            }
         }
 
         self.finish_node();
@@ -1548,7 +1573,7 @@ impl<'a> Parser<'a> {
             self.eat_whitespace();
             self.parse_required_expr("expected expression after `=`");
         }
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1566,7 +1591,7 @@ impl<'a> Parser<'a> {
             self.eat_whitespace();
             self.parse_required_expr("expected expression after `=`");
         }
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1578,7 +1603,7 @@ impl<'a> Parser<'a> {
         if self.is_expr_start() {
             self.parse_expr();
         }
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1594,7 +1619,7 @@ impl<'a> Parser<'a> {
         if self.is_expr_start() || self.at(SyntaxKind::Comma) {
             self.parse_bare_arg_list();
         }
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1602,7 +1627,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::OnErrorStmt);
         self.eat_trivia();
         self.bump(); // On
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1610,7 +1635,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ResumeStmt);
         self.eat_trivia();
         self.bump(); // Resume
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1618,7 +1643,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ReDimStmt);
         self.eat_trivia();
         self.bump(); // ReDim
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1626,7 +1651,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::EraseStmt);
         self.eat_trivia();
         self.bump(); // Erase
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1634,7 +1659,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ExitStmt);
         self.eat_trivia();
         self.bump(); // Exit
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1642,7 +1667,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::GoToStmt);
         self.eat_trivia();
         self.bump(); // GoTo
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1650,7 +1675,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::GoSubStmt);
         self.eat_trivia();
         self.bump(); // GoSub
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1658,7 +1683,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ReturnStmt);
         self.eat_trivia();
         self.bump(); // Return
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1666,7 +1691,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::RaiseEventStmt);
         self.eat_trivia();
         self.bump(); // RaiseEvent
-        self.eat_to_eol();
+        self.eat_to_statement_end();
         self.finish_node();
     }
 
@@ -1687,7 +1712,7 @@ impl<'a> Parser<'a> {
                 self.eat_whitespace();
                 self.parse_required_expr("expected expression after `=`");
             }
-            self.eat_to_eol();
+            self.eat_to_statement_end();
         } else {
             self.start_node(SyntaxKind::CallStmt);
             self.eat_trivia();
@@ -1699,7 +1724,7 @@ impl<'a> Parser<'a> {
             if self.is_expr_start() || self.at(SyntaxKind::Comma) {
                 self.parse_bare_arg_list();
             }
-            self.eat_to_eol();
+            self.eat_to_statement_end();
         }
 
         self.finish_node();
@@ -1805,6 +1830,21 @@ mod tests {
         let src = "Public Property Get Value() As Long\n    Value = mValue\nEnd Property\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+    }
+
+    #[test]
+    fn round_trip_exported_attribute_lines() {
+        let src = "Attribute VB_Name = \"Module1\"\nAttribute VB_Description = \"demo\"\nSub T()\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let attrs = collect_nodes(&p.syntax(), SyntaxKind::AttributeStmt);
+        assert_eq!(
+            attrs.len(),
+            2,
+            "expected exported attributes, got {:?}",
+            attrs
+        );
     }
 
     #[test]
@@ -1933,6 +1973,32 @@ mod tests {
         );
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+    }
+
+    #[test]
+    fn round_trip_inline_statement_separators() {
+        let src = "Sub T()\n    x = 1: y = 2: RaiseEvent Tick\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let assigns = collect_nodes(&p.syntax(), SyntaxKind::AssignStmt);
+        assert_eq!(
+            assigns.len(),
+            2,
+            "expected two assignments, got {:?}",
+            assigns
+        );
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::RaiseEventStmt));
+    }
+
+    #[test]
+    fn round_trip_inline_on_error_and_resume() {
+        let src = "Sub T()\n    On Error Resume Next: Resume Next\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::OnErrorStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ResumeStmt));
     }
 
     #[test]
