@@ -244,6 +244,9 @@ mod tests {
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("select case multi-value")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("select case is")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"
         );
@@ -256,10 +259,10 @@ mod tests {
             "{report:#?}"
         );
         assert!(
-            report.residuals().iter().any(|finding| {
-                finding.area.contains("select case is")
-                    || finding.area.contains("for each statement")
-            }),
+            report
+                .residuals()
+                .iter()
+                .any(|finding| { finding.area.contains("for each statement") }),
             "{report:#?}"
         );
         assert!(

@@ -240,6 +240,7 @@ impl SemanticModel {
                 self.index_expr_tree(start);
                 self.index_expr_tree(end);
             }
+            HirCaseClause::Is { value, .. } => self.index_expr_tree(value),
         }
     }
 

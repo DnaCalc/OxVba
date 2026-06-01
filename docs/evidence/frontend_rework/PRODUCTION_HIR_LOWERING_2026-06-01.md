@@ -24,7 +24,8 @@ The initial production scope is intentionally narrow and explicit:
 - `While` / `Wend` loops,
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
-  ranges, comma-separated integer value clauses, and optional `Case Else`,
+  ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
+  `Case Else`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
 - typed structural `Null`/`Nothing` literals,
 - same-module procedure call statements whose targets bind to procedure symbols and whose arguments
@@ -131,8 +132,14 @@ The tenth FE-8.5 slice adds comma-separated value clauses:
 - HIR stores them as multiple `HirCaseClause::Value` entries in one arm; and
 - production lowering emits the existing aggregate case-match bytecode path for multi-value arms.
 
-This is not full `Select Case` closure. `Case Is`, non-integer case expressions, mixed range lists,
-and richer clause parsing remain explicit route-audit residuals.
+The eleventh FE-8.5 slice adds `Case Is` clauses:
+
+- the syntax parser now recognizes `Case Is <op> <expr>` headers;
+- HIR stores them as `HirCaseClause::Is` with a normalized comparison operator; and
+- production lowering emits `BoundCaseClause::Is` for integer comparison values.
+
+This is not full `Select Case` closure. Non-integer case expressions, mixed range lists, and richer
+clause parsing remain outside this narrow route-audited subset.
 
 ## Checks
 

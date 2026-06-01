@@ -517,6 +517,17 @@ fn lower_case_clause(
             start: lower_case_value(typed_hir, *start)?,
             end: lower_case_value(typed_hir, *end)?,
         }),
+        HirCaseClause::Is { op, value } => {
+            let Some(op) = compare_op_from_hir(*op) else {
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "Select Case Is operator {op:?}"
+                )));
+            };
+            Ok(BoundCaseClause::Is {
+                op,
+                value: lower_case_value(typed_hir, *value)?,
+            })
+        }
     }
 }
 
@@ -1002,6 +1013,23 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::BoolOr { .. })),
             "expected aggregate case match bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_branch_bytecode_for_select_case_is() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase Is < 0\nx = 2\nEnd Select\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected case branch bytecode: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

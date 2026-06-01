@@ -293,6 +293,9 @@ fn collect_case_clause_structural_intrinsics(
             collect_expr_structural_intrinsics(typed_hir, *start, structural_intrinsics);
             collect_expr_structural_intrinsics(typed_hir, *end, structural_intrinsics);
         }
+        HirCaseClause::Is { value, .. } => {
+            collect_expr_structural_intrinsics(typed_hir, *value, structural_intrinsics);
+        }
     }
 }
 

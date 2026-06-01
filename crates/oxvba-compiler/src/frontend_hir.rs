@@ -160,6 +160,7 @@ pub enum HirStmtKind {
 pub enum HirCaseClause {
     Value(HirExprId),
     Range { start: HirExprId, end: HirExprId },
+    Is { op: HirBinaryOp, value: HirExprId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -706,17 +707,22 @@ impl HirBuilder {
                             clause.text().trim()
                         )));
                     }
-                    if clause_header.trim_start().starts_with("case is ") {
-                        return Err(HirBuildError::Unsupported(format!(
-                            "complex Select Case clauses are not yet supported by HIR lowering: `{}`",
-                            clause.text().trim()
-                        )));
-                    }
                     let values: Vec<HirExprId> = expression_children(clause)
                         .into_iter()
                         .map(|expr| self.lower_expr(scope, expr))
                         .collect::<Result<_, _>>()?;
-                    let clauses = if clause_header.contains(" to ") {
+                    let clauses = if clause_header.trim_start().starts_with("case is ") {
+                        if values.len() != 1 {
+                            return Err(HirBuildError::Unsupported(format!(
+                                "Case Is clause without comparison value: `{}`",
+                                clause.text().trim()
+                            )));
+                        }
+                        vec![HirCaseClause::Is {
+                            op: case_is_operator(clause)?,
+                            value: values[0],
+                        }]
+                    } else if clause_header.contains(" to ") {
                         if values.len() != 2 {
                             return Err(HirBuildError::Unsupported(format!(
                                 "Case range without start/end values: `{}`",
@@ -1116,6 +1122,27 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
         SyntaxKind::KwOr => Ok(HirBinaryOp::Or),
         _ => unreachable!("filtered operator token"),
     }
+}
+
+fn case_is_operator(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
+    for token in node.child_tokens() {
+        let op = match token.kind {
+            SyntaxKind::Eq => Some(HirBinaryOp::Eq),
+            SyntaxKind::LtGt => Some(HirBinaryOp::Ne),
+            SyntaxKind::Lt => Some(HirBinaryOp::Lt),
+            SyntaxKind::LtEq => Some(HirBinaryOp::Le),
+            SyntaxKind::Gt => Some(HirBinaryOp::Gt),
+            SyntaxKind::GtEq => Some(HirBinaryOp::Ge),
+            _ => None,
+        };
+        if let Some(op) = op {
+            return Ok(op);
+        }
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "Case Is clause without comparison operator: `{}`",
+        node.text().trim()
+    )))
 }
 
 #[cfg(test)]
@@ -1713,6 +1740,41 @@ mod tests {
         assert_eq!(arms[0].0.len(), 2);
         assert!(matches!(arms[0].0[0], HirCaseClause::Value(_)));
         assert!(matches!(arms[0].0[1], HirCaseClause::Value(_)));
+    }
+
+    #[test]
+    fn hir_builder_lowers_select_case_is_clause() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase Is < 0\nx = 2\nEnd Select\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let select_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_select_case_stmt(&module.arenas, *stmt))
+            .expect("select case statement");
+        let Some(HirStmt {
+            kind: HirStmtKind::SelectCase { arms, .. },
+            ..
+        }) = module.arenas.stmt(select_stmt)
+        else {
+            panic!("expected select case statement");
+        };
+        let HirCaseClause::Is { op, value } = &arms[0].0[0] else {
+            panic!("expected Case Is clause");
+        };
+        assert_eq!(*op, HirBinaryOp::Lt);
+        assert!(matches!(
+            module.arenas.expr(*value).map(|expr| &expr.kind),
+            Some(HirExprKind::Literal(HirLiteral::Int(0)))
+        ));
     }
 
     #[test]

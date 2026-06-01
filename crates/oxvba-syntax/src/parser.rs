@@ -1527,6 +1527,24 @@ impl<'a> Parser<'a> {
                 self.eat_whitespace();
                 if self.at(SyntaxKind::KwElse) {
                     self.bump();
+                } else if self.at(SyntaxKind::KwIs) {
+                    self.bump();
+                    self.eat_whitespace();
+                    if matches!(
+                        self.current(),
+                        SyntaxKind::Eq
+                            | SyntaxKind::LtGt
+                            | SyntaxKind::Lt
+                            | SyntaxKind::LtEq
+                            | SyntaxKind::Gt
+                            | SyntaxKind::GtEq
+                    ) {
+                        self.bump();
+                        self.eat_whitespace();
+                    }
+                    if self.is_expr_start() {
+                        self.parse_expr();
+                    }
                 } else if self.is_expr_start() {
                     loop {
                         self.parse_expr();
