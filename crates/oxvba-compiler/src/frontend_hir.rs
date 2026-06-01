@@ -484,16 +484,6 @@ impl HirBuilder {
                 })))
             }
             SyntaxKind::IfStmt => {
-                if node
-                    .child_nodes()
-                    .into_iter()
-                    .any(|child| child.kind() == SyntaxKind::ElseIfClause)
-                {
-                    return Err(HirBuildError::Unsupported(format!(
-                        "ElseIf clauses are not yet supported by HIR lowering: `{}`",
-                        node.text().trim()
-                    )));
-                }
                 let condition_node =
                     expression_children(node)
                         .into_iter()
@@ -525,6 +515,16 @@ impl HirBuilder {
                     .map(|block| self.collect_stmt_block(scope, block))
                     .transpose()?
                     .unwrap_or_default();
+                let mut else_body = else_body;
+                let elseif_clauses = node
+                    .child_nodes()
+                    .into_iter()
+                    .filter(|child| child.kind() == SyntaxKind::ElseIfClause)
+                    .collect::<Vec<_>>();
+                for clause in elseif_clauses.into_iter().rev() {
+                    let nested_if = self.lower_elseif_clause(scope, clause, else_body)?;
+                    else_body = vec![nested_if];
+                }
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::If {
@@ -806,6 +806,39 @@ impl HirBuilder {
                 }
             }
         }
+    }
+
+    fn lower_elseif_clause(
+        &mut self,
+        scope: ScopeId,
+        clause: SyntaxNode<'_>,
+        else_body: Vec<HirStmtId>,
+    ) -> Result<HirStmtId, HirBuildError> {
+        let condition_node = expression_children(clause)
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                HirBuildError::Unsupported(format!(
+                    "ElseIf clause without condition: `{}`",
+                    clause.text().trim()
+                ))
+            })?;
+        let condition = self.lower_expr(scope, condition_node)?;
+        let then_body = clause
+            .child_nodes()
+            .into_iter()
+            .find(|child| child.kind() == SyntaxKind::Block)
+            .map(|block| self.collect_stmt_block(scope, block))
+            .transpose()?
+            .unwrap_or_default();
+        Ok(self.arenas.alloc_stmt(HirStmt {
+            cst: cst(clause),
+            kind: HirStmtKind::If {
+                condition,
+                then_body,
+                else_body,
+            },
+        }))
     }
 
     fn collect_stmt_block(

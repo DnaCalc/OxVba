@@ -18,6 +18,8 @@ The audit proves the good path and exposes the remaining production residuals:
   call/coercion seed-row delta is a documented source-map metadata improvement, not a syntax-route
   residual or bytecode/call-descriptor bug;
 - simple multiline `If ... Then ... End If` fixtures now reach `HirProduction`;
+- multiline `If ... Else ... End If` and `If ... ElseIf ... Else ... End If` fixtures now reach
+  `HirProduction`;
 - simple front-checked `Do While ... Loop`, `Do Until`, and post-check loop fixtures now reach
   `HirProduction`;
 - `While`/`Wend` fixtures now reach `HirProduction`;
@@ -75,7 +77,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - The audit previously proved HIR reachability but not the plain `compile()` entry point. The
   lightweight compile path now has an executable route check for completed constructs, while project
   compile and broader unsupported surfaces remain separate workset scope.
-- Procedure-call syntax, simple multiline If syntax, front-checked Do While syntax, and simple
+- Procedure-call syntax, multiline If/ElseIf syntax, front-checked Do While syntax, and simple
   single-value Select Case syntax are no longer themselves route blockers. The call/coercion
   fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering
   coverage for language surfaces outside this route-audited subset, but the audited control-flow

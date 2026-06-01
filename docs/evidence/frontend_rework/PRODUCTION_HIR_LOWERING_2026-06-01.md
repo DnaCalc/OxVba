@@ -20,7 +20,7 @@ The initial production scope is intentionally narrow and explicit:
 - explicit `ByVal` / `ByRef` parameter mechanism projection for lowered procedures,
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
-- simple multiline `If ... Then ... End If` statements without `ElseIf`,
+- simple multiline `If ... Then ... End If` statements, including `Else` and `ElseIf` branches,
 - `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
 - `While` / `Wend` loops,
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
@@ -72,10 +72,10 @@ The third FE-8.5 slice removes the simplest control-flow route residual:
   `If x = 0 Then ... End If` fixture; and
 - the route audit classifies the simple If fixture as `HirProduction`.
 
-This is intentionally not full control-flow closure. `ElseIf`, bare `Do` loops, `Exit Do`,
-richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5
-residuals until each has HIR shape, lowering tests, bytecode/metadata parity or documented
-improvement classification, and route-audit coverage.
+This is intentionally not full control-flow closure. Bare `Do` loops, `Exit Do`, richer
+`Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5 residuals
+until each has HIR shape, lowering tests, bytecode/metadata parity or documented improvement
+classification, and route-audit coverage.
 
 ## Loop Continuation
 
@@ -168,6 +168,16 @@ Fresh-eyes correction in the same slice: the first default-route attempt was too
 parse some sources whose semantics are not yet fully represented, including DefType defaults,
 optional/default parameters, function return types, and project-rewritten modules. The lightweight
 default gate now excludes those surfaces and leaves them on the tracked residual path.
+
+## ElseIf Continuation
+
+The fourteenth FE-8.5 slice widens block-If coverage:
+
+- `ElseIfClause` nodes lower into nested `HirStmtKind::If` statements in the outer else branch;
+- `Else` blocks remain the terminal nested else body;
+- production HIR lowering emits multiple conditional branch sites for the nested branch tree; and
+- the production route audit now includes `If/Else` and `If/ElseIf/Else` fixtures as
+  `HirProduction`.
 
 ## Checks
 

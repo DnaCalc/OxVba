@@ -59,6 +59,21 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let if_else_statement =
+        "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nElse\nx = 2\nEnd If\nEnd Sub\n";
+    findings.push(route_finding(
+        "if else statement fixture",
+        if_else_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let elseif_statement = "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nElseIf x = 1 Then\nx = 2\nElse\nx = 3\nEnd If\nEnd Sub\n";
+    findings.push(route_finding(
+        "elseif statement fixture",
+        elseif_statement,
+        "bd-aprs.9.5",
+    ));
+
     let do_while_statement =
         "Sub Main()\nDim x As Long\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub\n";
     findings.push(route_finding(
@@ -221,6 +236,12 @@ mod tests {
         assert!(
             report.findings.iter().any(|finding| {
                 finding.area.contains("if statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("if else statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("elseif statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

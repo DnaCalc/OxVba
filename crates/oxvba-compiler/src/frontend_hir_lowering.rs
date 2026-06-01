@@ -873,6 +873,24 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_emits_nested_branches_for_elseif() {
+        let source = "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nElseIf x = 1 Then\nx = 2\nElse\nx = 3\nEnd If\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let branch_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, Instruction::JumpIfZero { .. }))
+            .count();
+        assert!(
+            branch_count >= 2,
+            "expected branch bytecode for If and ElseIf: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
     fn hir_production_lowering_emits_loop_bytecode_for_do_while() {
         let source = "Sub Main()\nDim x As Long\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub\n";
         let (bytecode, metadata) =
