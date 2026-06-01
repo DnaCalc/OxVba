@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::frontend_hir::{
-    CstBackpointer, HirArenas, HirExprId, HirExprKind, HirStmtId, HirTypeId,
+    BoundHirModule, CstBackpointer, HirArenas, HirExprId, HirExprKind, HirStmtId, HirStmtKind,
+    HirTypeId,
 };
 use crate::frontend_symbols::{FrontendSourceSpan, SymbolId, SymbolModel};
 
@@ -51,6 +52,26 @@ impl SemanticModel {
         }
     }
 
+    pub fn from_bound_hir_module(module: BoundHirModule) -> Self {
+        let BoundHirModule {
+            symbols,
+            arenas,
+            declarations,
+        } = module;
+        let mut model = Self::new(symbols, arenas);
+        for decl in declarations {
+            let Some(decl) = model.hir.decl(decl).cloned() else {
+                continue;
+            };
+            if let crate::frontend_hir::HirDeclKind::Procedure { body, .. } = decl.kind {
+                for stmt in body {
+                    model.index_stmt_tree(stmt);
+                }
+            }
+        }
+        model
+    }
+
     pub fn symbols(&self) -> &SymbolModel {
         &self.symbols
     }
@@ -87,8 +108,27 @@ impl SemanticModel {
         self.stmts_by_node.get(key).copied()
     }
 
+    pub fn expr_for_span(&self, span: FrontendSourceSpan) -> Option<HirExprId> {
+        self.exprs_by_node
+            .iter()
+            .find(|(key, _)| key.span == span)
+            .map(|(_, expr)| *expr)
+    }
+
+    pub fn stmt_for_span(&self, span: FrontendSourceSpan) -> Option<HirStmtId> {
+        self.stmts_by_node
+            .iter()
+            .find(|(key, _)| key.span == span)
+            .map(|(_, stmt)| *stmt)
+    }
+
     pub fn symbol_for_node(&self, key: &SemanticNodeKey) -> Option<SymbolId> {
         let expr = self.expr_for_node(key)?;
+        self.symbol_for_expr(expr)
+    }
+
+    pub fn symbol_for_span(&self, span: FrontendSourceSpan) -> Option<SymbolId> {
+        let expr = self.expr_for_span(span)?;
         self.symbol_for_expr(expr)
     }
 
@@ -120,6 +160,55 @@ impl SemanticModel {
     pub fn diagnostics(&self) -> &[SemanticDiagnostic] {
         &self.diagnostics
     }
+
+    fn index_stmt_tree(&mut self, stmt: HirStmtId) {
+        let Some(stmt_data) = self.hir.stmt(stmt).cloned() else {
+            return;
+        };
+        self.bind_stmt_node(&stmt_data.cst, stmt);
+        match stmt_data.kind {
+            HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value } => {
+                self.index_expr_tree(target);
+                self.index_expr_tree(value);
+            }
+            HirStmtKind::Expr(expr) => self.index_expr_tree(expr),
+            HirStmtKind::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                self.index_expr_tree(condition);
+                for stmt in then_body.into_iter().chain(else_body) {
+                    self.index_stmt_tree(stmt);
+                }
+            }
+            HirStmtKind::Block(stmts) => {
+                for stmt in stmts {
+                    self.index_stmt_tree(stmt);
+                }
+            }
+            HirStmtKind::Empty => {}
+        }
+    }
+
+    fn index_expr_tree(&mut self, expr: HirExprId) {
+        let Some(expr_data) = self.hir.expr(expr).cloned() else {
+            return;
+        };
+        self.bind_expr_node(&expr_data.cst, expr);
+        match expr_data.kind {
+            HirExprKind::Name(symbol) => self.record_expr_symbol(expr, symbol),
+            HirExprKind::Unary { expr: child, .. } => self.index_expr_tree(child),
+            HirExprKind::Binary { lhs, rhs, .. } => {
+                self.index_expr_tree(lhs);
+                self.index_expr_tree(rhs);
+            }
+            HirExprKind::Call(_)
+            | HirExprKind::Member(_)
+            | HirExprKind::Missing
+            | HirExprKind::Literal(_) => {}
+        }
+    }
 }
 
 fn spans_overlap(left: FrontendSourceSpan, right: FrontendSourceSpan) -> bool {
@@ -131,6 +220,7 @@ mod tests {
     use super::*;
     use crate::frontend_hir::{
         CstBackpointer, HirBuiltinType, HirExpr, HirExprKind, HirLiteral, HirType, HirTypeKind,
+        build_hir_from_source,
     };
     use crate::frontend_symbols::{ScopeKind, SourceProvenance, SymbolModel, SymbolNamespace};
 
@@ -224,5 +314,43 @@ mod tests {
         let diagnostics = model.diagnostics_for_span(FrontendSourceSpan { start: 15, end: 16 });
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "BIND001");
+    }
+
+    #[test]
+    fn semantic_model_indexes_symbols_from_cst_backed_hir() {
+        let source = "Sub Main(ByVal seed As Long)\n    Dim x As Long\n    x = seed + 1\nEnd Sub\n";
+        let hir = build_hir_from_source("Module1", source).expect("HIR module");
+        let model = SemanticModel::from_bound_hir_module(hir);
+
+        let seed_start = source.rfind("seed").expect("seed use");
+        let seed_span = FrontendSourceSpan {
+            start: seed_start,
+            end: seed_start + "seed".len(),
+        };
+        let symbol = model
+            .symbol_for_span(seed_span)
+            .and_then(|symbol| model.symbols().symbol(symbol))
+            .expect("seed symbol");
+        let name = model.symbols().name(symbol.name).expect("seed name");
+        assert_eq!(name.folded, "seed");
+        assert_eq!(symbol.namespace, SymbolNamespace::Parameter);
+    }
+
+    #[test]
+    fn semantic_model_indexes_statements_from_cst_backed_hir() {
+        let source = "Sub Main()\n    Dim total As Long\n    total = 1\nEnd Sub\n";
+        let hir = build_hir_from_source("Module1", source).expect("HIR module");
+        let model = SemanticModel::from_bound_hir_module(hir);
+
+        let assign_start = source.find("total = 1").expect("assignment");
+        let assign_span = FrontendSourceSpan {
+            start: assign_start,
+            end: assign_start + "total = 1".len(),
+        };
+        let stmt = model
+            .stmt_for_span(assign_span)
+            .and_then(|stmt| model.hir().stmt(stmt))
+            .expect("assignment statement");
+        assert_eq!(stmt.cst.syntax_kind, "AssignStmt");
     }
 }

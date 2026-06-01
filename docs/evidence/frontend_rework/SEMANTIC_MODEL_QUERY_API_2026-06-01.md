@@ -21,9 +21,22 @@ The API provides:
 The query layer does not store semantic data on CST nodes. It maps from CST identity to HIR IDs and
 answers from HIR/symbol/type facts.
 
+Reopened update: `SemanticModel::from_bound_hir_module` now indexes the CST-fed HIR produced by
+FE-6.2. It walks procedure bodies, maps statement/expression backpointers into query keys, records
+name-expression symbols from HIR facts, and exposes byte-span query helpers:
+
+- `expr_for_span`
+- `stmt_for_span`
+- `symbol_for_span`
+
+This gives the language-service-style API an executable route from source text through
+`oxvba-syntax` -> FE-6.1 symbols -> FE-6.2 HIR -> SemanticModel queries for the scoped subset.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_semantic_model --quiet`
+- `cargo test -p oxvba-compiler frontend_hir --quiet`
+- `cargo test -p oxvba-compiler frontend_symbols --quiet`
 - `cargo fmt -p oxvba-compiler`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -35,8 +48,12 @@ answers from HIR/symbol/type facts.
 - Name expressions can answer symbol queries directly from `HirExprKind::Name`; non-name
   expressions use explicit HIR fact records. That avoids duplicating binding logic in the query
   layer.
+- The reopened tests query a parameter symbol and an assignment statement by byte span from a
+  source-built model, proving the API is no longer only manually populated.
 - Diagnostics are currently simple code/message/span facts. FE-6.5 can add compatibility mapping
   without changing the basic query shape.
 - `SemanticNodeKey` uses syntax kind plus byte span, which is stable enough for batch and thin IDE
   queries but not a final incremental identity. FE-9.3/salsa work should replace or augment it with
   snapshot-aware keys.
+- Type facts still need FE-6.4 to populate them from real declared/coercion information; this bead
+  preserves the query shape and source/HIR route.
