@@ -528,6 +528,20 @@ The latest FE-8.5 construction slice adds the missing compile entry point for th
   helper source until the project compile boundary calls this HIR entry point with the facts it
   already materializes.
 
+## Project Boundary HIR Route Continuation
+
+The latest FE-8.5/FE-9.1 project slice routes a narrow production project shape through the
+HIR-capable metadata compiler:
+
+- `compile_project(...)` now calls the HIR-capable compile wrapper for single active
+  procedural-module projects with no reference projects. Unsupported HIR shapes still fall back
+  inside that wrapper.
+- Multi-module projects, class/document modules, forced-object-local shapes, and reference-project
+  shapes still call the legacy project backend directly. A first attempt to route broader projects
+  exposed module-qualified metadata drift, so the eligibility was narrowed before commit.
+- The focused regression uses an inline statement sequence that the legacy-only metadata path cannot
+  parse, proving this project boundary now reaches HIR for completed constructs.
+
 ## Project Construction Downstream Regression Continuation
 
 Two downstream object-construction regressions were narrowed while the direct HIR project compile
@@ -582,6 +596,8 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_distinct_new_instances_have_separate_state --quiet`
 - `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
+- `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
+- `cargo test -p oxvba-compiler compile_project_rewrites_module_qualified_calls_for_unique_names --quiet`
 - `cargo test -p oxvba-compiler withevents --quiet`
 - `cargo test -p oxvba-compiler hir_compile_binds_new_expression_to_project_instance_bytecode --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
