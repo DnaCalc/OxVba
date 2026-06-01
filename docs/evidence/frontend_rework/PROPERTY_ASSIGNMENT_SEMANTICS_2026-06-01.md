@@ -29,6 +29,8 @@ The 2026-06-01 continuation added:
   collide in the front-end symbol table.
 - a production compile-path metadata validation gate that checks runtime property metadata against
   parsed front-end accessor facts when the front-end can parse the source.
+- a production compile-path metadata validation gate for non-identity assignment coercions derived
+  from typed HIR assignment semantics.
 
 ## Checks
 
@@ -37,6 +39,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler frontend_type_hooks --quiet`
 - `cargo test -p oxvba-compiler procedure_runtime_metadata_projects_first_signature_descriptor_view --quiet`
 - `cargo test -p oxvba-compiler compile_property --quiet`
+- `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -60,6 +63,9 @@ The 2026-06-01 continuation added:
 - Production metadata now has a front-end consistency check: compiled property procedure metadata
   must agree with HIR property accessor kind and property group facts for sources the front-end can
   parse.
+- Non-identity assignment coercion metadata is now checked against typed-HIR assignment semantics.
+  Identity assignments are intentionally skipped because they do not always emit coercion
+  descriptors.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
   assignment diagnostics for compiled projects. Next step: connect the property/default-member

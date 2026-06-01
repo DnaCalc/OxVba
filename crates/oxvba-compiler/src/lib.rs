@@ -261,6 +261,7 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
     }
     let (bytecode, metadata) = emit::emit_bytecode_with_runtime_metadata(&optimized);
     validate_frontend_property_accessor_metadata(source, &metadata)?;
+    validate_frontend_assignment_coercion_metadata(source, &metadata)?;
     Ok((bytecode, metadata))
 }
 
@@ -306,6 +307,35 @@ fn validate_frontend_property_accessor_metadata(
             return Err(CompileError::ResolveError(format!(
                 "frontend_v2 property metadata group mismatch for {key}: expected {expected_group:?}, got {:?}",
                 signature.property_group
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_frontend_assignment_coercion_metadata(
+    source: &str,
+    metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Result<(), CompileError> {
+    let Ok(typed_hir) = frontend_type_hooks::collect_type_hooks_from_source("Main", source) else {
+        return Ok(());
+    };
+    let semantics =
+        frontend_assignment_semantics::collect_assignment_semantics_from_typed_hir(&typed_hir);
+    for semantic in semantics {
+        if semantic.value_type == semantic.target_type {
+            continue;
+        }
+        if !metadata.values().any(|procedure| {
+            procedure.coercions.iter().any(|coercion| {
+                coercion.kind == semantic.coercion
+                    && coercion.source_declared_type == semantic.value_type
+                    && coercion.target_declared_type == semantic.target_type
+            })
+        }) {
+            return Err(CompileError::ResolveError(format!(
+                "frontend_v2 assignment coercion metadata missing for {:?} {:?}->{:?}",
+                semantic.coercion, semantic.value_type, semantic.target_type
             )));
         }
     }
