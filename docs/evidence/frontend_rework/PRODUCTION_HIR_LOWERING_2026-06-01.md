@@ -493,12 +493,35 @@ Remaining production residuals after this slice:
 - `Class_Initialize`, imported/COM activation, `Dim As New` lazy semantics, and source-map
   accounting still need end-to-end integration on the production project route.
 
+## Project Construction Binding Fact Continuation
+
+The latest FE-8.5 project slice connects active-project construction analysis to the HIR binding
+payload:
+
+- `ProjectDynamicInstanceBindingDraft` now records the normalized constructor type name separately
+  from the resolved project/module route. This matters when the source constructor (`Widget`) and
+  module file identity (`WidgetFile`) differ.
+- Project lowering materializes `HirNewExpressionBinding` facts from generated dynamic instance
+  handles in source order. The active-project `Dim As New` / `Set x = New Widget` route test now
+  proves handles `1` and `2` produce corresponding `widget` HIR construction bindings.
+- The project compile boundary currently builds those HIR construction facts, but still compiles
+  the rewritten backend source. This keeps existing behavior stable while exposing the exact data
+  needed for the next rewrite-retirement slice.
+
+Remaining production residuals after this slice:
+
+- Project compilation must consume the HIR construction facts when compiling the module source, so
+  `Set x = New Widget` no longer needs to become `Set x = __oxvba_project_instance(handle)`.
+- `Dim As New`, `Class_Initialize`, source maps, and imported/COM construction still need the same
+  direct-HIR integration.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler new_expression --quiet`
 - `cargo test -p oxvba-compiler hir_lowering_binds_new_expression --quiet`
+- `cargo test -p oxvba-compiler expand_bound_source_line_uses_frontend_class_route_for_active_project_new --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_enum_member_constants --quiet`
 - `cargo test -p oxvba-compiler compile_enum_member_usage_is_supported --quiet`
