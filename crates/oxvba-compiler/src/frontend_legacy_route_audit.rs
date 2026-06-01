@@ -145,8 +145,8 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     });
     findings.push(LegacyRouteAuditFinding {
         area: "language-service legacy BoundModule compatibility",
-        evidence: "oxvba-languageservice SemanticSnapshot no longer retains/exposes BoundModule or uses it for signature help; semantic.rs builds BoundModule only for fallback correlation and resolution diagnostics when frontend HIR binding is unavailable".to_string(),
-        disposition: LegacyRouteAuditDisposition::StaticResidual,
+        evidence: "oxvba-languageservice SemanticSnapshot no longer retains/exposes or builds a legacy BoundModule; unsupported HIR snapshots report front-end diagnostics instead of rebuilding legacy symbol/callable correlation".to_string(),
+        disposition: LegacyRouteAuditDisposition::HirProduction,
         owner: "bd-aprs.10.4",
     });
 
@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn audit_records_static_residuals_before_terminal_gate() {
+    fn audit_terminal_gate_passes_after_audited_residuals_retire() {
         let report = run_production_legacy_route_audit();
         assert!(
             report
@@ -254,16 +254,8 @@ mod tests {
             "{report:#?}"
         );
         assert!(
-            report.residuals().iter().any(|finding| {
-                finding
-                    .area
-                    .contains("language-service legacy BoundModule compatibility")
-            }),
-            "{report:#?}"
-        );
-        assert!(
-            !report.terminal_gate_passed(),
-            "terminal gate must not pass while residuals exist: {report:#?}"
+            report.terminal_gate_passed(),
+            "terminal gate should pass when audited residuals are retired: {report:#?}"
         );
     }
 }

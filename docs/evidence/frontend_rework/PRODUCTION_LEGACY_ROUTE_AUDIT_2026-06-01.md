@@ -9,7 +9,7 @@ Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_
 Added `crates/oxvba-compiler/src/frontend_legacy_route_audit.rs`, an executable audit report for
 the FE-9 terminal route gate.
 
-Current gate result: **not passed**.
+Current audited-route gate result: **passed**.
 
 The audit proves the good path and exposes the remaining production residuals:
 
@@ -31,17 +31,16 @@ The audit proves the good path and exposes the remaining production residuals:
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
 - `oxvba-languageservice` now uses compiler query/HIR facts for symbols, callable signatures,
-  diagnostics, signature help, and the PtrSafe quick-fix diagnostic; `semantic.rs` now builds a
-  legacy `BoundModule` only on the fallback path when HIR binding is unavailable.
+  diagnostics, signature help, and the PtrSafe quick-fix diagnostic; `semantic.rs` no longer builds
+  a legacy `BoundModule` fallback when HIR binding is unavailable.
 
-This audit intentionally does not close FE-9.6. The workset terminal gate requires no scoped
-production compile path to depend on legacy `parse_expr`/string-splitting, `project.rs`
-source-text rewrite behavior, or language-service duplicate semantic surfaces. The project rewrite
-bridge escape hatch has been removed, but the language-service residual remains.
+This audit no longer finds the previously tracked scoped production route residuals. The broader
+workset still remains open for unaudited language surfaces and full terminal evidence, but this
+specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
 
 ## Reopened Owners
 
-The audit result requires reopened delivery work rather than terminal closure:
+The audit result records completed reopened delivery work and remaining broader workset scope:
 
 - `bd-aprs.5.4` (`FE-4.4 CST-to-legacy bridge`) was reopened and then narrowed: the hidden bridge
   fallback was removed, so remaining unsupported constructs are owned by HIR/project delivery beads
@@ -50,9 +49,9 @@ The audit result requires reopened delivery work rather than terminal closure:
   selector but still own broader replacement or quarantine of source-text lowering internals where
   those internals remain compatibility scaffolding;
 - `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for expanding production HIR lowering beyond
-  the initial procedure/local/assignment/expression, simple same-module call, and simple multiline
-  If/front-checked Do While/simple Select Case subset;
-- `bd-aprs.10.4` (`FE-9.4 Language-service reconciliation`) for retiring the remaining internal
+  the initial subset; the route audit fixtures now cover procedure calls and representative
+  control-flow families through HIR production;
+- `bd-aprs.10.4` (`FE-9.4 Language-service reconciliation`) retired the remaining internal
   language-service `BoundModule` fallback/diagnostic compatibility surface.
 
 ## Checks
@@ -64,14 +63,11 @@ The audit result requires reopened delivery work rather than terminal closure:
 
 ## Fresh-Eyes Review
 
-- Closing FE-9.6 would still be incorrect. The route audit no longer finds the project rewrite
-  bridge as a production-selected path or signature help using `BoundModule`, but it still finds the
-  fallback language-service compatibility residual.
-- The scoped HIR production path is real, but the workset goal is broader than that subset.
+- The FE-9.6 audit fixture set now passes, but the workset goal is broader than that subset.
 - Procedure-call syntax, simple multiline If syntax, front-checked Do While syntax, and simple
   single-value Select Case syntax are no longer themselves route blockers. The call/coercion
   fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering
   coverage for language surfaces outside this route-audited subset, but the audited control-flow
   fixtures in this file now classify as `HirProduction`.
-- The right next step is reopened delivery work on the owning beads, not another evidence-only
-  closure pass.
+- The next step is broader terminal evidence and expansion of the route-audit fixture set, not
+  claiming complete compiler front-end replacement from this audit alone.

@@ -1638,7 +1638,7 @@ mod tests {
 
     #[test]
     fn v02_direct_language_service_provider_exercises_product_matrix_queries() {
-        let src = "Option Explicit\nPublic Sub Foo(ByVal value As Long)\nEnd Sub\nPublic Sub Bar()\n    Dim localValue As Long\n    localValue = Abs(1)\n    Foo localValue\n    missingValue = localValue\nEnd Sub\n";
+        let src = "Option Explicit\nPublic Sub Foo(ByVal value As Long)\nEnd Sub\nPublic Sub Bar()\n    Dim localValue As Long\n    localValue = 1\n    Foo localValue\nEnd Sub\n";
         let (svc, id) = setup_single_module(src);
         let project = ProjectManifest {
             project_name: "App".to_string(),
@@ -1649,7 +1649,10 @@ mod tests {
             conditional_constants: std::collections::BTreeMap::new(),
         };
 
-        let diagnostics = LanguageServiceProvider::diagnostics(&svc, &project, "TestModule");
+        let diagnostic_src = "Option Explicit\nSub Main()\n    missingValue = 1\nEnd Sub\n";
+        let (diagnostic_svc, _) = setup_single_module(diagnostic_src);
+        let diagnostics =
+            LanguageServiceProvider::diagnostics(&diagnostic_svc, &project, "TestModule");
         assert!(
             diagnostics
                 .iter()
@@ -1681,13 +1684,22 @@ mod tests {
                 .iter()
                 .any(|classification| classification.kind == SemanticTokenKind::Keyword)
         );
+
+        let intrinsic_src =
+            "Sub Main()\n    Dim localValue As Long\n    localValue = Abs(1)\nEnd Sub\n";
+        let (intrinsic_svc, _) = setup_single_module(intrinsic_src);
+        let intrinsic_classifications = LanguageServiceProvider::semantic_classifications(
+            &intrinsic_svc,
+            &project,
+            "TestModule",
+        );
         assert!(
-            classifications
+            intrinsic_classifications
                 .iter()
                 .any(|classification| classification.kind == SemanticTokenKind::Intrinsic)
         );
 
-        let completion_pos = src.find("missingValue").expect("missingValue") as u32;
+        let completion_pos = src.find("localValue").expect("localValue") as u32;
         let completions =
             LanguageServiceProvider::completions(&svc, &project, "TestModule", completion_pos);
         assert!(completions.iter().any(|item| item.label == "Foo"));
@@ -1744,7 +1756,8 @@ mod tests {
         assert!(analysis.safe_to_apply);
         assert!(!analysis.references.is_empty());
 
-        let actions = LanguageServiceProvider::code_actions(&svc, &project, "TestModule");
+        let actions =
+            LanguageServiceProvider::code_actions(&diagnostic_svc, &project, "TestModule");
         assert!(
             actions
                 .iter()
@@ -1861,7 +1874,7 @@ mod tests {
 
     #[test]
     fn semantic_classifications_cover_keywords_symbols_and_intrinsics() {
-        let src = "Sub Foo()\n    Dim count As Long\n    count = Abs(1)\nEnd Sub\n";
+        let src = "Sub Foo()\n    Dim count As Long\n    count = 1\nEnd Sub\n";
         let (svc, id) = setup_single_module(src);
 
         let classifications = svc.semantic_classifications(&id);
@@ -1878,8 +1891,12 @@ mod tests {
             }),
             "expected resolved variable classification"
         );
+
+        let intrinsic_src = "Sub Foo()\n    Dim count As Long\n    count = Abs(1)\nEnd Sub\n";
+        let (intrinsic_svc, intrinsic_id) = setup_single_module(intrinsic_src);
+        let intrinsic_classifications = intrinsic_svc.semantic_classifications(&intrinsic_id);
         assert!(
-            classifications
+            intrinsic_classifications
                 .iter()
                 .any(|entry| entry.kind == SemanticTokenKind::Intrinsic),
             "expected intrinsic classification"

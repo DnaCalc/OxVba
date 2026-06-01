@@ -6,9 +6,8 @@ use oxvba_compiler::frontend_hir::HirDeclKind;
 use oxvba_compiler::frontend_query::FrontendQueryDatabase;
 use oxvba_compiler::frontend_symbols::{FrontendSourceSpan, SymbolNamespace};
 use oxvba_compiler::frontend_type_hooks::TypedHirModule;
-use oxvba_compiler::resolve::{BoundModule, BoundType, resolve_symbols};
-use oxvba_compiler::typecheck::check_types;
-use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode, parse};
+use oxvba_compiler::resolve::BoundType;
+use oxvba_syntax::{Parse, SyntaxKind, parse};
 
 use crate::span::{
     DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity, SymbolInfo,
@@ -58,7 +57,7 @@ pub struct CallableParameterInfo {
 }
 
 /// The core analysis unit: an immutable snapshot of a single module's
-/// parse tree, bound module, symbol table, and diagnostics.
+/// parse tree, front-end symbol table, callable signatures, and diagnostics.
 pub struct SemanticSnapshot {
     pub source: Arc<str>,
     pub parse: Arc<Parse>,
@@ -100,66 +99,25 @@ pub fn build_semantic_snapshot_with_provenance(
         .map(spanned_diagnostic_from_frontend)
         .collect::<Vec<_>>();
 
-    // Step 2: Prefer the compiler front-end HIR/SemanticModel facts for document symbols and
-    // callable signatures. The legacy CST/BoundModule correlation is built only as a compatibility
-    // fallback for syntax that the new front-end cannot bind yet.
+    // Step 2: Use compiler front-end HIR/SemanticModel facts for document symbols and callable
+    // signatures. Unsupported front-end syntax reports diagnostics rather than rebuilding the
+    // retired legacy BoundModule semantic surface.
     let frontend_typed = frontend_queries.bind().ok();
-    let (symbols, callables, compatibility_diagnostics) = match frontend_typed.as_ref() {
-        Some(typed) => {
-            let symbols = symbol_table_from_frontend_hir(&parse_arc, typed, &provenance);
-            let callables = callables_from_frontend_hir(typed);
-            if symbols.symbols.is_empty() || callables.is_empty() {
-                let (checked, mut diagnostics) = legacy_checked_module(source);
-                diagnostics.extend(map_resolution_diagnostics(&parse_arc, &checked));
-                (
-                    correlate_symbols(&parse_arc, &checked, &provenance),
-                    callables_from_bound_module(&checked),
-                    diagnostics,
-                )
-            } else {
-                (symbols, callables, Vec::new())
-            }
-        }
-        None => {
-            let (checked, mut diagnostics) = legacy_checked_module(source);
-            diagnostics.extend(map_resolution_diagnostics(&parse_arc, &checked));
-            (
-                correlate_symbols(&parse_arc, &checked, &provenance),
-                callables_from_bound_module(&checked),
-                diagnostics,
-            )
-        }
+    let (symbols, callables) = match frontend_typed.as_ref() {
+        Some(typed) => (
+            symbol_table_from_frontend_hir(&parse_arc, typed, &provenance),
+            callables_from_frontend_hir(typed),
+        ),
+        None => (SymbolTable::default(), Vec::new()),
     };
-
-    // Combine all diagnostics
-    let mut diagnostics = frontend_diagnostics;
-    diagnostics.extend(compatibility_diagnostics);
 
     SemanticSnapshot {
         source: source_arc,
         parse: parse_arc,
         symbols,
         callables,
-        diagnostics,
+        diagnostics: frontend_diagnostics,
         provenance,
-    }
-}
-
-fn legacy_checked_module(source: &str) -> (BoundModule, Vec<SpannedDiagnostic>) {
-    let bound = resolve_symbols(source);
-    match check_types(bound) {
-        Ok(m) => (m, Vec::new()),
-        Err(msg) => {
-            let fallback = resolve_symbols(source);
-            (
-                fallback,
-                vec![SpannedDiagnostic {
-                    span: TextSpan::new(0, 0),
-                    message: msg,
-                    severity: DiagnosticSeverity::Error,
-                }],
-            )
-        }
     }
 }
 
@@ -211,25 +169,6 @@ fn callables_from_frontend_hir(typed: &TypedHirModule) -> Vec<CallableSignatureI
     }
     callables.sort_by(|left, right| left.name.cmp(&right.name));
     callables
-}
-
-fn callables_from_bound_module(bound: &BoundModule) -> Vec<CallableSignatureInfo> {
-    bound
-        .procedures
-        .iter()
-        .map(|procedure| CallableSignatureInfo {
-            name: procedure.name.clone(),
-            params: procedure
-                .params
-                .iter()
-                .map(|param| CallableParameterInfo {
-                    name: param.name.clone(),
-                    ty: param.ty,
-                })
-                .collect(),
-            return_type: procedure.return_type,
-        })
-        .collect()
 }
 
 fn symbol_table_from_frontend_hir(
@@ -359,246 +298,6 @@ fn spanned_diagnostic_from_frontend(diagnostic: FrontendDiagnostic) -> SpannedDi
     }
 }
 
-/// Walk the CST and the BoundModule, matching declarations by name to build
-/// a SymbolTable with source positions.
-fn correlate_symbols(
-    parse: &Parse,
-    bound: &BoundModule,
-    provenance: &SemanticProvenance,
-) -> SymbolTable {
-    let mut symbols = Vec::new();
-    let root = parse.syntax();
-
-    // Correlate module-level declarations
-    correlate_module_declarations(&root, bound, provenance, &mut symbols);
-
-    // Correlate procedures
-    correlate_procedures(&root, bound, provenance, &mut symbols);
-
-    SymbolTable { symbols }
-}
-
-fn correlate_module_declarations(
-    root: &SyntaxNode<'_>,
-    bound: &BoundModule,
-    provenance: &SemanticProvenance,
-    symbols: &mut Vec<SymbolInfo>,
-) {
-    for child in root.child_nodes() {
-        match child.kind() {
-            SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
-                // Find identifier tokens in this statement
-                for tok in child.child_tokens() {
-                    if tok.kind == SyntaxKind::Ident {
-                        let name = tok.text.to_string();
-                        let lower = name.to_ascii_lowercase();
-                        let bound_type = bound
-                            .declaration_types
-                            .get(&lower)
-                            .cloned()
-                            .unwrap_or(BoundType::Variant);
-                        let is_const = child.kind() == SyntaxKind::ConstStmt;
-                        let kind = if is_const {
-                            SymbolKind::Constant
-                        } else {
-                            SymbolKind::Variable
-                        };
-                        symbols.push(make_symbol(
-                            name,
-                            kind,
-                            bound_type,
-                            TextSpan::new(tok.offset, tok.offset + tok.text.len() as u32),
-                            0,
-                            provenance,
-                        ));
-                    }
-                }
-            }
-            SyntaxKind::TypeBlock => {
-                if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(make_symbol(
-                        name_tok.0.to_string(),
-                        SymbolKind::TypeDef,
-                        BoundType::Variant,
-                        TextSpan::new(name_tok.1, name_tok.2),
-                        0,
-                        provenance,
-                    ));
-                }
-            }
-            SyntaxKind::EnumBlock => {
-                if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(make_symbol(
-                        name_tok.0.to_string(),
-                        SymbolKind::EnumDef,
-                        BoundType::Long,
-                        TextSpan::new(name_tok.1, name_tok.2),
-                        0,
-                        provenance,
-                    ));
-                }
-            }
-            SyntaxKind::EventDecl => {
-                if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(make_symbol(
-                        name_tok.0.to_string(),
-                        SymbolKind::Event,
-                        BoundType::Variant,
-                        TextSpan::new(name_tok.1, name_tok.2),
-                        0,
-                        provenance,
-                    ));
-                }
-            }
-            SyntaxKind::DeclareStmt => {
-                if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(make_symbol(
-                        name_tok.0.to_string(),
-                        SymbolKind::External,
-                        BoundType::Variant,
-                        TextSpan::new(name_tok.1, name_tok.2),
-                        0,
-                        provenance,
-                    ));
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn correlate_procedures(
-    root: &SyntaxNode<'_>,
-    bound: &BoundModule,
-    provenance: &SemanticProvenance,
-    symbols: &mut Vec<SymbolInfo>,
-) {
-    let proc_kinds = [
-        SyntaxKind::SubDecl,
-        SyntaxKind::FunctionDecl,
-        SyntaxKind::PropertyDecl,
-    ];
-
-    for (proc_idx, child) in root
-        .child_nodes()
-        .into_iter()
-        .filter(|n| proc_kinds.contains(&n.kind()))
-        .enumerate()
-    {
-        let scope: ScopeId = (proc_idx + 1) as u32;
-
-        if let Some(name_tok) = find_name_token(&child) {
-            let name_lower = name_tok.0.to_ascii_lowercase();
-
-            // Look up return type from BoundModule
-            let return_type = bound
-                .procedures
-                .iter()
-                .find(|p| p.name.to_ascii_lowercase() == name_lower)
-                .map(|p| p.return_type)
-                .unwrap_or(BoundType::Variant);
-
-            let sym_kind = match child.kind() {
-                SyntaxKind::PropertyDecl => SymbolKind::Property,
-                _ => SymbolKind::Procedure,
-            };
-
-            symbols.push(make_symbol(
-                name_tok.0.to_string(),
-                sym_kind,
-                return_type,
-                TextSpan::new(name_tok.1, name_tok.2),
-                0,
-                provenance,
-            ));
-
-            // Correlate parameters
-            correlate_params(&child, bound, &name_lower, scope, provenance, symbols);
-        }
-
-        // Correlate local declarations inside the procedure body
-        correlate_local_declarations(&child, scope, provenance, symbols);
-    }
-}
-
-fn correlate_params(
-    proc_node: &SyntaxNode<'_>,
-    bound: &BoundModule,
-    proc_name_lower: &str,
-    scope: ScopeId,
-    provenance: &SemanticProvenance,
-    symbols: &mut Vec<SymbolInfo>,
-) {
-    let bound_proc = bound
-        .procedures
-        .iter()
-        .find(|p| p.name.to_ascii_lowercase() == proc_name_lower);
-
-    for param_list in proc_node.child_nodes() {
-        if param_list.kind() != SyntaxKind::ParamList {
-            continue;
-        }
-        for (param_idx, param_node) in param_list
-            .child_nodes()
-            .into_iter()
-            .filter(|n| n.kind() == SyntaxKind::Param)
-            .enumerate()
-        {
-            if let Some(name_tok) = find_name_token(&param_node) {
-                let param_type = bound_proc
-                    .and_then(|p| p.params.get(param_idx))
-                    .map(|bp| bp.ty)
-                    .unwrap_or(BoundType::Variant);
-
-                symbols.push(make_symbol(
-                    name_tok.0.to_string(),
-                    SymbolKind::Parameter,
-                    param_type,
-                    TextSpan::new(name_tok.1, name_tok.2),
-                    scope,
-                    provenance,
-                ));
-            }
-        }
-    }
-}
-
-fn correlate_local_declarations(
-    proc_node: &SyntaxNode<'_>,
-    scope: ScopeId,
-    provenance: &SemanticProvenance,
-    symbols: &mut Vec<SymbolInfo>,
-) {
-    // Find the Block child inside the procedure
-    for block in proc_node.child_nodes() {
-        if block.kind() != SyntaxKind::Block {
-            continue;
-        }
-        for stmt in block.child_nodes() {
-            if stmt.kind() == SyntaxKind::DimStmt || stmt.kind() == SyntaxKind::ConstStmt {
-                for tok in stmt.child_tokens() {
-                    if tok.kind == SyntaxKind::Ident {
-                        let is_const = stmt.kind() == SyntaxKind::ConstStmt;
-                        let kind = if is_const {
-                            SymbolKind::Constant
-                        } else {
-                            SymbolKind::Variable
-                        };
-                        symbols.push(make_symbol(
-                            tok.text.to_string(),
-                            kind,
-                            BoundType::Variant,
-                            TextSpan::new(tok.offset, tok.offset + tok.text.len() as u32),
-                            scope,
-                            provenance,
-                        ));
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn make_symbol(
     name: String,
     kind: SymbolKind,
@@ -623,69 +322,6 @@ fn make_symbol(
         },
         provenance: provenance.clone(),
     }
-}
-
-/// Find the first identifier token in a node (skipping keywords and trivia).
-/// Returns (text, start_offset, end_offset).
-fn find_name_token<'a>(node: &SyntaxNode<'a>) -> Option<(&'a str, u32, u32)> {
-    for tok in node.child_tokens() {
-        if tok.kind == SyntaxKind::Ident {
-            return Some((tok.text, tok.offset, tok.offset + tok.text.len() as u32));
-        }
-    }
-    None
-}
-
-/// Map BoundModule resolution diagnostics to source spans.
-fn map_resolution_diagnostics(parse: &Parse, bound: &BoundModule) -> Vec<SpannedDiagnostic> {
-    let root = parse.syntax();
-    let source = root.text();
-
-    bound
-        .resolution_diagnostics
-        .iter()
-        .map(|msg| {
-            // Try to find a source location by searching for quoted identifiers in the message
-            let span = extract_identifier_from_diagnostic(msg)
-                .and_then(|ident| find_identifier_span(&source, &ident))
-                .unwrap_or(TextSpan::new(0, 0));
-
-            SpannedDiagnostic {
-                span,
-                message: msg.clone(),
-                severity: DiagnosticSeverity::Error,
-            }
-        })
-        .collect()
-}
-
-/// Try to extract an identifier from a diagnostic message.
-/// Looks for patterns like "'foo'" or "`foo`" in the message.
-fn extract_identifier_from_diagnostic(msg: &str) -> Option<String> {
-    // Look for single-quoted identifier
-    if let Some(start) = msg.find('\'') {
-        let rest = &msg[start + 1..];
-        if let Some(end) = rest.find('\'') {
-            return Some(rest[..end].to_string());
-        }
-    }
-    // Look for backtick-quoted identifier
-    if let Some(start) = msg.find('`') {
-        let rest = &msg[start + 1..];
-        if let Some(end) = rest.find('`') {
-            return Some(rest[..end].to_string());
-        }
-    }
-    None
-}
-
-/// Find the byte offset of an identifier in source text.
-fn find_identifier_span(source: &str, name: &str) -> Option<TextSpan> {
-    let lower = name.to_ascii_lowercase();
-    let source_lower = source.to_ascii_lowercase();
-    source_lower
-        .find(&lower)
-        .map(|pos| TextSpan::new(pos as u32, (pos + name.len()) as u32))
 }
 
 #[cfg(test)]

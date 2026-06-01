@@ -883,14 +883,18 @@ Candidate bead units:
   queries for incremental recompute.
   Evidence: `docs/evidence/frontend_rework/QUERY_INTEGRATION_2026-06-01.md`.
 - FE-9.4 Language-service reconciliation: replace duplicate `oxvba-languageservice` semantic
-  logic with shared SemanticModel/HIR-backed queries.
+  logic with shared SemanticModel/HIR-backed queries. Reopened continuation removes the remaining
+  legacy `BoundModule` fallback from `SemanticSnapshot`; unsupported front-end syntax now surfaces
+  front-end diagnostics instead of a second semantic model.
   Evidence: `docs/evidence/frontend_rework/LANGUAGE_SERVICE_RECONCILIATION_2026-06-01.md`.
 - FE-9.5 Terminal evidence and closure: run full compiler, VM, host, conformance, syntax, and
   selected Excel oracle checks; archive the legacy comparison harness when no longer needed.
   Evidence: `docs/evidence/frontend_rework/TERMINAL_CLOSURE_2026-06-01.md`.
 - FE-9.6 Production legacy-route audit gate: prove before terminal closure that no scoped
-  production compile path still depends on legacy `parse_expr`/string-splitting or `project.rs`
-  source-text rewrite behavior.
+  production compile path still depends on legacy `parse_expr`/string-splitting, `project.rs`
+  source-text rewrite behavior, or duplicate language-service semantic fallbacks. Reopened
+  continuation now passes the recorded audit fixtures/static checks; the workset remains open for
+  broader terminal evidence and expanded route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

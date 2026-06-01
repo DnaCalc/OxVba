@@ -250,14 +250,9 @@ impl FrontendQueryDatabase {
             ));
             match self.typecheck() {
                 Ok(typecheck) => diagnostics.extend(typecheck.diagnostics),
-                Err(err) if parse.errors.is_empty() => diagnostics.push(FrontendDiagnostic {
-                    family: FrontendDiagnosticFamily::Binder,
-                    severity: FrontendDiagnosticSeverity::Error,
-                    code: "BIND-E-HIR".to_string(),
-                    legacy_code: None,
-                    span: FrontendSourceSpan { start: 0, end: 0 },
-                    message: err,
-                }),
+                Err(err) if parse.errors.is_empty() => {
+                    diagnostics.push(bind_error_diagnostic(&self.source, err));
+                }
                 Err(_) => {}
             }
             self.diagnostics_cache = Some(QueryCache {
@@ -299,6 +294,63 @@ impl FrontendQueryDatabase {
     fn bump_recompute(&mut self, layer: FrontendQueryLayer) {
         *self.recomputes.entry(layer).or_default() += 1;
     }
+}
+
+fn bind_error_diagnostic(source: &str, err: String) -> FrontendDiagnostic {
+    if let Some(name) = unresolved_hir_symbol_name(&err) {
+        let span = find_last_identifier_span(source, name)
+            .unwrap_or(FrontendSourceSpan { start: 0, end: 0 });
+        return FrontendDiagnostic {
+            family: FrontendDiagnosticFamily::Binder,
+            severity: FrontendDiagnosticSeverity::Error,
+            code: "BIND-E-UNDECLARED".to_string(),
+            legacy_code: None,
+            span,
+            message: format!("use of undeclared variable: {name}"),
+        };
+    }
+    FrontendDiagnostic {
+        family: FrontendDiagnosticFamily::Binder,
+        severity: FrontendDiagnosticSeverity::Error,
+        code: "BIND-E-HIR".to_string(),
+        legacy_code: None,
+        span: FrontendSourceSpan { start: 0, end: 0 },
+        message: err,
+    }
+}
+
+fn unresolved_hir_symbol_name(err: &str) -> Option<&str> {
+    let marker = "unresolved HIR symbol `";
+    let start = err.find(marker)? + marker.len();
+    let rest = &err[start..];
+    let end = rest.find('`')?;
+    Some(&rest[..end])
+}
+
+fn find_last_identifier_span(source: &str, name: &str) -> Option<FrontendSourceSpan> {
+    let name_lower = name.to_ascii_lowercase();
+    let source_lower = source.to_ascii_lowercase();
+    let mut result = None;
+    let mut search_start = 0;
+    while let Some(relative) = source_lower[search_start..].find(&name_lower) {
+        let start = search_start + relative;
+        let end = start + name.len();
+        if is_identifier_boundary(source, start, end) {
+            result = Some(FrontendSourceSpan { start, end });
+        }
+        search_start = end;
+    }
+    result
+}
+
+fn is_identifier_boundary(source: &str, start: usize, end: usize) -> bool {
+    let before = source[..start].chars().next_back();
+    let after = source[end..].chars().next();
+    !before.is_some_and(is_identifier_char) && !after.is_some_and(is_identifier_char)
+}
+
+fn is_identifier_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 #[cfg(test)]

@@ -21,13 +21,11 @@ Changes:
   - document symbols are projected from typed HIR `SymbolModel` + type hooks;
   - callable signatures are projected into `SemanticSnapshot::callables` from typed HIR and type
     hooks, and signature help resolves against that projection;
-  - the previous CST/legacy `BoundModule` correlation remains only as a compatibility fallback for
-    syntax the new front-end cannot bind yet.
+  - unsupported front-end syntax reports front-end diagnostics instead of rebuilding legacy
+    `BoundModule` symbol/callable correlation.
 - The existing legacy `BoundModule` is no longer retained or exposed on `SemanticSnapshot`, is no
-  longer used by signature help, and is no longer built for supported HIR snapshots. It is built
-  only when front-end HIR binding is unavailable, to provide fallback symbol correlation,
-  return-type compatibility, and resolution diagnostics. This is an explicit remaining
-  compatibility surface, not the preferred IDE query source.
+  longer used by signature help, and is no longer built by the language-service semantic snapshot
+  path.
 
 Executable proof:
 
@@ -61,8 +59,7 @@ Executable proof:
 - The service now consumes the compiler-owned query/HIR facts for the supported snapshot surface,
   which makes the IDE and compiler front-end agree on symbols, declared types, and diagnostics for
   that surface.
-- Not all language-service internals are retired. `semantic.rs` still builds a `BoundModule` on the
-  fallback path when HIR binding is unavailable. That residual is narrower than before: supported
-  HIR snapshots now avoid legacy bound construction for symbols, callables, signature help, and the
-  PtrSafe quick-fix diagnostic. The remaining fallback is visible in the FE-9.6 audit and should be
-  retired when unsupported syntax fallback symbol paths move fully onto shared front-end facts.
+- The reopened continuation removed the fallback `BoundModule` build from `semantic.rs`. This means
+  unsupported front-end syntax no longer gets a second, divergent semantic answer from the
+  language-service layer; it gets front-end diagnostics until the relevant compiler-front-end facts
+  are implemented.
