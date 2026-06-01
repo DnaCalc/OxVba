@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
+    frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
     frontend_member_dispatch::{
         MemberDispatchClass, classify_imported_com_member, classify_project_member,
     },
@@ -2361,11 +2362,8 @@ fn frontend_implements_member_route_exists(
 }
 
 fn reference_kind_resolution_priority(manifest: &ProjectManifest, project_name: &str) -> usize {
-    manifest
-        .references
-        .iter()
-        .find(|reference| normalize_identifier(&reference.referenced_project_name) == project_name)
-        .map(|reference| match reference.reference_kind {
+    frontend_reference_kind_for_name(manifest, project_name)
+        .map(|reference_kind| match reference_kind {
             ReferenceKind::HostInjected => 0,
             ReferenceKind::Project => 1,
             ReferenceKind::TypeLibrary => 2,
@@ -2589,13 +2587,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
     }
     for referenced in &manifest.reference_projects {
         let project_name = normalize_identifier(&referenced.project_name);
-        let reference_kind = manifest
-            .references
-            .iter()
-            .find(|reference| {
-                normalize_identifier(&reference.referenced_project_name) == project_name
-            })
-            .map(|reference| reference.reference_kind)
+        let reference_kind = frontend_reference_kind_for_name(manifest, &project_name)
             .unwrap_or(ReferenceKind::Project);
         let implicit_receiver_precedence = reference_order
             .get(&project_name)
@@ -3978,11 +3970,9 @@ fn referenced_typelib_blob_for_project_module(
             return Ok(Some(build_typelib_metadata(&identity)));
         }
     }
-    if manifest.references.iter().any(|reference| {
-        reference.reference_kind == ReferenceKind::TypeLibrary
-            && normalize_identifier(&reference.referenced_project_name) == normalized_project
-    }) && let Some(identity) =
-        resolve_typelib_identity_for_project_module(project_name, module_name)
+    if frontend_typelib_reference_binding_exists(manifest, project_name)
+        && let Some(identity) =
+            resolve_typelib_identity_for_project_module(project_name, module_name)
     {
         return Ok(Some(build_typelib_metadata(&identity)));
     }
@@ -4012,13 +4002,11 @@ fn referenced_typelib_blob_for_type_reference(
         {
             return Ok(Some((normalized_project, normalized_module, blob)));
         }
-        let referenced = manifest.references.iter().any(|reference| {
-            reference.reference_kind == ReferenceKind::TypeLibrary
-                && normalize_identifier(&reference.referenced_project_name) == normalized_project
-        }) || manifest
-            .reference_projects
-            .iter()
-            .any(|project| normalize_identifier(&project.project_name) == normalized_project);
+        let referenced = frontend_typelib_reference_binding_exists(manifest, qualifier)
+            || manifest
+                .reference_projects
+                .iter()
+                .any(|project| normalize_identifier(&project.project_name) == normalized_project);
         if referenced
             && let Some(identity) =
                 resolve_typelib_identity_for_project_module(&normalized_project, &normalized_module)
@@ -4053,6 +4041,10 @@ fn referenced_typelib_blob_for_type_reference(
         if reference.reference_kind != ReferenceKind::TypeLibrary {
             continue;
         }
+        if !frontend_typelib_reference_binding_exists(manifest, &reference.referenced_project_name)
+        {
+            continue;
+        }
         let Some(identity) =
             resolve_typelib_identity_for_project_module(&reference.referenced_project_name, raw)
         else {
@@ -4066,6 +4058,28 @@ fn referenced_typelib_blob_for_type_reference(
     }
 
     Ok(None)
+}
+
+fn frontend_typelib_reference_binding_exists(
+    manifest: &ProjectManifest,
+    reference_name: &str,
+) -> bool {
+    build_external_reference_index(manifest)
+        .resolve(reference_name, ReferenceKind::TypeLibrary)
+        .is_ok()
+}
+
+fn frontend_reference_kind_for_name(
+    manifest: &ProjectManifest,
+    reference_name: &str,
+) -> Option<ReferenceKind> {
+    build_external_reference_index(manifest)
+        .resolve_kind(reference_name)
+        .map(|kind| match kind {
+            ExternalReferenceKind::TypeLibrary => ReferenceKind::TypeLibrary,
+            ExternalReferenceKind::Project => ReferenceKind::Project,
+            ExternalReferenceKind::Native => ReferenceKind::HostInjected,
+        })
 }
 
 fn resolve_typelib_identity_for_project_module(
@@ -18690,6 +18704,48 @@ mod tests {
                 .any(|member| member.name == "EchoVariant" && member.is_default_member),
             "expected imported binding metadata to carry authoritative default-member identity"
         );
+    }
+
+    #[test]
+    fn expand_bound_source_line_requires_frontend_external_typelib_reference_route() {
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: Vec::new(),
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        assert!(
+            !super::frontend_typelib_reference_binding_exists(&manifest, "OxVba"),
+            "project-shaped references must not satisfy the frontend typelib binding route"
+        );
+        let mut early_bound = BTreeMap::new();
+        let mut internal_class_bindings = BTreeMap::new();
+        let mut withevents_bindings = BTreeSet::new();
+        let mut next_internal_instance_id = 1;
+        let mut dynamic_instance_bindings = Vec::new();
+
+        let err = expand_bound_source_line(
+            "Dim obj As New OxVba.TestDispatch",
+            &manifest,
+            "projecta",
+            None,
+            "projecta",
+            &BTreeMap::new(),
+            &[],
+            &mut early_bound,
+            &mut internal_class_bindings,
+            &mut withevents_bindings,
+            &mut next_internal_instance_id,
+            &mut dynamic_instance_bindings,
+        )
+        .expect_err("qualified typelib declaration must require frontend typelib reference route");
+
+        assert_eq!(err.code(), "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED");
     }
 
     #[test]

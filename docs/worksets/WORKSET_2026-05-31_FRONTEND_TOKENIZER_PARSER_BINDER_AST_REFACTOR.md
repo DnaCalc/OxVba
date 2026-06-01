@@ -781,7 +781,11 @@ Candidate bead units:
   text-shaped statement lowering glue.
   Evidence: `docs/evidence/frontend_rework/EVENTS_IMPLEMENTS_SEMANTICS_2026-06-01.md`.
 - FE-7.6 External references: bind typelib/project/native references through descriptor-backed
-  symbols without dependency-specific routing.
+  symbols without dependency-specific routing. Current continuation progress moves reference-kind
+  authority into `frontend_external_references::ExternalReferenceIndex` for imported typelib
+  qualification, reference-project ordering, and host-injected/native implicit receiver
+  classification. Existing typelib metadata helpers remain as compatibility lowering after the
+  frontend route accepts the declared reference.
   Evidence: `docs/evidence/frontend_rework/EXTERNAL_REFERENCES_BINDING_2026-06-01.md`.
 
 Evidence gate: each migrated construct has before/after fixtures, semantic diff classification,
