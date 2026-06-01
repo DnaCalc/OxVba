@@ -72,11 +72,28 @@ pub fn compile_source_with_runtime_metadata_via_hir(
     ),
     HirProductionLoweringError,
 > {
+    compile_source_with_runtime_metadata_via_hir_with_new_bindings(source, &[])
+}
+
+pub fn compile_source_with_runtime_metadata_via_hir_with_new_bindings(
+    source: &str,
+    new_expression_bindings: &[HirNewExpressionBinding],
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    HirProductionLoweringError,
+> {
     reject_unsupported_production_syntax(source)?;
     let typed_hir = collect_type_hooks_from_source("Main", source)
         .map_err(|err| HirProductionLoweringError::Unsupported(err.to_string()))?;
     validate_hir_assignment_diagnostics(&typed_hir)?;
-    let bound = lower_typed_hir_to_bound_module(source, &typed_hir)?;
+    let bound = lower_typed_hir_to_bound_module_with_new_bindings(
+        source,
+        &typed_hir,
+        new_expression_bindings,
+    )?;
     let checked = check_types(bound).map_err(CompileError::TypeError)?;
     let optimized = if std::env::var("OXVBA_DISABLE_OPT").ok().as_deref() == Some("1") {
         checked
@@ -2725,6 +2742,35 @@ mod tests {
                 } if target == "obj" && matches!(args.as_slice(), [BoundExpr::IntConst(7)])
             )
         }));
+    }
+
+    #[test]
+    fn hir_compile_binds_new_expression_to_project_instance_bytecode() {
+        let source = "Sub Main()\nDim obj As Object\nDim same As Boolean\nSet obj = New Widget\nsame = obj Is Nothing\nEnd Sub\n";
+        let (bytecode, metadata) = compile_source_with_runtime_metadata_via_hir_with_new_bindings(
+            source,
+            &[HirNewExpressionBinding {
+                type_name: "Widget".to_string(),
+                object_handle: 7,
+            }],
+        )
+        .expect("bound New expression should compile");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::LoadProjectObjectRef { .. })),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

@@ -943,6 +943,9 @@ Candidate bead units:
   explicit production residual until project compilation consumes those facts for active-project
   class handles, imported/COM activation, generated instance metadata, `Class_Initialize`, and
   `As New` lazy-construction semantics without relying on `project.rs` source-text rewrites.
+  Follow-up continuation adds a compile-to-bytecode HIR entry point that accepts those
+  `HirNewExpressionBinding` facts and emits project-object reference bytecode, so the remaining
+  project compile work can call HIR directly instead of duplicating lowering internals.
   Follow-up project continuation now records normalized constructor type names in dynamic instance
   drafts and materializes `HirNewExpressionBinding` facts in source order at the project compile
   boundary; the remaining gap is direct consumption of those facts instead of compiling rewritten
