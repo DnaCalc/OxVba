@@ -12,6 +12,7 @@ pub mod frontend_event_semantics;
 pub mod frontend_external_references;
 pub mod frontend_hir;
 pub mod frontend_member_dispatch;
+pub mod frontend_operator_normalization;
 pub mod frontend_project_symbols;
 pub mod frontend_semantic_model;
 pub mod frontend_structural_intrinsics;

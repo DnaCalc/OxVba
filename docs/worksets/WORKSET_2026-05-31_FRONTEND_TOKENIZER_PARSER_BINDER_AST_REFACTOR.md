@@ -672,6 +672,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/TYPED_STRUCTURAL_INTRINSICS_2026-06-01.md`.
 - FE-8.2 Operator normalization: replace parser-produced `AddConst`/`SubConst` with uniform
   binary ops and a separate optimizer transform.
+  Evidence: `docs/evidence/frontend_rework/OPERATOR_NORMALIZATION_2026-06-01.md`.
 - FE-8.3 Lowering contract cleanup: lower HIR into current bytecode/call-site metadata without
   relying on legacy name strings or flat-slot assumptions.
 - FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
