@@ -608,6 +608,13 @@ project-instance helper-source compile artifact on the HIR construction route:
 - `compile_project(...)` reconstructs generated explicit `Set x = __oxvba_project_instance(handle)`
   carriers back to `Set x = New <constructor-type>` and supplies one
   `HirNewExpressionBinding` fact for each generated/reconstructed `New` occurrence.
+- Source-class `WithEvents` assignments from `New <Class>` now use the same construction candidate:
+  the generated temporary assignment is restored to `Set __oxvba_withevents_new_instance_N = New T`,
+  the runtime `__oxvba_withevents_set(...)` side effect receives that temporary rather than an inline
+  `New`, and the compiled artifact no longer depends on the project-instance carrier for the
+  accepted fixture.
+- HIR parameter lowering now reuses the existing procedure-signature parser for parameter metadata,
+  preserving generated optional/default guard-wrapper parameters needed by the WithEvents route.
 - HIR symbol binding now declares the typed structural-intrinsic prelude from
   `StructuralIntrinsic`, and HIR lowering maps those call targets back to typed structural
   intrinsic calls. This lets generated field-storage helper calls in `Class_Initialize` bodies stay
@@ -621,9 +628,10 @@ project-instance helper-source compile artifact on the HIR construction route:
   longer models `As New` as declaration-time-only construction.
 
 This is still not full `bd-aprs.9.7` closure. The accepted HIR route now covers lazy first-use and
-after-`Nothing` construction for simple active-project dereference lines, but broader WithEvents
-construction interactions, imported/COM construction, unsupported fallback project shapes, and the
-full object-lifetime/source-map story still need closure evidence before the bead can close.
+after-`Nothing` construction for simple active-project dereference lines plus the narrowed
+source-class `WithEvents Set x = New T` construction fixture, but imported/COM construction,
+unsupported fallback project shapes, broader WithEvents event/lifetime interactions, and the full
+object-lifetime/source-map story still need closure evidence before the bead can close.
 
 ## Const Expression Continuation
 
@@ -665,6 +673,8 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_active_project_set_new --quiet`
 - `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_as_new_and_initializer --quiet`
 - `cargo test -p oxvba-compiler compile_project_lazily_reconstructs_as_new_after_set_nothing --quiet`
+- `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_preserves_optional_parameter_defaults --quiet`
 - `cargo test -p oxvba-compiler hir_lowering_lowers_structural_intrinsic_call_targets --quiet`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_rewrites_module_qualified_calls_for_unique_names --quiet`
