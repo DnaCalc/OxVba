@@ -139,6 +139,7 @@ pub enum HirStmtKind {
         condition: HirExprId,
         body: Vec<HirStmtId>,
         post_check: bool,
+        until: bool,
     },
     SelectCase {
         expr: HirExprId,
@@ -515,16 +516,6 @@ impl HirBuilder {
                 })))
             }
             SyntaxKind::DoStmt => {
-                if node
-                    .child_tokens()
-                    .iter()
-                    .any(|token| token.kind == SyntaxKind::KwUntil)
-                {
-                    return Err(HirBuildError::Unsupported(format!(
-                        "Do Until / Loop Until are not yet supported by HIR lowering: `{}`",
-                        node.text().trim()
-                    )));
-                }
                 let block = node
                     .child_nodes()
                     .into_iter()
@@ -536,23 +527,18 @@ impl HirBuilder {
                         ))
                     })?;
                 let block_start = block.text_range().0;
-                let while_token = node
+                let condition_token = node
                     .child_tokens()
                     .into_iter()
-                    .find(|token| token.kind == SyntaxKind::KwWhile)
+                    .find(|token| matches!(token.kind, SyntaxKind::KwWhile | SyntaxKind::KwUntil))
                     .ok_or_else(|| {
                         HirBuildError::Unsupported(format!(
-                            "Do without While is not yet supported by HIR lowering: `{}`",
+                            "Do without While/Until is not yet supported by HIR lowering: `{}`",
                             node.text().trim()
                         ))
                     })?;
-                let post_check = while_token.offset > block_start;
-                if post_check {
-                    return Err(HirBuildError::Unsupported(format!(
-                        "post-check Loop While is not yet supported by HIR lowering: `{}`",
-                        node.text().trim()
-                    )));
-                }
+                let post_check = condition_token.offset > block_start;
+                let until = condition_token.kind == SyntaxKind::KwUntil;
                 let condition_node =
                     expression_children(node)
                         .into_iter()
@@ -571,6 +557,7 @@ impl HirBuilder {
                         condition,
                         body,
                         post_check,
+                        until,
                     },
                 })))
             }
@@ -1352,6 +1339,7 @@ mod tests {
                     condition,
                     body,
                     post_check,
+                    until,
                 },
             ..
         }) = module.arenas.stmt(do_stmt)
@@ -1360,6 +1348,7 @@ mod tests {
         };
 
         assert!(!post_check);
+        assert!(!until);
         assert!(matches!(
             module.arenas.expr(*condition).map(|expr| &expr.kind),
             Some(HirExprKind::Binary {
@@ -1372,6 +1361,44 @@ mod tests {
                 .any(|stmt| find_let_stmt(&module.arenas, *stmt).is_some()),
             "expected assignment in loop body: {module:#?}"
         );
+    }
+
+    #[test]
+    fn hir_builder_lowers_until_and_post_checked_do_loops() {
+        let source = "Sub Main()\nDim x As Long\nDo Until x = 3\nx = x + 1\nLoop\nDo\nx = x + 1\nLoop Until x = 7\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let loops: Vec<_> = main_body
+            .iter()
+            .filter_map(|stmt| find_do_while_stmt(&module.arenas, *stmt))
+            .collect();
+        assert_eq!(loops.len(), 2, "{module:#?}");
+        let first = module.arenas.stmt(loops[0]).expect("first loop");
+        let second = module.arenas.stmt(loops[1]).expect("second loop");
+        assert!(matches!(
+            first.kind,
+            HirStmtKind::DoWhile {
+                post_check: false,
+                until: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            second.kind,
+            HirStmtKind::DoWhile {
+                post_check: true,
+                until: true,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -20,7 +20,7 @@ The initial production scope is intentionally narrow and explicit:
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
 - simple multiline `If ... Then ... End If` statements without `ElseIf`,
-- front-checked `Do While ... Loop` statements without `Exit Do` or post-check loop conditions,
+- `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
 - simple `Select Case` statements with single integer-value `Case` clauses and optional
   `Case Else`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
@@ -67,11 +67,10 @@ The third FE-8.5 slice removes the simplest control-flow route residual:
   `If x = 0 Then ... End If` fixture; and
 - the route audit classifies the simple If fixture as `HirProduction`.
 
-This is intentionally not full control-flow closure. `ElseIf`, `Do Until`, post-check
-`Loop While`/`Loop Until`, `Exit Do`, `For`, `For Each`, `While`/`Wend`, `Select Case`, labels,
-`GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5 residuals until each has HIR
-shape, lowering tests, bytecode/metadata parity or documented improvement classification, and
-route-audit coverage.
+This is intentionally not full control-flow closure. `ElseIf`, bare `Do` loops, `Exit Do`, `For`,
+`For Each`, `While`/`Wend`, richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control
+constructs remain tracked FE-8.5 residuals until each has HIR shape, lowering tests,
+bytecode/metadata parity or documented improvement classification, and route-audit coverage.
 
 ## Loop Continuation
 
@@ -84,9 +83,16 @@ The fourth FE-8.5 slice removes the simplest loop route residual:
 - HIR production bytecode emission now reaches loop branch and backedge bytecode for the
   `Do While x < 3 ... Loop` fixture.
 
-This slice deliberately rejects `Do Until`, bare `Do`, and post-check `Loop While`/`Loop Until`
-forms from HIR production lowering. Those routes still fall back as tracked residuals until their
-condition polarity and exit semantics are covered directly.
+The sixth FE-8.5 slice widens the loop coverage:
+
+- `Do Until` and post-check `Loop While`/`Loop Until` forms use the same HIR loop node with
+  explicit `post_check` and `until` flags;
+- production lowering maps `Until` by inverting the lowered condition before emitting the existing
+  `BoundStmt::DoWhile` backend shape; and
+- route-audit fixtures for `Do Until` and post-check loops now classify as `HirProduction`.
+
+Bare `Do` loops and `Exit Do` remain out of scope for this slice because the current backend shape
+requires a condition and exit-stack semantics need direct coverage.
 
 ## Select Continuation
 

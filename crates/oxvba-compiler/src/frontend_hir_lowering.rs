@@ -296,13 +296,18 @@ fn lower_stmt(
             condition,
             body,
             post_check,
+            until,
         } => {
             let mut lowered_body = Vec::new();
             for stmt in body {
                 lower_stmt(typed_hir, *stmt, &mut lowered_body)?;
             }
+            let mut cond = lower_condition(typed_hir, *condition)?;
+            if *until {
+                cond = BoundCond::Not(Box::new(cond));
+            }
             out.push(BoundStmt::DoWhile {
-                cond: lower_condition(typed_hir, *condition)?,
+                cond,
                 body: lowered_body,
                 post_check: *post_check,
             });
@@ -825,6 +830,29 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::Jump { .. })),
             "expected loop backedge bytecode: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Long
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_loop_bytecode_for_until_and_post_check_loops() {
+        let source = "Sub Main()\nDim x As Long\nDo Until x = 3\nx = x + 1\nLoop\nDo\nx = x + 1\nLoop Until x = 7\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let branch_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, Instruction::JumpIfZero { .. }))
+            .count();
+        assert!(
+            branch_count >= 2,
+            "expected branch bytecode for both loops: {:?}",
             bytecode.instructions
         );
         let main = metadata.get("main").expect("main metadata");
