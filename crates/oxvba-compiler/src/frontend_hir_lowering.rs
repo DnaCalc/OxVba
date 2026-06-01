@@ -16,8 +16,9 @@ use crate::resolve::{
     ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
     BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
     BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
-    BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp,
+    BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
     RuntimeArrayDimExpr, collect_declared_external_procedures, collect_option_base,
+    parse_proc_signature,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -245,6 +246,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
             typed_hir,
             &const_values,
             option_base,
+            &default_type_table,
             *decl,
             &mut context,
         )? {
@@ -279,6 +281,7 @@ fn lower_procedure(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
     option_base: i32,
+    default_type_table: &[BoundType; 26],
     decl_id: HirDeclId,
     context: &mut HirLoweringContext,
 ) -> Result<Option<BoundProcedure>, HirProductionLoweringError> {
@@ -297,21 +300,35 @@ fn lower_procedure(
     let mut bound_params = Vec::new();
     let udt_defs = collect_hir_udt_definitions(source);
     let mut udt_instances = HashMap::<String, String>::new();
+    let parsed_params =
+        parsed_signature_params_for_hir_decl(source, decl, default_type_table).unwrap_or_default();
 
     for param in params {
         let param_name = symbol_name(typed_hir, *param)?;
-        let ty = declared_bound_type(typed_hir, *param).unwrap_or(BoundType::Variant);
-        let source_mechanism = parameter_source_mechanism(source, typed_hir, *param);
-        let by_ref = !matches!(source_mechanism, BoundParamSourceMechanism::ExplicitByVal);
+        let parsed_param = parsed_params
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&param_name));
+        let ty = parsed_param
+            .map(|candidate| candidate.ty)
+            .or_else(|| declared_bound_type(typed_hir, *param))
+            .unwrap_or(BoundType::Variant);
+        let source_mechanism = parsed_param
+            .map(|candidate| candidate.source_mechanism)
+            .unwrap_or_else(|| parameter_source_mechanism(source, typed_hir, *param));
+        let by_ref = parsed_param
+            .map(|candidate| candidate.by_ref)
+            .unwrap_or_else(|| {
+                !matches!(source_mechanism, BoundParamSourceMechanism::ExplicitByVal)
+            });
         declarations.push(param_name.clone());
         declaration_types.insert(param_name.clone(), ty);
         bound_params.push(BoundParam {
             name: param_name,
             source_mechanism,
             by_ref,
-            param_array: false,
-            optional: false,
-            default_value: None,
+            param_array: parsed_param.is_some_and(|candidate| candidate.param_array),
+            optional: parsed_param.is_some_and(|candidate| candidate.optional),
+            default_value: parsed_param.and_then(|candidate| candidate.default_value),
             ty,
         });
     }
@@ -435,6 +452,25 @@ fn lower_procedure(
         duplicate_declarations: Vec::new(),
         body: stmts,
     }))
+}
+
+fn parsed_signature_params_for_hir_decl(
+    source: &str,
+    decl: &crate::frontend_hir::HirDecl,
+    default_type_table: &[BoundType; 26],
+) -> Option<Vec<BoundParam>> {
+    let kind = match decl.cst.syntax_kind.as_str() {
+        "SubDecl" => ProcKind::Sub,
+        "FunctionDecl" => ProcKind::Function,
+        "PropertyDecl" => ProcKind::PropertyGet,
+        _ => return None,
+    };
+    let start = decl.cst.span.start.min(source.len());
+    let end = decl.cst.span.end.min(source.len());
+    let text = source.get(start..end)?;
+    let first_line = text.lines().next()?.trim();
+    let (_name, params, _return_type) = parse_proc_signature(first_line, kind, default_type_table)?;
+    Some(params)
 }
 
 fn lower_stmt(
@@ -2668,6 +2704,18 @@ mod tests {
             !bytecode.instructions.is_empty(),
             "expected statement-form call bytecode"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_optional_parameter_defaults() {
+        let source = "Sub Use(Optional ByVal n = 7)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(use_metadata.signature.parameters.len(), 1);
+        assert!(use_metadata.signature.parameters[0].optional);
+        assert_eq!(use_metadata.signature.parameters[0].default_value, Some(7));
     }
 
     #[test]

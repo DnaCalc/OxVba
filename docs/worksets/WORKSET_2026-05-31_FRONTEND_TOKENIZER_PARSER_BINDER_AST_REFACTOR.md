@@ -1082,9 +1082,11 @@ Candidate bead units:
   now derives a separate HIR construction candidate for active-project `Dim x As New T`: fallback
   source remains eager/legacy-compatible, while the accepted HIR route removes declaration-time
   helper construction and inserts guarded first-use/after-`Nothing` `New` sites, including
-  field-mutating `Class_Initialize` bodies and source-map/dynamic-route checks. This bead remains
-  open because broader WithEvents construction interactions, imported/COM construction, unsupported
-  fallback project shapes, and the full lifetime/source-map closure story are not yet proven.
+  field-mutating `Class_Initialize` bodies and source-map/dynamic-route checks. Source-class
+  `WithEvents Set x = New T` also now restores its generated temporary construction to HIR `New`
+  and preserves generated optional/default guard parameters. This bead remains open because
+  imported/COM construction, unsupported fallback project shapes, broader WithEvents event/lifetime
+  interactions, and the full lifetime/source-map closure story are not yet proven.
 - FE-8.5.c Property/default-member/writeback lowering: finish the semantic and lowering route for
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
   indexed/named writeback, and overload validation. Partial work has already been done: simple

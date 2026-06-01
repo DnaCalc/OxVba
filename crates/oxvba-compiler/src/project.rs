@@ -903,6 +903,7 @@ fn hir_construction_source_from_project_rewrites(
                 binding.source_kind,
                 ProjectDynamicInstanceSourceKind::AsNewDeclaration
                     | ProjectDynamicInstanceSourceKind::SetNewExpression
+                    | ProjectDynamicInstanceSourceKind::WithEventsSetNewTemporary
             )
         })
         .map(|binding| (binding.object_handle, binding))
@@ -961,8 +962,19 @@ fn hir_construction_source_from_project_rewrites(
                     ));
                     continue;
                 }
-                ProjectDynamicInstanceSourceKind::WithEventsSetNewTemporary
-                | ProjectDynamicInstanceSourceKind::ExportOnly => {}
+                ProjectDynamicInstanceSourceKind::WithEventsSetNewTemporary => {
+                    changed = true;
+                    consumed_bindings.push(HirNewExpressionBinding {
+                        type_name: binding.constructor_type_name.clone(),
+                        object_handle: handle,
+                    });
+                    out.push(format!(
+                        "{prefix}New {}{suffix}",
+                        binding.constructor_type_name
+                    ));
+                    continue;
+                }
+                ProjectDynamicInstanceSourceKind::ExportOnly => {}
             }
         }
 
@@ -6659,6 +6671,7 @@ fn lower_withevents_project_new_expression(
     });
     let temp_name = format!("__oxvba_withevents_new_instance_{object_handle}");
     let mut prelude = vec![
+        format!("{indent}Dim __oxvba_field_set_discard"),
         format!("{indent}Dim {temp_name}"),
         format!("{indent}Set {temp_name} = __oxvba_project_instance({object_handle})"),
     ];
@@ -6830,9 +6843,8 @@ fn rewrite_internal_class_set_assignment(
             (rewrite_typelib_new_expression(manifest, rhs)?, Vec::new())
         };
         let set_line = format!(
-            "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
+            "{}__oxvba_field_set_discard = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
             &line[..leading],
-            lhs,
             binding_token,
             rhs
         );
@@ -12502,16 +12514,28 @@ mod tests {
             "expected WithEvents New expression to materialize a temporary project instance: {lowered}"
         );
         assert!(
-            lowered.contains("__oxvba_project_instance("),
-            "expected WithEvents New expression to use the project-instance carrier: {lowered}"
+            lowered.contains("new emitter"),
+            "expected WithEvents New expression to reach HIR as an explicit New source: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_project_instance("),
+            "WithEvents New expression should not compile from the project-instance carrier: {lowered}"
         );
         assert!(
             lowered.contains("__oxvba_withevents_set(__oxvba_this_instance,"),
             "expected WithEvents Set assignment to route through runtime binding setter: {lowered}"
         );
+        let setter_line = lowered
+            .lines()
+            .find(|line| line.contains("__oxvba_withevents_set(__oxvba_this_instance,"))
+            .expect("WithEvents setter line");
         assert!(
-            !lowered.contains("new emitter"),
-            "legacy New expression text must not reach parse_expr inside the WithEvents setter: {lowered}"
+            setter_line.contains("__oxvba_withevents_new_instance_"),
+            "WithEvents setter should receive the constructed temp: {setter_line}"
+        );
+        assert!(
+            !setter_line.contains("new emitter"),
+            "New expression text must not be embedded inside the WithEvents setter argument: {lowered}"
         );
         assert!(
             compiled

@@ -120,9 +120,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated
       `__oxvba_project_instance(...)` assignment as the production artifact;
     - `bd-aprs.9.7`: partially progressed for active-project lazy first-use/after-`Nothing`
-      `As New` plus field-mutating `Class_Initialize` through HIR, but still open for broader
-      WithEvents construction interactions, imported/COM construction, unsupported fallback project
-      shapes, and full construction lifetime/source-map closure;
+      `As New`, field-mutating `Class_Initialize`, and narrowed source-class
+      `WithEvents Set x = New T` construction through HIR, but still open for imported/COM
+      construction, unsupported fallback project shapes, broader WithEvents event/lifetime
+      interactions, and full construction lifetime/source-map closure;
     - `bd-aprs.9.8`: arrays, indexing, and `ReDim` parity;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
     - `bd-aprs.9.10`: broader declaration/type surface;
