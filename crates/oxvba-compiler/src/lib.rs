@@ -357,7 +357,7 @@ fn validate_frontend_assignment_diagnostics(source: &str) -> Result<(), CompileE
             .unwrap_or_else(|| "target".to_string());
         let message = match diagnostic.code.as_str() {
             "BIND-E-SET-REQUIRES-OBJECT" => format!(
-                "type mismatch in assignment: Set requires Object or Variant target, got {:?} variable {}",
+                "type mismatch in assignment: Set requires Object or Variant target, got {} variable {}",
                 frontend_assignment_bound_type_name(semantic.target_type),
                 target_name
             ),

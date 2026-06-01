@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::resolve::{
-    AssignmentIntent, BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt,
-    BoundType,
+    ArithOp, AssignmentIntent, BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam,
+    BoundStmt, BoundType,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1204,7 +1204,48 @@ fn check_expr(
                 proc_context,
             )
         }
-        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            check_expr(
+                lhs,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )?;
+            check_expr(
+                rhs,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )?;
+            let lhs_ty = infer_expr_type(lhs, declared_types);
+            let rhs_ty = infer_expr_type(rhs, declared_types);
+            match op {
+                ArithOp::Concat => Ok(()),
+                ArithOp::Add
+                | ArithOp::Sub
+                | ArithOp::Mul
+                | ArithOp::Div
+                | ArithOp::IntDiv
+                | ArithOp::Mod
+                | ArithOp::Pow => match arithmetic_result(lhs_ty, rhs_ty) {
+                    ArithmeticResult::Ok(_) => Ok(()),
+                    ArithmeticResult::TypeMismatch => Err(format!(
+                        "type mismatch in arithmetic expression: cannot apply {:?} to {:?} and {:?}",
+                        op, lhs_ty, rhs_ty
+                    )),
+                },
+                ArithOp::Neg => Ok(()),
+            }
+        }
+        BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
             check_expr(
                 lhs,
                 option_explicit,

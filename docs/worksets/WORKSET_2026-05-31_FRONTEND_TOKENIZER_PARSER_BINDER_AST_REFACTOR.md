@@ -814,7 +814,11 @@ Candidate bead units:
   codebase.
   Evidence: `docs/evidence/frontend_rework/TYPED_STRUCTURAL_INTRINSICS_2026-06-01.md`.
 - FE-8.2 Operator normalization: replace parser-produced `AddConst`/`SubConst` with uniform
-  binary ops and a separate optimizer transform.
+  binary ops and a separate optimizer transform. Reopened continuation removed the direct
+  `parse_expr` fast-path branch for simple `var + const` / `var - const` source forms and moved the
+  fast-path conversion into recursive optimizer expression normalization, so parser/resolver shape is
+  uniform while existing backend `AddConstI32`/`SubConstI32` bytecode support remains available after
+  optimization.
   Evidence: `docs/evidence/frontend_rework/OPERATOR_NORMALIZATION_2026-06-01.md`.
 - FE-8.3 Lowering contract cleanup: lower HIR into current bytecode/call-site metadata without
   relying on legacy name strings or flat-slot assumptions.

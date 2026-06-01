@@ -5261,18 +5261,6 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
             _ => &expr[split_pos + 1..],
         };
 
-        // Preserve AddConst/SubConst fast-path for simple `var + const` / `var - const`
-        if matches!(op, ArithOp::Add | ArithOp::Sub)
-            && let Some(var) = parse_reference_name(left_raw, array_bounds)
-            && let Ok(delta) = right_raw.trim().parse::<i32>()
-        {
-            return match op {
-                ArithOp::Add => Some(BoundExpr::AddConst { var, delta }),
-                ArithOp::Sub => Some(BoundExpr::SubConst { var, delta }),
-                _ => unreachable!(),
-            };
-        }
-
         let lhs = parse_expr(left_raw, array_bounds)?;
         let rhs = parse_expr(right_raw, array_bounds)?;
         return Some(BoundExpr::BinaryOp {
@@ -7020,7 +7008,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_line_continuation_assignment_expression() {
+    fn resolve_line_continuation_assignment_expression_uses_uniform_binary_op() {
         let source = "Sub Main()\nDim x\nx = 1\nx = x + _\n2\nEnd Sub";
         let module = resolve_symbols(source);
         let Some(BoundStmt::Assign { expr, .. }) = module.body.get(1) else {
@@ -7028,9 +7016,10 @@ mod tests {
         };
         assert_eq!(
             expr,
-            &BoundExpr::AddConst {
-                var: "x".to_string(),
-                delta: 2,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Add,
+                lhs: Box::new(BoundExpr::Var("x".to_string())),
+                rhs: Box::new(BoundExpr::IntConst(2)),
             }
         );
     }
@@ -7051,9 +7040,10 @@ mod tests {
         assert_eq!(target, "x_value");
         assert_eq!(
             expr,
-            &BoundExpr::AddConst {
-                var: "x_value".to_string(),
-                delta: 2,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Add,
+                lhs: Box::new(BoundExpr::Var("x_value".to_string())),
+                rhs: Box::new(BoundExpr::IntConst(2)),
             }
         );
     }
@@ -7084,9 +7074,10 @@ mod tests {
         assert_eq!(target, "x_inner_value");
         assert_eq!(
             expr,
-            &BoundExpr::AddConst {
-                var: "x_inner_value".to_string(),
-                delta: 3,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Add,
+                lhs: Box::new(BoundExpr::Var("x_inner_value".to_string())),
+                rhs: Box::new(BoundExpr::IntConst(3)),
             }
         );
     }
@@ -7693,7 +7684,12 @@ mod tests {
         assert_eq!(bounds[0].lower_bound, 0);
         assert!(matches!(
             bounds[0].upper_bound,
-            BoundExpr::SubConst { ref var, delta } if var == "length" && delta == 1
+            BoundExpr::BinaryOp {
+                op: ArithOp::Sub,
+                ref lhs,
+                ref rhs,
+            } if matches!(lhs.as_ref(), BoundExpr::Var(var) if var == "length")
+                && matches!(rhs.as_ref(), BoundExpr::IntConst(1))
         ));
     }
 

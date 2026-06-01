@@ -1,7 +1,7 @@
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::resolve::{
-    BoundCaseClause, BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp, IntrinsicSurface,
-    intrinsic_surface,
+    ArithOp, BoundCallArg, BoundCaseClause, BoundCond, BoundExpr, BoundModule, BoundStmt,
+    CompareOp, IntrinsicSurface, intrinsic_surface,
 };
 
 pub fn optimize_module(mut module: BoundModule) -> BoundModule {
@@ -21,6 +21,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 expr,
                 intent,
             } => {
+                let expr = optimize_expr(expr);
                 let is_noop = matches!(
                     &expr,
                     BoundExpr::AddConst { var, delta } if *delta == 0 && var == &target
@@ -57,6 +58,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 then_body,
                 else_body,
             } => {
+                let cond = optimize_cond(cond);
                 let then_body = optimize_stmt_list(then_body);
                 let else_body = optimize_stmt_list(else_body);
                 if let Some(always_true) = eval_const_cond(&cond) {
@@ -80,6 +82,9 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 step,
                 body,
             } => {
+                let start = optimize_expr(start);
+                let end = optimize_expr(end);
+                let step = optimize_expr(step);
                 let body = optimize_stmt_list(body);
                 out.push(BoundStmt::ForRange {
                     var,
@@ -95,6 +100,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 iterable,
                 body,
             } => {
+                let iterable = iterable.map(optimize_expr);
                 let body = optimize_stmt_list(body);
                 out.push(BoundStmt::ForEach {
                     var,
@@ -108,6 +114,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 body,
                 post_check,
             } => {
+                let cond = optimize_cond(cond);
                 let body = optimize_stmt_list(body);
                 if !post_check && matches!(eval_const_cond(&cond), Some(false)) {
                     continue;
@@ -123,6 +130,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 arms,
                 else_body,
             } => {
+                let expr = optimize_expr(expr);
                 let next_arms = arms
                     .into_iter()
                     .map(|(values, body)| (values, optimize_stmt_list(body)))
@@ -159,7 +167,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 out.push(BoundStmt::AssignFromCall {
                     target,
                     name,
-                    args,
+                    args: args.into_iter().map(optimize_call_arg).collect(),
                     intent,
                     syntax,
                 });
@@ -168,6 +176,98 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
         }
     }
     out
+}
+
+fn optimize_call_arg(mut arg: BoundCallArg) -> BoundCallArg {
+    arg.expr = optimize_expr(arg.expr);
+    arg
+}
+
+fn optimize_cond(cond: BoundCond) -> BoundCond {
+    match cond {
+        BoundCond::Compare { op, lhs, rhs } => BoundCond::Compare {
+            op,
+            lhs: optimize_expr(lhs),
+            rhs: optimize_expr(rhs),
+        },
+        BoundCond::Truthy(expr) => BoundCond::Truthy(optimize_expr(expr)),
+        BoundCond::Not(inner) => BoundCond::Not(Box::new(optimize_cond(*inner))),
+        BoundCond::And(lhs, rhs) => {
+            BoundCond::And(Box::new(optimize_cond(*lhs)), Box::new(optimize_cond(*rhs)))
+        }
+        BoundCond::Or(lhs, rhs) => {
+            BoundCond::Or(Box::new(optimize_cond(*lhs)), Box::new(optimize_cond(*rhs)))
+        }
+    }
+}
+
+fn optimize_expr(expr: BoundExpr) -> BoundExpr {
+    match expr {
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let lhs = optimize_expr(*lhs);
+            let rhs = optimize_expr(*rhs);
+            match (op, &lhs, &rhs) {
+                (ArithOp::Add, BoundExpr::Var(var), BoundExpr::IntConst(delta)) => {
+                    BoundExpr::AddConst {
+                        var: var.clone(),
+                        delta: *delta,
+                    }
+                }
+                (ArithOp::Sub, BoundExpr::Var(var), BoundExpr::IntConst(delta)) => {
+                    BoundExpr::SubConst {
+                        var: var.clone(),
+                        delta: *delta,
+                    }
+                }
+                _ => BoundExpr::BinaryOp {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+            }
+        }
+        BoundExpr::CompareOp { op, lhs, rhs } => BoundExpr::CompareOp {
+            op,
+            lhs: Box::new(optimize_expr(*lhs)),
+            rhs: Box::new(optimize_expr(*rhs)),
+        },
+        BoundExpr::UnaryOp { op, operand } => BoundExpr::UnaryOp {
+            op,
+            operand: Box::new(optimize_expr(*operand)),
+        },
+        BoundExpr::LogicalBinaryOp { op, lhs, rhs } => BoundExpr::LogicalBinaryOp {
+            op,
+            lhs: Box::new(optimize_expr(*lhs)),
+            rhs: Box::new(optimize_expr(*rhs)),
+        },
+        BoundExpr::LogicalNot { operand } => BoundExpr::LogicalNot {
+            operand: Box::new(optimize_expr(*operand)),
+        },
+        BoundExpr::IntrinsicCall { name, args } => BoundExpr::IntrinsicCall {
+            name,
+            args: args.into_iter().map(optimize_expr).collect(),
+        },
+        BoundExpr::StructuralIntrinsicCall { intrinsic, args } => {
+            BoundExpr::StructuralIntrinsicCall {
+                intrinsic,
+                args: args.into_iter().map(optimize_expr).collect(),
+            }
+        }
+        BoundExpr::ProcCall { name, args } => BoundExpr::ProcCall {
+            name,
+            args: args.into_iter().map(optimize_call_arg).collect(),
+        },
+        BoundExpr::Member {
+            receiver,
+            member,
+            args,
+        } => BoundExpr::Member {
+            receiver: Box::new(optimize_expr(*receiver)),
+            member,
+            args: args.into_iter().map(optimize_call_arg).collect(),
+        },
+        other => other,
+    }
 }
 
 fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
@@ -413,9 +513,9 @@ mod tests {
                 matches!(
                     stmt,
                     BoundStmt::Assign {
-                        expr: crate::resolve::BoundExpr::IntrinsicCall { name, .. },
+                        expr: crate::resolve::BoundExpr::StructuralIntrinsicCall { intrinsic, .. },
                         ..
-                    } if name == "__oxvba_withevents_set"
+                    } if *intrinsic == crate::frontend_structural_intrinsics::StructuralIntrinsic::WithEventsSet
                 )
             })
             .count();
