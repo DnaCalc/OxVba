@@ -47,6 +47,18 @@ pub fn property_accessor(property: SymbolId, kind: HirPropertyKind) -> PropertyA
     PropertyAccessorRoute { property, kind }
 }
 
+pub fn collect_property_accessors_from_typed_hir(
+    typed: &TypedHirModule,
+) -> Vec<PropertyAccessorRoute> {
+    typed
+        .module
+        .arenas
+        .properties()
+        .iter()
+        .map(|property| property_accessor(property.symbol, property.kind))
+        .collect()
+}
+
 pub fn default_member_route(
     receiver: SymbolId,
     member: SymbolId,
@@ -247,6 +259,38 @@ mod tests {
                     && item.value_type == VbaTypeId::Object
             }),
             "Let assignment should carry typed HIR source/target facts: {semantics:?}"
+        );
+    }
+
+    #[test]
+    fn property_accessors_collect_from_typed_hir_route() {
+        let typed = collect_type_hooks_from_source(
+            "Module1",
+            "Property Get Value()\nEnd Property\nProperty Let Other(ByVal newValue)\nEnd Property\nProperty Set Obj(ByVal newValue)\nEnd Property",
+        )
+        .expect("typed hir");
+
+        let accessors = collect_property_accessors_from_typed_hir(&typed);
+        assert_eq!(
+            accessors
+                .iter()
+                .filter(|accessor| accessor.kind == HirPropertyKind::Get)
+                .count(),
+            1
+        );
+        assert_eq!(
+            accessors
+                .iter()
+                .filter(|accessor| accessor.kind == HirPropertyKind::Let)
+                .count(),
+            1
+        );
+        assert_eq!(
+            accessors
+                .iter()
+                .filter(|accessor| accessor.kind == HirPropertyKind::Set)
+                .count(),
+            1
         );
     }
 }

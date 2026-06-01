@@ -287,6 +287,10 @@ impl HirArenas {
         self.properties.get(id.0)
     }
 
+    pub fn properties(&self) -> &[HirProperty] {
+        &self.properties
+    }
+
     pub fn alloc_type(&mut self, ty: HirType) -> HirTypeId {
         let id = HirTypeId(self.types.len());
         self.types.push(ty);
@@ -371,6 +375,14 @@ impl HirBuilder {
                     },
                 });
                 self.declarations.push(decl);
+                if node.kind() == SyntaxKind::PropertyDecl {
+                    self.arenas.alloc_property(HirProperty {
+                        cst: cst(node),
+                        symbol,
+                        kind: property_kind(node),
+                        value_type: None,
+                    });
+                }
             }
             SyntaxKind::DimStmt => {
                 if let Some(local) = self.local_decl(scope, node)? {
@@ -642,6 +654,24 @@ fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
                 .unwrap_or(&text)
                 .to_string()
         })
+}
+
+fn property_kind(node: SyntaxNode<'_>) -> HirPropertyKind {
+    if node
+        .child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwLet)
+    {
+        HirPropertyKind::Let
+    } else if node
+        .child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwSet)
+    {
+        HirPropertyKind::Set
+    } else {
+        HirPropertyKind::Get
+    }
 }
 
 fn lower_literal(node: SyntaxNode<'_>) -> Result<HirLiteral, HirBuildError> {

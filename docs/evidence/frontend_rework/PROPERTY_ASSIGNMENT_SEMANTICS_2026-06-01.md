@@ -17,13 +17,18 @@ The model records:
 - corresponding coercion descriptor kind;
 - object/scalar assignment diagnostics.
 
-The 2026-06-01 continuation added `collect_assignment_semantics_from_typed_hir`, which derives
-Let/Set assignment semantics from the real typed-HIR/type-hook route instead of only constructing
-standalone examples.
+The 2026-06-01 continuation added:
+
+- `collect_assignment_semantics_from_typed_hir`, which derives Let/Set assignment semantics from
+  the real typed-HIR/type-hook route instead of only constructing standalone examples;
+- real HIR property arena population for parsed `Property Get/Let/Set` declarations;
+- `collect_property_accessors_from_typed_hir`, which turns those parsed property declarations into
+  accessor routes.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_assignment_semantics --quiet`
+- `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler frontend_type_hooks --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -36,6 +41,8 @@ standalone examples.
 - The assignment side now has executable front-end route proof: typed HIR assignment statements are
   converted into `AssignmentSemantics` records with assignment intent, coercion kind, inferred
   source/target types, and diagnostics.
+- Parsed `Property Get/Let/Set` declarations now populate HIR property facts and accessor routes
+  from real source.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
   assignment diagnostics for compiled projects. Next step: connect the property/default-member
