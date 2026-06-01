@@ -152,7 +152,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
         SyntaxKind::DeclareStmt
             | SyntaxKind::TypeBlock
             | SyntaxKind::EnumBlock
-            | SyntaxKind::WithStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::NewExpr
     ) {
@@ -1841,6 +1840,38 @@ mod tests {
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_with_member_reads() {
+        let source = "Sub Main()\nDim obj\nDim x\nWith obj\nx = .Value\nEnd With\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost { args, .. }
+                    if args.is_empty()
+                )
+            }),
+            "expected With member read to emit dispatch invoke: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_with_member_assignment_target_for_fallback() {
+        let source = "Sub Main()\nDim obj\nWith obj\n.Value = 1\nEnd With\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("With member assignment target remains residual");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Unsupported(_)),
+            "With member assignment target must remain fallback-eligible, got {err:?}"
+        );
     }
 
     #[test]

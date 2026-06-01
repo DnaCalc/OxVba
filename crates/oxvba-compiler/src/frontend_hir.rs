@@ -392,6 +392,7 @@ pub fn build_hir_from_source(
         symbols,
         arenas: HirArenas::default(),
         declarations: Vec::new(),
+        with_receivers: Vec::new(),
     };
     let module_scope = builder
         .scope_by_kind_and_name(ScopeKind::Module, module_name)
@@ -410,6 +411,7 @@ struct HirBuilder {
     symbols: SymbolModel,
     arenas: HirArenas,
     declarations: Vec<HirDeclId>,
+    with_receivers: Vec<HirExprId>,
 }
 
 impl HirBuilder {
@@ -601,6 +603,36 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: call_stmt_cst,
                     kind: HirStmtKind::Expr(expr),
+                })))
+            }
+            SyntaxKind::WithStmt => {
+                let receiver_node =
+                    expression_children(node)
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            HirBuildError::Unsupported(format!(
+                                "With statement without receiver: `{}`",
+                                node.text().trim()
+                            ))
+                        })?;
+                let receiver = self.lower_expr(scope, receiver_node)?;
+                let block = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::Block)
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "With statement without body block: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                self.with_receivers.push(receiver);
+                let body = self.collect_stmt_block(scope, block);
+                self.with_receivers.pop();
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::Block(body?),
                 })))
             }
             SyntaxKind::IfStmt => {
@@ -1155,16 +1187,17 @@ impl HirBuilder {
                 HirExprKind::Call(call)
             }
             SyntaxKind::MemberExpr => {
-                let receiver = expression_children(node)
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| {
+                let receiver = if let Some(receiver) = expression_children(node).into_iter().next()
+                {
+                    self.lower_expr(scope, receiver)?
+                } else {
+                    *self.with_receivers.last().ok_or_else(|| {
                         HirBuildError::Unsupported(format!(
                             "member expression without receiver: `{}`",
                             node.text().trim()
                         ))
-                    })?;
-                let receiver = self.lower_expr(scope, receiver)?;
+                    })?
+                };
                 let member_name = direct_member_name(node).ok_or_else(|| {
                     HirBuildError::Unsupported(format!(
                         "member expression without supported member name: `{}`",
