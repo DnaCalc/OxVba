@@ -497,6 +497,7 @@ pub struct UnsupportedReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProjectLoweringStrategy {
     ModuleAwareBindPlan,
+    #[cfg(test)]
     RewriteBridge,
 }
 
@@ -971,14 +972,7 @@ fn attach_runtime_routes_to_reflection(
 }
 
 fn selected_project_lowering_strategy() -> ProjectLoweringStrategy {
-    match std::env::var("OXVBA_PMR_LOWERING")
-        .ok()
-        .map(|value| value.trim().to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("rewrite-bridge") => ProjectLoweringStrategy::RewriteBridge,
-        _ => ProjectLoweringStrategy::ModuleAwareBindPlan,
-    }
+    ProjectLoweringStrategy::ModuleAwareBindPlan
 }
 
 fn compile_project_with_strategy(
@@ -1717,6 +1711,7 @@ fn lower_module_source(
             next_internal_instance_id,
             dynamic_instance_bindings,
         ),
+        #[cfg(test)]
         ProjectLoweringStrategy::RewriteBridge => rewrite_module_source(
             manifest,
             active_project,
@@ -9105,6 +9100,7 @@ fn statement_call_name_span(line: &str) -> Option<(usize, usize)> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn rewrite_module_source(
     manifest: &ProjectManifest,
     active_project: &str,

@@ -54,8 +54,8 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
 
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
-        evidence: "ProjectLoweringStrategy::RewriteBridge and rewrite_module_source remain present for project/class/COM/default-member semantics".to_string(),
-        disposition: LegacyRouteAuditDisposition::StaticResidual,
+        evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
+        disposition: LegacyRouteAuditDisposition::HirProduction,
         owner: "bd-aprs.8.*",
     });
     findings.push(LegacyRouteAuditFinding {
@@ -127,10 +127,10 @@ mod tests {
             "{report:#?}"
         );
         assert!(
-            report
-                .residuals()
-                .iter()
-                .any(|finding| finding.area.contains("project.rs")),
+            report.findings.iter().any(|finding| {
+                finding.area.contains("project.rs")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }),
             "{report:#?}"
         );
         assert!(

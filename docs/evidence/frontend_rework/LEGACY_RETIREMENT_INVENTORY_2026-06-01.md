@@ -20,8 +20,9 @@ Rows now distinguish:
 - quarantined broad resolver parsing: `resolve::parse_expr` still exists inside the legacy
   production resolver and remains a terminal-audit residual, even though scoped HIR fixtures bypass
   it;
-- quarantined project/class/COM/default-member rewrites: `project.rs` remains load-bearing for
-  broad project semantics despite partial FE-7 classifier/index work;
+- quarantined project/class/COM/default-member rewrites: `project.rs` production compilation now
+  selects the module-aware plan unconditionally; the old rewrite bridge remains for internal parity
+  tests while FE-7.1 through FE-7.6 own broader replacement of source-text lowering internals;
 - quarantined CST-to-legacy expression bridge: `syntax_bridge::lower_cst_expr` remains a
   compatibility/test bridge until the terminal route audit proves it is outside the claimed
   production surface or deletes it;
@@ -31,10 +32,9 @@ Rows now distinguish:
 Each row carries the partial work already done and the concrete closure condition needed before it
 can be treated as retired rather than merely inventoried.
 
-Executable route proof was added through a test-only route classifier in `syntax_bridge`: a scoped
-assignment/arithmetic fixture classifies as `HirProduction`, while an unsupported `Call` statement
-fixture classifies as `CstLegacyFallback`. This prevents FE-9.2 from silently treating fallback as
-retirement.
+Executable route proof was added through a test-only route classifier in `syntax_bridge`: scoped
+assignment/arithmetic and simple same-module `Call` statement fixtures classify as
+`HirProduction`. This prevents FE-9.2 from silently treating fallback as retirement.
 
 ## Checks
 
@@ -48,8 +48,9 @@ retirement.
 - The previous evidence was stale after FE-8.5: it still described `syntax_bridge::lower_cst_expr`
   as the replacement route. That is now corrected to HIR production lowering for the scoped
   surface, with the CST bridge classified as residual.
-- This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrites. Those remain
-  load-bearing residuals until FE-9.6 proves they are outside the scoped surface or later beads
-  remove/quarantine them construct by construct.
+- This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrite-era internals.
+  The project rewrite bridge is no longer production-selected, but source-text lowering internals
+  remain compatibility scaffolding until FE-7/FE-9 retirement beads finish replacing or
+  quarantining them.
 - Every residual row has an owner, replacement surface, partial-work note, and closure condition,
   so legacy fallback is not silent.
