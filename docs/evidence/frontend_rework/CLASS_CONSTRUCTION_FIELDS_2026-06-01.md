@@ -36,6 +36,12 @@ front-end symbol index:
   field tokens through frontend-confirmed class field names when available; legacy source parsing
   remains the compatibility fallback for parser-incomplete modules and for excluding non-ordinary
   declarations such as `WithEvents`.
+- Continuation work split ordinary class fields from `WithEvents` fields in the frontend project
+  symbol table. `Private WithEvents source As T` is now collected as the `source`
+  `WithEventsField` route rather than accidentally recording the keyword as a field name, and
+  active-project dynamic object routes now emit ordinary field tokens directly from frontend field
+  routes before falling back to legacy line parsing for referenced-project or parser-incomplete
+  cases.
 
 Production-route proof:
 
@@ -44,6 +50,11 @@ Production-route proof:
   is `WidgetFile`. The legacy active-project resolver only matches manifest module names; the test
   proves both `Dim widget As New Widget` and `Set other = New Widget` resolve through the frontend
   class route and then map back to the runtime module id `widgetfile`.
+- `project_symbol_index_resolves_class_routes_and_field_names` now covers the ordinary-field vs
+  `WithEventsField` split in the frontend symbol index.
+- `compile_project_dynamic_field_tokens_use_frontend_ordinary_field_routes` proves active-project
+  dynamic object metadata uses frontend ordinary field routes and excludes `WithEvents` bindings
+  from ordinary field-token storage.
 - `cargo test -p oxvba-compiler predeclared --quiet` covers the existing predeclared/default-root
   matrix after adding the frontend route gate.
 - Existing host/runtime tests prove the bd-1ufc field/lifetime behavior remains executable:
@@ -59,13 +70,14 @@ Compatibility quarantine / residual classification:
 - Imported COM `As New` / `New` remains on the typelib metadata route, not the active-project class
   route.
 - The legacy line parser remains as a field-token compatibility fallback when the new syntax
-  collector cannot parse a module body or when declaration text is needed to exclude `WithEvents`
-  from ordinary field storage.
+  collector cannot parse a module body or when the route belongs to a referenced project outside
+  the active-project symbol index.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_class_semantics --quiet`
 - `cargo test -p oxvba-compiler frontend_project_symbols --quiet`
+- `cargo test -p oxvba-compiler compile_project_dynamic_field_tokens_use_frontend_ordinary_field_routes --quiet`
 - `cargo test -p oxvba-compiler expand_bound_source_line_uses_frontend_class_route_for_active_project_new --quiet`
 - `cargo test -p oxvba-compiler compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
