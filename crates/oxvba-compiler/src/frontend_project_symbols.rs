@@ -159,6 +159,10 @@ impl ProjectSymbolTables {
             .unwrap_or_default()
     }
 
+    pub fn resolve_class(&self, name: &str) -> Option<ProjectSymbolRoute> {
+        self.classes.get(&fold_identifier(name)).copied()
+    }
+
     pub fn resolve_qualified(&self, name: &QualifiedName) -> Option<ProjectSymbolRoute> {
         match name.parts.as_slice() {
             [single] => self.resolve_unqualified(single),
@@ -282,6 +286,31 @@ impl ProjectSymbolTables {
         routes.sort_by_key(|route| (route.symbol.0, route_kind_order(route.kind)));
         routes.dedup();
         routes
+    }
+}
+
+impl ProjectSymbolIndex {
+    pub fn resolve_class_route(&self, name: &str) -> Option<ProjectSymbolRoute> {
+        self.tables.resolve_class(name)
+    }
+
+    pub fn resolve_class_field_names(&self, owner: &str) -> Vec<String> {
+        let owner = fold_identifier(owner);
+        let mut names = self
+            .tables
+            .class_members
+            .iter()
+            .filter_map(|((route_owner, member), routes)| {
+                (route_owner == &owner
+                    && routes
+                        .iter()
+                        .any(|route| route.kind == ProjectSymbolKind::Field))
+                .then_some(member.clone())
+            })
+            .collect::<Vec<_>>();
+        names.sort();
+        names.dedup();
+        names
     }
 }
 
@@ -831,6 +860,35 @@ mod tests {
                 symbol: member,
                 kind: ProjectSymbolKind::Field,
             })
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_resolves_class_routes_and_field_names() {
+        let module = ModuleUnit {
+            module_name: "Widget".to_string(),
+            module_kind: ModuleKind::Class,
+            attributes: Default::default(),
+            source: "Private score As Long\nPublic Function Value() As Long\nEnd Function"
+                .to_string(),
+        };
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: crate::project::ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let index =
+            build_project_symbol_index_from_manifest(&manifest).expect("index should build");
+        assert_eq!(
+            index.resolve_class_route("widget").map(|route| route.kind),
+            Some(ProjectSymbolKind::Class)
+        );
+        assert_eq!(
+            index.resolve_class_field_names("widget"),
+            vec!["score".to_string()]
         );
     }
 

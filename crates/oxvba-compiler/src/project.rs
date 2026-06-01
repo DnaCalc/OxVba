@@ -1068,6 +1068,7 @@ fn compile_project_with_strategy(
         collect_class_implements_map(manifest, &procedure_index, &reference_order)?;
     let project_dynamic_objects = build_project_dynamic_object_routes(
         manifest,
+        &project_symbol_index,
         &dynamic_instance_bindings,
         &procedure_index,
         &procedure_runtime_metadata,
@@ -2201,6 +2202,38 @@ fn resolve_interface_module(
     Ok(None)
 }
 
+fn resolve_class_construction_module(
+    manifest: &ProjectManifest,
+    active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    current_project: &str,
+    type_name: &str,
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let active_project_key = normalize_identifier(active_project);
+    if normalize_identifier(current_project) == active_project_key
+        && normalize_identifier(&manifest.project_name) == active_project_key
+        && let Some(index) = project_symbol_index
+        && index.resolve_class_route(type_name).is_some()
+    {
+        let requested = normalize_identifier(type_name);
+        for module in &manifest.modules {
+            if module.module_kind == ModuleKind::Class
+                && (normalize_identifier(&module.module_name) == requested
+                    || (!module.attributes.vb_name.trim().is_empty()
+                        && normalize_identifier(&module.attributes.vb_name) == requested))
+            {
+                return Ok(Some((
+                    active_project_key,
+                    normalize_identifier(&module.module_name),
+                )));
+            }
+        }
+    }
+
+    resolve_interface_module(manifest, current_project, type_name, reference_order)
+}
+
 fn reference_kind_resolution_priority(manifest: &ProjectManifest, project_name: &str) -> usize {
     manifest
         .references
@@ -3176,8 +3209,12 @@ fn lower_module_source_module_aware(
     let mut withevents_bindings = BTreeSet::<String>::new();
     let (module_shadowed_identifiers, shadowed_identifiers_by_proc) =
         collect_module_shadowed_identifiers(module);
-    let module_state_bindings =
-        collect_module_state_bindings(module, current_project, &current_module);
+    let module_state_bindings = collect_module_state_bindings(
+        module,
+        current_project,
+        &current_module,
+        Some(project_symbol_index),
+    );
     let same_module_byref_param_masks =
         collect_same_module_byref_param_masks(module, current_project, &current_module, procedures);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
@@ -3193,6 +3230,8 @@ fn lower_module_source_module_aware(
         let expanded = expand_bound_source_line(
             line,
             manifest,
+            active_project,
+            Some(project_symbol_index),
             current_project,
             reference_order,
             procedures,
@@ -3394,6 +3433,8 @@ fn module_source_lines_with_class_terminate_cleanup(module: &ModuleUnit) -> Vec<
 fn expand_bound_source_line(
     line: &str,
     manifest: &ProjectManifest,
+    active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     current_project: &str,
     reference_order: &BTreeMap<String, usize>,
     procedures: &[ProcedureDecl],
@@ -3445,8 +3486,10 @@ fn expand_bound_source_line(
     }
 
     if let Some(dim_decl) = parse_internal_class_dim_declaration(line)
-        && let Some((target_project, target_module)) = resolve_interface_module(
+        && let Some((target_project, target_module)) = resolve_class_construction_module(
             manifest,
+            active_project,
+            project_symbol_index,
             current_project,
             &dim_decl.type_name,
             reference_order,
@@ -3565,8 +3608,14 @@ fn expand_bound_source_line(
     // `New` falls through to the early-bound rewrites below (resolve_interface_module → None).
     if let Some((var_name, type_name)) = parse_set_new_instantiation(line)
         && referenced_typelib_blob_for_type_reference(manifest, &type_name)?.is_none()
-        && let Some((target_project, target_module)) =
-            resolve_interface_module(manifest, current_project, &type_name, reference_order)?
+        && let Some((target_project, target_module)) = resolve_class_construction_module(
+            manifest,
+            active_project,
+            project_symbol_index,
+            current_project,
+            &type_name,
+            reference_order,
+        )?
     {
         let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
         let leading_ws = line[..leading_ws_len].to_string();
@@ -6515,6 +6564,7 @@ fn collect_module_state_bindings(
     module: &ModuleUnit,
     current_project: &str,
     current_module: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
 ) -> ModuleStateBindings {
     let owner_expr = match module.module_kind {
         ModuleKind::Class => "__oxvba_this_instance".to_string(),
@@ -6529,6 +6579,15 @@ fn collect_module_state_bindings(
         }
     };
 
+    let frontend_field_names = project_symbol_index
+        .filter(|_| module.module_kind == ModuleKind::Class)
+        .map(|index| {
+            let mut names = index.resolve_class_field_names(current_module);
+            if names.is_empty() && !module.attributes.vb_name.trim().is_empty() {
+                names = index.resolve_class_field_names(&module.attributes.vb_name);
+            }
+            names.into_iter().collect::<BTreeSet<_>>()
+        });
     let mut field_tokens = BTreeMap::new();
     let mut in_procedure = false;
     for line in module.source.lines() {
@@ -6546,6 +6605,12 @@ fn collect_module_state_bindings(
             continue;
         }
         for field_name in parse_class_state_field_names(line) {
+            if let Some(frontend_names) = &frontend_field_names
+                && !frontend_names.is_empty()
+                && !frontend_names.contains(&normalize_identifier(&field_name))
+            {
+                continue;
+            }
             field_tokens.insert(
                 normalize_identifier(&field_name),
                 class_state_binding_token(current_project, current_module, &field_name),
@@ -7950,6 +8015,7 @@ fn build_project_com_withevents_routes(
 
 fn build_project_dynamic_object_routes(
     manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
     bindings: &[ProjectDynamicInstanceBindingDraft],
     procedures: &[ProcedureDecl],
     runtime_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
@@ -8106,6 +8172,7 @@ fn build_project_dynamic_object_routes(
             module_name: binding.module_name.clone(),
             field_tokens: project_class_field_tokens(
                 manifest,
+                project_symbol_index,
                 &binding.project_name,
                 &binding.module_name,
             ),
@@ -8120,6 +8187,7 @@ fn build_project_dynamic_object_routes(
 
 fn project_class_field_tokens(
     manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
     project_name: &str,
     module_name: &str,
 ) -> Vec<i32> {
@@ -8127,9 +8195,14 @@ fn project_class_field_tokens(
     if let Some(module) = find_project_module(manifest, project_name, module_name)
         && module.module_kind == ModuleKind::Class
     {
-        for field_name in collect_module_state_bindings(module, project_name, module_name)
-            .field_tokens
-            .keys()
+        for field_name in collect_module_state_bindings(
+            module,
+            project_name,
+            module_name,
+            Some(project_symbol_index),
+        )
+        .field_tokens
+        .keys()
         {
             tokens.push(class_state_binding_token(
                 project_name,
@@ -8815,7 +8888,7 @@ fn rewrite_module_source(
 ) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let module_state_bindings =
-        collect_module_state_bindings(module, current_project, &current_module);
+        collect_module_state_bindings(module, current_project, &current_module, None);
     let same_module_byref_param_masks =
         collect_same_module_byref_param_masks(module, current_project, &current_module, procedures);
     let imported_collection_newenum_fields =
@@ -8843,6 +8916,8 @@ fn rewrite_module_source(
         let expanded = expand_bound_source_line(
             line,
             manifest,
+            active_project,
+            None,
             current_project,
             reference_order,
             procedures,
@@ -10351,6 +10426,7 @@ mod tests {
         Instruction,
         bytecode::{ComMemberSelectorDescriptor, ProjectMemberCallKind},
         emit::{ParameterRole, ResolvedParameterMechanism, SourceParameterMechanism, VbaTypeId},
+        frontend_project_symbols::build_project_symbol_index_from_manifest,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -18247,6 +18323,8 @@ mod tests {
             "Dim obj As New OxVba.TestDispatch",
             &manifest,
             "projecta",
+            None,
+            "projecta",
             &BTreeMap::new(),
             &[],
             &mut early_bound,
@@ -18286,6 +18364,94 @@ mod tests {
                 .iter()
                 .any(|member| member.name == "EchoVariant" && member.is_default_member),
             "expected imported binding metadata to carry authoritative default-member identity"
+        );
+    }
+
+    #[test]
+    fn expand_bound_source_line_uses_frontend_class_route_for_active_project_new() {
+        let mut widget = module_unit_from_source(
+            "WidgetFile",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("class parses");
+        widget.module_name = "WidgetFile".to_string();
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let project_symbol_index =
+            build_project_symbol_index_from_manifest(&manifest).expect("index should build");
+        let mut early_bound = BTreeMap::new();
+        let mut internal_class_bindings = BTreeMap::new();
+        let mut withevents_bindings = BTreeSet::new();
+        let mut next_internal_instance_id = 1;
+        let mut dynamic_instance_bindings = Vec::new();
+
+        let expanded = expand_bound_source_line(
+            "Dim widget As New Widget",
+            &manifest,
+            "projecta",
+            Some(&project_symbol_index),
+            "projecta",
+            &BTreeMap::new(),
+            &[],
+            &mut early_bound,
+            &mut internal_class_bindings,
+            &mut withevents_bindings,
+            &mut next_internal_instance_id,
+            &mut dynamic_instance_bindings,
+        )
+        .expect("active-project class should resolve through frontend route");
+
+        assert_eq!(
+            expanded,
+            vec![
+                "Dim widget".to_string(),
+                "Set widget = __oxvba_project_instance(1)".to_string()
+            ]
+        );
+        assert_eq!(
+            internal_class_bindings
+                .get("widget")
+                .map(|binding| binding.module_name.as_str()),
+            Some("widgetfile")
+        );
+        assert_eq!(
+            dynamic_instance_bindings
+                .first()
+                .map(|binding| binding.module_name.as_str()),
+            Some("widgetfile")
+        );
+
+        let expanded_set = expand_bound_source_line(
+            "Set other = New Widget",
+            &manifest,
+            "projecta",
+            Some(&project_symbol_index),
+            "projecta",
+            &BTreeMap::new(),
+            &[],
+            &mut early_bound,
+            &mut internal_class_bindings,
+            &mut withevents_bindings,
+            &mut next_internal_instance_id,
+            &mut dynamic_instance_bindings,
+        )
+        .expect("explicit New expression should resolve through frontend route");
+        assert_eq!(
+            expanded_set,
+            vec!["Set other = __oxvba_project_instance(2)".to_string()]
+        );
+        assert_eq!(
+            internal_class_bindings
+                .get("other")
+                .map(|binding| binding.module_name.as_str()),
+            Some("widgetfile")
         );
     }
 
