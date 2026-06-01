@@ -195,6 +195,20 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let goto_label_statement = "Sub Main()\nGoTo done\ndone:\nEnd Sub\n";
+    findings.push(route_finding(
+        "goto label statement fixture",
+        goto_label_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let goto_numeric_label_statement = "Sub Main()\nGoTo 100\n100:\nEnd Sub\n";
+    findings.push(route_finding(
+        "goto numeric label statement fixture",
+        goto_numeric_label_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
@@ -331,6 +345,12 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("on error goto zero")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("goto label statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("goto numeric label")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

@@ -242,7 +242,9 @@ impl SemanticModel {
             | HirStmtKind::OnErrorResumeNext
             | HirStmtKind::OnErrorGoto0
             | HirStmtKind::ResumeNext
-            | HirStmtKind::Resume => {}
+            | HirStmtKind::Resume
+            | HirStmtKind::Label { .. }
+            | HirStmtKind::GoTo { .. } => {}
         }
     }
 

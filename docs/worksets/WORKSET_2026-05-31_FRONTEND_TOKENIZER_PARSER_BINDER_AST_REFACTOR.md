@@ -866,8 +866,9 @@ Candidate bead units:
   statements. Sixteenth reopened continuation changes the syntax parser to preserve single-line
   `If ... Then ... Else ...` bodies as inline blocks and routes that HIR shape through production
   lowering. Seventeenth reopened continuation adds typed HIR and production lowering for non-label
-  `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume`. FE-8.5 remains open
-  for unaudited broader language surfaces outside that subset.
+  `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume`. Eighteenth reopened
+  continuation adds syntax/HIR/lowering support for identifier and numeric labels plus `GoTo`.
+  FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
@@ -914,8 +915,8 @@ Candidate bead units:
   continuation now passes the recorded audit fixtures/static checks and includes a direct check that
   completed lightweight compile fixtures use the HIR runtime-metadata route. Follow-up continuation
   expands the audit with multiline `If/ElseIf`, single-line If, basic `Exit`, and non-label
-  error-control fixtures. The workset remains open for broader terminal evidence and expanded
-  route-audit coverage.
+  error-control fixtures plus identifier/numeric-label `GoTo` fixtures. The workset remains open
+  for broader terminal evidence and expanded route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

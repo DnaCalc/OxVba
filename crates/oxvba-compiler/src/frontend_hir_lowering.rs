@@ -75,7 +75,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::WithStmt
             | SyntaxKind::ReDimStmt
             | SyntaxKind::EraseStmt
-            | SyntaxKind::GoToStmt
             | SyntaxKind::GoSubStmt
             | SyntaxKind::ReturnStmt
             | SyntaxKind::RaiseEventStmt
@@ -378,6 +377,10 @@ fn lower_stmt(
         HirStmtKind::OnErrorGoto0 => out.push(BoundStmt::OnErrorGoto0),
         HirStmtKind::ResumeNext => out.push(BoundStmt::ResumeNext),
         HirStmtKind::Resume => out.push(BoundStmt::Resume),
+        HirStmtKind::Label { name } => out.push(BoundStmt::Label { name: name.clone() }),
+        HirStmtKind::GoTo { label } => out.push(BoundStmt::GoTo {
+            label: label.clone(),
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -1094,6 +1097,22 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::Resume)),
             "expected Resume bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_goto_label_jumps() {
+        let source = "Sub Main()\nGoTo done\ndone:\nGoTo 100\n100:\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Jump { .. })),
+            "expected GoTo jump bytecode: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

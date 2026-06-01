@@ -27,6 +27,7 @@ The initial production scope is intentionally narrow and explicit:
 - simple `For Each <var> In <iterable> ... Next` loops through the iterable backend path,
 - `Exit Do`, `Exit For`, and `Exit Sub` statements through HIR statement nodes,
 - `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume` statements,
+- identifier/numeric labels and `GoTo` statements,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
@@ -216,6 +217,18 @@ The seventeenth FE-8.5 slice removes the basic non-label error-control residual:
 - production HIR lowering maps those variants to the existing backend error-control statements; and
 - label-targeted `On Error GoTo label` / `Resume label` remains unsupported until labels are
   represented by the syntax/HIR route.
+
+## Label and GoTo Continuation
+
+The eighteenth FE-8.5 slice adds the first label-targeted control-flow route:
+
+- `oxvba-syntax` now parses identifier and numeric labels as `LabelStmt` nodes instead of treating
+  them as unstructured statement text;
+- HIR lowers labels and `GoTo` targets into typed statement variants, normalizing numeric labels to
+  the existing backend `__line_N` key shape;
+- production HIR lowering maps those variants to `BoundStmt::Label` and `BoundStmt::GoTo`; and
+- `GoSub`, `Return`, `On Error GoTo label`, and `Resume label` remain residuals until their label
+  target behavior is audited separately.
 
 ## Checks
 

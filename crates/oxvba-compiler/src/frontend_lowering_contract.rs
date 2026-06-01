@@ -295,7 +295,9 @@ fn collect_stmt_contract_facts(
         | HirStmtKind::OnErrorResumeNext
         | HirStmtKind::OnErrorGoto0
         | HirStmtKind::ResumeNext
-        | HirStmtKind::Resume => {}
+        | HirStmtKind::Resume
+        | HirStmtKind::Label { .. }
+        | HirStmtKind::GoTo { .. } => {}
     }
 }
 

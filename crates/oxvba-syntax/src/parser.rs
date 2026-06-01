@@ -634,6 +634,14 @@ impl<'a> Parser<'a> {
         j < self.tokens.len() && self.tokens[j].0 == SyntaxKind::ColonEq
     }
 
+    fn peek_is_label_colon(&self) -> bool {
+        let mut j = self.pos + 1;
+        while j < self.tokens.len() && self.tokens[j].0 == SyntaxKind::Whitespace {
+            j += 1;
+        }
+        j < self.tokens.len() && self.tokens[j].0 == SyntaxKind::Colon
+    }
+
     // ── Top-level parsing ───────────────────────────────────
 
     fn parse_source_file(&mut self) {
@@ -1269,6 +1277,11 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwRaiseEvent => self.parse_raise_event_stmt(),
             SyntaxKind::KwDebug => self.parse_call_stmt_generic(),
             SyntaxKind::KwStop => self.parse_call_stmt_generic(),
+            SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::IntLiteral
+                if self.peek_is_label_colon() =>
+            {
+                self.parse_label_stmt()
+            }
             SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::KwMe | SyntaxKind::Dot => {
                 self.parse_assign_or_call()
             }
@@ -1768,6 +1781,15 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
+    fn parse_label_stmt(&mut self) {
+        self.start_node(SyntaxKind::LabelStmt);
+        self.eat_trivia();
+        self.bump(); // label
+        self.eat_whitespace();
+        self.expect(SyntaxKind::Colon);
+        self.finish_node();
+    }
+
     fn parse_gosub_stmt(&mut self) {
         self.start_node(SyntaxKind::GoSubStmt);
         self.eat_trivia();
@@ -2136,6 +2158,16 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert!(has_node_kind(&p.syntax(), SyntaxKind::OnErrorStmt));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ResumeStmt));
+    }
+
+    #[test]
+    fn parses_identifier_and_numeric_labels() {
+        let src = "Sub T()\nGoTo done\ndone:\nGoTo 100\n100:\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LabelStmt).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::GoToStmt).len(), 2);
     }
 
     #[test]

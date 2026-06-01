@@ -172,6 +172,7 @@ pub enum SyntaxKind {
     SetStmt,
     LetStmt,
     CallStmt,
+    LabelStmt,
     OnErrorStmt,
     ResumeStmt,
     ReDimStmt,

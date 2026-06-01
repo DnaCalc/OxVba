@@ -6,6 +6,7 @@ use crate::frontend_symbols::{
     FrontendSourceSpan, ScopeId, ScopeKind, SymbolId, SymbolModel, SymbolModelError,
     SymbolNamespace, build_symbol_model_from_source,
 };
+use crate::resolve::normalize_ident;
 
 #[derive(Debug, Clone)]
 pub struct BoundHirModule {
@@ -165,6 +166,12 @@ pub enum HirStmtKind {
     OnErrorGoto0,
     ResumeNext,
     Resume,
+    Label {
+        name: String,
+    },
+    GoTo {
+        label: String,
+    },
     Block(Vec<HirStmtId>),
 }
 
@@ -722,6 +729,20 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind,
+                })))
+            }
+            SyntaxKind::LabelStmt => {
+                let name = label_name_from_stmt(node)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::Label { name },
+                })))
+            }
+            SyntaxKind::GoToStmt => {
+                let label = jump_label_from_stmt(node, SyntaxKind::KwGoTo)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::GoTo { label },
                 })))
             }
             SyntaxKind::SelectStmt => {
@@ -1298,6 +1319,56 @@ fn resume_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError> 
         "Resume statement without supported target: `{}`",
         node.text().trim()
     )))
+}
+
+fn label_name_from_stmt(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
+    node.child_tokens()
+        .into_iter()
+        .find_map(label_name_from_token)
+        .ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "label statement without supported label: `{}`",
+                node.text().trim()
+            ))
+        })
+}
+
+fn jump_label_from_stmt(
+    node: SyntaxNode<'_>,
+    jump_kind: SyntaxKind,
+) -> Result<String, HirBuildError> {
+    let mut after_jump = false;
+    for token in node.child_tokens() {
+        if token.kind == jump_kind {
+            after_jump = true;
+            continue;
+        }
+        if !after_jump || token.kind.is_trivia() {
+            continue;
+        }
+        if let Some(label) = label_name_from_token(token) {
+            return Ok(label);
+        }
+        break;
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "jump statement without supported label: `{}`",
+        node.text().trim()
+    )))
+}
+
+fn label_name_from_token(token: oxvba_syntax::SyntaxToken<'_>) -> Option<String> {
+    match token.kind {
+        SyntaxKind::IntLiteral => token
+            .text
+            .trim()
+            .parse::<i32>()
+            .ok()
+            .filter(|line| *line >= 0)
+            .map(|line| format!("__line_{line}")),
+        SyntaxKind::Ident | SyntaxKind::BracketedIdent => normalize_ident(token.text),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
