@@ -192,14 +192,7 @@ fn const_stmt_is_supported(text: &str) -> bool {
         return false;
     };
     let payload = text[pos + "const".len()..].trim();
-    let declarators = split_const_declarators(payload);
-    !declarators.is_empty()
-        && declarators.iter().all(|declarator| {
-            let Some((_, rhs)) = declarator.split_once('=') else {
-                return false;
-            };
-            parse_const_value(rhs.trim()).is_some()
-        })
+    parse_const_statement_values(payload).is_some()
 }
 
 pub fn lower_typed_hir_to_bound_module(
@@ -1720,10 +1713,12 @@ fn const_literal_after_span(
     if !prefix.contains("const") {
         return None;
     }
+    let line = source.get(line_start..line_end)?;
+    let const_env = const_values_before_span_on_line(line, span.start - line_start)?;
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
-    parse_const_value(rhs.trim())
+    parse_const_value(rhs.trim(), &const_env)
 }
 
 fn first_const_declarator_tail(text: &str) -> &str {
@@ -1776,10 +1771,48 @@ fn split_const_declarators(text: &str) -> Vec<&str> {
     declarators
 }
 
-fn parse_const_value(text: &str) -> Option<BoundExpr> {
+fn parse_const_statement_values(text: &str) -> Option<HashMap<String, BoundExpr>> {
+    let mut values = HashMap::new();
+    let declarators = split_const_declarators(text);
+    if declarators.is_empty() {
+        return None;
+    }
+    for declarator in declarators {
+        let (name_part, rhs) = declarator.split_once('=')?;
+        let name_part = split_keyword_ci(name_part.trim(), "as")
+            .map(|(name, _)| name)
+            .unwrap_or(name_part);
+        let name = normalize_hir_ident(name_part.trim())?;
+        let value = parse_const_value(rhs.trim(), &values)?;
+        values.insert(name, value);
+    }
+    Some(values)
+}
+
+fn const_values_before_span_on_line(
+    line: &str,
+    span_start: usize,
+) -> Option<HashMap<String, BoundExpr>> {
+    let lower = line.to_ascii_lowercase();
+    let const_pos = lower.find("const")?;
+    let name_offset = span_start.checked_sub(const_pos + "const".len())?;
+    let before_name =
+        line[const_pos + "const".len()..const_pos + "const".len() + name_offset].trim();
+    if before_name.is_empty() {
+        return Some(HashMap::new());
+    }
+    parse_const_statement_values(before_name.trim_end_matches(','))
+}
+
+fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<BoundExpr> {
     let text = strip_balanced_outer_parens(text.trim());
     if let Some(value) = parse_const_literal(text) {
         return Some(value);
+    }
+    if let Some(name) = normalize_hir_ident(text)
+        && let Some(value) = named_values.get(&name)
+    {
+        return Some(value.clone());
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-', '&']) {
         let op = match op {
@@ -1790,8 +1823,8 @@ fn parse_const_value(text: &str) -> Option<BoundExpr> {
         };
         return Some(BoundExpr::BinaryOp {
             op,
-            lhs: Box::new(parse_const_value(lhs.trim())?),
-            rhs: Box::new(parse_const_value(rhs.trim())?),
+            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
+            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
         });
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
@@ -1802,14 +1835,14 @@ fn parse_const_value(text: &str) -> Option<BoundExpr> {
         };
         return Some(BoundExpr::BinaryOp {
             op,
-            lhs: Box::new(parse_const_value(lhs.trim())?),
-            rhs: Box::new(parse_const_value(rhs.trim())?),
+            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
+            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
         });
     }
     if let Some(rest) = text.strip_prefix('-') {
         return Some(BoundExpr::UnaryOp {
             op: ArithOp::Neg,
-            operand: Box::new(parse_const_value(rest.trim())?),
+            operand: Box::new(parse_const_value(rest.trim(), named_values)?),
         });
     }
     None
@@ -2843,7 +2876,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_accepts_expression_const_statement() {
-        let source = "Const CBase = 1 + 2, COffset = -1 + 2\nSub Main()\nDim x\nDim y\nx = CBase\ny = COffset\nEnd Sub\n";
+        let source = "Const CBase = 1 + 2, COffset = -1 + 2, CTotal = CBase + COffset\nSub Main()\nDim x\nDim y\nDim z\nx = CBase\ny = COffset\nz = CTotal\nEnd Sub\n";
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
@@ -2859,7 +2892,8 @@ mod tests {
                 .slots
                 .iter()
                 .any(|slot| slot.name.eq_ignore_ascii_case("cbase")
-                    || slot.name.eq_ignore_ascii_case("coffset")),
+                    || slot.name.eq_ignore_ascii_case("coffset")
+                    || slot.name.eq_ignore_ascii_case("ctotal")),
             "{main:#?}"
         );
     }

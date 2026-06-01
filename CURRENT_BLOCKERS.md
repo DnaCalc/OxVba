@@ -69,7 +69,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - scoped single-source HIR lowering now covers the broad completed subset recorded in
       `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`;
     - the HIR `Const` route now includes simple constant expressions such as `Const CBase = 1 + 2`
-      without allocating runtime local slots for the constant symbol;
+      without allocating runtime local slots for the constant symbol, including references to
+      earlier declarators in the same `Const` statement;
     - read-side bang member access such as `obj!Field` now reaches HIR production lowering through
       the existing member-expression dispatch route;
     - `New <Class>` is represented as first-class HIR and can lower through typed
@@ -965,7 +966,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
 
