@@ -80,9 +80,9 @@ fn route_finding(
             disposition: LegacyRouteAuditDisposition::HirProduction,
             owner,
         },
-        Ok(SyntaxBridgeProductionRoute::CstLegacyFallback) => LegacyRouteAuditFinding {
+        Ok(SyntaxBridgeProductionRoute::HirUnsupportedResidual) => LegacyRouteAuditFinding {
             area,
-            evidence: "classified as CST validation plus legacy fallback after HIR Unsupported"
+            evidence: "classified as HIR Unsupported residual; outer default policy may still fall back to legacy"
                 .to_string(),
             disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
             owner,

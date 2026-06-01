@@ -107,7 +107,7 @@ mod tests {
         let fallback_source = "Sub Main()\nCall Worker\nEnd Sub\nSub Worker()\nEnd Sub\n";
         assert_eq!(
             production_route_for_source(fallback_source).expect("route classification"),
-            SyntaxBridgeProductionRoute::CstLegacyFallback
+            SyntaxBridgeProductionRoute::HirUnsupportedResidual
         );
 
         assert!(LEGACY_RETIREMENT_ROWS.iter().any(|row| {

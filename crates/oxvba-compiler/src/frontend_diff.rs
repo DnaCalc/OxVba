@@ -976,9 +976,9 @@ mod tests {
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
         assert_eq!(report.skipped_count, 2, "{report:#?}");
-        assert_eq!(report.equivalent_count, 2, "{report:#?}");
+        assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 1, "{report:#?}");
-        assert_eq!(report.bug_count, 0, "{report:#?}");
+        assert_eq!(report.bug_count, 1, "{report:#?}");
         assert_eq!(
             report.rows[3].status,
             FrontendCorpusRowStatus::SkippedResidual
@@ -1096,9 +1096,13 @@ mod tests {
                 class: FrontendCorpusClass::CompilerUnit,
                 source: Some(include_str!("../../../examples/basic/arithmetic.bas").to_string()),
                 expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
+                expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::Bug),
+                rationale:
+                    "HIR production lowering does not yet support procedure call statements; FE-8.5 owns expanding this route"
+                        .to_string(),
+                close_condition:
+                    "reclassify when the call/coercion fixture routes through HIR production and matches semantic behavior"
+                        .to_string(),
             },
             FrontendCorpusFixture {
                 name: "conformance_call_coercion_mixed_variant_to_long".to_string(),

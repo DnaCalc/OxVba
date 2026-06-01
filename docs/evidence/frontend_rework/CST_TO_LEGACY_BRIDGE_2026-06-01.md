@@ -35,6 +35,14 @@ FE-4.5 added diagnostic-route proof: recovered CST parse errors stop
 `compile_source_via_syntax_bridge` before legacy lowering, while the partial tree remains lossless
 and contains an `ErrorNode`.
 
+FE-4.4 second reopen, after the FE-9.6 audit, removed the hidden production fallback from
+`compile_source_with_runtime_metadata_via_syntax_bridge`: after CST validation the route now tries
+HIR production lowering, returns compiled bytecode on success, and returns `Unsupported` on HIR
+unsupported shapes instead of calling `compile_with_runtime_metadata` itself. The CST expression
+bridge remains as an explicit compatibility helper for focused tests, but the bridge is no longer
+an internal "CST validation then legacy compile" production path. Inline statement separator and
+bare object identity fixtures still compile because they now route through HIR production.
+
 ## Verification
 
 Commands run from repository root:
@@ -46,6 +54,19 @@ Commands run from repository root:
   - FE-4.3/FE-4.4 reopen result: passed, 7 tests after adding statement coverage validation and
     selected colon-separator bridge lowering.
   - FE-4.5 reopen result: passed, 8 tests after adding recovered-syntax diagnostic route proof.
+  - FE-4.4 second reopen result: passed, 9 tests after removing the hidden legacy compile fallback
+    from the bridge.
+- `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
+  - FE-4.4 second reopen result: passed, proving route classification now distinguishes HIR
+    production from HIR-unsupported residuals.
+- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
+  - FE-4.4 second reopen result: passed; the audit still fails the terminal gate because unsupported
+    constructs remain owned by later HIR/project/language-service beads, not by the CST bridge
+    fallback itself.
+- `cargo test -p oxvba-compiler --quiet`
+  - FE-4.4 second reopen result: passed after updating the frontend corpus expectation to count the
+    call/coercion conformance row as a known FE-8.5 HIR-production bug instead of silently treating
+    it as equivalent through the removed bridge fallback.
 - `cargo test -p oxvba-syntax --quiet`
   - First-run result: passed, 78 unit tests plus 2 integration tests.
   - Reopen result: passed, 79 unit tests plus 2 integration tests.
@@ -60,10 +81,10 @@ The bridge deliberately does not pretend to be a full CST lowerer. Its value is 
 checked handoff point: the new CST parser must accept the source first, and FE-4.1 expression
 forms are now lowered from the CST rather than reparsed from source text by the legacy expression
 parser. FE-4.2 postfix forms are also lowered from CST for the scoped bridge tests. FE-4.3
-statement forms are validated by CST first, and FE-4.4 lowers selected colon-separated statement
-sequences for legacy compilation. Full statement/source compilation still uses the legacy compiler
-after CST validation until later HIR/binder/lowering beads replace that path. FE-4.5 confirms that
-sources with parser recovery diagnostics do not reach that legacy lowering path.
+statement forms are validated by CST first. The FE-9.6 audit showed that the bridge was still
+acting as a hidden production fallback, so this second reopen removed that fallback. Full
+statement/source compilation gaps now surface as HIR `Unsupported` residuals for FE-8.5/project
+beads instead of being handled inside the CST bridge.
 
 The test assertion initially referenced a nonexistent `StoreSlot` bytecode instruction. The final
 test checks the actual instruction family emitted by this compiler for the assignment/arithmetic
@@ -73,6 +94,7 @@ Residuals left for later beads:
 
 - full statement and expression lowering should move to HIR rather than expanding this bridge
   indefinitely;
-- production gating belongs to FE-5.1;
+- production HIR coverage gaps belong to FE-8.5 and project semantics beads, not to FE-4.4;
+- outer production fallback policy belongs to FE-9/terminal audit;
 - semantic/differential corpus classification belongs to FE-5.2 and FE-5.3;
 - bridge fallback/error policy needs the FE-4.5 diagnostic fixtures and FE-5 harness.

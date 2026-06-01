@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::bytecode::Bytecode;
 use crate::resolve::{ArithOp, BoundCallArg, BoundExpr, CompareOp, LogicalBinOp, normalize_ident};
-use crate::{CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata};
+use crate::{CompileError, ProcedureRuntimeMetadata};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 /// Errors produced by the temporary CST-to-legacy bridge.
@@ -68,25 +68,13 @@ pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
     validate_source_with_cst(source)?;
     match crate::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
         Ok(compiled) => return Ok(compiled),
-        Err(crate::frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => {}
+        Err(crate::frontend_hir_lowering::HirProductionLoweringError::Unsupported(reason)) => {
+            return Err(SyntaxBridgeError::Unsupported(format!(
+                "HIR production lowering unsupported: {reason}"
+            )));
+        }
         Err(crate::frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => {
             return Err(SyntaxBridgeError::Compile(err));
-        }
-    }
-    let lowered_object_is = lower_bare_object_is_for_legacy(source)?;
-    let compile_source = if lowered_object_is == source {
-        source
-    } else {
-        lowered_object_is.as_str()
-    };
-    match compile_with_runtime_metadata(compile_source) {
-        Ok(compiled) => Ok(compiled),
-        Err(first_error) => {
-            let lowered = lower_statement_separators_for_legacy(compile_source);
-            if lowered == compile_source {
-                return Err(SyntaxBridgeError::Compile(first_error));
-            }
-            compile_with_runtime_metadata(&lowered).map_err(SyntaxBridgeError::Compile)
         }
     }
 }
@@ -94,7 +82,7 @@ pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntaxBridgeProductionRoute {
     HirProduction,
-    CstLegacyFallback,
+    HirUnsupportedResidual,
 }
 
 pub fn production_route_for_source(
@@ -104,7 +92,7 @@ pub fn production_route_for_source(
     match crate::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
         Ok(_) => Ok(SyntaxBridgeProductionRoute::HirProduction),
         Err(crate::frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => {
-            Ok(SyntaxBridgeProductionRoute::CstLegacyFallback)
+            Ok(SyntaxBridgeProductionRoute::HirUnsupportedResidual)
         }
         Err(crate::frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => {
             Err(SyntaxBridgeError::Compile(err))
@@ -127,18 +115,6 @@ fn has_node_kind(node: &oxvba_syntax::SyntaxNode<'_>, kind: oxvba_syntax::Syntax
     node.child_nodes()
         .iter()
         .any(|child| has_node_kind(child, kind))
-}
-
-fn lower_statement_separators_for_legacy(source: &str) -> String {
-    let mut lowered = String::with_capacity(source.len());
-    for (kind, text) in oxvba_syntax::lexer::tokenize(source) {
-        match kind {
-            SyntaxKind::Colon => lowered.push('\n'),
-            SyntaxKind::Eof => {}
-            _ => lowered.push_str(text),
-        }
-    }
-    lowered
 }
 
 fn find_node_kind<'a>(node: &SyntaxNode<'a>, kind: SyntaxKind) -> Option<SyntaxNode<'a>> {
@@ -402,62 +378,6 @@ fn logical_expr(
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
     })
-}
-
-fn lower_bare_object_is_for_legacy(source: &str) -> Result<String, SyntaxBridgeError> {
-    let parsed = oxvba_syntax::parse(source);
-    if !parsed.errors().is_empty() {
-        return Err(SyntaxBridgeError::Syntax(format!("{:?}", parsed.errors())));
-    }
-    let mut replacements = Vec::new();
-    collect_object_is_replacements(parsed.syntax(), &mut replacements)?;
-    if replacements.is_empty() {
-        return Ok(source.to_string());
-    }
-    replacements.sort_by_key(|(start, _, _)| *start);
-    replacements.dedup_by_key(|(start, end, _)| (*start, *end));
-
-    let mut lowered = source.to_string();
-    for (start, end, replacement) in replacements.into_iter().rev() {
-        lowered.replace_range(start..end, &replacement);
-    }
-    Ok(lowered)
-}
-
-fn collect_object_is_replacements(
-    node: SyntaxNode<'_>,
-    replacements: &mut Vec<(usize, usize, String)>,
-) -> Result<(), SyntaxBridgeError> {
-    if node.kind() == SyntaxKind::BinaryExpr
-        && direct_operator_token(node).is_some_and(|token| token.kind == SyntaxKind::KwIs)
-        && !first_nontrivia_token(node).is_some_and(|token| token.kind == SyntaxKind::KwTypeOf)
-    {
-        let exprs = expression_children(node);
-        if exprs.len() >= 2 {
-            if !is_object_identity_operand_syntax(exprs[0])
-                || !is_object_identity_operand_syntax(exprs[1])
-            {
-                return Err(unsupported_expr(
-                    node,
-                    "bare object `Is` comparison requires object-shaped operands or `Nothing`",
-                ));
-            }
-            let (start, end) = node.text_range();
-            replacements.push((
-                start as usize,
-                end as usize,
-                format!(
-                    "__oxvba_object_is({}, {})",
-                    exprs[0].text().trim(),
-                    exprs[1].text().trim()
-                ),
-            ));
-        }
-    }
-    for child in node.child_nodes() {
-        collect_object_is_replacements(child, replacements)?;
-    }
-    Ok(())
 }
 
 fn is_object_identity_operand_syntax(node: SyntaxNode<'_>) -> bool {

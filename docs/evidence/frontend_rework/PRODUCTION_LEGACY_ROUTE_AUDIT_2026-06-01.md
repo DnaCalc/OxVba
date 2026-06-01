@@ -14,8 +14,8 @@ Current gate result: **not passed**.
 The audit proves the good path and exposes the remaining production residuals:
 
 - scoped procedure/local/assignment/arithmetic fixtures classify as `HirProduction`;
-- procedure call statement fixtures still classify as `CstLegacyFallback` after HIR reports
-  `Unsupported`;
+- procedure call statement fixtures still classify as HIR-unsupported residuals; the syntax bridge
+  now returns `Unsupported`, but the outer default policy may still fall back to legacy compilation;
 - `project.rs` still contains the `ProjectLoweringStrategy::RewriteBridge` /
   `rewrite_module_source` source-text rewrite production surface for project/class/COM/
   default-member semantics;
@@ -31,8 +31,9 @@ source-text rewrite behavior. That condition is false today.
 
 The audit result requires reopened delivery work rather than terminal closure:
 
-- `bd-aprs.5.4` (`FE-4.4 CST-to-legacy bridge`) for the compatibility bridge remaining in the
-  production route after HIR `Unsupported`;
+- `bd-aprs.5.4` (`FE-4.4 CST-to-legacy bridge`) was reopened and then narrowed: the hidden bridge
+  fallback was removed, so remaining unsupported constructs are owned by HIR/project delivery beads
+  and outer route policy rather than the bridge itself;
 - `bd-aprs.8.1` through `bd-aprs.8.6` (`FE-7.*`) for project/class/member/property/event/external
   semantics that still rely on `project.rs` rewrite glue;
 - `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for expanding HIR production lowering beyond
