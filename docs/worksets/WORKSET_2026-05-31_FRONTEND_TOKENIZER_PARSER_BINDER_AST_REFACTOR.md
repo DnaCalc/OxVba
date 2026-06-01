@@ -834,7 +834,11 @@ Candidate bead units:
   metadata-summary mismatch.
   Evidence: `docs/evidence/frontend_rework/METADATA_NORMALIZATION_2026-06-01.md`.
 - FE-8.5 Production HIR lowering: implement production bytecode and `ProcedureRuntimeMetadata`
-  emission from bound HIR facts for the scoped language surface.
+  emission from bound HIR facts for the scoped language surface. Initial reopened continuation adds
+  a scoped HIR production route for procedure/local/parameter declarations and assignment/expression
+  bodies, tried before the CST/legacy bridge in frontend-v2 compilation. Unsupported constructs are
+  rejected before HIR lowering and remain on the tracked fallback path rather than being silently
+  partially lowered.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and

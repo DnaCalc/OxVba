@@ -66,6 +66,13 @@ pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
     source: &str,
 ) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), SyntaxBridgeError> {
     validate_source_with_cst(source)?;
+    match crate::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
+        Ok(compiled) => return Ok(compiled),
+        Err(crate::frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => {}
+        Err(crate::frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => {
+            return Err(SyntaxBridgeError::Compile(err));
+        }
+    }
     let lowered_object_is = lower_bare_object_is_for_legacy(source)?;
     let compile_source = if lowered_object_is == source {
         source
