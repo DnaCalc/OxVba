@@ -353,6 +353,25 @@ mod tests {
     }
 
     #[test]
+    fn compile_options_frontend_v2_enables_completed_bridge_construct_without_default_flip() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
+        let legacy_err =
+            compile(source).expect_err("legacy path should not accept inline sequence");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let default_err = super::compile_with_options(source, super::CompileOptions::default())
+            .expect_err("default options must stay on legacy route");
+        assert_eq!(legacy_err.to_string(), default_err.to_string());
+
+        let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+            .expect("frontend_v2 bridge should compile completed inline construct");
+        assert!(!out.instructions.is_empty());
+    }
+
+    #[test]
     fn compile_options_frontend_v2_rejects_syntax_before_legacy_lowering() {
         let err = super::compile_with_options(
             "Sub Main()\n    x = (1 + 2\nEnd Sub\n",
