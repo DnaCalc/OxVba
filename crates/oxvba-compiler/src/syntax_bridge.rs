@@ -91,15 +91,13 @@ pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
     }
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SyntaxBridgeProductionRoute {
+pub enum SyntaxBridgeProductionRoute {
     HirProduction,
     CstLegacyFallback,
 }
 
-#[cfg(test)]
-pub(crate) fn production_route_for_source(
+pub fn production_route_for_source(
     source: &str,
 ) -> Result<SyntaxBridgeProductionRoute, SyntaxBridgeError> {
     validate_source_with_cst(source)?;
