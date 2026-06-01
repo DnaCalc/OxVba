@@ -20,16 +20,18 @@ Production route proof now covers:
 - omitted positional argument sentinels;
 - project-class instance materialisation (`__oxvba_project_instance`); and
 - pointer helpers (`VarPtr`, `StrPtr`, `ObjPtr`) including external-call pointer writeback
-  classification.
+  classification;
+- WithEvents runtime helpers (`__oxvba_withevents_get`, `set`, `clear_owner`, `first_owner`,
+  `next_owner`); and
+- dynamic dispatch invoke helpers (`DispatchInvoke`, `__OxVbaEarlyInvoke`).
 
-Those constructs no longer enter the backend as `IntrinsicCall { name: "__null" | "__nothing" |
-"__omitted" | "__oxvba_project_instance" | "varptr" | "strptr" | "objptr" }`; emit, metadata
-collection, optimization walks, typechecking, and pointer writeback consume the typed
-structural-intrinsic variant directly.
+Those constructs no longer enter the backend as structural `IntrinsicCall { name: ... }` magic
+strings; emit, metadata collection, optimization walks, typechecking, event binding, dynamic
+dispatch, and pointer writeback consume the typed structural-intrinsic variant directly.
 
-The remaining enum families still have a compatibility legacy-name bridge. Project instance,
-WithEvents and dynamic dispatch migration remains bounded to later FE-8/FE-9 lowering cleanup
-unless a follow-up slice in this bead moves them first.
+The compatibility bridge remains for ordinary VBA intrinsics and non-structural helper names.
+Placeholder dynamic get/let/set variants were removed because this codebase has no production
+`__oxvba_dispatch_get`/`let`/`set` helpers to migrate.
 
 ## Checks
 
@@ -43,6 +45,8 @@ unless a follow-up slice in this bead moves them first.
 - `cargo test -p oxvba-compiler pointer --quiet`
 - `cargo test -p oxvba-compiler resolve_statement_level_call_without_parentheses_preserves_arguments --quiet`
 - `cargo test -p oxvba-compiler compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table --quiet`
+- `cargo test -p oxvba-compiler withevents --quiet`
+- `cargo test -p oxvba-compiler dispatchinvoke --quiet`
 - `cargo test -p oxvba-compiler object_assignment --quiet`
 - `cargo test -p oxvba-compiler emit --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
@@ -60,6 +64,6 @@ unless a follow-up slice in this bead moves them first.
   assignment as explicit `Let`. The pre-pass gate now only surfaces `BIND-E-LET-OBJECT-TARGET`
   when source text actually used explicit `Let`, preserving the existing runtime-validation lane
   for implicit Variant-to-Object assignment.
-- Legacy string use remains material for WithEvents and dynamic dispatch families and for ordinary
-  VBA intrinsics. This evidence does not claim full retirement of every `IntrinsicCall { name }`
-  path.
+- The production structural-helper names in this bead now bind as typed structural intrinsics.
+  Legacy string use remains material for ordinary VBA intrinsics and unrelated compatibility
+  helpers. This evidence does not claim full retirement of every `IntrinsicCall { name }` path.

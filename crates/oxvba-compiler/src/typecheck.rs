@@ -1370,19 +1370,20 @@ fn structural_intrinsic_result_type(intrinsic: StructuralIntrinsic) -> BoundType
     match intrinsic {
         StructuralIntrinsic::NothingLiteral
         | StructuralIntrinsic::ProjectInstance
-        | StructuralIntrinsic::WithEventsAttach
-        | StructuralIntrinsic::WithEventsDetach
-        | StructuralIntrinsic::DynamicDispatchGet
+        | StructuralIntrinsic::WithEventsClearOwner
         | StructuralIntrinsic::DynamicDispatchInvoke
-        | StructuralIntrinsic::DynamicDispatchLet
-        | StructuralIntrinsic::DynamicDispatchSet => BoundType::Object,
+        | StructuralIntrinsic::DynamicDispatchEarlyInvoke => BoundType::Object,
+        StructuralIntrinsic::WithEventsFirstOwner | StructuralIntrinsic::WithEventsNextOwner => {
+            BoundType::Long
+        }
         StructuralIntrinsic::PtrOf
         | StructuralIntrinsic::ObjPtr
         | StructuralIntrinsic::VarPtr
         | StructuralIntrinsic::StrPtr => BoundType::LongPtr,
-        StructuralIntrinsic::NullLiteral | StructuralIntrinsic::OmittedArgument => {
-            BoundType::Variant
-        }
+        StructuralIntrinsic::WithEventsGet
+        | StructuralIntrinsic::WithEventsSet
+        | StructuralIntrinsic::NullLiteral
+        | StructuralIntrinsic::OmittedArgument => BoundType::Variant,
     }
 }
 

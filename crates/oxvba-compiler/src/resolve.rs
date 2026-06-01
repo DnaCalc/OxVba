@@ -5713,6 +5713,13 @@ fn parse_stdlib_intrinsic_call_expr(
 fn structural_intrinsic_for_call_name(name: &str) -> Option<StructuralIntrinsic> {
     match name {
         "__oxvba_project_instance" => Some(StructuralIntrinsic::ProjectInstance),
+        "__oxvba_withevents_get" => Some(StructuralIntrinsic::WithEventsGet),
+        "__oxvba_withevents_set" => Some(StructuralIntrinsic::WithEventsSet),
+        "__oxvba_withevents_clear_owner" => Some(StructuralIntrinsic::WithEventsClearOwner),
+        "__oxvba_withevents_first_owner" => Some(StructuralIntrinsic::WithEventsFirstOwner),
+        "__oxvba_withevents_next_owner" => Some(StructuralIntrinsic::WithEventsNextOwner),
+        "dispatchinvoke" => Some(StructuralIntrinsic::DynamicDispatchInvoke),
+        "__oxvbaearlyinvoke" => Some(StructuralIntrinsic::DynamicDispatchEarlyInvoke),
         "varptr" => Some(StructuralIntrinsic::VarPtr),
         "strptr" => Some(StructuralIntrinsic::StrPtr),
         "objptr" => Some(StructuralIntrinsic::ObjPtr),

@@ -1,3 +1,4 @@
+use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::resolve::{
     BoundCaseClause, BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp, IntrinsicSurface,
     intrinsic_surface,
@@ -219,8 +220,14 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
                 );
             call_has_effect || args.iter().any(expr_has_observable_effect)
         }
-        BoundExpr::StructuralIntrinsicCall { args, .. } => {
-            args.iter().any(expr_has_observable_effect)
+        BoundExpr::StructuralIntrinsicCall { intrinsic, args } => {
+            matches!(
+                intrinsic,
+                StructuralIntrinsic::WithEventsSet
+                    | StructuralIntrinsic::WithEventsClearOwner
+                    | StructuralIntrinsic::WithEventsFirstOwner
+                    | StructuralIntrinsic::WithEventsNextOwner
+            ) || args.iter().any(expr_has_observable_effect)
         }
         BoundExpr::ProcCall { .. } => true,
         // A late-bound member dispatch invokes a method/property — assume observable effects.
@@ -428,10 +435,10 @@ mod tests {
                 matches!(
                     stmt,
                     BoundStmt::Assign {
-                        expr: crate::resolve::BoundExpr::IntrinsicCall { name, .. },
+                        expr: crate::resolve::BoundExpr::StructuralIntrinsicCall { intrinsic, .. },
                         ..
-                    } if name == "__oxvba_withevents_first_owner"
-                        || name == "__oxvba_withevents_next_owner"
+                    } if *intrinsic == crate::frontend_structural_intrinsics::StructuralIntrinsic::WithEventsFirstOwner
+                        || *intrinsic == crate::frontend_structural_intrinsics::StructuralIntrinsic::WithEventsNextOwner
                 )
             })
             .count();

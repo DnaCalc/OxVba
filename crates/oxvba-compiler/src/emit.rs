@@ -5452,19 +5452,20 @@ fn structural_intrinsic_result_type(intrinsic: StructuralIntrinsic) -> VbaTypeId
     match intrinsic {
         StructuralIntrinsic::NothingLiteral
         | StructuralIntrinsic::ProjectInstance
-        | StructuralIntrinsic::WithEventsAttach
-        | StructuralIntrinsic::WithEventsDetach
-        | StructuralIntrinsic::DynamicDispatchGet
+        | StructuralIntrinsic::WithEventsClearOwner
         | StructuralIntrinsic::DynamicDispatchInvoke
-        | StructuralIntrinsic::DynamicDispatchLet
-        | StructuralIntrinsic::DynamicDispatchSet => VbaTypeId::Object,
+        | StructuralIntrinsic::DynamicDispatchEarlyInvoke => VbaTypeId::Object,
+        StructuralIntrinsic::WithEventsFirstOwner | StructuralIntrinsic::WithEventsNextOwner => {
+            VbaTypeId::Long
+        }
         StructuralIntrinsic::PtrOf
         | StructuralIntrinsic::ObjPtr
         | StructuralIntrinsic::VarPtr
         | StructuralIntrinsic::StrPtr => VbaTypeId::LongPtr,
-        StructuralIntrinsic::NullLiteral | StructuralIntrinsic::OmittedArgument => {
-            VbaTypeId::Variant
-        }
+        StructuralIntrinsic::WithEventsGet
+        | StructuralIntrinsic::WithEventsSet
+        | StructuralIntrinsic::NullLiteral
+        | StructuralIntrinsic::OmittedArgument => VbaTypeId::Variant,
     }
 }
 
@@ -5472,19 +5473,20 @@ fn structural_intrinsic_bound_type(intrinsic: StructuralIntrinsic) -> BoundType 
     match intrinsic {
         StructuralIntrinsic::NothingLiteral
         | StructuralIntrinsic::ProjectInstance
-        | StructuralIntrinsic::WithEventsAttach
-        | StructuralIntrinsic::WithEventsDetach
-        | StructuralIntrinsic::DynamicDispatchGet
+        | StructuralIntrinsic::WithEventsClearOwner
         | StructuralIntrinsic::DynamicDispatchInvoke
-        | StructuralIntrinsic::DynamicDispatchLet
-        | StructuralIntrinsic::DynamicDispatchSet => BoundType::Object,
+        | StructuralIntrinsic::DynamicDispatchEarlyInvoke => BoundType::Object,
+        StructuralIntrinsic::WithEventsFirstOwner | StructuralIntrinsic::WithEventsNextOwner => {
+            BoundType::Long
+        }
         StructuralIntrinsic::PtrOf
         | StructuralIntrinsic::ObjPtr
         | StructuralIntrinsic::VarPtr
         | StructuralIntrinsic::StrPtr => BoundType::LongPtr,
-        StructuralIntrinsic::NullLiteral | StructuralIntrinsic::OmittedArgument => {
-            BoundType::Variant
-        }
+        StructuralIntrinsic::WithEventsGet
+        | StructuralIntrinsic::WithEventsSet
+        | StructuralIntrinsic::NullLiteral
+        | StructuralIntrinsic::OmittedArgument => BoundType::Variant,
     }
 }
 
@@ -9380,6 +9382,51 @@ fn emit_expr_into(
                 }
                 (StructuralIntrinsic::ObjPtr, [src]) => {
                     instructions.push(Instruction::IntrinsicObjPtr { dst, src: *src });
+                }
+                (
+                    StructuralIntrinsic::DynamicDispatchInvoke
+                    | StructuralIntrinsic::DynamicDispatchEarlyInvoke,
+                    [object, member, args @ ..],
+                ) => instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+                    dst,
+                    object: *object,
+                    member: *member,
+                    args: args
+                        .iter()
+                        .map(|slot| DispatchInvokeArg {
+                            slot: Some(*slot),
+                            name: None,
+                        })
+                        .collect(),
+                    early_bound: *intrinsic == StructuralIntrinsic::DynamicDispatchEarlyInvoke,
+                    com_member: None,
+                }),
+                (StructuralIntrinsic::WithEventsGet, [owner, binding]) => {
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                }
+                (StructuralIntrinsic::WithEventsSet, [owner, binding, value]) => {
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: *value,
+                    });
+                }
+                (StructuralIntrinsic::WithEventsClearOwner, [owner]) => instructions
+                    .push(Instruction::IntrinsicWithEventsClearOwner { dst, owner: *owner }),
+                (StructuralIntrinsic::WithEventsFirstOwner, [source, binding]) => {
+                    instructions.push(Instruction::IntrinsicWithEventsFirstOwner {
+                        dst,
+                        source: *source,
+                        binding: *binding,
+                    });
+                }
+                (StructuralIntrinsic::WithEventsNextOwner, []) => {
+                    instructions.push(Instruction::IntrinsicWithEventsNextOwner { dst });
                 }
                 _ => {}
             }
