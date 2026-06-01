@@ -909,8 +909,9 @@ Candidate bead units:
   bytecode emission. Unsupported declare signatures still return HIR `Unsupported` and remain
   fallback-eligible. Follow-up continuation adds simple module-level `Type` block layout projection
   for local UDT variables: HIR production now emits UDT descriptors and flattened field slots for
-  declarations such as `Dim p As Point`. UDT member syntax like `p.X` remains HIR `Unsupported`
-  until field read/write lowering maps it to aliases instead of late-bound object dispatch.
+  declarations such as `Dim p As Point`. Follow-up UDT continuation maps simple field reads/writes
+  such as `p.X = 1` and `y = p.X + 2` to flattened aliases, and preserves same-shape whole-UDT
+  assignment as field-wise `UdtAssign` copy lowering.
   `New` remains an explicit production residual because object construction requires project class
   handles, imported/COM activation, and `As New` lazy-construction semantics that cannot be no-op
   routed.

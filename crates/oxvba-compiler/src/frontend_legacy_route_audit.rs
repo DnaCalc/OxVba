@@ -298,8 +298,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
-    let udt_layout =
-        "Type Point\nX As Long\nY As String\nEnd Type\nSub Main()\nDim p As Point\nEnd Sub\n";
+    let udt_layout = "Type Point\nX As Long\nY As String\nEnd Type\nSub Main()\nDim p As Point\nDim y As Long\np.X = 1\ny = p.X + 2\nEnd Sub\n";
     findings.push(route_finding(
         "UDT layout descriptor fixture",
         udt_layout,

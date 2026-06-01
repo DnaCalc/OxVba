@@ -139,13 +139,6 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
             "syntax kind {kind:?}"
         )));
     }
-    if contains_syntax_kind(parsed.syntax(), SyntaxKind::TypeBlock)
-        && contains_syntax_kind(parsed.syntax(), SyntaxKind::MemberExpr)
-    {
-        return Err(HirProductionLoweringError::Unsupported(
-            "UDT member syntax remains a tracked residual".to_string(),
-        ));
-    }
     if let Some(text) = first_unsupported_const_stmt(parsed.syntax()) {
         return Err(HirProductionLoweringError::Unsupported(format!(
             "const statement {text:?}"
@@ -161,14 +154,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
     node.child_nodes()
         .into_iter()
         .find_map(first_unsupported_production_syntax)
-}
-
-fn contains_syntax_kind(node: oxvba_syntax::SyntaxNode<'_>, kind: SyntaxKind) -> bool {
-    node.kind() == kind
-        || node
-            .child_nodes()
-            .into_iter()
-            .any(|child| contains_syntax_kind(child, kind))
 }
 
 fn first_unsupported_const_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> Option<String> {
@@ -346,11 +331,15 @@ fn lower_procedure(
         declaration_types.insert(name.clone(), return_type);
     }
 
+    let udt_field_aliases = build_hir_udt_field_aliases(&udt_defs, &udt_instances);
+    let udt_instance_fields = build_hir_udt_instance_fields(&udt_defs, &udt_instances);
     let mut stmts = Vec::new();
     for stmt in body {
         lower_stmt(
             typed_hir,
             const_values,
+            &udt_field_aliases,
+            &udt_instance_fields,
             option_base,
             &dynamic_array_names,
             *stmt,
@@ -405,6 +394,8 @@ fn lower_procedure(
 fn lower_stmt(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
+    udt_instance_fields: &HashMap<String, Vec<String>>,
     option_base: i32,
     dynamic_array_names: &HashSet<String>,
     stmt: HirStmtId,
@@ -415,8 +406,23 @@ fn lower_stmt(
     };
     match &stmt_data.kind {
         HirStmtKind::Let { target, value } => {
-            let target = lower_assignment_target(typed_hir, *target)?;
-            let expr = lower_expr(typed_hir, const_values, *value)?;
+            let target = lower_assignment_target(typed_hir, udt_field_aliases, *target)?;
+            if let Some(source) = hir_name_expr(typed_hir, *value)?
+                && let (Some(target_fields), Some(source_fields)) = (
+                    udt_instance_fields.get(&target.to_ascii_lowercase()),
+                    udt_instance_fields.get(&source.to_ascii_lowercase()),
+                )
+            {
+                if target_fields == source_fields {
+                    out.push(BoundStmt::UdtAssign {
+                        target,
+                        source,
+                        fields: target_fields.clone(),
+                    });
+                    return Ok(());
+                }
+            }
+            let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value)?;
             let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
                 AssignmentIntent::Let
             } else {
@@ -438,8 +444,23 @@ fn lower_stmt(
             }
         }
         HirStmtKind::Set { target, value } => {
-            let target = lower_assignment_target(typed_hir, *target)?;
-            let expr = lower_expr(typed_hir, const_values, *value)?;
+            let target = lower_assignment_target(typed_hir, udt_field_aliases, *target)?;
+            if let Some(source) = hir_name_expr(typed_hir, *value)?
+                && let (Some(target_fields), Some(source_fields)) = (
+                    udt_instance_fields.get(&target.to_ascii_lowercase()),
+                    udt_instance_fields.get(&source.to_ascii_lowercase()),
+                )
+            {
+                if target_fields == source_fields {
+                    out.push(BoundStmt::UdtAssign {
+                        target,
+                        source,
+                        fields: target_fields.clone(),
+                    });
+                    return Ok(());
+                }
+            }
+            let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value)?;
             match expr {
                 BoundExpr::ProcCall { name, args } => out.push(BoundStmt::AssignFromCall {
                     target,
@@ -460,6 +481,8 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *child,
@@ -467,33 +490,35 @@ fn lower_stmt(
                 )?;
             }
         }
-        HirStmtKind::Expr(expr) => match lower_expr(typed_hir, const_values, *expr)? {
-            BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
-                name,
-                args,
-                syntax: if stmt_data.cst.syntax_kind == "CallStmtNoCallKeyword" {
-                    BoundCallSyntax::StatementNoCall
-                } else {
-                    BoundCallSyntax::StatementCallKeyword
-                },
-            }),
-            BoundExpr::Member {
-                receiver,
-                member,
-                args,
-            } => out.push(BoundStmt::Expr {
-                expr: BoundExpr::Member {
+        HirStmtKind::Expr(expr) => {
+            match lower_expr(typed_hir, const_values, udt_field_aliases, *expr)? {
+                BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
+                    name,
+                    args,
+                    syntax: if stmt_data.cst.syntax_kind == "CallStmtNoCallKeyword" {
+                        BoundCallSyntax::StatementNoCall
+                    } else {
+                        BoundCallSyntax::StatementCallKeyword
+                    },
+                }),
+                BoundExpr::Member {
                     receiver,
                     member,
                     args,
-                },
-            }),
-            other => {
-                return Err(HirProductionLoweringError::Unsupported(format!(
-                    "expression statement {other:?}"
-                )));
+                } => out.push(BoundStmt::Expr {
+                    expr: BoundExpr::Member {
+                        receiver,
+                        member,
+                        args,
+                    },
+                }),
+                other => {
+                    return Err(HirProductionLoweringError::Unsupported(format!(
+                        "expression statement {other:?}"
+                    )));
+                }
             }
-        },
+        }
         HirStmtKind::If {
             condition,
             then_body,
@@ -504,6 +529,8 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *stmt,
@@ -515,6 +542,8 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *stmt,
@@ -522,7 +551,7 @@ fn lower_stmt(
                 )?;
             }
             out.push(BoundStmt::IfCond {
-                cond: lower_condition(typed_hir, const_values, *condition)?,
+                cond: lower_condition(typed_hir, const_values, udt_field_aliases, *condition)?,
                 then_body: lowered_then,
                 else_body: lowered_else,
             });
@@ -538,13 +567,15 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_body,
                 )?;
             }
-            let mut cond = lower_condition(typed_hir, const_values, *condition)?;
+            let mut cond = lower_condition(typed_hir, const_values, udt_field_aliases, *condition)?;
             if *until {
                 cond = BoundCond::Not(Box::new(cond));
             }
@@ -563,13 +594,17 @@ fn lower_stmt(
             for (clauses, body) in arms {
                 let clauses = clauses
                     .iter()
-                    .map(|clause| lower_case_clause(typed_hir, const_values, clause))
+                    .map(|clause| {
+                        lower_case_clause(typed_hir, const_values, udt_field_aliases, clause)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut lowered_body = Vec::new();
                 for stmt in body {
                     lower_stmt(
                         typed_hir,
                         const_values,
+                        udt_field_aliases,
+                        udt_instance_fields,
                         option_base,
                         dynamic_array_names,
                         *stmt,
@@ -583,6 +618,8 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *stmt,
@@ -590,7 +627,7 @@ fn lower_stmt(
                 )?;
             }
             out.push(BoundStmt::SelectCase {
-                expr: lower_expr(typed_hir, const_values, *expr)?,
+                expr: lower_expr(typed_hir, const_values, udt_field_aliases, *expr)?,
                 arms: lowered_arms,
                 else_body: lowered_else,
             });
@@ -607,6 +644,8 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *stmt,
@@ -615,10 +654,10 @@ fn lower_stmt(
             }
             out.push(BoundStmt::ForRange {
                 var: symbol_name(typed_hir, *var)?,
-                start: lower_expr(typed_hir, const_values, *start)?,
-                end: lower_expr(typed_hir, const_values, *end)?,
+                start: lower_expr(typed_hir, const_values, udt_field_aliases, *start)?,
+                end: lower_expr(typed_hir, const_values, udt_field_aliases, *end)?,
                 step: match step {
-                    Some(step) => lower_expr(typed_hir, const_values, *step)?,
+                    Some(step) => lower_expr(typed_hir, const_values, udt_field_aliases, *step)?,
                     None => BoundExpr::IntConst(1),
                 },
                 body: lowered_body,
@@ -634,6 +673,8 @@ fn lower_stmt(
                 lower_stmt(
                     typed_hir,
                     const_values,
+                    udt_field_aliases,
+                    udt_instance_fields,
                     option_base,
                     dynamic_array_names,
                     *stmt,
@@ -643,7 +684,12 @@ fn lower_stmt(
             out.push(BoundStmt::ForEach {
                 var: symbol_name(typed_hir, *var)?,
                 items: Vec::new(),
-                iterable: Some(lower_expr(typed_hir, const_values, *iterable)?),
+                iterable: Some(lower_expr(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *iterable,
+                )?),
                 body: lowered_body,
             });
         }
@@ -689,7 +735,12 @@ fn lower_stmt(
                 .map(|bound| {
                     Ok(RuntimeArrayDimExpr {
                         lower_bound: option_base,
-                        upper_bound: lower_expr(typed_hir, const_values, *bound)?,
+                        upper_bound: lower_expr(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            *bound,
+                        )?,
                     })
                 })
                 .collect::<Result<Vec<_>, HirProductionLoweringError>>()?;
@@ -707,7 +758,7 @@ fn lower_stmt(
                 .map(|arg| {
                     Ok(BoundCallArg {
                         name: None,
-                        expr: lower_expr(typed_hir, const_values, *arg)?,
+                        expr: lower_expr(typed_hir, const_values, udt_field_aliases, *arg)?,
                         force_byval: false,
                     })
                 })
@@ -764,6 +815,7 @@ fn bound_type_name(text: &str) -> Option<BoundType> {
 
 fn lower_assignment_target(
     typed_hir: &TypedHirModule,
+    udt_field_aliases: &HashMap<(String, String), String>,
     target: HirExprId,
 ) -> Result<String, HirProductionLoweringError> {
     let Some(expr) = typed_hir.module.arenas.expr(target) else {
@@ -773,6 +825,13 @@ fn lower_assignment_target(
     };
     match expr.kind {
         HirExprKind::Name(symbol) => symbol_name(typed_hir, symbol),
+        HirExprKind::Member(member) => udt_member_alias(typed_hir, udt_field_aliases, member)
+            .ok_or_else(|| {
+                HirProductionLoweringError::Unsupported(format!(
+                    "assignment target {:?}",
+                    expr.kind
+                ))
+            }),
         _ => Err(HirProductionLoweringError::Unsupported(format!(
             "assignment target {:?}",
             expr.kind
@@ -783,6 +842,7 @@ fn lower_assignment_target(
 fn lower_expr(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     expr: HirExprId,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
     let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
@@ -823,17 +883,35 @@ fn lower_expr(
         HirExprKind::Unary { op, expr } => match op {
             HirUnaryOp::Negate => Ok(BoundExpr::UnaryOp {
                 op: ArithOp::Neg,
-                operand: Box::new(lower_expr(typed_hir, const_values, *expr)?),
+                operand: Box::new(lower_expr(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *expr,
+                )?),
             }),
             HirUnaryOp::Not => Ok(BoundExpr::LogicalNot {
-                operand: Box::new(lower_expr(typed_hir, const_values, *expr)?),
+                operand: Box::new(lower_expr(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *expr,
+                )?),
             }),
         },
         HirExprKind::Binary { op, lhs, rhs } => {
-            lower_binary_expr(typed_hir, const_values, *op, *lhs, *rhs)
+            lower_binary_expr(typed_hir, const_values, udt_field_aliases, *op, *lhs, *rhs)
         }
-        HirExprKind::Call(call) => lower_call_expr(typed_hir, const_values, *call),
-        HirExprKind::Member(member) => lower_member_expr(typed_hir, const_values, *member),
+        HirExprKind::Call(call) => {
+            lower_call_expr(typed_hir, const_values, udt_field_aliases, *call)
+        }
+        HirExprKind::Member(member) => {
+            if let Some(alias) = udt_member_alias(typed_hir, udt_field_aliases, *member) {
+                Ok(BoundExpr::Var(alias))
+            } else {
+                lower_member_expr(typed_hir, const_values, udt_field_aliases, *member)
+            }
+        }
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "expression {other:?}"
         ))),
@@ -843,12 +921,13 @@ fn lower_expr(
 fn lower_binary_expr(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     op: HirBinaryOp,
     lhs: HirExprId,
     rhs: HirExprId,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
-    let lhs = lower_expr(typed_hir, const_values, lhs)?;
-    let rhs = lower_expr(typed_hir, const_values, rhs)?;
+    let lhs = lower_expr(typed_hir, const_values, udt_field_aliases, lhs)?;
+    let rhs = lower_expr(typed_hir, const_values, udt_field_aliases, rhs)?;
     match op {
         HirBinaryOp::Add => binary(ArithOp::Add, lhs, rhs),
         HirBinaryOp::Sub => binary(ArithOp::Sub, lhs, rhs),
@@ -871,6 +950,7 @@ fn lower_binary_expr(
 fn lower_call_expr(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     call: crate::frontend_hir::HirCallId,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
     let Some(call_data) = typed_hir.module.arenas.call(call) else {
@@ -878,15 +958,17 @@ fn lower_call_expr(
             "missing call".to_string(),
         ));
     };
-    let target = lower_expr(typed_hir, const_values, call_data.target)?;
+    let target = lower_expr(typed_hir, const_values, udt_field_aliases, call_data.target)?;
     let args = call_data
         .args
         .iter()
         .map(|arg| {
-            lower_expr(typed_hir, const_values, arg.expr).map(|expr| BoundCallArg {
-                name: None,
-                expr,
-                force_byval: arg.force_byval,
+            lower_expr(typed_hir, const_values, udt_field_aliases, arg.expr).map(|expr| {
+                BoundCallArg {
+                    name: None,
+                    expr,
+                    force_byval: arg.force_byval,
+                }
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -927,6 +1009,7 @@ fn lower_call_expr(
 fn lower_member_expr(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     member: crate::frontend_hir::HirMemberId,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
     let Some(member_data) = typed_hir.module.arenas.member(member) else {
@@ -940,7 +1023,12 @@ fn lower_member_expr(
         ));
     };
     Ok(BoundExpr::Member {
-        receiver: Box::new(lower_expr(typed_hir, const_values, receiver)?),
+        receiver: Box::new(lower_expr(
+            typed_hir,
+            const_values,
+            udt_field_aliases,
+            receiver,
+        )?),
         member: symbol_name(typed_hir, member_data.symbol)?,
         args: Vec::new(),
     })
@@ -949,15 +1037,17 @@ fn lower_member_expr(
 fn lower_case_clause(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     clause: &HirCaseClause,
 ) -> Result<BoundCaseClause, HirProductionLoweringError> {
     match clause {
         HirCaseClause::Value(expr) => {
-            lower_case_value(typed_hir, const_values, *expr).map(BoundCaseClause::Value)
+            lower_case_value(typed_hir, const_values, udt_field_aliases, *expr)
+                .map(BoundCaseClause::Value)
         }
         HirCaseClause::Range { start, end } => Ok(BoundCaseClause::Range {
-            start: lower_case_value(typed_hir, const_values, *start)?,
-            end: lower_case_value(typed_hir, const_values, *end)?,
+            start: lower_case_value(typed_hir, const_values, udt_field_aliases, *start)?,
+            end: lower_case_value(typed_hir, const_values, udt_field_aliases, *end)?,
         }),
         HirCaseClause::Is { op, value } => {
             let Some(op) = compare_op_from_hir(*op) else {
@@ -967,7 +1057,7 @@ fn lower_case_clause(
             };
             Ok(BoundCaseClause::Is {
                 op,
-                value: lower_case_value(typed_hir, const_values, *value)?,
+                value: lower_case_value(typed_hir, const_values, udt_field_aliases, *value)?,
             })
         }
     }
@@ -976,9 +1066,12 @@ fn lower_case_clause(
 fn lower_case_value(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     expr: HirExprId,
 ) -> Result<i32, HirProductionLoweringError> {
-    if let BoundExpr::IntConst(value) = lower_expr(typed_hir, const_values, expr)? {
+    if let BoundExpr::IntConst(value) =
+        lower_expr(typed_hir, const_values, udt_field_aliases, expr)?
+    {
         return Ok(value);
     }
     let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
@@ -1005,6 +1098,7 @@ fn lower_case_value(
 fn lower_condition(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
     expr: crate::frontend_hir::HirExprId,
 ) -> Result<BoundCond, HirProductionLoweringError> {
     let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
@@ -1019,6 +1113,7 @@ fn lower_condition(
         } => Ok(BoundCond::Not(Box::new(lower_condition(
             typed_hir,
             const_values,
+            udt_field_aliases,
             *expr,
         )?))),
         HirExprKind::Binary { op, lhs, rhs } => match op {
@@ -1034,27 +1129,49 @@ fn lower_condition(
                 };
                 Ok(BoundCond::Compare {
                     op: compare_op,
-                    lhs: lower_expr(typed_hir, const_values, *lhs)?,
-                    rhs: lower_expr(typed_hir, const_values, *rhs)?,
+                    lhs: lower_expr(typed_hir, const_values, udt_field_aliases, *lhs)?,
+                    rhs: lower_expr(typed_hir, const_values, udt_field_aliases, *rhs)?,
                 })
             }
             HirBinaryOp::And => Ok(BoundCond::And(
-                Box::new(lower_condition(typed_hir, const_values, *lhs)?),
-                Box::new(lower_condition(typed_hir, const_values, *rhs)?),
+                Box::new(lower_condition(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *lhs,
+                )?),
+                Box::new(lower_condition(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *rhs,
+                )?),
             )),
             HirBinaryOp::Or => Ok(BoundCond::Or(
-                Box::new(lower_condition(typed_hir, const_values, *lhs)?),
-                Box::new(lower_condition(typed_hir, const_values, *rhs)?),
+                Box::new(lower_condition(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *lhs,
+                )?),
+                Box::new(lower_condition(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *rhs,
+                )?),
             )),
             _ => Ok(BoundCond::Truthy(lower_expr(
                 typed_hir,
                 const_values,
+                udt_field_aliases,
                 expr,
             )?)),
         },
         _ => Ok(BoundCond::Truthy(lower_expr(
             typed_hir,
             const_values,
+            udt_field_aliases,
             expr,
         )?)),
     }
@@ -1279,6 +1396,62 @@ fn build_hir_udt_descriptors(
         .collect::<Vec<_>>();
     descriptors.sort_by(|left, right| left.type_name.cmp(&right.type_name));
     descriptors
+}
+
+fn build_hir_udt_field_aliases(
+    udt_defs: &HirUdtDefMap,
+    instances: &HashMap<String, String>,
+) -> HashMap<(String, String), String> {
+    let mut aliases = HashMap::new();
+    for (instance, type_name) in instances {
+        let Some(fields) = udt_defs.get(type_name) else {
+            continue;
+        };
+        for field in fields {
+            aliases.insert(
+                (
+                    instance.to_ascii_lowercase(),
+                    field.name.to_ascii_lowercase(),
+                ),
+                format!("{instance}_{}", field.name),
+            );
+        }
+    }
+    aliases
+}
+
+fn build_hir_udt_instance_fields(
+    udt_defs: &HirUdtDefMap,
+    instances: &HashMap<String, String>,
+) -> HashMap<String, Vec<String>> {
+    let mut out = HashMap::new();
+    for (instance, type_name) in instances {
+        let Some(fields) = udt_defs.get(type_name) else {
+            continue;
+        };
+        out.insert(
+            instance.to_ascii_lowercase(),
+            fields.iter().map(|field| field.name.clone()).collect(),
+        );
+    }
+    out
+}
+
+fn udt_member_alias(
+    typed_hir: &TypedHirModule,
+    udt_field_aliases: &HashMap<(String, String), String>,
+    member: crate::frontend_hir::HirMemberId,
+) -> Option<String> {
+    let member_data = typed_hir.module.arenas.member(member)?;
+    let receiver = member_data.receiver?;
+    let receiver_name = hir_name_expr(typed_hir, receiver).ok().flatten()?;
+    let member_name = symbol_name(typed_hir, member_data.symbol).ok()?;
+    udt_field_aliases
+        .get(&(
+            receiver_name.to_ascii_lowercase(),
+            member_name.to_ascii_lowercase(),
+        ))
+        .cloned()
 }
 
 fn collect_hir_enum_descriptors(source: &str) -> Vec<BoundEnumDescriptor> {
@@ -2338,12 +2511,26 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_udt_member_syntax_for_fallback() {
-        let source =
-            "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\np.X = 1\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("UDT member syntax remains residual");
-        assert!(matches!(err, HirProductionLoweringError::Unsupported(_)));
+    fn hir_production_lowering_accepts_udt_field_read_write_aliases() {
+        let source = "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\nDim y As Long\np.X = 1\ny = p.X + 2\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| slot.name == "p_x"));
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::AddConstI32 { value: 2, .. } | Instruction::AddSlots { .. }
+            )),
+            "{bytecode:#?}"
+        );
     }
 
     #[test]
