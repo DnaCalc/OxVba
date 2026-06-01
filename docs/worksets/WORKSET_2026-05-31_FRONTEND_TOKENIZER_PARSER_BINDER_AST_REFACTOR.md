@@ -745,12 +745,13 @@ Candidate bead units:
 - FE-7.1 Qualified names and project/module lookup: move module, class, procedure, field, and
   public symbol resolution into binder-owned tables. Partial work has already been done: a
   manifest-backed `ProjectSymbolIndex` exists and covers module/class/procedure/field/public
-  routes, including `VB_Name` and `Option Private Module` handling. This bead remains open until
-  the production module-aware project lowering path consumes those `SymbolId`/`ProjectSymbolRoute`
-  facts for the full scoped surface. Current continuation progress wires the index into production
+  routes, including `VB_Name` and `Option Private Module` handling. Continuation progress wires the
+  index into production
   qualified procedure invocation lookup and active-project unqualified public procedure lookup
   while preserving ambiguity/reference-precedence behavior. Field/class member use is explicitly
   handed to FE-7.2, FE-7.3, and FE-7.4, which must consume this index rather than re-parsing text.
+  Status: scoped delivery bead closed after qualified/unqualified active-project route proof and
+  explicit handoff of member/property/class semantics to the downstream FE-7 beads.
   Evidence: `docs/evidence/frontend_rework/QUALIFIED_NAME_PROJECT_LOOKUP_2026-06-01.md`.
 - FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
   members, late-bound dispatch, default members, and host-provided globals. Current continuation
@@ -758,9 +759,13 @@ Candidate bead units:
   COM member dispatch. Remaining executable categories are explicitly handed to FE-7.3, FE-7.4,
   FE-7.6, and FE-8.1, which must consume the same dispatch vocabulary rather than string-only
   decisions.
+  Status: scoped delivery bead closed for project-procedure and imported-COM dispatch
+  classification, with later categories explicitly owned by narrower beads.
   Evidence: `docs/evidence/frontend_rework/MEMBER_DISPATCH_CLASSIFICATION_2026-06-01.md`.
 - FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
   write/invoke, Let vs Set coercion, and object/scalar assignment diagnostics.
+  Status: scoped delivery bead closed after active-project property/default-member route proof,
+  typed-HIR assignment diagnostics, and compatibility classification for residual scans.
   Evidence: `docs/evidence/frontend_rework/PROPERTY_ASSIGNMENT_SEMANTICS_2026-06-01.md`.
 - FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
   ordinary fields, WithEvents fields, and runtime object-field metadata. Current continuation
@@ -772,6 +777,8 @@ Candidate bead units:
   frontend class route. Remaining fallback routes are explicitly bounded to referenced-project
   class/predeclared roots, imported COM activation metadata, and parser-incomplete compatibility
   enumeration outside the active-project symbol-index route.
+  Status: scoped delivery bead closed for active-project class construction/field metadata, with
+  referenced-project and imported-COM activation classified to FE-7.6/reference composition.
   Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
   and related diagnostics out of string rewriting. Current continuation progress makes
