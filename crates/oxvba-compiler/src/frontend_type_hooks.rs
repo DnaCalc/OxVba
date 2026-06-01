@@ -640,7 +640,10 @@ mod tests {
         let call = hir.alloc_call(HirCall {
             cst: cst("CallExpr"),
             target,
-            args: vec![arg],
+            args: vec![crate::frontend_hir::HirCallArg {
+                expr: arg,
+                force_byval: false,
+            }],
         });
 
         let mut hooks = HirTypeHooks::default();

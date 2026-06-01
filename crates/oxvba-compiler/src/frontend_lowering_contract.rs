@@ -365,7 +365,7 @@ fn collect_expr_structural_intrinsics(
                     structural_intrinsics,
                 );
                 for arg in &call_data.args {
-                    collect_expr_structural_intrinsics(typed_hir, *arg, structural_intrinsics);
+                    collect_expr_structural_intrinsics(typed_hir, arg.expr, structural_intrinsics);
                 }
             }
         }

@@ -292,7 +292,7 @@ impl SemanticModel {
                 };
                 self.index_expr_tree(call_data.target);
                 for arg in call_data.args {
-                    self.index_expr_tree(arg);
+                    self.index_expr_tree(arg.expr);
                 }
             }
             HirExprKind::Member(member) => {

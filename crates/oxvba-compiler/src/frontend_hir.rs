@@ -231,7 +231,13 @@ pub enum HirDeclKind {
 pub struct HirCall {
     pub cst: CstBackpointer,
     pub target: HirExprId,
-    pub args: Vec<HirExprId>,
+    pub args: Vec<HirCallArg>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HirCallArg {
+    pub expr: HirExprId,
+    pub force_byval: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -508,7 +514,16 @@ impl HirBuilder {
                 })))
             }
             SyntaxKind::CallStmt => {
-                let expr = expression_children(node)
+                let has_call_keyword = node
+                    .child_tokens()
+                    .into_iter()
+                    .any(|token| token.kind == SyntaxKind::KwCall);
+                let call_stmt_cst = if has_call_keyword {
+                    cst(node)
+                } else {
+                    cst_with_kind(node, "CallStmtNoCallKeyword")
+                };
+                let expr_node = expression_children(node)
                     .into_iter()
                     .next()
                     .ok_or_else(|| {
@@ -517,9 +532,74 @@ impl HirBuilder {
                             node.text().trim()
                         ))
                     })?;
-                let expr = self.lower_expr(scope, expr)?;
+                let direct_arg_list = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::ArgList);
+                let mut expr = if !has_call_keyword
+                    && expr_node.kind() == SyntaxKind::IndexExpr
+                    && direct_arg_list.is_none()
+                {
+                    let exprs = expression_children(expr_node);
+                    let Some(target_node) = exprs.first().copied() else {
+                        return Err(HirBuildError::Unsupported(format!(
+                            "statement call without target: `{}`",
+                            node.text().trim()
+                        )));
+                    };
+                    let target = self.lower_expr(scope, target_node)?;
+                    let args = expr_node
+                        .child_nodes()
+                        .into_iter()
+                        .find(|child| child.kind() == SyntaxKind::ArgList)
+                        .map(|arg_list| {
+                            expression_children(arg_list)
+                                .into_iter()
+                                .map(|arg| {
+                                    Ok::<_, HirBuildError>(HirCallArg {
+                                        expr: self.lower_expr(scope, arg)?,
+                                        force_byval: true,
+                                    })
+                                })
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .transpose()?
+                        .unwrap_or_default();
+                    let call = self.arenas.alloc_call(HirCall {
+                        cst: call_stmt_cst.clone(),
+                        target,
+                        args,
+                    });
+                    self.arenas.alloc_expr(HirExpr {
+                        cst: call_stmt_cst.clone(),
+                        kind: HirExprKind::Call(call),
+                    })
+                } else {
+                    self.lower_expr(scope, expr_node)?
+                };
+                if let Some(arg_list) = direct_arg_list {
+                    let args = expression_children(arg_list)
+                        .into_iter()
+                        .map(|arg| {
+                            let force_byval = arg.kind() == SyntaxKind::ParenExpr;
+                            Ok::<_, HirBuildError>(HirCallArg {
+                                expr: self.lower_expr(scope, arg)?,
+                                force_byval,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let call = self.arenas.alloc_call(HirCall {
+                        cst: call_stmt_cst.clone(),
+                        target: expr,
+                        args,
+                    });
+                    expr = self.arenas.alloc_expr(HirExpr {
+                        cst: call_stmt_cst.clone(),
+                        kind: HirExprKind::Call(call),
+                    });
+                }
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
-                    cst: cst(node),
+                    cst: call_stmt_cst,
                     kind: HirStmtKind::Expr(expr),
                 })))
             }
@@ -1057,7 +1137,12 @@ impl HirBuilder {
                     .map(|arg_list| {
                         expression_children(arg_list)
                             .into_iter()
-                            .map(|arg| self.lower_expr(scope, arg))
+                            .map(|arg| {
+                                Ok::<_, HirBuildError>(HirCallArg {
+                                    expr: self.lower_expr(scope, arg)?,
+                                    force_byval: false,
+                                })
+                            })
                             .collect::<Result<Vec<_>, _>>()
                     })
                     .transpose()?
@@ -1212,9 +1297,13 @@ impl HirBuilder {
 }
 
 fn cst(node: SyntaxNode<'_>) -> CstBackpointer {
+    cst_with_kind(node, &format!("{:?}", node.kind()))
+}
+
+fn cst_with_kind(node: SyntaxNode<'_>, syntax_kind: &str) -> CstBackpointer {
     let (start, end) = node.text_range();
     CstBackpointer {
-        syntax_kind: format!("{:?}", node.kind()),
+        syntax_kind: syntax_kind.to_string(),
         span: FrontendSourceSpan {
             start: start as usize,
             end: end as usize,

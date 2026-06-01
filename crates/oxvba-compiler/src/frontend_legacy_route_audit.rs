@@ -52,6 +52,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let statement_form_call = "Sub Use(ByVal a, ByVal b)\nEnd Sub\nSub Main()\nUse 1, 2\nEnd Sub\n";
+    findings.push(route_finding(
+        "statement-form procedure call arguments fixture",
+        statement_form_call,
+        "bd-aprs.9.5",
+    ));
+
     let function_statement =
         "Function Alpha() As Long\nAlpha = 1\nEnd Function\nSub Main()\nEnd Sub\n";
     findings.push(route_finding(
@@ -341,6 +348,15 @@ mod tests {
                 .iter()
                 .any(|finding| finding.area.contains("call statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction),
+            "{report:#?}"
+        );
+        assert!(
+            report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("statement-form procedure call arguments")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }),
             "{report:#?}"
         );
         assert!(

@@ -376,20 +376,47 @@ fn lower_stmt(
         return Ok(());
     };
     match &stmt_data.kind {
-        HirStmtKind::Let { target, value } => out.push(BoundStmt::Assign {
-            target: lower_assignment_target(typed_hir, *target)?,
-            expr: lower_expr(typed_hir, const_values, *value)?,
-            intent: if stmt_data.cst.syntax_kind == "LetStmt" {
+        HirStmtKind::Let { target, value } => {
+            let target = lower_assignment_target(typed_hir, *target)?;
+            let expr = lower_expr(typed_hir, const_values, *value)?;
+            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
                 AssignmentIntent::Let
             } else {
                 AssignmentIntent::Implicit
-            },
-        }),
-        HirStmtKind::Set { target, value } => out.push(BoundStmt::Assign {
-            target: lower_assignment_target(typed_hir, *target)?,
-            expr: lower_expr(typed_hir, const_values, *value)?,
-            intent: AssignmentIntent::Set,
-        }),
+            };
+            match expr {
+                BoundExpr::ProcCall { name, args } => out.push(BoundStmt::AssignFromCall {
+                    target,
+                    name,
+                    args,
+                    intent,
+                    syntax: BoundCallSyntax::ExpressionCall,
+                }),
+                expr => out.push(BoundStmt::Assign {
+                    target,
+                    expr,
+                    intent,
+                }),
+            }
+        }
+        HirStmtKind::Set { target, value } => {
+            let target = lower_assignment_target(typed_hir, *target)?;
+            let expr = lower_expr(typed_hir, const_values, *value)?;
+            match expr {
+                BoundExpr::ProcCall { name, args } => out.push(BoundStmt::AssignFromCall {
+                    target,
+                    name,
+                    args,
+                    intent: AssignmentIntent::Set,
+                    syntax: BoundCallSyntax::ExpressionCall,
+                }),
+                expr => out.push(BoundStmt::Assign {
+                    target,
+                    expr,
+                    intent: AssignmentIntent::Set,
+                }),
+            }
+        }
         HirStmtKind::Block(children) => {
             for child in children {
                 lower_stmt(
@@ -406,7 +433,11 @@ fn lower_stmt(
             BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
                 name,
                 args,
-                syntax: BoundCallSyntax::StatementCallKeyword,
+                syntax: if stmt_data.cst.syntax_kind == "CallStmtNoCallKeyword" {
+                    BoundCallSyntax::StatementNoCall
+                } else {
+                    BoundCallSyntax::StatementCallKeyword
+                },
             }),
             other => {
                 return Err(HirProductionLoweringError::Unsupported(format!(
@@ -803,10 +834,10 @@ fn lower_call_expr(
         .args
         .iter()
         .map(|arg| {
-            lower_expr(typed_hir, const_values, *arg).map(|expr| BoundCallArg {
+            lower_expr(typed_hir, const_values, arg.expr).map(|expr| BoundCallArg {
                 name: None,
                 expr,
-                force_byval: false,
+                force_byval: arg.force_byval,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1746,6 +1777,40 @@ mod tests {
         assert!(main.slots.iter().any(|slot| slot.name == "obj"));
         assert!(main.slots.iter().any(|slot| slot.name == "x"));
         assert!(main.slots.iter().any(|slot| slot.name == "y"));
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_statement_form_procedure_call_arguments() {
+        let source = "Sub Use(ByVal a, ByVal b)\nEnd Sub\nSub Main()\nUse 1, 2\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| call_site
+                .target_name
+                .eq_ignore_ascii_case("use")
+                && call_site.arguments.len() == 2
+                && call_site.invocation_syntax
+                    == crate::emit::CallInvocationSyntaxDescriptor::StatementNoCall),
+            "expected statement-form call to preserve two call-site args: {main:#?}"
+        );
+        assert!(
+            !bytecode.instructions.is_empty(),
+            "expected statement-form call bytecode"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_statement_form_member_call_for_fallback() {
+        let source = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("statement-form member call remains residual");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Unsupported(_)),
+            "statement-form member call must remain fallback-eligible, got {err:?}"
+        );
     }
 
     #[test]
