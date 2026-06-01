@@ -266,7 +266,7 @@ mod tests {
     fn property_accessors_collect_from_typed_hir_route() {
         let typed = collect_type_hooks_from_source(
             "Module1",
-            "Property Get Value()\nEnd Property\nProperty Let Other(ByVal newValue)\nEnd Property\nProperty Set Obj(ByVal newValue)\nEnd Property",
+            "Property Get Value()\nEnd Property\nProperty Let Value(ByVal newValue)\nEnd Property\nProperty Set Value(ByVal newValue)\nEnd Property",
         )
         .expect("typed hir");
 

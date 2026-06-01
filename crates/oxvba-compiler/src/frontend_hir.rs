@@ -343,17 +343,18 @@ impl HirBuilder {
                 let Some(name) = first_identifier_text(node) else {
                     return Ok(());
                 };
+                let symbol_name = procedure_symbol_name(node, &name);
                 let symbol = self
                     .symbols
-                    .find_in_scope(scope, SymbolNamespace::Procedure, &name)?
+                    .find_in_scope(scope, SymbolNamespace::Procedure, &symbol_name)?
                     .ok_or_else(|| HirBuildError::UnresolvedName {
-                        name: name.clone(),
+                        name: symbol_name.clone(),
                         scope,
                     })?;
                 let procedure_scope = self
-                    .scope_by_kind_and_name(ScopeKind::Procedure, &name)
+                    .scope_by_kind_and_name(ScopeKind::Procedure, &symbol_name)
                     .ok_or_else(|| HirBuildError::UnresolvedName {
-                        name: name.clone(),
+                        name: symbol_name.clone(),
                         scope,
                     })?;
                 let params = self.parameter_symbols(procedure_scope)?;
@@ -672,6 +673,18 @@ fn property_kind(node: SyntaxNode<'_>) -> HirPropertyKind {
     } else {
         HirPropertyKind::Get
     }
+}
+
+fn procedure_symbol_name(node: SyntaxNode<'_>, name: &str) -> String {
+    if node.kind() != SyntaxKind::PropertyDecl {
+        return name.to_string();
+    }
+    let prefix = match property_kind(node) {
+        HirPropertyKind::Get => "property_get",
+        HirPropertyKind::Let => "property_let",
+        HirPropertyKind::Set => "property_set",
+    };
+    format!("{prefix}_{name}")
 }
 
 fn lower_literal(node: SyntaxNode<'_>) -> Result<HirLiteral, HirBuildError> {

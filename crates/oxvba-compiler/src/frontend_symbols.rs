@@ -360,17 +360,15 @@ fn collect_procedure_symbols(
     let Some(name_token) = first_identifier_token(node) else {
         return Ok(());
     };
+    let procedure_name = procedure_symbol_name(node, normalize_identifier_token(name_token.text));
     model.declare_symbol(
         parent_scope,
         SymbolNamespace::Procedure,
-        normalize_identifier_token(name_token.text),
+        &procedure_name,
         provenance_for_token(module_name, name_token),
     )?;
-    let procedure_scope = model.add_scope(
-        ScopeKind::Procedure,
-        parent_scope,
-        Some(normalize_identifier_token(name_token.text)),
-    )?;
+    let procedure_scope =
+        model.add_scope(ScopeKind::Procedure, parent_scope, Some(&procedure_name))?;
 
     if let Some(param_list) = node.param_list() {
         for param in param_list.params() {
@@ -389,6 +387,28 @@ fn collect_procedure_symbols(
         collect_symbols_from_node(model, module_name, procedure_scope, body)?;
     }
     Ok(())
+}
+
+fn procedure_symbol_name(node: SyntaxNode<'_>, name: &str) -> String {
+    if node.kind() != SyntaxKind::PropertyDecl {
+        return name.to_string();
+    }
+    let prefix = if node
+        .child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwLet)
+    {
+        "property_let"
+    } else if node
+        .child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwSet)
+    {
+        "property_set"
+    } else {
+        "property_get"
+    };
+    format!("{prefix}_{name}")
 }
 
 fn declare_named_node(
