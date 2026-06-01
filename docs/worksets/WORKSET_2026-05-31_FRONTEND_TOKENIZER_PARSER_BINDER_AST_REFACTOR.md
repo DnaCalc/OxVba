@@ -627,6 +627,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/TYPE_COERCION_HOOKS_2026-06-01.md`.
 - FE-6.5 Diagnostic mapping: route parser, binder, and type diagnostics to stable source spans
   with existing diagnostic family compatibility where applicable.
+  Evidence: `docs/evidence/frontend_rework/DIAGNOSTIC_MAPPING_2026-06-01.md`.
 
 Evidence gate: selected constructs bind through HIR, answer SemanticModel queries, and lower/run
 with behavior matching or improving the legacy path.
