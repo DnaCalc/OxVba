@@ -765,66 +765,27 @@ mod tests {
 
     #[test]
     fn frontend_corpus_runner_runs_source_backed_rows_and_skips_residuals() {
-        let report = run_frontend_diff_corpus(&[
-            FrontendCorpusFixture {
-                name: "compiler_assignment".to_string(),
-                fixture_path: "inline:compiler_assignment".to_string(),
-                class: FrontendCorpusClass::CompilerUnit,
-                source: Some("Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n".to_string()),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-            FrontendCorpusFixture {
-                name: "conformance_assignment".to_string(),
-                fixture_path: "inline:conformance_assignment".to_string(),
-                class: FrontendCorpusClass::ConformanceCase,
-                source: Some("Sub Main()\n    Dim y As Long\n    y = 3\nEnd Sub\n".to_string()),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-            FrontendCorpusFixture {
-                name: "host_project_residual".to_string(),
-                fixture_path: "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#host-project-residual".to_string(),
-                class: FrontendCorpusClass::HostProject,
-                source: Some("Sub Main()\nEnd Sub\n".to_string()),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-            FrontendCorpusFixture {
-                name: "excel_oracle_residual".to_string(),
-                fixture_path: "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual".to_string(),
-                class: FrontendCorpusClass::ExcelOracle,
-                source: None,
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-        ]);
+        let fixtures = frontend_rework_seed_corpus();
+        let report = run_frontend_diff_corpus(&fixtures);
 
-        assert_eq!(report.ran_count, 2, "{report:#?}");
+        assert_eq!(report.ran_count, 3, "{report:#?}");
         assert_eq!(report.skipped_count, 2, "{report:#?}");
         assert_eq!(report.equivalent_count, 2, "{report:#?}");
+        assert_eq!(report.intentional_improvement_count, 1, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
         assert_eq!(
-            report.rows[2].status,
+            report.rows[3].status,
             FrontendCorpusRowStatus::SkippedResidual
         );
         assert!(
-            report.rows[2]
+            report.rows[3]
                 .skip_reason
                 .as_deref()
                 .is_some_and(|reason| reason.contains("requires VM")),
             "{report:#?}"
         );
         assert_eq!(
-            report.rows[3].status,
+            report.rows[4].status,
             FrontendCorpusRowStatus::SkippedResidual
         );
     }
@@ -877,5 +838,82 @@ mod tests {
         compare_legacy_to_frontend_v2(
             "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n",
         )
+    }
+
+    fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
+        vec![
+            FrontendCorpusFixture {
+                name: "examples_basic_arithmetic".to_string(),
+                fixture_path: "examples/basic/arithmetic.bas".to_string(),
+                class: FrontendCorpusClass::CompilerUnit,
+                source: Some(include_str!("../../../examples/basic/arithmetic.bas").to_string()),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+            FrontendCorpusFixture {
+                name: "conformance_call_coercion_mixed_variant_to_long".to_string(),
+                fixture_path: "conformance/tests/call_coercion_mixed_variant_to_long.bas"
+                    .to_string(),
+                class: FrontendCorpusClass::ConformanceCase,
+                source: Some(
+                    include_str!(
+                        "../../../conformance/tests/call_coercion_mixed_variant_to_long.bas"
+                    )
+                    .to_string(),
+                ),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+            FrontendCorpusFixture {
+                name: "inline_statement_separator_bridge_improvement".to_string(),
+                fixture_path:
+                    "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-3"
+                        .to_string(),
+                class: FrontendCorpusClass::CompilerUnit,
+                source: Some(
+                    "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n".to_string(),
+                ),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+                rationale:
+                    "v2 accepts a CST-valid inline statement sequence that legacy-default rejects"
+                        .to_string(),
+                close_condition:
+                    "keep as improvement only while v2 compiles and FE-5.4 adds execution evidence"
+                        .to_string(),
+            },
+            FrontendCorpusFixture {
+                name: "integration_host_project_residual".to_string(),
+                fixture_path: "conformance/integration/projects/INTP-001/main/Main.proc.bas"
+                    .to_string(),
+                class: FrontendCorpusClass::HostProject,
+                source: Some(
+                    include_str!(
+                        "../../../conformance/integration/projects/INTP-001/main/Main.proc.bas"
+                    )
+                    .to_string(),
+                ),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+            FrontendCorpusFixture {
+                name: "excel_oracle_residual".to_string(),
+                fixture_path:
+                    "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
+                        .to_string(),
+                class: FrontendCorpusClass::ExcelOracle,
+                source: None,
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+        ]
     }
 }

@@ -13,7 +13,8 @@ The first automated route accepts fixture rows with:
 - fixture name and evidence path;
 - fixture class: compiler unit, conformance case, host project, or Excel oracle;
 - optional inline source;
-- bytecode drift expectation, rationale, and close condition for classifier policy.
+- bytecode drift expectation, diagnostic/acceptance drift expectation, rationale, and close
+  condition for classifier policy.
 
 Rows with inline source and class `CompilerUnit` or `ConformanceCase` run through the existing
 legacy-vs-v2 harness and classifier. Host project and Excel oracle rows are represented in the
@@ -22,20 +23,35 @@ runner can execute VM/host/oracle observations without creating a compiler depen
 
 ## Automated Smoke Route
 
-The unit test `frontend_corpus_runner_runs_source_backed_rows_and_skips_residuals` verifies:
+The unit test `frontend_corpus_runner_runs_source_backed_rows_and_skips_residuals` now runs a
+reopened seed corpus with real repo fixture sources plus the route-backed v2 improvement fixture:
 
-- compiler unit row runs through the harness and classifies as equivalent;
-- conformance row runs through the harness and classifies as equivalent;
+- `examples/basic/arithmetic.bas`: compiler unit row runs through the harness and classifies as
+  equivalent;
+- `conformance/tests/call_coercion_mixed_variant_to_long.bas`: conformance row runs through the
+  harness and classifies as equivalent;
+- `inline_statement_separator_bridge_improvement`: compiler unit row runs through the v2 bridge
+  route and classifies as `IntentionalImprovement`, because legacy-default rejects the inline
+  statement sequence while frontend v2 compiles it with bytecode and metadata;
 - host project row is present but skipped as a residual requiring VM/host execution;
 - Excel oracle row is present but skipped as a residual requiring oracle-backed execution.
+
+Expected report counts:
+
+- `ran_count = 3`
+- `skipped_count = 2`
+- `equivalent_count = 2`
+- `intentional_improvement_count = 1`
+- `bug_count = 0`
 
 ### host-project-residual
 
 - Class: `HostProject`
 - Current status: `SkippedResidual`
 - Reason: requires VM/host project runner.
-- Next route: FE-5.4 follow-on integration should call the same report/classifier shape from a
-  crate or script that can depend on the VM/host layer.
+- Seed fixture: `conformance/integration/projects/INTP-001/main/Main.proc.bas`.
+- Next route: a crate or script that can depend on the VM/host layer should call the same
+  report/classifier shape and attach execution observations.
 
 ### excel-oracle-residual
 
@@ -57,5 +73,7 @@ The unit test `frontend_corpus_runner_runs_source_backed_rows_and_skips_residual
 - The runner does not pretend the compiler crate can execute host projects or Excel oracle cases.
   Those classes are included in the report as explicit residual skips, not silently omitted.
 - Source-backed compiler and conformance rows already exercise the harness/classifier end to end.
+- The reopened seed corpus now includes real repository fixture files, not only inline examples,
+  and carries the diagnostic-improvement policy from FE-5.3 through the corpus runner.
 - This keeps the dependency direction clean: compiler support code remains independent of VM and
-  host crates, while FE-5.4 leaves a concrete row shape for the later higher-layer runner.
+  host crates, while leaving a concrete row shape for the later higher-layer runner.
