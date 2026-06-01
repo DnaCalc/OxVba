@@ -2620,15 +2620,23 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_bang_member_access_for_fallback() {
+    fn hir_production_lowering_accepts_bang_member_access() {
         let source = "Sub Main()\nDim obj\nDim x\nx = obj!Value\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("bang member access remains residual");
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
 
         assert!(
-            matches!(err, HirProductionLoweringError::Unsupported(_)),
-            "bang member access must remain fallback-eligible, got {err:?}"
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost { args, .. }
+                    if args.is_empty()
+                )
+            }),
+            "expected bang member read to emit dispatch invoke: {:?}",
+            bytecode.instructions
         );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

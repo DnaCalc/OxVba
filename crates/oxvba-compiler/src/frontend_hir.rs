@@ -1462,10 +1462,11 @@ fn direct_member_name(node: SyntaxNode<'_>) -> Option<String> {
     let mut after_member_operator = false;
     for element in node.children() {
         match element {
-            SyntaxElement::Token(token) if token.kind == SyntaxKind::Dot => {
+            SyntaxElement::Token(token)
+                if token.kind == SyntaxKind::Dot || token.kind == SyntaxKind::Bang =>
+            {
                 after_member_operator = true;
             }
-            SyntaxElement::Token(token) if token.kind == SyntaxKind::Bang => return None,
             SyntaxElement::Token(token)
                 if after_member_operator
                     && !token.kind.is_trivia()

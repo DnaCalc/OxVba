@@ -913,8 +913,10 @@ Candidate bead units:
   metadata.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
-  Bang access, member assignment targets, `With` shorthand, object construction, default-member/property
-  selection, project/class binding, COM binding, and writeback behavior remain residual work.
+  Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
+  HIR member expression route and backend late-bound dispatch shape. Member assignment targets,
+  `With` shorthand writes, object construction, default-member/property selection, project/class
+  binding, COM binding, and writeback behavior remain residual work.
   Follow-up continuation adds read-side `With obj ... .Member ... End With` lowering by binding
   dot-prefixed member reads to the active With receiver; With member assignment targets remain
   fallback-eligible until member write/property Let/Set semantics move to HIR.
