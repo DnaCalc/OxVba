@@ -33,6 +33,14 @@ The classifier distinguishes:
   production qualified/public procedure lookup. The classifier gates the route as
   `EarlyBoundProject { kind: Procedure }` before the lowering path maps the symbol route to the
   lowered procedure.
-- This bead is not complete yet. Imported COM members, late-bound dispatch, default-member
-  dispatch, and host-provided globals still need production route proof through this classifier or
-  explicit handoff to narrower FE-7 beads before closure.
+- Imported COM member dispatch now consumes resolved typelib member specs in production early-bound
+  member rewriting. The classifier gates each resolved member as `ImportedCom` with the concrete
+  dispatch id before rendering `__OxVbaEarlyInvoke`.
+- This bead is not complete yet. Late-bound dispatch, project/default-member dispatch, and
+  host-provided globals still need production route proof through this classifier or explicit
+  handoff to narrower FE-7 beads before closure.
+
+## Continuation Checks
+
+- `cargo test -p oxvba-compiler compile_project_rewrites_early_bound_member_call_to_dispatchinvoke_subset --quiet`
+- `cargo test -p oxvba-compiler known_typelib_default_member_token_and_spec_reads_external_metadata --quiet`

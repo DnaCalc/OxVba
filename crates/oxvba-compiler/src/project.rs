@@ -14,7 +14,9 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
-    frontend_member_dispatch::{MemberDispatchClass, classify_project_member},
+    frontend_member_dispatch::{
+        MemberDispatchClass, classify_imported_com_member, classify_project_member,
+    },
     frontend_project_symbols::{
         ProjectSymbolIndex, ProjectSymbolKind, ProjectSymbolRoute, QualifiedName,
         build_project_symbol_index_from_manifest,
@@ -3899,6 +3901,7 @@ fn rewrite_early_bound_member_dispatch(
                             });
                         }
                     };
+                validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
                 (var_name.to_string(), target_name, member_token, member_spec)
             } else {
                 let var_name = raw_name.trim();
@@ -3933,6 +3936,7 @@ fn rewrite_early_bound_member_dispatch(
                             });
                         }
                     };
+                validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
                 (
                     var_name.to_string(),
                     format!("{}.{}", binding.qualified_type, member_spec.name),
@@ -4047,6 +4051,7 @@ fn resolve_early_bound_invoke_target(
                     });
                 }
             };
+        validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
         Ok(Some((
             var_name.to_string(),
             format!("{}.{}", binding.qualified_type, member_spec.name),
@@ -4084,6 +4089,7 @@ fn resolve_early_bound_invoke_target(
                     });
                 }
             };
+        validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
         Ok(Some((
             var_name.to_string(),
             format!("{}.{}", binding.qualified_type, member_spec.name),
@@ -4091,6 +4097,33 @@ fn resolve_early_bound_invoke_target(
             member_spec,
         )))
     }
+}
+
+fn validate_imported_com_dispatch_classification(
+    binding: &EarlyBoundBinding,
+    member_spec: &ComMemberSpec,
+    member_token: i32,
+) -> Result<(), ProjectCompileError> {
+    let decision = classify_imported_com_member(
+        &binding.qualified_type,
+        &member_spec.name,
+        Some(member_token),
+    );
+    if !matches!(
+        decision.class,
+        MemberDispatchClass::ImportedCom {
+            dispatch_id: Some(dispatch_id),
+            ..
+        } if dispatch_id == member_token
+    ) {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-MEMBER-DISPATCH-CLASSIFICATION: imported COM member {}.{} did not classify with dispatch id {}",
+                binding.qualified_type, member_spec.name, member_token
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn validate_early_bound_invoke_shape(
