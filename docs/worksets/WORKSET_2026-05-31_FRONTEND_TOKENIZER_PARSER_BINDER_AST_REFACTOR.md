@@ -655,6 +655,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/EVENTS_IMPLEMENTS_SEMANTICS_2026-06-01.md`.
 - FE-7.6 External references: bind typelib/project/native references through descriptor-backed
   symbols without dependency-specific routing.
+  Evidence: `docs/evidence/frontend_rework/EXTERNAL_REFERENCES_BINDING_2026-06-01.md`.
 
 Evidence gate: each migrated construct has before/after fixtures, semantic diff classification,
 and deletion or quarantine of the corresponding text rewrite.
