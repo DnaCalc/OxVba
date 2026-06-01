@@ -15,6 +15,7 @@ use thiserror::Error;
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy_object_locals_class,
     frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
+    frontend_hir_lowering::HirNewExpressionBinding,
     frontend_member_dispatch::{
         MemberDispatchClass, classify_imported_com_member, classify_project_member,
     },
@@ -799,6 +800,7 @@ struct ProjectDynamicInstanceBindingDraft {
     object_handle: i32,
     project_name: String,
     module_name: String,
+    constructor_type_name: String,
 }
 
 type ForcedObjectLocalsByProc = BTreeMap<String, BTreeSet<String>>;
@@ -807,6 +809,19 @@ type LoweredProjectSource = (
     Vec<ProjectDynamicInstanceBindingDraft>,
     ForcedObjectLocalsByProc,
 );
+
+fn hir_new_expression_bindings_from_dynamic_instances(
+    bindings: &[ProjectDynamicInstanceBindingDraft],
+) -> Vec<HirNewExpressionBinding> {
+    bindings
+        .iter()
+        .filter(|binding| binding.object_handle >= 0)
+        .map(|binding| HirNewExpressionBinding {
+            type_name: binding.constructor_type_name.clone(),
+            object_handle: binding.object_handle,
+        })
+        .collect()
+}
 
 pub fn module_unit_from_source(
     module_name: impl Into<String>,
@@ -1043,6 +1058,8 @@ fn compile_project_with_strategy(
             &reference_order,
             &event_dispatch_plan,
         )?;
+    let _hir_new_expression_bindings =
+        hir_new_expression_bindings_from_dynamic_instances(&dynamic_instance_bindings);
     let rewritten_source = rewrite_predeclared_property_reads_for_backend(
         &rewritten_source,
         &collect_predeclared_property_read_rewrite_routes(
@@ -3632,6 +3649,7 @@ fn expand_bound_source_line(
                 object_handle,
                 project_name: target_project.clone(),
                 module_name: target_module.clone(),
+                constructor_type_name: normalize_identifier(&dim_decl.type_name),
             });
             out.push(format!(
                 "{}Set {} = __oxvba_project_instance({})",
@@ -3750,6 +3768,7 @@ fn expand_bound_source_line(
             object_handle,
             project_name: target_project.clone(),
             module_name: target_module.clone(),
+            constructor_type_name: normalize_identifier(&type_name),
         });
         internal_class_bindings.insert(
             normalize_identifier(&var_name),
@@ -8238,7 +8257,8 @@ fn build_project_dynamic_object_routes(
             all_bindings.push(ProjectDynamicInstanceBindingDraft {
                 object_handle: next_export_only_handle,
                 project_name: current_project.clone(),
-                module_name,
+                module_name: module_name.clone(),
+                constructor_type_name: module_name,
             });
             next_export_only_handle -= 1;
         }
@@ -18884,6 +18904,12 @@ mod tests {
                 .map(|binding| binding.module_name.as_str()),
             Some("widgetfile")
         );
+        assert_eq!(
+            dynamic_instance_bindings
+                .first()
+                .map(|binding| binding.constructor_type_name.as_str()),
+            Some("widget")
+        );
 
         let expanded_set = expand_bound_source_line(
             "Set other = New Widget",
@@ -18909,6 +18935,19 @@ mod tests {
                 .get("other")
                 .map(|binding| binding.module_name.as_str()),
             Some("widgetfile")
+        );
+        assert_eq!(
+            super::hir_new_expression_bindings_from_dynamic_instances(&dynamic_instance_bindings),
+            vec![
+                super::HirNewExpressionBinding {
+                    type_name: "widget".to_string(),
+                    object_handle: 1,
+                },
+                super::HirNewExpressionBinding {
+                    type_name: "widget".to_string(),
+                    object_handle: 2,
+                }
+            ]
         );
     }
 

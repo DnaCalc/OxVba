@@ -934,10 +934,13 @@ Candidate bead units:
   project-aware construction-binding error. Follow-up continuation adds an explicit HIR lowering
   construction-binding hook: supplied `HirNewExpressionBinding` facts lower `New <Class>` to typed
   `StructuralIntrinsic::ProjectInstance(handle)` instead of a helper-name rewrite. `New` remains an
-  explicit production residual until project compilation generates and consumes those facts for
-  active-project class handles, imported/COM activation, generated instance metadata,
-  `Class_Initialize`, and `As New` lazy-construction semantics without relying on `project.rs`
-  source-text rewrites.
+  explicit production residual until project compilation consumes those facts for active-project
+  class handles, imported/COM activation, generated instance metadata, `Class_Initialize`, and
+  `As New` lazy-construction semantics without relying on `project.rs` source-text rewrites.
+  Follow-up project continuation now records normalized constructor type names in dynamic instance
+  drafts and materializes `HirNewExpressionBinding` facts in source order at the project compile
+  boundary; the remaining gap is direct consumption of those facts instead of compiling rewritten
+  backend source.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
