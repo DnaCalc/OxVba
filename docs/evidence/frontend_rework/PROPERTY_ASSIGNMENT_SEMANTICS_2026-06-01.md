@@ -63,6 +63,9 @@ The 2026-06-01 continuation added:
   invocation kind, and early-bound COM property read plus property put/putref rewrite paths validate
   that the front-end dispatch classification matches both dispatch id and `PropertyGet`/`Method`/
   `PropertyPut`/`PropertyPutRef` kind before emitting the existing `DispatchInvoke` carrier.
+- `bd-aprs.8.7` host continuation: selected host-injected property/default-member routes now
+  validate through the front-end `HostGlobal` dispatch classification before the compatibility
+  project rewrite bridge emits the selected host member call.
 
 ## Checks
 
@@ -78,6 +81,10 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler property_put_external --quiet`
 - `cargo test -p oxvba-compiler imported_property --quiet`
+- `cargo test -p oxvba-compiler host_injected_predeclared_property --quiet`
+- `cargo test -p oxvba-compiler host_injected_global_namespace_property --quiet`
+- `cargo test -p oxvba-compiler host_injected_predeclared_default_member --quiet`
+- `cargo test -p oxvba-compiler host_injected_global_namespace_default_member --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -147,3 +154,8 @@ The 2026-06-01 continuation added:
   compatibility `DispatchInvoke` source rewrite. This is still not full closure for the bead:
   host/project default-member writeback breadth, indexed/named writeback through HIR facts, and
   replacement/quarantine of the remaining project rewrite bodies remain open.
+- Host continuation fresh-eyes review found that `classify_host_global` existed only as a model
+  test and did not protect the production host-injected route. The selected host member and
+  default-member resolver exits now validate host/global classification before returning the
+  lowered PMR target. This improves route proof for host fixtures, but it remains a guard around the
+  compatibility rewrite path, not full HIR ownership.

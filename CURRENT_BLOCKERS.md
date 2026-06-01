@@ -117,9 +117,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `bd-aprs.8.7`: property/default-member production semantics;
       - continuation progress: imported-COM dispatch classification now records typelib invoke
         kind and early-bound COM property read/put/putref rewrite paths validate dispatch id and
-        invoke kind before retaining the compatibility `DispatchInvoke` carrier;
-      - still open: host/project default-member writeback breadth, indexed/named writeback through
-        HIR facts, overload validation, and replacement/quarantine of the remaining rewrite bodies;
+        invoke kind before retaining the compatibility `DispatchInvoke` carrier; selected
+        host-injected property/default-member routes now validate through `HostGlobal`
+        classification before retaining the compatibility PMR rewrite carrier;
+      - still open: project default-member writeback breadth, indexed/named writeback through HIR
+        facts, overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated

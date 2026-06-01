@@ -21,7 +21,8 @@ use crate::{
         compile_source_with_runtime_metadata_via_hir_with_new_bindings,
     },
     frontend_member_dispatch::{
-        MemberDispatchClass, classify_imported_com_member, classify_project_member,
+        MemberDispatchClass, classify_host_global, classify_imported_com_member,
+        classify_project_member,
     },
     frontend_project_symbols::{
         ProjectSymbolIndex, ProjectSymbolKind, ProjectSymbolRoute, QualifiedName,
@@ -6096,6 +6097,10 @@ fn resolve_internal_class_member_target_of_kinds(
         })
         .collect::<Vec<_>>();
     if interface_implementation_candidates.len() == 1 {
+        validate_host_global_dispatch_classification(
+            interface_implementation_candidates[0],
+            member,
+        )?;
         return Ok(Some((
             interface_implementation_candidates
                 .remove(0)
@@ -6145,7 +6150,35 @@ fn resolve_internal_class_member_target_of_kinds(
         };
     }
     candidates.sort_by_key(|decl| decl.lowered_name.clone());
-    Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
+    let selected = candidates[0];
+    validate_host_global_dispatch_classification(selected, member)?;
+    Ok(Some((selected.lowered_name.clone(), instance_arg)))
+}
+
+fn validate_host_global_dispatch_classification(
+    decl: &ProcedureDecl,
+    member: &str,
+) -> Result<(), ProjectCompileError> {
+    if decl.reference_kind != Some(ReferenceKind::HostInjected) {
+        return Ok(());
+    }
+    let decision = classify_host_global(&decl.module_name, member);
+    if !matches!(
+        decision.class,
+        MemberDispatchClass::HostGlobal {
+            ref host_name,
+            ref member_name
+        } if normalize_identifier(host_name) == decl.module_name
+            && normalize_identifier(member_name) == decl.procedure_name
+    ) {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-HOST-DISPATCH-CLASSIFICATION: host member {}.{} did not classify as selected route {}.{}",
+                decl.module_name, member, decl.module_name, decl.procedure_name
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6233,7 +6266,9 @@ fn resolve_internal_class_default_member_target_of_kinds(
         }
     }
     candidates.sort_by_key(|decl| decl.lowered_name.clone());
-    Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
+    let selected = candidates[0];
+    validate_host_global_dispatch_classification(selected, &selected.procedure_name)?;
+    Ok(Some((selected.lowered_name.clone(), instance_arg)))
 }
 
 #[allow(clippy::too_many_arguments)]

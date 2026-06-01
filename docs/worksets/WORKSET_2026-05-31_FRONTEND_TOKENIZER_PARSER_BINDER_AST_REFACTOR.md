@@ -1098,6 +1098,8 @@ Candidate bead units:
   HIR with Let/Set hints. Continuation progress now makes imported-COM dispatch classification
   carry typelib invocation kind and validates early-bound COM property read plus put/putref rewrite
   paths against that front-end dispatch fact before emitting the compatibility `DispatchInvoke`
+  carrier; selected host-injected property/default-member routes now validate through the
+  front-end `HostGlobal` dispatch classification before retaining their compatibility PMR rewrite
   carrier.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
