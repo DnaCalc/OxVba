@@ -81,6 +81,7 @@ pub enum HirExprKind {
 pub enum HirLiteral {
     Empty,
     Null,
+    Nothing,
     Bool(bool),
     Int(i64),
     String(String),
@@ -106,6 +107,7 @@ pub enum HirBinaryOp {
     Le,
     Gt,
     Ge,
+    Is,
     And,
     Or,
 }
@@ -666,6 +668,7 @@ fn lower_literal(node: SyntaxNode<'_>) -> Result<HirLiteral, HirBuildError> {
         SyntaxKind::KwFalse => Ok(HirLiteral::Bool(false)),
         SyntaxKind::KwEmpty => Ok(HirLiteral::Empty),
         SyntaxKind::KwNull => Ok(HirLiteral::Null),
+        SyntaxKind::KwNothing => Ok(HirLiteral::Nothing),
         _ => Err(HirBuildError::Unsupported(format!(
             "unsupported literal token {:?}",
             token.kind
@@ -689,6 +692,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
                 | SyntaxKind::LtEq
                 | SyntaxKind::Gt
                 | SyntaxKind::GtEq
+                | SyntaxKind::KwIs
                 | SyntaxKind::KwAnd
                 | SyntaxKind::KwOr
         )
@@ -711,6 +715,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
         SyntaxKind::LtEq => Ok(HirBinaryOp::Le),
         SyntaxKind::Gt => Ok(HirBinaryOp::Gt),
         SyntaxKind::GtEq => Ok(HirBinaryOp::Ge),
+        SyntaxKind::KwIs => Ok(HirBinaryOp::Is),
         SyntaxKind::KwAnd => Ok(HirBinaryOp::And),
         SyntaxKind::KwOr => Ok(HirBinaryOp::Or),
         _ => unreachable!("filtered operator token"),
@@ -904,6 +909,38 @@ mod tests {
                 op: HirBinaryOp::Add,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn hir_builder_lowers_object_is_and_nothing_literal_from_cst() {
+        let source = "Sub Main()\n    Dim obj As Object\n    Dim same As Boolean\n    same = obj Is Nothing\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let procedure = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("procedure declaration");
+        let let_stmt = procedure
+            .iter()
+            .find_map(|stmt| find_let_stmt(&module.arenas, *stmt))
+            .expect("let statement");
+        let value = module.arenas.expr(let_stmt.1).expect("assignment value");
+        let HirExprKind::Binary {
+            op: HirBinaryOp::Is,
+            rhs,
+            ..
+        } = value.kind
+        else {
+            panic!("expected object identity binary expression, got {value:?}");
+        };
+        assert!(matches!(
+            module.arenas.expr(rhs).map(|expr| &expr.kind),
+            Some(HirExprKind::Literal(HirLiteral::Nothing))
         ));
     }
 

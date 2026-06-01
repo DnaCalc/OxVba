@@ -7323,6 +7323,13 @@ impl Vm {
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
+                Instruction::CmpObjectIsSlots { dst, lhs, rhs } => {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::runtime_object_identity_is(&lhs, &rhs);
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
+                    pc += 1;
+                }
                 Instruction::LoadErrNumber { slot } => {
                     self.write_variant_slot(*slot, Variant::from_i32(self.last_error))?;
                     pc += 1;

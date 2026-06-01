@@ -66,11 +66,17 @@ pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
     source: &str,
 ) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), SyntaxBridgeError> {
     validate_source_with_cst(source)?;
-    match compile_with_runtime_metadata(source) {
+    let lowered_object_is = lower_bare_object_is_for_legacy(source)?;
+    let compile_source = if lowered_object_is == source {
+        source
+    } else {
+        lowered_object_is.as_str()
+    };
+    match compile_with_runtime_metadata(compile_source) {
         Ok(compiled) => Ok(compiled),
         Err(first_error) => {
-            let lowered = lower_statement_separators_for_legacy(source);
-            if lowered == source {
+            let lowered = lower_statement_separators_for_legacy(compile_source);
+            if lowered == compile_source {
                 return Err(SyntaxBridgeError::Compile(first_error));
             }
             compile_with_runtime_metadata(&lowered).map_err(SyntaxBridgeError::Compile)
@@ -277,6 +283,16 @@ fn lower_binary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeErro
         });
     }
 
+    if operator.kind == SyntaxKind::KwIs
+        && (!is_object_identity_operand_syntax(exprs[0])
+            || !is_object_identity_operand_syntax(rhs_node))
+    {
+        return Err(unsupported_expr(
+            node,
+            "bare object `Is` comparison requires object-shaped operands or `Nothing`",
+        ));
+    }
+
     let rhs = lower_cst_expr(rhs_node)?;
     match operator.kind {
         SyntaxKind::Plus => Ok(BoundExpr::BinaryOp {
@@ -326,10 +342,7 @@ fn lower_binary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeErro
         SyntaxKind::Gt => compare_expr(CompareOp::Gt, lhs, rhs),
         SyntaxKind::GtEq => compare_expr(CompareOp::Ge, lhs, rhs),
         SyntaxKind::KwLike => compare_expr(CompareOp::Like, lhs, rhs),
-        SyntaxKind::KwIs => Err(unsupported_expr(
-            node,
-            "bare object `Is` comparison needs binder/object identity lowering",
-        )),
+        SyntaxKind::KwIs => compare_expr(CompareOp::Is, lhs, rhs),
         SyntaxKind::KwAnd => logical_expr(LogicalBinOp::And, lhs, rhs),
         SyntaxKind::KwOr => logical_expr(LogicalBinOp::Or, lhs, rhs),
         _ => Err(unsupported_expr(
@@ -361,6 +374,80 @@ fn logical_expr(
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
     })
+}
+
+fn lower_bare_object_is_for_legacy(source: &str) -> Result<String, SyntaxBridgeError> {
+    let parsed = oxvba_syntax::parse(source);
+    if !parsed.errors().is_empty() {
+        return Err(SyntaxBridgeError::Syntax(format!("{:?}", parsed.errors())));
+    }
+    let mut replacements = Vec::new();
+    collect_object_is_replacements(parsed.syntax(), &mut replacements)?;
+    if replacements.is_empty() {
+        return Ok(source.to_string());
+    }
+    replacements.sort_by_key(|(start, _, _)| *start);
+    replacements.dedup_by_key(|(start, end, _)| (*start, *end));
+
+    let mut lowered = source.to_string();
+    for (start, end, replacement) in replacements.into_iter().rev() {
+        lowered.replace_range(start..end, &replacement);
+    }
+    Ok(lowered)
+}
+
+fn collect_object_is_replacements(
+    node: SyntaxNode<'_>,
+    replacements: &mut Vec<(usize, usize, String)>,
+) -> Result<(), SyntaxBridgeError> {
+    if node.kind() == SyntaxKind::BinaryExpr
+        && direct_operator_token(node).is_some_and(|token| token.kind == SyntaxKind::KwIs)
+        && !first_nontrivia_token(node).is_some_and(|token| token.kind == SyntaxKind::KwTypeOf)
+    {
+        let exprs = expression_children(node);
+        if exprs.len() >= 2 {
+            if !is_object_identity_operand_syntax(exprs[0])
+                || !is_object_identity_operand_syntax(exprs[1])
+            {
+                return Err(unsupported_expr(
+                    node,
+                    "bare object `Is` comparison requires object-shaped operands or `Nothing`",
+                ));
+            }
+            let (start, end) = node.text_range();
+            replacements.push((
+                start as usize,
+                end as usize,
+                format!(
+                    "__oxvba_object_is({}, {})",
+                    exprs[0].text().trim(),
+                    exprs[1].text().trim()
+                ),
+            ));
+        }
+    }
+    for child in node.child_nodes() {
+        collect_object_is_replacements(child, replacements)?;
+    }
+    Ok(())
+}
+
+fn is_object_identity_operand_syntax(node: SyntaxNode<'_>) -> bool {
+    match node.kind() {
+        SyntaxKind::IdentExpr
+        | SyntaxKind::MemberExpr
+        | SyntaxKind::IndexExpr
+        | SyntaxKind::CallExpr
+        | SyntaxKind::NewExpr => true,
+        SyntaxKind::ParenExpr => expression_children(node)
+            .into_iter()
+            .next()
+            .is_some_and(is_object_identity_operand_syntax),
+        SyntaxKind::LiteralExpr => {
+            first_nontrivia_token(node).is_some_and(|token| token.kind == SyntaxKind::KwNothing)
+        }
+        _ => false,
+    }
 }
 
 fn lower_arg_list(node: SyntaxNode<'_>) -> Result<Vec<BoundCallArg>, SyntaxBridgeError> {
@@ -584,11 +671,41 @@ mod tests {
             "expected typeofis intrinsic expression, got {type_of:?}"
         );
 
-        let bare_is = lower_expression_to_legacy_bound_expr("a Is b")
-            .expect_err("bare object identity needs binder lowering");
+        let bare_is =
+            lower_expression_to_legacy_bound_expr("a Is b").expect("object identity should lower");
         assert!(
-            bare_is.to_string().contains("bare object `Is` comparison"),
-            "unexpected error: {bare_is}"
+            matches!(
+                bare_is,
+                BoundExpr::CompareOp {
+                    op: CompareOp::Is,
+                    ..
+                }
+            ),
+            "expected object identity comparison, got {bare_is:?}"
+        );
+
+        let scalar_is = lower_expression_to_legacy_bound_expr("1 Is 2")
+            .expect_err("scalar Is must not lower as object identity");
+        assert!(
+            scalar_is
+                .to_string()
+                .contains("requires object-shaped operands"),
+            "unexpected scalar Is error: {scalar_is}"
+        );
+    }
+
+    #[test]
+    fn bridge_compiles_bare_object_is_through_cst_object_identity_route() {
+        let source = "Sub Main()\n    Dim obj As Object\n    Dim same As Boolean\n    same = obj Is Nothing\nEnd Sub\n";
+        let bytecode = compile_source_via_syntax_bridge(source)
+            .expect("object identity comparison should compile through bridge");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CmpObjectIsSlots { .. })),
+            "expected object identity bytecode: {:?}",
+            bytecode.instructions
         );
     }
 

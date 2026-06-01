@@ -727,7 +727,7 @@ Candidate bead units:
 - FE-6.7 Bare object `Is` identity binding/lowering: bind and lower `a Is b` and `a Is Nothing`
   as object identity through production front-end facts. This bead was added during the reopened
   FE-4.1 review after rejecting the incorrect shortcut of lowering bare `Is` as equality.
-  Evidence: to be created by `bd-aprs.7.7`.
+  Evidence: `docs/evidence/frontend_rework/OBJECT_IS_IDENTITY_BINDING_LOWERING_2026-06-01.md`.
 
 Evidence gate: selected constructs bind through HIR, answer SemanticModel queries, and lower/run
 with behavior matching or improving the legacy path.

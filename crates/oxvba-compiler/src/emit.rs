@@ -301,6 +301,7 @@ pub enum VbaOperatorDescriptor {
     GreaterThan,
     GreaterOrEqual,
     Like,
+    ObjectIs,
     Not,
     And,
     Or,
@@ -4222,8 +4223,8 @@ fn compare_operator_descriptor(
             .chain(expr_value_states(rhs))
             .collect(),
         Some(compare_mode_descriptor(compare_mode)),
-        "oxvba_vm::typed_compare_variants".to_string(),
-        "numeric-incompatible-error-or-current-null-falsy".to_string(),
+        compare_operator_helper(op).to_string(),
+        compare_operator_runtime_error(op).to_string(),
         EvaluationOrderDescriptor::LeftToRightEager,
         "vm-helper-backed".to_string(),
         "metadata-package-descriptor; locale/oracle-rows-remain-open".to_string(),
@@ -5555,6 +5556,21 @@ fn compare_operator_descriptor_kind(op: CompareOp) -> VbaOperatorDescriptor {
         CompareOp::Gt => VbaOperatorDescriptor::GreaterThan,
         CompareOp::Ge => VbaOperatorDescriptor::GreaterOrEqual,
         CompareOp::Like => VbaOperatorDescriptor::Like,
+        CompareOp::Is => VbaOperatorDescriptor::ObjectIs,
+    }
+}
+
+fn compare_operator_helper(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Is => "oxvba_vm::runtime_object_identity_is",
+        _ => "oxvba_vm::typed_compare_variants",
+    }
+}
+
+fn compare_operator_runtime_error(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Is => "none-object-identity-or-nothing",
+        _ => "numeric-incompatible-error-or-current-null-falsy",
     }
 }
 
@@ -5588,6 +5604,7 @@ fn compare_op_key(op: CompareOp) -> &'static str {
         CompareOp::Gt => "greater-than",
         CompareOp::Ge => "greater-or-equal",
         CompareOp::Like => "like",
+        CompareOp::Is => "object-is",
     }
 }
 
@@ -8615,6 +8632,11 @@ fn emit_select_case_clause_match(
                     pattern: const_slot,
                     mode: StringCompareMode::Binary,
                 }),
+                CompareOp::Is => instructions.push(Instruction::CmpObjectIsSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
             }
             cmp_slot
         }
@@ -8734,6 +8756,11 @@ fn emit_cond_into(
                     lhs: lhs_slot,
                     pattern: rhs_slot,
                     mode: compare_mode,
+                }),
+                CompareOp::Is => instructions.push(Instruction::CmpObjectIsSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
                 }),
             }
         }
@@ -9068,6 +9095,11 @@ fn emit_expr_into(
                     pattern: rhs_slot,
                     mode: compare_mode,
                 }),
+                CompareOp::Is => instructions.push(Instruction::CmpObjectIsSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
             }
         }
         BoundExpr::UnaryOp { op, operand } => {
@@ -9225,6 +9257,13 @@ fn emit_expr_into(
                     instructions.push(Instruction::LoadConstI32 {
                         slot: dst,
                         value: 0,
+                    });
+                }
+                ("__oxvba_object_is", [lhs, rhs]) => {
+                    instructions.push(Instruction::CmpObjectIsSlots {
+                        dst,
+                        lhs: *lhs,
+                        rhs: *rhs,
                     });
                 }
                 // Materialise a project-class instance as a reference-counted `Object`

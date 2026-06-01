@@ -256,6 +256,7 @@ fn eval_const_cond(cond: &BoundCond) -> Option<bool> {
                 CompareOp::Gt => lhs > rhs,
                 CompareOp::Ge => lhs >= rhs,
                 CompareOp::Like => lhs == rhs,
+                CompareOp::Is => false,
             })
         }
         BoundCond::Truthy(expr) => Some(eval_const_expr(expr)? != 0),
@@ -276,6 +277,7 @@ fn case_clause_matches_const(clause: &BoundCaseClause, value: i32) -> bool {
             CompareOp::Gt => value > *rhs,
             CompareOp::Ge => value >= *rhs,
             CompareOp::Like => value == *rhs,
+            CompareOp::Is => false,
         },
         BoundCaseClause::Range { start, end } => value >= *start && value <= *end,
     }

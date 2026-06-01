@@ -882,6 +882,13 @@ pub enum Instruction {
         rhs: usize,
         mode: StringCompareMode,
     },
+    /// VBA object identity comparison (`lhs Is rhs`). This is distinct from
+    /// value equality and treats `Nothing` as the null object identity.
+    CmpObjectIsSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
     LoadErrNumber {
         slot: usize,
     },

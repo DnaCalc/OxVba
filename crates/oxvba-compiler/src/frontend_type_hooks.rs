@@ -234,6 +234,7 @@ fn infer_expr_type(
         HirExprKind::Literal(HirLiteral::Int(_)) => Some(VbaTypeId::Long),
         HirExprKind::Literal(HirLiteral::String(_)) => Some(VbaTypeId::String),
         HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(VbaTypeId::Variant),
+        HirExprKind::Literal(HirLiteral::Nothing) => Some(VbaTypeId::Object),
         HirExprKind::Binary { lhs, .. } => infer_expr_type(hir, symbol_types, *lhs),
         _ => None,
     }

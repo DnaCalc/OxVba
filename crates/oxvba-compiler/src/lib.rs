@@ -460,6 +460,46 @@ mod tests {
     }
 
     #[test]
+    fn compile_options_frontend_v2_compiles_bare_object_is_identity() {
+        let source = "Sub Main()\n    Dim obj As Object\n    Dim same As Boolean\n    same = obj Is Nothing\nEnd Sub\n";
+        let legacy_err = compile(source).expect_err("legacy path should not parse bare object Is");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement")
+                || legacy_err.to_string().contains("cannot parse expression"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+            .expect("frontend_v2 should compile object identity");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CmpObjectIsSlots { .. })),
+            "expected object identity bytecode: {:?}",
+            out.instructions
+        );
+    }
+
+    #[test]
+    fn compile_options_frontend_v2_compiles_object_identity_conformance_fixtures() {
+        for source in [
+            include_str!("../../../conformance/tests/object_identity_is_nothing.bas"),
+            include_str!("../../../conformance/tests/object_identity_is_same_and_different.bas"),
+        ] {
+            let out =
+                super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+                    .expect("frontend_v2 should compile object identity fixture");
+            assert!(
+                out.instructions
+                    .iter()
+                    .any(|instruction| matches!(instruction, Instruction::CmpObjectIsSlots { .. })),
+                "expected object identity bytecode: {:?}",
+                out.instructions
+            );
+        }
+    }
+
+    #[test]
     fn compile_options_frontend_v2_rejects_syntax_before_legacy_lowering() {
         let err = super::compile_with_options(
             "Sub Main()\n    x = (1 + 2\nEnd Sub\n",

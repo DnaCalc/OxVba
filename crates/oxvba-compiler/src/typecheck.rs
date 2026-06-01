@@ -1605,7 +1605,9 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "atn" | "tan" | "rate" | "irr" | "mirr" => Some(BoundType::Double),
         "rnd" | "npv" => Some(BoundType::Double),
         "nper" => Some(BoundType::Double),
-        "isempty" | "isnull" | "iserror" | "typeofis" => Some(BoundType::Boolean),
+        "isempty" | "isnull" | "iserror" | "typeofis" | "__oxvba_object_is" => {
+            Some(BoundType::Boolean)
+        }
         "vbnullstring" => Some(BoundType::String),
         "array" | "__oxvba_array_append" => Some(BoundType::Array),
         "strptr" | "varptr" | "objptr" => Some(BoundType::LongPtr),

@@ -989,6 +989,15 @@ pub fn runtime_variant_is_nothing(value: &oxvba_runtime::Variant) -> bool {
     matches!(value.vtype(), oxvba_runtime::VarType::Empty) || value.as_i32() == Some(0)
 }
 
+pub fn runtime_object_identity_is(lhs: &Variant, rhs: &Variant) -> bool {
+    match (lhs.as_object_ref(), rhs.as_object_ref()) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        (Some(lhs), None) => lhs.raw() == 0 && runtime_variant_is_nothing(rhs),
+        (None, Some(rhs)) => runtime_variant_is_nothing(lhs) && rhs.raw() == 0,
+        (None, None) => runtime_variant_is_nothing(lhs) && runtime_variant_is_nothing(rhs),
+    }
+}
+
 pub fn runtime_vartype_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i32 {
     match value.vtype() {
         oxvba_runtime::VarType::Empty => 0,
@@ -2036,5 +2045,19 @@ mod tests {
                 .expect_err("Let assignment into Object should fail")
                 .contains("Let cannot assign to Object")
         );
+    }
+
+    #[test]
+    fn object_identity_is_distinguishes_objects_and_nothing() {
+        let object = ObjectRef::from_compat_identity(41);
+        let first = Variant::from_object_ref(object.clone());
+        let same = Variant::from_object_ref(object);
+        let different = Variant::from_object_ref(ObjectRef::from_compat_identity(42));
+        let nothing = Variant::from_i32(0);
+
+        assert!(runtime_object_identity_is(&first, &same));
+        assert!(!runtime_object_identity_is(&first, &different));
+        assert!(!runtime_object_identity_is(&first, &nothing));
+        assert!(runtime_object_identity_is(&nothing, &Variant::empty()));
     }
 }
