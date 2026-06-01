@@ -135,6 +135,52 @@ pub struct DiffClassification {
     pub reasons: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontendCorpusClass {
+    CompilerUnit,
+    ConformanceCase,
+    HostProject,
+    ExcelOracle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontendCorpusFixture {
+    pub name: String,
+    pub fixture_path: String,
+    pub class: FrontendCorpusClass,
+    pub source: Option<String>,
+    pub expected_bytecode_drift: Option<ExpectedBytecodeDrift>,
+    pub rationale: String,
+    pub close_condition: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontendCorpusRowStatus {
+    Ran,
+    SkippedResidual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontendCorpusRow {
+    pub name: String,
+    pub fixture_path: String,
+    pub class: FrontendCorpusClass,
+    pub status: FrontendCorpusRowStatus,
+    pub skip_reason: Option<String>,
+    pub classification: Option<DiffClassification>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontendCorpusReport {
+    pub rows: Vec<FrontendCorpusRow>,
+    pub ran_count: usize,
+    pub skipped_count: usize,
+    pub bug_count: usize,
+    pub harmless_drift_count: usize,
+    pub intentional_improvement_count: usize,
+    pub equivalent_count: usize,
+}
+
 pub fn compare_legacy_to_legacy(source: &str) -> FrontendDiffReport {
     make_report(
         observe_frontend(source, FrontendPath::Legacy),
@@ -206,6 +252,29 @@ pub fn classify_frontend_diff(
     }
 }
 
+pub fn run_frontend_diff_corpus(fixtures: &[FrontendCorpusFixture]) -> FrontendCorpusReport {
+    let rows: Vec<_> = fixtures.iter().map(run_frontend_corpus_fixture).collect();
+    let ran_count = rows
+        .iter()
+        .filter(|row| row.status == FrontendCorpusRowStatus::Ran)
+        .count();
+    let skipped_count = rows.len() - ran_count;
+    let bug_count = count_classification(&rows, DiffClassificationKind::Bug);
+    let harmless_drift_count = count_classification(&rows, DiffClassificationKind::HarmlessDrift);
+    let intentional_improvement_count =
+        count_classification(&rows, DiffClassificationKind::IntentionalImprovement);
+    let equivalent_count = count_classification(&rows, DiffClassificationKind::Equivalent);
+    FrontendCorpusReport {
+        rows,
+        ran_count,
+        skipped_count,
+        bug_count,
+        harmless_drift_count,
+        intentional_improvement_count,
+        equivalent_count,
+    }
+}
+
 pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation {
     let compiled = match path {
         FrontendPath::Legacy => compile_with_runtime_metadata(source),
@@ -232,6 +301,62 @@ pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation
             observable_output: runtime_not_run(),
         },
     }
+}
+
+fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpusRow {
+    let Some(source) = fixture.source.as_deref() else {
+        return skipped_corpus_row(fixture, "fixture has no inline source for compiler harness");
+    };
+    if !matches!(
+        fixture.class,
+        FrontendCorpusClass::CompilerUnit | FrontendCorpusClass::ConformanceCase
+    ) {
+        return skipped_corpus_row(
+            fixture,
+            "fixture class requires VM, host project, or oracle runner",
+        );
+    }
+
+    let diff = compare_legacy_to_frontend_v2(source);
+    let classification = classify_frontend_diff(
+        &diff,
+        DiffClassificationInput {
+            fixture_name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            expected_bytecode_drift: fixture.expected_bytecode_drift,
+            rationale: fixture.rationale.clone(),
+            close_condition: fixture.close_condition.clone(),
+        },
+    );
+    FrontendCorpusRow {
+        name: fixture.name.clone(),
+        fixture_path: fixture.fixture_path.clone(),
+        class: fixture.class,
+        status: FrontendCorpusRowStatus::Ran,
+        skip_reason: None,
+        classification: Some(classification),
+    }
+}
+
+fn skipped_corpus_row(fixture: &FrontendCorpusFixture, reason: &str) -> FrontendCorpusRow {
+    FrontendCorpusRow {
+        name: fixture.name.clone(),
+        fixture_path: fixture.fixture_path.clone(),
+        class: fixture.class,
+        status: FrontendCorpusRowStatus::SkippedResidual,
+        skip_reason: Some(reason.to_string()),
+        classification: None,
+    }
+}
+
+fn count_classification(rows: &[FrontendCorpusRow], kind: DiffClassificationKind) -> usize {
+    rows.iter()
+        .filter(|row| {
+            row.classification
+                .as_ref()
+                .is_some_and(|classification| classification.kind == kind)
+        })
+        .count()
 }
 
 fn make_report(left: FrontendObservation, right: FrontendObservation) -> FrontendDiffReport {
@@ -485,6 +610,68 @@ mod tests {
         assert_eq!(
             classification.kind,
             DiffClassificationKind::IntentionalImprovement
+        );
+    }
+
+    #[test]
+    fn frontend_corpus_runner_runs_source_backed_rows_and_skips_residuals() {
+        let report = run_frontend_diff_corpus(&[
+            FrontendCorpusFixture {
+                name: "compiler_assignment".to_string(),
+                fixture_path: "inline:compiler_assignment".to_string(),
+                class: FrontendCorpusClass::CompilerUnit,
+                source: Some("Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n".to_string()),
+                expected_bytecode_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+            FrontendCorpusFixture {
+                name: "conformance_assignment".to_string(),
+                fixture_path: "inline:conformance_assignment".to_string(),
+                class: FrontendCorpusClass::ConformanceCase,
+                source: Some("Sub Main()\n    Dim y As Long\n    y = 3\nEnd Sub\n".to_string()),
+                expected_bytecode_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+            FrontendCorpusFixture {
+                name: "host_project_residual".to_string(),
+                fixture_path: "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#host-project-residual".to_string(),
+                class: FrontendCorpusClass::HostProject,
+                source: Some("Sub Main()\nEnd Sub\n".to_string()),
+                expected_bytecode_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+            FrontendCorpusFixture {
+                name: "excel_oracle_residual".to_string(),
+                fixture_path: "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual".to_string(),
+                class: FrontendCorpusClass::ExcelOracle,
+                source: None,
+                expected_bytecode_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+        ]);
+
+        assert_eq!(report.ran_count, 2, "{report:#?}");
+        assert_eq!(report.skipped_count, 2, "{report:#?}");
+        assert_eq!(report.equivalent_count, 2, "{report:#?}");
+        assert_eq!(report.bug_count, 0, "{report:#?}");
+        assert_eq!(
+            report.rows[2].status,
+            FrontendCorpusRowStatus::SkippedResidual
+        );
+        assert!(
+            report.rows[2]
+                .skip_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("requires VM")),
+            "{report:#?}"
+        );
+        assert_eq!(
+            report.rows[3].status,
+            FrontendCorpusRowStatus::SkippedResidual
         );
     }
 

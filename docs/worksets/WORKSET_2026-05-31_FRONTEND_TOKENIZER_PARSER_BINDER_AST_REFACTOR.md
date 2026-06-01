@@ -602,6 +602,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md`.
 - FE-5.4 Corpus runner integration: run compiler unit fixtures, host projects, conformance cases,
   and targeted Excel oracle-backed cases through the harness.
+  Evidence: `docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md`.
 
 Evidence gate: the harness can prove old-vs-old stability, v2 smoke behavior, and meaningful
 classification of at least one intentional non-byte-identical lowering.
