@@ -618,6 +618,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/SYMBOL_IDENTITY_MODEL_2026-06-01.md`.
 - FE-6.2 Bound HIR arenas: define expression, statement, declaration, call, member, property,
   and type nodes with CST backpointers.
+  Evidence: `docs/evidence/frontend_rework/BOUND_HIR_ARENAS_2026-06-01.md`.
 - FE-6.3 SemanticModel query API: expose symbol/type/diagnostic queries keyed by CST nodes and
   byte spans, reusing HIR facts rather than duplicating compiler semantics.
 - FE-6.4 Type and coercion hooks: connect HIR to the current declared type model, call-site
