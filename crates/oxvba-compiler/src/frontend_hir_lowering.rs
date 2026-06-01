@@ -453,7 +453,39 @@ fn lower_stmt(
     };
     match &stmt_data.kind {
         HirStmtKind::Let { target, value } => {
-            let target = lower_assignment_target(typed_hir, udt_field_aliases, *target)?;
+            let target = match lower_assignment_target(typed_hir, udt_field_aliases, *target) {
+                Ok(target) => target,
+                Err(err) => {
+                    if let BoundExpr::Member {
+                        receiver,
+                        member,
+                        args,
+                    } = lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
+                    {
+                        let expr = lower_expr(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            *value,
+                            context,
+                        )?;
+                        let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                            AssignmentIntent::Let
+                        } else {
+                            AssignmentIntent::Implicit
+                        };
+                        out.push(BoundStmt::AssignMember {
+                            receiver: *receiver,
+                            member,
+                            args,
+                            expr,
+                            intent,
+                        });
+                        return Ok(());
+                    }
+                    return Err(err);
+                }
+            };
             if let Some(source) = hir_name_expr(typed_hir, *value)?
                 && let (Some(target_fields), Some(source_fields)) = (
                     udt_instance_fields.get(&target.to_ascii_lowercase()),
@@ -491,7 +523,34 @@ fn lower_stmt(
             }
         }
         HirStmtKind::Set { target, value } => {
-            let target = lower_assignment_target(typed_hir, udt_field_aliases, *target)?;
+            let target = match lower_assignment_target(typed_hir, udt_field_aliases, *target) {
+                Ok(target) => target,
+                Err(err) => {
+                    if let BoundExpr::Member {
+                        receiver,
+                        member,
+                        args,
+                    } = lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
+                    {
+                        let expr = lower_expr(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            *value,
+                            context,
+                        )?;
+                        out.push(BoundStmt::AssignMember {
+                            receiver: *receiver,
+                            member,
+                            args,
+                            expr,
+                            intent: AssignmentIntent::Set,
+                        });
+                        return Ok(());
+                    }
+                    return Err(err);
+                }
+            };
             if let Some(source) = hir_name_expr(typed_hir, *value)?
                 && let (Some(target_fields), Some(source_fields)) = (
                     udt_instance_fields.get(&target.to_ascii_lowercase()),
@@ -2646,27 +2705,64 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_with_member_assignment_target_for_fallback() {
+    fn hir_production_lowering_accepts_with_member_assignment_target() {
         let source = "Sub Main()\nDim obj\nWith obj\n.Value = 1\nEnd With\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("With member assignment target remains residual");
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
 
         assert!(
-            matches!(err, HirProductionLoweringError::Unsupported(_)),
-            "With member assignment target must remain fallback-eligible, got {err:?}"
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if args.len() == 1
+                )
+            }),
+            "expected With member assignment to emit property-let dispatch: {:?}",
+            bytecode.instructions
         );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]
-    fn hir_production_lowering_rejects_member_assignment_target_for_fallback() {
-        let source = "Sub Main()\nDim obj\nobj.Value = 1\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("member assignment target remains residual");
+    fn hir_production_lowering_accepts_member_assignment_targets() {
+        let source =
+            "Sub Main()\nDim obj\nDim other\nobj.Value = 1\nSet obj.Ref = other\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
 
         assert!(
-            matches!(err, HirProductionLoweringError::Unsupported(_)),
-            "member assignment target must remain fallback-eligible, got {err:?}"
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if args.len() == 1
+                )
+            }),
+            "expected member Let assignment to emit property-let dispatch: {:?}",
+            bytecode.instructions
         );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertySet),
+                        ..
+                    } if args.len() == 1
+                )
+            }),
+            "expected member Set assignment to emit property-set dispatch: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

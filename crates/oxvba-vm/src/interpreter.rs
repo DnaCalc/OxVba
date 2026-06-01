@@ -25,7 +25,8 @@ use oxvba_compiler::{
     bundle::ExportInventory,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
-        ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
+        ExternalCallWritebackKind, ProjectMemberCallKind, RuntimeArrayElementType,
+        StringCompareMode,
     },
     canonical_descriptor_id, descriptor_digest_debug, descriptor_digest_from_fields,
     descriptor_identity_debug,
@@ -2692,6 +2693,7 @@ fn collect_interop_descriptor_evidence(
                 args,
                 early_bound,
                 com_member,
+                call_kind_hint,
             } => {
                 let pc_part = format!("pc-{pc}");
                 let descriptor_id = canonical_descriptor_id(
@@ -2713,6 +2715,7 @@ fn collect_interop_descriptor_evidence(
                         args,
                         *early_bound,
                         com_member.as_ref(),
+                        *call_kind_hint,
                     ),
                 });
             }
@@ -3032,6 +3035,7 @@ fn com_dispatch_instruction_observations(
     args: &[oxvba_compiler::bytecode::DispatchInvokeArg],
     early_bound: bool,
     com_member: Option<&oxvba_compiler::bytecode::ComMemberCallDescriptor>,
+    call_kind_hint: Option<ProjectMemberCallKind>,
 ) -> Vec<String> {
     let named_arg_count = args.iter().filter(|arg| arg.name.is_some()).count();
     let mut observations = vec![
@@ -3044,6 +3048,12 @@ fn com_dispatch_instruction_observations(
         format!("member-slot={member}"),
         format!("arg-count={}", args.len()),
         format!("named-arg-count={named_arg_count}"),
+        format!(
+            "call-kind-hint={}",
+            call_kind_hint
+                .map(project_member_call_kind_token)
+                .unwrap_or("none")
+        ),
         "hresult-excepinfo-argerr=runtime-owned".to_string(),
         "hresult-policy=runtime-owned".to_string(),
         "excepinfo-policy=runtime-owned".to_string(),
@@ -3091,6 +3101,15 @@ fn com_member_selector_token(selector: &ComMemberSelectorDescriptor) -> String {
             format!("dispid:{dispatch_id}")
         }
         ComMemberSelectorDescriptor::Name(name) => format!("name:{}", name.to_ascii_lowercase()),
+    }
+}
+
+fn project_member_call_kind_token(kind: ProjectMemberCallKind) -> &'static str {
+    match kind {
+        ProjectMemberCallKind::Method => "method",
+        ProjectMemberCallKind::PropertyGet => "property-get",
+        ProjectMemberCallKind::PropertyLet => "property-let",
+        ProjectMemberCallKind::PropertySet => "property-set",
     }
 }
 
@@ -3737,6 +3756,15 @@ fn runtime_invoke_kind_for_dynamic_call_hint(hint: DynamicCallKind) -> RuntimeMe
         DynamicCallKind::PropertyGet => RuntimeMemberInvokeKind::PropertyGet,
         DynamicCallKind::PropertyLet => RuntimeMemberInvokeKind::PropertyLet,
         DynamicCallKind::PropertySet => RuntimeMemberInvokeKind::PropertySet,
+    }
+}
+
+fn dynamic_call_kind_for_project_member(hint: ProjectMemberCallKind) -> DynamicCallKind {
+    match hint {
+        ProjectMemberCallKind::Method => DynamicCallKind::Method,
+        ProjectMemberCallKind::PropertyGet => DynamicCallKind::PropertyGet,
+        ProjectMemberCallKind::PropertyLet => DynamicCallKind::PropertyLet,
+        ProjectMemberCallKind::PropertySet => DynamicCallKind::PropertySet,
     }
 }
 
@@ -6651,6 +6679,7 @@ impl Vm {
                     member,
                     args,
                     early_bound,
+                    call_kind_hint,
                     ..
                 } => {
                     let invoke_label = if *early_bound {
@@ -6715,7 +6744,7 @@ impl Vm {
                             }
                         },
                         args: Vec::new(),
-                        call_kind_hint: None,
+                        call_kind_hint: call_kind_hint.map(dynamic_call_kind_for_project_member),
                     };
                     for arg in args {
                         request.args.push(DynamicCallArg {

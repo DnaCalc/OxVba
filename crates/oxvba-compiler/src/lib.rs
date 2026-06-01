@@ -1849,11 +1849,14 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 1, .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::AddConstI32 { value: 2, .. }))
-        );
+        assert!(out.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::IntrinsicDispatchInvokeHost {
+                args,
+                call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertyLet),
+                ..
+            } if args.len() == 1
+        )));
     }
 
     #[test]
@@ -1865,11 +1868,14 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::AddConstI32 { value: 3, .. }))
-        );
+        assert!(out.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::IntrinsicDispatchInvokeHost {
+                args,
+                call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertyLet),
+                ..
+            } if args.len() == 1
+        )));
     }
 
     #[test]

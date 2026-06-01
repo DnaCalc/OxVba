@@ -321,6 +321,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let member_assignment =
+        "Sub Main()\nDim obj\nDim other\nobj.Value = 1\nSet obj.Ref = other\nEnd Sub\n";
+    findings.push(route_finding(
+        "member assignment target fixture",
+        member_assignment,
+        "bd-aprs.9.5",
+    ));
+
     let bang_member_expression = "Sub Main()\nDim obj\nDim x\nx = obj!Value\nEnd Sub\n";
     findings.push(route_finding(
         "value-side bang member expression fixture",
@@ -515,6 +523,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("value-side member expression")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("member assignment target")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding

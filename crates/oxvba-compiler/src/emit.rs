@@ -2377,6 +2377,18 @@ fn collect_stmt_value_states(
             }
             collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
         }
+        BoundStmt::AssignMember {
+            receiver,
+            args,
+            expr,
+            ..
+        } => {
+            collect_expr_value_states(receiver, None, procedure_id, ordinal, descriptors);
+            for arg in args {
+                collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
+        }
         BoundStmt::UdtAssign { .. } => {}
         BoundStmt::MidAssign {
             start,
@@ -2864,6 +2876,39 @@ fn collect_stmt_expression_semantics(
             collect_expr_semantics(
                 expr,
                 ExpressionSourceContextDescriptor::RuntimeArrayValue,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::AssignMember {
+            receiver,
+            args,
+            expr,
+            ..
+        } => {
+            collect_expr_semantics(
+                receiver,
+                ExpressionSourceContextDescriptor::CallArgument,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for arg in args {
+                collect_expr_semantics(
+                    &arg.expr,
+                    ExpressionSourceContextDescriptor::CallArgument,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_semantics(
+                expr,
+                ExpressionSourceContextDescriptor::AssignmentRhs,
                 type_by_name,
                 procedure_id,
                 ordinal,
@@ -3517,6 +3562,39 @@ fn collect_stmt_operator_semantics(
             for index in indices {
                 collect_expr_operator_semantics(
                     index,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_operator_semantics(
+                expr,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::AssignMember {
+            receiver,
+            args,
+            expr,
+            ..
+        } => {
+            collect_expr_operator_semantics(
+                receiver,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for arg in args {
+                collect_expr_operator_semantics(
+                    &arg.expr,
                     type_by_name,
                     compare_mode,
                     procedure_id,
@@ -4604,6 +4682,27 @@ fn collect_stmt_coercions(
             ));
             for index in indices {
                 collect_expr_coercions(index, type_by_name, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::AssignMember {
+            receiver,
+            args,
+            expr,
+            intent,
+            ..
+        } => {
+            descriptors.push(assignment_coercion_descriptor(
+                procedure_id,
+                *intent,
+                expr,
+                VbaTypeId::Variant,
+                type_by_name,
+                ordinal,
+            ));
+            collect_expr_coercions(receiver, type_by_name, procedure_id, ordinal, descriptors);
+            for arg in args {
+                collect_expr_coercions(&arg.expr, type_by_name, procedure_id, ordinal, descriptors);
             }
             collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
         }
@@ -6301,6 +6400,80 @@ fn emit_stmt(
                     src: value_slot,
                 });
             }
+        }
+        BoundStmt::AssignMember {
+            receiver,
+            member,
+            args,
+            expr,
+            intent,
+        } => {
+            let object_slot = temps.alloc_temp();
+            emit_expr_into(
+                receiver,
+                compare_mode,
+                object_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            let member_slot = temps.alloc_temp();
+            instructions.push(Instruction::LoadConstString {
+                slot: member_slot,
+                value: member.clone(),
+            });
+            let mut invoke_args = Vec::with_capacity(args.len() + 1);
+            for arg in args {
+                let arg_slot = temps.alloc_temp();
+                emit_expr_into(
+                    &arg.expr,
+                    compare_mode,
+                    arg_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                invoke_args.push(DispatchInvokeArg {
+                    slot: Some(arg_slot),
+                    name: arg.name.clone(),
+                });
+            }
+            let value_slot = temps.alloc_temp();
+            emit_expr_into(
+                expr,
+                compare_mode,
+                value_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            invoke_args.push(DispatchInvokeArg {
+                slot: Some(value_slot),
+                name: None,
+            });
+            instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+                dst: temps.alloc_temp(),
+                object: object_slot,
+                member: member_slot,
+                args: invoke_args,
+                early_bound: false,
+                com_member: None,
+                call_kind_hint: Some(match intent {
+                    AssignmentIntent::Set => ProjectMemberCallKind::PropertySet,
+                    AssignmentIntent::Implicit | AssignmentIntent::Let => {
+                        ProjectMemberCallKind::PropertyLet
+                    }
+                }),
+            });
         }
         BoundStmt::UdtAssign {
             target,
@@ -8390,6 +8563,7 @@ fn emit_dispatch_invoke_call(
         args: bytecode_args,
         early_bound,
         com_member,
+        call_kind_hint: None,
     });
     true
 }
@@ -8674,6 +8848,7 @@ fn emit_late_bound_default_member_call(
         args: invoke_args,
         early_bound: false,
         com_member: None,
+        call_kind_hint: None,
     });
     if let (Some(call_site_descriptors), Some(current_proc_name)) =
         (call_site_descriptors, current_proc_name)
@@ -9440,6 +9615,7 @@ fn emit_expr_into(
                         .collect(),
                     early_bound: *intrinsic == StructuralIntrinsic::DynamicDispatchEarlyInvoke,
                     com_member: None,
+                    call_kind_hint: None,
                 }),
                 (StructuralIntrinsic::WithEventsGet, [owner, binding]) => {
                     instructions.push(Instruction::IntrinsicWithEventsGet {
@@ -10220,6 +10396,7 @@ fn emit_expr_into(
                             .collect(),
                         early_bound: name.eq_ignore_ascii_case("__OxVbaEarlyInvoke"),
                         com_member: None,
+                        call_kind_hint: None,
                     })
                 }
                 ("__oxvba_com_subscribe_event", [object, event]) => {
@@ -10368,6 +10545,7 @@ fn emit_expr_into(
                 args: invoke_args,
                 early_bound: false,
                 com_member: None,
+                call_kind_hint: None,
             });
         }
     }

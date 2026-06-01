@@ -793,6 +793,7 @@ pub enum Instruction {
         args: Vec<DispatchInvokeArg>,
         early_bound: bool,
         com_member: Option<ComMemberCallDescriptor>,
+        call_kind_hint: Option<ProjectMemberCallKind>,
     },
     IntrinsicComSubscribeEventHost {
         dst: usize,
