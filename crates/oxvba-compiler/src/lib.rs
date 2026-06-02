@@ -347,7 +347,7 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_option_stmt(parsed.syntax()) {
         return false;
     }
-    if source_has_hir_parameter_count_mismatch(source) {
+    if source_has_hir_parameter_signature_mismatch(source) {
         return false;
     }
     if source_has_unsupported_property_declaration(source) {
@@ -399,7 +399,7 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
     false
 }
 
-fn source_has_hir_parameter_count_mismatch(source: &str) -> bool {
+fn source_has_hir_parameter_signature_mismatch(source: &str) -> bool {
     let Ok(typed_hir) = frontend_type_hooks::collect_type_hooks_from_source("Main", source) else {
         return true;
     };

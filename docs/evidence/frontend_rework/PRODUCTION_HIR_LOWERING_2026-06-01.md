@@ -213,8 +213,9 @@ metadata for otherwise completed single-source inputs. A later optional-paramete
 routes optional parameters without explicit defaults through HIR, preserving the existing
 `VariantMissingError448` / declared-type-default descriptor policy and omitted-argument call-site
 metadata. The default-route eligibility guard now also checks HIR/parsed signature parameter-name
-alignment so broader typed multi-parameter shapes with known HIR symbol misclassification remain on
-the residual fallback path. Richer default expressions remain outside the lightweight default route.
+alignment, and the symbol collector now avoids declaring `As` type-reference tokens as parameters
+in typed multi-parameter signatures. Richer default expressions remain outside the lightweight
+default route.
 Additional property-declaration work teaches HIR lowering to derive `Property Get`/`Property Let`
 procedure kinds from the HIR property record, preserve getter return-slot metadata, and bind the
 getter self-assignment name to that return slot. Same-module zero-argument `Property Get` reads now

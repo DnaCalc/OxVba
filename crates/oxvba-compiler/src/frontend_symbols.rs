@@ -395,7 +395,7 @@ fn collect_procedure_symbols(
 
     if let Some(param_list) = node.param_list() {
         for param in param_list.params() {
-            if let Some(param_name) = first_identifier_token(param) {
+            if let Some(param_name) = parameter_name_token(param) {
                 model.declare_symbol(
                     procedure_scope,
                     SymbolNamespace::Parameter,
@@ -410,6 +410,50 @@ fn collect_procedure_symbols(
         collect_symbols_from_node(model, module_name, procedure_scope, body)?;
     }
     Ok(())
+}
+
+fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    let mut after_modifier = true;
+    let mut in_type_ref = false;
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if matches!(
+                    token.kind,
+                    SyntaxKind::KwOptional
+                        | SyntaxKind::KwByVal
+                        | SyntaxKind::KwByRef
+                        | SyntaxKind::KwParamArray
+                ) =>
+            {
+                after_modifier = true;
+            }
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::KwAs => {
+                in_type_ref = true;
+                after_modifier = false;
+            }
+            SyntaxElement::Token(token)
+                if !in_type_ref && after_modifier && is_identifier_like(token.kind) =>
+            {
+                return Some(token);
+            }
+            SyntaxElement::Node(child)
+                if !in_type_ref && after_modifier && child.kind() == SyntaxKind::IdentExpr =>
+            {
+                return first_identifier_token_deep(child);
+            }
+            SyntaxElement::Node(child) if child.kind() == SyntaxKind::TypeRef => {
+                in_type_ref = true;
+            }
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
+                if token.kind != SyntaxKind::TypeSuffix {
+                    after_modifier = false;
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn procedure_symbol_name(node: SyntaxNode<'_>, name: &str) -> String {
