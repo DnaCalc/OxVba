@@ -46,6 +46,20 @@ fn scalar_single_const_carrier_executes() {
 }
 
 #[test]
+fn scalar_type_char_const_carriers_execute() {
+    let snap = run(
+        "Const CTotal! = 1.5\nConst CAmount@ = 1.25\nSub Main()\nDim x As Single\nDim amount As Currency\nx = CTotal\namount = CAmount\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_f32(1.5),
+            Variant::from_currency_scaled_i64(12_500),
+        ]
+    );
+}
+
+#[test]
 fn scalar_currency_date_const_carriers_execute() {
     let snap = run(
         "Const CAmount As Currency = 1.25@\nConst CStamp As Date = #2026-02-28#\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",

@@ -1671,6 +1671,42 @@ mod tests {
     }
 
     #[test]
+    fn compile_default_routes_type_char_consts_through_hir() {
+        let source = "Const CTotal! = 1.5\nConst CAmount@ = 1.25\nSub Main()\nDim x As Single\nDim amount As Currency\nx = CTotal: amount = CAmount\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
+            "legacy path should reject the active inline sequence after type-char consts",
+        );
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support type-char consts");
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route type-char consts through HIR");
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for type-char consts"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF32 { bits, .. } if *bits == 1.5f32.to_bits()
+            )),
+            "expected type-char Single const bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstCurrency { scaled: 12_500, .. }
+            )),
+            "expected type-char Currency const bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const() {
         let source = "Const CTotal As Long = 2 ^ 31\nSub Main()\nEnd Sub\n";
         let err = super::compile_with_runtime_metadata(source)

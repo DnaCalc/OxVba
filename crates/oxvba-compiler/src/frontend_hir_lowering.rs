@@ -2822,20 +2822,15 @@ fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<Sym
         else {
             continue;
         };
+        let declared_type = declared_bound_type(typed_hir, symbol.id)
+            .or_else(|| type_char_bound_type_at_span(source, span));
         let value = const_longlong_literal_after_span_with_env(
             source,
             span,
-            declared_bound_type(typed_hir, symbol.id),
+            declared_type,
             &i64_values_by_name,
         )
-        .or_else(|| {
-            const_literal_after_span_with_env(
-                source,
-                span,
-                declared_bound_type(typed_hir, symbol.id),
-                &values_by_name,
-            )
-        })
+        .or_else(|| const_literal_after_span_with_env(source, span, declared_type, &values_by_name))
         .or_else(|| enum_values.get(name.as_str()).cloned());
         let Some(value) = value else {
             continue;
@@ -3583,14 +3578,26 @@ fn parse_const_value_for_declared(
 }
 
 fn parse_const_name_and_declared_type(text: &str) -> (&str, Option<BoundType>) {
-    let Some((name, ty_text)) = split_keyword_ci(text, "as") else {
-        return (text, None);
+    let (name, explicit_type) = if let Some((name, ty_text)) = split_keyword_ci(text, "as") {
+        (
+            name,
+            ty_text
+                .split_whitespace()
+                .next()
+                .and_then(parse_hir_bound_type),
+        )
+    } else {
+        (text, None)
     };
-    let declared_type = ty_text
-        .split_whitespace()
-        .next()
-        .and_then(parse_hir_bound_type);
-    (name, declared_type)
+    let trimmed_name = name.trim();
+    let (name, type_char_type) = match trimmed_name.chars().next_back() {
+        Some(ch) if type_char_bound_type(ch).is_some() => (
+            &trimmed_name[..trimmed_name.len().saturating_sub(ch.len_utf8())],
+            type_char_bound_type(ch),
+        ),
+        _ => (name, None),
+    };
+    (name, explicit_type.or(type_char_type))
 }
 
 fn parse_const_i64_statement_values_with_initial(
@@ -3605,9 +3612,7 @@ fn parse_const_i64_statement_values_with_initial(
     }
     for declarator in declarators {
         let (name_part, rhs) = declarator.split_once('=')?;
-        let name_part = split_keyword_ci(name_part.trim(), "as")
-            .map(|(name, _)| name)
-            .unwrap_or(name_part);
+        let (name_part, _) = parse_const_name_and_declared_type(name_part.trim());
         let name = normalize_hir_ident(name_part.trim())?;
         let value = parse_const_i64_value(rhs.trim(), &visible_values)?;
         visible_values.insert(name.clone(), value);
@@ -7930,6 +7935,26 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_collects_type_char_const_literal() {
+        let source = "Const CTotal! = 1.5\nSub Main()\nDim x As Single\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF32 { bits, .. } if *bits == 1.5f32.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Single
+        }));
+    }
+
+    #[test]
     fn hir_production_lowering_collects_typed_currency_const_literal() {
         let source = "Const CAmount As Currency = 1.25@\nSub Main()\nDim x As Currency\nx = CAmount\nEnd Sub\n";
         let (bytecode, metadata) =
@@ -7947,6 +7972,20 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Currency
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_currency_type_char_const_literal() {
+        let source = "Const CAmount@ = 1.25\nSub Main()\nDim x As Currency\nx = CAmount\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstCurrency { scaled: 12_500, .. }
+            )),
+            "{bytecode:#?}"
+        );
     }
 
     #[test]

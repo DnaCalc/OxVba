@@ -694,7 +694,8 @@ Required newly explicit delivery beads:
   constants through `FloatConst`/`LoadConstF64`, plus declared `Currency` and deterministic
   `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`, plus declared
   `Single` constants through `LoadConstF32`, plus bounded numeric arithmetic expressions for
-  declared `Currency` and `Date` constants through the same exact carriers.
+  declared `Currency` and `Date` constants through the same exact carriers, plus `Const` name
+  type-declaration characters such as `!` and `@` for the covered carrier subset.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
@@ -1213,7 +1214,8 @@ Candidate bead units:
   `LongPtr` semantics remain broader FE-8.5 work. Later FE-8.5.e continuation adds that bounded
   Date/Currency arithmetic-expression subset for source-prior constants, literal numeric operands,
   and deterministic `#...#` Date literal operands, keeping final bytecode on
-  `LoadConstCurrency`/`LoadConstDate`.
+  `LoadConstCurrency`/`LoadConstDate`. Later continuation also applies `Const` name
+  type-declaration characters to the covered `Single` and `Currency` carrier subset.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
