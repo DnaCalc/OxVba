@@ -3836,6 +3836,9 @@ fn parse_declared_const_value(
             parse_const_string_value(text, named_values).map(BoundExpr::StringConst)
         }
         Some(BoundType::Byte | BoundType::Integer | BoundType::Long) => {
+            if const_expr_contains_true_division(text) {
+                return None;
+            }
             let i64_values = const_i64_env_from_bound_values(named_values);
             let ConstI64Eval::Value(value) = parse_const_i64_eval_value(text, &i64_values)? else {
                 return None;
@@ -3881,13 +3884,55 @@ fn const_i64_env_from_bound_values(values: &HashMap<String, BoundExpr>) -> HashM
     values
         .iter()
         .filter_map(|(name, value)| {
-            let ConstI64Eval::Value(value) = parse_const_i64_eval_value_from_bound_expr(value)?
-            else {
-                return None;
-            };
-            Some((name.clone(), value))
+            parse_const_exact_i64_from_bound_expr(value).map(|value| (name.clone(), value))
         })
         .collect()
+}
+
+fn parse_const_exact_i64_from_bound_expr(expr: &BoundExpr) -> Option<i64> {
+    match expr {
+        BoundExpr::IntConst(value) => Some(i64::from(*value)),
+        BoundExpr::LongLongConst(value) => Some(*value),
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => parse_const_exact_i64_from_bound_expr(operand)?.checked_neg(),
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let lhs = parse_const_exact_i64_from_bound_expr(lhs)?;
+            let rhs = parse_const_exact_i64_from_bound_expr(rhs)?;
+            match op {
+                ArithOp::Add => lhs.checked_add(rhs),
+                ArithOp::Sub => lhs.checked_sub(rhs),
+                ArithOp::Mul => lhs.checked_mul(rhs),
+                ArithOp::IntDiv if rhs != 0 => lhs.checked_div(rhs),
+                ArithOp::Mod if rhs != 0 => lhs.checked_rem(rhs),
+                ArithOp::Pow if rhs >= 0 && rhs <= i64::from(u32::MAX) => {
+                    lhs.checked_pow(rhs as u32)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn const_expr_contains_true_division(text: &str) -> bool {
+    let mut in_string = false;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some('"')) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            '/' if !in_string => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn parse_const_bool_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<bool> {
@@ -8061,6 +8106,46 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Integer
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_keeps_true_division_const_expression_unfolded() {
+        let source = "Const CBase = 3 / 2\nConst CTotal As Long = CBase + 1\nSub Main()\nDim x As Long\nx = CTotal\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let const_values = collect_const_values(source, &typed_hir);
+        let ctotal_symbol = typed_hir
+            .module
+            .symbols
+            .symbols()
+            .iter()
+            .find(|symbol| {
+                symbol.namespace == SymbolNamespace::Local
+                    && typed_hir
+                        .module
+                        .symbols
+                        .name(symbol.name)
+                        .is_some_and(|name| name.folded == "ctotal")
+            })
+            .expect("ctotal symbol");
+        let value = const_values
+            .get(&ctotal_symbol.id)
+            .expect("ctotal const value");
+        assert!(
+            matches!(
+                value,
+                BoundExpr::BinaryOp {
+                    op: ArithOp::Add,
+                    lhs,
+                    rhs,
+                    ..
+                } if matches!(
+                    lhs.as_ref(),
+                    BoundExpr::BinaryOp { op: ArithOp::Div, .. }
+                ) && matches!(rhs.as_ref(), BoundExpr::IntConst(1))
+            ),
+            "{value:#?}"
+        );
     }
 
     #[test]
