@@ -678,7 +678,8 @@ Required newly explicit delivery beads:
   HIR-production routes, `integration_predeclared_document_project` and follow-up
   `integration_predeclared_document_method_project` as source-backed predeclared `ThisWorkbook`
   document property/method routes, plus `excel_oracle_activation_smoke` as a source-backed Excel
-  fixture route that classifies as HIR production; the selected route audit now has no skipped
+  fixture route that classifies as HIR production and now has an ignored host execution lane for
+  live `Excel.Application` activation/property-get/`Quit` cleanup; the selected route audit now has no skipped
   residual rows. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
@@ -693,8 +694,9 @@ Required newly explicit delivery beads:
   current synthetic `ThisWorkbook.Path` and `ThisWorkbook.FullName()` route rows into real host
   object-model behavior, broaden imported COM beyond the current `TestDispatch` and
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover
-  deeper cross-workspace language-service route runners beyond those seed shapes, and add live
-  Excel-oracle execution evidence for environment-dependent behavior beyond source-route
+  deeper cross-workspace language-service route runners beyond those seed shapes, and broaden live
+  Excel-oracle execution beyond activation/property-get/cleanup into workbook, range, named-argument,
+  property-put, and other environment-dependent behavior beyond source-route
   classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine

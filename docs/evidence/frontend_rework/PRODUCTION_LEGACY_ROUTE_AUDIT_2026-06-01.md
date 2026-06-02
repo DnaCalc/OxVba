@@ -79,6 +79,14 @@ to predeclared member reads so public predeclared functions can use the same PMR
 This is still synthetic document-module route evidence; live Excel object model behavior remains
 separate oracle work.
 
+Continuation update: the selected Excel oracle source route now has a matching ignored host
+execution lane. `excel_application_activation_smoke.bas` was narrowed to the behavior actually
+proved live here: `CreateObject("Excel.Application")`, root `Visible` property get, and explicit
+`Quit` cleanup. The command
+`cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
+passed on this machine. The previous property-set shape is not claimed by this evidence; richer
+Excel property put/member/workbook/range lanes remain open.
+
 This audit no longer finds the previously tracked scoped production route residuals. The broader
 workset still remains open for unaudited language surfaces and full terminal evidence, but this
 specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
@@ -119,6 +127,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
+- `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -155,3 +164,6 @@ The audit result records completed reopened delivery work and remaining broader 
 - Predeclared document route evidence now covers both `ThisWorkbook.Path` property reads and
   `ThisWorkbook.FullName()` public method calls through HIR production. Broader document/host work
   remains open for real host object-model semantics and live Excel oracle execution.
+- The selected live Excel execution lane now proves activation, root property get, and cleanup. It
+  also exposed that property-set behavior should not be claimed by the activation smoke; broader
+  Excel object-model mutation remains a separate FE-7/FE-8/FE-9 delivery and oracle surface.

@@ -9,7 +9,8 @@ live execution belongs to the Office-enabled evidence lane.
 Current fixtures:
 
 - `excel_application_activation_smoke.bas`: late-bound
-  `CreateObject("Excel.Application")` activation and root property smoke.
+  `CreateObject("Excel.Application")` activation, root property-get smoke, and
+  explicit `Quit` cleanup.
 - `excel_workbook_range_smoke.bas`: workbook, worksheet, range value, and
   default-member shaped object-model interactions.
 - `excel_named_argument_smoke.bas`: metadata-sensitive named-argument call
@@ -24,4 +25,3 @@ Execution rule:
 - Live automation runs must classify absent Excel/VBOM as environment skips.
 - Hidden Excel/VBE automation should use `scripts/excel-dialog-guardian.ps1`
   and `scripts/excel-vbe-dialog-handler.ps1`.
-
