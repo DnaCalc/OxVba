@@ -15,8 +15,10 @@ Rows now distinguish:
 - replaced scoped production behavior: `resolve::parse_expr_for_syntax_bridge` is superseded for
   the completed assignment/expression production surface by
   `frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir`;
-- quarantined compatibility fallback: `syntax_bridge` still falls back to the existing
-  resolver/lowering path when HIR production lowering reports `Unsupported`;
+- quarantined compatibility fallback: default `compile_with_options` now tries HIR production
+  lowering directly, then falls back to the existing resolver/lowering path when HIR production
+  lowering reports `Unsupported`; explicit `frontend_v2` mode reports HIR unsupported as a
+  front-end error instead of falling back;
 - quarantined broad resolver parsing: `resolve::parse_expr` still exists inside the legacy
   production resolver and remains a terminal-audit residual, even though scoped HIR fixtures bypass
   it;
@@ -47,7 +49,9 @@ assignment/arithmetic and simple same-module `Call` statement fixtures classify 
 
 - The previous evidence was stale after FE-8.5: it still described `syntax_bridge::lower_cst_expr`
   as the replacement route. That is now corrected to HIR production lowering for the scoped
-  surface, with the CST bridge classified as residual.
+  surface, with the CST bridge classified as residual. A later FE-9 route cleanup moved the public
+  `compile_with_options` HIR attempt off `syntax_bridge` entirely; only the explicit default
+  fallback policy reaches legacy compilation after `Unsupported`.
 - This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrite-era internals.
   The project rewrite bridge is no longer production-selected, but source-text lowering internals
   remain compatibility scaffolding until FE-7/FE-9 retirement beads finish replacing or

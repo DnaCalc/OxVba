@@ -24,11 +24,11 @@ pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
         closure_condition: "scoped assignment/expression fixtures route to HIR production before any legacy compile fallback",
     },
     LegacyRetirementRow {
-        legacy_path: "syntax_bridge CST-to-legacy fallback after HIR Unsupported",
+        legacy_path: "compile_with_options default legacy fallback after HIR Unsupported",
         replacement: "construct-by-construct HIR production lowering owned by FE-6/FE-7/FE-8 follow-up beads",
         disposition: RetirementDisposition::QuarantinedResidual,
         owner: "bd-aprs.9.6",
-        partial_work: "The bridge validates CST and tries HIR production first, but unsupported constructs still compile by falling back to the existing resolver/lowering path.",
+        partial_work: "The default compile options now try HIR production lowering directly; unsupported constructs still compile by falling back to the existing resolver/lowering path outside explicit frontend_v2 mode.",
         closure_condition: "every construct in the claimed scoped surface either routes to HIR production or has an explicit out-of-scope residual row before terminal closure",
     },
     LegacyRetirementRow {

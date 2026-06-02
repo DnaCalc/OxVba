@@ -157,15 +157,18 @@ pub fn compile_with_options(
 ) -> Result<Bytecode, CompileError> {
     if options.frontend_v2 {
         let _analysis = analyze_frontend_v2_source(source)?;
-        return syntax_bridge::compile_source_via_syntax_bridge(source)
-            .map_err(|err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")));
+        return match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
+            Ok((bytecode, _)) => Ok(bytecode),
+            Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(reason)) => Err(
+                CompileError::ResolveError(format!("frontend_v2 HIR unsupported: {reason}")),
+            ),
+            Err(frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => Err(err),
+        };
     }
-    match syntax_bridge::compile_source_via_syntax_bridge(source) {
-        Ok(bytecode) => Ok(bytecode),
-        Err(syntax_bridge::SyntaxBridgeError::Unsupported(_)) => compile(source),
-        Err(err) => Err(CompileError::ResolveError(format!(
-            "frontend_v2 default route error: {err}"
-        ))),
+    match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
+        Ok((bytecode, _)) => Ok(bytecode),
+        Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => compile(source),
+        Err(frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => Err(err),
     }
 }
 

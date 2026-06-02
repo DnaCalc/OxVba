@@ -55,9 +55,9 @@ pub fn lower_expression_to_legacy_bound_expr(
 
 /// Compile source after first validating that the v2 CST parser accepts it.
 ///
-/// Production still uses the legacy compiler path. This bridge is a temporary
-/// transition hook for fixtures that are known to be supported by both the CST
-/// parser and the existing lowering.
+/// This helper is retained for bridge/diff harnesses while production compile
+/// entry points call HIR lowering directly and apply fallback policy outside
+/// this module.
 pub fn compile_source_via_syntax_bridge(source: &str) -> Result<Bytecode, SyntaxBridgeError> {
     compile_source_with_runtime_metadata_via_syntax_bridge(source).map(|(bytecode, _)| bytecode)
 }

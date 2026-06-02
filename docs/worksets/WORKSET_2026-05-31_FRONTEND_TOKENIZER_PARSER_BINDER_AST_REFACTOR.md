@@ -1267,10 +1267,16 @@ Candidate bead units:
   deliberately still excludes surfaces whose HIR semantics are partial, including DefType,
   properties, optional/default/ParamArray parameters, project rewrites, and class/object-local
   compatibility contexts. The legacy baseline remains available through an explicit comparison
-  helper, and fallback is preserved only for unsupported residual constructs.
+  helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
+  cleanup moves the public `compile_with_options` HIR attempt off `syntax_bridge` and calls HIR
+  production lowering directly; only default non-`frontend_v2` mode falls back to legacy compile on
+  HIR `Unsupported`.
   Evidence: `docs/evidence/frontend_rework/PER_CONSTRUCT_ROUTE_POLICY_2026-06-01.md`.
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
-  splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
+  splitting and retired `project.rs` rewrite paths once their matrix rows are covered. Partial work
+  already done: `compile_with_options` no longer uses `syntax_bridge` as its production HIR route;
+  the CST-to-legacy expression bridge remains quarantined to bridge/diff harness surfaces until
+  terminal route audit deletion or test-only proof.
   Evidence: `docs/evidence/frontend_rework/LEGACY_RETIREMENT_INVENTORY_2026-06-01.md`.
 - FE-9.3 Salsa/query integration: wrap parse, bind, typecheck, diagnostics, and SemanticModel
   queries for incremental recompute.
