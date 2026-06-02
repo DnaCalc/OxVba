@@ -347,13 +347,53 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_optional_parameter(source) {
         return false;
     }
-    !syntax_tree_has_any_kind(
-        parsed.syntax(),
-        &[
-            oxvba_syntax::SyntaxKind::PropertyDecl,
-            oxvba_syntax::SyntaxKind::KwParamArray,
-        ],
-    )
+    if source_has_unsupported_property_declaration(source) {
+        return false;
+    }
+    !syntax_tree_has_any_kind(parsed.syntax(), &[oxvba_syntax::SyntaxKind::KwParamArray])
+}
+
+fn source_has_unsupported_property_declaration(source: &str) -> bool {
+    if !source
+        .lines()
+        .any(|line| contains_ascii_word(line, "property"))
+    {
+        return false;
+    }
+
+    let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+    let default_type_table = resolve::collect_default_type_table(&lines);
+    for line in source.lines() {
+        if !contains_ascii_word(line, "property")
+            || line.trim().eq_ignore_ascii_case("End Property")
+        {
+            continue;
+        }
+        let Some(kind) = proc_kind_for_signature_line(line) else {
+            return true;
+        };
+        if !matches!(
+            kind,
+            resolve::ProcKind::PropertyGet
+                | resolve::ProcKind::PropertyLet
+                | resolve::ProcKind::PropertySet
+        ) {
+            continue;
+        }
+        let Some((_, params, _)) = resolve::parse_proc_signature(line, kind, &default_type_table)
+        else {
+            return true;
+        };
+        let supported = match kind {
+            resolve::ProcKind::PropertyGet => params.is_empty(),
+            resolve::ProcKind::PropertyLet | resolve::ProcKind::PropertySet => params.len() == 1,
+            _ => true,
+        };
+        if !supported {
+            return true;
+        }
+    }
+    false
 }
 
 fn source_has_unsupported_optional_parameter(source: &str) -> bool {
@@ -1114,11 +1154,33 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_still_rejects_property_declaration_route() {
-        let source = "Property Get Value() As Long\nValue = 9\nEnd Property\nSub Main()\nEnd Sub\n";
+    fn compile_with_runtime_metadata_default_routes_simple_property_declarations_through_hir() {
+        let source = "Sub Main()\nDim x\nx = Value\nValue = x\nEnd Sub\nProperty Get Value() As Long\nValue = 9\nEnd Property\nProperty Let Value(ByRef target)\ntarget = target + 1\nEnd Property\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "simple non-indexed property declarations should be eligible for default HIR"
+        );
+
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route simple property source through HIR",
+        );
+        assert!(metadata.contains_key("property_get_value"), "{metadata:#?}");
+        assert!(metadata.contains_key("property_let_value"), "{metadata:#?}");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected property get/let procedure calls: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_still_rejects_indexed_property_route() {
+        let source = "Sub Main()\nDim x\nx = Value(1)\nEnd Sub\nProperty Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\n";
         assert!(
             !super::source_is_eligible_for_lightweight_hir_default(source),
-            "property declarations remain outside the default HIR route until invocation semantics are complete"
+            "indexed property declarations remain outside the default HIR route"
         );
     }
 

@@ -201,7 +201,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         HIR lowering now preserves `Property Get`/`Property Let` declaration metadata and binds the
         property getter self-assignment return slot; same-module zero-argument `Property Get`
         reads and simple same-module `Property Let`/`Property Set` writes now lower through HIR as
-        procedure calls;
+        procedure calls; simple non-indexed property declarations now remain eligible for the
+        default HIR route;
         `ParamArray`, richer default expressions, and broader call-entry optional/missing-state
         behavior, plus indexed property invocation and default-route property semantics, remain
         open;
