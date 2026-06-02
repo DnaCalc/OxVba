@@ -789,12 +789,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
-    findings.push(LegacyRouteAuditFinding {
-        area: "project.rs source-text rewrite bridge",
-        evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
-        disposition: LegacyRouteAuditDisposition::HirProduction,
-        owner: "bd-aprs.8.*",
-    });
+    findings.push(active_project_construction_hir_route_finding());
     findings.push(LegacyRouteAuditFinding {
         area: "language-service legacy BoundModule compatibility",
         evidence: "oxvba-languageservice SemanticSnapshot no longer retains/exposes or builds a legacy BoundModule; unsupported HIR snapshots report front-end diagnostics instead of rebuilding legacy symbol/callable correlation".to_string(),
@@ -803,6 +798,89 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     });
 
     LegacyRouteAuditReport { findings }
+}
+
+fn active_project_construction_hir_route_finding() -> LegacyRouteAuditFinding {
+    let main = match crate::project::module_unit_from_source(
+        "MainModule",
+        crate::project::ModuleKind::Procedural,
+        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As Object\nSet obj = New Widget\nEnd Sub",
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return LegacyRouteAuditFinding {
+                area: "active-project construction HIR compile route",
+                evidence: format!("fixture main module parse failed: {err}"),
+                disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
+                owner: "bd-aprs.9.6",
+            };
+        }
+    };
+    let widget = match crate::project::module_unit_from_source(
+        "Widget",
+        crate::project::ModuleKind::Class,
+        "Attribute VB_Name = \"Widget\"\nPublic Sub Ping()\nEnd Sub",
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return LegacyRouteAuditFinding {
+                area: "active-project construction HIR compile route",
+                evidence: format!("fixture class module parse failed: {err}"),
+                disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
+                owner: "bd-aprs.9.6",
+            };
+        }
+    };
+    let manifest = crate::project::ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: crate::project::ProjectKind::Source,
+        modules: vec![main, widget],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let compiled = match crate::project::compile_project(&manifest) {
+        Ok(compiled) => compiled,
+        Err(err) => {
+            return LegacyRouteAuditFinding {
+                area: "active-project construction HIR compile route",
+                evidence: format!("fixture project compile failed: {err}"),
+                disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
+                owner: "bd-aprs.9.6",
+            };
+        }
+    };
+
+    let lowered = compiled.rewritten_source.to_ascii_lowercase();
+    let has_hir_new_source = lowered.contains("set obj = new widget");
+    let has_helper_source = lowered.contains("__oxvba_project_instance(");
+    let has_object_ref_instruction =
+        compiled.bytecode.instructions.iter().any(|instruction| {
+            matches!(instruction, crate::Instruction::LoadProjectObjectRef { .. })
+        });
+    let has_dynamic_route = compiled
+        .project_dynamic_objects
+        .iter()
+        .any(|route| route.module_name.eq_ignore_ascii_case("Widget"));
+
+    if has_hir_new_source && !has_helper_source && has_object_ref_instruction && has_dynamic_route {
+        LegacyRouteAuditFinding {
+            area: "active-project construction HIR compile route",
+            evidence: "project compile consumes active-project `New Widget` HIR binding, preserves `Set obj = New Widget` in the compiled source artifact, emits LoadProjectObjectRef, and does not leave `__oxvba_project_instance(...)` helper source".to_string(),
+            disposition: LegacyRouteAuditDisposition::HirProduction,
+            owner: "bd-aprs.9.6",
+        }
+    } else {
+        LegacyRouteAuditFinding {
+            area: "active-project construction HIR compile route",
+            evidence: format!(
+                "expected HIR New source/object-ref route without helper source; has_new={has_hir_new_source}, has_helper={has_helper_source}, has_object_ref={has_object_ref_instruction}, has_dynamic_route={has_dynamic_route}"
+            ),
+            disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
+            owner: "bd-aprs.9.6",
+        }
+    }
 }
 
 fn route_finding(
@@ -911,7 +989,9 @@ mod tests {
         );
         assert!(
             report.findings.iter().any(|finding| {
-                finding.area.contains("project.rs")
+                finding
+                    .area
+                    .contains("active-project construction HIR compile route")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

@@ -1340,7 +1340,12 @@ Candidate bead units:
   basic `RaiseEvent`, `Event` declaration, single-source `Implements`, and literal `Const`. The workset remains open for broader terminal evidence
   and expanded route-audit coverage. Follow-up continuation also covers a one-dimensional
   dynamic-array runtime `ReDim` fixture, an explicit-receiver value-side dot-member read/call
-  fixture, and a read-side `With` member fixture.
+  fixture, and a read-side `With` member fixture. Follow-up correction replaces the audit's broad
+  static `project.rs` rewrite-bridge pass with an executable, scoped active-project construction
+  project-compile check: accepted `Set obj = New Widget` must consume HIR `New` facts, preserve the
+  `New` source shape in the compiled artifact, emit `LoadProjectObjectRef`, retain dynamic object
+  metadata, and avoid `__oxvba_project_instance(...)` helper source. This does not close broader
+  project/class/default-member/COM rewrite retirement.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 - FE-9.7 Broad matrix/corpus route audit: expand FE-9.6 from selected route fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
@@ -1361,7 +1366,9 @@ Candidate bead units:
   search and route proof that remaining legacy helpers are comparison/test-only or outside the
   accepted surface. Follow-up FE-9 syntax-bridge cleanup makes `syntax_bridge` crate-private and
   test-gates its CST-to-legacy helpers, so current production routes must enter through HIR lowering
-  or explicit route-audit support.
+  or explicit route-audit support. Follow-up correction narrows the project audit evidence to the
+  executable active-project construction route; remaining `project.rs` helper-source rewrite
+  carriers stay open here until deleted or compatibility-quarantined with route proof.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is
