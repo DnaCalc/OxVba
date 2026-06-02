@@ -17,12 +17,11 @@ The first automated route accepts fixture rows with:
   condition for classifier policy.
 
 Rows with inline source and class `CompilerUnit` or `ConformanceCase` run through the existing
-legacy-vs-v2 harness and classifier. Source-backed host/oracle rows that cannot be bytecode-diffed
-inside the compiler crate are now `RouteChecked`: the corpus report records HIR production route
-evidence from the shared route-audit helper while still marking that full VM/host/oracle execution
-requires a higher-layer runner. Manifest-only project rows remain `SkippedResidual` with explicit
-reasons until that runner can execute the higher-layer observations without creating a compiler
-dependency cycle.
+legacy-vs-v2 harness and classifier. Host/oracle rows that cannot be bytecode-diffed inside the
+compiler crate are now `RouteChecked` when they have a compiler-local HIR production route helper:
+the corpus report records HIR route evidence from the shared route-audit helper while still marking
+that full VM/host/oracle execution requires a higher-layer runner. This removes unexamined skips
+from the seed corpus without claiming runtime/host execution inside the compiler crate.
 
 ## Automated Smoke Route
 
@@ -38,17 +37,19 @@ reopened seed corpus with real repo fixture sources plus the route-backed v2 imp
 - `inline_statement_separator_bridge_improvement`: compiler unit row runs through the v2 bridge
   route and classifies as `IntentionalImprovement`, because legacy-default rejects the inline
   statement sequence while frontend v2 compiles it with bytecode and metadata;
-- source-backed `INTP-001` is route-checked as HIR production through the project entry point while
-  still requiring VM/host execution for a full corpus observation;
+- selected host/project/imported-COM/predeclared-document seed rows are route-checked as HIR
+  production through their compiler-local project route helpers while still requiring VM/host
+  execution for full corpus observations;
 - source-backed Excel oracle rows are route-checked as HIR production in the compiler corpus while
   still requiring ignored live Excel oracle tests for environment-dependent behavior;
-- manifest-only host project rows remain skipped as residuals requiring VM/host execution.
+- no seed corpus row remains an unexamined skip; future broader corpus additions may still add
+  skipped rows until they have route or execution helpers.
 
 Expected report counts:
 
 - `ran_count = 3`
-- `route_checked_count = 3`
-- `skipped_count = 9`
+- `route_checked_count = 12`
+- `skipped_count = 0`
 - `equivalent_count = 1`
 - `intentional_improvement_count = 2`
 - `bug_count = 0`
@@ -56,10 +57,9 @@ Expected report counts:
 ### host/project residual rows
 
 - Class: `HostProject`
-- Current status: `RouteChecked` for source-backed `INTP-001`; `SkippedResidual` for manifest-only
-  project rows.
-- Reason: `INTP-001` has compiler-local HIR production route evidence, but still requires a VM/host
-  project runner for full diff/execution observations.
+- Current status: `RouteChecked`
+- Reason: the seed project rows have compiler-local HIR production route evidence, but still
+  require a VM/host project runner for full diff/execution observations.
 - Seed fixtures: `INTP-001`, `INTP-002`, `INTP-003`, `INTP-004`, `INTP-016`, `INTP-019`,
   inline imported `OxVba.TestDispatch`, inline imported `Scripting.Dictionary`, inline
   predeclared `ThisWorkbook` document reference, and inline predeclared `ThisWorkbook` method

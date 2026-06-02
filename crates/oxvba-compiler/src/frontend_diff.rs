@@ -1686,6 +1686,13 @@ fn skipped_corpus_route_row(
 
 fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpusRow {
     let Some(source) = fixture.source.as_deref() else {
+        if fixture.class == FrontendCorpusClass::HostProject {
+            let route_row = frontend_corpus_route_row(fixture);
+            if route_row.status == FrontendCorpusRouteStatus::HirProduction {
+                return route_checked_corpus_row(fixture, route_row.evidence);
+            }
+            return skipped_corpus_row(fixture, &route_row.evidence);
+        }
         return skipped_corpus_row(fixture, "fixture has no inline source for compiler harness");
     };
     if !matches!(
@@ -1694,18 +1701,7 @@ fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpu
     ) {
         let route_row = frontend_corpus_route_row(fixture);
         if route_row.status == FrontendCorpusRouteStatus::HirProduction {
-            return FrontendCorpusRow {
-                name: fixture.name.clone(),
-                fixture_path: fixture.fixture_path.clone(),
-                class: fixture.class,
-                status: FrontendCorpusRowStatus::RouteChecked,
-                skip_reason: Some(
-                    "fixture class still requires VM, host project, or oracle runner for full diff execution"
-                        .to_string(),
-                ),
-                route_evidence: Some(route_row.evidence),
-                classification: None,
-            };
+            return route_checked_corpus_row(fixture, route_row.evidence);
         }
         return skipped_corpus_row(fixture, &route_row.evidence);
     }
@@ -1731,6 +1727,24 @@ fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpu
         skip_reason: None,
         route_evidence: None,
         classification: Some(classification),
+    }
+}
+
+fn route_checked_corpus_row(
+    fixture: &FrontendCorpusFixture,
+    evidence: String,
+) -> FrontendCorpusRow {
+    FrontendCorpusRow {
+        name: fixture.name.clone(),
+        fixture_path: fixture.fixture_path.clone(),
+        class: fixture.class,
+        status: FrontendCorpusRowStatus::RouteChecked,
+        skip_reason: Some(
+            "fixture class still requires VM, host project, or oracle runner for full diff execution"
+                .to_string(),
+        ),
+        route_evidence: Some(evidence),
+        classification: None,
     }
 }
 
@@ -2345,8 +2359,8 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.route_checked_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 9, "{report:#?}");
+        assert_eq!(report.route_checked_count, 12, "{report:#?}");
+        assert_eq!(report.skipped_count, 0, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -2381,34 +2395,15 @@ mod tests {
                 .is_some_and(|evidence| evidence.contains("HIR production")),
             "{report:#?}"
         );
-        assert_eq!(
-            report.rows[4].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
-        assert_eq!(
-            report.rows[5].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
-        assert_eq!(
-            report.rows[6].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
-        assert_eq!(
-            report.rows[7].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
-        assert_eq!(
-            report.rows[8].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
-        assert_eq!(
-            report.rows[9].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
-        assert_eq!(
-            report.rows[10].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
+        for row in &report.rows[4..=12] {
+            assert_eq!(row.status, FrontendCorpusRowStatus::RouteChecked);
+            assert!(
+                row.route_evidence
+                    .as_deref()
+                    .is_some_and(|evidence| evidence.contains("HIR")),
+                "{row:#?}"
+            );
+        }
         assert_eq!(
             report.rows[13].status,
             FrontendCorpusRowStatus::RouteChecked
