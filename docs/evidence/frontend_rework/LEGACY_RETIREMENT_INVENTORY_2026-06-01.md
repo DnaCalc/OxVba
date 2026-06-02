@@ -24,7 +24,8 @@ Rows now distinguish:
   it;
 - quarantined bundle context fallback: bundle module context fact extraction now tries HIR
   `BoundModule` construction first, then falls back to `resolve_symbols` only for unsupported
-  residual modules;
+  residual modules; the internal route decision is now executable-test visible so HIR-derived
+  bundle facts and fallback-derived bundle facts cannot be conflated in terminal evidence;
 - quarantined project/class/COM/default-member rewrites: `project.rs` production compilation now
   selects the module-aware plan unconditionally; the old rewrite bridge remains for internal parity
   tests while FE-7.1 through FE-7.6 own broader replacement of source-text lowering internals;
@@ -41,9 +42,17 @@ Executable route proof was added through a test-only route classifier in `syntax
 assignment/arithmetic and simple same-module `Call` statement fixtures classify as
 `HirProduction`. This prevents FE-9.2 from silently treating fallback as retirement.
 
+Bundle module fact extraction now has a separate internal route classifier:
+`bundle_fact_bound_module_route_uses_hir_for_supported_modules` proves a completed lightweight
+module produces facts from the HIR `BoundModule` path, while
+`bundle_fact_bound_module_route_marks_legacy_residual_fallback` proves an unsupported external
+declaration shape is still classified as a legacy-resolver residual instead of being mistaken for
+retirement.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
+- `cargo test -p oxvba-compiler bundle_fact_bound_module_route --quiet`
 - `cargo test -p oxvba-compiler syntax_bridge::tests::bridge_compiles_supported_statement_sequence_after_cst_validation --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -56,7 +65,9 @@ assignment/arithmetic and simple same-module `Call` statement fixtures classify 
   `compile_with_options` HIR attempt off `syntax_bridge` entirely; only the explicit default
   fallback policy reaches legacy compilation after `Unsupported`. A subsequent FE-9 package-context
   cleanup moved bundle module fact extraction to prefer HIR `BoundModule` facts, with
-  `resolve_symbols` retained as an explicit unsupported-module fallback.
+  `resolve_symbols` retained as an explicit unsupported-module fallback. This continuation adds
+  route-visible bundle fact tests so that fallback-derived package context facts cannot satisfy a
+  terminal HIR ownership claim.
 - This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrite-era internals.
   The project rewrite bridge is no longer production-selected, but source-text lowering internals
   remain compatibility scaffolding until FE-7/FE-9 retirement beads finish replacing or

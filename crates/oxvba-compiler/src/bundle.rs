@@ -1806,11 +1806,28 @@ fn module_fact_from_manifest_module(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BundleFactBoundModuleRoute {
+    HirBoundModule,
+    LegacyResolverFallback,
+}
+
 fn bound_module_for_bundle_facts(module: &ModuleUnit) -> BoundModule {
-    collect_type_hooks_from_source(&module.module_name, &module.source)
-        .ok()
-        .and_then(|typed_hir| lower_typed_hir_to_bound_module(&module.source, &typed_hir).ok())
-        .unwrap_or_else(|| resolve_symbols(&module.source))
+    bound_module_for_bundle_facts_with_route(module).0
+}
+
+fn bound_module_for_bundle_facts_with_route(
+    module: &ModuleUnit,
+) -> (BoundModule, BundleFactBoundModuleRoute) {
+    if let Ok(typed_hir) = collect_type_hooks_from_source(&module.module_name, &module.source) {
+        if let Ok(bound) = lower_typed_hir_to_bound_module(&module.source, &typed_hir) {
+            return (bound, BundleFactBoundModuleRoute::HirBoundModule);
+        }
+    }
+    (
+        resolve_symbols(&module.source),
+        BundleFactBoundModuleRoute::LegacyResolverFallback,
+    )
 }
 
 fn module_fact_from_reflection_module(module: &ModuleDescriptor) -> BundleProjectModuleFact {
@@ -2699,10 +2716,42 @@ mod tests {
         OxBundle::from_compiled_project_with_manifest(&compiled, &manifest)
     }
 
+    fn route_probe_module(source: &str) -> crate::project::ModuleUnit {
+        crate::project::ModuleUnit {
+            module_name: "RouteProbe".to_string(),
+            module_kind: ModuleKind::Procedural,
+            attributes: Default::default(),
+            source: source.to_string(),
+        }
+    }
+
     fn assert_legacy_bundle_rejected(version: u32, data: &[u8]) {
         let err = OxBundle::deserialize_from_bytes(data)
             .expect_err("legacy bundle version should be rejected");
         assert_eq!(err, unsupported_bundle_version_message(version));
+    }
+
+    #[test]
+    fn bundle_fact_bound_module_route_uses_hir_for_supported_modules() {
+        let module =
+            route_probe_module("Option Explicit\nSub Main()\nDim x As Long\nx = 1 + 2\nEnd Sub\n");
+
+        let (bound, route) = bound_module_for_bundle_facts_with_route(&module);
+
+        assert_eq!(route, BundleFactBoundModuleRoute::HirBoundModule);
+        assert!(bound.option_explicit);
+    }
+
+    #[test]
+    fn bundle_fact_bound_module_route_marks_legacy_residual_fallback() {
+        let module = route_probe_module(
+            "Declare Sub Sleep Lib \"kernel32\" (ByVal ms As Long)\nSub Main()\nEnd Sub\n",
+        );
+
+        let (bound, route) = bound_module_for_bundle_facts_with_route(&module);
+
+        assert_eq!(route, BundleFactBoundModuleRoute::LegacyResolverFallback);
+        assert_eq!(bound.source, module.source);
     }
 
     fn legacy_v10_metadata(

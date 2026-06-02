@@ -1337,8 +1337,10 @@ Candidate bead units:
   fixtures bypass legacy parsing, and the old project rewrite-bridge selector is no longer the
   unconditional production strategy. Follow-up FE-9 package-context cleanup makes bundle module
   fact extraction prefer HIR `BoundModule` facts before falling back to `resolve_symbols` for
-  unsupported residual modules. Closure requires code search and route proof that remaining legacy
-  helpers are comparison/test-only or outside the accepted surface.
+  unsupported residual modules; a continuation makes that bundle fact route decision test-visible
+  so fallback-derived facts cannot be counted as HIR retirement evidence. Closure requires code
+  search and route proof that remaining legacy helpers are comparison/test-only or outside the
+  accepted surface.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is
