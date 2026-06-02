@@ -48,13 +48,18 @@ fn scalar_single_const_carrier_executes() {
 #[test]
 fn scalar_type_char_const_carriers_execute() {
     let snap = run(
-        "Const CTotal! = 1.5\nConst CAmount@ = 1.25\nSub Main()\nDim x As Single\nDim amount As Currency\nx = CTotal\namount = CAmount\nEnd Sub",
+        "Const CInteger% = 7\nConst CLong& = 8\nConst CLongLong^ = 5000000000\nConst CTotal! = 1.5\nConst CDouble# = 2\nConst CAmount@ = 1.25\nConst CText$ = \"ok\"\nSub Main()\nDim i As Integer\nDim l As Long\nDim ll As LongLong\nDim x As Single\nDim d As Double\nDim amount As Currency\nDim s As String\ni = CInteger\nl = CLong\nll = CLongLong\nx = CTotal\nd = CDouble\namount = CAmount\ns = CText\nEnd Sub",
     );
     assert_eq!(
         snap,
         vec![
+            Variant::from_i32(7),
+            Variant::from_i32(8),
+            Variant::from_i64(5_000_000_000),
             Variant::from_f32(1.5),
+            Variant::from_f64(2.0),
             Variant::from_currency_scaled_i64(12_500),
+            Variant::from_string(BStr::from("ok")),
         ]
     );
 }

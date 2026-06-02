@@ -1672,7 +1672,7 @@ mod tests {
 
     #[test]
     fn compile_default_routes_type_char_consts_through_hir() {
-        let source = "Const CTotal! = 1.5\nConst CAmount@ = 1.25\nSub Main()\nDim x As Single\nDim amount As Currency\nx = CTotal: amount = CAmount\nEnd Sub\n";
+        let source = "Const CTotal! = 1.5\nConst CAmount@ = 1.25\nConst CLongLong^ = 5000000000\nConst CDouble# = 2\nConst CText$ = \"ok\"\nSub Main()\nDim x As Single\nDim amount As Currency\nDim ll As LongLong\nDim d As Double\nDim s As String\nx = CTotal: amount = CAmount: ll = CLongLong: d = CDouble: s = CText\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
             "legacy path should reject the active inline sequence after type-char consts",
         );
@@ -1703,6 +1703,30 @@ mod tests {
                 Instruction::LoadConstCurrency { scaled: 12_500, .. }
             )),
             "expected type-char Currency const bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI64 {
+                    value: 5_000_000_000,
+                    ..
+                }
+            )),
+            "expected type-char LongLong const bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF64 { bits, .. } if *bits == 2.0f64.to_bits()
+            )),
+            "expected type-char Double const bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "ok"
+            )),
+            "expected type-char String const bytecode: {bytecode:#?}"
         );
     }
 

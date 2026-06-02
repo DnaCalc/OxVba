@@ -386,9 +386,8 @@ fn parse_typed_i64_const_statement_values_with_initial(
     }
     for declarator in declarators {
         let (name_part, rhs) = declarator.split_once('=')?;
-        let (name_part, type_part) = split_keyword_ci(name_part.trim(), "as")?;
-        let ty = parse_hir_bound_type(type_part.trim())?;
-        if !matches!(ty, BoundType::LongLong | BoundType::LongPtr) {
+        let (name_part, ty) = parse_const_name_and_declared_type(name_part.trim());
+        if !matches!(ty, Some(BoundType::LongLong | BoundType::LongPtr)) {
             return None;
         }
         let name = normalize_hir_ident(name_part.trim())?;
@@ -3826,6 +3825,8 @@ fn parse_declared_const_value(
 ) -> Option<BoundExpr> {
     match declared_type {
         Some(BoundType::Single) => parse_const_single_literal(text).map(BoundExpr::SingleConst),
+        Some(BoundType::Double) => parse_const_f64_value(text, named_values, false)
+            .map(|value| BoundExpr::FloatConst(value.to_bits())),
         Some(BoundType::Currency) => {
             if let Some(value) = parse_const_currency_literal(text) {
                 return Some(BoundExpr::CurrencyConst(value));
@@ -7986,6 +7987,72 @@ mod tests {
             )),
             "{bytecode:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_all_scalar_type_char_const_literals() {
+        let source = "Const CInteger% = 7\nConst CLong& = 8\nConst CLongLong^ = 5000000000\nConst CDouble# = 2\nConst CText$ = \"ok\"\nSub Main()\nDim i As Integer\nDim l As Long\nDim ll As LongLong\nDim d As Double\nDim s As String\ni = CInteger\nl = CLong\nll = CLongLong\nd = CDouble\ns = CText\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 8, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI64 {
+                    value: 5_000_000_000,
+                    ..
+                }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF64 { bits, .. } if *bits == 2.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "ok"
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "i"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Integer
+        }));
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "ll"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::LongLong
+        }));
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "d"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Double
+        }));
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "s"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::String
+        }));
     }
 
     #[test]

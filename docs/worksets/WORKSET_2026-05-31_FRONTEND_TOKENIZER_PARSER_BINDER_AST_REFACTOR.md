@@ -1215,7 +1215,10 @@ Candidate bead units:
   Date/Currency arithmetic-expression subset for source-prior constants, literal numeric operands,
   and deterministic `#...#` Date literal operands, keeping final bytecode on
   `LoadConstCurrency`/`LoadConstDate`. Later continuation also applies `Const` name
-  type-declaration characters to the covered `Single` and `Currency` carrier subset.
+  type-declaration characters to the covered `Single` and `Currency` carrier subset. Follow-up
+  continuation completes the standard scalar `Const` name type-character family for the covered
+  evaluator subset (`%`, `&`, `^`, `!`, `#`, `@`, `$`) and tightens declared `Double` constants so
+  integer-looking `#` constants still materialize as `FloatConst`/`LoadConstF64`.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
