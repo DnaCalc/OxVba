@@ -258,6 +258,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         host bytecode for simple handle/payload expressions;
         file-handle `Input #handle, target[, ...]` now lowers through HIR to the existing file-input
         host bytecode;
+        file-handle `Line Input #handle, target` now lowers through HIR to the existing file
+        line-input host bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

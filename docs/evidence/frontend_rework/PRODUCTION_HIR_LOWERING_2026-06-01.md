@@ -376,6 +376,9 @@ Follow-up file-input route work adds HIR-owned `Input #handle, target[, ...]` lo
 existing file-input host bytecode, including multi-target input. `Open` and file `Line Input #`
 remain open file-handle statement surfaces.
 
+Follow-up file-line-input route work adds HIR-owned `Line Input #handle, target` lowering to the
+existing file line-input host bytecode. `Open` remains an open file-handle statement surface.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

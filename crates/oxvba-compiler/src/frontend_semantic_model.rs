@@ -289,6 +289,9 @@ impl SemanticModel {
             HirStmtKind::FileInput { file_number, .. } => {
                 self.index_expr_tree(file_number);
             }
+            HirStmtKind::FileLineInput { file_number, .. } => {
+                self.index_expr_tree(file_number);
+            }
         }
     }
 

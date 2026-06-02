@@ -360,7 +360,8 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::FileClose { .. }
         | HirStmtKind::FilePrint { .. }
         | HirStmtKind::FileWrite { .. }
-        | HirStmtKind::FileInput { .. } => {}
+        | HirStmtKind::FileInput { .. }
+        | HirStmtKind::FileLineInput { .. } => {}
     }
 }
 

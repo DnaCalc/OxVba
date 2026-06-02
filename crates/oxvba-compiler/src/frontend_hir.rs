@@ -320,6 +320,10 @@ pub enum HirStmtKind {
         file_number: HirExprId,
         targets: Vec<String>,
     },
+    FileLineInput {
+        file_number: HirExprId,
+        target: String,
+    },
     Label {
         name: String,
     },
@@ -684,6 +688,17 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::ConsoleInput { targets },
+                })))
+            }
+            SyntaxKind::CallStmt if is_file_line_input_stmt(node) => {
+                let (file_number, target) =
+                    self.lower_file_handle_single_target(scope, node, "Line Input")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FileLineInput {
+                        file_number,
+                        target,
+                    },
                 })))
             }
             SyntaxKind::CallStmt if is_console_line_input_stmt(node) => {
@@ -1550,6 +1565,28 @@ impl HirBuilder {
         Ok((file_number, targets))
     }
 
+    fn lower_file_handle_single_target(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<(HirExprId, String), HirBuildError> {
+        let (file_number, targets) = self.lower_file_handle_targets(scope, node, statement_name)?;
+        if targets.len() != 1 {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires exactly one target: `{}`",
+                node.text().trim()
+            )));
+        }
+        let target = targets.into_iter().next().ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires a target: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        Ok((file_number, target))
+    }
+
     fn lower_simple_statement_expr(
         &mut self,
         scope: ScopeId,
@@ -2095,6 +2132,13 @@ fn is_console_line_input_stmt(node: SyntaxNode<'_>) -> bool {
     let lower = node.text().trim_start().to_ascii_lowercase();
     lower.strip_prefix("line input").is_some_and(|rest| {
         rest.starts_with(char::is_whitespace) && !rest.trim_start().starts_with('#')
+    })
+}
+
+fn is_file_line_input_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("line input").is_some_and(|rest| {
+        rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('#')
     })
 }
 
