@@ -229,21 +229,31 @@ fn validate_hir_const_diagnostics(
         else {
             continue;
         };
-        let Some(value) = const_i64_after_span(source, span) else {
+        let Some(value) = const_i64_eval_after_span(source, span) else {
             continue;
         };
-        if value < min_value || value > max_value {
-            let name = typed_hir
-                .module
-                .symbols
-                .name(symbol.name)
-                .map(|name| name.folded.as_str())
-                .unwrap_or("<unknown>");
-            return Err(HirProductionLoweringError::Compile(
-                CompileError::ResolveError(format!(
-                    "constant {name} value {value} overflows {type_name}"
-                )),
-            ));
+        let name = typed_hir
+            .module
+            .symbols
+            .name(symbol.name)
+            .map(|name| name.folded.as_str())
+            .unwrap_or("<unknown>");
+        match value {
+            ConstI64Eval::Value(value) if value < min_value || value > max_value => {
+                return Err(HirProductionLoweringError::Compile(
+                    CompileError::ResolveError(format!(
+                        "constant {name} value {value} overflows {type_name}"
+                    )),
+                ));
+            }
+            ConstI64Eval::Overflow => {
+                return Err(HirProductionLoweringError::Compile(
+                    CompileError::ResolveError(format!(
+                        "constant {name} expression overflows {type_name}"
+                    )),
+                ));
+            }
+            ConstI64Eval::Value(_) => {}
         }
     }
     Ok(())
@@ -254,6 +264,8 @@ fn const_integer_range(ty: Option<BoundType>) -> Option<(&'static str, i64, i64)
         BoundType::Byte => Some(("Byte", 0, i64::from(u8::MAX))),
         BoundType::Integer => Some(("Integer", i64::from(i16::MIN), i64::from(i16::MAX))),
         BoundType::Long => Some(("Long", i64::from(i32::MIN), i64::from(i32::MAX))),
+        BoundType::LongLong => Some(("LongLong", i64::MIN, i64::MAX)),
+        BoundType::LongPtr => Some(("LongPtr", i64::MIN, i64::MAX)),
         _ => None,
     }
 }
@@ -3214,10 +3226,10 @@ fn const_literal_after_span(
     parse_const_value(rhs.trim(), &const_env)
 }
 
-fn const_i64_after_span(
+fn const_i64_eval_after_span(
     source: &str,
     span: crate::frontend_symbols::FrontendSourceSpan,
-) -> Option<i64> {
+) -> Option<ConstI64Eval> {
     let line_start = source[..span.start].rfind('\n').map_or(0, |idx| idx + 1);
     let line_end = span.end
         + source[span.end..]
@@ -3232,7 +3244,7 @@ fn const_i64_after_span(
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
-    parse_const_i64_value(rhs.trim(), &const_env)
+    parse_const_i64_eval_value(rhs.trim(), &const_env)
 }
 
 fn first_const_declarator_tail(text: &str) -> &str {
@@ -3415,56 +3427,115 @@ fn parse_const_i64_statement_values(text: &str) -> Option<HashMap<String, i64>> 
 }
 
 fn parse_const_i64_value(text: &str, named_values: &HashMap<String, i64>) -> Option<i64> {
+    match parse_const_i64_eval_value(text, named_values)? {
+        ConstI64Eval::Value(value) => Some(value),
+        ConstI64Eval::Overflow => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConstI64Eval {
+    Value(i64),
+    Overflow,
+}
+
+fn checked_i64_eval(value: Option<i64>) -> ConstI64Eval {
+    match value {
+        Some(value) => ConstI64Eval::Value(value),
+        None => ConstI64Eval::Overflow,
+    }
+}
+
+fn parse_const_i64_eval_value(
+    text: &str,
+    named_values: &HashMap<String, i64>,
+) -> Option<ConstI64Eval> {
     let text = strip_balanced_outer_parens(text.trim());
-    if let Some(value) = parse_const_i64_literal(text) {
+    if let Some(value) = parse_const_i64_eval_literal(text) {
         return Some(value);
     }
     if let Some(name) = normalize_hir_ident_exact(text)
         && let Some(value) = named_values.get(&name)
     {
-        return Some(*value);
+        return Some(ConstI64Eval::Value(*value));
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-']) {
-        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        let ConstI64Eval::Value(lhs) = parse_const_i64_eval_value(lhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
+        let ConstI64Eval::Value(rhs) = parse_const_i64_eval_value(rhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
         return match op {
-            '+' => lhs.checked_add(rhs),
-            '-' => lhs.checked_sub(rhs),
+            '+' => Some(checked_i64_eval(lhs.checked_add(rhs))),
+            '-' => Some(checked_i64_eval(lhs.checked_sub(rhs))),
             _ => None,
         };
     }
     if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "mod") {
-        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
-        return if rhs != 0 { lhs.checked_rem(rhs) } else { None };
+        let ConstI64Eval::Value(lhs) = parse_const_i64_eval_value(lhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
+        let ConstI64Eval::Value(rhs) = parse_const_i64_eval_value(rhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
+        return if rhs != 0 {
+            Some(checked_i64_eval(lhs.checked_rem(rhs)))
+        } else {
+            None
+        };
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/', '\\']) {
-        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        let ConstI64Eval::Value(lhs) = parse_const_i64_eval_value(lhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
+        let ConstI64Eval::Value(rhs) = parse_const_i64_eval_value(rhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
         return match op {
-            '*' => lhs.checked_mul(rhs),
-            '/' if rhs != 0 => lhs.checked_div(rhs),
-            '\\' if rhs != 0 => lhs.checked_div(rhs),
+            '*' => Some(checked_i64_eval(lhs.checked_mul(rhs))),
+            '/' if rhs != 0 => Some(checked_i64_eval(lhs.checked_div(rhs))),
+            '\\' if rhs != 0 => Some(checked_i64_eval(lhs.checked_div(rhs))),
             _ => None,
         };
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['^']) {
-        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        let ConstI64Eval::Value(lhs) = parse_const_i64_eval_value(lhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
+        let ConstI64Eval::Value(rhs) = parse_const_i64_eval_value(rhs.trim(), named_values)? else {
+            return Some(ConstI64Eval::Overflow);
+        };
         return match op {
-            '^' if rhs >= 0 => lhs.checked_pow(rhs as u32),
+            '^' if rhs >= 0 && rhs <= i64::from(u32::MAX) => {
+                Some(checked_i64_eval(lhs.checked_pow(rhs as u32)))
+            }
+            '^' if rhs >= 0 => Some(ConstI64Eval::Overflow),
             _ => None,
         };
     }
     if let Some(rest) = text.strip_prefix('-') {
-        return parse_const_i64_value(rest.trim(), named_values)?.checked_neg();
+        let ConstI64Eval::Value(value) = parse_const_i64_eval_value(rest.trim(), named_values)?
+        else {
+            return Some(ConstI64Eval::Overflow);
+        };
+        return Some(checked_i64_eval(value.checked_neg()));
     }
     None
 }
 
-fn parse_const_i64_literal(text: &str) -> Option<i64> {
+fn parse_const_i64_eval_literal(text: &str) -> Option<ConstI64Eval> {
     if let Ok(value) = text.parse::<i64>() {
-        return Some(value);
+        return Some(ConstI64Eval::Value(value));
+    }
+    if let Ok(value) = text.parse::<i128>() {
+        return Some(
+            if value < i128::from(i64::MIN) || value > i128::from(i64::MAX) {
+                ConstI64Eval::Overflow
+            } else {
+                ConstI64Eval::Value(value as i64)
+            },
+        );
     }
     let text = text.trim();
     if text.len() < 3 || !text.starts_with('&') {
@@ -3473,10 +3544,19 @@ fn parse_const_i64_literal(text: &str) -> Option<i64> {
     let prefix = text.as_bytes()[1].to_ascii_lowercase();
     let digits = &text[2..];
     match prefix {
-        b'h' => i64::from_str_radix(digits, 16).ok(),
-        b'o' => i64::from_str_radix(digits, 8).ok(),
+        b'h' => parse_u128_i64_eval_literal(digits, 16),
+        b'o' => parse_u128_i64_eval_literal(digits, 8),
         _ => None,
     }
+}
+
+fn parse_u128_i64_eval_literal(digits: &str, radix: u32) -> Option<ConstI64Eval> {
+    let value = u128::from_str_radix(digits, radix).ok()?;
+    Some(if value > i64::MAX as u128 {
+        ConstI64Eval::Overflow
+    } else {
+        ConstI64Eval::Value(value as i64)
+    })
 }
 
 fn parse_const_literal(text: &str) -> Option<BoundExpr> {
@@ -7259,6 +7339,36 @@ mod tests {
                 err,
                 HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
                     if message.contains("constant ctotal value 32768 overflows Integer")
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_overflowing_typed_longlong_const() {
+        let source = "Const CTotal As LongLong = 9223372036854775807 + 1\nSub Main()\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("overflowing LongLong const should be diagnosed");
+        assert!(
+            matches!(
+                err,
+                HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
+                    if message.contains("constant ctotal expression overflows LongLong")
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_overflowing_typed_longptr_const() {
+        let source = "Const CTotal As LongPtr = 9223372036854775807 + 1\nSub Main()\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("overflowing LongPtr const should be diagnosed");
+        assert!(
+            matches!(
+                err,
+                HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
+                    if message.contains("constant ctotal expression overflows LongPtr")
             ),
             "unexpected error: {err:?}"
         );
