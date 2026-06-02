@@ -1000,8 +1000,8 @@ Candidate bead units:
   symbol table, emits active-project dynamic object field-token metadata from frontend
   ordinary-field routes, and classifies active-project typed class locals through the same
   frontend class route. Remaining fallback routes are explicitly bounded to referenced-project
-  class/predeclared roots, imported COM activation metadata, and parser-incomplete compatibility
-  enumeration outside the active-project symbol-index route.
+  class-construction/member ownership, imported COM activation metadata, used referenced helpers,
+  and parser-incomplete compatibility enumeration outside the active-project symbol-index route.
   Status: reopened continuation required. Partial work has already been done: active-project class
   construction route analysis, typed class locals, predeclared Property Get roots, ordinary field
   metadata from frontend routes, WithEvents field separation, HIR `New` shape, construction
