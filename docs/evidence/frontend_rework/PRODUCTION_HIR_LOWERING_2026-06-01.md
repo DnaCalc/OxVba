@@ -317,6 +317,10 @@ Follow-up file-position host intrinsic work adds `EOF(handle)`, `LOF(handle)`, `
 through production HIR. File statements such as `Open`, `Close`, `Kill`, `Print`, `Write`, and
 `Line Input` remain separate statement-lowering surfaces.
 
+Follow-up dialog host intrinsic work adds `MsgBox(prompt[, style])` and
+`InputBox(prompt[, default])` to HIR built-in resolution and verifies the existing UI host bytecode
+through production HIR. This is route proof only and does not change the HAL dialog contract.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

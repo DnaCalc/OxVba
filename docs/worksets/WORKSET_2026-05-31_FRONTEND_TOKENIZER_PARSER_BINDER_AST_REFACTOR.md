@@ -1215,8 +1215,10 @@ Candidate bead units:
   intrinsics `Date()`, `Time()`, `Now()`, and `Timer()` through existing host bytecode, plus host
   utility intrinsics `FreeFile()`/`FreeFile(range)` and `DoEvents()` through existing host bytecode.
   Follow-up file-position host intrinsic routing covers `EOF(handle)`, `LOF(handle)`,
-  `Seek(handle)`, and `Loc(handle)` through existing host bytecode. The `Array(...)` helper proof
-  is not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  `Seek(handle)`, and `Loc(handle)` through existing host bytecode. Follow-up dialog host intrinsic
+  routing covers `MsgBox(prompt[, style])` and `InputBox(prompt[, default])` through existing host
+  bytecode. The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that
+  remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

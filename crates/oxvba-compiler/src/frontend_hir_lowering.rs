@@ -4999,6 +4999,32 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_dialog_host_intrinsics() {
+        let source = "Sub Main()\nDim a\nDim b\na = MsgBox(7, 3)\nb = InputBox(9, 4)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicMsgBoxHost { style: Some(_), .. }
+            )),
+            "expected MsgBox(7, 3) to emit styled host dialog intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicInputBoxHost {
+                    default_value: Some(_),
+                    ..
+                }
+            )),
+            "expected InputBox(9, 4) to emit defaulted host dialog intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
         let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
         let (bytecode, _metadata) =

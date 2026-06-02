@@ -234,6 +234,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         host utility intrinsics `FreeFile()`/`FreeFile(range)` and `DoEvents()` now lower through HIR;
         file-position host intrinsics `EOF(handle)`, `LOF(handle)`, `Seek(handle)`, and
         `Loc(handle)` now lower through HIR;
+        dialog host intrinsics `MsgBox(prompt[, style])` and `InputBox(prompt[, default])` now lower
+        through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

@@ -524,6 +524,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let dialog_host_intrinsics =
+        "Sub Main()\nDim a\nDim b\na = MsgBox(7, 3)\nb = InputBox(9, 4)\nEnd Sub\n";
+    findings.push(route_finding(
+        "dialog host intrinsic fixture",
+        dialog_host_intrinsics,
+        "bd-aprs.9.10",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",
