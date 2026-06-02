@@ -346,6 +346,7 @@ pub struct CompiledProject {
     pub source_maps: CompilerSourceMap,
     pub rewritten_source: String,
     pub compile_route: ProjectCompileRoute,
+    pub compile_route_detail: Option<String>,
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
     pub event_dispatch_bindings: Vec<ProjectEventDispatchBinding>,
@@ -1435,12 +1436,13 @@ fn compile_project_with_strategy(
                     }
                 }
             });
-    let (compiled_source, compile_result, compile_route) =
+    let (compiled_source, compile_result, compile_route, compile_route_detail) =
         if let Some((compiled_source, compiled)) = hir_construction_compile {
             (
                 compiled_source,
                 compiled,
                 ProjectCompileRoute::HirProduction,
+                None,
             )
         } else if project_compile_boundary == ProjectCompileBoundary::ActiveHir {
             match compile_project_source_via_strict_hir(
@@ -1451,8 +1453,9 @@ fn compile_project_with_strategy(
                     lowered_project_source.active_project_source.clone(),
                     Ok(compiled),
                     ProjectCompileRoute::HirProduction,
+                    None,
                 ),
-                Err(HirProductionLoweringError::Unsupported(_)) => (
+                Err(HirProductionLoweringError::Unsupported(reason)) => (
                     lowered_project_source.full_source.clone(),
                     compile_with_runtime_metadata_legacy_object_locals_class(
                         &lowered_project_source.full_source,
@@ -1460,11 +1463,13 @@ fn compile_project_with_strategy(
                         has_class_modules,
                     ),
                     ProjectCompileRoute::LegacyFallbackAfterHirUnsupported,
+                    Some(reason),
                 ),
                 Err(HirProductionLoweringError::Compile(err)) => (
                     lowered_project_source.active_project_source.clone(),
                     Err(err),
                     ProjectCompileRoute::HirProduction,
+                    None,
                 ),
             }
         } else if project_compile_boundary == ProjectCompileBoundary::FullHir {
@@ -1476,8 +1481,9 @@ fn compile_project_with_strategy(
                     lowered_project_source.full_source.clone(),
                     Ok(compiled),
                     ProjectCompileRoute::HirProduction,
+                    None,
                 ),
-                Err(HirProductionLoweringError::Unsupported(_)) => (
+                Err(HirProductionLoweringError::Unsupported(reason)) => (
                     lowered_project_source.full_source.clone(),
                     compile_with_runtime_metadata_legacy_object_locals_class(
                         &lowered_project_source.full_source,
@@ -1485,11 +1491,13 @@ fn compile_project_with_strategy(
                         has_class_modules,
                     ),
                     ProjectCompileRoute::LegacyFallbackAfterHirUnsupported,
+                    Some(reason),
                 ),
                 Err(HirProductionLoweringError::Compile(err)) => (
                     lowered_project_source.full_source.clone(),
                     Err(err),
                     ProjectCompileRoute::HirProduction,
+                    None,
                 ),
             }
         } else {
@@ -1501,6 +1509,7 @@ fn compile_project_with_strategy(
                     has_class_modules,
                 ),
                 ProjectCompileRoute::LegacyFallback,
+                Some("project boundary still requires legacy full-project lowering".to_string()),
             )
         };
     let (bytecode, mut procedure_runtime_metadata) =
@@ -1550,6 +1559,7 @@ fn compile_project_with_strategy(
         source_maps,
         rewritten_source: public_rewritten_source,
         compile_route,
+        compile_route_detail,
         host_exports,
         reference_visible_exports,
         event_dispatch_bindings,

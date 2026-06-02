@@ -2,6 +2,7 @@ use thiserror::Error;
 
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
+use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::{
     FrontendSourceSpan, ScopeId, ScopeKind, SourceProvenance, SymbolId, SymbolModel,
     SymbolModelError, SymbolNamespace, build_symbol_model_from_source,
@@ -2038,7 +2039,8 @@ impl HirBuilder {
         if let Some(symbol) = self.resolve_property_write_name(scope, name)? {
             return Ok(symbol);
         }
-        if is_builtin_intrinsic_name(name) {
+        if is_builtin_intrinsic_name(name) || StructuralIntrinsic::from_legacy_name(name).is_some()
+        {
             return Ok(self.symbols.declare_symbol(
                 scope,
                 SymbolNamespace::Procedure,

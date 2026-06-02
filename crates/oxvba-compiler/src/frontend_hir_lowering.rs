@@ -2317,6 +2317,9 @@ fn lower_call_expr(
                     args: intrinsic_args,
                 });
             }
+            if is_early_bound_property_dispatch_helper(&name) {
+                return Ok(BoundExpr::ProcCall { name, args });
+            }
             if let Some(intrinsic) = StructuralIntrinsic::from_legacy_name(&name) {
                 if matches!(
                     intrinsic,
@@ -2364,6 +2367,12 @@ fn lower_call_expr(
             "call target {other:?}"
         ))),
     }
+}
+
+fn is_early_bound_property_dispatch_helper(name: &str) -> bool {
+    name.eq_ignore_ascii_case("__OxVbaEarlyPropertyGetInvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyPropertyLetInvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyPropertySetInvoke")
 }
 
 fn lower_member_expr(

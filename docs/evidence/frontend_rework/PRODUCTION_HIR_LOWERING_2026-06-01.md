@@ -1025,9 +1025,10 @@ method calls compiling through `ProjectCompileRoute::HirProduction`. Document mo
 COM/reference shapes beyond procedural project references, broader class semantics, and
 host/oracle-backed project semantics remain open.
 The audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM
-residual: `Dim obj As New OxVba.TestDispatch` compiles through
-`LegacyFallbackAfterHirUnsupported`, so the source-backed gate intentionally remains open until
-imported COM construction/member lowering is strict-HIR backed.
+route: `Dim obj As New OxVba.TestDispatch` rewrites through imported activation/member metadata and
+compiles through `ProjectCompileRoute::HirProduction`. The source-backed route gate now passes; the
+terminal route gate remains open for the skipped Excel oracle row and broader uncovered project
+routes.
 Language-service workspace coverage now loads matching seed-route project manifests: `INTP-003`
 proves referenced-project exports surface through workspace symbols with `ProjectReference`
 provenance, and `INTP-016` proves active class members surface from the class project workspace

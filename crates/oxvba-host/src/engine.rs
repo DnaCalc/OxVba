@@ -1240,6 +1240,7 @@ impl Engine {
             source_maps: oxvba_compiler::CompilerSourceMap::default(),
             rewritten_source: String::new(),
             compile_route: ProjectCompileRoute::LegacyFallback,
+            compile_route_detail: None,
             host_exports: bundle
                 .export_inventory
                 .as_ref()
