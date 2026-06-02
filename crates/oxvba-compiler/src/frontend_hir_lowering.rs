@@ -14,9 +14,9 @@ use crate::frontend_type_hooks::{
 use crate::optimize::optimize_module;
 use crate::resolve::{
     ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
-    BoundCaseClause, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor, BoundExpr,
-    BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
-    BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
+    BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
+    BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
+    BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
     RuntimeArrayDimExpr, collect_declared_external_procedures, collect_module_constants,
     collect_option_base, collect_option_compare_mode, parse_proc_signature_with_module_constants,
 };
@@ -346,7 +346,9 @@ fn const_stmt_is_supported_with_env(
         return false;
     };
     let payload = text[pos + "const".len()..].trim();
-    if let Some(values) = parse_const_statement_values_with_initial(payload, const_values) {
+    if let Some(values) =
+        parse_const_statement_values_with_initial(payload, const_values, BoundCompareMode::Binary)
+    {
         for (name, value) in values {
             if let Some(ConstI64Eval::Value(i64_value)) =
                 parse_const_i64_eval_value_from_bound_expr(&value)
@@ -2798,6 +2800,8 @@ fn symbol_name(
 
 fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<SymbolId, BoundExpr> {
     let enum_values = collect_hir_enum_constants(source);
+    let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+    let compare_mode = collect_option_compare_mode(&lines);
     let mut values_by_name = enum_values.clone();
     let mut i64_values_by_name = collect_hir_enum_i64_constants(source);
     let mut values_by_symbol = HashMap::new();
@@ -2829,7 +2833,15 @@ fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<Sym
             declared_type,
             &i64_values_by_name,
         )
-        .or_else(|| const_literal_after_span_with_env(source, span, declared_type, &values_by_name))
+        .or_else(|| {
+            const_literal_after_span_with_env(
+                source,
+                span,
+                declared_type,
+                &values_by_name,
+                compare_mode,
+            )
+        })
         .or_else(|| enum_values.get(name.as_str()).cloned());
         let Some(value) = value else {
             continue;
@@ -3330,6 +3342,7 @@ fn const_literal_after_span_with_env(
     span: crate::frontend_symbols::FrontendSourceSpan,
     declared_type: Option<BoundType>,
     prior_values: &HashMap<String, BoundExpr>,
+    compare_mode: BoundCompareMode,
 ) -> Option<BoundExpr> {
     let line_start = source[..span.start].rfind('\n').map_or(0, |idx| idx + 1);
     let line_end = span.end
@@ -3341,12 +3354,16 @@ fn const_literal_after_span_with_env(
         return None;
     }
     let line = source.get(line_start..line_end)?;
-    let const_env =
-        const_values_before_span_on_line_with_env(line, span.start - line_start, prior_values)?;
+    let const_env = const_values_before_span_on_line_with_env(
+        line,
+        span.start - line_start,
+        prior_values,
+        compare_mode,
+    )?;
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
-    parse_const_value_for_declared(rhs.trim(), &const_env, declared_type)
+    parse_const_value_for_declared(rhs.trim(), &const_env, declared_type, compare_mode)
 }
 
 fn const_longlong_literal_after_span_with_env(
@@ -3442,6 +3459,7 @@ fn split_const_declarators(text: &str) -> Vec<&str> {
 fn parse_const_statement_values_with_initial(
     text: &str,
     initial_values: &HashMap<String, BoundExpr>,
+    compare_mode: BoundCompareMode,
 ) -> Option<HashMap<String, BoundExpr>> {
     let mut visible_values = initial_values.clone();
     let mut values = HashMap::new();
@@ -3453,7 +3471,12 @@ fn parse_const_statement_values_with_initial(
         let (name_part, rhs) = declarator.split_once('=')?;
         let (name_part, declared_type) = parse_const_name_and_declared_type(name_part.trim());
         let name = normalize_hir_ident(name_part.trim())?;
-        let value = parse_const_value_for_declared(rhs.trim(), &visible_values, declared_type)?;
+        let value = parse_const_value_for_declared(
+            rhs.trim(),
+            &visible_values,
+            declared_type,
+            compare_mode,
+        )?;
         visible_values.insert(name.clone(), value.clone());
         values.insert(name, value);
     }
@@ -3464,6 +3487,7 @@ fn const_values_before_span_on_line_with_env(
     line: &str,
     span_start: usize,
     prior_values: &HashMap<String, BoundExpr>,
+    compare_mode: BoundCompareMode,
 ) -> Option<HashMap<String, BoundExpr>> {
     let lower = line.to_ascii_lowercase();
     let const_pos = lower.find("const")?;
@@ -3477,6 +3501,7 @@ fn const_values_before_span_on_line_with_env(
     values.extend(parse_const_statement_values_with_initial(
         before_name.trim_end_matches(','),
         prior_values,
+        compare_mode,
     )?);
     Some(values)
 }
@@ -3502,17 +3527,15 @@ fn const_i64_values_before_span_on_line_with_env(
     Some(values)
 }
 
-fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<BoundExpr> {
-    parse_const_value_for_declared(text, named_values, None)
-}
-
 fn parse_const_value_for_declared(
     text: &str,
     named_values: &HashMap<String, BoundExpr>,
     declared_type: Option<BoundType>,
+    compare_mode: BoundCompareMode,
 ) -> Option<BoundExpr> {
     let text = strip_balanced_outer_parens(text.trim());
-    if let Some(value) = parse_declared_const_value(text, named_values, declared_type) {
+    if let Some(value) = parse_declared_const_value(text, named_values, declared_type, compare_mode)
+    {
         return Some(value);
     }
     if let Some(value) = parse_const_literal(text) {
@@ -3537,15 +3560,35 @@ fn parse_const_value_for_declared(
         };
         return Some(BoundExpr::BinaryOp {
             op,
-            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
-            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
+            lhs: Box::new(parse_const_value_for_declared(
+                lhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
+            rhs: Box::new(parse_const_value_for_declared(
+                rhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
         });
     }
     if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "mod") {
         return Some(BoundExpr::BinaryOp {
             op: ArithOp::Mod,
-            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
-            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
+            lhs: Box::new(parse_const_value_for_declared(
+                lhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
+            rhs: Box::new(parse_const_value_for_declared(
+                rhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
         });
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/', '\\']) {
@@ -3557,8 +3600,18 @@ fn parse_const_value_for_declared(
         };
         return Some(BoundExpr::BinaryOp {
             op,
-            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
-            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
+            lhs: Box::new(parse_const_value_for_declared(
+                lhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
+            rhs: Box::new(parse_const_value_for_declared(
+                rhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
         });
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['^']) {
@@ -3568,14 +3621,29 @@ fn parse_const_value_for_declared(
         };
         return Some(BoundExpr::BinaryOp {
             op,
-            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
-            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
+            lhs: Box::new(parse_const_value_for_declared(
+                lhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
+            rhs: Box::new(parse_const_value_for_declared(
+                rhs.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
         });
     }
     if let Some(rest) = text.strip_prefix('-') {
         return Some(BoundExpr::UnaryOp {
             op: ArithOp::Neg,
-            operand: Box::new(parse_const_value(rest.trim(), named_values)?),
+            operand: Box::new(parse_const_value_for_declared(
+                rest.trim(),
+                named_values,
+                None,
+                compare_mode,
+            )?),
         });
     }
     None
@@ -3827,10 +3895,11 @@ fn parse_declared_const_value(
     text: &str,
     named_values: &HashMap<String, BoundExpr>,
     declared_type: Option<BoundType>,
+    compare_mode: BoundCompareMode,
 ) -> Option<BoundExpr> {
     match declared_type {
         Some(BoundType::Boolean) => {
-            parse_const_bool_value(text, named_values).map(BoundExpr::BoolConst)
+            parse_const_bool_value(text, named_values, compare_mode).map(BoundExpr::BoolConst)
         }
         Some(BoundType::String) => {
             parse_const_string_value(text, named_values).map(BoundExpr::StringConst)
@@ -3935,7 +4004,11 @@ fn const_expr_contains_true_division(text: &str) -> bool {
     false
 }
 
-fn parse_const_bool_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<bool> {
+fn parse_const_bool_value(
+    text: &str,
+    named_values: &HashMap<String, BoundExpr>,
+    compare_mode: BoundCompareMode,
+) -> Option<bool> {
     let text = strip_balanced_outer_parens(text.trim());
     if text.eq_ignore_ascii_case("true") {
         return Some(true);
@@ -3950,21 +4023,25 @@ fn parse_const_bool_value(text: &str, named_values: &HashMap<String, BoundExpr>)
     }
     if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "or") {
         return Some(
-            parse_const_bool_value(lhs.trim(), named_values)?
-                || parse_const_bool_value(rhs.trim(), named_values)?,
+            parse_const_bool_value(lhs.trim(), named_values, compare_mode)?
+                || parse_const_bool_value(rhs.trim(), named_values, compare_mode)?,
         );
     }
     if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "and") {
         return Some(
-            parse_const_bool_value(lhs.trim(), named_values)?
-                && parse_const_bool_value(rhs.trim(), named_values)?,
+            parse_const_bool_value(lhs.trim(), named_values, compare_mode)?
+                && parse_const_bool_value(rhs.trim(), named_values, compare_mode)?,
         );
     }
     if let Some((lhs, op, rhs)) = split_const_compare_expr(text) {
-        return eval_const_compare(lhs.trim(), op, rhs.trim(), named_values);
+        return eval_const_compare(lhs.trim(), op, rhs.trim(), named_values, compare_mode);
     }
     if let Some(rest) = strip_const_keyword_prefix(text, "not") {
-        return Some(!parse_const_bool_value(rest.trim(), named_values)?);
+        return Some(!parse_const_bool_value(
+            rest.trim(),
+            named_values,
+            compare_mode,
+        )?);
     }
     None
 }
@@ -3986,6 +4063,7 @@ fn eval_const_compare(
     op: CompareOp,
     rhs: &str,
     named_values: &HashMap<String, BoundExpr>,
+    compare_mode: BoundCompareMode,
 ) -> Option<bool> {
     if let (Some(lhs), Some(rhs)) = (
         parse_const_f64_value(lhs, named_values, false),
@@ -4002,8 +4080,8 @@ fn eval_const_compare(
         };
     }
     if let (Some(lhs), Some(rhs)) = (
-        parse_const_bool_value(lhs, named_values),
-        parse_const_bool_value(rhs, named_values),
+        parse_const_bool_value(lhs, named_values, compare_mode),
+        parse_const_bool_value(rhs, named_values, compare_mode),
     ) {
         return match op {
             CompareOp::Eq => Some(lhs == rhs),
@@ -4015,9 +4093,13 @@ fn eval_const_compare(
         parse_const_string_value(lhs, named_values),
         parse_const_string_value(rhs, named_values),
     ) {
+        let equal = match compare_mode {
+            BoundCompareMode::Text => lhs.eq_ignore_ascii_case(&rhs),
+            BoundCompareMode::Binary | BoundCompareMode::Database => lhs == rhs,
+        };
         return match op {
-            CompareOp::Eq => Some(lhs == rhs),
-            CompareOp::Ne => Some(lhs != rhs),
+            CompareOp::Eq => Some(equal),
+            CompareOp::Ne => Some(!equal),
             _ => None,
         };
     }
@@ -8423,6 +8505,42 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Boolean
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_folds_option_compare_text_boolean_const() {
+        let source = "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstBool { value: true, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            !bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CmpEqSlots { .. })),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_keeps_option_compare_database_const_binary() {
+        let source = "Option Compare Database\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstBool { value: false, .. }
+            )),
+            "{bytecode:#?}"
+        );
     }
 
     #[test]

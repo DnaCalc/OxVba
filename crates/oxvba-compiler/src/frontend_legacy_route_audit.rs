@@ -448,6 +448,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let option_compare_text_const_statement = "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+    findings.push(route_finding(
+        "option compare text boolean const fixture",
+        option_compare_text_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let option_private_module_statement =
         "Option Private Module\nSub Main()\nDim x\nx = 1\nEnd Sub\n";
     findings.push(route_finding(
