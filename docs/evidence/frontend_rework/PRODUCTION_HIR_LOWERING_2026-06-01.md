@@ -713,16 +713,18 @@ The FE-8.5 UDT slices remove the basic UDT declaration/layout and simple field-a
   flattened descriptor/slot shape used by the legacy resolver.
 - Simple UDT field reads/writes now lower to flattened aliases, so `p.X = 1` and `y = p.X + 2`
   avoid the object/member dispatch path.
+- Nested UDT member-chain reads/writes now resolve through the same flattened aliases, so
+  `r.Inner.X = 7` and `y = r.Inner.X + 2` lower to `r_inner_x` rather than late-bound dispatch.
 - Same-shape whole-value UDT assignment lowers to the existing field-wise `BoundStmt::UdtAssign`
   copy path.
 - The production route audit includes a `Type Point ... p.X = 1 ... y = p.X + 2` fixture and
-  a nested/fixed-array/fixed-string descriptor fixture, and classifies both as `HirProduction`.
+  nested/fixed-array/fixed-string descriptor plus nested member-chain fixtures, and classifies
+  them as `HirProduction`.
 
 Remaining production residuals after this slice:
 
-- Executable nested UDT member-chain syntax, indexed UDT field access/write semantics, richer
-  cross-type assignment diagnostics, and broader UDT lifetime/default initialization parity remain
-  open.
+- Indexed UDT field access/write semantics, richer cross-type assignment diagnostics, and broader
+  UDT lifetime/default initialization parity remain open.
 - `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
   construction interactions, and assignment/writeback behavior.
 
@@ -1026,6 +1028,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-syntax parses_type_block_field_declaration_shapes_losslessly --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_rich_udt_field_metadata --quiet`
 - `cargo test -p oxvba-compiler udt_field_read_write --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_nested_udt_member_chain_aliases --quiet`
 - `cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`

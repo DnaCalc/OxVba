@@ -542,6 +542,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let nested_udt_member_chain = "Type Inner\nX As Long\nEnd Type\nType Record\nInner As Inner\nEnd Type\nSub Main()\nDim r As Record\nDim y As Long\nr.Inner.X = 7\ny = r.Inner.X + 2\nEnd Sub\n";
+    findings.push(route_finding(
+        "nested UDT member-chain fixture",
+        nested_udt_member_chain,
+        "bd-aprs.9.5",
+    ));
+
     let member_expression =
         "Sub Main()\nDim obj\nDim x\nDim y\nx = obj.Value\ny = obj.Method(1)\nEnd Sub\n";
     findings.push(route_finding(

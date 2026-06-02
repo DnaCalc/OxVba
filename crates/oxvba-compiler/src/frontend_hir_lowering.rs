@@ -2828,16 +2828,37 @@ fn udt_member_alias(
     udt_field_aliases: &HashMap<(String, String), String>,
     member: crate::frontend_hir::HirMemberId,
 ) -> Option<String> {
-    let member_data = typed_hir.module.arenas.member(member)?;
-    let receiver = member_data.receiver?;
-    let receiver_name = hir_name_expr(typed_hir, receiver).ok().flatten()?;
-    let member_name = symbol_name(typed_hir, member_data.symbol).ok()?;
+    let path = hir_member_path(typed_hir, member)?;
+    let (receiver_name, field_parts) = path.split_first()?;
+    if field_parts.is_empty() {
+        return None;
+    }
+    let member_name = field_parts.join("_");
     udt_field_aliases
         .get(&(
             receiver_name.to_ascii_lowercase(),
             member_name.to_ascii_lowercase(),
         ))
         .cloned()
+}
+
+fn hir_member_path(
+    typed_hir: &TypedHirModule,
+    member: crate::frontend_hir::HirMemberId,
+) -> Option<Vec<String>> {
+    let member_data = typed_hir.module.arenas.member(member)?;
+    let receiver = member_data.receiver?;
+    let mut path = hir_expr_path(typed_hir, receiver)?;
+    path.push(symbol_name(typed_hir, member_data.symbol).ok()?);
+    Some(path)
+}
+
+fn hir_expr_path(typed_hir: &TypedHirModule, expr: HirExprId) -> Option<Vec<String>> {
+    match typed_hir.module.arenas.expr(expr).map(|expr| &expr.kind)? {
+        HirExprKind::Name(symbol) => Some(vec![symbol_name(typed_hir, *symbol).ok()?]),
+        HirExprKind::Member(member) => hir_member_path(typed_hir, *member),
+        _ => None,
+    }
 }
 
 fn collect_hir_enum_descriptors(source: &str) -> Vec<BoundEnumDescriptor> {
@@ -6479,6 +6500,29 @@ mod tests {
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
                 Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::AddConstI32 { value: 2, .. } | Instruction::AddSlots { .. }
+            )),
+            "{bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_nested_udt_member_chain_aliases() {
+        let source = "Type Inner\nX As Long\nEnd Type\nType Record\nInner As Inner\nEnd Type\nSub Main()\nDim r As Record\nDim y As Long\nr.Inner.X = 7\ny = r.Inner.X + 2\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| slot.name == "r_inner_x"));
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
             )),
             "{bytecode:#?}"
         );
