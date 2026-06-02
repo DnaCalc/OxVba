@@ -69,8 +69,9 @@ The 2026-06-01 continuation added:
 - `bd-aprs.8.7` named-argument HIR continuation: statement-form call arguments now preserve
   `name := expr` in `HirCallArg` and HIR production lowering carries that name into `BoundCallArg`,
   allowing existing call-site descriptor and argument-binding metadata to classify the argument as
-  named from HIR facts. The syntax parser now also accepts explicit no-paren `Call Proc name :=
-  value` so that route reaches the HIR call-argument path.
+  named from HIR facts. The syntax parser now accepts named arguments in both explicit no-paren
+  `Call Proc name := value` and parenthesized `Call Proc(name := value)` forms so those routes
+  reach the HIR call-argument path.
 
 ## Checks
 
@@ -170,7 +171,6 @@ The 2026-06-01 continuation added:
   compatibility rewrite path, not full HIR ownership.
 - Named-argument HIR review found that the syntax parser preserved `:=` tokens, but HIR collapsed
   arguments to positional expressions. `HirCallArg` now carries an optional source name and
-  statement-form HIR lowering preserves that into `BoundCallArg`; explicit no-paren `Call` now
-  parses the same bare argument list. Parenthesized explicit `Call Use(name := value)` still fails
-  in the current parser and remains parser-surface work; indexed property/default-member writeback
-  is also still open.
+  statement-form HIR lowering preserves that into `BoundCallArg`; explicit no-paren `Call` parses
+  the same bare argument list, and parenthesized argument lists now parse `name := expr` through the
+  same argument parser. Indexed property/default-member writeback remains open.

@@ -559,7 +559,7 @@ impl<'a> Parser<'a> {
         if !self.at(SyntaxKind::RParen) && !self.at_eof() {
             // First argument
             if !self.at(SyntaxKind::Comma) {
-                self.parse_expr_bp(0);
+                self.parse_bare_arg();
             }
 
             while self.at(SyntaxKind::Comma) || {
@@ -570,7 +570,7 @@ impl<'a> Parser<'a> {
                 self.eat_expr_whitespace();
                 // Support empty argument slots: f(a,,b)
                 if !self.at(SyntaxKind::Comma) && !self.at(SyntaxKind::RParen) && !self.at_eof() {
-                    self.parse_expr_bp(0);
+                    self.parse_bare_arg();
                 }
                 self.eat_expr_whitespace();
             }
