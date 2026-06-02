@@ -166,6 +166,7 @@ struct ProjectedTypeLibReferenceProvenance {
 struct ModuleStateBindings {
     owner_expr: String,
     field_tokens: BTreeMap<String, i32>,
+    fixed_array_field_tokens: BTreeMap<String, i32>,
     dynamic_array_field_tokens: BTreeMap<String, i32>,
 }
 
@@ -3781,6 +3782,11 @@ fn lower_module_source_module_aware(
                 &module_state_bindings,
                 rewrite_suffix,
             );
+            let expanded_line = rewrite_internal_class_fixed_array_field_assignment(
+                &expanded_line,
+                &module_state_bindings,
+                rewrite_suffix,
+            );
             let expanded_line = rewrite_same_module_byref_module_state_call_line(
                 &expanded_line,
                 &module_state_bindings,
@@ -3791,7 +3797,7 @@ fn lower_module_source_module_aware(
             let expanded_line = if state_assigned != expanded_line {
                 state_assigned
             } else {
-                let array_reads = rewrite_internal_class_dynamic_array_field_reads(
+                let array_reads = rewrite_internal_class_array_field_reads(
                     &state_assigned,
                     &module_state_bindings,
                 );
@@ -7788,6 +7794,7 @@ fn collect_module_state_bindings(
             return ModuleStateBindings {
                 owner_expr: String::new(),
                 field_tokens: BTreeMap::new(),
+                fixed_array_field_tokens: BTreeMap::new(),
                 dynamic_array_field_tokens: BTreeMap::new(),
             };
         }
@@ -7803,6 +7810,7 @@ fn collect_module_state_bindings(
             names.into_iter().collect::<BTreeSet<_>>()
         });
     let mut field_tokens = BTreeMap::new();
+    let mut fixed_array_field_tokens = BTreeMap::new();
     let mut dynamic_array_field_tokens = BTreeMap::new();
     let mut in_procedure = false;
     for line in module.source.lines() {
@@ -7849,10 +7857,12 @@ fn collect_module_state_bindings(
                 else {
                     continue;
                 };
-                if descriptor.dynamic
-                    && let Some(token) = field_tokens.get(&normalized).copied()
-                {
-                    dynamic_array_field_tokens.insert(normalized, token);
+                if let Some(token) = field_tokens.get(&normalized).copied() {
+                    if descriptor.dynamic {
+                        dynamic_array_field_tokens.insert(normalized, token);
+                    } else {
+                        fixed_array_field_tokens.insert(normalized, token);
+                    }
                 }
             }
         }
@@ -7860,6 +7870,7 @@ fn collect_module_state_bindings(
     ModuleStateBindings {
         owner_expr,
         field_tokens,
+        fixed_array_field_tokens,
         dynamic_array_field_tokens,
     }
 }
@@ -8480,6 +8491,65 @@ fn rewrite_internal_class_dynamic_array_field_assignment(
     .join("\n")
 }
 
+fn rewrite_internal_class_fixed_array_field_assignment(
+    line: &str,
+    module_state_bindings: &ModuleStateBindings,
+    rewrite_suffix: usize,
+) -> String {
+    if module_state_bindings.fixed_array_field_tokens.is_empty()
+        || class_state_line_is_non_executable(line)
+    {
+        return line.to_string();
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let Some(eq_idx) = find_top_level_assignment_eq(trimmed) else {
+        return line.to_string();
+    };
+    let lhs = trimmed[..eq_idx].trim();
+    let rhs = trimmed[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return line.to_string();
+    }
+    let Some((field_name, indices)) = parse_simple_array_target(lhs) else {
+        return line.to_string();
+    };
+    let Some(binding_token) = module_state_bindings
+        .fixed_array_field_tokens
+        .get(&field_name)
+        .copied()
+    else {
+        return line.to_string();
+    };
+    let rewritten_rhs = rewrite_internal_class_array_field_reads(rhs, module_state_bindings);
+    let indent = &line[..leading];
+    let temp_name = array_field_temp_name("fixed_assign", &field_name, line, rewrite_suffix);
+    [
+        format!("{indent}Dim {temp_name}()"),
+        format!(
+            "{indent}{temp_name} = __oxvba_withevents_get({}, {})",
+            module_state_bindings.owner_expr, binding_token
+        ),
+        format!("{indent}{temp_name}({indices}) = {rewritten_rhs}"),
+        format!(
+            "{indent}__oxvba_field_set_discard = __oxvba_withevents_set({}, {}, {temp_name})",
+            module_state_bindings.owner_expr, binding_token
+        ),
+    ]
+    .join("\n")
+}
+
+fn rewrite_internal_class_array_field_reads(
+    text: &str,
+    module_state_bindings: &ModuleStateBindings,
+) -> String {
+    if text.contains('\n') || class_state_line_is_non_executable(text) {
+        return text.to_string();
+    }
+    let rewritten = rewrite_internal_class_dynamic_array_field_reads(text, module_state_bindings);
+    rewrite_internal_class_fixed_array_field_reads(&rewritten, module_state_bindings)
+}
+
 fn rewrite_internal_class_dynamic_array_field_reads(
     text: &str,
     module_state_bindings: &ModuleStateBindings,
@@ -8507,10 +8577,72 @@ fn rewrite_internal_class_dynamic_array_field_reads(
     out
 }
 
+fn rewrite_internal_class_fixed_array_field_reads(
+    text: &str,
+    module_state_bindings: &ModuleStateBindings,
+) -> String {
+    if module_state_bindings.fixed_array_field_tokens.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut cursor = 0usize;
+    while cursor < text.len() {
+        let Some((name_start, name_end, field_name, args, close_idx)) =
+            next_fixed_array_field_read(text, cursor, module_state_bindings)
+        else {
+            out.push_str(&text[cursor..]);
+            break;
+        };
+        out.push_str(&text[cursor..name_start]);
+        let binding_token = module_state_bindings.fixed_array_field_tokens[&field_name];
+        out.push_str(&format!(
+            "__oxvba_array_get(__oxvba_withevents_get({}, {}), {})",
+            module_state_bindings.owner_expr, binding_token, args
+        ));
+        cursor = close_idx.max(name_end);
+    }
+    out
+}
+
 fn next_dynamic_array_field_read(
     text: &str,
     start: usize,
     module_state_bindings: &ModuleStateBindings,
+) -> Option<(usize, usize, String, String, usize)> {
+    next_array_field_read(
+        text,
+        start,
+        &module_state_bindings.dynamic_array_field_tokens,
+    )
+}
+
+fn next_fixed_array_field_read(
+    text: &str,
+    start: usize,
+    module_state_bindings: &ModuleStateBindings,
+) -> Option<(usize, usize, String, String, usize)> {
+    next_array_field_read(text, start, &module_state_bindings.fixed_array_field_tokens)
+}
+
+fn parse_simple_array_target(text: &str) -> Option<(String, String)> {
+    let trimmed = text.trim();
+    let open_idx = trimmed.find('(')?;
+    let close_idx = find_matching_paren(trimmed, open_idx)?;
+    if close_idx != trimmed.len().saturating_sub(1) {
+        return None;
+    }
+    let field_name = normalize_identifier(trimmed[..open_idx].trim());
+    if field_name.is_empty() {
+        return None;
+    }
+    let args = trimmed[open_idx + 1..close_idx].trim();
+    (!args.is_empty()).then(|| (field_name, args.to_string()))
+}
+
+fn next_array_field_read(
+    text: &str,
+    start: usize,
+    field_tokens: &BTreeMap<String, i32>,
 ) -> Option<(usize, usize, String, String, usize)> {
     let bytes = text.as_bytes();
     let mut idx = start;
@@ -8539,10 +8671,7 @@ fn next_dynamic_array_field_read(
         }
         let name_end = idx;
         let field_name = normalize_identifier(&text[name_start..name_end]);
-        if !module_state_bindings
-            .dynamic_array_field_tokens
-            .contains_key(&field_name)
-        {
+        if !field_tokens.contains_key(&field_name) {
             continue;
         }
         let mut open_idx = idx;
@@ -8562,21 +8691,6 @@ fn next_dynamic_array_field_read(
     None
 }
 
-fn parse_simple_array_target(text: &str) -> Option<(String, String)> {
-    let trimmed = text.trim();
-    let open_idx = trimmed.find('(')?;
-    let close_idx = find_matching_paren(trimmed, open_idx)?;
-    if close_idx != trimmed.len().saturating_sub(1) {
-        return None;
-    }
-    let field_name = normalize_identifier(trimmed[..open_idx].trim());
-    if field_name.is_empty() {
-        return None;
-    }
-    let args = trimmed[open_idx + 1..close_idx].trim();
-    (!args.is_empty()).then(|| (field_name, args.to_string()))
-}
-
 fn dynamic_array_field_temp_name(
     kind: &str,
     field_name: &str,
@@ -8590,6 +8704,25 @@ fn dynamic_array_field_temp_name(
     rewrite_suffix.hash(&mut hasher);
     format!(
         "__oxvba_dynamic_array_field_{}_{}_{}",
+        kind,
+        field_name,
+        hasher.finish()
+    )
+}
+
+fn array_field_temp_name(
+    kind: &str,
+    field_name: &str,
+    line: &str,
+    rewrite_suffix: usize,
+) -> String {
+    let mut hasher = DefaultHasher::new();
+    kind.hash(&mut hasher);
+    field_name.hash(&mut hasher);
+    line.hash(&mut hasher);
+    rewrite_suffix.hash(&mut hasher);
+    format!(
+        "__oxvba_array_field_{}_{}_{}",
         kind,
         field_name,
         hasher.finish()
@@ -10668,6 +10801,11 @@ fn rewrite_module_source(
                 &module_state_bindings,
                 rewrite_suffix,
             );
+            let expanded_line = rewrite_internal_class_fixed_array_field_assignment(
+                &expanded_line,
+                &module_state_bindings,
+                rewrite_suffix,
+            );
             let expanded_line = rewrite_same_module_byref_module_state_call_line(
                 &expanded_line,
                 &module_state_bindings,
@@ -10678,7 +10816,7 @@ fn rewrite_module_source(
             let expanded_line = if state_assigned != expanded_line {
                 state_assigned
             } else {
-                let array_reads = rewrite_internal_class_dynamic_array_field_reads(
+                let array_reads = rewrite_internal_class_array_field_reads(
                     &state_assigned,
                     &module_state_bindings,
                 );
@@ -20975,6 +21113,76 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayGet { .. })),
             "dynamic class array element read should compile through runtime array get"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_fixed_class_array_field_accesses() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nCall widget.Touch\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Option Base 1\n",
+                "Private scores(2) As Long\n",
+                "Public Sub Touch()\n",
+                "scores(1) = 7\n",
+                "Dim x As Long\n",
+                "x = scores(1)\n",
+                "End Sub\n"
+            ),
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile");
+        assert!(
+            !compiled
+                .rewritten_source
+                .to_ascii_lowercase()
+                .contains("private __oxvba_array_get"),
+            "fixed array field declaration must not be rewritten as an executable array read"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArraySet { .. })),
+            "fixed class array element write should compile through runtime array set"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayGet { .. })),
+            "fixed class array element read should compile through runtime array get"
+        );
+        assert!(
+            !compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(
+                    instruction,
+                    Instruction::IntrinsicArrayResize { .. }
+                        | Instruction::IntrinsicArrayResizePreserve { .. }
+                )),
+            "fixed class array fields must not compile through ReDim/resize bytecode"
         );
     }
 

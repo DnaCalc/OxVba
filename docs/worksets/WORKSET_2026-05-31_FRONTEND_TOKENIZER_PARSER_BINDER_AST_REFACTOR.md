@@ -626,9 +626,10 @@ Required newly explicit delivery beads:
   `ReDim` bounds, project-symbol indexing for class/procedural-module array-field descriptors,
   class field-array metadata emission through `ProjectDynamicObjectRoute`, route-audit coverage for
   local procedure array shapes, dynamic class array-field `ReDim`/element get/set through
-  per-instance field tokens, and `Option Base` default-route policy.
-  Remaining work: implement fixed project/class array-field executable semantics and complete
-  broader project-owned array shapes.
+  per-instance field tokens, fixed class array-field element get/set through per-instance field
+  tokens without declaration rewrite or resize bytecode, and `Option Base` default-route policy.
+  Remaining work: implement fixed procedural/project module array-field executable semantics and
+  complete broader project-owned array shapes.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
@@ -1177,9 +1178,11 @@ Candidate bead units:
   class/procedural-module array-field descriptors in `ProjectSymbolIndex`, emits class field-array
   metadata through `ProjectDynamicObjectRoute`, includes local procedure array shapes in the
   production route audit, supports dynamic class array-field `ReDim`/element get/set through
-  per-instance field tokens, and carries `Option Base` default-route policy.
-  Remaining work: implement fixed project/class array-field executable semantics, then complete
-  broader project-owned array shapes.
+  per-instance field tokens, supports fixed class array-field element get/set through per-instance
+  field tokens without declaration rewrite or resize bytecode, and carries `Option Base`
+  default-route policy.
+  Remaining work: implement fixed procedural/project module array-field executable semantics, then
+  complete broader project-owned array shapes.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
