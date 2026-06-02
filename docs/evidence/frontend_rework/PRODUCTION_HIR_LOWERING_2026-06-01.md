@@ -383,6 +383,9 @@ Follow-up file-open route work adds HIR-owned `Open path For mode As #handle` lo
 existing file-open host bytecode for simple literal/name path and handle expressions and the
 existing `Input`/`Output`/`Append`/`Binary`/`Random` mode set.
 
+Follow-up expression route work adds HIR-owned `Mod` arithmetic and `Like` comparison lowering to
+the existing modulo and like bytecode paths.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

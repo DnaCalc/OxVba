@@ -2013,6 +2013,7 @@ fn lower_binary_expr(
         HirBinaryOp::Sub => binary(ArithOp::Sub, lhs, rhs),
         HirBinaryOp::Mul => binary(ArithOp::Mul, lhs, rhs),
         HirBinaryOp::Div => binary(ArithOp::Div, lhs, rhs),
+        HirBinaryOp::Mod => binary(ArithOp::Mod, lhs, rhs),
         HirBinaryOp::Pow => binary(ArithOp::Pow, lhs, rhs),
         HirBinaryOp::Concat => binary(ArithOp::Concat, lhs, rhs),
         HirBinaryOp::Eq => compare(CompareOp::Eq, lhs, rhs),
@@ -2022,6 +2023,7 @@ fn lower_binary_expr(
         HirBinaryOp::Gt => compare(CompareOp::Gt, lhs, rhs),
         HirBinaryOp::Ge => compare(CompareOp::Ge, lhs, rhs),
         HirBinaryOp::Is => compare(CompareOp::Is, lhs, rhs),
+        HirBinaryOp::Like => compare(CompareOp::Like, lhs, rhs),
         HirBinaryOp::And => logical(LogicalBinOp::And, lhs, rhs),
         HirBinaryOp::Or => logical(LogicalBinOp::Or, lhs, rhs),
     }
@@ -2246,7 +2248,8 @@ fn lower_condition(
             | HirBinaryOp::Le
             | HirBinaryOp::Gt
             | HirBinaryOp::Ge
-            | HirBinaryOp::Is => {
+            | HirBinaryOp::Is
+            | HirBinaryOp::Like => {
                 let Some(compare_op) = compare_op_from_hir(*op) else {
                     unreachable!("comparison operator covered by match arm");
                 };
@@ -2315,6 +2318,7 @@ fn compare_op_from_hir(op: HirBinaryOp) -> Option<CompareOp> {
         HirBinaryOp::Gt => Some(CompareOp::Gt),
         HirBinaryOp::Ge => Some(CompareOp::Ge),
         HirBinaryOp::Is => Some(CompareOp::Is),
+        HirBinaryOp::Like => Some(CompareOp::Like),
         _ => None,
     }
 }
@@ -5978,6 +5982,36 @@ mod tests {
                 .any(|slot| slot.name.eq_ignore_ascii_case("safe")),
             "{main:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_mod_expression() {
+        let source = "Sub Main()\nDim x\nx = 17 Mod 3\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ModSlots { .. })),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_like_expression() {
+        let source = "Sub Main()\nDim ok\nok = \"123\" Like \"###\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicLikeDigits { .. })),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

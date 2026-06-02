@@ -206,6 +206,7 @@ pub enum HirBinaryOp {
     Sub,
     Mul,
     Div,
+    Mod,
     Pow,
     Concat,
     Eq,
@@ -215,6 +216,7 @@ pub enum HirBinaryOp {
     Gt,
     Ge,
     Is,
+    Like,
     And,
     Or,
 }
@@ -2532,6 +2534,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
                 | SyntaxKind::Minus
                 | SyntaxKind::Star
                 | SyntaxKind::Slash
+                | SyntaxKind::KwMod
                 | SyntaxKind::Caret
                 | SyntaxKind::Ampersand
                 | SyntaxKind::Eq
@@ -2541,6 +2544,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
                 | SyntaxKind::Gt
                 | SyntaxKind::GtEq
                 | SyntaxKind::KwIs
+                | SyntaxKind::KwLike
                 | SyntaxKind::KwAnd
                 | SyntaxKind::KwOr
         )
@@ -2555,6 +2559,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
         SyntaxKind::Minus => Ok(HirBinaryOp::Sub),
         SyntaxKind::Star => Ok(HirBinaryOp::Mul),
         SyntaxKind::Slash => Ok(HirBinaryOp::Div),
+        SyntaxKind::KwMod => Ok(HirBinaryOp::Mod),
         SyntaxKind::Caret => Ok(HirBinaryOp::Pow),
         SyntaxKind::Ampersand => Ok(HirBinaryOp::Concat),
         SyntaxKind::Eq => Ok(HirBinaryOp::Eq),
@@ -2564,6 +2569,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
         SyntaxKind::Gt => Ok(HirBinaryOp::Gt),
         SyntaxKind::GtEq => Ok(HirBinaryOp::Ge),
         SyntaxKind::KwIs => Ok(HirBinaryOp::Is),
+        SyntaxKind::KwLike => Ok(HirBinaryOp::Like),
         SyntaxKind::KwAnd => Ok(HirBinaryOp::And),
         SyntaxKind::KwOr => Ok(HirBinaryOp::Or),
         _ => unreachable!("filtered operator token"),
