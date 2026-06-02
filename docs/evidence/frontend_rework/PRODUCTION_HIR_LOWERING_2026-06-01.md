@@ -1180,6 +1180,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-host embedded_host_build_workspace_applies_manifest_conditional_constants --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage indexed_property_get_executes_through_package_vm --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_same_module_indexed_property_let_write --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_let_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_same_module_indexed_property_set_write --quiet`

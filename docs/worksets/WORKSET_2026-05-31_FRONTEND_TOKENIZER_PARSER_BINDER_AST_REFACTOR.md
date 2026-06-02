@@ -1258,9 +1258,10 @@ Candidate bead units:
   for the single-active-module type-library-only subset, compile the active module through the
   HIR-capable boundary with early-bound COM dispatch-id metadata plus `PropertyGet`/`PropertyLet`/
   `PropertySet` bytecode hints instead of the legacy project backend. Read-side indexed same-module
-  `Property Get` declarations now stay on the default HIR route and lower as argument-preserving
-  procedure calls; same-module indexed `Property Let`/`Property Set` writeback now lowers through
-  HIR by appending the assigned value to the matching setter call, including named index arguments.
+  `Property Get` declarations now stay on the default HIR route, lower as argument-preserving
+  procedure calls, and execute through the package VM proof; same-module indexed `Property Let`/
+  `Property Set` writeback now lowers through HIR by appending the assigned value to the matching
+  setter call, including named index arguments.
   Project/class/COM property writeback, default-member writeback, broader named-argument writeback,
   and overload validation breadth remain residual work. The project construction HIR candidate now
   rejects generated

@@ -125,6 +125,14 @@ fn optional_date_currency_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn indexed_property_get_executes_through_package_vm() {
+    let snap = run(
+        "Sub Main()\nDim value As Long\nvalue = Item(4)\nEnd Sub\nProperty Get Item(ByVal index As Long) As Long\nItem = index + 3\nEnd Property",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(7)]);
+}
+
+#[test]
 fn string_functions_left_mid_ucase() {
     let snap = run(
         "Sub Main()\nDim a As String\nDim b As String\na = Left$(\"hello\", 3)\nb = UCase$(Mid$(\"hello\", 2, 2))\nEnd Sub",
