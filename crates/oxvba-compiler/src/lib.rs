@@ -10,6 +10,7 @@ pub mod frontend_diagnostics;
 pub mod frontend_diff;
 pub mod frontend_event_semantics;
 pub mod frontend_external_references;
+pub mod frontend_grammar_matrix_route_audit;
 pub mod frontend_hir;
 pub mod frontend_hir_lowering;
 pub mod frontend_language_service;
