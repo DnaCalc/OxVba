@@ -1260,8 +1260,8 @@ Candidate bead units:
   signature routing preserves multi-argument non-`Long` parameter and return descriptors through
   HIR. Follow-up native declaration routing preserves `LongPtr` parameter metadata and native FFI
   lane selection for non-host libraries on native-FFI targets. Follow-up declaration diagnostics
-  now report missing `PtrSafe` policy errors from the HIR production route instead of using legacy
-  fallback solely to reject them. Follow-up bundle fact routing proves accepted `Declare PtrSafe`
+  now report missing `PtrSafe` and invalid ordinal-alias policy errors from the HIR production
+  route instead of using legacy fallback solely to reject them. Follow-up bundle fact routing proves accepted `Declare PtrSafe`
   module facts, including `LongPtr`, are sourced from HIR `BoundModule` construction rather than
   `resolve_symbols` fallback. Follow-up retirement-inventory cleanup replaces the misleading `Xor`
   fallback probe with the tracked project-construction `New` residual so operator work is not

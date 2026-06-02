@@ -557,6 +557,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let declared_external_invalid_ordinal_alias = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#12a\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
+    findings.push(route_diagnostic_finding(
+        "declared external invalid ordinal alias diagnostic fixture",
+        declared_external_invalid_ordinal_alias,
+        "ordinal alias",
+        "bd-aprs.9.5",
+    ));
+
     let declared_external_sub_call = "Declare PtrSafe Sub HostTap Lib \"host\" Alias \"tap\" (ByVal x As Long)\nSub Main()\nCall HostTap(3)\nEnd Sub\n";
     findings.push(route_finding(
         "declared external Sub call fixture",
@@ -1103,6 +1111,11 @@ mod tests {
                 finding
                     .area
                     .contains("declared external missing PtrSafe diagnostic")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("declared external invalid ordinal alias diagnostic")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("file kill statement")

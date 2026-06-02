@@ -6666,6 +6666,18 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_reports_invalid_declare_ordinal_alias_diagnostic() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#12a\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("invalid ordinal alias should be a HIR production diagnostic");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Compile(CompileError::ResolveError(ref message)) if message.contains("ordinal alias")),
+            "Declare ordinal diagnostics must be reported without legacy fallback, got {err:?}"
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_udt_layout_descriptors() {
         let source =
             "Type Point\nX As Long\nY As String\nEnd Type\nSub Main()\nDim p As Point\nEnd Sub\n";
