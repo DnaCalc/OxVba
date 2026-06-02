@@ -277,6 +277,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.8",
     ));
 
+    let dynamic_array_element_write_statement =
+        "Sub Main()\nDim buf() As Byte\nReDim buf(2)\nbuf(1) = 7\nEnd Sub\n";
+    findings.push(route_finding(
+        "dynamic array element write fixture",
+        dynamic_array_element_write_statement,
+        "bd-aprs.9.8",
+    ));
+
     let raise_event_statement = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
     findings.push(route_finding(
         "raise event statement fixture",
@@ -563,6 +571,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("dynamic array element read")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("dynamic array element write")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("value-side member expression")

@@ -561,6 +561,29 @@ fn lower_stmt(
                             });
                             return Ok(());
                         }
+                        BoundExpr::IntrinsicCall { name, args } if name == "__oxvba_array_get" => {
+                            if let Some((name, indices)) = runtime_array_target_from_args(args) {
+                                let expr = lower_expr(
+                                    typed_hir,
+                                    const_values,
+                                    udt_field_aliases,
+                                    *value,
+                                    context,
+                                )?;
+                                let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                                    AssignmentIntent::Let
+                                } else {
+                                    AssignmentIntent::Implicit
+                                };
+                                out.push(BoundStmt::AssignRuntimeArrayElement {
+                                    name,
+                                    indices,
+                                    expr,
+                                    intent,
+                                });
+                                return Ok(());
+                            }
+                        }
                         _ => {}
                     }
                     return Err(err);
@@ -644,6 +667,24 @@ fn lower_stmt(
                                 intent: AssignmentIntent::Set,
                             });
                             return Ok(());
+                        }
+                        BoundExpr::IntrinsicCall { name, args } if name == "__oxvba_array_get" => {
+                            if let Some((name, indices)) = runtime_array_target_from_args(args) {
+                                let expr = lower_expr(
+                                    typed_hir,
+                                    const_values,
+                                    udt_field_aliases,
+                                    *value,
+                                    context,
+                                )?;
+                                out.push(BoundStmt::AssignRuntimeArrayElement {
+                                    name,
+                                    indices,
+                                    expr,
+                                    intent: AssignmentIntent::Set,
+                                });
+                                return Ok(());
+                            }
                         }
                         _ => {}
                     }
@@ -1057,6 +1098,16 @@ fn bound_type_name(text: &str) -> Option<BoundType> {
         "variant" => Some(BoundType::Variant),
         _ => None,
     }
+}
+
+fn runtime_array_target_from_args(mut args: Vec<BoundExpr>) -> Option<(String, Vec<BoundExpr>)> {
+    if args.len() < 2 {
+        return None;
+    }
+    let BoundExpr::Var(name) = args.remove(0) else {
+        return None;
+    };
+    Some((name, args))
 }
 
 fn lower_static_redim_bound(
@@ -2762,6 +2813,29 @@ mod tests {
                 Instruction::IntrinsicArrayGet { indices, .. } if indices.len() == 1
             )),
             "expected dynamic array element read bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "buf")
+            .expect("dynamic array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Byte);
+        assert_eq!(shape.rank, 1);
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_dynamic_array_element_write() {
+        let source = "Sub Main()\nDim buf() As Byte\nReDim buf(2)\nbuf(1) = 7\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArraySet { indices, .. } if indices.len() == 1
+            )),
+            "expected dynamic array element write bytecode: {:?}",
             bytecode.instructions
         );
         let proc = metadata.get("main").expect("main metadata");
