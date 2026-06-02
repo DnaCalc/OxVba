@@ -88,6 +88,10 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "nper"
             | "rnd"
             | "randomize"
+            | "date"
+            | "time"
+            | "now"
+            | "timer"
     )
 }
 

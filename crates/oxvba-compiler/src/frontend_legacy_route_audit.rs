@@ -503,6 +503,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let time_locale_host_intrinsics = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Date()\nb = Time()\nc = Now()\nd = Timer()\nEnd Sub\n";
+    findings.push(route_finding(
+        "time-locale host intrinsic fixture",
+        time_locale_host_intrinsics,
+        "bd-aprs.9.10",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",

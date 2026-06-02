@@ -304,6 +304,10 @@ The HIR builder now records a dedicated `TypeOfIs` expression with object expres
 text, HIR lowering targets the existing `typeofis` intrinsic contract, and the route audit includes
 a production fixture that emits `IntrinsicTypeOfIs` bytecode.
 
+Follow-up time-locale host intrinsic work adds `Date()`, `Time()`, `Now()`, and `Timer()` to HIR
+built-in resolution and verifies the existing host bytecode instructions through production HIR.
+This proves routing only; host policy/runtime behavior remains owned by the VM/HAL contract.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering
