@@ -1261,7 +1261,9 @@ Candidate bead units:
   HIR. Follow-up native declaration routing preserves `LongPtr` parameter metadata and native FFI
   lane selection for non-host libraries on native-FFI targets. Follow-up declaration diagnostics
   now report missing `PtrSafe` policy errors from the HIR production route instead of using legacy
-  fallback solely to reject them. Follow-up console-input routing
+  fallback solely to reject them. Follow-up bundle fact routing proves accepted `Declare PtrSafe`
+  module facts, including `LongPtr`, are sourced from HIR `BoundModule` construction rather than
+  `resolve_symbols` fallback. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
   `Line Input #`. Follow-up console line-input routing covers `Line Input target` through existing
   host bytecode, still without claiming file `Line Input #` at that point. Follow-up file-handle

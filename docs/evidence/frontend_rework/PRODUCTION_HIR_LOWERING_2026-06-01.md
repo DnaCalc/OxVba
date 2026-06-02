@@ -715,6 +715,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Unsupported declaration shapes that the shared declaration parser can diagnose, including missing
   `PtrSafe`, now return HIR production diagnostics instead of falling back to the legacy declaration
   route solely to report the policy error.
+- Bundle fact extraction now has an accepted-declaration route probe proving `Declare PtrSafe`
+  module facts, including `LongPtr` usage, come from HIR `BoundModule` construction rather than the
+  legacy resolver fallback.
 
 Remaining production residuals after this slice:
 

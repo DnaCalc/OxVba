@@ -2743,6 +2743,31 @@ mod tests {
     }
 
     #[test]
+    fn bundle_fact_bound_module_route_uses_hir_for_accepted_declare_facts() {
+        let module = route_probe_module(
+            "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nEnd Sub\n",
+        );
+
+        let (bound, route) = bound_module_for_bundle_facts_with_route(&module);
+
+        assert_eq!(route, BundleFactBoundModuleRoute::HirBoundModule);
+        assert_eq!(bound.external_declarations.len(), 1);
+        let external = bound
+            .external_declarations
+            .get("lstrlenw")
+            .expect("accepted Declare descriptor");
+        assert!(external.ptr_safe);
+        assert_eq!(external.return_type, BoundType::Long);
+        assert!(
+            external
+                .params
+                .iter()
+                .any(|param| param.ty == BoundType::LongPtr),
+            "{external:#?}"
+        );
+    }
+
+    #[test]
     fn bundle_fact_bound_module_route_marks_legacy_residual_fallback() {
         let module = route_probe_module(
             "Declare Sub Sleep Lib \"kernel32\" (ByVal ms As Long)\nSub Main()\nEnd Sub\n",
