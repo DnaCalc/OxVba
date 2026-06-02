@@ -1045,10 +1045,11 @@ constant expressions:
   `Const CTotal As Single = 1.5!`.
 - An eighth focused evaluator pass extends declared `Currency` and `Date` module constants from
   literal-only carriers to bounded numeric arithmetic expressions over `+`, `-`, `*`, `/`, `^`,
-  unary minus, and source-prior numeric constants. The result still materializes through the exact
-  carrier (`LoadConstCurrency` scaled `i64` or `LoadConstDate` f64 bits), with default-route,
-  route-audit, and VM execution coverage for `Const CAmount As Currency = 1.25@ * 2@ - 1.0@` and
-  `Const CStamp As Date = (CBase + 3.0) / 2.0`.
+  unary minus, deterministic `#...#` Date literal operands, and source-prior numeric constants. The
+  result still materializes through the exact carrier (`LoadConstCurrency` scaled `i64` or
+  `LoadConstDate` f64 bits), with default-route, route-audit, and VM execution coverage for
+  `Const CAmount As Currency = 1.25@ * 2@ - 1.0@` and
+  `Const CStamp As Date = #2026-02-28# + 1`.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
   beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
