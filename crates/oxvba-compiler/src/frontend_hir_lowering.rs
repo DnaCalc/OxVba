@@ -460,6 +460,33 @@ fn lower_procedure(
             if let Some(fields) = udt_defs.get(&udt_name) {
                 for field in fields {
                     let alias = format!("{local_name}_{}", field.name);
+                    if let Some(bounds) = &field.array_bounds {
+                        if !declarations
+                            .iter()
+                            .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                        {
+                            declarations.push(alias.clone());
+                        }
+                        fixed_array_bounds.insert(alias.to_ascii_lowercase(), bounds.clone());
+                        declaration_types.insert(alias.clone(), BoundType::Array);
+                        let element_count =
+                            static_array_element_count(bounds).ok_or_else(|| {
+                                HirProductionLoweringError::Unsupported(format!(
+                                    "UDT array field has invalid bounds for {alias}"
+                                ))
+                            })?;
+                        for index in 0..element_count {
+                            let element_alias = format!("{alias}_{index}");
+                            if !declarations
+                                .iter()
+                                .any(|existing| existing.eq_ignore_ascii_case(&element_alias))
+                            {
+                                declarations.push(element_alias.clone());
+                            }
+                            declaration_types.insert(element_alias, field.bound_type);
+                        }
+                        continue;
+                    }
                     if !declarations
                         .iter()
                         .any(|existing| existing.eq_ignore_ascii_case(&alias))
@@ -6519,6 +6546,31 @@ mod tests {
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         let main = metadata.get("main").expect("main metadata");
         assert!(main.slots.iter().any(|slot| slot.name == "r_inner_x"));
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::AddConstI32 { value: 2, .. } | Instruction::AddSlots { .. }
+            )),
+            "{bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_udt_array_field_index_aliases() {
+        let source = "Type Record\nScores(1 To 2) As Long\nEnd Type\nSub Main()\nDim r As Record\nDim y As Long\nr.Scores(1) = 7\ny = r.Scores(2) + 2\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| slot.name == "r_scores"));
+        assert!(main.slots.iter().any(|slot| slot.name == "r_scores_0"));
+        assert!(main.slots.iter().any(|slot| slot.name == "r_scores_1"));
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,

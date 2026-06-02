@@ -549,6 +549,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let udt_array_field_index = "Type Record\nScores(1 To 2) As Long\nEnd Type\nSub Main()\nDim r As Record\nDim y As Long\nr.Scores(1) = 7\ny = r.Scores(2) + 2\nEnd Sub\n";
+    findings.push(route_finding(
+        "UDT array field index fixture",
+        udt_array_field_index,
+        "bd-aprs.9.5",
+    ));
+
     let member_expression =
         "Sub Main()\nDim obj\nDim x\nDim y\nx = obj.Value\ny = obj.Method(1)\nEnd Sub\n";
     findings.push(route_finding(
