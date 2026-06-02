@@ -578,8 +578,11 @@ expressions that overflow their VBA ranges before the unsupported-const fallback
 including checked exponentiation overflow such as `2 ^ 31` for `Long`. A later FE-8.5.e
 continuation extends that HIR-owned diagnostic path to explicit `As LongLong` and `As LongPtr`
 integer expressions that overflow the signed 64-bit carrier range, for example
-`9223372036854775807 + 1`. Typed constant coercion, out-of-i32 `LongLong`/`LongPtr` constant
-carriers in bytecode/lowering, and broader compile-time expression parity remain open.
+`9223372036854775807 + 1`. Follow-up carrier work adds a signed-64-bit bound expression and
+bytecode carrier for explicit `As LongLong` and `As LongPtr` constants whose values do not fit the
+old i32 literal carrier, with VM execution coverage for `Const CTotal As LongLong = 5000000000`.
+Typed constant coercion, broader constant-name/expression parity, and full platform `LongPtr`
+semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -1006,10 +1009,14 @@ constant expressions:
 - A third focused diagnostic pass distinguishes unsupported constant expressions from integer
   evaluation overflow and rejects explicit `As LongLong` and `As LongPtr` expressions that exceed
   the signed 64-bit carrier range before unsupported-const fallback can hide them.
+- A fourth focused carrier pass adds `BoundExpr::LongLongConst(i64)`,
+  `Instruction::LoadConstI64`, and VM execution support, so covered explicit `As LongLong` and
+  `As LongPtr` constants outside the i32 range can lower and execute instead of being truncated or
+  rejected as unsupported.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
-  enum/literal route, plus typed constant coercion and out-of-i32 `LongLong`/`LongPtr` constant
-  carriers, remain future FE-8.5 work.
+  enum/literal route, plus typed constant coercion and full `LongPtr` platform semantics, remain
+  future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
