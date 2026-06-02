@@ -4124,7 +4124,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_accepts_introspection_intrinsics_on_param_array() {
-        let source = "Sub Main()\nDim vt\nDim tn\nDim ia\nDim isn\nDim idt\nCall Capture(vt, tn, ia, isn, idt, 5, 7)\nEnd Sub\nSub Capture(ByRef vt, ByRef tn, ByRef ia, ByRef isn, ByRef idt, ParamArray items() As Variant)\nvt = VarType(items)\ntn = TypeName(items)\nia = IsArray(items)\nisn = IsNumeric(items)\nidt = IsDate(items)\nEnd Sub\n";
+        let source = "Sub Main()\nDim vt\nDim tn\nDim ia\nDim isn\nDim idt\nDim io\nDim ie\nDim inl\nDim ier\nCall Capture(vt, tn, ia, isn, idt, io, ie, inl, ier, 5, 7)\nEnd Sub\nSub Capture(ByRef vt, ByRef tn, ByRef ia, ByRef isn, ByRef idt, ByRef io, ByRef ie, ByRef inl, ByRef ier, ParamArray items() As Variant)\nvt = VarType(items)\ntn = TypeName(items)\nia = IsArray(items)\nisn = IsNumeric(items)\nidt = IsDate(items)\nio = IsObject(items)\nie = IsEmpty(items)\ninl = IsNull(items)\nier = IsError(items)\nEnd Sub\n";
         let (bytecode, _metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
@@ -4165,6 +4165,38 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicIsDateTag { .. }
             )),
             "expected IsDate(items) to emit IsDate intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsObjectTag { .. }
+            )),
+            "expected IsObject(items) to emit IsObject intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsEmpty { .. }
+            )),
+            "expected IsEmpty(items) to emit IsEmpty intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsNull { .. }
+            )),
+            "expected IsNull(items) to emit IsNull intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsError { .. }
+            )),
+            "expected IsError(items) to emit IsError intrinsic: {:?}",
             bytecode.instructions
         );
     }

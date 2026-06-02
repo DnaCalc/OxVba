@@ -232,11 +232,13 @@ intrinsics remain tracked residual work.
 
 The next bounded ParamArray callee slice extends that same HIR intrinsic bridge to the
 legacy-recognized one-argument introspection intrinsics `IsArray`, `VarType`, `TypeName`,
-`IsNumeric`, and `IsDate`. The focused regression writes each result to a distinct ByRef parameter
-so optimizer dead-store elimination cannot hide missing bytecode, and verifies the existing
-`IntrinsicIsArrayTag`, `IntrinsicVarType`, `IntrinsicTypeNameTag`, `IntrinsicIsNumeric`, and
-`IntrinsicIsDateTag` instructions. This is still not blanket intrinsic closure; richer callee
-intrinsics and broader optional/missing-state entry behavior remain open.
+`IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`. The focused regression writes
+each result to a distinct ByRef parameter so optimizer dead-store elimination cannot hide missing
+bytecode, and verifies the existing `IntrinsicIsArrayTag`, `IntrinsicVarType`,
+`IntrinsicTypeNameTag`, `IntrinsicIsNumeric`, `IntrinsicIsDateTag`, `IntrinsicIsObjectTag`,
+`IntrinsicIsEmpty`, `IntrinsicIsNull`, and `IntrinsicIsError` instructions. This is still not
+blanket intrinsic closure; multi-argument and host-sensitive callee intrinsics plus broader
+optional/missing-state entry behavior remain open.
 
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names

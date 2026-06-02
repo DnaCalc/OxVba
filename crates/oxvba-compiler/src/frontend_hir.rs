@@ -11,7 +11,17 @@ use crate::resolve::normalize_ident;
 pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
+        "lbound"
+            | "ubound"
+            | "isarray"
+            | "vartype"
+            | "typename"
+            | "isnumeric"
+            | "isdate"
+            | "isobject"
+            | "isempty"
+            | "isnull"
+            | "iserror"
     )
 }
 
