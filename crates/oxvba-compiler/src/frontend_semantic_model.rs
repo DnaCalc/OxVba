@@ -276,6 +276,10 @@ impl SemanticModel {
                     self.index_expr_tree(file_number);
                 }
             }
+            HirStmtKind::FilePrint { file_number, data } => {
+                self.index_expr_tree(file_number);
+                self.index_expr_tree(data);
+            }
         }
     }
 

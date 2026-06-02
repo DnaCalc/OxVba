@@ -308,6 +308,10 @@ pub enum HirStmtKind {
     FileClose {
         file_number: Option<HirExprId>,
     },
+    FilePrint {
+        file_number: HirExprId,
+        data: HirExprId,
+    },
     Label {
         name: String,
     },
@@ -686,6 +690,13 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::FileClose { file_number },
+                })))
+            }
+            SyntaxKind::CallStmt if is_file_print_stmt(node) => {
+                let (file_number, data) = self.lower_file_handle_payload(scope, node, "Print")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FilePrint { file_number, data },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1418,6 +1429,77 @@ impl HirBuilder {
         })))
     }
 
+    fn lower_file_handle_payload(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<(HirExprId, HirExprId), HirBuildError> {
+        let raw = statement_payload_after_keyword(node, statement_name).ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "{statement_name} statement requires a file handle: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        let payload = raw.strip_prefix('#').unwrap_or(raw.as_str()).trim();
+        let Some((file_number, data)) = payload.split_once(',') else {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires comma-separated data: `{}`",
+                node.text().trim()
+            )));
+        };
+        let file_number = self.lower_simple_statement_expr(scope, node, file_number.trim())?;
+        let data = if data.trim().is_empty() {
+            self.arenas.alloc_expr(HirExpr {
+                cst: cst(node),
+                kind: HirExprKind::Literal(HirLiteral::String(String::new())),
+            })
+        } else {
+            self.lower_simple_statement_expr(scope, node, data.trim())?
+        };
+        Ok((file_number, data))
+    }
+
+    fn lower_simple_statement_expr(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        text: &str,
+    ) -> Result<HirExprId, HirBuildError> {
+        let trimmed = text.trim();
+        if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+            return Ok(self.arenas.alloc_expr(HirExpr {
+                cst: cst(node),
+                kind: HirExprKind::Literal(HirLiteral::String(
+                    trimmed[1..trimmed.len() - 1].replace("\"\"", "\""),
+                )),
+            }));
+        }
+        if let Ok(value) = trimmed.parse::<i64>() {
+            return Ok(self.arenas.alloc_expr(HirExpr {
+                cst: cst(node),
+                kind: HirExprKind::Literal(HirLiteral::Int(value)),
+            }));
+        }
+        if trimmed.eq_ignore_ascii_case("true") || trimmed.eq_ignore_ascii_case("false") {
+            return Ok(self.arenas.alloc_expr(HirExpr {
+                cst: cst(node),
+                kind: HirExprKind::Literal(HirLiteral::Bool(trimmed.eq_ignore_ascii_case("true"))),
+            }));
+        }
+        let Some(name) = normalize_ident(trimmed) else {
+            return Err(HirBuildError::Unsupported(format!(
+                "unsupported statement expression `{trimmed}` in `{}`",
+                node.text().trim()
+            )));
+        };
+        let symbol = self.resolve_name(scope, &name)?;
+        Ok(self.arenas.alloc_expr(HirExpr {
+            cst: cst(node),
+            kind: HirExprKind::Name(symbol),
+        }))
+    }
+
     fn concat_exprs_with_delimiter(
         &mut self,
         node: SyntaxNode<'_>,
@@ -1931,6 +2013,13 @@ fn is_file_close_stmt(node: SyntaxNode<'_>) -> bool {
     lower
         .strip_prefix("close")
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+}
+
+fn is_file_print_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("print").is_some_and(|rest| {
+        rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('#')
+    })
 }
 
 fn statement_payload_after_keyword(node: SyntaxNode<'_>, keyword: &str) -> Option<String> {

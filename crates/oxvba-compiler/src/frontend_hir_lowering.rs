@@ -1560,6 +1560,16 @@ fn lower_stmt(
                 })
                 .transpose()?,
         }),
+        HirStmtKind::FilePrint { file_number, data } => out.push(BoundStmt::FilePrint {
+            file_number: lower_expr(
+                typed_hir,
+                const_values,
+                udt_field_aliases,
+                *file_number,
+                context,
+            )?,
+            data: lower_expr(typed_hir, const_values, udt_field_aliases, *data, context)?,
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5229,6 +5239,23 @@ mod tests {
         assert_eq!(
             close_count, 2,
             "expected close #handle and close-all host intrinsics: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_file_print_statement() {
+        let source = "Sub Main()\nPrint #1, \"hello\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFilePrintHost { .. }
+            )),
+            "expected Print # statement to emit file print host intrinsic: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

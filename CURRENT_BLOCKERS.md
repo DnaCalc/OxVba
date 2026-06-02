@@ -252,6 +252,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         bytecode;
         file-handle `Close #handle` and close-all `Close` now lower through HIR to the existing
         file-close host bytecode;
+        file-handle `Print #handle, data` now lowers through HIR to the existing file-print host
+        bytecode for simple handle/payload expressions;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and
