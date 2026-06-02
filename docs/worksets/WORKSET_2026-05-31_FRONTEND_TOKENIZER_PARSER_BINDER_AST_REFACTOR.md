@@ -1202,9 +1202,12 @@ Candidate bead units:
   construction closure. `bd-aprs.9.6` continuation now consumes generated construction facts for
   the accepted direct active-project `Set obj = New Widget` shape by reconstructing the generated
   helper assignment as a HIR `New` expression and compiling it through
-  `compile_source_with_runtime_metadata_via_hir_with_new_bindings`; `As New`,
-  `Class_Initialize`, construction source maps, broader WithEvents construction, and imported/COM
-  construction remain open under `bd-aprs.9.7` / `bd-aprs.8.8`.
+  `compile_source_with_runtime_metadata_via_hir_with_new_bindings`. Later `bd-aprs.9.7`
+  continuation work completes the scoped active-project `As New`/`Class_Initialize`/
+  source-map/lifetime and source-class WithEvents construction lane and proves it through the
+  production legacy-route audit as HIR production. Imported/reference/COM activation remains open
+  under FE-7.6.a / `bd-aprs.8.8`, and unsupported fallback shapes remain compatibility fallback
+  until the broad route audit.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 - FE-8.5.a Direct project construction on HIR: finish the already-started `New <Class>` migration
