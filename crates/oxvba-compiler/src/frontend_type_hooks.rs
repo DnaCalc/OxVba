@@ -6,6 +6,7 @@ use crate::frontend_hir::{
     HirTypeKind, build_hir_from_source,
 };
 use crate::frontend_symbols::{FrontendSourceSpan, SymbolId, SymbolNamespace};
+use crate::resolve::{self, BoundParam, BoundParamDefaultValue, BoundType, ProcKind};
 use crate::{CoercionKindDescriptor, OptionalDefaultValue, ParameterPassingMode, VbaTypeId};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
@@ -57,6 +58,7 @@ pub struct HirParameterHook {
 #[derive(Debug, Clone, Default)]
 pub struct HirTypeHooks {
     declared_types_by_symbol: BTreeMap<SymbolId, HirDeclaredTypeHook>,
+    parameters_by_symbol: BTreeMap<SymbolId, HirParameterHook>,
     assignment_intents: BTreeMap<HirStmtId, HirAssignmentIntent>,
     call_sites: BTreeMap<HirCallId, HirCallSiteHook>,
     coercions_by_expr: BTreeMap<HirExprId, Vec<HirCoercionHook>>,
@@ -79,6 +81,18 @@ impl HirTypeHooks {
 
     pub fn declared_types(&self) -> impl Iterator<Item = &HirDeclaredTypeHook> {
         self.declared_types_by_symbol.values()
+    }
+
+    pub fn record_parameter(&mut self, hook: HirParameterHook) {
+        self.parameters_by_symbol.insert(hook.symbol, hook);
+    }
+
+    pub fn parameter(&self, symbol: SymbolId) -> Option<&HirParameterHook> {
+        self.parameters_by_symbol.get(&symbol)
+    }
+
+    pub fn parameters(&self) -> impl Iterator<Item = &HirParameterHook> {
+        self.parameters_by_symbol.values()
     }
 
     pub fn record_assignment_intent(&mut self, stmt: HirStmtId, intent: HirAssignmentIntent) {
@@ -168,6 +182,7 @@ pub fn collect_type_hooks_from_source(
     for node in parsed.syntax().child_nodes() {
         collect_procedure_return_type_hooks(&mut module, &mut hooks, &mut symbol_types, node);
     }
+    collect_parameter_hooks(&module, source, &mut hooks, &symbol_types);
 
     for decl in module.declarations.clone() {
         let Some(decl) = module.arenas.decl(decl).cloned() else {
@@ -181,6 +196,134 @@ pub fn collect_type_hooks_from_source(
     }
 
     Ok(TypedHirModule { module, hooks })
+}
+
+fn collect_parameter_hooks(
+    module: &BoundHirModule,
+    source: &str,
+    hooks: &mut HirTypeHooks,
+    symbol_types: &BTreeMap<SymbolId, VbaTypeId>,
+) {
+    let default_type_table = resolve::collect_default_type_table(&[source.to_string()]);
+    for decl_id in &module.declarations {
+        let Some(decl) = module.arenas.decl(*decl_id) else {
+            continue;
+        };
+        let HirDeclKind::Procedure { params, .. } = &decl.kind else {
+            continue;
+        };
+        let signature_line = source_line_for_span(source, decl.cst.span.start);
+        let Some(proc_kind) = proc_kind_for_signature_line(signature_line) else {
+            continue;
+        };
+        let parsed_params =
+            resolve::parse_proc_signature(signature_line, proc_kind, &default_type_table)
+                .map(|(_, params, _)| params)
+                .unwrap_or_default();
+        for param_symbol in params {
+            let Some(symbol) = module.symbols.symbols().iter().find(|symbol| {
+                symbol.id == *param_symbol && symbol.namespace == SymbolNamespace::Parameter
+            }) else {
+                continue;
+            };
+            let Some(name) = module.symbols.name(symbol.name) else {
+                continue;
+            };
+            let parsed_param = parsed_params
+                .iter()
+                .find(|candidate| candidate.name.eq_ignore_ascii_case(&name.first_spelling));
+            let declared_type = parsed_param
+                .map(|param| vba_type_id_from_bound_type(param.ty))
+                .or_else(|| symbol_types.get(param_symbol).copied())
+                .unwrap_or(VbaTypeId::Variant);
+            let by_ref = parsed_param.map(|param| param.by_ref).unwrap_or(true);
+            let optional = parsed_param.is_some_and(|param| param.optional);
+            let param_array = parsed_param.is_some_and(|param| param.param_array);
+            hooks.record_parameter(HirParameterHook {
+                symbol: *param_symbol,
+                declared_type,
+                passing_mode: if by_ref {
+                    ParameterPassingMode::ByRef
+                } else {
+                    ParameterPassingMode::ByVal
+                },
+                optional,
+                param_array,
+                default_value: parsed_param.and_then(optional_default_value_for_bound_param),
+            });
+        }
+    }
+}
+
+fn optional_default_value_for_bound_param(param: &BoundParam) -> Option<OptionalDefaultValue> {
+    if !param.optional {
+        return None;
+    }
+    match &param.default_literal {
+        Some(BoundParamDefaultValue::ExplicitI32(value)) => {
+            Some(OptionalDefaultValue::ExplicitI32(*value))
+        }
+        Some(BoundParamDefaultValue::ExplicitBool(value)) => {
+            Some(OptionalDefaultValue::ExplicitBool(*value))
+        }
+        Some(BoundParamDefaultValue::ExplicitString(value)) => {
+            Some(OptionalDefaultValue::ExplicitString(value.clone()))
+        }
+        None if param.ty == BoundType::Variant => {
+            Some(OptionalDefaultValue::VariantMissingError448)
+        }
+        None => Some(OptionalDefaultValue::DeclaredTypeDefault),
+    }
+}
+
+fn vba_type_id_from_bound_type(ty: BoundType) -> VbaTypeId {
+    match ty {
+        BoundType::Integer => VbaTypeId::Integer,
+        BoundType::Long => VbaTypeId::Long,
+        BoundType::LongLong => VbaTypeId::LongLong,
+        BoundType::LongPtr => VbaTypeId::LongPtr,
+        BoundType::Byte => VbaTypeId::Byte,
+        BoundType::Single => VbaTypeId::Single,
+        BoundType::Double => VbaTypeId::Double,
+        BoundType::Currency => VbaTypeId::Currency,
+        BoundType::Date => VbaTypeId::Date,
+        BoundType::String => VbaTypeId::String,
+        BoundType::Boolean => VbaTypeId::Boolean,
+        BoundType::Object => VbaTypeId::Object,
+        BoundType::Array => VbaTypeId::Array,
+        BoundType::Variant | BoundType::Decimal => VbaTypeId::Variant,
+    }
+}
+
+fn source_line_for_span(source: &str, start: usize) -> &str {
+    let prefix_start = source[..start]
+        .rfind(['\n', '\r'])
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    let suffix = &source[start..];
+    let suffix_end = suffix.find(['\n', '\r']).unwrap_or(suffix.len());
+    &source[prefix_start..start + suffix_end]
+}
+
+fn proc_kind_for_signature_line(line: &str) -> Option<ProcKind> {
+    if contains_ascii_word(line, "property") && contains_ascii_word(line, "get") {
+        Some(ProcKind::PropertyGet)
+    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "let") {
+        Some(ProcKind::PropertyLet)
+    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "set") {
+        Some(ProcKind::PropertySet)
+    } else if contains_ascii_word(line, "function") {
+        Some(ProcKind::Function)
+    } else if contains_ascii_word(line, "sub") {
+        Some(ProcKind::Sub)
+    } else {
+        None
+    }
+}
+
+fn contains_ascii_word(text: &str, needle: &str) -> bool {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .any(|word| word.eq_ignore_ascii_case(needle))
 }
 
 fn collect_procedure_return_type_hooks(
@@ -762,6 +905,60 @@ mod tests {
                 .map(|hook| hook.runtime_type),
             Some(VbaTypeId::String)
         );
+    }
+
+    #[test]
+    fn type_hooks_collect_parameter_descriptors_from_source_backed_hir() {
+        let source = "Sub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
+        let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
+
+        let parameter = |name: &str| {
+            typed
+                .module
+                .symbols
+                .symbols()
+                .iter()
+                .find(|symbol| {
+                    symbol.namespace == SymbolNamespace::Parameter
+                        && typed
+                            .module
+                            .symbols
+                            .name(symbol.name)
+                            .is_some_and(|actual| actual.folded == name)
+                })
+                .map(|symbol| symbol.id)
+                .unwrap_or_else(|| panic!("missing parameter {name}"))
+        };
+        let text = typed
+            .hooks
+            .parameter(parameter("text"))
+            .expect("text parameter hook");
+        let flag = typed
+            .hooks
+            .parameter(parameter("flag"))
+            .expect("flag parameter hook");
+        let rest = typed
+            .hooks
+            .parameter(parameter("rest"))
+            .expect("rest parameter hook");
+
+        assert_eq!(text.declared_type, VbaTypeId::String);
+        assert_eq!(text.passing_mode, ParameterPassingMode::ByVal);
+        assert!(text.optional);
+        assert_eq!(
+            text.default_value,
+            Some(OptionalDefaultValue::ExplicitString("ready".to_string()))
+        );
+        assert_eq!(flag.declared_type, VbaTypeId::Boolean);
+        assert!(flag.optional);
+        assert_eq!(
+            flag.default_value,
+            Some(OptionalDefaultValue::ExplicitBool(true))
+        );
+        assert_eq!(rest.declared_type, VbaTypeId::Array);
+        assert!(rest.param_array);
+        assert!(!rest.optional);
+        assert_eq!(rest.default_value, None);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use oxvba_compiler::frontend_hir::HirDeclKind;
 use oxvba_compiler::frontend_query::FrontendQueryDatabase;
 use oxvba_compiler::frontend_symbols::{FrontendSourceSpan, SymbolNamespace};
 use oxvba_compiler::frontend_type_hooks::TypedHirModule;
-use oxvba_compiler::resolve::{self, BoundType};
+use oxvba_compiler::resolve::BoundType;
 use oxvba_compiler::{OptionalDefaultValue, VbaTypeId};
 use oxvba_syntax::{Parse, SyntaxKind, parse};
 
@@ -109,7 +109,7 @@ pub fn build_semantic_snapshot_with_provenance(
     let (symbols, callables) = match frontend_typed.as_ref() {
         Some(typed) => (
             symbol_table_from_frontend_hir(&parse_arc, typed, &provenance),
-            callables_from_frontend_hir(typed, source),
+            callables_from_frontend_hir(typed),
         ),
         None => (SymbolTable::default(), Vec::new()),
     };
@@ -124,7 +124,7 @@ pub fn build_semantic_snapshot_with_provenance(
     }
 }
 
-fn callables_from_frontend_hir(typed: &TypedHirModule, source: &str) -> Vec<CallableSignatureInfo> {
+fn callables_from_frontend_hir(typed: &TypedHirModule) -> Vec<CallableSignatureInfo> {
     let mut callables = Vec::new();
     for decl_id in &typed.module.declarations {
         let Some(decl) = typed.module.arenas.decl(*decl_id) else {
@@ -142,7 +142,6 @@ fn callables_from_frontend_hir(typed: &TypedHirModule, source: &str) -> Vec<Call
         else {
             continue;
         };
-        let signature_params = parse_signature_params_for_decl(source, decl);
         let params = params
             .iter()
             .filter_map(|param| {
@@ -157,30 +156,13 @@ fn callables_from_frontend_hir(typed: &TypedHirModule, source: &str) -> Vec<Call
                     .declared_type(*param)
                     .map(|hook| bound_type_from_vba_type(hook.runtime_type))
                     .unwrap_or(BoundType::Variant);
-                let signature_param = signature_params
-                    .iter()
-                    .find(|candidate| candidate.name.eq_ignore_ascii_case(&name));
+                let parameter_hook = typed.hooks.parameter(*param);
                 Some(CallableParameterInfo {
                     name,
                     ty,
-                    optional: signature_param.is_some_and(|candidate| candidate.optional),
-                    param_array: signature_param.is_some_and(|candidate| candidate.param_array),
-                    default_value: signature_param.and_then(|candidate| {
-                        candidate
-                            .default_literal
-                            .as_ref()
-                            .map(|default| match default {
-                                resolve::BoundParamDefaultValue::ExplicitI32(value) => {
-                                    OptionalDefaultValue::ExplicitI32(*value)
-                                }
-                                resolve::BoundParamDefaultValue::ExplicitBool(value) => {
-                                    OptionalDefaultValue::ExplicitBool(*value)
-                                }
-                                resolve::BoundParamDefaultValue::ExplicitString(value) => {
-                                    OptionalDefaultValue::ExplicitString(value.clone())
-                                }
-                            })
-                    }),
+                    optional: parameter_hook.is_some_and(|hook| hook.optional),
+                    param_array: parameter_hook.is_some_and(|hook| hook.param_array),
+                    default_value: parameter_hook.and_then(|hook| hook.default_value.clone()),
                 })
             })
             .collect();
@@ -197,51 +179,6 @@ fn callables_from_frontend_hir(typed: &TypedHirModule, source: &str) -> Vec<Call
     }
     callables.sort_by(|left, right| left.name.cmp(&right.name));
     callables
-}
-
-fn parse_signature_params_for_decl(
-    source: &str,
-    decl: &oxvba_compiler::frontend_hir::HirDecl,
-) -> Vec<resolve::BoundParam> {
-    let signature_line = source_line_for_span(source, decl.cst.span.start);
-    let Some(kind) = proc_kind_for_signature_line(signature_line) else {
-        return Vec::new();
-    };
-    let default_type_table = [BoundType::Variant; 26];
-    resolve::parse_proc_signature(signature_line, kind, &default_type_table)
-        .map(|(_, params, _)| params)
-        .unwrap_or_default()
-}
-
-fn source_line_for_span(source: &str, start: usize) -> &str {
-    let prefix_start = source[..start]
-        .rfind(['\n', '\r'])
-        .map(|idx| idx + 1)
-        .unwrap_or(0);
-    let suffix = &source[start..];
-    let suffix_end = suffix.find(['\n', '\r']).unwrap_or(suffix.len());
-    &source[prefix_start..start + suffix_end]
-}
-
-fn proc_kind_for_signature_line(line: &str) -> Option<resolve::ProcKind> {
-    if contains_ascii_word(line, "sub") {
-        Some(resolve::ProcKind::Sub)
-    } else if contains_ascii_word(line, "function") {
-        Some(resolve::ProcKind::Function)
-    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "get") {
-        Some(resolve::ProcKind::PropertyGet)
-    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "let") {
-        Some(resolve::ProcKind::PropertyLet)
-    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "set") {
-        Some(resolve::ProcKind::PropertySet)
-    } else {
-        None
-    }
-}
-
-fn contains_ascii_word(text: &str, needle: &str) -> bool {
-    text.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-        .any(|word| word.eq_ignore_ascii_case(needle))
 }
 
 fn symbol_table_from_frontend_hir(

@@ -52,11 +52,12 @@ Executable proof:
   help with imported-typelib provenance. This is still identifier-based IDE resolution evidence,
   not proof of complete type-directed COM member binding.
 - follow-up FE-9.7 optional-default coverage now carries literal string and Boolean optional
-  parameter defaults from the compiler front-end signature parser into `SemanticSnapshot::callables`
-  and signature help. This proves the IDE callable surface can expose the same richer optional
-  metadata now used by runtime descriptors for these literal defaults; it does not claim complete
-  module-constant, Date/Currency, or arbitrary default-expression coverage. The same continuation
-  also proves the `ParamArray` flag is preserved on snapshot callables and signature help.
+  parameter defaults through compiler-owned `HirParameterHook` facts into
+  `SemanticSnapshot::callables` and signature help. This proves the IDE callable surface can expose
+  the same richer optional metadata now used by runtime descriptors for these literal defaults; it
+  does not claim complete module-constant, Date/Currency, or arbitrary default-expression coverage.
+  The same continuation also proves the `ParamArray` flag is preserved on snapshot callables and
+  signature help.
 
 ## Checks
 
@@ -65,6 +66,7 @@ Executable proof:
 - `cargo test -p oxvba-languageservice snapshot_covers_matrix_route_overlay_shapes_from_frontend_hir --quiet`
 - `cargo test -p oxvba-languageservice workspace_symbols_cover_frontend_seed_project_routes --quiet`
 - `cargo test -p oxvba-languageservice project_aware_workspace_loads_projected_typelib_references --quiet`
+- `cargo test -p oxvba-compiler type_hooks_collect_parameter_descriptors_from_source_backed_hir --quiet`
 - `cargo test -p oxvba-languageservice snapshot_callables_preserve_optional_string_boolean_defaults --quiet`
 - `cargo test -p oxvba-languageservice signature_help_preserves_optional_string_boolean_defaults --quiet`
 - `cargo test -p oxvba-languageservice snapshot_callables_preserve_param_array_flag --quiet`
@@ -103,9 +105,9 @@ Executable proof:
   identifier, so this does not close richer typed COM member/property/default-member or live
   reference behavior; predeclared document host behavior and live Excel execution still need their
   own route runners.
-- The optional-default continuation intentionally recovers optional/default flags from the compiler
-  signature parser because HIR params currently carry names and type hooks but not the full
-  resolved parameter descriptor. That keeps the IDE result aligned with the production compiler
-  parser for literal string/Boolean defaults, but it also marks a remaining cleanup: parameter
-  descriptors should become first-class HIR/SemanticModel facts before claiming full Roslyn-style
-  callable metadata parity.
+- The optional-default continuation now makes parameter descriptors first-class front-end type-hook
+  facts keyed by parameter symbol, so the language service no longer reparses procedure signatures
+  to recover optional/default metadata. The underlying descriptor breadth remains bounded to the
+  literal/default shapes currently accepted by the compiler front-end parameter parser; broader
+  default-expression and constant surfaces still need their own delivery proof before claiming full
+  Roslyn-style callable metadata parity.
