@@ -258,6 +258,11 @@ constructs `HirExprKind::Unary` for unary minus and `Not`, treats unary plus as 
 production lowering regression verifies `NegSlot` and `BoolNot` bytecode from ordinary assignment
 expressions.
 
+Follow-up deterministic date/time intrinsic work adds `Year`, `Month`, `Day`, `Weekday`,
+`MonthName`, `DateValue`, `TimeValue`, `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff` to the
+HIR built-in allowlist and verifies the existing date/time bytecode variants. This intentionally
+excludes host current-time intrinsics such as `Date()`, `Time()`, `Now()`, and `Timer()`.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

@@ -213,6 +213,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`,
         `Cos`, `Log`, `Exp`, `Atn`, and `Tan` now lower through HIR;
         general unary minus/plus and `Not` expressions now lower through HIR;
+        deterministic date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`,
+        `DateValue`, `TimeValue`, `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff` now lower
+        through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

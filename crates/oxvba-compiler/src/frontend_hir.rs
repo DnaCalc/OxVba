@@ -42,6 +42,17 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "exp"
             | "atn"
             | "tan"
+            | "year"
+            | "month"
+            | "day"
+            | "weekday"
+            | "monthname"
+            | "datevalue"
+            | "timevalue"
+            | "dateserial"
+            | "timeserial"
+            | "dateadd"
+            | "datediff"
     )
 }
 

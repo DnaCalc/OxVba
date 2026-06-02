@@ -4399,6 +4399,101 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_deterministic_date_time_intrinsics() {
+        let source = "Sub Main()\nDim yr\nDim mo\nDim dy\nDim wd\nDim mn\nDim dv\nDim tv\nDim ds\nDim ts\nDim da\nDim dd\nCall Capture(yr, mo, dy, wd, mn, dv, tv, ds, ts, da, dd)\nEnd Sub\nSub Capture(ByRef yr, ByRef mo, ByRef dy, ByRef wd, ByRef mn, ByRef dv, ByRef tv, ByRef ds, ByRef ts, ByRef da, ByRef dd)\nyr = Year(45000)\nmo = Month(45000)\ndy = Day(45000)\nwd = Weekday(45000)\nmn = MonthName(1)\ndv = DateValue(45000)\ntv = TimeValue(1234)\nds = DateSerial(2026, 2, 28)\nts = TimeSerial(1, 2, 3)\nda = DateAdd(\"d\", 1, 45000)\ndd = DateDiff(\"d\", 45000, 45001)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicYearDigits { .. }
+            )),
+            "expected Year to emit Year intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicMonthDigits { .. }
+            )),
+            "expected Month to emit Month intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDayDigits { .. }
+            )),
+            "expected Day to emit Day intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicWeekdayDigits { .. }
+            )),
+            "expected Weekday to emit Weekday intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicMonthNameDigits { .. }
+            )),
+            "expected MonthName to emit MonthName intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDateValueDigits { .. }
+            )),
+            "expected DateValue to emit DateValue intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicTimeValueDigits { .. }
+            )),
+            "expected TimeValue to emit TimeValue intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDateSerialDigits { .. }
+            )),
+            "expected DateSerial to emit DateSerial intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicTimeSerialDigits { .. }
+            )),
+            "expected TimeSerial to emit TimeSerial intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDateAddDigits { .. }
+            )),
+            "expected DateAdd to emit DateAdd intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDateDiffDigits { .. }
+            )),
+            "expected DateDiff to emit DateDiff intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =

@@ -1199,7 +1199,9 @@ Candidate bead units:
   `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR,
   deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
   `Log`, `Exp`, `Atn`, and `Tan` in HIR, `Declare PtrSafe` calls, simple UDT layout/field aliases,
-  same-shape UDT assignment, and general unary minus/plus plus `Not` expressions.
+  same-shape UDT assignment, general unary minus/plus plus `Not` expressions, and deterministic
+  date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`, `DateValue`, `TimeValue`,
+  `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
