@@ -1009,6 +1009,42 @@ fn starts_enum_block(lower: &str) -> bool {
 }
 
 pub(crate) fn normalize_source_lines(source: &str) -> Vec<String> {
+    let merged = merge_physical_source_lines(source);
+    let conditional_filtered = apply_conditional_compilation(&merged);
+
+    let mut out = Vec::new();
+    let mut with_stack: Vec<String> = Vec::new();
+    for line in conditional_filtered {
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("with ") {
+            let raw_target = line[5..].trim();
+            let parent = with_stack.last().map(String::as_str);
+            if let Some(target) = normalize_with_target(raw_target, parent) {
+                with_stack.push(target);
+            } else {
+                out.push(line);
+            }
+            continue;
+        }
+
+        if lower == "end with" {
+            if with_stack.pop().is_none() {
+                out.push(line);
+            }
+            continue;
+        }
+
+        if let Some(target) = with_stack.last() {
+            out.push(rewrite_with_member_accesses(&line, target));
+        } else {
+            out.push(line);
+        }
+    }
+
+    out
+}
+
+fn merge_physical_source_lines(source: &str) -> Vec<String> {
     let mut merged = Vec::new();
     let mut pending = String::new();
 
@@ -1046,38 +1082,7 @@ pub(crate) fn normalize_source_lines(source: &str) -> Vec<String> {
         merged.push(final_line.to_string());
     }
 
-    let conditional_filtered = apply_conditional_compilation(&merged);
-
-    let mut out = Vec::new();
-    let mut with_stack: Vec<String> = Vec::new();
-    for line in conditional_filtered {
-        let lower = line.to_ascii_lowercase();
-        if lower.starts_with("with ") {
-            let raw_target = line[5..].trim();
-            let parent = with_stack.last().map(String::as_str);
-            if let Some(target) = normalize_with_target(raw_target, parent) {
-                with_stack.push(target);
-            } else {
-                out.push(line);
-            }
-            continue;
-        }
-
-        if lower == "end with" {
-            if with_stack.pop().is_none() {
-                out.push(line);
-            }
-            continue;
-        }
-
-        if let Some(target) = with_stack.last() {
-            out.push(rewrite_with_member_accesses(&line, target));
-        } else {
-            out.push(line);
-        }
-    }
-
-    out
+    merged
 }
 
 fn strip_inline_comment(line: &str) -> &str {
@@ -1230,6 +1235,11 @@ fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
     }
 
     out
+}
+
+pub(crate) fn apply_conditional_compilation_to_source(source: &str) -> String {
+    let lines = merge_physical_source_lines(source);
+    apply_conditional_compilation(&lines).join("\n")
 }
 
 /// Predefined `#If` compilation constants for the targeted dialect: **VBA 7.1**

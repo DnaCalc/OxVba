@@ -260,11 +260,16 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
         return Err(CompileError::EmptySource);
     }
 
-    if forced_object_locals_by_proc.is_empty()
-        && !has_class_modules
-        && source_is_eligible_for_lightweight_hir_default(source)
-    {
-        match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
+    if forced_object_locals_by_proc.is_empty() && !has_class_modules {
+        let hir_source = resolve::apply_conditional_compilation_to_source(source);
+        if !source_is_eligible_for_lightweight_hir_default(&hir_source) {
+            return compile_with_runtime_metadata_legacy_object_locals_class(
+                source,
+                forced_object_locals_by_proc,
+                has_class_modules,
+            );
+        }
+        match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(&hir_source) {
             Ok(compiled) => return Ok(compiled),
             Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => {}
             Err(frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => {
@@ -938,6 +943,36 @@ mod tests {
         );
         super::compile_with_runtime_metadata(source).expect(
             "default runtime metadata compile should route single-source Option Private Module through HIR",
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_conditional_compilation_through_hir() {
+        let source = "#Const ENABLE = True\nSub Main()\nDim x As Long\n#If ENABLE Then\nx = 7: x = x + 1\n#Else\nx = 1\n#End If\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should reject the active inline sequence");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route filtered #If source through HIR",
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "expected active #If branch bytecode: {bytecode:#?}"
+        );
+        assert!(
+            !bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "inactive #Else branch should not be emitted: {bytecode:#?}"
         );
     }
 

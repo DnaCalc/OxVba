@@ -1,3 +1,4 @@
+use crate::resolve::apply_conditional_compilation_to_source;
 use crate::syntax_bridge::{SyntaxBridgeProductionRoute, production_route_for_source};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,6 +398,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let conditional_compilation_statement = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub\n";
+    findings.push(route_finding(
+        "conditional compilation fixture",
+        conditional_compilation_statement,
+        "bd-aprs.9.9",
+    ));
+
     let enum_member_constants =
         "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
     findings.push(route_finding(
@@ -484,7 +492,8 @@ fn route_finding(
     source: &'static str,
     owner: &'static str,
 ) -> LegacyRouteAuditFinding {
-    match production_route_for_source(source) {
+    let route_source = apply_conditional_compilation_to_source(source);
+    match production_route_for_source(&route_source) {
         Ok(SyntaxBridgeProductionRoute::HirProduction) => LegacyRouteAuditFinding {
             area,
             evidence: "classified as HIR production".to_string(),
@@ -708,6 +717,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("def type module-scope scalar")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("conditional compilation")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

@@ -186,9 +186,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         project module-kind/reference visibility validation remains owned by the project route;
         basic DefType default table preservation now covers local untyped `Dim`,
         parameters, function returns, and module-scope scalar `Dim` declarations through HIR;
+        basic `#Const`/`#If`/`#Else`/`#End If` filtering now runs before the default HIR route for
+        otherwise completed single-source inputs;
         broader DefType surfaces for visibility-prefixed class/project fields, attributes,
-        conditional compilation, typed constants, and broader compile-time constant evaluation remain
-        open;
+        broader conditional-compilation/preprocessor parity, typed constants, and broader
+        compile-time constant evaluation remain open;
     - `bd-aprs.9.10`: broader declaration/type surface;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.

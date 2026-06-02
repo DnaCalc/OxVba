@@ -638,7 +638,9 @@ Required newly explicit delivery beads:
   Module` single-source/default HIR routing with project privacy enforcement left in the project
   route, simple constants, enum constants, basic DefType default-table preservation for local
   untyped `Dim`, parameters, and function returns, module-scope scalar `Dim` declarations, known
-  DefType default-route eligibility, and same-statement constant expression substitution.
+  DefType default-route eligibility, basic `#Const`/`#If`/`#Else`/`#End If` filtering before the
+  default HIR route for otherwise completed single-source inputs, and same-statement constant
+  expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1175,7 +1177,9 @@ Candidate bead units:
   approximation, `Option Private Module` single-source/default HIR routing with project privacy
   enforcement left in the project route, enum constants, basic DefType default-table preservation
   for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations, and
-  known DefType default-route eligibility, and simple same-statement constant expressions.
+  known DefType default-route eligibility, basic `#Const`/`#If`/`#Else`/`#End If` filtering before
+  the default HIR route for otherwise completed single-source inputs, and simple same-statement
+  constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
