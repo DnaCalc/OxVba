@@ -1227,8 +1227,10 @@ Candidate bead units:
   console `Print` and diagnostics `Debug.Print` through existing host bytecode, including
   multi-field `Debug.Print` payload concatenation. Follow-up file-system statement routing covers
   `Kill path` through existing host bytecode; file-handle I/O statements (`Open`, `Close`,
-  `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. The `Array(...)` helper proof is
-  not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. Follow-up console-input routing
+  covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
+  `Line Input #`. The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that
+  remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

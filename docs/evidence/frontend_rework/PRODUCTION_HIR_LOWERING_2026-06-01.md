@@ -351,6 +351,10 @@ Follow-up file-system statement route work adds the first HIR-owned file stateme
 file-handle I/O closure; `Open`, `Close`, `Print #`, `Write #`, `Input #`, and `Line Input #`
 remain open statement-lowering surfaces.
 
+Follow-up console-input route work adds HIR-owned `Input a[, b...]` statement lowering to the
+existing console-input host bytecode, preserving one input operation per target. This does not claim
+file input closure; `Input #` and `Line Input #` remain separate file-handle statement surfaces.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

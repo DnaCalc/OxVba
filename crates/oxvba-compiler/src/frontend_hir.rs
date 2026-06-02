@@ -299,6 +299,9 @@ pub enum HirStmtKind {
     FileKill {
         path: HirExprId,
     },
+    ConsoleInput {
+        targets: Vec<String>,
+    },
     Label {
         name: String,
     },
@@ -656,6 +659,13 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::FileKill { path },
+                })))
+            }
+            SyntaxKind::CallStmt if is_console_input_stmt(node) => {
+                let targets = self.lower_statement_target_names(scope, node, "Input")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::ConsoleInput { targets },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1318,6 +1328,44 @@ impl HirBuilder {
         Ok(args[0].expr)
     }
 
+    fn lower_statement_target_names(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<Vec<String>, HirBuildError> {
+        let args = node
+            .child_nodes()
+            .into_iter()
+            .find(|child| child.kind() == SyntaxKind::ArgList)
+            .map(|arg_list| self.lower_call_args(scope, arg_list, false))
+            .transpose()?
+            .unwrap_or_default();
+        let mut targets = Vec::with_capacity(args.len());
+        for arg in args {
+            let Some(expr) = self.arenas.expr(arg.expr) else {
+                return Err(HirBuildError::Unsupported(format!(
+                    "{statement_name} statement target is missing: `{}`",
+                    node.text().trim()
+                )));
+            };
+            let HirExprKind::Name(symbol) = expr.kind else {
+                return Err(HirBuildError::Unsupported(format!(
+                    "{statement_name} statement target must be a variable: `{}`",
+                    node.text().trim()
+                )));
+            };
+            targets.push(symbol_name(&self.symbols, symbol)?);
+        }
+        if targets.is_empty() {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} statement requires at least one target: `{}`",
+                node.text().trim()
+            )));
+        }
+        Ok(targets)
+    }
+
     fn concat_exprs_with_delimiter(
         &mut self,
         node: SyntaxNode<'_>,
@@ -1773,6 +1821,16 @@ fn cst_with_kind(node: SyntaxNode<'_>, syntax_kind: &str) -> CstBackpointer {
     }
 }
 
+fn symbol_name(symbols: &SymbolModel, symbol: SymbolId) -> Result<String, HirBuildError> {
+    let symbol = symbols
+        .symbol(symbol)
+        .ok_or_else(|| HirBuildError::Unsupported("missing symbol".to_string()))?;
+    let name = symbols
+        .name(symbol.name)
+        .ok_or_else(|| HirBuildError::Unsupported("missing symbol name".to_string()))?;
+    Ok(name.first_spelling.clone())
+}
+
 fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
     node.child_nodes()
         .into_iter()
@@ -1800,6 +1858,13 @@ fn is_kill_stmt(node: SyntaxNode<'_>) -> bool {
     lower
         .strip_prefix("kill")
         .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+}
+
+fn is_console_input_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("input").is_some_and(|rest| {
+        rest.starts_with(char::is_whitespace) && !rest.trim_start().starts_with('#')
+    })
 }
 
 fn is_expression_node(kind: SyntaxKind) -> bool {

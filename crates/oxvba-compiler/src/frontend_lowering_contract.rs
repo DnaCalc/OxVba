@@ -340,6 +340,7 @@ fn collect_stmt_contract_facts(
         | HirStmtKind::GoSub { .. }
         | HirStmtKind::Return
         | HirStmtKind::Erase { .. } => {}
+        HirStmtKind::ConsoleInput { .. } => {}
     }
 }
 

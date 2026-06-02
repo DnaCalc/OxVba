@@ -354,7 +354,8 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::RaiseEvent { .. }
         | HirStmtKind::ConsolePrint { .. }
         | HirStmtKind::DebugPrint { .. }
-        | HirStmtKind::FileKill { .. } => {}
+        | HirStmtKind::FileKill { .. }
+        | HirStmtKind::ConsoleInput { .. } => {}
     }
 }
 

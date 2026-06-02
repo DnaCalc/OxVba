@@ -246,6 +246,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         bytecode;
         file-system statement `Kill path` now lowers through HIR to the existing file-kill host
         bytecode;
+        console `Input a[, b...]` now lowers through HIR to the existing console-input host
+        bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

@@ -268,7 +268,8 @@ impl SemanticModel {
             | HirStmtKind::GoTo { .. }
             | HirStmtKind::GoSub { .. }
             | HirStmtKind::Return
-            | HirStmtKind::Erase { .. } => {}
+            | HirStmtKind::Erase { .. }
+            | HirStmtKind::ConsoleInput { .. } => {}
         }
     }
 

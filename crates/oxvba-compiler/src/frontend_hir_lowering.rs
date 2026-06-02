@@ -1541,6 +1541,9 @@ fn lower_stmt(
         HirStmtKind::FileKill { path } => out.push(BoundStmt::FileKill {
             path: lower_expr(typed_hir, const_values, udt_field_aliases, *path, context)?,
         }),
+        HirStmtKind::ConsoleInput { targets } => out.push(BoundStmt::ConsoleInput {
+            targets: targets.clone(),
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5145,6 +5148,30 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicFileKillHost { .. }
             )),
             "expected Kill statement to emit file kill host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_console_input_statement() {
+        let source = "Sub Main()\nDim a\nDim b\nInput a, b\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let input_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicConsoleInputHost { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            input_count, 2,
+            "expected one console input host intrinsic per target: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
