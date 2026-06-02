@@ -223,6 +223,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         `Join` now lower through HIR;
         deterministic collection intrinsics `CollectionAdd`, `CollectionItem`, `CollectionRemove`,
         and `CollectionCount` now lower through HIR;
+        deterministic financial intrinsics `FV`, `PV`, `Pmt`, `NPV`, `IRR`, `MIRR`, `Rate`, and
+        `NPer` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

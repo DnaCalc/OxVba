@@ -279,6 +279,11 @@ Follow-up collection intrinsic work adds `CollectionAdd`, `CollectionItem`, `Col
 This covers the deterministic collection helper family but does not claim general VBA `Collection`
 object/member syntax or default-member semantics.
 
+Follow-up financial intrinsic work adds `FV`, `PV`, `Pmt`, `NPV`, `IRR`, `MIRR`, `Rate`, and `NPer`
+to HIR built-in resolution and verifies the existing financial bytecode variants. The regression
+uses the minimal accepted arity for each intrinsic; richer optional argument combinations remain
+covered by the shared emitter/runtime paths and broader call-entry optional-state work.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

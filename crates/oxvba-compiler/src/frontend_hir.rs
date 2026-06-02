@@ -77,6 +77,14 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "collectionitem"
             | "collectionremove"
             | "collectioncount"
+            | "fv"
+            | "pv"
+            | "pmt"
+            | "npv"
+            | "irr"
+            | "mirr"
+            | "rate"
+            | "nper"
     )
 }
 

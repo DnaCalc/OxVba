@@ -4707,6 +4707,77 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_financial_intrinsics() {
+        let source = "Sub Main()\nDim fvOut\nDim pvOut\nDim pmtOut\nDim npvOut\nDim irrOut\nDim mirrOut\nDim rateOut\nDim nperOut\nCall Capture(fvOut, pvOut, pmtOut, npvOut, irrOut, mirrOut, rateOut, nperOut)\nEnd Sub\nSub Capture(ByRef fvOut, ByRef pvOut, ByRef pmtOut, ByRef npvOut, ByRef irrOut, ByRef mirrOut, ByRef rateOut, ByRef nperOut)\nfvOut = FV(1, 2, 3)\npvOut = PV(1, 2, 3)\npmtOut = Pmt(1, 2, 3)\nnpvOut = NPV(1, 2, 3)\nirrOut = IRR(1)\nmirrOut = MIRR(1, 2, 3)\nrateOut = Rate(1, 2, 3)\nnperOut = NPer(1, 2, 3)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFvI32 { .. }
+            )),
+            "expected FV to emit FV intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicPvI32 { .. }
+            )),
+            "expected PV to emit PV intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicPmtI32 { .. }
+            )),
+            "expected Pmt to emit Pmt intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicNpvI32 { .. }
+            )),
+            "expected NPV to emit NPV intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIrrI32 { .. }
+            )),
+            "expected IRR to emit IRR intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicMirrI32 { .. }
+            )),
+            "expected MIRR to emit MIRR intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRateI32 { .. }
+            )),
+            "expected Rate to emit Rate intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicNPerI32 { .. }
+            )),
+            "expected NPer to emit NPer intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =
