@@ -1260,6 +1260,58 @@ fn project_source_has_only_active_procedural_modules_without_references(
             .all(|module| module.module_kind == ModuleKind::Procedural)
 }
 
+fn project_source_has_only_active_procedural_modules_with_unused_host_references(
+    manifest: &ProjectManifest,
+) -> bool {
+    !manifest.modules.is_empty()
+        && !manifest.references.is_empty()
+        && manifest.reference_projects.is_empty()
+        && manifest
+            .modules
+            .iter()
+            .all(|module| module.module_kind == ModuleKind::Procedural)
+        && manifest
+            .references
+            .iter()
+            .all(|reference| reference.reference_kind == ReferenceKind::HostInjected)
+        && manifest.references.iter().all(|reference| {
+            !manifest.modules.iter().any(|module| {
+                contains_ascii_identifier(&module.source, &reference.referenced_project_name)
+            })
+        })
+}
+
+fn contains_ascii_identifier(source: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+
+    let source_lowercase = source.to_ascii_lowercase();
+    let needle_lowercase = needle.to_ascii_lowercase();
+    let mut search_start = 0;
+    while let Some(relative_index) = source_lowercase[search_start..].find(&needle_lowercase) {
+        let start = search_start + relative_index;
+        let end = start + needle_lowercase.len();
+        let before = start
+            .checked_sub(1)
+            .and_then(|index| source_lowercase.as_bytes().get(index))
+            .copied();
+        let after = source_lowercase.as_bytes().get(end).copied();
+
+        if !is_ascii_identifier_byte(before) && !is_ascii_identifier_byte(after) {
+            return true;
+        }
+
+        search_start = end;
+    }
+
+    false
+}
+
+fn is_ascii_identifier_byte(byte: Option<u8>) -> bool {
+    matches!(byte, Some(b'a'..=b'z' | b'0'..=b'9' | b'_'))
+}
+
 fn project_source_has_only_procedural_modules_including_references(
     manifest: &ProjectManifest,
 ) -> bool {
@@ -1347,6 +1399,7 @@ fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
 
 fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundary {
     if project_source_has_only_active_procedural_modules_without_references(manifest)
+        || project_source_has_only_active_procedural_modules_with_unused_host_references(manifest)
         || project_source_is_single_procedural_module_with_hir_safe_typelib_references(manifest)
     {
         ProjectCompileBoundary::ActiveHir
@@ -24310,11 +24363,40 @@ mod tests {
     }
 
     #[test]
-    fn project_compile_boundary_keeps_host_injected_references_on_legacy() {
+    fn project_compile_boundary_routes_unused_host_injected_references_through_active_hir() {
         let module_a = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
             "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module_a],
+            references: vec![ProjectReference {
+                referenced_project_name: "Application".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            project_compile_boundary(&manifest),
+            ProjectCompileBoundary::ActiveHir
+        );
+        let compiled = compile_project(&manifest)
+            .expect("unused host-injected reference should not block active HIR production");
+        assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
+    }
+
+    #[test]
+    fn project_compile_boundary_keeps_used_host_injected_references_on_legacy() {
+        let module_a = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut\nvalueOut = Application.Value\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {

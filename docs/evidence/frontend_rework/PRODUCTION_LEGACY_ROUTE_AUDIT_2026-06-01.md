@@ -280,3 +280,8 @@ The audit result records completed reopened delivery work and remaining broader 
 - Default compile fallback is now proved unused for every source-backed FE-9.7 seed row: strict
   frontend-v2 and default compile bytecode match. The fallback remains a quarantined residual only
   for unsupported/out-of-scope modules.
+- Unused host-injected reference declarations no longer force `FullLegacy`: an otherwise active
+  procedural project with a declared `HostInjected` `Application` reference and no source mention
+  now routes through `ActiveHir`/`HirProduction`. A matching guard keeps projects that actually name
+  `Application` on the existing host rewrite/compatibility path until host object-model binding is
+  structurally owned by FE-7.6.

@@ -1025,8 +1025,11 @@ Candidate bead units:
   symbols without dependency-specific routing. Current continuation progress moves reference-kind
   authority into `frontend_external_references::ExternalReferenceIndex` for imported typelib
   qualification, reference-project ordering, and host-injected/native implicit receiver
-  classification. Existing typelib metadata helpers remain as compatibility lowering after the
-  frontend route accepts the declared reference.
+  classification. Follow-up production-routing progress now also proves that declared but unused
+  host-injected references do not by themselves force an otherwise procedural active project onto
+  the legacy route; named host roots still stay on the existing host rewrite/compatibility route
+  until FE-7.6 owns host object-model binding structurally. Existing typelib metadata helpers remain
+  as compatibility lowering after the frontend route accepts the declared reference.
   Status: scoped delivery bead closed after imported/reference/host route proof and compatibility
   classification for post-acceptance metadata materialisation.
   Evidence: `docs/evidence/frontend_rework/EXTERNAL_REFERENCES_BINDING_2026-06-01.md`.
