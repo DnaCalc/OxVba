@@ -326,12 +326,9 @@ pub(crate) fn compile_with_runtime_metadata_legacy_object_locals_class(
 }
 
 fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
-    let lower = source.to_ascii_lowercase();
-    if lower
-        .lines()
-        .map(str::trim_start)
-        .any(|line| line.starts_with("def"))
-    {
+    if source.lines().map(str::trim_start).any(|line| {
+        line.to_ascii_lowercase().starts_with("def") && !is_supported_def_type_line(line)
+    }) {
         return false;
     }
 
@@ -349,6 +346,34 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
             oxvba_syntax::SyntaxKind::KwOptional,
             oxvba_syntax::SyntaxKind::KwParamArray,
         ],
+    )
+}
+
+fn is_supported_def_type_line(line: &str) -> bool {
+    let normalized = line.to_ascii_lowercase();
+    let parts: Vec<_> = normalized.split_whitespace().collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    matches!(
+        parts.as_slice(),
+        [
+            "defbool"
+                | "defbyte"
+                | "defint"
+                | "deflng"
+                | "deflnglng"
+                | "deflngptr"
+                | "defsng"
+                | "defdbl"
+                | "defdec"
+                | "defcur"
+                | "defdate"
+                | "defstr"
+                | "defobj"
+                | "defvar",
+            ..
+        ]
     )
 }
 
@@ -849,6 +874,39 @@ mod tests {
         super::compile_with_runtime_metadata(source).expect(
             "default runtime metadata compile should route Option Compare Database source through HIR",
         );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_allows_def_type_hir_route() {
+        let source =
+            "DefLng A-Z\nSub Main()\n    Dim alpha\n    alpha = 1: alpha = alpha + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not accept inline sequence");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "known DefType directives should not disqualify otherwise-completed HIR constructs"
+        );
+        super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route known DefType source through HIR",
+        );
+    }
+
+    #[test]
+    fn lightweight_hir_default_rejects_unknown_def_type_statement() {
+        for source in [
+            "DefFoo A-Z\nSub Main()\nEnd Sub\n",
+            "DefLng\nSub Main()\nEnd Sub\n",
+        ] {
+            assert!(
+                !super::source_is_eligible_for_lightweight_hir_default(source),
+                "unknown or malformed DefType directive should remain outside default HIR route: {source}"
+            );
+        }
     }
 
     #[test]

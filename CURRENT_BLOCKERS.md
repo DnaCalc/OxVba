@@ -185,8 +185,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         approximation; basic DefType default table preservation now covers local untyped `Dim`,
         parameters, function returns, and module-scope scalar `Dim` declarations through HIR;
         `Option Private Module`, broader DefType surfaces for visibility-prefixed class/project
-        fields and default-route eligibility, attributes, conditional compilation, typed constants,
-        and broader compile-time constant evaluation remain open;
+        fields, attributes, conditional compilation, typed constants, and broader compile-time
+        constant evaluation remain open;
     - `bd-aprs.9.10`: broader declaration/type surface;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.
