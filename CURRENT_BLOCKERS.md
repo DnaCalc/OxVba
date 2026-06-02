@@ -140,7 +140,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         definitely scalar-typed value parameters; imported bare/indexed default-member assignment
         syntax now resolves through typelib metadata for the required `PropertyPut`/`PropertyPutRef`
         kind before rewrite, producing frontend/typelib diagnostics instead of backend parse
-        fallout when the imported type has no default setter;
+        fallout when the imported type has no default setter and rewriting fixture-backed default
+        put/putref assignments to `DispatchInvoke` when default setter metadata exists;
       - still open: broader project/host/imported-COM default-member writeback breadth, type
         overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;

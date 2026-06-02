@@ -13,6 +13,8 @@ const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 const OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID: &str = "OxVba.TestDispatchNoDefault";
 #[cfg(any(test, feature = "fixture-typelibs"))]
 const OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID: &str = "OxVba.TestDispatchAmbiguousDefault";
+#[cfg(any(test, feature = "fixture-typelibs"))]
+const OXVBA_TEST_DISPATCH_DEFAULT_PUT_PROGID: &str = "OxVba.TestDispatchDefaultPut";
 const OXVBA_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServer";
 const OXVBA_ALT_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServerAlt";
 const OXVBA_ALT2_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServerAlt2";
@@ -384,6 +386,18 @@ pub fn known_typelib_identity_for_prog_id_name(
             cache_key: "typelib:oxvba-testdispatch-ambiguousdefault:1.0:0".to_string(),
         });
     }
+    if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_DEFAULT_PUT_PROGID) {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: OXVBA_TEST_DISPATCH_DEFAULT_PUT_PROGID.to_string(),
+            requested_coclass: None,
+            importlib: "oxvba_testdispatch_defaultput.tlb".to_string(),
+            libid: Some("11111111-2222-3333-4444-555555555558".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testdispatch-defaultput:1.0:0".to_string(),
+        });
+    }
     None
 }
 
@@ -413,10 +427,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
         || identity
             .importlib
             .eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
+        || identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_defaultput.tlb")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
             libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555555")
                 || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555556")
                 || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555557")
+                || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555558")
         }) {
         let mut members = vec![
             TypeLibMemberMetadata {
@@ -1529,6 +1547,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 member.is_default_member = member.name.eq_ignore_ascii_case("EchoVariant")
                     || member.name.eq_ignore_ascii_case("Value");
             }
+        } else if identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_defaultput.tlb")
+        {
+            for member in &mut members {
+                member.is_default_member = member.name.eq_ignore_ascii_case("SetIndexedValue")
+                    || member.name.eq_ignore_ascii_case("SetIndexedValueRef");
+            }
         }
         let member_name_to_token = members
             .iter()
@@ -1971,6 +1997,28 @@ mod tests {
             resolve_default_member_token_and_spec_from_typelib_metadata(&blob),
             TypeLibMemberLookupResult::Ambiguous
         );
+    }
+
+    #[test]
+    fn default_put_fixture_marks_indexed_put_members_as_defaults() {
+        let identity = known_typelib_identity_for_prog_id_name("OxVba.TestDispatchDefaultPut")
+            .expect("identity");
+        let blob = build_typelib_metadata(&identity);
+        let put = member_spec_from_typelib_metadata(
+            &blob,
+            ComMemberToken::new(super::TEST_DISPID_SET_INDEXED_VALUE),
+        )
+        .expect("default property put spec");
+        assert_eq!(put.invoke_kind, TypeLibMemberInvokeKind::PropertyPut);
+        assert!(put.is_default_member);
+
+        let putref = member_spec_from_typelib_metadata(
+            &blob,
+            ComMemberToken::new(super::TEST_DISPID_SET_INDEXED_VALUE_REF),
+        )
+        .expect("default property putref spec");
+        assert_eq!(putref.invoke_kind, TypeLibMemberInvokeKind::PropertyPutRef);
+        assert!(putref.is_default_member);
     }
 
     #[test]

@@ -21886,6 +21886,58 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_imported_default_member_property_put_assignment_to_dispatchinvoke()
+    {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchDefaultPut\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj(7) = 11\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("imported default-member PropertyPut assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 14, 7, 11)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_imported_default_member_property_putref_assignment_to_dispatchinvoke()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchDefaultPut\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj(8) = other\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("imported default-member PropertyPutRef assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 15, 8, other)"));
+    }
+
+    #[test]
     fn compile_project_rejects_wrong_arity_for_zero_arg_external_member() {
         let main_module = module_unit_from_source(
             "MainModule",

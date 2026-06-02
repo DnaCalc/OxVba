@@ -109,9 +109,10 @@ The 2026-06-01 continuation added:
   rewriting now recognizes bare/indexed imported default-member assignment syntax such as
   `obj(41) = value` and `Set obj(41) = other`. The path resolves a default member of the required
   `PropertyPut`/`PropertyPutRef` kind through typelib metadata before rewrite and therefore
-  produces frontend/typelib diagnostics instead of falling through to backend parsing. The current
-  fixture proves the diagnostic route for a COM type whose default member is not a setter; positive
-  default setter execution still requires a fixture with default put/putref metadata.
+  produces frontend/typelib diagnostics instead of falling through to backend parsing. A dedicated
+  fixture alias, `OxVba.TestDispatchDefaultPut`, marks the indexed property put/putref members as
+  default setters and proves positive `DispatchInvoke` rewrite for both Let and Set assignment
+  forms.
 
 ## Checks
 
@@ -143,7 +144,9 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler scalar_typed_default_member_value --quiet`
 - `cargo test -p oxvba-compiler default_member --quiet`
 - `cargo test -p oxvba-compiler routes_imported_default_member --quiet`
+- `cargo test -p oxvba-compiler imported_default_member_property --quiet`
 - `cargo test -p oxvba-compiler external_default_member --quiet`
+- `cargo test -p oxvba-com default_put_fixture --quiet`
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler compile_project --quiet`
