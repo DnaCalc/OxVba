@@ -720,14 +720,16 @@ The FE-8.5 UDT slices remove the basic UDT declaration/layout and simple field-a
   such as `r_scores_0` and `r_scores_1`.
 - Same-shape whole-value UDT assignment lowers to the existing field-wise `BoundStmt::UdtAssign`
   copy path.
+- Cross-type whole-value UDT assignment now preserves the legacy unsupported diagnostic instead of
+  silently copying same-shaped fields across distinct UDT type names.
 - The production route audit includes a `Type Point ... p.X = 1 ... y = p.X + 2` fixture and
   nested/fixed-array/fixed-string descriptor, nested member-chain, and fixed UDT array-field index
   fixtures, and classifies them as `HirProduction`.
 
 Remaining production residuals after this slice:
 
-- Dynamic/non-static UDT array field indexing, richer cross-type assignment diagnostics, and broader
-  UDT lifetime/default initialization parity remain open.
+- Dynamic/non-static UDT array field indexing and broader UDT lifetime/default initialization
+  parity remain open.
 - `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
   construction interactions, and assignment/writeback behavior.
 
@@ -1033,6 +1035,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler udt_field_read_write --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_nested_udt_member_chain_aliases --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_udt_array_field_index_aliases --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_rejects_cross_type_udt_whole_assignment --quiet`
 - `cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`

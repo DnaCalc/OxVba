@@ -525,6 +525,7 @@ fn lower_procedure(
             typed_hir,
             const_values,
             &udt_field_aliases,
+            &udt_instances,
             &udt_instance_fields,
             option_base,
             &dynamic_array_names,
@@ -816,6 +817,7 @@ fn lower_stmt(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
+    udt_instances: &HashMap<String, String>,
     udt_instance_fields: &HashMap<String, Vec<String>>,
     option_base: i32,
     dynamic_array_names: &HashSet<String>,
@@ -977,6 +979,16 @@ fn lower_stmt(
                 )
             {
                 if target_fields == source_fields {
+                    if let Some((target_type, source_type)) =
+                        cross_type_udt_assignment(&target, &source, udt_instances)
+                    {
+                        out.push(BoundStmt::Unsupported {
+                            line: format!(
+                                "cross-type UDT assignment from {source_type} to {target_type}"
+                            ),
+                        });
+                        return Ok(());
+                    }
                     out.push(BoundStmt::UdtAssign {
                         target,
                         source,
@@ -1133,6 +1145,16 @@ fn lower_stmt(
                 )
             {
                 if target_fields == source_fields {
+                    if let Some((target_type, source_type)) =
+                        cross_type_udt_assignment(&target, &source, udt_instances)
+                    {
+                        out.push(BoundStmt::Unsupported {
+                            line: format!(
+                                "cross-type UDT assignment from {source_type} to {target_type}"
+                            ),
+                        });
+                        return Ok(());
+                    }
                     out.push(BoundStmt::UdtAssign {
                         target,
                         source,
@@ -1163,6 +1185,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -1253,6 +1276,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -1271,6 +1295,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -1307,6 +1332,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -1360,6 +1386,7 @@ fn lower_stmt(
                         typed_hir,
                         const_values,
                         udt_field_aliases,
+                        udt_instances,
                         udt_instance_fields,
                         option_base,
                         dynamic_array_names,
@@ -1380,6 +1407,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -1411,6 +1439,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -1447,6 +1476,7 @@ fn lower_stmt(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
+                    udt_instances,
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
@@ -2848,6 +2878,17 @@ fn build_hir_udt_instance_fields(
         );
     }
     out
+}
+
+fn cross_type_udt_assignment(
+    target: &str,
+    source: &str,
+    instances: &HashMap<String, String>,
+) -> Option<(String, String)> {
+    let target_type = instances.get(&target.to_ascii_lowercase())?;
+    let source_type = instances.get(&source.to_ascii_lowercase())?;
+    (!target_type.eq_ignore_ascii_case(source_type))
+        .then(|| (target_type.clone(), source_type.clone()))
 }
 
 fn udt_member_alias(
@@ -6584,6 +6625,30 @@ mod tests {
                 Instruction::AddConstI32 { value: 2, .. } | Instruction::AddSlots { .. }
             )),
             "{bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_cross_type_udt_whole_assignment() {
+        let source = "Type PairA\nX As Long\nY As Long\nEnd Type\nType PairB\nX As Long\nY As Long\nEnd Type\nSub Main()\nDim a As PairA\nDim b As PairB\nb = a\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+        assert!(
+            main.body.iter().any(|stmt| {
+                matches!(
+                    stmt,
+                    BoundStmt::Unsupported { line }
+                        if line.contains("cross-type UDT assignment from paira to pairb")
+                )
+            }),
+            "{main:#?}"
         );
     }
 

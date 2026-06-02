@@ -1213,8 +1213,8 @@ Candidate bead units:
   same-shape UDT assignment, parser reachability plus metadata projection for fixed-length string
   UDT fields, fixed UDT array fields, and nested UDT field descriptors, nested UDT member-chain
   reads/writes through flattened field aliases, fixed UDT array-field reads/writes for static
-  integer indices through scalar field aliases, general unary minus/plus plus `Not` expressions, and
-  deterministic
+  integer indices through scalar field aliases, cross-type whole-value UDT assignment diagnostics
+  for distinct UDT type names, general unary minus/plus plus `Not` expressions, and deterministic
   date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`, `DateValue`, `TimeValue`,
   `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff`, plus deterministic
   conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and `Oct`, plus
