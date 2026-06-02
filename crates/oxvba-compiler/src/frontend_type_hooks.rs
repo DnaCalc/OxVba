@@ -353,7 +353,8 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::Erase { .. }
         | HirStmtKind::RaiseEvent { .. }
         | HirStmtKind::ConsolePrint { .. }
-        | HirStmtKind::DebugPrint { .. } => {}
+        | HirStmtKind::DebugPrint { .. }
+        | HirStmtKind::FileKill { .. } => {}
     }
 }
 

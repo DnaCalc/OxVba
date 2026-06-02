@@ -346,6 +346,11 @@ payloads are preserved as HIR concatenation expressions before bytecode emission
 I/O statement closure; `Open`, `Close`, file `Print #`, `Write #`, `Input #`, and `Line Input #`
 remain separate statement-lowering surfaces.
 
+Follow-up file-system statement route work adds the first HIR-owned file statement:
+`Kill path` now lowers through HIR to the existing file-kill host bytecode. This is still not
+file-handle I/O closure; `Open`, `Close`, `Print #`, `Write #`, `Input #`, and `Line Input #`
+remain open statement-lowering surfaces.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

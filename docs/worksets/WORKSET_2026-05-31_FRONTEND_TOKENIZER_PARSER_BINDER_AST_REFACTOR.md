@@ -1225,9 +1225,10 @@ Candidate bead units:
   existing host dispatch bytecode, so explicit compatibility dispatch helpers no longer force the
   default route back to legacy solely to retain names. Follow-up statement-host routing covers
   console `Print` and diagnostics `Debug.Print` through existing host bytecode, including
-  multi-field `Debug.Print` payload concatenation; file-handle I/O statements remain open. The
-  `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
-  FE-8.5.d.
+  multi-field `Debug.Print` payload concatenation. Follow-up file-system statement routing covers
+  `Kill path` through existing host bytecode; file-handle I/O statements (`Open`, `Close`,
+  `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. The `Array(...)` helper proof is
+  not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

@@ -311,6 +311,9 @@ fn collect_stmt_contract_facts(
         HirStmtKind::ConsolePrint { data } | HirStmtKind::DebugPrint { data } => {
             collect_expr_structural_intrinsics(typed_hir, *data, structural_intrinsics);
         }
+        HirStmtKind::FileKill { path } => {
+            collect_expr_structural_intrinsics(typed_hir, *path, structural_intrinsics);
+        }
         HirStmtKind::Block(children) => {
             for child in children {
                 collect_stmt_contract_facts(

@@ -296,6 +296,9 @@ pub enum HirStmtKind {
     DebugPrint {
         data: HirExprId,
     },
+    FileKill {
+        path: HirExprId,
+    },
     Label {
         name: String,
     },
@@ -646,6 +649,13 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::ConsolePrint { data },
+                })))
+            }
+            SyntaxKind::CallStmt if is_kill_stmt(node) => {
+                let path = self.lower_single_statement_arg(scope, node, "Kill")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FileKill { path },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1286,6 +1296,28 @@ impl HirBuilder {
         Ok(self.concat_exprs_with_delimiter(node, exprs, delimiter))
     }
 
+    fn lower_single_statement_arg(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<HirExprId, HirBuildError> {
+        let args = node
+            .child_nodes()
+            .into_iter()
+            .find(|child| child.kind() == SyntaxKind::ArgList)
+            .map(|arg_list| self.lower_call_args(scope, arg_list, false))
+            .transpose()?
+            .unwrap_or_default();
+        if args.len() != 1 {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} statement requires exactly one argument: `{}`",
+                node.text().trim()
+            )));
+        }
+        Ok(args[0].expr)
+    }
+
     fn concat_exprs_with_delimiter(
         &mut self,
         node: SyntaxNode<'_>,
@@ -1761,6 +1793,13 @@ fn is_console_print_stmt(node: SyntaxNode<'_>) -> bool {
         (rest.is_empty() || rest.starts_with(char::is_whitespace))
             && !rest.trim_start().starts_with('#')
     })
+}
+
+fn is_kill_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower
+        .strip_prefix("kill")
+        .is_some_and(|rest| rest.starts_with(char::is_whitespace))
 }
 
 fn is_expression_node(kind: SyntaxKind) -> bool {

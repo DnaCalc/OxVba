@@ -244,6 +244,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         named arguments through HIR into the existing host dispatch bytecode;
         console `Print` and diagnostics `Debug.Print` now lower through HIR to the existing host
         bytecode;
+        file-system statement `Kill path` now lowers through HIR to the existing file-kill host
+        bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

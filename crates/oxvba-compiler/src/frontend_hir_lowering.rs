@@ -1538,6 +1538,9 @@ fn lower_stmt(
         HirStmtKind::DebugPrint { data } => out.push(BoundStmt::DebugPrint {
             data: lower_expr(typed_hir, const_values, udt_field_aliases, *data, context)?,
         }),
+        HirStmtKind::FileKill { path } => out.push(BoundStmt::FileKill {
+            path: lower_expr(typed_hir, const_values, udt_field_aliases, *path, context)?,
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5125,6 +5128,23 @@ mod tests {
                 crate::bytecode::Instruction::ConcatSlots { .. }
             )),
             "expected multi-expression Debug.Print payload to concatenate fields: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_file_kill_statement() {
+        let source = "Sub Main()\nDim path As String\npath = \"x\"\nKill path\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFileKillHost { .. }
+            )),
+            "expected Kill statement to emit file kill host intrinsic: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

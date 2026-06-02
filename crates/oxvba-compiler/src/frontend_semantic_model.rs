@@ -246,6 +246,9 @@ impl SemanticModel {
             HirStmtKind::ConsolePrint { data } | HirStmtKind::DebugPrint { data } => {
                 self.index_expr_tree(data);
             }
+            HirStmtKind::FileKill { path } => {
+                self.index_expr_tree(path);
+            }
             HirStmtKind::Block(stmts) => {
                 for stmt in stmts {
                     self.index_stmt_tree(stmt);
