@@ -178,9 +178,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         fixed project/class array-field executable semantics and broader project-owned array shapes
         remain open;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
-      - continuation progress: `Option Compare Text` now routes through HIR for otherwise
-        completed lightweight sources and emits text comparison bytecode; `Option Explicit`,
-        `Option Compare Database`, `Option Private Module`, DefType, attributes, conditional
+      - continuation progress: `Option Explicit` now preserves the HIR-bound module flag and has
+        production route-audit coverage; `Option Compare Text` now routes through HIR for otherwise
+        completed lightweight sources and emits text comparison bytecode; `Option Compare Database`,
+        `Option Private Module`, DefType, attributes, conditional
         compilation, typed constants, and broader compile-time constant evaluation remain open;
     - `bd-aprs.9.10`: broader declaration/type surface;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;

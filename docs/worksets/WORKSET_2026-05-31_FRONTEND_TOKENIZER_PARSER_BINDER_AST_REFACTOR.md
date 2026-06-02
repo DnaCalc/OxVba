@@ -632,8 +632,9 @@ Required newly explicit delivery beads:
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
-  `Option Base 0/1`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
-  simple constants, enum constants, and same-statement constant expression substitution.
+  `Option Explicit` HIR-bound module flag plus route audit, `Option Base 0/1`,
+  `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, simple constants, enum
+  constants, and same-statement constant expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1029,8 +1030,9 @@ Candidate bead units:
   dynamic/fixed element access.
   Follow-up default-route correction allows `Option Base 0`, `Option Base 1`, default-equivalent
   `Option Compare Binary`, and `Option Compare Text` on otherwise completed lightweight HIR
-  sources, while leaving `Option Explicit`, `Option Compare Database`, and
-  `Option Private Module` outside the default route until their semantics are owned by HIR.
+  sources. Follow-up FE-8.5.e work preserves the `Option Explicit` HIR-bound module flag and adds
+  route-audit coverage; `Option Compare Database` and `Option Private Module` remain outside the
+  default route until their semantics are owned by HIR.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
   Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
@@ -1161,8 +1163,9 @@ Candidate bead units:
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
-  work has already been done: `Option Base`, `Option Compare Binary`, `Option Compare Text`
-  compare-mode bytecode, enum constants, and simple same-statement constant expressions.
+  work has already been done: `Option Explicit` HIR-bound module flag plus route audit,
+  `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, enum
+  constants, and simple same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:

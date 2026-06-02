@@ -292,7 +292,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
     }
     Ok(BoundModule {
         source: source.to_string(),
-        option_explicit: false,
+        option_explicit: collect_option_explicit(&lines),
         is_class_module: false,
         compare_mode,
         default_type_table: [BoundType::Variant; 26],
@@ -305,6 +305,12 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
         body: Vec::new(),
         procedures,
     })
+}
+
+fn collect_option_explicit(lines: &[String]) -> bool {
+    lines
+        .iter()
+        .any(|line| line.trim().eq_ignore_ascii_case("Option Explicit"))
 }
 
 fn lower_procedure(
@@ -3250,6 +3256,17 @@ mod tests {
         assert_eq!(shape.bounds[1].lower_bound, 1);
         assert_eq!(shape.bounds[1].upper_bound, 2);
         assert_eq!(shape.storage, crate::emit::ArrayStorageKind::StaticFixed);
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_option_explicit_flag() {
+        let source = "Option Explicit\nSub Main()\nDim x\nx = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+
+        assert!(bound.option_explicit);
     }
 
     #[test]

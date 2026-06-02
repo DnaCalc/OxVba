@@ -311,9 +311,10 @@ Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option
 compare collector and emits text comparison bytecode (`StringCompareMode::Text`) for string
-comparisons under `Option Compare Text`. Other `Option` forms remain outside the lightweight
-default route until HIR owns their semantics (`Option Explicit`, database compare mode, and module
-privacy).
+comparisons under `Option Compare Text`. Follow-up FE-8.5.e work also preserves the
+`Option Explicit` flag in the HIR-bound module and adds production route-audit coverage for an
+otherwise completed `Option Explicit` source. Other `Option` forms remain outside the lightweight
+default route until HIR owns their semantics (database compare mode and module privacy).
 
 ## Member Expression Continuation
 
