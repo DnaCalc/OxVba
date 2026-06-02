@@ -55,12 +55,21 @@ pub struct ProjectSymbolTables {
     default_members: BTreeMap<String, Vec<ProjectSymbolRoute>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectFieldArrayDescriptor {
+    pub owner: String,
+    pub field: String,
+    pub bounds: Vec<(i32, i32)>,
+    pub dynamic: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProjectSymbolIndex {
     pub symbols: SymbolModel,
     pub tables: ProjectSymbolTables,
     pub project_scope: ScopeId,
     pub module_scopes: BTreeMap<String, ScopeId>,
+    pub field_arrays: BTreeMap<(String, String), ProjectFieldArrayDescriptor>,
 }
 
 impl ProjectSymbolTables {
@@ -348,6 +357,15 @@ impl ProjectSymbolIndex {
         names.dedup();
         names
     }
+
+    pub fn resolve_field_array_descriptor(
+        &self,
+        owner: &str,
+        field: &str,
+    ) -> Option<&ProjectFieldArrayDescriptor> {
+        self.field_arrays
+            .get(&(fold_identifier(owner), fold_identifier(field)))
+    }
 }
 
 fn unique_route(routes: &[ProjectSymbolRoute]) -> Option<ProjectSymbolRoute> {
@@ -378,6 +396,7 @@ pub fn build_project_symbol_index_from_manifest(
 ) -> Result<ProjectSymbolIndex, SymbolModelError> {
     let mut symbols = SymbolModel::default();
     let mut tables = ProjectSymbolTables::default();
+    let mut field_arrays = BTreeMap::new();
     let project_scope = symbols.add_scope(
         ScopeKind::Project,
         symbols.global_scope(),
@@ -401,6 +420,7 @@ pub fn build_project_symbol_index_from_manifest(
             module,
             &mut symbols,
             &mut tables,
+            &mut field_arrays,
             project_scope,
             &mut module_scopes,
         )?;
@@ -411,6 +431,7 @@ pub fn build_project_symbol_index_from_manifest(
         tables,
         project_scope,
         module_scopes,
+        field_arrays,
     })
 }
 
@@ -418,6 +439,7 @@ fn index_module(
     module: &ModuleUnit,
     symbols: &mut SymbolModel,
     tables: &mut ProjectSymbolTables,
+    field_arrays: &mut BTreeMap<(String, String), ProjectFieldArrayDescriptor>,
     project_scope: ScopeId,
     module_scopes: &mut BTreeMap<String, ScopeId>,
 ) -> Result<(), SymbolModelError> {
@@ -455,6 +477,15 @@ fn index_module(
     let default_member_names = collect_default_member_attribute_names(&module.source);
     let declared_event_names = collect_declared_event_names(&module.source);
     let withevents_field_names = collect_withevents_field_names(&module.source);
+    for descriptor in collect_field_array_descriptors(&module_name, &module.source) {
+        field_arrays.insert(
+            (
+                fold_identifier(&descriptor.owner),
+                fold_identifier(&descriptor.field),
+            ),
+            descriptor,
+        );
+    }
 
     match collect_symbols_from_source_into_model(
         symbols,
@@ -604,6 +635,199 @@ fn collect_withevents_field_names(source: &str) -> BTreeMap<String, ()> {
         .into_iter()
         .filter_map(|line| withevents_field_name(&line).map(|name| (fold_identifier(name), ())))
         .collect()
+}
+
+fn collect_field_array_descriptors(owner: &str, source: &str) -> Vec<ProjectFieldArrayDescriptor> {
+    let option_base = module_option_base(source);
+    let mut descriptors = Vec::new();
+    let mut in_procedure = false;
+    let mut in_type_or_enum = false;
+    for line in normalize_source_lines(source) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if legacy_line_procedure_symbol_name(trimmed).is_some() {
+            in_procedure = true;
+            continue;
+        }
+        if lower == "end sub" || lower == "end function" || lower == "end property" {
+            in_procedure = false;
+            continue;
+        }
+        if lower.starts_with("type ")
+            || lower.starts_with("public type ")
+            || lower.starts_with("private type ")
+        {
+            in_type_or_enum = true;
+            continue;
+        }
+        if lower.starts_with("enum ")
+            || lower.starts_with("public enum ")
+            || lower.starts_with("private enum ")
+        {
+            in_type_or_enum = true;
+            continue;
+        }
+        if lower == "end type" || lower == "end enum" {
+            in_type_or_enum = false;
+            continue;
+        }
+        if in_procedure || in_type_or_enum {
+            continue;
+        }
+        let Some(rest) = field_array_declaration_payload(trimmed) else {
+            continue;
+        };
+        let rest_lower = rest.to_ascii_lowercase();
+        if rest_lower.starts_with("withevents ")
+            || rest_lower.starts_with("sub ")
+            || rest_lower.starts_with("function ")
+            || rest_lower.starts_with("property ")
+            || rest_lower.starts_with("event ")
+            || rest_lower.starts_with("declare ")
+            || rest_lower.starts_with("const ")
+        {
+            continue;
+        }
+        for segment in split_decl_segments(rest) {
+            if let Some(descriptor) = parse_field_array_descriptor(owner, segment, option_base) {
+                descriptors.push(descriptor);
+            }
+        }
+    }
+    descriptors
+}
+
+fn field_array_declaration_payload(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("dim ") {
+        return Some(trimmed[4..].trim_start());
+    }
+    if lower.starts_with("global ") {
+        return Some(trimmed[7..].trim_start());
+    }
+    let stripped = strip_access_modifiers(trimmed);
+    if stripped.len() == trimmed.len() {
+        return None;
+    }
+    let lower = stripped.to_ascii_lowercase();
+    if lower.starts_with("dim ") {
+        Some(stripped[4..].trim_start())
+    } else {
+        Some(stripped)
+    }
+}
+
+fn module_option_base(source: &str) -> i32 {
+    normalize_source_lines(source)
+        .into_iter()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            let lower = trimmed.to_ascii_lowercase();
+            let rest = lower.strip_prefix("option base ")?;
+            match rest.trim() {
+                "1" => Some(1),
+                "0" => Some(0),
+                _ => None,
+            }
+        })
+        .unwrap_or(0)
+}
+
+fn split_decl_segments(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                let segment = text[start..idx].trim();
+                if !segment.is_empty() {
+                    out.push(segment);
+                }
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    let segment = text[start..].trim();
+    if !segment.is_empty() {
+        out.push(segment);
+    }
+    out
+}
+
+fn parse_field_array_descriptor(
+    owner: &str,
+    segment: &str,
+    option_base: i32,
+) -> Option<ProjectFieldArrayDescriptor> {
+    let name_part = split_keyword_ci(segment, "as")
+        .map(|(lhs, _)| lhs.trim())
+        .unwrap_or(segment.trim());
+    let open = name_part.find('(')?;
+    let close = name_part.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let field = identifier_after_keyword(name_part[..open].trim(), 0)?.to_string();
+    let bounds_text = name_part[open + 1..close].trim();
+    let dynamic = bounds_text.is_empty();
+    let bounds = if dynamic {
+        Vec::new()
+    } else {
+        parse_field_array_bounds(bounds_text, option_base)?
+    };
+    Some(ProjectFieldArrayDescriptor {
+        owner: owner.to_string(),
+        field,
+        bounds,
+        dynamic,
+    })
+}
+
+fn parse_field_array_bounds(raw: &str, option_base: i32) -> Option<Vec<(i32, i32)>> {
+    let mut bounds = Vec::new();
+    for dim in split_decl_segments(raw) {
+        let (lower, upper) = if let Some((lhs, rhs)) = split_keyword_ci(dim, "to") {
+            (lhs.trim().parse().ok()?, rhs.trim().parse().ok()?)
+        } else {
+            (option_base, dim.trim().parse().ok()?)
+        };
+        if upper < lower {
+            return None;
+        }
+        bounds.push((lower, upper));
+    }
+    (!bounds.is_empty()).then_some(bounds)
+}
+
+fn split_keyword_ci<'a>(text: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let keyword = keyword.to_ascii_lowercase();
+    let mut start = 0usize;
+    while let Some(rel) = lower[start..].find(&keyword) {
+        let idx = start + rel;
+        let end = idx + keyword.len();
+        let before_ok = lower[..idx]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+        let after_ok = lower[end..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+        if before_ok && after_ok {
+            return Some((&text[..idx], &text[end..]));
+        }
+        start = end;
+    }
+    None
 }
 
 fn withevents_field_name(line: &str) -> Option<&str> {
@@ -978,6 +1202,104 @@ mod tests {
         assert_eq!(
             index.resolve_class_withevents_field_names("widget"),
             vec!["source".to_string()]
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_records_field_array_descriptors() {
+        let module = ModuleUnit {
+            module_name: "Widget".to_string(),
+            module_kind: ModuleKind::Class,
+            attributes: Default::default(),
+            source: "Option Base 1\nPrivate scores(2) As Long\nPublic grid(0 To 1, 3 To 4) As Integer\nPrivate dyn() As String\nPublic Sub Use()\nEnd Sub"
+                .to_string(),
+        };
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        let scores = index
+            .resolve_field_array_descriptor("Widget", "scores")
+            .expect("scores descriptor");
+        assert_eq!(scores.bounds, vec![(1, 2)]);
+        assert!(!scores.dynamic);
+        let grid = index
+            .resolve_field_array_descriptor("widget", "GRID")
+            .expect("grid descriptor");
+        assert_eq!(grid.bounds, vec![(0, 1), (3, 4)]);
+        assert!(!grid.dynamic);
+        let dyn_array = index
+            .resolve_field_array_descriptor("Widget", "dyn")
+            .expect("dynamic descriptor");
+        assert!(dyn_array.dynamic);
+        assert!(dyn_array.bounds.is_empty());
+    }
+
+    #[test]
+    fn project_symbol_index_records_procedural_module_array_fields() {
+        let module = ModuleUnit {
+            module_name: "MainModule".to_string(),
+            module_kind: ModuleKind::Procedural,
+            attributes: Default::default(),
+            source: "Private cache(0 To 2) As Variant\nPublic Sub Main()\nEnd Sub".to_string(),
+        };
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        let cache = index
+            .resolve_field_array_descriptor("MainModule", "cache")
+            .expect("module field array descriptor");
+        assert_eq!(cache.bounds, vec![(0, 2)]);
+        assert!(!cache.dynamic);
+    }
+
+    #[test]
+    fn project_symbol_index_does_not_record_local_or_udt_array_fields_as_module_fields() {
+        let module = ModuleUnit {
+            module_name: "MainModule".to_string(),
+            module_kind: ModuleKind::Procedural,
+            attributes: Default::default(),
+            source: "Private module_cache(0 To 2) As Variant\nType Record\nscores(1 To 2) As Long\nEnd Type\nPublic Sub Main()\nDim local(1 To 3) As Long\nEnd Sub".to_string(),
+        };
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        assert!(
+            index
+                .resolve_field_array_descriptor("MainModule", "module_cache")
+                .is_some()
+        );
+        assert!(
+            index
+                .resolve_field_array_descriptor("MainModule", "local")
+                .is_none(),
+            "procedure-local arrays must not be recorded as module field arrays"
+        );
+        assert!(
+            index
+                .resolve_field_array_descriptor("MainModule", "scores")
+                .is_none(),
+            "UDT array fields are not module field arrays"
         );
     }
 

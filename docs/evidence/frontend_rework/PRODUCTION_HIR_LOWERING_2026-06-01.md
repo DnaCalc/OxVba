@@ -284,6 +284,9 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
   the HIR route;
 - dynamic-array shape metadata now widens rank from observed runtime `ReDim` bounds, so a
   two-dimensional resize records rank `2` instead of the declaration seed rank; and
+- the front-end `ProjectSymbolIndex` now records project field-array descriptors for class and
+  procedural module fields, including dynamic fields, multidimensional fixed bounds, and omitted
+  lower bounds derived from `Option Base`; and
 - the route audit now includes one-dimensional dynamic-array `ReDim buf(length - 1)`,
   two-dimensional dynamic-array `ReDim grid(rows - 1, cols - 1)`, and explicit lower-bound
   `ReDim buf(1 To length - 1)` fixtures, plus read- and write-side dynamic-array element
@@ -294,8 +297,9 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 This is intentionally not full `ReDim` parity. Runtime lower bounds currently match the old
 production constraint: the lower side of `To` must be a static integer, while upper bounds may be
 expressions. Fixed-array declaration and `ReDim` alias materialization currently require static
-integer bounds and static integer element indices. Project/class array fields and broader
-project-owned array shapes remain broader HIR and project-semantics work.
+integer bounds and static integer element indices. Project/class array field shapes are now
+front-end indexed, but production lowering/metadata consumers do not yet use those descriptors for
+all project-owned array shapes; that remains broader HIR and project-semantics work.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
