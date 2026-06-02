@@ -596,8 +596,8 @@ production substitution path using `BoundExpr::CurrencyConst(i64)` / `LoadConstC
 `Single` carrier slice adds `BoundExpr::SingleConst(u32)` and serialized `LoadConstF32`, with
 bundle format v17 and VM execution coverage for `Const CTotal As Single = 1.5!`. Typed constant
 coercion, broader constant-name/expression parity, Date/Currency expression coercion beyond the
-covered literal path, locale-sensitive Date literal breadth, and full platform `LongPtr` semantics
-remain open.
+covered numeric arithmetic subset, locale-sensitive Date literal breadth, and full platform
+`LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -1043,9 +1043,15 @@ constant expressions:
   `Variant::from_f32(...)` rather than widened Double values. This bumps strict `OxBundle` format to
   v17 and covers direct HIR, default-route, route-audit, and VM execution paths for
   `Const CTotal As Single = 1.5!`.
+- An eighth focused evaluator pass extends declared `Currency` and `Date` module constants from
+  literal-only carriers to bounded numeric arithmetic expressions over `+`, `-`, `*`, `/`, `^`,
+  unary minus, and source-prior numeric constants. The result still materializes through the exact
+  carrier (`LoadConstCurrency` scaled `i64` or `LoadConstDate` f64 bits), with default-route,
+  route-audit, and VM execution coverage for `Const CAmount As Currency = 1.25@ * 2@ - 1.0@` and
+  `Const CStamp As Date = (CBase + 3.0) / 2.0`.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
-  beyond the covered literal path, locale-sensitive Date literal breadth, or names beyond
+  beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
   source-prior constants and the already handled enum/literal route, plus typed constant coercion
   and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
