@@ -434,6 +434,8 @@ fn lower_procedure(
             .unwrap_or_else(|| {
                 !matches!(source_mechanism, BoundParamSourceMechanism::ExplicitByVal)
             });
+        let default_value = parsed_param.and_then(|candidate| candidate.default_value);
+        let default_literal = parsed_param.and_then(|candidate| candidate.default_literal.clone());
         declarations.push(param_name.clone());
         declaration_types.insert(param_name.clone(), ty);
         bound_params.push(BoundParam {
@@ -442,7 +444,8 @@ fn lower_procedure(
             by_ref,
             param_array: parsed_param.is_some_and(|candidate| candidate.param_array),
             optional: parsed_param.is_some_and(|candidate| candidate.optional),
-            default_value: parsed_param.and_then(|candidate| candidate.default_value),
+            default_value,
+            default_literal,
             ty,
         });
     }

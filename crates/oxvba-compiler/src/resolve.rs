@@ -441,7 +441,24 @@ pub struct BoundParam {
     pub param_array: bool,
     pub optional: bool,
     pub default_value: Option<i32>,
+    pub default_literal: Option<BoundParamDefaultValue>,
     pub ty: BoundType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundParamDefaultValue {
+    ExplicitI32(i32),
+    ExplicitBool(bool),
+    ExplicitString(String),
+}
+
+impl BoundParamDefaultValue {
+    pub fn as_i32(&self) -> Option<i32> {
+        match self {
+            Self::ExplicitI32(value) => Some(*value),
+            Self::ExplicitBool(_) | Self::ExplicitString(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1888,15 +1905,18 @@ pub(crate) fn parse_proc_signature_with_module_constants(
                 } else {
                     (BoundParamSourceMechanism::Omitted, true, token)
                 };
-                let (decl_text, default_value) = if let Some((lhs, rhs)) = remainder.split_once('=')
-                {
-                    (
-                        lhs.trim(),
-                        Some(parse_param_default(rhs.trim(), module_constants)?),
-                    )
-                } else {
-                    (remainder, None)
-                };
+                let (decl_text, default_literal) =
+                    if let Some((lhs, rhs)) = remainder.split_once('=') {
+                        (
+                            lhs.trim(),
+                            Some(parse_param_default(rhs.trim(), module_constants)?),
+                        )
+                    } else {
+                        (remainder, None)
+                    };
+                let default_value = default_literal
+                    .as_ref()
+                    .and_then(BoundParamDefaultValue::as_i32);
 
                 let (name_text, explicit_ty) =
                     if let Some((lhs, rhs)) = split_keyword_ci(decl_text, "as") {
@@ -1953,6 +1973,7 @@ pub(crate) fn parse_proc_signature_with_module_constants(
                     param_array,
                     optional,
                     default_value,
+                    default_literal,
                     ty,
                 });
                 if param_array {
@@ -1989,9 +2010,43 @@ pub(crate) fn parse_proc_signature_with_module_constants(
     Some((name, params, return_type))
 }
 
-fn parse_param_default(text: &str, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {
+fn parse_param_default(
+    text: &str,
+    module_constants: &HashMap<String, BoundExpr>,
+) -> Option<BoundParamDefaultValue> {
     let expr = parse_expr(text.trim(), &HashMap::new())?;
-    static_i32_expr(&expr, module_constants)
+    static_param_default_expr(&expr, module_constants)
+}
+
+fn static_param_default_expr(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+) -> Option<BoundParamDefaultValue> {
+    static_param_default_expr_inner(expr, module_constants, &mut HashSet::new())
+}
+
+fn static_param_default_expr_inner(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<BoundParamDefaultValue> {
+    match expr {
+        BoundExpr::BoolConst(value) => Some(BoundParamDefaultValue::ExplicitBool(*value)),
+        BoundExpr::StringConst(value) => {
+            Some(BoundParamDefaultValue::ExplicitString(value.clone()))
+        }
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value =
+                static_param_default_expr_inner(const_expr, module_constants, resolving_constants);
+            resolving_constants.remove(name);
+            value
+        }
+        _ => static_i32_expr(expr, module_constants).map(BoundParamDefaultValue::ExplicitI32),
+    }
 }
 
 fn static_i32_expr(expr: &BoundExpr, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {

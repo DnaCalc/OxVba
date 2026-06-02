@@ -31,12 +31,13 @@ exclusion list has been narrowed by later FE-8.5 delivery. The lightweight defau
 admits known DefType directives, `Option Compare Binary`/`Text`/`Database` (with the current
 Database-as-binary runtime approximation), single-source `Option Private Module`, simple function
 returns, simple property declaration/read/write shapes, explicit/defaultless/integer-expression
-optional parameters, simple `ParamArray` packing, selected typed constants, and the documented
-Declare subsets once their HIR facts and route proof landed. Follow-up FE-8.5.e work also admits
-`Option Explicit` to the lightweight default route once HIR preserved the option flag and route proof
-covered an otherwise completed source. Class/object-local compatibility contexts, project-rewritten
-compilation, unsupported project property/default-member/COM rewrite shapes, and other explicitly
-tracked residual constructs still fall back rather than accepting partial HIR output.
+optional parameters plus literal string/Boolean optional defaults, simple `ParamArray` packing,
+selected typed constants, and the documented Declare subsets once their HIR facts and route proof
+landed. Follow-up FE-8.5.e work also admits `Option Explicit` to the lightweight default route once
+HIR preserved the option flag and route proof covered an otherwise completed source.
+Class/object-local compatibility contexts, project-rewritten compilation, unsupported project
+property/default-member/COM rewrite shapes, Date/Currency/coerced default expressions, and other
+explicitly tracked residual constructs still fall back rather than accepting partial HIR output.
 
 ## Checks
 
@@ -45,6 +46,7 @@ tracked residual constructs still fall back rather than accepting partial HIR ou
 - `cargo test -p oxvba-compiler compile_options_default_uses_explicit_legacy_helper_for_unsupported_residuals --quiet`
 - `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_string_bool_defaults_through_hir --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`

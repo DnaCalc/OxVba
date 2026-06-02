@@ -1310,6 +1310,8 @@ Candidate bead units:
   simple functions with return slots, optional parameters with simple explicit defaults and
   integer constant-expression defaults, including integer module-constant and enum-member
   references, through the default HIR route within the existing `ExplicitI32` metadata shape,
+  literal string and Boolean optional defaults through explicit optional-default descriptors,
+  default-route HIR metadata, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
   `Property Set` writes through HIR, simple non-indexed property declarations through the default
@@ -1407,8 +1409,9 @@ Candidate bead units:
   multi-parameter symbol collection so `As` type-reference tokens are not declared as parameters.
   The eligibility guard deliberately still excludes surfaces whose HIR semantics are partial,
   including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
-  member property writeback, non-integer default-expression metadata, and broader optional
-  call-entry combinations. The legacy baseline remains available through an explicit comparison
+  member property writeback, Date/Currency/coerced default-expression metadata beyond the covered
+  integer plus literal string/Boolean defaults, and broader optional call-entry combinations. The
+  legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
   cleanup moves the public `compile_with_options` HIR attempt off `syntax_bridge` and calls HIR
   production lowering directly; only default non-`frontend_v2` mode falls back to legacy compile on

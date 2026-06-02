@@ -2547,6 +2547,7 @@ mod tests {
                 param_array: false,
                 optional: false,
                 default_value: None,
+                default_literal: None,
                 ty: BoundType::Long,
             }],
         )]);
@@ -2575,6 +2576,7 @@ mod tests {
                 param_array: false,
                 optional: false,
                 default_value: None,
+                default_literal: None,
                 ty: BoundType::Variant,
             }],
         )]);

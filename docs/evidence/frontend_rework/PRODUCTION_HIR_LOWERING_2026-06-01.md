@@ -1129,9 +1129,18 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   same `ExplicitI32` descriptor contract.
 - A further focused route proof covers enum-member defaults as integer constants through the same
   HIR production path.
-- This deliberately does not claim string, Boolean, date, currency, non-integer module constant, or
-  broader expression-default metadata expansion. Those need a broader optional-default descriptor
-  decision before they can be production-routed honestly.
+- Follow-up descriptor work adds `OptionalDefaultValue::ExplicitString` and
+  `OptionalDefaultValue::ExplicitBool`, records literal `Optional ... As String = "..."` and
+  `Optional ... As Boolean = True/False` defaults during procedure signature parsing, preserves
+  those defaults through HIR production/default-route metadata, and binds omitted package-VM
+  arguments to real string/Boolean `Variant` values.
+- The same follow-up found a front-end symbol-model miss where a later parameter following a string
+  default could be absent from the HIR parameter list even though the signature parser saw it.
+  Procedure symbol collection now reconciles missing parameter symbols against the signature parser
+  instead of letting the default-route gate reject the source.
+- This deliberately does not claim Date, Currency, non-literal string/Boolean module constants,
+  typed coercion of default expressions, or broader expression-default metadata expansion. Those
+  remain FE-8.5.f residuals.
 
 ## Checks
 
@@ -1142,6 +1151,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_module_constant_defaults_through_hir --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_params_with_enum_constant_defaults --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_enum_constant_defaults_through_hir --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_string_bool_defaults_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_boolean_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_integer_const --quiet`

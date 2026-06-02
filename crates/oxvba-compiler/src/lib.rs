@@ -1034,6 +1034,53 @@ mod tests {
         assert_has_dispatch_member(out, expected_token, expected_name);
     }
 
+    fn optional_default_param_debug(source: &str) -> String {
+        let typed = match super::frontend_type_hooks::collect_type_hooks_from_source("Main", source)
+        {
+            Ok(typed) => typed,
+            Err(err) => return format!("typed-HIR error: {err:?}"),
+        };
+        let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+        let default_type_table = resolve::collect_default_type_table(&lines);
+        let module_constants = resolve::collect_module_constants(&lines);
+        let mut rows = Vec::new();
+        for decl_id in &typed.module.declarations {
+            let Some(decl) = typed.module.arenas.decl(*decl_id) else {
+                continue;
+            };
+            let super::frontend_hir::HirDeclKind::Procedure { params, .. } = &decl.kind else {
+                continue;
+            };
+            let signature_line = super::source_line_for_span(source, decl.cst.span.start);
+            let parsed = super::proc_kind_for_signature_line(signature_line).and_then(|kind| {
+                resolve::parse_proc_signature_with_module_constants(
+                    signature_line,
+                    kind,
+                    &default_type_table,
+                    &module_constants,
+                )
+            });
+            let hir_names = params
+                .iter()
+                .filter_map(|param| {
+                    typed
+                        .module
+                        .symbols
+                        .symbol(*param)
+                        .and_then(|symbol| typed.module.symbols.name(symbol.name))
+                        .map(|name| name.folded.clone())
+                })
+                .collect::<Vec<_>>();
+            let parsed_names = parsed
+                .map(|(_, params, _)| params.into_iter().map(|param| param.name).collect())
+                .unwrap_or_else(Vec::new);
+            rows.push(format!(
+                "line={signature_line:?}; hir={hir_names:?}; parsed={parsed_names:?}"
+            ));
+        }
+        rows.join("; ")
+    }
+
     #[test]
     fn compile_simple_module() {
         let out = compile("Sub Main()\nEnd Sub").expect("compile should succeed");
@@ -1531,6 +1578,66 @@ mod tests {
                 missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
             }
         ));
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_optional_string_bool_defaults_through_hir() {
+        let source = "Sub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let parsed = oxvba_syntax::parse(source);
+        assert!(
+            parsed.errors().is_empty(),
+            "syntax parser should accept string/Boolean optional defaults: {:?}",
+            parsed.errors()
+        );
+        assert!(
+            !super::source_has_hir_parameter_signature_mismatch(source),
+            "typed HIR parameter symbols should match parsed string/Boolean default parameters: {}",
+            optional_default_param_debug(source)
+        );
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "string and Boolean optional defaults should stay eligible for default HIR"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support string/Boolean defaults");
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route string/Boolean defaults through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for string/Boolean defaults"
+        );
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(use_metadata.signature.parameters[0].default_value, None);
+        assert!(matches!(
+            &use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitString(value),
+                missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
+            } if value == "ready"
+        ));
+        assert_eq!(use_metadata.signature.parameters[1].default_value, None);
+        assert!(matches!(
+            use_metadata.signature.parameters[1].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitBool(true),
+                missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
+            }
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.arguments.iter().any(|arg| {
+                    arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitString("ready".to_string()))
+                }) && call_site.arguments.iter().any(|arg| {
+                    arg.optional_default == Some(OptionalDefaultValue::ExplicitBool(true))
+                })
+            }),
+            "expected omitted optional string/Boolean argument metadata: {main:#?}"
+        );
     }
 
     #[test]

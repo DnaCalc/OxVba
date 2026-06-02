@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::frontend_structural_intrinsics::ALL_STRUCTURAL_INTRINSICS;
+use crate::resolve;
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -405,11 +406,158 @@ fn collect_procedure_symbols(
             }
         }
     }
+    reconcile_signature_parameter_symbols(model, module_name, procedure_scope, node)?;
 
     if let Some(body) = node.body_block() {
         collect_symbols_from_node(model, module_name, procedure_scope, body)?;
     }
     Ok(())
+}
+
+fn reconcile_signature_parameter_symbols(
+    model: &mut SymbolModel,
+    module_name: &str,
+    procedure_scope: ScopeId,
+    node: SyntaxNode<'_>,
+) -> Result<(), SymbolModelError> {
+    let Some(kind) = resolve_proc_kind(node) else {
+        return Ok(());
+    };
+    let node_text = node.text();
+    let signature_line = node_text
+        .lines()
+        .next()
+        .map(str::trim_end)
+        .unwrap_or(node_text.as_str());
+    let signature_without_defaults = strip_parameter_defaults(signature_line);
+    let default_type_table =
+        resolve::collect_default_type_table(&[signature_without_defaults.clone()]);
+    let Some((_, params, _)) =
+        resolve::parse_proc_signature(&signature_without_defaults, kind, &default_type_table)
+    else {
+        return Ok(());
+    };
+    let node_start = node.text_range().0 as usize;
+    for param in params {
+        if model
+            .find_in_scope(procedure_scope, SymbolNamespace::Parameter, &param.name)?
+            .is_some()
+        {
+            continue;
+        }
+        model.declare_symbol(
+            procedure_scope,
+            SymbolNamespace::Parameter,
+            &param.name,
+            signature_param_provenance(module_name, signature_line, node_start, &param.name),
+        )?;
+    }
+    Ok(())
+}
+
+fn strip_parameter_defaults(signature_line: &str) -> String {
+    let Some(open) = signature_line.find('(') else {
+        return signature_line.to_string();
+    };
+    let Some(close) = signature_line.rfind(')') else {
+        return signature_line.to_string();
+    };
+    if close <= open {
+        return signature_line.to_string();
+    }
+    let mut sanitized = String::with_capacity(signature_line.len());
+    sanitized.push_str(&signature_line[..open + 1]);
+    let mut chars = signature_line[open + 1..close].chars();
+    let mut skipping_default = false;
+    let mut in_string = false;
+    while let Some(ch) = chars.next() {
+        if skipping_default {
+            match ch {
+                '"' => {
+                    in_string = !in_string;
+                }
+                ',' if !in_string => {
+                    sanitized.push(ch);
+                    skipping_default = false;
+                }
+                _ => {}
+            }
+            continue;
+        }
+        if ch == '=' {
+            skipping_default = true;
+            continue;
+        }
+        sanitized.push(ch);
+    }
+    sanitized.push_str(&signature_line[close..]);
+    sanitized
+}
+
+fn resolve_proc_kind(node: SyntaxNode<'_>) -> Option<resolve::ProcKind> {
+    match node.kind() {
+        SyntaxKind::SubDecl => Some(resolve::ProcKind::Sub),
+        SyntaxKind::FunctionDecl => Some(resolve::ProcKind::Function),
+        SyntaxKind::PropertyDecl => {
+            let normalized = node
+                .text()
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_ascii_lowercase();
+            if normalized.contains(" get ") {
+                Some(resolve::ProcKind::PropertyGet)
+            } else if normalized.contains(" let ") {
+                Some(resolve::ProcKind::PropertyLet)
+            } else if normalized.contains(" set ") {
+                Some(resolve::ProcKind::PropertySet)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn signature_param_provenance(
+    module_name: &str,
+    signature_line: &str,
+    node_start: usize,
+    param_name: &str,
+) -> SourceProvenance {
+    let start = find_identifier_start(signature_line, param_name).unwrap_or(0);
+    SourceProvenance {
+        module_name: Some(module_name.to_string()),
+        span: Some(FrontendSourceSpan {
+            start: node_start + start,
+            end: node_start + start + param_name.len(),
+        }),
+    }
+}
+
+fn find_identifier_start(text: &str, name: &str) -> Option<usize> {
+    text.char_indices()
+        .filter(|(_, ch)| ch.is_ascii_alphabetic() || *ch == '_')
+        .map(|(index, _)| index)
+        .find(|index| {
+            let Some(candidate) = text[*index..].get(..name.len()) else {
+                return false;
+            };
+            if !candidate.eq_ignore_ascii_case(name) {
+                return false;
+            }
+            let before_ok = *index == 0
+                || text[..*index]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+            let after_ok = text[*index + name.len()..]
+                .chars()
+                .next()
+                .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+            before_ok && after_ok
+        })
 }
 
 fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {

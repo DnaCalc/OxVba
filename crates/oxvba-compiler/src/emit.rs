@@ -18,8 +18,8 @@ use crate::{
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause,
         BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundExpr, BoundExternalDecl,
-        BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
-        CompareOp, LogicalBinOp,
+        BoundModule, BoundParam, BoundParamDefaultValue, BoundParamSourceMechanism, BoundProcedure,
+        BoundStmt, BoundType, CompareOp, LogicalBinOp,
     },
 };
 
@@ -843,6 +843,8 @@ pub enum OptionalParameterDescriptor {
 pub enum OptionalDefaultValue {
     Unknown,
     ExplicitI32(i32),
+    ExplicitBool(bool),
+    ExplicitString(String),
     DeclaredTypeDefault,
     VariantMissingError448,
     ImplementationDefined,
@@ -1375,8 +1377,16 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
 }
 
 fn optional_default_value_for_param(param: &BoundParam) -> OptionalDefaultValue {
-    match param.default_value {
-        Some(value) => OptionalDefaultValue::ExplicitI32(value),
+    match &param.default_literal {
+        Some(BoundParamDefaultValue::ExplicitI32(value)) => {
+            OptionalDefaultValue::ExplicitI32(*value)
+        }
+        Some(BoundParamDefaultValue::ExplicitBool(value)) => {
+            OptionalDefaultValue::ExplicitBool(*value)
+        }
+        Some(BoundParamDefaultValue::ExplicitString(value)) => {
+            OptionalDefaultValue::ExplicitString(value.clone())
+        }
         None if param.ty == BoundType::Variant => OptionalDefaultValue::VariantMissingError448,
         None => OptionalDefaultValue::DeclaredTypeDefault,
     }
@@ -1418,12 +1428,8 @@ fn optional_descriptor_for_param(param: &BoundParam) -> OptionalParameterDescrip
     if !param.optional {
         return OptionalParameterDescriptor::Required;
     }
-    let default_value = match param.default_value {
-        Some(value) => OptionalDefaultValue::ExplicitI32(value),
-        None if param.ty == BoundType::Variant => OptionalDefaultValue::VariantMissingError448,
-        None => OptionalDefaultValue::DeclaredTypeDefault,
-    };
-    let missing_state = if param.default_value.is_none() && param.ty == BoundType::Variant {
+    let default_value = optional_default_value_for_param(param);
+    let missing_state = if param.default_literal.is_none() && param.ty == BoundType::Variant {
         OptionalMissingStatePolicy::PreserveMissingArgumentState
     } else {
         OptionalMissingStatePolicy::AssignDefaultLocal
@@ -2339,6 +2345,29 @@ fn collect_signature_value_state_descriptors(
                     ValueStateSource::OptionalParameter,
                     (parameter.slot, None, Some(parameter.name.clone())),
                     format!("default=ExplicitI32({value}); missing-state={missing_state:?}"),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::ExplicitBool(value) => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!("default=ExplicitBool({value}); missing-state={missing_state:?}"),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::ExplicitString(value) => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!(
+                        "default=ExplicitString(len={}); missing-state={missing_state:?}",
+                        value.len()
+                    ),
                     ordinal,
                 ));
             }
@@ -10936,10 +10965,32 @@ fn emit_err_member_value(name: &str, dst: usize, instructions: &mut Vec<Instruct
 }
 
 fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<Instruction>) {
-    instructions.push(Instruction::LoadConstI32 {
-        slot: dst,
-        value: param.default_value.unwrap_or(0),
-    });
+    match &param.default_literal {
+        Some(BoundParamDefaultValue::ExplicitI32(value)) => {
+            instructions.push(Instruction::LoadConstI32 {
+                slot: dst,
+                value: *value,
+            });
+        }
+        Some(BoundParamDefaultValue::ExplicitBool(value)) => {
+            instructions.push(Instruction::LoadConstBool {
+                slot: dst,
+                value: *value,
+            });
+        }
+        Some(BoundParamDefaultValue::ExplicitString(value)) => {
+            instructions.push(Instruction::LoadConstString {
+                slot: dst,
+                value: value.clone(),
+            });
+        }
+        None => {
+            instructions.push(Instruction::LoadConstI32 {
+                slot: dst,
+                value: 0,
+            });
+        }
+    }
 }
 
 fn map_call_args_for_emit<'a>(

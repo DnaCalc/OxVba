@@ -65,6 +65,20 @@ fn string_concat_and_len() {
 }
 
 #[test]
+fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Sub Main()\nDim s As String\nDim b As Boolean\nCall Fill(s, b)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\ntarget = text\nflagTarget = flag\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_string(BStr::from("ready")),
+            Variant::from_bool(true),
+        ]
+    );
+}
+
+#[test]
 fn string_functions_left_mid_ucase() {
     let snap = run(
         "Sub Main()\nDim a As String\nDim b As String\na = Left$(\"hello\", 3)\nb = UCase$(Mid$(\"hello\", 2, 2))\nEnd Sub",
