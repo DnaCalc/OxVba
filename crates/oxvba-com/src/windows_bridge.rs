@@ -3,7 +3,7 @@
 use crate::{
     ComBinding, ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeFailure,
     ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor, ComObjectToken,
-    ComSubscriptionToken, DynamicCallRequest, DynamicMemberSelector, RawIDispatch,
+    ComSubscriptionToken, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, RawIDispatch,
     ReleasedWindowsComObject, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibMetadataCacheState,
     TypeLibResolveRequest, TypeLibResolvedIdentity, WindowsComClientState,
     activate_runtime_dispatch, activate_runtime_object_binding_shared,
@@ -542,6 +542,50 @@ impl WindowsComBridge {
             } else {
                 Vec::new()
             };
+            match request.call_kind_hint {
+                Some(DynamicCallKind::PropertyLet) | Some(DynamicCallKind::PropertySet) => {
+                    let value_arg_count = args.len().saturating_sub(1);
+                    let mut put_named_arg_dispids =
+                        if args[..value_arg_count].iter().any(|arg| arg.name.is_some()) {
+                            unsafe {
+                                self.resolve_named_argument_dispids(
+                                    dispatch,
+                                    member_name,
+                                    &args[..value_arg_count],
+                                )
+                            }
+                            .map_err(WindowsComBridgeDispatchError::Message)?
+                        } else {
+                            Vec::new()
+                        };
+                    put_named_arg_dispids.push(crate::COM_DISPID_PROPERTYPUT);
+                    let (flags, label) = match request.call_kind_hint {
+                        Some(DynamicCallKind::PropertySet) => (
+                            windows_sys::Win32::System::Com::DISPATCH_PROPERTYPUTREF,
+                            "property-putref",
+                        ),
+                        _ => (
+                            windows_sys::Win32::System::Com::DISPATCH_PROPERTYPUT,
+                            "property-put",
+                        ),
+                    };
+                    return unsafe {
+                        invoke_dispatch_variant_with_shared_state(
+                            dispatch.cast(),
+                            dispid,
+                            flags,
+                            args.as_slice(),
+                            put_named_arg_dispids.as_slice(),
+                            label,
+                            &binding.prog_id_name,
+                            &self.state,
+                        )
+                    }
+                    .map(Some)
+                    .map_err(WindowsComBridgeDispatchError::InvokeFailure);
+                }
+                _ => {}
+            }
             // Late-bound name dispatch cannot know whether `member_name` is a method or a
             // property accessor, so start with the combined get-or-call flag used by OLE
             // Automation clients. Some servers, including Excel for parameterized properties

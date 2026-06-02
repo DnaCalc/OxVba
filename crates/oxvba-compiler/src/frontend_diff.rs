@@ -502,6 +502,23 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             rationale: String::new(),
             close_condition: String::new(),
         },
+        FrontendCorpusFixture {
+            name: "excel_oracle_range_value_put_smoke".to_string(),
+            fixture_path: "conformance/com/office/excel/excel_range_value_put_smoke.bas"
+                .to_string(),
+            class: FrontendCorpusClass::ExcelOracle,
+            source: Some(
+                include_str!(
+                    "../../../conformance/com/office/excel/excel_range_value_put_smoke.bas"
+                )
+                .to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
     ]
 }
 
@@ -2408,7 +2425,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.route_checked_count, 15, "{report:#?}");
+        assert_eq!(report.route_checked_count, 16, "{report:#?}");
         assert_eq!(report.skipped_count, 0, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
@@ -2453,7 +2470,7 @@ mod tests {
                 "{row:#?}"
             );
         }
-        for row in &report.rows[13..=17] {
+        for row in &report.rows[13..=18] {
             assert_eq!(row.status, FrontendCorpusRowStatus::RouteChecked);
             assert!(
                 row.route_evidence
@@ -2583,14 +2600,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert_eq!(report.fallback_residuals().len(), 0, "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 0, "{report:#?}");
-        assert_eq!(report.rows.len(), 18, "{report:#?}");
+        assert_eq!(report.rows.len(), 19, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            18,
+            19,
             "{report:#?}"
         );
         assert_eq!(
@@ -2687,6 +2704,11 @@ mod tests {
         }));
         assert!(report.rows.iter().any(|row| {
             row.name == "excel_oracle_find_null_result_smoke"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("Excel oracle source fixture")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "excel_oracle_range_value_put_smoke"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("Excel oracle source fixture")
         }));

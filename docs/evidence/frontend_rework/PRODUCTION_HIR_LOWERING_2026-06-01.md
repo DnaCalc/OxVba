@@ -1072,7 +1072,8 @@ Excel oracle broadening attempt:
   explicit `DispatchInvoke(sheet, "Range", "A1")` range object access for live Excel by retrying
   strict dynamic-name parameterized properties as `DISPATCH_PROPERTYGET`. Follow-up Excel oracle
   work separately proved named-argument worksheet-add dispatch and null `Cells.Find` results against
-  live Excel. Excel property-put and range value/default-member mutation lanes remain open.
+  live Excel, and scoped `Range.Value` property-put after the COM dynamic-name bridge honored
+  property-put hints. Range default-member mutation and broader Excel mutation lanes remain open.
 
 ## Indexed Property Default Route
 

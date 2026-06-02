@@ -139,6 +139,14 @@ registered COM bindings. The dedicated
 `Cells.Find` case through live Excel execution with:
 `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_find_null_result_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
 
+Continuation update: scoped late-bound Excel property-put is now live-proven for `Range.Value`.
+Dynamic name dispatch now honors `PropertyLet`/`PropertySet` call-kind hints by invoking
+`DISPATCH_PROPERTYPUT`/`DISPATCH_PROPERTYPUTREF` with `DISPID_PROPERTYPUT` instead of the read-side
+get-or-call path. The new `conformance/com/office/excel/excel_range_value_put_smoke.bas` fixture
+writes `cell.Value = "needle"` and observes the mutation through named-argument `Cells.Find` with:
+`cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_range_value_put_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
+This does not claim default-member mutation or broader Excel object-model mutation parity.
+
 Continuation update: FE-9.8 bundle context facts now have source-backed seed-corpus proof. The
 test `bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows` walks the
 frontend rework seed corpus and asserts every row with inline source produces package/module facts
@@ -200,6 +208,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_dispatchinvoke_range_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_named_argument_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_find_null_result_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
+- `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_range_value_put_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -249,8 +258,9 @@ The audit result records completed reopened delivery work and remaining broader 
   `DispatchInvoke` object-access gap is now live-proven through the new Excel fixture after the COM
   bridge property-get retry. Named-argument Excel dispatch is now live-proven through
   `Worksheets.Add After:=sheet`; null COM object result handling is now live-proven through the
-  no-match `Cells.Find` fixture. Range value/default-member mutation, property-put, and broader
-  object-model parity remain open.
+  no-match `Cells.Find` fixture. Scoped `Range.Value` property-put is now live-proven through
+  dynamic-name `PropertyLet`; range default-member mutation and broader object-model parity remain
+  open.
 - Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
   The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
   accepted-row production route.

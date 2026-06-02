@@ -24,6 +24,8 @@ Current fixtures:
   After:=sheet`.
 - `excel_find_null_result_smoke.bas`: metadata-sensitive named-argument
   `Cells.Find` call that returns Excel `Nothing` when no cell matches.
+- `excel_range_value_put_smoke.bas`: late-bound `Range("A1").Value`
+  property-put followed by named-argument `Cells.Find` observation.
 - `excel_unsupported_event_sink_boundary.bas`: deterministic V0.2 unsupported
   row for real `Excel.Application` event sinks beyond controlled TestEventServer
   coverage.
