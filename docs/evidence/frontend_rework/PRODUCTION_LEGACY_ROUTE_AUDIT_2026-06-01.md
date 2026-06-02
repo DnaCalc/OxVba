@@ -111,8 +111,20 @@ no-keyword `StructuralIntrinsicCallWithArgs` as an expression statement, the reg
 arguments survive to `IntrinsicDispatchInvokeHost`, and the production route audit includes a
 no-keyword statement-form named `DispatchInvoke` fixture. `Call DispatchInvoke(...)` remains on the
 compatibility route where project/imported-COM rewrites need to attach early-bound COM metadata.
-The explicit `DispatchInvoke(sheet, "Range", "A1")` adapter fault remains open and is not
-reclassified by this compiler-side fix.
+That compiler-side fix did not by itself reclassify the explicit
+`DispatchInvoke(sheet, "Range", "A1")` adapter fault.
+
+Continuation update: the explicit live Excel Range `DispatchInvoke` adapter fault is now closed for
+range object access. The COM dynamic-name bridge still tries the OLE Automation combined
+method/property-get get-or-call dispatch first, then retries `DISPATCH_PROPERTYGET` for strict
+parameterized properties such as Excel `Range("A1")`; if the retry also fails, diagnostics preserve
+the original combined-dispatch failure. The new
+`conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas` fixture proves `Workbooks`,
+`Workbooks.Add`, `Worksheets(1)`, and `DispatchInvoke(sheet, "Range", "A1")` through live Excel
+execution with:
+`cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_dispatchinvoke_range_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
+This does not claim named-argument Excel dispatch, range value/default-member mutation, property-put,
+or broader Excel object-model parity.
 
 Continuation update: FE-9.8 bundle context facts now have source-backed seed-corpus proof. The
 test `bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows` walks the
@@ -172,6 +184,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_statement_form_dispatchinvoke_arguments --quiet`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_range_object_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
+- `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_dispatchinvoke_range_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -217,8 +230,10 @@ The audit result records completed reopened delivery work and remaining broader 
   no-keyword statement-form `DispatchInvoke` and explicit `DispatchInvoke(sheet, "Range", "A1")`
   were not ready to be claimed at first. The compiler-side no-keyword statement-form
   `DispatchInvoke` gap is now route-audited through HIR production, while `Call DispatchInvoke(...)`
-  remains on the compatibility route for early-bound COM metadata; explicit Range `DispatchInvoke`,
-  range value/default-member mutation, and property-put remain open.
+  remains on the compatibility route for early-bound COM metadata. The explicit Range
+  `DispatchInvoke` object-access gap is now live-proven through the new Excel fixture after the COM
+  bridge property-get retry. Range value/default-member mutation, property-put, named-argument Excel
+  dispatch, and broader object-model parity remain open.
 - Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
   The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
   accepted-row production route.

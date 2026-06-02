@@ -15,6 +15,10 @@ Current fixtures:
   worksheet indexing, native `Range("A1")` object access, workbook close, and
   explicit application cleanup. Range value/default-member mutation remains a
   separate open oracle lane.
+- `excel_dispatchinvoke_range_smoke.bas`: the same workbook/worksheet/range
+  object path through explicit `DispatchInvoke(..., "member", ...)` calls,
+  including `DispatchInvoke(sheet, "Range", "A1")`. Range value/default-member
+  mutation remains a separate open oracle lane.
 - `excel_named_argument_smoke.bas`: metadata-sensitive named-argument call
   shape over an Excel object-model member.
 - `excel_unsupported_event_sink_boundary.bas`: deterministic V0.2 unsupported

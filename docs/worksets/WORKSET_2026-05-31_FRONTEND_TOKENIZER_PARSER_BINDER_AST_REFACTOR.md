@@ -685,12 +685,15 @@ Required newly explicit delivery beads:
   `Quit`; the selected route audit now has no skipped residual rows. The first broader
   workbook/range attempt exposed two remaining
   gaps rather than closing them: HIR did not yet lower statement-form `DispatchInvoke` with
-  arguments, and explicit live Excel `DispatchInvoke(sheet, "Range", "A1")` currently faults
+  arguments, and explicit live Excel `DispatchInvoke(sheet, "Range", "A1")` faulted
   through the `DispatchInvoke` adapter. Follow-up HIR lowering work now accepts no-keyword
   statement-form `DispatchInvoke` with named arguments and adds it to the production route audit,
   while `Call DispatchInvoke(...)` remains on the compatibility route for early-bound COM metadata.
-  The explicit live Excel `DispatchInvoke(sheet, "Range", "A1")` adapter fault, range value/
-  default-member mutation, and property-put lanes remain open. Language-service
+  Follow-up COM bridge work now keeps the OLE Automation combined get-or-call dispatch as the first
+  attempt and retries property-get for strict parameterized properties; the new
+  `excel_dispatchinvoke_range_smoke.bas` fixture passes live Excel execution for
+  `DispatchInvoke(sheet, "Range", "A1")`. Range value/default-member mutation, property-put, and
+  named-argument Excel dispatch lanes remain open. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
@@ -713,8 +716,9 @@ Required newly explicit delivery beads:
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover
   deeper cross-workspace language-service route runners beyond those seed shapes and the current
   imported-typelib projections, and broaden live
-  Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup into explicit
-  Range `DispatchInvoke`, named-argument dispatch, property-put/default-member mutation, and other
+  Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup and explicit
+  Range `DispatchInvoke` object access into named-argument dispatch,
+  property-put/default-member mutation, and other
   environment-dependent behavior beyond source-route
   classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.

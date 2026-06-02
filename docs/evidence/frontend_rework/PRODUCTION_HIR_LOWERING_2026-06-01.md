@@ -1068,9 +1068,10 @@ Excel oracle broadening attempt:
   fixture in addition to the assignment-form named `DispatchInvoke` fixture.
 - `Call DispatchInvoke(...)` remains outside this HIR route so project/imported-COM compatibility
   rewrites can still attach early-bound COM metadata where that route remains load-bearing.
-- This closes the compiler-side HIR residual only. Explicit
-  `DispatchInvoke(sheet, "Range", "A1")`, Excel property-put, and range value/default-member
-  mutation lanes remain open.
+- This closes the compiler-side HIR residual only. Follow-up COM bridge work separately closed
+  explicit `DispatchInvoke(sheet, "Range", "A1")` range object access for live Excel by retrying
+  strict dynamic-name parameterized properties as `DISPATCH_PROPERTYGET`. Excel property-put,
+  named-argument dispatch, and range value/default-member mutation lanes remain open.
 
 ## Indexed Property Default Route
 

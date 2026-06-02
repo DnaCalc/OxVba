@@ -543,12 +543,11 @@ impl WindowsComBridge {
                 Vec::new()
             };
             // Late-bound name dispatch cannot know whether `member_name` is a method or a
-            // property accessor, so issue the combined DISPATCH_METHOD|DISPATCH_PROPERTYGET
-            // and let the server resolve it in a single call. Strict servers (DAO/Jet)
-            // reject a method invoked as a bare property-get (and vice-versa); a one-flag
-            // probe with retry only masks the first failure. The combined flag is the OLE
-            // Automation convention real clients — including VBA — rely on for get-or-call.
-            unsafe {
+            // property accessor, so start with the combined get-or-call flag used by OLE
+            // Automation clients. Some servers, including Excel for parameterized properties
+            // such as Range("A1"), reject the combined flag but accept a property-get invoke.
+            // If the retry fails, keep the original combined failure as the diagnostic.
+            let combined = unsafe {
                 invoke_dispatch_variant_with_shared_state(
                     dispatch.cast(),
                     dispid,
@@ -560,6 +559,22 @@ impl WindowsComBridge {
                     &binding.prog_id_name,
                     &self.state,
                 )
+            };
+            match combined {
+                Ok(value) => Ok(value),
+                Err(combined_failure) => unsafe {
+                    invoke_dispatch_variant_with_shared_state(
+                        dispatch.cast(),
+                        dispid,
+                        windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
+                        args.as_slice(),
+                        named_arg_dispids.as_slice(),
+                        "property-get",
+                        &binding.prog_id_name,
+                        &self.state,
+                    )
+                    .or_else(|_| Err(combined_failure))
+                },
             }
         };
         invoke_result
