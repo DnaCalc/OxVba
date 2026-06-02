@@ -339,6 +339,28 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             close_condition: String::new(),
         },
         FrontendCorpusFixture {
+            name: "integration_reference_shadow_intp004".to_string(),
+            fixture_path: "conformance/integration/projects/INTP-004".to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
+            name: "integration_multi_reference_intp019".to_string(),
+            fixture_path: "conformance/integration/projects/INTP-019".to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
             name: "excel_oracle_residual".to_string(),
             fixture_path:
                 "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
@@ -573,6 +595,12 @@ fn host_project_corpus_route_row(
     if fixture.name == "integration_reference_project_intp003" {
         return intp003_host_project_route_row(fixture);
     }
+    if fixture.name == "integration_reference_shadow_intp004" {
+        return intp004_host_project_route_row(fixture);
+    }
+    if fixture.name == "integration_multi_reference_intp019" {
+        return intp019_host_project_route_row(fixture);
+    }
     let Some(source) = source else {
         return skipped_corpus_route_row(fixture, "host project fixture has no route runner");
     };
@@ -760,6 +788,235 @@ fn intp003_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
             class: fixture.class,
             status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
             evidence: format!("INTP-003 project compile failed: {err}"),
+        },
+    }
+}
+
+fn intp004_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusRouteRow {
+    let main = match module_unit_from_source(
+        "Main",
+        ModuleKind::Procedural,
+        include_str!("../../../conformance/integration/projects/INTP-004/main/Main.proc.bas"),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-004 Main module parse failed: {err}"),
+            };
+        }
+    };
+    let ping = match module_unit_from_source(
+        "Ping",
+        ModuleKind::Procedural,
+        include_str!(
+            "../../../conformance/integration/projects/INTP-004/references/LibShadow/Ping.proc.bas"
+        ),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-004 LibShadow Ping module parse failed: {err}"),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: "AlphaShadow".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main],
+        references: vec![crate::ProjectReference {
+            referenced_project_name: "LibShadow".to_string(),
+            reference_kind: crate::ReferenceKind::Project,
+        }],
+        reference_projects: vec![crate::ReferencedProjectManifest {
+            project_name: "LibShadow".to_string(),
+            modules: vec![ping],
+        }],
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(compiled) => {
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            if !lowered.contains("x = pmr_alphashadow_main_ping()") {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "INTP-004 active-project shadowing rewrite was not preserved: {lowered}"
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "INTP-004 active-project shadowing reference fixture compiled through HIR full-source project boundary".to_string(),
+            }
+        }
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("INTP-004 project compile failed: {err}"),
+        },
+    }
+}
+
+fn intp019_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusRouteRow {
+    let main = match module_unit_from_source(
+        "Main",
+        ModuleKind::Procedural,
+        include_str!("../../../conformance/integration/projects/INTP-019/main/Main.proc.bas"),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-019 Main module parse failed: {err}"),
+            };
+        }
+    };
+    let lib_a = match module_unit_from_source(
+        "Util",
+        ModuleKind::Procedural,
+        include_str!(
+            "../../../conformance/integration/projects/INTP-019/references/LibA/Util.proc.bas"
+        ),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-019 LibA Util module parse failed: {err}"),
+            };
+        }
+    };
+    let lib_b = match module_unit_from_source(
+        "Util",
+        ModuleKind::Procedural,
+        include_str!(
+            "../../../conformance/integration/projects/INTP-019/references/LibB/Util.proc.bas"
+        ),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-019 LibB Util module parse failed: {err}"),
+            };
+        }
+    };
+    let lib_c = match module_unit_from_source(
+        "Calc",
+        ModuleKind::Procedural,
+        include_str!(
+            "../../../conformance/integration/projects/INTP-019/references/LibC/Calc.proc.bas"
+        ),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-019 LibC Calc module parse failed: {err}"),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: "AlphaMultiRef".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main],
+        references: vec![
+            crate::ProjectReference {
+                referenced_project_name: "LibA".to_string(),
+                reference_kind: crate::ReferenceKind::Project,
+            },
+            crate::ProjectReference {
+                referenced_project_name: "LibB".to_string(),
+                reference_kind: crate::ReferenceKind::Project,
+            },
+            crate::ProjectReference {
+                referenced_project_name: "LibC".to_string(),
+                reference_kind: crate::ReferenceKind::Project,
+            },
+        ],
+        reference_projects: vec![
+            crate::ReferencedProjectManifest {
+                project_name: "LibA".to_string(),
+                modules: vec![lib_a],
+            },
+            crate::ReferencedProjectManifest {
+                project_name: "LibB".to_string(),
+                modules: vec![lib_b],
+            },
+            crate::ReferencedProjectManifest {
+                project_name: "LibC".to_string(),
+                modules: vec![lib_c],
+            },
+        ],
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(compiled) => {
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            let expected_rewrites = [
+                "a = pmr_liba_util_tag()",
+                "b = pmr_libb_util_tag()",
+                "c = pmr_libc_calc_triple(4)",
+                "d = pmr_alphamultiref_main_tag()",
+            ];
+            let missing = expected_rewrites
+                .iter()
+                .filter(|expected| !lowered.contains(**expected))
+                .copied()
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "INTP-019 multi-reference rewrite missed {missing:?}: {lowered}"
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "INTP-019 multi-reference procedural project compiled through HIR full-source project boundary".to_string(),
+            }
+        }
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("INTP-019 project compile failed: {err}"),
         },
     }
 }
@@ -1424,7 +1681,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 4, "{report:#?}");
+        assert_eq!(report.skipped_count, 6, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -1465,6 +1722,14 @@ mod tests {
         );
         assert_eq!(
             report.rows[6].status,
+            FrontendCorpusRowStatus::SkippedResidual
+        );
+        assert_eq!(
+            report.rows[7].status,
+            FrontendCorpusRowStatus::SkippedResidual
+        );
+        assert_eq!(
+            report.rows[8].status,
             FrontendCorpusRowStatus::SkippedResidual
         );
     }
@@ -1588,14 +1853,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert!(report.fallback_residuals().is_empty(), "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 1, "{report:#?}");
-        assert_eq!(report.rows.len(), 7, "{report:#?}");
+        assert_eq!(report.rows.len(), 9, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            6,
+            8,
             "{report:#?}"
         );
         assert_eq!(
@@ -1625,6 +1890,16 @@ mod tests {
             row.name == "integration_reference_project_intp003"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("procedural reference project")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_reference_shadow_intp004"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("active-project shadowing")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_multi_reference_intp019"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("multi-reference procedural")
         }));
     }
 

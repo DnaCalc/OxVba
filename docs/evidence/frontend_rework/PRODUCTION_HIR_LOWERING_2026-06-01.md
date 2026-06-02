@@ -1017,9 +1017,10 @@ project semantics remain outside this slice.
 Follow-up reference-project expansion makes the project boundary explicit: active procedural-only
 projects compile from active source through HIR, while procedural-only projects with procedural
 reference projects compile from full lowered source through HIR. The new regression fixture covers a
-project-qualified call into `LibMath.MathApi`, and the seed route audit now includes `INTP-003`.
-Class/document modules, imported COM/reference shapes beyond procedural project references, and
-host/oracle-backed project semantics remain open.
+project-qualified call into `LibMath.MathApi`, and the seed route audit now includes `INTP-003`,
+`INTP-004`, and `INTP-019` for procedural reference projects, active-project shadowing of a
+referenced procedure, and multiple project references. Class/document modules, imported COM/reference
+shapes beyond procedural project references, and host/oracle-backed project semantics remain open.
 
 ## Bang Member Read Continuation
 

@@ -667,7 +667,8 @@ Required newly explicit delivery beads:
   Follow-up host-project expansion routes active projects containing only procedural modules and no
   references through the HIR-capable project boundary and adds the multi-module `INTP-002` seed row
   to the route audit. Follow-up reference-project expansion routes procedural-only projects with
-  procedural reference projects through a full-source HIR boundary and adds `INTP-003`.
+  procedural reference projects through a full-source HIR boundary and adds `INTP-003`, `INTP-004`,
+  and `INTP-019` route rows.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
   from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, add
   class/document/imported host-project and cross-workspace language-service route runners, and add an
