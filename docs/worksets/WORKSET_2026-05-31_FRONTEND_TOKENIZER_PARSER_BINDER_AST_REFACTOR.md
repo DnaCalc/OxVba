@@ -1210,8 +1210,9 @@ Candidate bead units:
   `MIRR`, `Rate`, and `NPer`, plus production-HIR pointer-helper proof for `StrPtr`, `VarPtr`, and
   `ObjPtr` through typed structural intrinsics, plus the `Array(...)` literal helper through the
   existing array-literal intrinsic bytecode, plus VM-stateful deterministic `Rnd`/`Randomize`
-  no-seed and seeded forms through existing RNG bytecode. The `Array(...)` helper proof is not
-  array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  no-seed and seeded forms through existing RNG bytecode, plus `TypeOf ... Is ...` as a dedicated
+  HIR expression that emits the existing `IntrinsicTypeOfIs` bytecode. The `Array(...)` helper
+  proof is not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

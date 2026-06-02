@@ -299,6 +299,11 @@ built-in resolution and verifies no-seed and seeded forms through the existing
 host-sensitive current-time, file, shell/environment, dialog, dispatch, and COM callback
 intrinsics.
 
+Follow-up `TypeOf ... Is ...` work stops treating the RHS type expression as a value lookup in HIR.
+The HIR builder now records a dedicated `TypeOfIs` expression with object expression plus type-name
+text, HIR lowering targets the existing `typeofis` intrinsic contract, and the route audit includes
+a production fixture that emits `IntrinsicTypeOfIs` bytecode.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

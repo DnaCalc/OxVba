@@ -289,6 +289,7 @@ impl SemanticModel {
                 self.index_expr_tree(lhs);
                 self.index_expr_tree(rhs);
             }
+            HirExprKind::TypeOfIs { expr: child, .. } => self.index_expr_tree(child),
             HirExprKind::Call(call) => {
                 let Some(call_data) = self.hir.call(call).cloned() else {
                     return;

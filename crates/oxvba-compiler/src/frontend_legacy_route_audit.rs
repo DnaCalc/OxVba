@@ -495,6 +495,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let typeof_is_expression =
+        "Sub Main()\nDim obj As Object\nDim ok\nok = TypeOf obj Is Class1\nEnd Sub\n";
+    findings.push(route_finding(
+        "TypeOf Is expression fixture",
+        typeof_is_expression,
+        "bd-aprs.9.5",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",

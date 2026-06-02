@@ -378,6 +378,9 @@ fn collect_expr_structural_intrinsics(
             collect_expr_structural_intrinsics(typed_hir, *lhs, structural_intrinsics);
             collect_expr_structural_intrinsics(typed_hir, *rhs, structural_intrinsics);
         }
+        HirExprKind::TypeOfIs { expr, .. } => {
+            collect_expr_structural_intrinsics(typed_hir, *expr, structural_intrinsics);
+        }
         HirExprKind::Call(call) => {
             if let Some(call_data) = typed_hir.module.arenas.call(*call) {
                 collect_expr_structural_intrinsics(

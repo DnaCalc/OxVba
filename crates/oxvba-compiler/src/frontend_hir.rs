@@ -160,6 +160,10 @@ pub enum HirExprKind {
         lhs: HirExprId,
         rhs: HirExprId,
     },
+    TypeOfIs {
+        expr: HirExprId,
+        type_name: String,
+    },
     Call(HirCallId),
     Member(HirMemberId),
 }
@@ -1365,6 +1369,14 @@ impl HirBuilder {
                         node.text().trim()
                     )));
                 }
+                if is_typeof_is_expr(node) {
+                    let expr = self.lower_expr(scope, exprs[0])?;
+                    let type_name = exprs[1].text().trim().to_string();
+                    return Ok(self.arenas.alloc_expr(HirExpr {
+                        cst: cst(node),
+                        kind: HirExprKind::TypeOfIs { expr, type_name },
+                    }));
+                }
                 let lhs = self.lower_expr(scope, exprs[0])?;
                 let rhs = self.lower_expr(scope, exprs[1])?;
                 HirExprKind::Binary {
@@ -1887,6 +1899,16 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
         SyntaxKind::KwOr => Ok(HirBinaryOp::Or),
         _ => unreachable!("filtered operator token"),
     }
+}
+
+fn is_typeof_is_expr(node: SyntaxNode<'_>) -> bool {
+    node.child_tokens()
+        .into_iter()
+        .any(|token| token.kind == SyntaxKind::KwTypeOf)
+        && node
+            .child_tokens()
+            .into_iter()
+            .any(|token| token.kind == SyntaxKind::KwIs)
 }
 
 fn case_is_operator(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {

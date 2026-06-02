@@ -1882,6 +1882,13 @@ fn lower_expr(
             *rhs,
             context,
         ),
+        HirExprKind::TypeOfIs { expr, type_name } => Ok(BoundExpr::IntrinsicCall {
+            name: "typeofis".to_string(),
+            args: vec![
+                lower_expr(typed_hir, const_values, udt_field_aliases, *expr, context)?,
+                BoundExpr::StringConst(type_name.clone()),
+            ],
+        }),
         HirExprKind::Call(call) => {
             lower_call_expr(typed_hir, const_values, udt_field_aliases, *call, context)
         }
@@ -2975,6 +2982,7 @@ fn hir_expr_bound_type(typed_hir: &TypedHirModule, expr: HirExprId) -> Option<Bo
         HirExprKind::Literal(HirLiteral::Nothing) => Some(BoundType::Object),
         HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(BoundType::Variant),
         HirExprKind::Binary { .. } | HirExprKind::Unary { .. } => Some(BoundType::Variant),
+        HirExprKind::TypeOfIs { .. } => Some(BoundType::Boolean),
         HirExprKind::New { .. } => Some(BoundType::Object),
         _ => None,
     }
@@ -4855,6 +4863,22 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicRandomizeDigits { seed: Some(_), .. }
             )),
             "expected Randomize 1 to emit seeded Randomize intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_typeof_is_expression() {
+        let source = "Sub Main()\nDim obj As Object\nDim ok\nok = TypeOf obj Is Class1\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicTypeOfIs { type_name, .. }
+                    if type_name == "Class1"
+            )),
+            "expected TypeOf obj Is Class1 to emit TypeOfIs intrinsic: {:?}",
             bytecode.instructions
         );
     }
