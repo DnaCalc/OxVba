@@ -52,12 +52,11 @@ Executable proof:
   help with imported-typelib provenance. This is still identifier-based IDE resolution evidence,
   not proof of complete type-directed COM member binding.
 - follow-up FE-9.7 optional-default coverage now carries literal string and Boolean optional
-  parameter defaults through compiler-owned `HirParameterHook` facts into
-  `SemanticSnapshot::callables` and signature help. This proves the IDE callable surface can expose
-  the same richer optional metadata now used by runtime descriptors for these literal defaults; it
-  does not claim complete module-constant, Date/Currency, or arbitrary default-expression coverage.
-  The same continuation also proves the `ParamArray` flag is preserved on snapshot callables and
-  signature help.
+  parameter defaults, integer module-constant/enum-member defaults, and `ParamArray` flags through
+  compiler-owned `HirParameterHook` facts into `SemanticSnapshot::callables` and signature help.
+  This proves the IDE callable surface can expose the same richer optional metadata now used by
+  runtime descriptors for these supported defaults; it does not claim Date/Currency or arbitrary
+  default-expression coverage.
 
 ## Checks
 
@@ -108,6 +107,6 @@ Executable proof:
 - The optional-default continuation now makes parameter descriptors first-class front-end type-hook
   facts keyed by parameter symbol, so the language service no longer reparses procedure signatures
   to recover optional/default metadata. The underlying descriptor breadth remains bounded to the
-  literal/default shapes currently accepted by the compiler front-end parameter parser; broader
-  default-expression and constant surfaces still need their own delivery proof before claiming full
-  Roslyn-style callable metadata parity.
+  literal and integer constant-expression shapes currently accepted by the compiler front-end
+  parameter parser; Date/Currency and broader default-expression surfaces still need their own
+  delivery proof before claiming full Roslyn-style callable metadata parity.

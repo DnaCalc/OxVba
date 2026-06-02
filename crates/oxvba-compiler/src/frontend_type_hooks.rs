@@ -205,6 +205,8 @@ fn collect_parameter_hooks(
     symbol_types: &BTreeMap<SymbolId, VbaTypeId>,
 ) {
     let default_type_table = resolve::collect_default_type_table(&[source.to_string()]);
+    let source_lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+    let module_constants = resolve::collect_module_constants(&source_lines);
     for decl_id in &module.declarations {
         let Some(decl) = module.arenas.decl(*decl_id) else {
             continue;
@@ -216,10 +218,14 @@ fn collect_parameter_hooks(
         let Some(proc_kind) = proc_kind_for_signature_line(signature_line) else {
             continue;
         };
-        let parsed_params =
-            resolve::parse_proc_signature(signature_line, proc_kind, &default_type_table)
-                .map(|(_, params, _)| params)
-                .unwrap_or_default();
+        let parsed_params = resolve::parse_proc_signature_with_module_constants(
+            signature_line,
+            proc_kind,
+            &default_type_table,
+            &module_constants,
+        )
+        .map(|(_, params, _)| params)
+        .unwrap_or_default();
         for param_symbol in params {
             let Some(symbol) = module.symbols.symbols().iter().find(|symbol| {
                 symbol.id == *param_symbol && symbol.namespace == SymbolNamespace::Parameter
@@ -909,7 +915,7 @@ mod tests {
 
     #[test]
     fn type_hooks_collect_parameter_descriptors_from_source_backed_hir() {
-        let source = "Sub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
+        let source = "Const CBase = &H10 + 1\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe)\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
         let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
 
         let parameter = |name: &str| {
@@ -937,6 +943,10 @@ mod tests {
             .hooks
             .parameter(parameter("flag"))
             .expect("flag parameter hook");
+        let value = typed
+            .hooks
+            .parameter(parameter("value"))
+            .expect("value parameter hook");
         let rest = typed
             .hooks
             .parameter(parameter("rest"))
@@ -954,6 +964,12 @@ mod tests {
         assert_eq!(
             flag.default_value,
             Some(OptionalDefaultValue::ExplicitBool(true))
+        );
+        assert_eq!(value.declared_type, VbaTypeId::Long);
+        assert!(value.optional);
+        assert_eq!(
+            value.default_value,
+            Some(OptionalDefaultValue::ExplicitI32(21))
         );
         assert_eq!(rest.declared_type, VbaTypeId::Array);
         assert!(rest.param_array);

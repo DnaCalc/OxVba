@@ -717,10 +717,11 @@ Required newly explicit delivery beads:
   navigation, and signature help with imported-typelib provenance; this is still identifier-based
   projection evidence, not full type-directed COM member binding. Follow-up optional-default
   language-service coverage carries literal string and Boolean optional parameter defaults from the
-  compiler-owned `HirParameterHook` facts into semantic snapshots and signature help, proving
-  richer runtime descriptor metadata is visible to the IDE surface for those literal defaults while
-  leaving module-constant, Date/Currency, and arbitrary default-expression breadth open; the same
-  continuation proves the `ParamArray` flag on both surfaces.
+  compiler-owned `HirParameterHook` facts into semantic snapshots and signature help. Continuation
+  work extends those hooks to integer module-constant/enum-member defaults, proving richer runtime
+  descriptor metadata is visible to the IDE surface for the supported literal/constant defaults
+  while leaving Date/Currency and arbitrary default-expression breadth open; the same continuation
+  proves the `ParamArray` flag on both surfaces.
   Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
   oracle fixtures that have compiler-local HIR route helpers, folding HIR production route evidence
@@ -1475,9 +1476,10 @@ Candidate bead units:
   coverage now drives the existing `INTP-003` and `INTP-016` seed project manifests through
   navigation/signature-help route assertions. Follow-up optional-default coverage carries literal
   string and Boolean optional parameter defaults into `SemanticSnapshot::callables` and signature
-  help; this is IDE-surface metadata evidence, not closure for module-constant, Date/Currency, or
-  arbitrary default-expression coverage; the same continuation moves those parameter descriptors
-  into compiler-owned `HirParameterHook` facts and proves the `ParamArray` flag on both surfaces.
+  help; continuation work also carries integer module-constant/enum-member defaults. This is
+  IDE-surface metadata evidence, not closure for Date/Currency or arbitrary default-expression
+  coverage; the same continuation moves those parameter descriptors into compiler-owned
+  `HirParameterHook` facts and proves the `ParamArray` flag on both surfaces.
   Closure requires every accepted in-scope row to classify as HIR/SemanticModel production or to
   reopen/create the owning delivery bead, and richer corpus/host/reference/oracle surfaces remain
   in scope until proved through execution evidence.

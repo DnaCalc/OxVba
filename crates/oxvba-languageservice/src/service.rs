@@ -2418,7 +2418,7 @@ mod tests {
 
     #[test]
     fn signature_help_preserves_optional_string_boolean_defaults() {
-        let src = "Sub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\nEnd Sub\nSub Test()\n    Call Use()\nEnd Sub\n";
+        let src = "Const CBase = &H10 + 1\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe)\nEnd Sub\nSub Test()\n    Call Use()\nEnd Sub\n";
         let (svc, id) = setup_single_module(src);
         let pos = src.find("Use()").expect("call") as u32 + "Use(".len() as u32;
         let help = svc
@@ -2426,7 +2426,7 @@ mod tests {
             .expect("signature help for optional defaults");
 
         assert_eq!(help.name, "Use");
-        assert_eq!(help.parameters.len(), 2);
+        assert_eq!(help.parameters.len(), 3);
         assert_eq!(help.parameters[0].name, "text");
         assert!(help.parameters[0].optional);
         assert_eq!(
@@ -2438,6 +2438,12 @@ mod tests {
         assert_eq!(
             help.parameters[1].default_value,
             Some(OptionalDefaultValue::ExplicitBool(true))
+        );
+        assert_eq!(help.parameters[2].name, "value");
+        assert!(help.parameters[2].optional);
+        assert_eq!(
+            help.parameters[2].default_value,
+            Some(OptionalDefaultValue::ExplicitI32(21))
         );
     }
 

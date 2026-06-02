@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn snapshot_callables_preserve_optional_string_boolean_defaults() {
-        let src = "Sub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\nEnd Sub\n";
+        let src = "Const CBase = &H10 + 1\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe)\nEnd Sub\n";
         let snap = build_semantic_snapshot(src);
 
         let callable = snap
@@ -486,7 +486,7 @@ mod tests {
             .iter()
             .find(|callable| callable.name == "Use")
             .expect("callable from compiler HIR facts");
-        assert_eq!(callable.params.len(), 2);
+        assert_eq!(callable.params.len(), 3);
         assert_eq!(callable.params[0].name, "text");
         assert_eq!(callable.params[0].ty, BoundType::String);
         assert!(callable.params[0].optional);
@@ -500,6 +500,13 @@ mod tests {
         assert_eq!(
             callable.params[1].default_value,
             Some(OptionalDefaultValue::ExplicitBool(true))
+        );
+        assert_eq!(callable.params[2].name, "value");
+        assert_eq!(callable.params[2].ty, BoundType::Long);
+        assert!(callable.params[2].optional);
+        assert_eq!(
+            callable.params[2].default_value,
+            Some(OptionalDefaultValue::ExplicitI32(21))
         );
     }
 
