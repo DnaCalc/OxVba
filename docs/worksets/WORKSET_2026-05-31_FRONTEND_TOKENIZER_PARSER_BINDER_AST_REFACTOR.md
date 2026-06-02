@@ -118,7 +118,7 @@ gate is semantic equivalence plus documented intentional improvements, not byte 
 | S2 | Names are strings; AST is **not resolved** | `BoundExpr::Var(String)`, `ProcCall { name: String }`, `Member { member: String }`; resolution recovered later via `slot_map` (emit) + `project.rs` | symbol table; AST carries `SymbolId` |
 | S3 | String-rewriting front-end (macro-by-text) | `project.rs`: member dispatch, default members, property Get/Let/Set, qualified names, `New`, WithEvents, collections, F3c diagnostics | resolve in the binder against the symbol table |
 | S4 | Stringly-typed intrinsics as an escape hatch (~25 magic names) | `IntrinsicCall { name }` (`__empty`, `__null`, `__nothing`, `__oxvba_project_instance`, `__oxvba_withevents_*`, `dispatchinvoke`, `__omitted`, `vbnullstring`, …); giant `match name.as_str()` in `emit.rs` | dedicated AST/IR nodes (or a typed `enum Intrinsic`) for structural concepts |
-| S5 | Under-modeled operators / postfix | `Is` (object identity) unsupported as a binary op (only `TypeOf x Is T`); indexing is the `__oxvba_array_get` intrinsic, not a uniform `Index`; `New`, bang `obj!field` are string-rewritten | unified postfix grammar: call / index / member / bang; `CompareOp::Is` |
+| S5 | Under-modeled operators / postfix | Bare object `Is` identity now has HIR/default-route proof for the scoped accepted surface; indexing is still the `__oxvba_array_get` intrinsic, not a uniform `Index`; some `New`/bang/default-member lanes still have compatibility carriers | unified postfix grammar: call / index / member / bang; keep `CompareOp::Is` as object identity, not equality |
 | S6 | Peephole optimization baked into AST shape | `BoundExpr::AddConst`/`SubConst` produced directly by the parser, special-cased in every consumer | uniform `BinaryOp`; recognize in an optimizer pass |
 
 Precedent already in-repo: `oxvba-syntax` contains a custom lossless green/red tree, lexer,
@@ -938,6 +938,10 @@ Candidate bead units:
 - FE-6.7 Bare object `Is` identity binding/lowering: bind and lower `a Is b` and `a Is Nothing`
   as object identity through production front-end facts. This bead was added during the reopened
   FE-4.1 review after rejecting the incorrect shortcut of lowering bare `Is` as equality.
+  Review continuation: scoped `obj Is Nothing` now also has ordinary
+  `compile_with_runtime_metadata(...)` default-route proof that emits `CmpObjectIsSlots`; keep this
+  bead closed for the accepted object-identity surface unless a broader reference/object identity
+  row fails later corpus or host evidence.
   Evidence: `docs/evidence/frontend_rework/OBJECT_IS_IDENTITY_BINDING_LOWERING_2026-06-01.md`.
 
 Evidence gate: selected constructs bind through HIR, answer SemanticModel queries, and lower/run

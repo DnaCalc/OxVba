@@ -37,8 +37,15 @@ Added conformance fixture sources:
 - `conformance/tests/object_identity_is_nothing.bas`
 - `conformance/tests/object_identity_is_same_and_different.bas`
 
-These are currently compiled through the opt-in frontend v2 route because the
-default production route has not yet flipped for this workset.
+These were initially compiled through the opt-in frontend v2 route because the
+default production route had not yet flipped for this workset.
+
+Follow-up default-route proof now compiles `obj Is Nothing` through
+`compile_with_runtime_metadata(...)` for an otherwise accepted source that also
+forces the legacy path to fail on inline statement continuation. The resulting
+bytecode contains `Instruction::CmpObjectIsSlots`, proving the ordinary runtime
+metadata route now reaches the HIR object-identity lowering for this scoped
+surface.
 
 ## Checks
 
@@ -50,8 +57,10 @@ default production route has not yet flipped for this workset.
 
 ## Fresh-Eyes Review
 
-- The default compiler route still does not parse bare object `Is`; FE-9 owns
-  the default flip after the broader production route is ready.
+- The default compiler route now parses and lowers bare `obj Is Nothing` for
+  otherwise accepted HIR sources. Broader object/reference identity behavior
+  remains covered by the existing conformance fixtures and VM object-identity
+  checks.
 - The temporary production bridge still rewrites this construct to a structural
   intrinsic before legacy lowering. This is an explicit quarantine for the
   bridge phase, not the terminal HIR-to-bytecode route; FE-8.5 owns direct HIR
