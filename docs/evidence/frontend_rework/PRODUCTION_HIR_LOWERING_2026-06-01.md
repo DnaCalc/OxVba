@@ -724,7 +724,8 @@ The FE-8.5 UDT slices remove the basic UDT declaration/layout and simple field-a
   silently copying same-shaped fields across distinct UDT type names.
 - The production route audit includes a `Type Point ... p.X = 1 ... y = p.X + 2` fixture and
   nested/fixed-array/fixed-string descriptor, nested member-chain, and fixed UDT array-field index
-  fixtures, and classifies them as `HirProduction`.
+  fixtures as `HirProduction`, plus a cross-type whole-value UDT assignment fixture classified as
+  a HIR production diagnostic.
 
 Remaining production residuals after this slice:
 

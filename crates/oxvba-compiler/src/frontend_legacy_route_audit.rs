@@ -556,6 +556,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let cross_type_udt_assignment = "Type PairA\nX As Long\nY As Long\nEnd Type\nType PairB\nX As Long\nY As Long\nEnd Type\nSub Main()\nDim a As PairA\nDim b As PairB\nb = a\nEnd Sub\n";
+    findings.push(route_diagnostic_finding(
+        "cross-type UDT assignment diagnostic fixture",
+        cross_type_udt_assignment,
+        "cross-type UDT assignment from paira to pairb",
+        "bd-aprs.9.5",
+    ));
+
     let member_expression =
         "Sub Main()\nDim obj\nDim x\nDim y\nx = obj.Value\ny = obj.Method(1)\nEnd Sub\n";
     findings.push(route_finding(
@@ -769,6 +777,35 @@ fn route_finding(
         Err(err) => LegacyRouteAuditFinding {
             area,
             evidence: format!("route classification failed: {err}"),
+            disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
+            owner,
+        },
+    }
+}
+
+fn route_diagnostic_finding(
+    area: &'static str,
+    source: &'static str,
+    expected: &'static str,
+    owner: &'static str,
+) -> LegacyRouteAuditFinding {
+    let route_source = apply_conditional_compilation_to_source(source);
+    match production_route_for_source(&route_source) {
+        Err(err) if err.to_string().contains(expected) => LegacyRouteAuditFinding {
+            area,
+            evidence: format!("classified as HIR production diagnostic: {err}"),
+            disposition: LegacyRouteAuditDisposition::HirProduction,
+            owner,
+        },
+        Ok(route) => LegacyRouteAuditFinding {
+            area,
+            evidence: format!("expected HIR diagnostic `{expected}`, got route {route:?}"),
+            disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
+            owner,
+        },
+        Err(err) => LegacyRouteAuditFinding {
+            area,
+            evidence: format!("route diagnostic mismatch: {err}"),
             disposition: LegacyRouteAuditDisposition::LegacyFallbackResidual,
             owner,
         },
