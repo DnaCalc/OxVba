@@ -490,6 +490,9 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 - fixed class array fields now compile executable element writes and reads through the same
   per-instance field token and runtime array get/set path without rewriting field declarations as
   executable array reads or emitting resize bytecode; and
+- fixed procedural-module array fields now compile executable element writes and reads through the
+  same module-state field token and runtime array get/set path without rewriting field declarations
+  as executable array reads or emitting resize bytecode; and
 - the route audit now includes one-dimensional dynamic-array `ReDim buf(length - 1)`,
   two-dimensional dynamic-array `ReDim grid(rows - 1, cols - 1)`, and explicit lower-bound
   `ReDim buf(1 To length - 1)` fixtures, plus read- and write-side dynamic-array element
@@ -502,10 +505,10 @@ production constraint: the lower side of `To` must be a static integer, while up
 expressions. Fixed-array declaration and `ReDim` alias materialization currently require static
 integer bounds and static integer element indices. Project/class array field shapes are now
 front-end indexed, class shapes are emitted in dynamic-object route metadata, dynamic class
-array-field `ReDim`/element get/set is executable through the current bridge, and fixed class
-array-field element get/set is executable without resize. Fixed procedural/project module
-array-field executable semantics and broader project-owned array shapes remain broader HIR and
-project-semantics work.
+array-field `ReDim`/element get/set is executable through the current bridge, fixed class
+array-field element get/set is executable without resize, and fixed procedural-module array-field
+element get/set is executable without resize. Broader project-owned array shapes remain broader HIR
+and project-semantics work.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer

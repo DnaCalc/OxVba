@@ -7840,7 +7840,12 @@ fn collect_module_state_bindings(
             );
         }
     }
-    if let Some(index) = project_symbol_index.filter(|_| module.module_kind == ModuleKind::Class) {
+    if let Some(index) = project_symbol_index.filter(|_| {
+        matches!(
+            module.module_kind,
+            ModuleKind::Class | ModuleKind::Procedural
+        )
+    }) {
         let mut owners = vec![current_module.to_string()];
         if !module.attributes.vb_name.trim().is_empty()
             && !module
@@ -7851,7 +7856,7 @@ fn collect_module_state_bindings(
             owners.push(module.attributes.vb_name.clone());
         }
         for owner in owners {
-            for field_name in index.resolve_class_field_names(&owner) {
+            for field_name in field_tokens.keys() {
                 let normalized = normalize_identifier(&field_name);
                 let Some(descriptor) = index.resolve_field_array_descriptor(&owner, &field_name)
                 else {
@@ -21183,6 +21188,70 @@ mod tests {
                         | Instruction::IntrinsicArrayResizePreserve { .. }
                 )),
             "fixed class array fields must not compile through ReDim/resize bytecode"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_fixed_procedural_module_array_field_accesses() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            concat!(
+                "Attribute VB_Name = \"MainModule\"\n",
+                "Option Base 1\n",
+                "Private cache(2) As Long\n",
+                "Public Sub Main()\n",
+                "cache(1) = 7\n",
+                "Dim x As Long\n",
+                "x = cache(1)\n",
+                "End Sub\n"
+            ),
+        )
+        .expect("main module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile");
+        assert!(
+            !compiled
+                .rewritten_source
+                .to_ascii_lowercase()
+                .contains("private __oxvba_array_get"),
+            "fixed procedural module array declaration must not be rewritten as an executable array read"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArraySet { .. })),
+            "fixed procedural module array element write should compile through runtime array set"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayGet { .. })),
+            "fixed procedural module array element read should compile through runtime array get"
+        );
+        assert!(
+            !compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(
+                    instruction,
+                    Instruction::IntrinsicArrayResize { .. }
+                        | Instruction::IntrinsicArrayResizePreserve { .. }
+                )),
+            "fixed procedural module array fields must not compile through ReDim/resize bytecode"
         );
     }
 
