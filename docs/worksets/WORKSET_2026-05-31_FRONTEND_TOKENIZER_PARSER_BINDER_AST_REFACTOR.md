@@ -1190,7 +1190,10 @@ Candidate bead units:
   field tokens without declaration rewrite or resize bytecode, supports fixed procedural-module
   array-field element get/set through module-state field tokens without declaration rewrite or
   resize bytecode, supports dynamic procedural-module array-field `ReDim`/element get/set through
-  module-state field tokens, and carries `Option Base` default-route policy.
+  module-state field tokens, carries `Option Base` default-route policy, and now asserts
+  token-level compatibility-carrier proof for representative dynamic class, fixed class, and
+  dynamic procedural-module array-field get/set/resize routes so the rewrite bridge cannot drift
+  away from frontend field-route metadata.
   Remaining work: move project-owned array-shape handling out of the project rewrite bridge and
   into HIR-owned lowering/metadata paths.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,

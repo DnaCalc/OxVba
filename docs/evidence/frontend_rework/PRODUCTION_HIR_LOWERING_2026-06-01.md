@@ -514,6 +514,14 @@ element get/set is executable without resize, and dynamic procedural-module arra
 array-shape work is HIR ownership and metadata replacement of the current project rewrite bridge,
 not a known missing fixed/dynamic class/procedural executable get/set route.
 
+2026-06-02 array-field route-proof hardening: representative dynamic class, fixed class, and
+dynamic procedural-module array-field routes now assert that the generated compatibility carriers
+read and write through deterministic frontend field tokens (`__oxvba_withevents_get/set(owner,
+field_token, ...)`) before reaching runtime array get/set/resize bytecode. This prevents the
+current rewrite bridge from drifting away from frontend field-route metadata, but it does not
+remove the remaining project-owned array-shape rewrite body or claim native HIR ownership for those
+field-array routes.
+
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option

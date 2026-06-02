@@ -21110,6 +21110,20 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        let field_token = super::class_state_binding_token("projecta", "widget", "buf");
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_get(__oxvba_this_instance, {field_token})"
+            )),
+            "dynamic class array route should read through the frontend field token: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_set(__oxvba_this_instance, {field_token},"
+            )),
+            "dynamic class array route should write through the frontend field token: {lowered}"
+        );
         assert!(
             compiled
                 .bytecode
@@ -21169,12 +21183,23 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        let field_token = super::class_state_binding_token("projecta", "widget", "scores");
         assert!(
-            !compiled
-                .rewritten_source
-                .to_ascii_lowercase()
-                .contains("private __oxvba_array_get"),
+            !lowered.contains("private __oxvba_array_get"),
             "fixed array field declaration must not be rewritten as an executable array read"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_get(__oxvba_this_instance, {field_token})"
+            )),
+            "fixed class array route should read through the frontend field token: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_set(__oxvba_this_instance, {field_token},"
+            )),
+            "fixed class array route should write through the frontend field token: {lowered}"
         );
         assert!(
             compiled
@@ -21297,12 +21322,24 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        let owner_token = super::procedural_module_state_owner_token("projecta", "mainmodule");
+        let field_token = super::class_state_binding_token("projecta", "mainmodule", "cache");
         assert!(
-            !compiled
-                .rewritten_source
-                .to_ascii_lowercase()
-                .contains("private __oxvba_array_get"),
+            !lowered.contains("private __oxvba_array_get"),
             "dynamic procedural module array declaration must not be rewritten as an executable array read"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_get({owner_token}, {field_token})"
+            )),
+            "dynamic procedural array route should read through the module-state field token: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_set({owner_token}, {field_token},"
+            )),
+            "dynamic procedural array route should write through the module-state field token: {lowered}"
         );
         assert!(
             compiled
