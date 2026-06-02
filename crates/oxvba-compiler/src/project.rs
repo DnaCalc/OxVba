@@ -11749,6 +11749,26 @@ mod tests {
         }
     }
 
+    fn assert_project_member_call_metadata(
+        compiled: &super::CompiledProject,
+        lowered_name: &str,
+        kind: ProjectMemberCallKind,
+    ) {
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::CallProc {
+                        project_member: Some(project_member),
+                        ..
+                    } if project_member.lowered_name.eq_ignore_ascii_case(lowered_name)
+                        && project_member.kind == kind
+                )
+            }),
+            "expected project member bytecode metadata for {kind:?} {lowered_name}"
+        );
+    }
+
     #[test]
     fn compile_project_uses_hir_capable_boundary_for_completed_constructs() {
         let module = module_unit_from_source(
@@ -27162,6 +27182,16 @@ mod tests {
             lowered.contains("aftervalue = property_get_pmr_hostproject_application_value(0)"),
             "unexpected lowered source: {lowered}"
         );
+        assert_project_member_call_metadata(
+            &compiled,
+            "pmr_hostproject_application_value",
+            ProjectMemberCallKind::PropertyLet,
+        );
+        assert_project_member_call_metadata(
+            &compiled,
+            "pmr_hostproject_application_value",
+            ProjectMemberCallKind::PropertyGet,
+        );
     }
 
     #[test]
@@ -29467,6 +29497,16 @@ mod tests {
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
                 "{label}: unexpected lowered source: {lowered}"
             );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_observe",
+                ProjectMemberCallKind::PropertyGet,
+            );
         }
     }
 
@@ -29547,6 +29587,16 @@ mod tests {
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
                 "{label}: unexpected lowered source: {lowered}"
             );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_observe",
+                ProjectMemberCallKind::PropertyGet,
+            );
         }
     }
 
@@ -29626,6 +29676,21 @@ mod tests {
             assert!(
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
                 "{label}: unexpected lowered source: {lowered}"
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_value",
+                ProjectMemberCallKind::PropertyLet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_observe",
+                ProjectMemberCallKind::PropertyGet,
             );
         }
     }
@@ -30261,6 +30326,16 @@ mod tests {
             assert!(
                 lowered.contains("aftervalue = x"),
                 "{label}: unexpected lowered source: {lowered}"
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_value",
+                ProjectMemberCallKind::PropertySet,
             );
         }
     }

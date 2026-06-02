@@ -120,6 +120,12 @@ The 2026-06-01 continuation added:
   type-library-only subset. Bytecode assertions prove early-bound COM dispatch-id metadata plus
   `PropertyGet`/`PropertyLet`/`PropertySet` hints, and the compiled active source no longer includes
   projected typelib reference stubs on this route.
+- `bd-aprs.8.7` host compatibility-helper metadata continuation: representative host-injected
+  default-member/property get, let, and set routes now assert patched `CallProc.project_member`
+  bytecode metadata for the expected `pmr_hostproject_*` helper identity and accessor kind. This
+  hardens the current rewrite-backed host route so it cannot silently lose property/default-member
+  intent in bytecode metadata, while the broader host/reference HIR ownership and rewrite-body
+  quarantine work remains open.
 
 ## Checks
 
@@ -140,6 +146,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler host_injected_global_namespace_property --quiet`
 - `cargo test -p oxvba-compiler host_injected_predeclared_default_member --quiet`
 - `cargo test -p oxvba-compiler host_injected_global_namespace_default_member --quiet`
+- `cargo test -p oxvba-compiler host_injected --quiet`
 - `cargo test -p oxvba-compiler hir_builder_preserves_named_call_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_named_call_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member_call --quiet`
@@ -287,3 +294,8 @@ The 2026-06-01 continuation added:
   id, arity, early-bound COM metadata, and `PropertyGet`/`PropertyLet`/`PropertySet` hints for
   property-get read/call rows plus named, indexed, named-argument indexed, and default-member setter
   rows. Broader reference-project, host, imported-COM, and rewrite-body retirement remains open.
+- Host route review found the analogous weakness in a different form: host-injected routes were
+  already classifier-backed before retaining their PMR rewrite carrier, but many tests only checked
+  helper text. The new assertions check the patched bytecode metadata for representative root and
+  host-returned child get/let/set helpers, so current compatibility lowering preserves accessor
+  intent until the route is migrated to HIR or explicitly quarantined.
