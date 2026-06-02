@@ -110,13 +110,14 @@ fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
 #[test]
 fn optional_date_currency_defaults_are_bound_for_omitted_args() {
     let snap = run(
-        "Sub Main()\nDim amount As Variant\nDim stamp As Variant\nDim blankAmount As Variant\nDim blankStamp As Variant\nCall Fill(amount, stamp, blankAmount, blankStamp)\nEnd Sub\nSub Fill(ByRef amountTarget As Variant, ByRef stampTarget As Variant, ByRef blankAmountTarget As Variant, ByRef blankStampTarget As Variant, Optional ByVal amount As Currency = 1.25@, Optional ByVal stamp As Date = 2.5, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\namountTarget = amount\nstampTarget = stamp\nblankAmountTarget = blankAmount\nblankStampTarget = blankStamp\nEnd Sub",
+        "Sub Main()\nDim amount As Variant\nDim stamp As Variant\nDim literalStamp As Variant\nDim blankAmount As Variant\nDim blankStamp As Variant\nCall Fill(amount, stamp, literalStamp, blankAmount, blankStamp)\nEnd Sub\nSub Fill(ByRef amountTarget As Variant, ByRef stampTarget As Variant, ByRef literalStampTarget As Variant, ByRef blankAmountTarget As Variant, ByRef blankStampTarget As Variant, Optional ByVal amount As Currency = 1.25@, Optional ByVal stamp As Date = 2.5, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\namountTarget = amount\nstampTarget = stamp\nliteralStampTarget = literalStamp\nblankAmountTarget = blankAmount\nblankStampTarget = blankStamp\nEnd Sub",
     );
     assert_eq!(
         snap,
         vec![
             Variant::from_currency_scaled_i64(12_500),
             Variant::from_date_f64(2.5),
+            Variant::from_date_f64(46_081.0),
             Variant::from_currency_scaled_i64(0),
             Variant::from_date_f64(0.0),
         ]

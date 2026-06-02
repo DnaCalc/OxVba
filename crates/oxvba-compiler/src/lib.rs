@@ -1788,7 +1788,7 @@ mod tests {
 
     #[test]
     fn optional_date_currency_defaults_route_through_hir() {
-        let source = "Const CAmount = 1.25@\nConst CStamp = 2.5\nSub Use(Optional ByVal amount As Currency = CAmount, Optional ByVal stamp As Date = CStamp, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let source = "Const CAmount = 1.25@\nConst CStamp = 2.5\nSub Use(Optional ByVal amount As Currency = CAmount, Optional ByVal stamp As Date = CStamp, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         let (_bytecode, metadata) =
             super::compile_with_runtime_metadata(source).expect("compile should route through HIR");
         let use_metadata = metadata.get("use").expect("Use metadata");
@@ -1809,12 +1809,19 @@ mod tests {
         assert!(matches!(
             use_metadata.signature.parameters[2].optional_descriptor,
             OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitDateSerialF64(bits),
+                ..
+            } if f64::from_bits(bits) == 46_081.0
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[3].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
                 default_value: OptionalDefaultValue::ExplicitCurrencyScaledI64(0),
                 ..
             }
         ));
         assert!(matches!(
-            use_metadata.signature.parameters[3].optional_descriptor,
+            use_metadata.signature.parameters[4].optional_descriptor,
             OptionalParameterDescriptor::Optional {
                 default_value: OptionalDefaultValue::ExplicitDateSerialF64(bits),
                 ..
@@ -1831,6 +1838,12 @@ mod tests {
                     && arg.optional_default
                         == Some(OptionalDefaultValue::ExplicitDateSerialF64(
                             2.5f64.to_bits(),
+                        ))
+            }) && call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("literalstamp")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitDateSerialF64(
+                            46_081.0f64.to_bits(),
                         ))
             }) && call_site.arguments.iter().any(|arg| {
                 arg.parameter_name.as_deref() == Some("blankamount")

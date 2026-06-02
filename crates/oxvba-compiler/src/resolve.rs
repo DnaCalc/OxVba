@@ -2021,8 +2021,105 @@ fn parse_param_default(
     module_constants: &HashMap<String, BoundExpr>,
     declared_type: BoundType,
 ) -> Option<BoundParamDefaultValue> {
+    if declared_type == BoundType::Date {
+        if let Some(bits) = parse_date_literal_serial_bits(text.trim()) {
+            return Some(BoundParamDefaultValue::ExplicitDateSerialF64(bits));
+        }
+    }
     let expr = parse_expr(text.trim(), &HashMap::new())?;
     static_param_default_expr(&expr, module_constants, declared_type)
+}
+
+fn parse_date_literal_serial_bits(text: &str) -> Option<u64> {
+    let inner = text.strip_prefix('#')?.strip_suffix('#')?.trim();
+    let packed = parse_date_literal_to_packed(inner)?;
+    Some(packed_date_to_ole_serial(packed)?.to_bits())
+}
+
+fn parse_date_literal_to_packed(text: &str) -> Option<i32> {
+    let normalized = text.trim().replace([',', '.', '-', '/'], " ");
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    let packed = match parts.as_slice() {
+        [year, month, day] if year.len() == 4 => {
+            let year = year.parse::<i32>().ok()?;
+            let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
+            let day = day.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
+        [month, day, year] if parse_month_token(month).is_some() => {
+            let month = parse_month_token(month)?;
+            let day = day.parse::<i32>().ok()?;
+            let year = year.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
+        [day, month, year] => {
+            let day = day.parse::<i32>().ok()?;
+            let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
+            let year = year.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
+        _ => return None,
+    };
+    packed_date_components(packed)?;
+    Some(packed)
+}
+
+fn parse_month_token(text: &str) -> Option<i32> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "jan" | "january" => Some(1),
+        "feb" | "february" => Some(2),
+        "mar" | "march" => Some(3),
+        "apr" | "april" => Some(4),
+        "may" => Some(5),
+        "jun" | "june" => Some(6),
+        "jul" | "july" => Some(7),
+        "aug" | "august" => Some(8),
+        "sep" | "sept" | "september" => Some(9),
+        "oct" | "october" => Some(10),
+        "nov" | "november" => Some(11),
+        "dec" | "december" => Some(12),
+        _ => None,
+    }
+}
+
+fn packed_date_components(packed: i32) -> Option<(i32, u32, u32)> {
+    let year = packed / 10_000;
+    let month = ((packed / 100) % 100) as u32;
+    let day = (packed % 100) as u32;
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if max_day == 0 || day == 0 || day > max_day {
+        return None;
+    }
+    Some((year, month, day))
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn packed_date_to_ole_serial(packed: i32) -> Option<f64> {
+    let (year, month, day) = packed_date_components(packed)?;
+    let serial = days_from_civil(year, month, day) + 25_569;
+    Some(serial as f64)
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let year = i64::from(year) - i64::from((month <= 2) as i32);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let month_index = i64::from(month) + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_index + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 fn static_param_default_expr(
@@ -7769,6 +7866,25 @@ mod tests {
         assert_eq!(fill.params.len(), 2);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(4));
+    }
+
+    #[test]
+    fn resolve_optional_date_literal_default() {
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal stamp As Date = #2026-02-28#)\ntarget = stamp\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitDateSerialF64(
+                46_081.0f64.to_bits()
+            ))
+        );
     }
 
     #[test]
