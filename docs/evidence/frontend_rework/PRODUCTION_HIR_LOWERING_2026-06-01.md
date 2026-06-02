@@ -588,9 +588,13 @@ small values and values that exceed the old i32 literal carrier, plus VM executi
 `Const CTotal As LongLong = 5000000000`.
 Follow-up literal-kind work extends the bounded production `Const` substitution evaluator to
 simple `Double` literals, including decimal/exponent literals and `#`-suffixed Double literals, with
-default-route and VM execution coverage for `Const CTotal As Double = 1.5`. Typed constant
-coercion, `Single`/`Currency`/`Date` constant carriers, broader constant-name/expression parity,
-and full platform `LongPtr` semantics remain open.
+default-route and VM execution coverage for `Const CTotal As Double = 1.5`. A later exact-carrier
+continuation adds declared `Currency` and deterministic `#...#` `Date` literals to the same
+production substitution path using `BoundExpr::CurrencyConst(i64)` / `LoadConstCurrency` and
+`BoundExpr::DateConst(u64)` / `LoadConstDate`, with default-route and VM execution coverage for
+`Const CAmount As Currency = 1.25@` and `Const CStamp As Date = #2026-02-28#`. Typed constant
+coercion, `Single` constant carriers, broader constant-name/expression parity, locale-sensitive
+Date literal breadth, and full platform `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -1026,10 +1030,16 @@ constant expressions:
 - A fifth focused literal-kind pass lets the same bounded evaluator substitute simple typed
   `Double` constants as `BoundExpr::FloatConst`/`LoadConstF64`, including `#`-suffixed Double
   literals and VM execution coverage.
+- A sixth focused exact-carrier pass lets declared `Currency` and deterministic `#...#` `Date`
+  constants substitute through exact carriers instead of hidden runtime slots:
+  `BoundExpr::CurrencyConst(i64)` / `LoadConstCurrency` and `BoundExpr::DateConst(u64)` /
+  `LoadConstDate`. The focused proof covers default route metadata equivalence and VM execution for
+  `Const CAmount As Currency = 1.25@` and `Const CStamp As Date = #2026-02-28#`.
 - This is intentionally still a bounded subset. Constant expressions that require broader
-  procedure-local scoping, conditional-branch source mapping, `Single`/`Currency`/`Date` constant
-  carriers, or names beyond source-prior constants and the already handled enum/literal route, plus
-  typed constant coercion and full `LongPtr` platform semantics, remain future FE-8.5 work.
+  procedure-local scoping, conditional-branch source mapping, `Single` carriers, Date/Currency
+  expression coercion beyond the covered literal path, locale-sensitive Date literal breadth, or
+  names beyond source-prior constants and the already handled enum/literal route, plus typed
+  constant coercion and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
