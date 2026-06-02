@@ -1306,9 +1306,10 @@ Candidate bead units:
 - FE-9.7 Broad matrix/corpus route audit: expand FE-9.6 from selected route fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
   and selected Excel oracle lanes. Partial work has already been done: the bounded route audit,
-  retirement inventory, corpus inventory, and diff classifier exist. Closure requires every
-  accepted in-scope row to classify as HIR/SemanticModel production or to reopen/create the owning
-  delivery bead.
+  retirement inventory, corpus inventory, and diff classifier exist. Follow-up FE-9 cleanup aligns
+  the diff classifier's frontend-v2 observer with direct HIR production lowering rather than the
+  syntax bridge. Closure requires every accepted in-scope row to classify as HIR/SemanticModel
+  production or to reopen/create the owning delivery bead.
 - FE-9.8 Legacy route retirement finalization: after FE-7/FE-8 delivery beads pass, remove or
   hard-quarantine legacy production entry points for `parse_expr`, CST-to-legacy lowering,
   `project.rs` helper-source rewrites, and duplicate language-service semantic fallbacks. Partial

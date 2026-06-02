@@ -30,9 +30,10 @@ The classifier turns a `FrontendDiffReport` plus fixture policy into one of:
   execution trace status, and observable output status.
 - Close condition: keep as harmless only while diagnostics, metadata, execution, and output match.
 
-This is a classifier fixture, not a claim that the current v2 bridge naturally emits different
-bytecode. The current bridge validates with the CST parser and then uses legacy lowering, so the
-smoke compiler fixture is expected to remain byte-identical today.
+This is a classifier fixture, not a claim that the current frontend-v2 route naturally emits
+different bytecode. The frontend-v2 observer now calls HIR production lowering directly, so
+bytecode identity is not required; equivalence is judged by diagnostics, metadata policy, execution
+trace status, and observable output status.
 
 ### fixture-2: synthetic legacy divergence fix
 
@@ -62,9 +63,9 @@ End Sub
 ```
 
 The left side records the legacy diagnostic and no bytecode/metadata. The right side records
-bridge bytecode and metadata through `compile_source_with_runtime_metadata_via_syntax_bridge`.
-Without `ExpectedDiagnosticDrift::IntentionalImprovement`, the same report is classified as
-`Bug`.
+frontend-v2 bytecode and metadata through
+`frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir`. Without
+`ExpectedDiagnosticDrift::IntentionalImprovement`, the same report is classified as `Bug`.
 
 ### fixture-4: source-map metadata improvement
 

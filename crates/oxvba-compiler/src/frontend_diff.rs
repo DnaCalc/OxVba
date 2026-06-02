@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     Bytecode, CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy,
-    syntax_bridge,
+    frontend_hir_lowering,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -325,8 +325,13 @@ pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation
     let compiled = match path {
         FrontendPath::Legacy => compile_with_runtime_metadata_legacy(source),
         FrontendPath::FrontendV2 => {
-            syntax_bridge::compile_source_with_runtime_metadata_via_syntax_bridge(source).map_err(
-                |err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")),
+            frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source).map_err(
+                |err| match err {
+                    frontend_hir_lowering::HirProductionLoweringError::Unsupported(reason) => {
+                        CompileError::ResolveError(format!("frontend_v2 HIR unsupported: {reason}"))
+                    }
+                    frontend_hir_lowering::HirProductionLoweringError::Compile(err) => err,
+                },
             )
         }
     };
