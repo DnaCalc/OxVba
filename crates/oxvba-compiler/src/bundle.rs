@@ -19,6 +19,8 @@ use crate::emit::{
     ProcedureSignatureDescriptor, ResolvedParameterMechanism, SourceParameterMechanism,
     UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId, legacy_procedure_signature_descriptor,
 };
+use crate::frontend_hir_lowering::lower_typed_hir_to_bound_module;
+use crate::frontend_type_hooks::collect_type_hooks_from_source;
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
     ModuleKind, ModuleUnit, ModuleVisibility, PassingMode, ProcedureAnnotation,
@@ -1764,7 +1766,7 @@ fn module_fact_from_manifest_module(
         .modules
         .iter()
         .find(|candidate| candidate.name.eq_ignore_ascii_case(&module.module_name));
-    let bound = resolve_symbols(&module.source);
+    let bound = bound_module_for_bundle_facts(module);
     let external_declare_count = bound.external_declarations.len();
     let ptrsafe_declare_count = bound
         .external_declarations
@@ -1802,6 +1804,13 @@ fn module_fact_from_manifest_module(
         uses_long_ptr,
         uses_long_long,
     }
+}
+
+fn bound_module_for_bundle_facts(module: &ModuleUnit) -> BoundModule {
+    collect_type_hooks_from_source(&module.module_name, &module.source)
+        .ok()
+        .and_then(|typed_hir| lower_typed_hir_to_bound_module(&module.source, &typed_hir).ok())
+        .unwrap_or_else(|| resolve_symbols(&module.source))
 }
 
 fn module_fact_from_reflection_module(module: &ModuleDescriptor) -> BundleProjectModuleFact {

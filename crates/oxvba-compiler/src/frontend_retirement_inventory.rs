@@ -40,6 +40,14 @@ pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
         closure_condition: "no scoped production fixture reaches compile(source)/resolve::resolve_symbols as its authoritative expression parser",
     },
     LegacyRetirementRow {
+        legacy_path: "bundle.rs module fact resolve_symbols fallback",
+        replacement: "HIR BoundModule facts from frontend_type_hooks plus frontend_hir_lowering",
+        disposition: RetirementDisposition::QuarantinedResidual,
+        owner: "bd-aprs.10.8",
+        partial_work: "Bundle module context fact extraction now tries HIR BoundModule construction before falling back to resolve_symbols for unsupported residual modules.",
+        closure_condition: "bundle context facts for accepted modules are proven to come from HIR facts, with legacy resolver fallback deleted or marked comparison-only",
+    },
+    LegacyRetirementRow {
         legacy_path: "project.rs text rewrites for project/class/COM/default-member semantics",
         replacement: "frontend_project_symbols/frontend_member_dispatch/frontend_assignment_semantics/frontend_class_semantics plus HIR lowering",
         disposition: RetirementDisposition::QuarantinedResidual,

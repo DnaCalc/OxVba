@@ -270,7 +270,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         broader call-entry optional/missing-state behavior, plus indexed property invocation and
         default-route property semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
-    - `bd-aprs.10.8`: final legacy route retirement/quarantine.
+    - `bd-aprs.10.8`: final legacy route retirement/quarantine; bundle module fact extraction now
+      prefers HIR `BoundModule` facts, but retains explicit `resolve_symbols` fallback for
+      unsupported residual modules.
 
 ### FE-TERM-001: Frontend rework terminal evidence compiler metadata failure
 - Status: resolved in current run; superseded by FE-TERM-002 for terminal closure.

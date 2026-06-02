@@ -22,6 +22,9 @@ Rows now distinguish:
 - quarantined broad resolver parsing: `resolve::parse_expr` still exists inside the legacy
   production resolver and remains a terminal-audit residual, even though scoped HIR fixtures bypass
   it;
+- quarantined bundle context fallback: bundle module context fact extraction now tries HIR
+  `BoundModule` construction first, then falls back to `resolve_symbols` only for unsupported
+  residual modules;
 - quarantined project/class/COM/default-member rewrites: `project.rs` production compilation now
   selects the module-aware plan unconditionally; the old rewrite bridge remains for internal parity
   tests while FE-7.1 through FE-7.6 own broader replacement of source-text lowering internals;
@@ -51,7 +54,9 @@ assignment/arithmetic and simple same-module `Call` statement fixtures classify 
   as the replacement route. That is now corrected to HIR production lowering for the scoped
   surface, with the CST bridge classified as residual. A later FE-9 route cleanup moved the public
   `compile_with_options` HIR attempt off `syntax_bridge` entirely; only the explicit default
-  fallback policy reaches legacy compilation after `Unsupported`.
+  fallback policy reaches legacy compilation after `Unsupported`. A subsequent FE-9 package-context
+  cleanup moved bundle module fact extraction to prefer HIR `BoundModule` facts, with
+  `resolve_symbols` retained as an explicit unsupported-module fallback.
 - This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrite-era internals.
   The project rewrite bridge is no longer production-selected, but source-text lowering internals
   remain compatibility scaffolding until FE-7/FE-9 retirement beads finish replacing or
