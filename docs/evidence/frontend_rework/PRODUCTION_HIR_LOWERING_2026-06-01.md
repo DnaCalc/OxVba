@@ -924,8 +924,30 @@ The latest FE-8.5 slice removes the read-side bang member residual:
   early-bound COM property-put resolution, indexed/named writeback breadth, and property Let/Set
   overload validation remain tracked residual work.
 
+## Indexed Property Get Default Route
+
+The latest FE-8.5.c slice narrows the property/default-member residual without claiming indexed
+writeback closure:
+
+- Default-route eligibility now allows same-module indexed `Property Get` declarations, because the
+  HIR path already lowers `Value(1)` as an argument-preserving `property_get_value` procedure call.
+- The regression covers the ordinary default compile entry point, so this is production-route
+  migration rather than an opt-in `frontend_v2` only path.
+- Indexed `Property Let`/`Property Set` writeback remains rejected by the default-route guard until
+  the target indices and assignment value intent are lowered together through HIR.
+- Fresh-eyes correction: the first implementation let property/default-member PMR helper traffic
+  piggyback on the project construction HIR candidate and broke object-local/default-member rewrite
+  lanes. The final route keeps generated `property_*_pmr_*` helpers out of that construction
+  candidate while allowing ordinary same-module indexed getter reads through HIR.
+
 ## Checks
 
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_still_rejects_indexed_property_writeback_route --quiet`
+- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
+- `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
+- `cargo test -p oxvba-compiler compile_project_does_not_inject_runtime_validation_for_rewritten_internal_class_object_locals --quiet`
+- `cargo test -p oxvba-compiler compile_project_infers_non_authoritative_single_candidate_indexed_default_member_let --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_bang_member_access --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-host --test source_member_call_statements --quiet`

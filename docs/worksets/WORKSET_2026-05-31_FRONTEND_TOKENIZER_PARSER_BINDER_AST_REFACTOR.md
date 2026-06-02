@@ -1154,7 +1154,13 @@ Candidate bead units:
   COM property-get read/invoke routes now use accessor-specific internal early-invoke carriers and,
   for the single-active-module type-library-only subset, compile the active module through the
   HIR-capable boundary with early-bound COM dispatch-id metadata plus `PropertyGet`/`PropertyLet`/
-  `PropertySet` bytecode hints instead of the legacy project backend. Representative host-injected
+  `PropertySet` bytecode hints instead of the legacy project backend. Read-side indexed same-module
+  `Property Get` declarations now stay on the default HIR route and
+  lower as argument-preserving procedure calls; indexed `Property Let`/`Property Set` writeback
+  remains explicitly outside the default HIR route until indices and assignment value intent are
+  lowered together. The project construction HIR candidate now rejects generated
+  `property_*_pmr_*` helper traffic so property/default-member PMR rewrite carriers do not
+  accidentally inherit a construction-only HIR migration. Representative host-injected
   default-member/property get plus non-indexed and indexed let/set compatibility-helper routes now
   assert patched `CallProc.project_member` bytecode metadata for the expected `pmr_*` helper
   identity and accessor kind; this is evidence for the current host semantics, not closure of the

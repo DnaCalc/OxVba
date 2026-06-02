@@ -457,6 +457,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let indexed_property_get_statement = "Sub Main()\nDim x\nx = Value(1)\nEnd Sub\nProperty Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\n";
+    findings.push(route_finding(
+        "indexed property get fixture",
+        indexed_property_get_statement,
+        "bd-aprs.9.9",
+    ));
+
     let enum_member_constants =
         "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
     findings.push(route_finding(
@@ -914,6 +921,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("simple property")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("indexed property get")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

@@ -383,12 +383,19 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
         ) {
             continue;
         }
-        let Some((_, params, _)) = resolve::parse_proc_signature(line, kind, &default_type_table)
+        let Some((name, params, _)) =
+            resolve::parse_proc_signature(line, kind, &default_type_table)
         else {
             return true;
         };
         let supported = match kind {
-            resolve::ProcKind::PropertyGet => params.is_empty(),
+            resolve::ProcKind::PropertyGet => {
+                params.is_empty()
+                    || source_uses_indexed_property_get_with_arguments(
+                        source,
+                        source_property_name(&name),
+                    )
+            }
             resolve::ProcKind::PropertyLet | resolve::ProcKind::PropertySet => params.len() == 1,
             _ => true,
         };
@@ -397,6 +404,90 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
         }
     }
     false
+}
+
+fn source_property_name(name: &str) -> &str {
+    name.strip_prefix("property_get_")
+        .or_else(|| name.strip_prefix("property_let_"))
+        .or_else(|| name.strip_prefix("property_set_"))
+        .unwrap_or(name)
+}
+
+fn source_uses_indexed_property_get_with_arguments(source: &str, property_name: &str) -> bool {
+    let mut saw_indexed_use = false;
+    let mut in_matching_get_body = false;
+    let property_name = property_name.to_ascii_lowercase();
+
+    for line in source.lines() {
+        if line.trim().eq_ignore_ascii_case("End Property") {
+            in_matching_get_body = false;
+            continue;
+        }
+        if let Some(kind) = proc_kind_for_signature_line(line)
+            && matches!(kind, resolve::ProcKind::PropertyGet)
+        {
+            let lower = line.to_ascii_lowercase();
+            if lower
+                .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+                .any(|word| word.eq_ignore_ascii_case(&property_name))
+            {
+                in_matching_get_body = true;
+            }
+            continue;
+        }
+        if in_matching_get_body {
+            continue;
+        }
+        if contains_ascii_word(line, "property") {
+            continue;
+        }
+        match property_get_line_use_state(line, &property_name) {
+            PropertyGetUseState::NoUse => {}
+            PropertyGetUseState::Indexed => saw_indexed_use = true,
+            PropertyGetUseState::Bare => return false,
+        }
+    }
+
+    saw_indexed_use
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PropertyGetUseState {
+    NoUse,
+    Indexed,
+    Bare,
+}
+
+fn property_get_line_use_state(line: &str, property_name: &str) -> PropertyGetUseState {
+    let lower = line.to_ascii_lowercase();
+    let mut start = 0usize;
+    let mut saw_indexed = false;
+    while let Some(relative) = lower[start..].find(property_name) {
+        let idx = start + relative;
+        let end = idx + property_name.len();
+        let before_is_ident = lower[..idx]
+            .chars()
+            .next_back()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        let after_is_ident = lower[end..]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        if !before_is_ident && !after_is_ident {
+            let after = lower[end..].trim_start();
+            if after.starts_with('(') {
+                saw_indexed = true;
+            } else {
+                return PropertyGetUseState::Bare;
+            }
+        }
+        start = end;
+    }
+    if saw_indexed {
+        PropertyGetUseState::Indexed
+    } else {
+        PropertyGetUseState::NoUse
+    }
 }
 
 fn source_has_hir_parameter_signature_mismatch(source: &str) -> bool {
@@ -1218,11 +1309,39 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_still_rejects_indexed_property_route() {
+    fn compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir() {
         let source = "Sub Main()\nDim x\nx = Value(1)\nEnd Sub\nProperty Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\n";
         assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "indexed Property Get declarations should be eligible once read-side calls lower through HIR"
+        );
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support indexed Property Get");
+
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route indexed Property Get source through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for indexed Property Get"
+        );
+        assert!(metadata.contains_key("property_get_value"), "{metadata:#?}");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected indexed property get to lower as a procedure call: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_still_rejects_indexed_property_writeback_route() {
+        let source = "Sub Main()\nValue(1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
+        assert!(
             !super::source_is_eligible_for_lightweight_hir_default(source),
-            "indexed property declarations remain outside the default HIR route"
+            "indexed Property Let/Set writeback remains outside the default HIR route until indices and value intent are lowered together"
         );
     }
 

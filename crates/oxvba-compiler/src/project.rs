@@ -939,6 +939,14 @@ fn hir_construction_source_from_project_rewrites(
     source: &str,
     bindings: &[ProjectDynamicInstanceBindingDraft],
 ) -> Option<(String, Vec<HirNewExpressionBinding>)> {
+    let lowered_source = source.to_ascii_lowercase();
+    if lowered_source.contains("property_get_pmr_")
+        || lowered_source.contains("property_let_pmr_")
+        || lowered_source.contains("property_set_pmr_")
+    {
+        return None;
+    }
+
     let construction_by_handle = bindings
         .iter()
         .filter(|binding| {

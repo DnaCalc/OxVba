@@ -2147,6 +2147,21 @@ fn lower_call_expr(
             member,
             args,
         }),
+        BoundExpr::ProcCall {
+            name,
+            args: mut target_args,
+        } => {
+            if call_data.cst.syntax_kind != "IndexExpr" || args.is_empty() {
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "call target ProcCall {{ name: {name:?}, args: {target_args:?} }}"
+                )));
+            }
+            target_args.extend(args);
+            Ok(BoundExpr::ProcCall {
+                name,
+                args: target_args,
+            })
+        }
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "call target {other:?}"
         ))),
