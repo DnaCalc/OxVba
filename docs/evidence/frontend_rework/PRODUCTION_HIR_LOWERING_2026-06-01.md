@@ -1078,6 +1078,11 @@ constant expressions:
   `Const CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & "ady" = "ready"` now
   substitutes as `LoadConstBool true` through direct HIR, default-route, route-audit, and VM
   execution paths.
+- A companion `String` typed-constant pass reuses the same bounded string evaluator for declared
+  module constants. `Const Prefix As String = "re"` followed by
+  `Const CText As String = Prefix & "ady"` now substitutes as `LoadConstString "ready"` through
+  direct HIR, default-route, route-audit, and VM execution paths, with no runtime concat bytecode
+  needed for the constant itself.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, locale-sensitive string comparison,
   Date/Currency expression coercion beyond the covered numeric arithmetic subset, locale-sensitive
@@ -1278,6 +1283,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_date_currency_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_same_statement_const_expression --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_string_const_expression --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_string_const_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_integer_const --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const --quiet`
