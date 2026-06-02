@@ -500,6 +500,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_double_const_statement =
+        "Const CTotal As Double = 1.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed double const fixture",
+        typed_double_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let mod_like_expression_statement = "Sub Main()\nDim x\nDim y\nDim ok\nx = 17 Mod 3\ny = 17 \\ 3\nok = \"123\" Like \"###\"\nEnd Sub\n";
     findings.push(route_finding(
         "mod integer-division and like expression fixture",

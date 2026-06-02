@@ -3768,6 +3768,9 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
     if let Some(value) = parse_const_numeric_prefix_literal(text) {
         return Some(BoundExpr::IntConst(value));
     }
+    if let Some(value) = parse_const_double_literal(text) {
+        return Some(BoundExpr::FloatConst(value.to_bits()));
+    }
     if text.eq_ignore_ascii_case("true") {
         return Some(BoundExpr::BoolConst(true));
     }
@@ -3781,6 +3784,19 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
         ));
     }
     None
+}
+
+fn parse_const_double_literal(text: &str) -> Option<f64> {
+    let text = text.trim();
+    let (body, has_double_suffix) = text
+        .strip_suffix('#')
+        .map(|body| (body, true))
+        .unwrap_or((text, false));
+    if !has_double_suffix && !body.contains(['.', 'e', 'E']) {
+        return None;
+    }
+    let value = body.parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 fn parse_const_numeric_prefix_literal(text: &str) -> Option<i32> {
@@ -7575,6 +7591,42 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::LongLong
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_double_const_literal() {
+        let source =
+            "Const CTotal As Double = 1.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF64 { bits, .. } if *bits == 1.5f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Double
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_double_suffix_const_literal() {
+        let source =
+            "Const CTotal As Double = 2#\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF64 { bits, .. } if *bits == 2.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
     }
 
     #[test]

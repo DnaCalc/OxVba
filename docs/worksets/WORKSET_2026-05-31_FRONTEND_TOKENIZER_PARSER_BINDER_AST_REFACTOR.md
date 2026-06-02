@@ -690,11 +690,13 @@ Required newly explicit delivery beads:
   same-statement constant subset, and explicit `As LongLong`/`As LongPtr` overflow diagnostics
   for signed 64-bit integer expressions that exceed the current carrier range, plus a signed-64-bit
   bound-expression/bytecode/VM carrier for covered explicit `As LongLong` and `As LongPtr`
-  constants, including values that fit in the old i32 literal range.
+  constants, including values that fit in the old i32 literal range, plus simple typed `Double`
+  constants through `FloatConst`/`LoadConstF64`.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
-  full platform `LongPtr` semantics, separate IDE/session option plumbing for conditional constants,
-  and project-owned attribute/module-option semantics outside the current single-source route.
+  `Single`/`Currency`/`Date` constant carriers, full platform `LongPtr` semantics, separate
+  IDE/session option plumbing for conditional constants, and project-owned attribute/module-option
+  semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1196,9 +1198,11 @@ Candidate bead units:
   FE-8.5.e work distinguishes unsupported constant expressions from integer evaluation overflow and
   rejects explicit `As LongLong`/`As LongPtr` expressions that exceed signed 64-bit range.
   Follow-up carrier work adds a signed-64-bit bound-expression/bytecode/VM carrier for covered
-  explicit `As LongLong` and `As LongPtr` constants, including values that fit in i32. Full
-  constant evaluation beyond source-prior constants, typed constant coercion, and full platform
-  `LongPtr` semantics remain broader FE-8.5 work.
+  explicit `As LongLong` and `As LongPtr` constants, including values that fit in i32. Follow-up
+  literal-kind work routes simple typed `Double` constants through `FloatConst`/`LoadConstF64` with
+  VM execution coverage. Full constant evaluation beyond source-prior constants, typed constant
+  coercion, `Single`/`Currency`/`Date` constant carriers, and full platform `LongPtr` semantics
+  remain broader FE-8.5 work.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

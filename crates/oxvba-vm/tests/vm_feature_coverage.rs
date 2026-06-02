@@ -32,6 +32,13 @@ fn scalar_longlong_const_carrier_executes() {
 }
 
 #[test]
+fn scalar_double_const_carrier_executes() {
+    let snap =
+        run("Const CTotal As Double = 1.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub");
+    assert_eq!(snap, vec![Variant::from_f64(1.5)]);
+}
+
+#[test]
 fn scalar_double_arithmetic() {
     let snap = run("Sub Main()\nDim d As Double\nd = 1.5\nd = d * 2.0\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_f64(3.0)]);
