@@ -1071,12 +1071,16 @@ constant expressions:
   literal-only fixture to the same source-prior expression shape: `Const CBase As Long = 1` followed
   by `Const CTotal As Double = CBase + 0.5`. Direct HIR, default-route, route-audit, and VM
   execution coverage now prove `LoadConstF64` for the expression route, not just the literal route.
+- A bounded Boolean typed-constant pass adds `True`/`False`, source-prior Boolean constants, `Not`,
+  `And`, and `Or` to the declared `Boolean` module-constant evaluator. `Const Enabled As Boolean =
+  True` followed by `Const CFlag As Boolean = Not Enabled Or False` now substitutes as
+  `LoadConstBool false` through direct HIR, default-route, route-audit, and VM execution paths.
 - This is intentionally still a bounded subset. Constant expressions that require broader
-  procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
-  beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
-  source-prior constants and the already handled enum/literal/type-character route, plus typed
-  constant coercion outside the covered exact numeric carrier subset and full `LongPtr` platform
-  semantics, remain future FE-8.5 work.
+  procedure-local scoping, conditional-branch source mapping, Boolean comparison/string expression
+  folding, Date/Currency expression coercion beyond the covered numeric arithmetic subset,
+  locale-sensitive Date literal breadth, or names beyond source-prior constants and the already
+  handled enum/literal/type-character route, plus typed constant coercion outside the covered exact
+  scalar carrier subset and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
