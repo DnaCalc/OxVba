@@ -533,8 +533,10 @@ Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option
 compare collector and emits text comparison bytecode (`StringCompareMode::Text`) for string
 comparisons under `Option Compare Text`. Follow-up FE-8.5.e work also preserves the
-`Option Explicit` flag in the HIR-bound module and adds production route-audit coverage for an
-otherwise completed `Option Explicit` source. The HIR lowerer now reuses the compiler DefType
+`Option Explicit` flag in the HIR-bound module, adds production route-audit coverage for an
+otherwise completed `Option Explicit` source, and admits that option to the lightweight default HIR
+route once metadata preservation was executable-test visible. The HIR lowerer now reuses the
+compiler DefType
 default table collector, with route-audit coverage for `DefLng A-Z` applying to a local untyped
 `Dim`, module-scope scalar `Dim` declarations, and DefType/type-character/explicit-`As` precedence
 in parameters and function returns. Known DefType directives now remain eligible for default HIR

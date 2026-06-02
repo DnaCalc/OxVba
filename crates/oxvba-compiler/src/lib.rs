@@ -679,6 +679,7 @@ fn source_has_unsupported_option_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> boo
             parts.as_slice(),
             ["option", "base", "0" | "1"]
                 | ["option", "compare", "binary" | "text" | "database"]
+                | ["option", "explicit"]
                 | ["option", "private", "module"]
         );
     }
@@ -1187,13 +1188,22 @@ mod tests {
     }
 
     #[test]
-    fn lightweight_hir_default_rejects_unsupported_option_statements() {
-        for source in ["Option Explicit\nSub Main()\nEnd Sub\n"] {
-            assert!(
-                !super::source_is_eligible_for_lightweight_hir_default(source),
-                "unsupported Option statement should remain outside default HIR route: {source}"
-            );
-        }
+    fn compile_with_runtime_metadata_default_allows_option_explicit_hir_route() {
+        let source =
+            "Option Explicit\nSub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not accept inline sequence");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "Option Explicit should not disqualify otherwise-completed HIR constructs"
+        );
+        super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route Option Explicit through HIR");
     }
 
     #[test]

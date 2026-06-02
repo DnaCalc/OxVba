@@ -27,9 +27,9 @@ admits known DefType directives, `Option Compare Binary`/`Text`/`Database` (with
 Database-as-binary runtime approximation), single-source `Option Private Module`, simple function
 returns, simple property declaration/read/write shapes, explicit/defaultless/integer-expression
 optional parameters, simple `ParamArray` packing, selected typed constants, and the documented
-Declare subsets once their HIR facts and route proof landed. `Option Explicit` has direct HIR
-production evidence, but it still remains outside this lightweight-default eligibility helper until
-that guard is relaxed deliberately. Class/object-local compatibility contexts, project-rewritten
+Declare subsets once their HIR facts and route proof landed. Follow-up FE-8.5.e work also admits
+`Option Explicit` to the lightweight default route once HIR preserved the option flag and route proof
+covered an otherwise completed source. Class/object-local compatibility contexts, project-rewritten
 compilation, unsupported project property/default-member/COM rewrite shapes, and other explicitly
 tracked residual constructs still fall back rather than accepting partial HIR output.
 

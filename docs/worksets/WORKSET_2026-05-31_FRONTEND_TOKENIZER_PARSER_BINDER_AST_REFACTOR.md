@@ -636,7 +636,8 @@ Required newly explicit delivery beads:
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
-  `Option Explicit` HIR-bound module flag plus route audit, `Option Base 0/1`,
+  `Option Explicit` HIR-bound module flag plus route audit and lightweight-default route admission,
+  `Option Base 0/1`,
   `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, `Option Compare Database`
   HIR/default routing with the current binary-runtime compare approximation, `Option Private
   Module` single-source/default HIR routing with project privacy enforcement left in the project
@@ -1046,7 +1047,8 @@ Candidate bead units:
   `Option Compare Binary`, `Option Compare Text`, and `Option Compare Database` on otherwise
   completed lightweight HIR sources. Database compare currently uses the runtime's binary compare
   approximation rather than Access collation. Follow-up FE-8.5.e work preserves the
-  `Option Explicit` HIR-bound module flag and adds route-audit coverage. `Option Private Module`
+  `Option Explicit` HIR-bound module flag, adds route-audit coverage, and admits otherwise
+  completed `Option Explicit` sources to the lightweight default HIR route. `Option Private Module`
   now routes through single-source/default HIR for otherwise completed sources; project
   module-kind/reference visibility enforcement remains in the project route.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
@@ -1199,7 +1201,8 @@ Candidate bead units:
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
-  work has already been done: `Option Explicit` HIR-bound module flag plus route audit,
+  work has already been done: `Option Explicit` HIR-bound module flag plus route audit and
+  lightweight-default route admission,
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
   `Option Compare Database` HIR/default routing with the current binary-runtime compare
   approximation, `Option Private Module` single-source/default HIR routing with project privacy
