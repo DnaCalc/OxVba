@@ -542,6 +542,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_string_const_statement = "Const Prefix As String = \"re\"\nConst CText As String = Prefix & \"ady\"\nSub Main()\nDim text As String\ntext = CText\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed string const expression fixture",
+        typed_string_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let mod_like_expression_statement = "Sub Main()\nDim x\nDim y\nDim ok\nx = 17 Mod 3\ny = 17 \\ 3\nok = \"123\" Like \"###\"\nEnd Sub\n";
     findings.push(route_finding(
         "mod integer-division and like expression fixture",

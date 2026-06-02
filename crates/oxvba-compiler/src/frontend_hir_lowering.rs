@@ -3827,6 +3827,9 @@ fn parse_declared_const_value(
         Some(BoundType::Boolean) => {
             parse_const_bool_value(text, named_values).map(BoundExpr::BoolConst)
         }
+        Some(BoundType::String) => {
+            parse_const_string_value(text, named_values).map(BoundExpr::StringConst)
+        }
         Some(BoundType::Single) => {
             if let Some(value) = parse_const_single_literal(text) {
                 return Some(BoundExpr::SingleConst(value));
@@ -8259,6 +8262,33 @@ mod tests {
             slot.name == "flag"
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Boolean
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_string_const_expression() {
+        let source = "Const Prefix As String = \"re\"\nConst CText As String = Prefix & \"ady\"\nSub Main()\nDim text As String\ntext = CText\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "ready"
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            !bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ConcatSlots { .. })),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "text"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::String
         }));
     }
 

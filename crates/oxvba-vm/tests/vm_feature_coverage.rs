@@ -75,6 +75,14 @@ fn scalar_boolean_const_expression_executes() {
 }
 
 #[test]
+fn scalar_string_const_expression_executes() {
+    let snap = run(
+        "Const Prefix As String = \"re\"\nConst CText As String = Prefix & \"ady\"\nSub Main()\nDim text As String\ntext = CText\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_string(BStr::from("ready"))]);
+}
+
+#[test]
 fn scalar_currency_date_const_carriers_execute() {
     let snap = run(
         "Const CAmount As Currency = 1.25@\nConst CStamp As Date = #2026-02-28#\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",
