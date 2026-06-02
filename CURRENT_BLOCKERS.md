@@ -182,11 +182,13 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         production route-audit coverage; `Option Compare Text` now routes through HIR for otherwise
         completed lightweight sources and emits text comparison bytecode; `Option Compare Database`
         now routes through HIR/default production with the current binary-runtime compare
-        approximation; basic DefType default table preservation now covers local untyped `Dim`,
+        approximation; `Option Private Module` now routes through single-source/default HIR while
+        project module-kind/reference visibility validation remains owned by the project route;
+        basic DefType default table preservation now covers local untyped `Dim`,
         parameters, function returns, and module-scope scalar `Dim` declarations through HIR;
-        `Option Private Module`, broader DefType surfaces for visibility-prefixed class/project
-        fields, attributes, conditional compilation, typed constants, and broader compile-time
-        constant evaluation remain open;
+        broader DefType surfaces for visibility-prefixed class/project fields, attributes,
+        conditional compilation, typed constants, and broader compile-time constant evaluation remain
+        open;
     - `bd-aprs.9.10`: broader declaration/type surface;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.

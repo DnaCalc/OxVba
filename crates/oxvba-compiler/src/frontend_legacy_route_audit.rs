@@ -367,6 +367,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let option_private_module_statement =
+        "Option Private Module\nSub Main()\nDim x\nx = 1\nEnd Sub\n";
+    findings.push(route_finding(
+        "option private module fixture",
+        option_private_module_statement,
+        "bd-aprs.9.9",
+    ));
+
     let def_type_statement = "DefLng A-Z\nSub Main()\nDim alpha\nalpha = 1\nEnd Sub\n";
     findings.push(route_finding(
         "def type untyped dim fixture",
@@ -688,6 +696,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("option compare database")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("option private module")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("def type untyped dim")

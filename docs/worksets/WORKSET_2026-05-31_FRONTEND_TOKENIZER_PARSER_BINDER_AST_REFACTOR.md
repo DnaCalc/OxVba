@@ -634,10 +634,11 @@ Required newly explicit delivery beads:
   compilation/compile constants, and richer constant evaluation. Partial work already done:
   `Option Explicit` HIR-bound module flag plus route audit, `Option Base 0/1`,
   `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, `Option Compare Database`
-  HIR/default routing with the current binary-runtime compare approximation, simple constants, enum
-  constants, basic DefType default-table preservation for local untyped `Dim`, parameters, and
-  function returns, module-scope scalar `Dim` declarations, known DefType default-route eligibility,
-  and same-statement constant expression substitution.
+  HIR/default routing with the current binary-runtime compare approximation, `Option Private
+  Module` single-source/default HIR routing with project privacy enforcement left in the project
+  route, simple constants, enum constants, basic DefType default-table preservation for local
+  untyped `Dim`, parameters, and function returns, module-scope scalar `Dim` declarations, known
+  DefType default-route eligibility, and same-statement constant expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1035,8 +1036,9 @@ Candidate bead units:
   `Option Compare Binary`, `Option Compare Text`, and `Option Compare Database` on otherwise
   completed lightweight HIR sources. Database compare currently uses the runtime's binary compare
   approximation rather than Access collation. Follow-up FE-8.5.e work preserves the
-  `Option Explicit` HIR-bound module flag and adds route-audit coverage; `Option Private Module`
-  remains outside the default route until its semantics are owned by HIR.
+  `Option Explicit` HIR-bound module flag and adds route-audit coverage. `Option Private Module`
+  now routes through single-source/default HIR for otherwise completed sources; project
+  module-kind/reference visibility enforcement remains in the project route.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
   Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
@@ -1170,9 +1172,10 @@ Candidate bead units:
   work has already been done: `Option Explicit` HIR-bound module flag plus route audit,
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
   `Option Compare Database` HIR/default routing with the current binary-runtime compare
-  approximation, enum constants, basic DefType default-table preservation for local untyped `Dim`,
-  parameters, function returns, module-scope scalar `Dim` declarations, and known DefType
-  default-route eligibility, and simple same-statement constant expressions.
+  approximation, `Option Private Module` single-source/default HIR routing with project privacy
+  enforcement left in the project route, enum constants, basic DefType default-table preservation
+  for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations, and
+  known DefType default-route eligibility, and simple same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:

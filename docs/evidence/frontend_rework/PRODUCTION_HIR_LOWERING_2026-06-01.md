@@ -321,9 +321,11 @@ production routing for otherwise completed sources; unknown `Def*` directives re
 route.
 `Option Compare Database` now routes through HIR/default production for otherwise completed sources;
 the current runtime intentionally maps Database compare to binary comparison rather than Access
-collation.
-Other `Option` forms remain outside the lightweight default route until HIR owns their semantics
-(module privacy), and broader DefType surfaces for visibility-prefixed class/project fields remain
+collation. `Option Private Module` now routes through single-source/default HIR for otherwise
+completed sources; project module-kind and reference-visibility enforcement remains in the project
+route.
+Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
+their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
 
 ## Member Expression Continuation
