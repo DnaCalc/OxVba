@@ -586,8 +586,11 @@ integer expressions that overflow the signed 64-bit carrier range, for example
 bytecode carrier for explicit `As LongLong` and `As LongPtr` constants, with coverage for both
 small values and values that exceed the old i32 literal carrier, plus VM execution coverage for
 `Const CTotal As LongLong = 5000000000`.
-Typed constant coercion, broader constant-name/expression parity, and full platform `LongPtr`
-semantics remain open.
+Follow-up literal-kind work extends the bounded production `Const` substitution evaluator to
+simple `Double` literals, including decimal/exponent literals and `#`-suffixed Double literals, with
+default-route and VM execution coverage for `Const CTotal As Double = 1.5`. Typed constant
+coercion, `Single`/`Currency`/`Date` constant carriers, broader constant-name/expression parity,
+and full platform `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -1020,10 +1023,13 @@ constant expressions:
 - A fourth focused carrier pass adds `BoundExpr::LongLongConst(i64)`,
   `Instruction::LoadConstI64`, and VM execution support, so covered explicit `As LongLong` and
   `As LongPtr` constants use the signed-64-bit carrier even when the value fits in i32.
+- A fifth focused literal-kind pass lets the same bounded evaluator substitute simple typed
+  `Double` constants as `BoundExpr::FloatConst`/`LoadConstF64`, including `#`-suffixed Double
+  literals and VM execution coverage.
 - This is intentionally still a bounded subset. Constant expressions that require broader
-  procedure-local scoping, conditional-branch source mapping, richer literal kinds, or names beyond
-  source-prior constants and the already handled enum/literal route, plus typed constant coercion
-  and full `LongPtr` platform semantics, remain future FE-8.5 work.
+  procedure-local scoping, conditional-branch source mapping, `Single`/`Currency`/`Date` constant
+  carriers, or names beyond source-prior constants and the already handled enum/literal route, plus
+  typed constant coercion and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
