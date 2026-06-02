@@ -568,9 +568,9 @@ and remain part of the broader attribute-semantics residual.
 Basic typed constant declarators such as `Const CBase As Long = 7` also route through default HIR
 and substitute the value into procedure bytecode. Follow-up route coverage proves typed simple
 expression declarators and same-statement typed references, for example
-`Const CBase As Long = 2 ^ 3 \ 2, CTotal As Long = CBase + 4`. This covers the current
+`Const CBase As Long = 2 ^ 3 \ 2 Mod 3, CTotal As Long = CBase + 4`. This covers the current
 literal/simple-expression constant evaluator, including checked nonnegative integer exponentiation
-and integer division.
+plus integer division and `Mod`.
 Later focused diagnostic passes reject explicit `As Byte`, `As Integer`, and `As Long` integer
 expressions that overflow their VBA ranges before the unsupported-const fallback can hide them,
 including checked exponentiation overflow such as `2 ^ 31` for `Long`. Typed constant coercion,
@@ -1126,8 +1126,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Procedure signature parsing now accepts integer constant-expression defaults by reusing the
   resolver expression parser and statically folding only integer-safe shapes.
 - This covers decimal, signed, prefixed hex/octal, typed integer suffixes, parentheses, and simple
-  integer arithmetic, including checked nonnegative exponentiation and integer division, that can be
-  represented as `OptionalDefaultValue::ExplicitI32`.
+  integer arithmetic, including checked nonnegative exponentiation, integer division, and `Mod`,
+  that can be represented as `OptionalDefaultValue::ExplicitI32`.
 - Follow-up route work also allows those integer defaults to reference integer-valued module
   constants, including constants initialized from prefixed hex/octal arithmetic, while keeping the
   same `ExplicitI32` descriptor contract.

@@ -3356,6 +3356,13 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
             rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
         });
     }
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "mod") {
+        return Some(BoundExpr::BinaryOp {
+            op: ArithOp::Mod,
+            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
+            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
+        });
+    }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/', '\\']) {
         let op = match op {
             '*' => ArithOp::Mul,
@@ -3425,6 +3432,11 @@ fn parse_const_i64_value(text: &str, named_values: &HashMap<String, i64>) -> Opt
             '-' => lhs.checked_sub(rhs),
             _ => None,
         };
+    }
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "mod") {
+        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        return if rhs != 0 { lhs.checked_rem(rhs) } else { None };
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/', '\\']) {
         let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
@@ -3574,6 +3586,47 @@ fn split_const_binary_expr<'a>(
     let lhs = text[..idx].trim();
     let rhs = text[idx + op.len_utf8()..].trim();
     (!lhs.is_empty() && !rhs.is_empty()).then_some((lhs, op, rhs))
+}
+
+fn split_const_binary_keyword_expr<'a>(text: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let keyword = keyword.to_ascii_lowercase();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut split = None;
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some((_, '"'))) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            '(' if !in_string => depth += 1,
+            ')' if !in_string => depth -= 1,
+            _ if !in_string && depth == 0 && lower[idx..].starts_with(&keyword) => {
+                let before = text[..idx].chars().next_back();
+                let after_idx = idx + keyword.len();
+                let after = text[after_idx..].chars().next();
+                if before.is_none_or(|ch| !is_const_ident_char(ch))
+                    && after.is_none_or(|ch| !is_const_ident_char(ch))
+                {
+                    split = Some(idx);
+                }
+            }
+            _ => {}
+        }
+    }
+    let idx = split?;
+    let lhs = text[..idx].trim();
+    let rhs = text[idx + keyword.len()..].trim();
+    (!lhs.is_empty() && !rhs.is_empty()).then_some((lhs, rhs))
+}
+
+fn is_const_ident_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 fn is_unary_const_minus(text: &str, idx: usize) -> bool {
@@ -7143,7 +7196,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_collects_typed_same_statement_const_expression() {
-        let source = "Const CBase As Long = 2 ^ 3 \\ 2, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+        let source = "Const CBase As Long = 2 ^ 3 \\ 2 Mod 3, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
         let typed_hir =
             collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
         let const_values = collect_const_values(source, &typed_hir);
@@ -7174,7 +7227,7 @@ mod tests {
                     ..
                 } if matches!(
                     lhs.as_ref(),
-                    BoundExpr::BinaryOp { op: ArithOp::IntDiv, .. }
+                    BoundExpr::BinaryOp { op: ArithOp::Mod, .. }
                 ) && matches!(rhs.as_ref(), BoundExpr::IntConst(4))
             ),
             "{value:#?}"

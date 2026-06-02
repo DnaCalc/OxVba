@@ -1428,7 +1428,7 @@ mod tests {
 
     #[test]
     fn compile_with_runtime_metadata_default_routes_typed_const_expression_through_hir() {
-        let source = "Const CBase As Long = 2 ^ 3 \\ 2, CTotal As Long = CBase + 4\nSub Main()\nDim x As Long\nx = CTotal: x = x + 1\nEnd Sub\n";
+        let source = "Const CBase As Long = 2 ^ 3 \\ 2 Mod 3, CTotal As Long = CBase + 4\nSub Main()\nDim x As Long\nx = CTotal: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
             "legacy path should reject the active inline sequence after typed const expressions",
         );
@@ -1461,6 +1461,13 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntDivSlots { .. })),
             "expected typed integer-division const bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ModSlots { .. })),
+            "expected typed Mod const bytecode: {bytecode:#?}"
         );
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
@@ -1522,7 +1529,7 @@ mod tests {
     #[test]
     fn compile_with_runtime_metadata_default_routes_optional_integer_expression_defaults_through_hir()
      {
-        let source = "Sub Use(Optional ByVal n As Long = 2 ^ 3 \\ 2 + &H10 + 2)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let source = "Sub Use(Optional ByVal n As Long = 2 ^ 3 \\ 2 Mod 3 + &H10 + 5)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         assert!(
             super::source_is_eligible_for_lightweight_hir_default(source),
             "integer constant-expression defaults should stay eligible for default HIR"

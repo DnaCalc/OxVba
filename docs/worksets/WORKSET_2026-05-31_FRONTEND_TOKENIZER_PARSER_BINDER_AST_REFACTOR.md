@@ -650,9 +650,9 @@ Required newly explicit delivery beads:
   discovery/lowering plus manifest-based embedded host build requests, basic single-source module
   `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
   declarators, typed simple-expression constants including checked nonnegative exponentiation and
-  integer division, and same-statement constant expression substitution, plus explicit `As Byte`/
-  `As Integer`/`As Long` integer-expression overflow diagnostics for the covered same-statement
-  constant subset.
+  integer division/`Mod`, and same-statement constant expression substitution, plus explicit
+  `As Byte`/`As Integer`/`As Long` integer-expression overflow diagnostics for the covered
+  same-statement constant subset.
   Remaining work: full VBA
   compile-time expression/name evaluation, typed constant coercion, `LongLong`/`LongPtr` constant
   carrier and range diagnostics, separate IDE/session option plumbing for conditional constants,
@@ -1326,7 +1326,7 @@ Candidate bead units:
   discovery/lowering plus manifest-based embedded host build requests, basic single-source module
   `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
-  exponentiation and integer division, and explicit `As Byte`/`As Integer`/`As Long`
+  exponentiation plus integer division/`Mod`, and explicit `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
@@ -1334,8 +1334,8 @@ Candidate bead units:
   diagnostics/metadata through HIR. Partial work has already been done:
   simple functions with return slots, optional parameters with simple explicit defaults and
   integer constant-expression defaults, including integer module-constant and enum-member
-  references plus checked nonnegative exponentiation and integer division, through the default HIR
-  route within the existing `ExplicitI32` metadata shape,
+  references plus checked nonnegative exponentiation and integer division/`Mod`, through the
+  default HIR route within the existing `ExplicitI32` metadata shape,
   literal/module-constant string defaults plus string concatenation constant expressions through
   explicit optional-default descriptors, Boolean literal/module-constant/logical expression defaults
   plus bounded numeric comparison and Boolean equality/inequality defaults through explicit
