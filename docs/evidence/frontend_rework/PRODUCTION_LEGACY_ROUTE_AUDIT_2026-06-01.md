@@ -290,3 +290,10 @@ The audit result records completed reopened delivery work and remaining broader 
   `ActiveHir`/`HirProduction`, with a two-module `OxVba.TestDispatch` fixture proving both modules'
   runtime metadata survives the active-source HIR route. Broader imported-COM rewrite-body
   retirement remains open.
+- Project-reference route admission now accepts referenced projects that mix unused procedural
+  helper modules with predeclared document/class roots: the full-source HIR boundary covers a
+  `ThisWorkbook.Path` read while retaining runtime metadata for an unused `HostHelpers.Touch`
+  helper in the same referenced project. A matching guard keeps active source that names the
+  referenced helper module/procedure on the existing compatibility path. Used referenced procedural
+  helpers and non-predeclared referenced class modules remain reference-project symbol composition
+  residuals, not accepted HIR-safe shapes.

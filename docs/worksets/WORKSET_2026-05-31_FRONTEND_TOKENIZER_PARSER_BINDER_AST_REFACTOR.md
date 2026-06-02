@@ -1029,8 +1029,11 @@ Candidate bead units:
   source-project and host-injected references do not by themselves force an otherwise procedural
   active project onto the legacy route; named project references and named host roots still stay on
   the existing project/host rewrite or compatibility route until FE-7.6 owns those bindings
-  structurally. Existing typelib metadata helpers remain as compatibility lowering after the
-  frontend route accepts the declared reference.
+  structurally. Mixed project references containing predeclared document/class roots plus unused
+  procedural helper modules now also route through the full-source HIR boundary; used referenced
+  procedural helpers and arbitrary referenced class modules remain outside this slice until
+  reference-project symbol-index composition lands. Existing typelib metadata helpers remain as
+  compatibility lowering after the frontend route accepts the declared reference.
   Status: scoped delivery bead closed after imported/reference/host route proof and compatibility
   classification for post-acceptance metadata materialisation.
   Evidence: `docs/evidence/frontend_rework/EXTERNAL_REFERENCES_BINDING_2026-06-01.md`.

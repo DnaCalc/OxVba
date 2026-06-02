@@ -69,10 +69,13 @@ Production-route proof:
 
 Compatibility quarantine / residual classification:
 
-- Referenced-project class construction and referenced-project predeclared roots still fall back to
-  `resolve_interface_module` / procedure metadata because the current `ProjectSymbolIndex` is built
-  for the active manifest only. This is classified as an out-of-scope compatibility route for
-  FE-7.4 and should be migrated when reference-project symbol-index composition lands.
+- Referenced-project class construction and arbitrary referenced-class member ownership still fall
+  back to `resolve_interface_module` / procedure metadata because the current `ProjectSymbolIndex`
+  is built for the active manifest only. Later project-boundary work admits mixed predeclared
+  document/class roots plus unused procedural helpers through the full-source HIR route, but used
+  referenced procedural helpers and reference-project class-construction/member ownership remain
+  out-of-scope compatibility routes for FE-7.4 until reference-project symbol-index composition
+  lands.
 - Imported COM `As New` / `New` remains on the typelib metadata route, not the active-project class
   route.
 - The legacy line parser remains as a field-token compatibility fallback when the new syntax

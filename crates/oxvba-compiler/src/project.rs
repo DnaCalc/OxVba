@@ -1350,7 +1350,10 @@ fn project_source_has_only_procedural_modules_including_references(
         })
 }
 
-fn project_source_has_predeclared_document_reference_modules(manifest: &ProjectManifest) -> bool {
+fn project_source_has_hir_safe_project_reference_modules(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+) -> bool {
     let referenced_project_names: BTreeSet<String> = manifest
         .reference_projects
         .iter()
@@ -1378,10 +1381,49 @@ fn project_source_has_predeclared_document_reference_modules(manifest: &ProjectM
         && manifest.reference_projects.iter().all(|project| {
             !project.modules.is_empty()
                 && project.modules.iter().all(|module| {
-                    matches!(module.module_kind, ModuleKind::Class | ModuleKind::Document)
-                        && module.attributes.vb_predeclared_id
+                    project_reference_module_is_hir_safe(manifest, procedures, module)
                 })
         })
+}
+
+fn project_reference_module_is_hir_safe(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+    module: &ModuleUnit,
+) -> bool {
+    (module.module_kind == ModuleKind::Procedural
+        && referenced_procedural_module_is_unused_by_active_source(manifest, procedures, module))
+        || (matches!(module.module_kind, ModuleKind::Class | ModuleKind::Document)
+            && module.attributes.vb_predeclared_id)
+}
+
+fn referenced_procedural_module_is_unused_by_active_source(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+    module: &ModuleUnit,
+) -> bool {
+    let mut names = vec![module.module_name.as_str()];
+    if !module.attributes.vb_name.trim().is_empty() {
+        names.push(module.attributes.vb_name.as_str());
+    }
+    names.extend(
+        procedures
+            .iter()
+            .filter(|decl| {
+                decl.module_kind == ModuleKind::Procedural
+                    && normalize_identifier(&decl.module_name)
+                        == normalize_identifier(&module.module_name)
+                    && decl.is_public
+            })
+            .map(|decl| decl.procedure_name.as_str()),
+    );
+
+    names.into_iter().all(|name| {
+        manifest
+            .modules
+            .iter()
+            .all(|module| !contains_ascii_identifier(&module.source, name))
+    })
 }
 
 fn project_source_has_only_procedural_modules_with_hir_safe_typelib_references(
@@ -1402,7 +1444,10 @@ fn project_source_has_only_procedural_modules_with_hir_safe_typelib_references(
             .all(is_synthetic_typelib_reference_project)
 }
 
-fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundary {
+fn project_compile_boundary(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+) -> ProjectCompileBoundary {
     if project_source_has_only_active_procedural_modules_without_references(manifest)
         || project_source_has_only_active_procedural_modules_with_unused_declared_references(
             manifest,
@@ -1411,7 +1456,7 @@ fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundar
     {
         ProjectCompileBoundary::ActiveHir
     } else if project_source_has_only_procedural_modules_including_references(manifest)
-        || project_source_has_predeclared_document_reference_modules(manifest)
+        || project_source_has_hir_safe_project_reference_modules(manifest, procedures)
     {
         ProjectCompileBoundary::FullHir
     } else {
@@ -1513,7 +1558,7 @@ fn compile_project_with_strategy(
         .modules
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
-    let project_compile_boundary = project_compile_boundary(manifest);
+    let project_compile_boundary = project_compile_boundary(manifest, &procedure_index);
     let hir_construction_candidate = hir_construction_source_from_project_rewrites(
         &lowered_project_source.full_source,
         &lowered_project_source.dynamic_instance_bindings,
@@ -12515,6 +12560,11 @@ mod tests {
         frontend_project_symbols::build_project_symbol_index_from_manifest,
     };
     use std::collections::{BTreeMap, BTreeSet};
+
+    fn project_compile_boundary_for_test(manifest: &ProjectManifest) -> ProjectCompileBoundary {
+        let procedures = super::collect_project_procedures(manifest);
+        project_compile_boundary(manifest, &procedures)
+    }
 
     fn base_manifest() -> ProjectManifest {
         let module = module_unit_from_source(
@@ -24390,7 +24440,7 @@ mod tests {
         };
 
         assert_eq!(
-            project_compile_boundary(&manifest),
+            project_compile_boundary_for_test(&manifest),
             ProjectCompileBoundary::ActiveHir
         );
         let compiled = compile_project(&manifest)
@@ -24419,7 +24469,7 @@ mod tests {
         };
 
         assert_eq!(
-            project_compile_boundary(&manifest),
+            project_compile_boundary_for_test(&manifest),
             ProjectCompileBoundary::ActiveHir
         );
         let compiled = compile_project(&manifest)
@@ -24448,7 +24498,7 @@ mod tests {
         };
 
         assert_eq!(
-            project_compile_boundary(&manifest),
+            project_compile_boundary_for_test(&manifest),
             ProjectCompileBoundary::FullLegacy
         );
     }
@@ -24474,7 +24524,7 @@ mod tests {
         };
 
         assert_eq!(
-            project_compile_boundary(&manifest),
+            project_compile_boundary_for_test(&manifest),
             ProjectCompileBoundary::FullLegacy
         );
     }
@@ -24509,12 +24559,105 @@ mod tests {
         };
 
         assert_eq!(
-            project_compile_boundary(&manifest),
+            project_compile_boundary_for_test(&manifest),
             ProjectCompileBoundary::FullHir
         );
         let compiled = compile_project(&manifest)
             .expect("predeclared document project should compile through HIR full-source boundary");
         assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
+    }
+
+    #[test]
+    fn project_compile_boundary_routes_mixed_predeclared_and_procedural_references_through_hir() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path\nEnd Sub",
+        )
+        .expect("main module parses");
+        let workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Document,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("workbook module parses");
+        let helpers = module_unit_from_source(
+            "HostHelpers",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"HostHelpers\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("helper module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostWorkbook".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostWorkbook".to_string(),
+                modules: vec![workbook, helpers],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            project_compile_boundary_for_test(&manifest),
+            ProjectCompileBoundary::FullHir
+        );
+        let compiled = compile_project(&manifest).expect(
+            "mixed predeclared/unused-procedural project reference should compile through HIR",
+        );
+        assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
+        assert!(
+            compiled
+                .procedure_runtime_metadata
+                .contains_key("pmr_hostworkbook_hosthelpers_touch"),
+            "{:?}",
+            compiled.procedure_runtime_metadata.keys()
+        );
+    }
+
+    #[test]
+    fn project_compile_boundary_keeps_used_referenced_procedural_helpers_on_legacy() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path\nCall HostHelpers.Touch\nEnd Sub",
+        )
+        .expect("main module parses");
+        let workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Document,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("workbook module parses");
+        let helpers = module_unit_from_source(
+            "HostHelpers",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"HostHelpers\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("helper module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostWorkbook".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostWorkbook".to_string(),
+                modules: vec![workbook, helpers],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            project_compile_boundary_for_test(&manifest),
+            ProjectCompileBoundary::FullLegacy
+        );
     }
 
     #[test]
@@ -24544,7 +24687,7 @@ mod tests {
         };
 
         assert_eq!(
-            project_compile_boundary(&manifest),
+            project_compile_boundary_for_test(&manifest),
             ProjectCompileBoundary::ActiveHir
         );
         let compiled =
