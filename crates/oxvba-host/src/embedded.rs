@@ -1650,6 +1650,26 @@ mod tests {
     }
 
     #[test]
+    fn embedded_host_build_workspace_applies_manifest_conditional_constants() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let mut manifest = make_manifest(
+            "#If FEATURE Then\nSub Main()\nDim x As Long\nx = 7\nEnd Sub\n#Else\nSub Main()\nDim x As Long\nx = Missing(\nEnd Sub\n#End If\n",
+        );
+        manifest
+            .conditional_constants
+            .insert("FEATURE".to_string(), -1);
+        let request = EmbeddedBuildRequest::new(EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::disk_only("App.basproj"),
+            manifest,
+        ));
+
+        let result = host.build_workspace(&request);
+        assert_eq!(result.status, EmbeddedBuildStatus::Succeeded);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
     fn embedded_host_build_workspace_projects_compile_failure_as_typed_diagnostics() {
         let engine = Engine::new(HostConfig::default());
         let host = EmbeddedBuildRunHost::new(&engine);
