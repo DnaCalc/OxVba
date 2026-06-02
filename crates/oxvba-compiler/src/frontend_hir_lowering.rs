@@ -3361,11 +3361,7 @@ fn const_longlong_literal_after_span_with_env(
     else {
         return None;
     };
-    if let Ok(value) = i32::try_from(value) {
-        Some(BoundExpr::IntConst(value))
-    } else {
-        Some(BoundExpr::LongLongConst(value))
-    }
+    Some(BoundExpr::LongLongConst(value))
 }
 
 fn const_i64_eval_after_span_with_env(
@@ -7653,6 +7649,27 @@ mod tests {
                     value: 5_000_000_000,
                     ..
                 }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::LongLong
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_small_longlong_const_carrier() {
+        let source =
+            "Const CTotal As LongLong = 5\nSub Main()\nDim x As LongLong\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI64 { value: 5, .. }
             )),
             "{bytecode:#?}"
         );
