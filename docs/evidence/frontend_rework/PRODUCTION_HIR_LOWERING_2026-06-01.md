@@ -554,6 +554,11 @@ completed single-source inputs, using the resolver's physical-line normalization
 `#Const`/`#If`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
 current compiler preprocessor surface, not terminal proof of full VBA preprocessor parity or source
 mapping.
+Follow-up project-route work feeds `ProjectManifest::conditional_constants` into the same
+preprocessor before project procedure discovery and HIR/project lowering, so active project modules
+can select `#If` branches from manifest-supplied constants while source `#Const` directives remain
+able to override the initial environment. Host/session-supplied conditional constants and richer
+compile-time expression/name parity remain open.
 Basic single-source module attributes such as `Attribute VB_Name = "Module1"` also route through
 the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
 Project-owned module attributes and member attributes continue to be enforced by the project route
@@ -1141,6 +1146,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_byte_const --quiet`
 - `cargo test -p oxvba-compiler compile_project_production_selector_uses_module_aware_plan --quiet`
+- `cargo test -p oxvba-compiler compile_project_applies_manifest_conditional_constants --quiet`
+- `cargo test -p oxvba-compiler compile_project_source_const_overrides_manifest_conditional_constant --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_same_module_indexed_property_let_write --quiet`

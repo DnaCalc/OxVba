@@ -1372,6 +1372,7 @@ fn compile_project_with_strategy(
     strategy: ProjectLoweringStrategy,
 ) -> Result<CompiledProject, ProjectCompileError> {
     validate_manifest(manifest)?;
+    let manifest = apply_project_conditional_constants(manifest);
 
     // Augment reference_projects with explicit project-shaped imported typelib references.
     let mut augmented_refs = manifest.reference_projects.clone();
@@ -1392,7 +1393,7 @@ fn compile_project_with_strategy(
     }
     let manifest = &ProjectManifest {
         reference_projects: augmented_refs,
-        ..manifest.clone()
+        ..manifest
     };
 
     let procedure_index = collect_project_procedures(manifest);
@@ -1603,6 +1604,24 @@ fn compile_project_with_strategy(
         project_dynamic_objects,
         project_reflection,
     })
+}
+
+fn apply_project_conditional_constants(manifest: &ProjectManifest) -> ProjectManifest {
+    let modules = manifest
+        .modules
+        .iter()
+        .map(|module| ModuleUnit {
+            source: crate::resolve::apply_conditional_compilation_to_source_with_constants(
+                &module.source,
+                &manifest.conditional_constants,
+            ),
+            ..module.clone()
+        })
+        .collect();
+    ProjectManifest {
+        modules,
+        ..manifest.clone()
+    }
 }
 
 fn build_compiler_source_map(
@@ -24075,6 +24094,80 @@ mod tests {
         assert_eq!(
             super::selected_project_lowering_strategy(),
             ProjectLoweringStrategy::ModuleAwareBindPlan
+        );
+    }
+
+    #[test]
+    fn compile_project_applies_manifest_conditional_constants() {
+        let module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\n#If FEATURE Then\nPublic Sub Main()\nDim x As Long\nx = 7\nEnd Sub\n#Else\nPublic Sub Main()\nDim x As Long\nx = Missing(\nEnd Sub\n#End If",
+        )
+        .expect("module parses");
+        let mut conditional_constants = BTreeMap::new();
+        conditional_constants.insert("FEATURE".to_string(), -1);
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants,
+        };
+
+        let compiled = compile_project(&manifest)
+            .expect("project conditional constants should select the valid branch");
+        assert!(compiled.rewritten_source.contains("x = 7"));
+        assert!(!compiled.rewritten_source.contains("Missing("));
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(
+                    instruction,
+                    Instruction::LoadConstI32 { value: 7, .. }
+                )),
+            "{:?}",
+            compiled.bytecode.instructions
+        );
+    }
+
+    #[test]
+    fn compile_project_source_const_overrides_manifest_conditional_constant() {
+        let module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\n#Const FEATURE = False\n#If FEATURE Then\nPublic Sub Main()\nDim x As Long\nx = Missing(\nEnd Sub\n#Else\nPublic Sub Main()\nDim x As Long\nx = 3\nEnd Sub\n#End If",
+        )
+        .expect("module parses");
+        let mut conditional_constants = BTreeMap::new();
+        conditional_constants.insert("FEATURE".to_string(), -1);
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants,
+        };
+
+        let compiled =
+            compile_project(&manifest).expect("source #Const should override manifest constant");
+        assert!(compiled.rewritten_source.contains("x = 3"));
+        assert!(!compiled.rewritten_source.contains("Missing("));
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(
+                    instruction,
+                    Instruction::LoadConstI32 { value: 3, .. }
+                )),
+            "{:?}",
+            compiled.bytecode.instructions
         );
     }
 

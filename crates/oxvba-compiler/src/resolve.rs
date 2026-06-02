@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 
@@ -1168,7 +1168,19 @@ struct ConditionalFrame {
 }
 
 fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
+    apply_conditional_compilation_with_constants(lines, &BTreeMap::new())
+}
+
+fn apply_conditional_compilation_with_constants(
+    lines: &[String],
+    initial_constants: &BTreeMap<String, i32>,
+) -> Vec<String> {
     let mut constants = builtin_pp_constants();
+    for (name_raw, value) in initial_constants {
+        if let Some(name) = normalize_ident(name_raw) {
+            constants.insert(name, *value);
+        }
+    }
     let mut frames: Vec<ConditionalFrame> = Vec::new();
     let mut current_active = true;
     let mut out = Vec::new();
@@ -1244,6 +1256,14 @@ fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
 pub(crate) fn apply_conditional_compilation_to_source(source: &str) -> String {
     let lines = merge_physical_source_lines(source);
     apply_conditional_compilation(&lines).join("\n")
+}
+
+pub(crate) fn apply_conditional_compilation_to_source_with_constants(
+    source: &str,
+    initial_constants: &BTreeMap<String, i32>,
+) -> String {
+    let lines = merge_physical_source_lines(source);
+    apply_conditional_compilation_with_constants(&lines, initial_constants).join("\n")
 }
 
 /// Predefined `#If` compilation constants for the targeted dialect: **VBA 7.1**

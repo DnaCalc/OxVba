@@ -645,14 +645,16 @@ Required newly explicit delivery beads:
   route, simple constants, enum constants, basic DefType default-table preservation for local
   untyped `Dim`, parameters, and function returns, module-scope scalar `Dim` declarations, known
   DefType default-route eligibility, basic `#Const`/`#If`/`#Else`/`#End If` filtering before the
-  default HIR route for otherwise completed single-source inputs, basic single-source module
-  `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
-  declarators, typed simple-expression constants, and same-statement constant expression
-  substitution, plus explicit `As Byte`/`As Integer`/`As Long` integer-expression overflow
-  diagnostics for the covered same-statement constant subset. Remaining work: full VBA
-  compile-time expression/name evaluation, typed constant coercion, `LongLong`/`LongPtr` constant
-  carrier and range diagnostics, host/project conditional-compilation parity, and project-owned
-  attribute/module-option semantics outside the current single-source route.
+  default HIR route for otherwise completed single-source inputs, active project
+  `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
+  discovery/lowering, basic single-source module `Attribute VB_Name` lines as ignored metadata,
+  basic typed `Const Name As Long = ...` declarators, typed simple-expression constants, and
+  same-statement constant expression substitution, plus explicit `As Byte`/`As Integer`/`As Long`
+  integer-expression overflow diagnostics for the covered same-statement constant subset. Remaining
+  work: full VBA compile-time expression/name evaluation, typed constant coercion,
+  `LongLong`/`LongPtr` constant carrier and range diagnostics, host/session conditional-compilation
+  parity, and project-owned attribute/module-option semantics outside the current single-source
+  route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1295,10 +1297,12 @@ Candidate bead units:
   enforcement left in the project route, enum constants, basic DefType default-table preservation
   for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations, and
   known DefType default-route eligibility, basic `#Const`/`#If`/`#Else`/`#End If` filtering before
-  the default HIR route for otherwise completed single-source inputs, basic single-source module
-  `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
-  declarators, simple same-statement constant expressions, and explicit `As Byte`/`As Integer`/
-  `As Long` integer-expression overflow diagnostics for that covered subset.
+  the default HIR route for otherwise completed single-source inputs, active project
+  `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
+  discovery/lowering, basic single-source module `Attribute VB_Name` lines as ignored metadata,
+  basic typed `Const Name As Long = ...` declarators, simple same-statement constant expressions,
+  and explicit `As Byte`/`As Integer`/`As Long` integer-expression overflow diagnostics for that
+  covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
