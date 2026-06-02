@@ -24,6 +24,14 @@ fn scalar_long_arithmetic() {
 }
 
 #[test]
+fn scalar_longlong_const_carrier_executes() {
+    let snap = run(
+        "Const CTotal As LongLong = 5000000000\nSub Main()\nDim x As LongLong\nx = CTotal\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i64(5_000_000_000)]);
+}
+
+#[test]
 fn scalar_double_arithmetic() {
     let snap = run("Sub Main()\nDim d As Double\nd = 1.5\nd = d * 2.0\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_f64(3.0)]);

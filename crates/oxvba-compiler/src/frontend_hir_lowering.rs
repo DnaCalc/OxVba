@@ -310,6 +310,27 @@ fn const_stmt_is_supported(text: &str) -> bool {
     };
     let payload = text[pos + "const".len()..].trim();
     parse_const_statement_values(payload).is_some()
+        || parse_typed_i64_const_statement_values(payload).is_some()
+}
+
+fn parse_typed_i64_const_statement_values(text: &str) -> Option<HashMap<String, i64>> {
+    let mut values = HashMap::new();
+    let declarators = split_const_declarators(text);
+    if declarators.is_empty() {
+        return None;
+    }
+    for declarator in declarators {
+        let (name_part, rhs) = declarator.split_once('=')?;
+        let (name_part, type_part) = split_keyword_ci(name_part.trim(), "as")?;
+        let ty = parse_hir_bound_type(type_part.trim())?;
+        if !matches!(ty, BoundType::LongLong | BoundType::LongPtr) {
+            return None;
+        }
+        let name = normalize_hir_ident(name_part.trim())?;
+        let value = parse_const_i64_value(rhs.trim(), &values)?;
+        values.insert(name, value);
+    }
+    Some(values)
 }
 
 pub fn lower_typed_hir_to_bound_module(
@@ -2722,7 +2743,13 @@ fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<Sym
                 return None;
             }
             let span = symbol.provenance.span?;
-            let value = const_literal_after_span(source, span).or_else(|| {
+            let value = const_longlong_literal_after_span(
+                source,
+                span,
+                declared_bound_type(typed_hir, symbol.id),
+            )
+            .or_else(|| const_literal_after_span(source, span))
+            .or_else(|| {
                 let name = typed_hir
                     .module
                     .symbols
@@ -3224,6 +3251,24 @@ fn const_literal_after_span(
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
     parse_const_value(rhs.trim(), &const_env)
+}
+
+fn const_longlong_literal_after_span(
+    source: &str,
+    span: crate::frontend_symbols::FrontendSourceSpan,
+    ty: Option<BoundType>,
+) -> Option<BoundExpr> {
+    if !matches!(ty, Some(BoundType::LongLong | BoundType::LongPtr)) {
+        return None;
+    }
+    let ConstI64Eval::Value(value) = const_i64_eval_after_span(source, span)? else {
+        return None;
+    };
+    if let Ok(value) = i32::try_from(value) {
+        Some(BoundExpr::IntConst(value))
+    } else {
+        Some(BoundExpr::LongLongConst(value))
+    }
 }
 
 fn const_i64_eval_after_span(
@@ -7372,6 +7417,52 @@ mod tests {
             ),
             "unexpected error: {err:?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_longlong_const_carrier() {
+        let source = "Const CTotal As LongLong = 5000000000\nSub Main()\nDim x As LongLong\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI64 {
+                    value: 5_000_000_000,
+                    ..
+                }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::LongLong
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_longptr_const_carrier() {
+        let source = "Const CTotal As LongPtr = 5000000000\nSub Main()\nDim x As LongPtr\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI64 {
+                    value: 5_000_000_000,
+                    ..
+                }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::LongPtr
+        }));
     }
 
     #[test]

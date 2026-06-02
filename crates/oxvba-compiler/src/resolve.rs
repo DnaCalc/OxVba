@@ -56,6 +56,7 @@ pub enum LogicalBinOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
+    LongLongConst(i64),
     BoolConst(bool),
     FloatConst(u64),
     StringConst(String),
@@ -2580,6 +2581,7 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
             BoundType::Long
         }
+        BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,

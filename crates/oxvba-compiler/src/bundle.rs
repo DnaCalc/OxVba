@@ -38,7 +38,7 @@ use crate::resolve::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current strict executable semantic package bundle format version.
-const FORMAT_VERSION: u32 = 15;
+const FORMAT_VERSION: u32 = 16;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -3237,12 +3237,12 @@ mod tests {
     }
 
     #[test]
-    fn previous_current_v14_bundle_rejects_deterministically() {
+    fn previous_current_v15_bundle_rejects_deterministically() {
         let mut bytes = strict_sample_bundle()
             .serialize_to_bytes()
             .expect("serialize");
-        bytes[4..8].copy_from_slice(&14u32.to_le_bytes());
-        assert_legacy_bundle_rejected(14, &bytes);
+        bytes[4..8].copy_from_slice(&15u32.to_le_bytes());
+        assert_legacy_bundle_rejected(15, &bytes);
     }
 
     #[test]

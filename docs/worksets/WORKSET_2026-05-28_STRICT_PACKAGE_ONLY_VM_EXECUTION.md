@@ -74,7 +74,7 @@ The current repository is package-capable but not package-only.
   paths are now selected from package support plus operator-semantic package
   descriptors and recorded in VM execution-selection evidence.
 - `bd-embl.4` removed the legacy bundle reader/backfill path: strict bundle
-  format v15 is now the only accepted serialized package format.
+  format v16 is now the only accepted serialized package format.
 
 Current progress:
 
@@ -89,7 +89,8 @@ Current progress:
   and package identity fixtures now enter through `OxBundle` or
   `VmExecutionPackage`; raw bytecode remains only as the package instruction
   stream and internal VM loop input.
-- `bd-embl.4` bumps the bundle format to strict version 15. Current bundle
+- `bd-embl.4` bumped the bundle format to strict version 15; later front-end bytecode-carrier work
+  bumps it to strict version 16. Current bundle
   serialization and deserialization require procedure metadata, manifest,
   export inventory, descriptor inventory, and project context sections. Versions
   1 through 14 reject deterministically instead of backfilling missing facts.

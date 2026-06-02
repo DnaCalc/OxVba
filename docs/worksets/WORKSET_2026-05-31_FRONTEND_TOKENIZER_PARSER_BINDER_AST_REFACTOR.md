@@ -687,11 +687,13 @@ Required newly explicit delivery beads:
   integer division/`Mod`, and same-statement constant expression substitution, plus explicit
   `As Byte`/`As Integer`/`As Long` integer-expression overflow diagnostics for the covered
   same-statement constant subset, and explicit `As LongLong`/`As LongPtr` overflow diagnostics
-  for signed 64-bit integer expressions that exceed the current carrier range.
+  for signed 64-bit integer expressions that exceed the current carrier range, plus a signed-64-bit
+  bound-expression/bytecode/VM carrier for covered explicit `As LongLong` and `As LongPtr`
+  constants outside the old i32 literal range.
   Remaining work: full VBA
-  compile-time expression/name evaluation, typed constant coercion, out-of-i32 `LongLong`/`LongPtr`
-  constant carriers, separate IDE/session option plumbing for conditional constants,
-  and project-owned attribute/module-option semantics outside the current single-source route.
+  compile-time expression/name evaluation, typed constant coercion, full platform `LongPtr`
+  semantics, separate IDE/session option plumbing for conditional constants, and project-owned
+  attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1189,9 +1191,11 @@ Candidate bead units:
   diagnostic work rejects explicit `As Long` integer-expression constants that overflow 32-bit
   range, then extends that range check to explicit `As Byte` and `As Integer` constants. Follow-up
   FE-8.5.e work distinguishes unsupported constant expressions from integer evaluation overflow and
-  rejects explicit `As LongLong`/`As LongPtr` expressions that exceed signed 64-bit range. Full
-  module/procedure-scoped constant evaluation, typed constant coercion, and out-of-i32
-  `LongLong`/`LongPtr` constant carriers remain broader FE-8.5 work.
+  rejects explicit `As LongLong`/`As LongPtr` expressions that exceed signed 64-bit range.
+  Follow-up carrier work adds a signed-64-bit bound-expression/bytecode/VM carrier for covered
+  explicit `As LongLong` and `As LongPtr` constants outside the i32 range. Full
+  module/procedure-scoped constant evaluation, typed constant coercion, and full platform
+  `LongPtr` semantics remain broader FE-8.5 work.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

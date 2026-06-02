@@ -1356,6 +1356,7 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
     match expr {
         BoundExpr::Var(_) => ArgumentExpressionKindDescriptor::Variable,
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => ArgumentExpressionKindDescriptor::Literal,
@@ -2808,6 +2809,7 @@ fn collect_expr_value_states(
             collect_expr_value_states(operand, None, procedure_id, ordinal, descriptors);
         }
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_)
@@ -3539,6 +3541,7 @@ fn collect_expr_semantics(
             }
         }
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_)
@@ -3580,6 +3583,7 @@ fn expression_semantics_descriptor(
 fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescriptor {
     match expr {
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => ExpressionClassificationDescriptor::Literal,
@@ -3661,6 +3665,7 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
             format!("member-access={}", member.to_ascii_lowercase())
         }
         BoundExpr::IntConst(value) => format!("literal=i32:{value}"),
+        BoundExpr::LongLongConst(value) => format!("literal=i64:{value}"),
         BoundExpr::BoolConst(value) => format!("literal=bool:{value}"),
         BoundExpr::FloatConst(_) => "literal=f64".to_string(),
         BoundExpr::StringConst(_) => "literal=string".to_string(),
@@ -4409,6 +4414,7 @@ fn collect_expr_operator_semantics(
             ));
         }
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_)
@@ -5195,6 +5201,7 @@ fn collect_expr_coercions(
             }
         }
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_)
@@ -5756,6 +5763,7 @@ fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId
         BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
             VbaTypeId::Long
         }
+        BoundExpr::LongLongConst(_) => VbaTypeId::LongLong,
         BoundExpr::BoolConst(_) => VbaTypeId::Boolean,
         BoundExpr::FloatConst(_) => VbaTypeId::Double,
         BoundExpr::StringConst(_) => VbaTypeId::String,
@@ -8265,6 +8273,7 @@ fn expr_bound_type(
         BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
             BoundType::Long
         }
+        BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,
@@ -9645,6 +9654,10 @@ fn emit_expr_into(
 ) {
     match expr {
         BoundExpr::IntConst(value) => instructions.push(Instruction::LoadConstI32 {
+            slot: dst,
+            value: *value,
+        }),
+        BoundExpr::LongLongConst(value) => instructions.push(Instruction::LoadConstI64 {
             slot: dst,
             value: *value,
         }),

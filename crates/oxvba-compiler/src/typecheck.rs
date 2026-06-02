@@ -1205,6 +1205,7 @@ fn check_expr(
 ) -> Result<(), String> {
     match expr {
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => Ok(()),
@@ -1506,6 +1507,7 @@ fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> Bo
 fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>) -> BoundType {
     match expr {
         BoundExpr::IntConst(_) => BoundType::Long,
+        BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,

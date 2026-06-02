@@ -4973,6 +4973,10 @@ impl Vm {
                     self.write_variant_slot(*slot, Variant::from_i32(*value))?;
                     pc += 1;
                 }
+                Instruction::LoadConstI64 { slot, value } => {
+                    self.write_variant_slot(*slot, Variant::from_i64(*value))?;
+                    pc += 1;
+                }
                 Instruction::CoerceNumeric { slot, target } => {
                     // Overflow guard for a fixed-width integer result/target: out of range is
                     // VBA error 6; in-range values pass through unchanged.

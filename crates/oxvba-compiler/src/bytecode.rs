@@ -134,6 +134,10 @@ pub enum Instruction {
         slot: usize,
         value: i32,
     },
+    LoadConstI64 {
+        slot: usize,
+        value: i64,
+    },
     LoadConstBool {
         slot: usize,
         value: bool,

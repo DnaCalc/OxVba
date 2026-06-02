@@ -292,6 +292,7 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::AddConst { var: name, .. } => name == var,
         BoundExpr::SubConst { var: name, .. } => name == var,
         BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => false,
@@ -347,6 +348,7 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
         | BoundExpr::AddConst { .. }
         | BoundExpr::SubConst { .. }
         | BoundExpr::IntConst(_)
+        | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => false,
