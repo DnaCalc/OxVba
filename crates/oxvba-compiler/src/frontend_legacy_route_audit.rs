@@ -508,6 +508,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_currency_date_const_statement = "Const CAmount As Currency = 1.25@\nConst CStamp As Date = #2026-02-28#\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed currency/date const fixture",
+        typed_currency_date_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let mod_like_expression_statement = "Sub Main()\nDim x\nDim y\nDim ok\nx = 17 Mod 3\ny = 17 \\ 3\nok = \"123\" Like \"###\"\nEnd Sub\n";
     findings.push(route_finding(
         "mod integer-division and like expression fixture",

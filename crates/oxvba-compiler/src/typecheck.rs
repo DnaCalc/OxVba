@@ -1208,6 +1208,8 @@ fn check_expr(
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_) => Ok(()),
         BoundExpr::Var(name) | BoundExpr::VarPtrArrayBuffer(name) => ensure_declared(
             name,
@@ -1510,6 +1512,8 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
+        BoundExpr::CurrencyConst(_) => BoundType::Currency,
+        BoundExpr::DateConst(_) => BoundType::Date,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::Var(name) => *declared_types.get(name).unwrap_or(&BoundType::Variant),
         BoundExpr::VarPtrArrayBuffer(_) => BoundType::LongPtr,

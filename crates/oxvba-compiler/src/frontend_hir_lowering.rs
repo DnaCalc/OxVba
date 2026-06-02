@@ -2828,7 +2828,14 @@ fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<Sym
             declared_bound_type(typed_hir, symbol.id),
             &i64_values_by_name,
         )
-        .or_else(|| const_literal_after_span_with_env(source, span, &values_by_name))
+        .or_else(|| {
+            const_literal_after_span_with_env(
+                source,
+                span,
+                declared_bound_type(typed_hir, symbol.id),
+                &values_by_name,
+            )
+        })
         .or_else(|| enum_values.get(name.as_str()).cloned());
         let Some(value) = value else {
             continue;
@@ -3327,6 +3334,7 @@ fn is_valid_hir_identifier(text: &str) -> bool {
 fn const_literal_after_span_with_env(
     source: &str,
     span: crate::frontend_symbols::FrontendSourceSpan,
+    declared_type: Option<BoundType>,
     prior_values: &HashMap<String, BoundExpr>,
 ) -> Option<BoundExpr> {
     let line_start = source[..span.start].rfind('\n').map_or(0, |idx| idx + 1);
@@ -3344,7 +3352,7 @@ fn const_literal_after_span_with_env(
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
-    parse_const_value(rhs.trim(), &const_env)
+    parse_const_value_for_declared(rhs.trim(), &const_env, declared_type)
 }
 
 fn const_longlong_literal_after_span_with_env(
@@ -3449,11 +3457,9 @@ fn parse_const_statement_values_with_initial(
     }
     for declarator in declarators {
         let (name_part, rhs) = declarator.split_once('=')?;
-        let name_part = split_keyword_ci(name_part.trim(), "as")
-            .map(|(name, _)| name)
-            .unwrap_or(name_part);
+        let (name_part, declared_type) = parse_const_name_and_declared_type(name_part.trim());
         let name = normalize_hir_ident(name_part.trim())?;
-        let value = parse_const_value(rhs.trim(), &visible_values)?;
+        let value = parse_const_value_for_declared(rhs.trim(), &visible_values, declared_type)?;
         visible_values.insert(name.clone(), value.clone());
         values.insert(name, value);
     }
@@ -3503,7 +3509,18 @@ fn const_i64_values_before_span_on_line_with_env(
 }
 
 fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<BoundExpr> {
+    parse_const_value_for_declared(text, named_values, None)
+}
+
+fn parse_const_value_for_declared(
+    text: &str,
+    named_values: &HashMap<String, BoundExpr>,
+    declared_type: Option<BoundType>,
+) -> Option<BoundExpr> {
     let text = strip_balanced_outer_parens(text.trim());
+    if let Some(value) = parse_declared_const_literal(text, declared_type) {
+        return Some(value);
+    }
     if let Some(value) = parse_const_literal(text) {
         return Some(value);
     }
@@ -3563,6 +3580,17 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
         });
     }
     None
+}
+
+fn parse_const_name_and_declared_type(text: &str) -> (&str, Option<BoundType>) {
+    let Some((name, ty_text)) = split_keyword_ci(text, "as") else {
+        return (text, None);
+    };
+    let declared_type = ty_text
+        .split_whitespace()
+        .next()
+        .and_then(parse_hir_bound_type);
+    (name, declared_type)
 }
 
 fn parse_const_i64_statement_values_with_initial(
@@ -3784,6 +3812,145 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
         ));
     }
     None
+}
+
+fn parse_declared_const_literal(text: &str, declared_type: Option<BoundType>) -> Option<BoundExpr> {
+    match declared_type {
+        Some(BoundType::Currency) => {
+            parse_const_currency_literal(text).map(BoundExpr::CurrencyConst)
+        }
+        Some(BoundType::Date) => parse_const_date_literal(text).map(BoundExpr::DateConst),
+        _ => None,
+    }
+}
+
+fn parse_const_currency_literal(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let body = text.strip_suffix('@').unwrap_or(text);
+    let value = if let Ok(value) = body.parse::<i32>() {
+        value as f64
+    } else if let Some(value) = parse_const_numeric_prefix_literal(body) {
+        value as f64
+    } else {
+        parse_const_double_literal(body)?
+    };
+    currency_scaled_i64_from_f64(value)
+}
+
+fn parse_const_date_literal(text: &str) -> Option<u64> {
+    let text = text.trim();
+    if text.starts_with('#') && text.ends_with('#') && text.len() >= 2 {
+        return parse_date_literal_serial_bits(text);
+    }
+    let value = if let Ok(value) = text.parse::<i32>() {
+        value as f64
+    } else {
+        parse_const_double_literal(text)?
+    };
+    value.is_finite().then_some(value.to_bits())
+}
+
+fn currency_scaled_i64_from_f64(value: f64) -> Option<i64> {
+    if !value.is_finite() {
+        return None;
+    }
+    let scaled = value * 10_000.0;
+    if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
+        return None;
+    }
+    Some(scaled.round() as i64)
+}
+
+fn parse_date_literal_serial_bits(text: &str) -> Option<u64> {
+    let inner = text.strip_prefix('#')?.strip_suffix('#')?.trim();
+    let packed = parse_date_literal_to_packed(inner)?;
+    Some(packed_date_to_ole_serial(packed)?.to_bits())
+}
+
+fn parse_date_literal_to_packed(text: &str) -> Option<i32> {
+    let normalized = text.trim().replace([',', '.', '-', '/'], " ");
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    let packed = match parts.as_slice() {
+        [year, month, day] if year.len() == 4 => {
+            let year = year.parse::<i32>().ok()?;
+            let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
+            let day = day.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
+        [month, day, year] if parse_month_token(month).is_some() => {
+            let month = parse_month_token(month)?;
+            let day = day.parse::<i32>().ok()?;
+            let year = year.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
+        [day, month, year] => {
+            let day = day.parse::<i32>().ok()?;
+            let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
+            let year = year.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
+        _ => return None,
+    };
+    packed_date_components(packed)?;
+    Some(packed)
+}
+
+fn parse_month_token(text: &str) -> Option<i32> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "jan" | "january" => Some(1),
+        "feb" | "february" => Some(2),
+        "mar" | "march" => Some(3),
+        "apr" | "april" => Some(4),
+        "may" => Some(5),
+        "jun" | "june" => Some(6),
+        "jul" | "july" => Some(7),
+        "aug" | "august" => Some(8),
+        "sep" | "sept" | "september" => Some(9),
+        "oct" | "october" => Some(10),
+        "nov" | "november" => Some(11),
+        "dec" | "december" => Some(12),
+        _ => None,
+    }
+}
+
+fn packed_date_components(packed: i32) -> Option<(i32, u32, u32)> {
+    let year = packed / 10_000;
+    let month = ((packed / 100) % 100) as u32;
+    let day = (packed % 100) as u32;
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if max_day == 0 || day == 0 || day > max_day {
+        return None;
+    }
+    Some((year, month, day))
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn packed_date_to_ole_serial(packed: i32) -> Option<f64> {
+    let (year, month, day) = packed_date_components(packed)?;
+    let serial = days_from_civil(year, month, day) + 25_569;
+    Some(serial as f64)
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let year = i64::from(year) - i64::from((month <= 2) as i32);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let month_index = i64::from(month) + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_index + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 fn parse_const_double_literal(text: &str) -> Option<f64> {
@@ -7627,6 +7794,47 @@ mod tests {
             )),
             "{bytecode:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_currency_const_literal() {
+        let source = "Const CAmount As Currency = 1.25@\nSub Main()\nDim x As Currency\nx = CAmount\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstCurrency { scaled: 12_500, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Currency
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_date_const_literal() {
+        let source =
+            "Const CStamp As Date = #2026-02-28#\nSub Main()\nDim x As Date\nx = CStamp\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_081.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Date
+        }));
     }
 
     #[test]

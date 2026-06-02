@@ -280,7 +280,7 @@ fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
     match expr {
         BoundExpr::IntConst(v) => Some(*v),
         BoundExpr::BoolConst(v) => Some(if *v { -1 } else { 0 }),
-        BoundExpr::FloatConst(_) => None,
+        BoundExpr::FloatConst(_) | BoundExpr::CurrencyConst(_) | BoundExpr::DateConst(_) => None,
         _ => None,
     }
 }
@@ -295,6 +295,8 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_) => false,
         BoundExpr::IntrinsicCall { args, .. } | BoundExpr::StructuralIntrinsicCall { args, .. } => {
             args.iter().any(|arg| expr_uses_var(arg, var))
@@ -351,6 +353,8 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_) => false,
         BoundExpr::CompareOp { lhs, rhs, .. } => {
             expr_has_observable_effect(lhs) || expr_has_observable_effect(rhs)

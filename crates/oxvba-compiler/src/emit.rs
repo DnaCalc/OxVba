@@ -1359,6 +1359,8 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_) => ArgumentExpressionKindDescriptor::Literal,
         BoundExpr::IntrinsicCall { .. }
         | BoundExpr::StructuralIntrinsicCall { .. }
@@ -2812,6 +2814,8 @@ fn collect_expr_value_states(
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_)
         | BoundExpr::Var(_)
         | BoundExpr::VarPtrArrayBuffer(_)
@@ -3544,6 +3548,8 @@ fn collect_expr_semantics(
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_)
         | BoundExpr::Var(_)
         | BoundExpr::VarPtrArrayBuffer(_)
@@ -3586,6 +3592,8 @@ fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescri
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_) => ExpressionClassificationDescriptor::Literal,
         BoundExpr::Var(_) => ExpressionClassificationDescriptor::Variable,
         BoundExpr::VarPtrArrayBuffer(_) => ExpressionClassificationDescriptor::PointerBuffer,
@@ -3668,6 +3676,8 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
         BoundExpr::LongLongConst(value) => format!("literal=i64:{value}"),
         BoundExpr::BoolConst(value) => format!("literal=bool:{value}"),
         BoundExpr::FloatConst(_) => "literal=f64".to_string(),
+        BoundExpr::CurrencyConst(_) => "literal=currency".to_string(),
+        BoundExpr::DateConst(_) => "literal=date".to_string(),
         BoundExpr::StringConst(_) => "literal=string".to_string(),
     }
 }
@@ -4417,6 +4427,8 @@ fn collect_expr_operator_semantics(
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_)
         | BoundExpr::Var(_)
         | BoundExpr::VarPtrArrayBuffer(_) => {}
@@ -5204,6 +5216,8 @@ fn collect_expr_coercions(
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_)
         | BoundExpr::StringConst(_)
         | BoundExpr::Var(_)
         | BoundExpr::VarPtrArrayBuffer(_)
@@ -5766,6 +5780,8 @@ fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId
         BoundExpr::LongLongConst(_) => VbaTypeId::LongLong,
         BoundExpr::BoolConst(_) => VbaTypeId::Boolean,
         BoundExpr::FloatConst(_) => VbaTypeId::Double,
+        BoundExpr::CurrencyConst(_) => VbaTypeId::Currency,
+        BoundExpr::DateConst(_) => VbaTypeId::Date,
         BoundExpr::StringConst(_) => VbaTypeId::String,
         BoundExpr::Var(name) => type_by_name
             .get(&name.to_ascii_lowercase())
@@ -8276,6 +8292,8 @@ fn expr_bound_type(
         BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
+        BoundExpr::CurrencyConst(_) => BoundType::Currency,
+        BoundExpr::DateConst(_) => BoundType::Date,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::CompareOp { .. } => BoundType::Boolean,
         BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => BoundType::Boolean,
@@ -9666,6 +9684,14 @@ fn emit_expr_into(
             value: *value,
         }),
         BoundExpr::FloatConst(bits) => instructions.push(Instruction::LoadConstF64 {
+            slot: dst,
+            bits: *bits,
+        }),
+        BoundExpr::CurrencyConst(scaled) => instructions.push(Instruction::LoadConstCurrency {
+            slot: dst,
+            scaled: *scaled,
+        }),
+        BoundExpr::DateConst(bits) => instructions.push(Instruction::LoadConstDate {
             slot: dst,
             bits: *bits,
         }),

@@ -39,6 +39,20 @@ fn scalar_double_const_carrier_executes() {
 }
 
 #[test]
+fn scalar_currency_date_const_carriers_execute() {
+    let snap = run(
+        "Const CAmount As Currency = 1.25@\nConst CStamp As Date = #2026-02-28#\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_currency_scaled_i64(12_500),
+            Variant::from_date_f64(46_081.0),
+        ]
+    );
+}
+
+#[test]
 fn scalar_double_arithmetic() {
     let snap = run("Sub Main()\nDim d As Double\nd = 1.5\nd = d * 2.0\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_f64(3.0)]);

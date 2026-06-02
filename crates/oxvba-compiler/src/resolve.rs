@@ -59,6 +59,8 @@ pub enum BoundExpr {
     LongLongConst(i64),
     BoolConst(bool),
     FloatConst(u64),
+    CurrencyConst(i64),
+    DateConst(u64),
     StringConst(String),
     Var(String),
     VarPtrArrayBuffer(String),
@@ -2273,6 +2275,9 @@ fn static_param_default_expr_inner(
             currency_scaled_i64_from_f64(f64::from_bits(*bits))
                 .map(BoundParamDefaultValue::ExplicitCurrencyScaledI64)
         }
+        BoundExpr::CurrencyConst(value) if declared_type == BoundType::Currency => {
+            Some(BoundParamDefaultValue::ExplicitCurrencyScaledI64(*value))
+        }
         _ if declared_type == BoundType::Currency => {
             static_f64_expr_inner(expr, module_constants, resolving_constants)
                 .and_then(currency_scaled_i64_from_f64)
@@ -2282,6 +2287,9 @@ fn static_param_default_expr_inner(
             BoundParamDefaultValue::ExplicitDateSerialF64((*value as f64).to_bits()),
         ),
         BoundExpr::FloatConst(bits) if declared_type == BoundType::Date => {
+            Some(BoundParamDefaultValue::ExplicitDateSerialF64(*bits))
+        }
+        BoundExpr::DateConst(bits) if declared_type == BoundType::Date => {
             Some(BoundParamDefaultValue::ExplicitDateSerialF64(*bits))
         }
         _ if declared_type == BoundType::Date => {
@@ -2460,7 +2468,8 @@ fn static_f64_expr_inner(
 ) -> Option<f64> {
     match expr {
         BoundExpr::IntConst(value) => Some(*value as f64),
-        BoundExpr::FloatConst(bits) => Some(f64::from_bits(*bits)),
+        BoundExpr::FloatConst(bits) | BoundExpr::DateConst(bits) => Some(f64::from_bits(*bits)),
+        BoundExpr::CurrencyConst(scaled) => Some(*scaled as f64 / 10_000.0),
         BoundExpr::Var(name) => {
             let const_expr = module_constants.get(name)?;
             if !resolving_constants.insert(name.clone()) {
@@ -2584,6 +2593,8 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
+        BoundExpr::CurrencyConst(_) => BoundType::Currency,
+        BoundExpr::DateConst(_) => BoundType::Date,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::Var(_)
         | BoundExpr::BinaryOp { .. }
