@@ -1339,7 +1339,8 @@ Candidate bead units:
   literal/module-constant string defaults plus string concatenation constant expressions through
   explicit optional-default descriptors, Boolean literal/module-constant/logical expression defaults
   plus bounded numeric comparison and Boolean equality/inequality defaults through explicit
-  descriptors,
+  descriptors, exact same-string equality/inequality defaults through the explicit Boolean
+  descriptor,
   source-backed `Currency` scaled and `Date` serial optional-default descriptors, default-route HIR
   metadata, deterministic `#...#` Date literal optional defaults, bounded Date/Currency arithmetic
   numeric constant-expression defaults (`+`, `-`, unary `-`, `*`, and guarded `/`) over numeric

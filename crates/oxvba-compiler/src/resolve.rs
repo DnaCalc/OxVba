@@ -2284,6 +2284,11 @@ fn static_compare_expr(
     {
         return Some(result);
     }
+    if let Some(result) =
+        static_string_compare_expr(op, lhs, rhs, module_constants, resolving_constants)
+    {
+        return Some(result);
+    }
     static_bool_compare_expr(op, lhs, rhs, module_constants, resolving_constants)
 }
 
@@ -2322,6 +2327,25 @@ fn static_bool_compare_expr(
     match op {
         CompareOp::Eq => Some(lhs == rhs),
         CompareOp::Ne => Some(lhs != rhs),
+        _ => None,
+    }
+}
+
+fn static_string_compare_expr(
+    op: CompareOp,
+    lhs: &BoundExpr,
+    rhs: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<bool> {
+    let lhs = static_string_expr_inner(lhs, module_constants, resolving_constants)?;
+    let rhs = static_string_expr_inner(rhs, module_constants, resolving_constants)?;
+    if lhs != rhs {
+        return None;
+    }
+    match op {
+        CompareOp::Eq => Some(true),
+        CompareOp::Ne => Some(false),
         _ => None,
     }
 }
@@ -8060,7 +8084,7 @@ mod tests {
 
     #[test]
     fn resolve_optional_boolean_expression_default() {
-        let source = "Const Enabled = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\ntarget = flag\nEnd Sub";
+        let source = "Const Prefix = \"re\"\nConst Enabled = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\")\ntarget = flag\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures
@@ -8072,6 +8096,20 @@ mod tests {
         assert_eq!(
             fill.params[1].default_literal,
             Some(super::BoundParamDefaultValue::ExplicitBool(true))
+        );
+    }
+
+    #[test]
+    fn resolve_optional_boolean_string_compare_default_keeps_collation_sensitive_case_unfolded() {
+        let expr = super::parse_expr("\"A\" = \"a\"", &HashMap::new())
+            .expect("string comparison expression should parse");
+        assert_eq!(
+            super::static_bool_expr_inner(
+                &expr,
+                &HashMap::new(),
+                &mut std::collections::HashSet::new()
+            ),
+            None
         );
     }
 

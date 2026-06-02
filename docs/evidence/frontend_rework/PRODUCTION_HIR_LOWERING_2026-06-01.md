@@ -1158,15 +1158,20 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `And`, and `Or` into the existing explicit Boolean optional-default carrier.
 - Follow-up Boolean comparison-default work evaluates bounded numeric comparison expressions and
   Boolean equality/inequality expressions into the same explicit Boolean optional-default carrier.
+- Follow-up exact string comparison-default work evaluates unambiguous string equality/inequality
+  expressions where both static string operands are byte-identical, including string concatenation
+  and module constants, into the same explicit Boolean optional-default carrier. Collation-sensitive
+  unequal strings, ordering comparisons, `Like`, and `Is` remain outside this bounded evaluator.
 - The same follow-up found a front-end symbol-model miss where a later parameter following a string
   default could be absent from the HIR parameter list even though the signature parser saw it.
   Procedure symbol collection now reconciles missing parameter symbols against the signature parser
   instead of letting the default-route gate reject the source.
 - This deliberately does not claim arbitrary typed coercion of default expressions, locale-sensitive
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
-  plus string/Boolean constant-expression subset, bounded Boolean comparison subset, and bounded
-  Date/Currency arithmetic numeric subset. String comparisons, `Like`/`Is`, and coercive comparison
-  defaults remain FE-8.5.f residuals.
+  plus string/Boolean constant-expression subset, bounded Boolean comparison subset, exact
+  same-string equality/inequality subset, and bounded Date/Currency arithmetic numeric subset.
+  Collation-sensitive string comparisons, `Like`/`Is`, and coercive comparison defaults remain
+  FE-8.5.f residuals.
 
 ## Checks
 
