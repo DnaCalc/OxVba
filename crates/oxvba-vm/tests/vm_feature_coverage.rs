@@ -79,6 +79,20 @@ fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Const CText = \"ready\"\nConst CFlag = True\nSub Main()\nDim s As String\nDim b As Boolean\nCall Fill(s, b)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, Optional ByVal text As String = CText, Optional ByVal flag As Boolean = CFlag)\ntarget = text\nflagTarget = flag\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_string(BStr::from("ready")),
+            Variant::from_bool(true),
+        ]
+    );
+}
+
+#[test]
 fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nDim n As Long\nCall Fill(s, b, n)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, ByRef numberTarget As Long, Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal value As Long)\ntarget = text\nflagTarget = flag\nnumberTarget = value\nEnd Sub",

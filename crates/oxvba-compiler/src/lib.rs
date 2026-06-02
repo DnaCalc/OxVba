@@ -1664,6 +1664,28 @@ mod tests {
     }
 
     #[test]
+    fn optional_string_bool_module_constant_defaults_route_through_hir() {
+        let source = "Const CText = \"ready\"\nConst CFlag = True\nSub Use(Optional ByVal text As String = CText, Optional ByVal flag As Boolean = CFlag)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("string/Boolean module-constant defaults should route through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            &use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitString(value),
+                ..
+            } if value == "ready"
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[1].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitBool(true),
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_param_array_through_hir() {
         let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
         assert!(

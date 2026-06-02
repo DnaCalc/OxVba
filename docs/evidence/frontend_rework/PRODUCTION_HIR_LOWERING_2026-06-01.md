@@ -1138,13 +1138,14 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   integer optional parameters without explicit defaults to concrete descriptor/runtime defaults
   (`""`, `False`, and `0`) instead of the vague declared-type default marker or integer-only
   entry default.
+- Follow-up module-constant proof covers `Optional ... As String = SomeStringConst` and
+  `Optional ... As Boolean = SomeBooleanConst` through the same descriptor/runtime route.
 - The same follow-up found a front-end symbol-model miss where a later parameter following a string
   default could be absent from the HIR parameter list even though the signature parser saw it.
   Procedure symbol collection now reconciles missing parameter symbols against the signature parser
   instead of letting the default-route gate reject the source.
-- This deliberately does not claim Date, Currency, non-literal string/Boolean module constants,
-  typed coercion of default expressions, or broader expression-default metadata expansion. Those
-  remain FE-8.5.f residuals.
+- This deliberately does not claim Date, Currency, typed coercion of default expressions, or
+  broader expression-default metadata expansion. Those remain FE-8.5.f residuals.
 
 ## Checks
 
