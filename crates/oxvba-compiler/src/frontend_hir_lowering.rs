@@ -3883,6 +3883,9 @@ fn parse_const_bool_value(text: &str, named_values: &HashMap<String, BoundExpr>)
                 && parse_const_bool_value(rhs.trim(), named_values)?,
         );
     }
+    if let Some((lhs, op, rhs)) = split_const_compare_expr(text) {
+        return eval_const_compare(lhs.trim(), op, rhs.trim(), named_values);
+    }
     if let Some(rest) = strip_const_keyword_prefix(text, "not") {
         return Some(!parse_const_bool_value(rest.trim(), named_values)?);
     }
@@ -3899,6 +3902,117 @@ fn strip_const_keyword_prefix<'a>(text: &'a str, keyword: &str) -> Option<&'a st
     after
         .is_none_or(|ch| !is_const_ident_char(ch))
         .then_some(&text[keyword_len..])
+}
+
+fn eval_const_compare(
+    lhs: &str,
+    op: CompareOp,
+    rhs: &str,
+    named_values: &HashMap<String, BoundExpr>,
+) -> Option<bool> {
+    if let (Some(lhs), Some(rhs)) = (
+        parse_const_f64_value(lhs, named_values, false),
+        parse_const_f64_value(rhs, named_values, false),
+    ) {
+        return match op {
+            CompareOp::Eq => Some(lhs == rhs),
+            CompareOp::Ne => Some(lhs != rhs),
+            CompareOp::Lt => Some(lhs < rhs),
+            CompareOp::Le => Some(lhs <= rhs),
+            CompareOp::Gt => Some(lhs > rhs),
+            CompareOp::Ge => Some(lhs >= rhs),
+            CompareOp::Like | CompareOp::Is => None,
+        };
+    }
+    if let (Some(lhs), Some(rhs)) = (
+        parse_const_bool_value(lhs, named_values),
+        parse_const_bool_value(rhs, named_values),
+    ) {
+        return match op {
+            CompareOp::Eq => Some(lhs == rhs),
+            CompareOp::Ne => Some(lhs != rhs),
+            _ => None,
+        };
+    }
+    if let (Some(lhs), Some(rhs)) = (
+        parse_const_string_value(lhs, named_values),
+        parse_const_string_value(rhs, named_values),
+    ) {
+        return match op {
+            CompareOp::Eq => Some(lhs == rhs),
+            CompareOp::Ne => Some(lhs != rhs),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn parse_const_string_value(
+    text: &str,
+    named_values: &HashMap<String, BoundExpr>,
+) -> Option<String> {
+    let text = strip_balanced_outer_parens(text.trim());
+    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+        return Some(text[1..text.len() - 1].replace("\"\"", "\""));
+    }
+    if let Some(name) = normalize_hir_ident_exact(text)
+        && let Some(BoundExpr::StringConst(value)) = named_values.get(&name)
+    {
+        return Some(value.clone());
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['&']) {
+        if op == '&' {
+            let mut value = parse_const_string_value(lhs.trim(), named_values)?;
+            value.push_str(&parse_const_string_value(rhs.trim(), named_values)?);
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn split_const_compare_expr<'a>(text: &'a str) -> Option<(&'a str, CompareOp, &'a str)> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some((_, '"'))) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            '(' if !in_string => depth += 1,
+            ')' if !in_string => depth -= 1,
+            _ if !in_string && depth == 0 => {
+                let candidate = match text
+                    .get(idx..)?
+                    .chars()
+                    .take(2)
+                    .collect::<String>()
+                    .as_str()
+                {
+                    "<>" => Some((CompareOp::Ne, 2)),
+                    "<=" => Some((CompareOp::Le, 2)),
+                    ">=" => Some((CompareOp::Ge, 2)),
+                    _ => match ch {
+                        '=' => Some((CompareOp::Eq, 1)),
+                        '<' => Some((CompareOp::Lt, 1)),
+                        '>' => Some((CompareOp::Gt, 1)),
+                        _ => None,
+                    },
+                };
+                if let Some((op, width)) = candidate {
+                    let lhs = text[..idx].trim();
+                    let rhs = text[idx + width..].trim();
+                    return (!lhs.is_empty() && !rhs.is_empty()).then_some((lhs, op, rhs));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_const_f64_value(
@@ -8130,13 +8244,13 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_collects_typed_boolean_const_expression() {
-        let source = "Const Enabled As Boolean = True\nConst CFlag As Boolean = Not Enabled Or False\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+        let source = "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstBool { value: false, .. }
+                Instruction::LoadConstBool { value: true, .. }
             )),
             "{bytecode:#?}"
         );

@@ -1223,7 +1223,9 @@ Candidate bead units:
   bounded numeric expression/source-prior evaluator used by the other covered exact numeric
   carriers; companion coverage hardening upgrades declared `Double` route evidence from literal-only
   to source-prior expression coverage. Later bounded Boolean work adds declared `Boolean` constants
-  over `True`/`False`, source-prior Boolean constants, `Not`, `And`, and `Or`.
+  over `True`/`False`, source-prior Boolean constants, `Not`, `And`, `Or`, finite numeric
+  comparisons, Boolean equality/inequality, and binary string equality/inequality with `&`
+  concatenation.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

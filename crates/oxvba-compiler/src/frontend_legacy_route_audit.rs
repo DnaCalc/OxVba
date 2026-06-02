@@ -535,7 +535,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
-    let typed_boolean_const_statement = "Const Enabled As Boolean = True\nConst CFlag As Boolean = Not Enabled Or False\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+    let typed_boolean_const_statement = "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
     findings.push(route_finding(
         "typed boolean const expression fixture",
         typed_boolean_const_statement,

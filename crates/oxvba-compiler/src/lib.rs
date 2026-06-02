@@ -1732,7 +1732,7 @@ mod tests {
 
     #[test]
     fn compile_with_runtime_metadata_default_routes_typed_boolean_const_through_hir() {
-        let source = "Const Enabled As Boolean = True\nConst CFlag As Boolean = Not Enabled Or False\nSub Main()\nDim flag As Boolean\nflag = CFlag: flag = Not flag\nEnd Sub\n";
+        let source = "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag: flag = Not flag\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
             "legacy path should reject the active inline sequence after typed Boolean const",
         );
@@ -1754,7 +1754,7 @@ mod tests {
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstBool { value: false, .. }
+                Instruction::LoadConstBool { value: true, .. }
             )),
             "expected typed Boolean expression const bytecode: {bytecode:#?}"
         );

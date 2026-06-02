@@ -69,9 +69,9 @@ fn scalar_type_char_const_carriers_execute() {
 #[test]
 fn scalar_boolean_const_expression_executes() {
     let snap = run(
-        "Const Enabled As Boolean = True\nConst CFlag As Boolean = Not Enabled Or False\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
+        "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
     );
-    assert_eq!(snap, vec![Variant::from_bool(false)]);
+    assert_eq!(snap, vec![Variant::from_bool(true)]);
 }
 
 #[test]
