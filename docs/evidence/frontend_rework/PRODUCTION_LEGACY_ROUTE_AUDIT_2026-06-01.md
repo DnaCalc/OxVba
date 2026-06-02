@@ -53,6 +53,11 @@ The audit proves the good path and exposes the remaining production residuals:
   compile audit: it consumes the HIR `New` binding, preserves `Set obj = New Widget` in the
   compiled source artifact, emits `LoadProjectObjectRef`, retains dynamic object metadata, and
   does not leave `__oxvba_project_instance(...)` helper source in the compiled artifact;
+- the active-project `WithEvents` field assignment route now has a separate executable project
+  compile audit: `Set src = New Emitter` materializes a generated temporary, restores that temporary
+  to explicit `New Emitter` HIR source, routes the event setter through the temporary, retains
+  dynamic object metadata, and does not leave `__oxvba_project_instance(...)` helper source in the
+  compiled artifact;
 - `oxvba-languageservice` now uses compiler query/HIR facts for symbols, callable signatures,
   diagnostics, signature help, and the PtrSafe quick-fix diagnostic; `semantic.rs` no longer builds
   a legacy `BoundModule` fallback when HIR binding is unavailable.
@@ -68,11 +73,11 @@ legacy resolver path is now an explicit comparison helper plus unsupported-resid
 than the first path for completed single-source fixtures.
 
 2026-06-02 correction: the audit no longer records a broad static pass for the whole `project.rs`
-source-text rewrite bridge. That was too coarse for the reopened workset. The project entry is now
-an executable, scoped active-project construction check. Broader project rewrite retirement remains
-open under FE-7/FE-8/FE-9 until each accepted project/class/default-member/COM route is either
-owned by frontend/HIR facts or explicitly compatibility-quarantined outside the accepted production
-surface.
+source-text rewrite bridge. That was too coarse for the reopened workset. The project entries are
+now executable, scoped active-project construction checks for the direct `Set obj = New Class` and
+WithEvents temporary-construction routes. Broader project rewrite retirement remains open under
+FE-7/FE-8/FE-9 until each accepted project/class/default-member/COM route is either owned by
+frontend/HIR facts or explicitly compatibility-quarantined outside the accepted production surface.
 
 ## Reopened Owners
 
@@ -82,9 +87,9 @@ The audit result records completed reopened delivery work and remaining broader 
   fallback was removed, so remaining unsupported constructs are owned by HIR/project delivery beads
   and outer route policy rather than the bridge itself;
 - `bd-aprs.8.1` through `bd-aprs.8.6` (`FE-7.*`) and `bd-aprs.9.6`/`bd-aprs.9.7` have moved the
-  accepted active-project construction subset onto HIR route evidence, but still own broader
-  replacement or quarantine of source-text lowering internals where those internals remain
-  compatibility scaffolding;
+  accepted active-project construction and WithEvents construction subsets onto HIR route evidence,
+  but still own broader replacement or quarantine of source-text lowering internals where those
+  internals remain compatibility scaffolding;
 - `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for expanding production HIR lowering beyond
   the initial subset; the route audit fixtures now cover procedure calls and representative
   control-flow families through HIR production;
@@ -104,9 +109,9 @@ The audit result records completed reopened delivery work and remaining broader 
 
 - The FE-9.6 audit fixture set now passes, but the workset goal is broader than that subset.
 - The audit previously proved HIR reachability but not the plain `compile()` entry point. The
-  lightweight compile path now has an executable route check for completed constructs. Active-project
-  construction now also has executable project-compile route evidence, while broader project
-  rewrites and unsupported surfaces remain separate workset scope.
+  lightweight compile path now has an executable route check for completed constructs. Direct and
+  WithEvents active-project construction now also have executable project-compile route evidence,
+  while broader project rewrites and unsupported surfaces remain separate workset scope.
 - Procedure-call syntax, including same-module statement-form procedure calls with bare arguments,
   multiline and single-line If/ElseIf syntax, front-checked Do While syntax, basic Exit and
   error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,

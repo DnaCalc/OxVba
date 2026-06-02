@@ -1344,8 +1344,11 @@ Candidate bead units:
   static `project.rs` rewrite-bridge pass with an executable, scoped active-project construction
   project-compile check: accepted `Set obj = New Widget` must consume HIR `New` facts, preserve the
   `New` source shape in the compiled artifact, emit `LoadProjectObjectRef`, retain dynamic object
-  metadata, and avoid `__oxvba_project_instance(...)` helper source. This does not close broader
-  project/class/default-member/COM rewrite retirement.
+  metadata, and avoid `__oxvba_project_instance(...)` helper source. A follow-up audit slice adds
+  the sibling active-project `WithEvents` construction check: accepted `Set src = New Emitter`
+  must restore the generated temporary to HIR `New` source, route the event setter through the
+  temporary, retain dynamic object metadata, and avoid helper-source construction in the compiled
+  artifact. This does not close broader project/class/default-member/COM rewrite retirement.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 - FE-9.7 Broad matrix/corpus route audit: expand FE-9.6 from selected route fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
