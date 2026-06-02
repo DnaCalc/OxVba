@@ -325,6 +325,13 @@ Follow-up process/environment host intrinsic work adds `Shell(command)`, `Enviro
 `Dir()`, and `Dir(path)` to HIR built-in resolution and verifies the existing process/environment
 host bytecode through production HIR. COM object creation remains separate.
 
+Follow-up COM object creation route work adds `CreateObject(progId)` to HIR built-in resolution and
+verifies `IntrinsicCreateObjectHost` plus ProgID string preservation through production HIR. This
+does not claim dispatch invocation, default-member, or COM binding cleanup. Fresh-eyes correction:
+default-route eligibility keeps `DispatchInvoke(...)` sources on the legacy route until HIR
+preserves dispatch metadata such as named argument descriptors; simple `CreateObject(...)` remains
+eligible.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

@@ -350,7 +350,16 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_property_declaration(source) {
         return false;
     }
+    if source_has_unsupported_dispatch_intrinsic(source) {
+        return false;
+    }
     true
+}
+
+fn source_has_unsupported_dispatch_intrinsic(source: &str) -> bool {
+    source
+        .lines()
+        .any(|line| contains_ascii_word(line, "DispatchInvoke"))
 }
 
 fn source_has_unsupported_property_declaration(source: &str) -> bool {
@@ -1180,6 +1189,33 @@ mod tests {
         assert!(
             !super::source_is_eligible_for_lightweight_hir_default(source),
             "indexed property declarations remain outside the default HIR route"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_simple_createobject_through_hir() {
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "simple CreateObject source should be eligible for default HIR"
+        );
+        let (bytecode, _metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route simple CreateObject source");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicCreateObjectHost { .. }
+            )),
+            "expected CreateObject host intrinsic through default route: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_keeps_dispatchinvoke_on_legacy_route() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetIndexedValue\", value := 11, lhs := 7)\nEnd Sub\n";
+        assert!(
+            !super::source_is_eligible_for_lightweight_hir_default(source),
+            "DispatchInvoke remains outside default HIR until dispatch metadata is complete"
         );
     }
 

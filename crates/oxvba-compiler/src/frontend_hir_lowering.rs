@@ -5061,6 +5061,30 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_createobject_host_intrinsic() {
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCreateObjectHost { .. }
+            )),
+            "expected CreateObject(...) to emit host object creation intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::LoadConstString { value, .. }
+                    if value == "Scripting.Dictionary"
+            )),
+            "expected CreateObject ProgID literal to be preserved: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
         let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
         let (bytecode, _metadata) =
