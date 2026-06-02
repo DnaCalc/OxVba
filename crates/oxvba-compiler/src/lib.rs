@@ -1395,6 +1395,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const() {
+        let source =
+            "Const CBase As Long = 2147483647, CTotal As Long = CBase + 1\nSub Main()\nEnd Sub\n";
+        let err = super::compile_with_runtime_metadata(source)
+            .expect_err("default route should diagnose overflowing Long const");
+        assert!(
+            matches!(
+                err,
+                super::CompileError::ResolveError(ref message)
+                    if message.contains("constant ctotal value 2147483648 overflows Long")
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_optional_param_through_hir() {
         let source =
             "Sub Use(Optional ByVal n As Long = 7)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";

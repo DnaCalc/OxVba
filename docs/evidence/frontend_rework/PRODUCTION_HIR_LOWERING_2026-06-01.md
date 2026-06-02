@@ -560,8 +560,10 @@ Basic typed constant declarators such as `Const CBase As Long = 7` also route th
 and substitute the value into procedure bytecode. Follow-up route coverage proves typed simple
 expression declarators and same-statement typed references, for example
 `Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`. This covers the current
-literal/simple-expression constant evaluator; typed constant coercion, overflow/type diagnostics,
-and broader compile-time expression parity remain open.
+literal/simple-expression constant evaluator. A later focused diagnostic pass rejects explicit
+`As Long` integer expressions that overflow the 32-bit VBA `Long` range before the unsupported-const
+fallback can hide them. Typed constant coercion, non-Long range/type diagnostics, and broader
+compile-time expression parity remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -980,9 +982,13 @@ constant expressions:
   not runtime variable reads.
 - Typed declarators use the same evaluator and route through the default HIR entry point for the
   covered subset, now audited with `Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`.
+- A focused follow-up diagnostic rejects explicit `As Long` constants whose integer expression
+  exceeds `Long` range, including same-statement reference cases such as
+  `Const CBase As Long = 2147483647, CTotal As Long = CBase + 1`.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
-  enum/literal route remain future FE-8.5 work.
+  enum/literal route, plus typed constant coercion and non-Long range/type diagnostics, remain
+  future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
@@ -1126,6 +1132,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler resolve_optional_params_with_enum_constant_defaults --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_enum_constant_defaults_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_same_module_indexed_property_let_write --quiet`

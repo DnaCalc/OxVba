@@ -647,9 +647,11 @@ Required newly explicit delivery beads:
   default HIR route for otherwise completed single-source inputs, basic single-source module
   `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
   declarators, typed simple-expression constants, and same-statement constant expression
-  substitution. Remaining work: full VBA compile-time expression/name evaluation, typed constant
-  coercion/overflow diagnostics, host/project conditional-compilation parity, and project-owned
-  attribute/module-option semantics outside the current single-source route.
+  substitution, plus explicit `As Long` integer-expression overflow diagnostics for the covered
+  same-statement constant subset. Remaining work: full VBA compile-time expression/name evaluation,
+  typed constant coercion and non-Long range/type diagnostics, host/project conditional-compilation
+  parity, and project-owned attribute/module-option semantics outside the current single-source
+  route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1110,8 +1112,10 @@ Candidate bead units:
   widens that subset to comma-separated literal `Const` declarators. Follow-up continuation accepts
   simple constant expressions such as `Const CBase = 1 + 2` by lowering them to bound expression
   trees and still keeping constants out of runtime local slots. Follow-up continuation allows later
-  declarators in the same `Const` statement to reference earlier declarators, while full
-  module/procedure-scoped constant evaluation remains broader FE-8.5 work.
+  declarators in the same `Const` statement to reference earlier declarators. Later focused
+  diagnostic work rejects explicit `As Long` integer-expression constants that overflow 32-bit
+  range. Full module/procedure-scoped constant evaluation, typed constant coercion, and non-Long
+  range/type diagnostics remain broader FE-8.5 work.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
@@ -1290,7 +1294,8 @@ Candidate bead units:
   known DefType default-route eligibility, basic `#Const`/`#If`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, basic single-source module
   `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
-  declarators, and simple same-statement constant expressions.
+  declarators, simple same-statement constant expressions, and explicit `As Long`
+  integer-expression overflow diagnostics for that covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

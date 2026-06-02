@@ -121,9 +121,11 @@ pub fn compile_source_with_runtime_metadata_via_hir_with_new_bindings(
     ),
     HirProductionLoweringError,
 > {
-    reject_unsupported_production_syntax(source)?;
+    reject_hir_parse_errors(source)?;
     let typed_hir = collect_type_hooks_from_source("Main", source)
         .map_err(|err| HirProductionLoweringError::Unsupported(err.to_string()))?;
+    validate_hir_const_diagnostics(source, &typed_hir)?;
+    reject_unsupported_const_syntax(source)?;
     validate_hir_assignment_diagnostics(&typed_hir)?;
     let bound = lower_typed_hir_to_bound_module_with_new_bindings(
         source,
@@ -211,7 +213,39 @@ fn validate_hir_assignment_diagnostics(
     Ok(())
 }
 
-fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductionLoweringError> {
+fn validate_hir_const_diagnostics(
+    source: &str,
+    typed_hir: &TypedHirModule,
+) -> Result<(), HirProductionLoweringError> {
+    for symbol in typed_hir.module.symbols.symbols() {
+        if symbol.namespace != SymbolNamespace::Local {
+            continue;
+        }
+        let Some(span) = symbol.provenance.span else {
+            continue;
+        };
+        if declared_bound_type(typed_hir, symbol.id) != Some(BoundType::Long) {
+            continue;
+        }
+        let Some(value) = const_i64_after_span(source, span) else {
+            continue;
+        };
+        if value < i64::from(i32::MIN) || value > i64::from(i32::MAX) {
+            let name = typed_hir
+                .module
+                .symbols
+                .name(symbol.name)
+                .map(|name| name.folded.as_str())
+                .unwrap_or("<unknown>");
+            return Err(HirProductionLoweringError::Compile(
+                CompileError::ResolveError(format!("constant {name} value {value} overflows Long")),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn reject_hir_parse_errors(source: &str) -> Result<(), HirProductionLoweringError> {
     let parsed = oxvba_syntax::parse(source);
     if !parsed.errors().is_empty() {
         return Err(HirProductionLoweringError::Unsupported(format!(
@@ -219,6 +253,11 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
             parsed.errors()
         )));
     }
+    Ok(())
+}
+
+fn reject_unsupported_const_syntax(source: &str) -> Result<(), HirProductionLoweringError> {
+    let parsed = oxvba_syntax::parse(source);
     if let Some(text) = first_unsupported_const_stmt(parsed.syntax()) {
         return Err(HirProductionLoweringError::Unsupported(format!(
             "const statement {text:?}"
@@ -3159,6 +3198,27 @@ fn const_literal_after_span(
     parse_const_value(rhs.trim(), &const_env)
 }
 
+fn const_i64_after_span(
+    source: &str,
+    span: crate::frontend_symbols::FrontendSourceSpan,
+) -> Option<i64> {
+    let line_start = source[..span.start].rfind('\n').map_or(0, |idx| idx + 1);
+    let line_end = span.end
+        + source[span.end..]
+            .find('\n')
+            .unwrap_or(source.len() - span.end);
+    let prefix = source[line_start..span.start].to_ascii_lowercase();
+    if !prefix.contains("const") {
+        return None;
+    }
+    let line = source.get(line_start..line_end)?;
+    let const_env = const_i64_values_before_span_on_line(line, span.start - line_start)?;
+    let suffix = source.get(span.end..line_end)?;
+    let suffix = first_const_declarator_tail(suffix);
+    let (_, rhs) = suffix.split_once('=')?;
+    parse_const_i64_value(rhs.trim(), &const_env)
+}
+
 fn first_const_declarator_tail(text: &str) -> &str {
     let mut in_string = false;
     let mut chars = text.char_indices().peekable();
@@ -3242,6 +3302,21 @@ fn const_values_before_span_on_line(
     parse_const_statement_values(before_name.trim_end_matches(','))
 }
 
+fn const_i64_values_before_span_on_line(
+    line: &str,
+    span_start: usize,
+) -> Option<HashMap<String, i64>> {
+    let lower = line.to_ascii_lowercase();
+    let const_pos = lower.find("const")?;
+    let name_offset = span_start.checked_sub(const_pos + "const".len())?;
+    let before_name =
+        line[const_pos + "const".len()..const_pos + "const".len() + name_offset].trim();
+    if before_name.is_empty() {
+        return Some(HashMap::new());
+    }
+    parse_const_i64_statement_values(before_name.trim_end_matches(','))
+}
+
 fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<BoundExpr> {
     let text = strip_balanced_outer_parens(text.trim());
     if let Some(value) = parse_const_literal(text) {
@@ -3284,6 +3359,75 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
         });
     }
     None
+}
+
+fn parse_const_i64_statement_values(text: &str) -> Option<HashMap<String, i64>> {
+    let mut values = HashMap::new();
+    let declarators = split_const_declarators(text);
+    if declarators.is_empty() {
+        return None;
+    }
+    for declarator in declarators {
+        let (name_part, rhs) = declarator.split_once('=')?;
+        let name_part = split_keyword_ci(name_part.trim(), "as")
+            .map(|(name, _)| name)
+            .unwrap_or(name_part);
+        let name = normalize_hir_ident(name_part.trim())?;
+        let value = parse_const_i64_value(rhs.trim(), &values)?;
+        values.insert(name, value);
+    }
+    Some(values)
+}
+
+fn parse_const_i64_value(text: &str, named_values: &HashMap<String, i64>) -> Option<i64> {
+    let text = strip_balanced_outer_parens(text.trim());
+    if let Some(value) = parse_const_i64_literal(text) {
+        return Some(value);
+    }
+    if let Some(name) = normalize_hir_ident_exact(text)
+        && let Some(value) = named_values.get(&name)
+    {
+        return Some(*value);
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-']) {
+        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        return match op {
+            '+' => lhs.checked_add(rhs),
+            '-' => lhs.checked_sub(rhs),
+            _ => None,
+        };
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
+        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        return match op {
+            '*' => lhs.checked_mul(rhs),
+            '/' if rhs != 0 => lhs.checked_div(rhs),
+            _ => None,
+        };
+    }
+    if let Some(rest) = text.strip_prefix('-') {
+        return parse_const_i64_value(rest.trim(), named_values)?.checked_neg();
+    }
+    None
+}
+
+fn parse_const_i64_literal(text: &str) -> Option<i64> {
+    if let Ok(value) = text.parse::<i64>() {
+        return Some(value);
+    }
+    let text = text.trim();
+    if text.len() < 3 || !text.starts_with('&') {
+        return None;
+    }
+    let prefix = text.as_bytes()[1].to_ascii_lowercase();
+    let digits = &text[2..];
+    match prefix {
+        b'h' => i64::from_str_radix(digits, 16).ok(),
+        b'o' => i64::from_str_radix(digits, 8).ok(),
+        _ => None,
+    }
 }
 
 fn parse_const_literal(text: &str) -> Option<BoundExpr> {
@@ -6993,6 +7137,22 @@ mod tests {
                 } if matches!(rhs.as_ref(), BoundExpr::IntConst(4))
             ),
             "{value:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_overflowing_typed_long_const() {
+        let source =
+            "Const CBase As Long = 2147483647, CTotal As Long = CBase + 1\nSub Main()\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("overflowing Long const should be diagnosed");
+        assert!(
+            matches!(
+                err,
+                HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
+                    if message.contains("constant ctotal value 2147483648 overflows Long")
+            ),
+            "unexpected error: {err:?}"
         );
     }
 
