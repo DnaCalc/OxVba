@@ -172,9 +172,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         array-shape rank metadata updates from observed `ReDim` bounds; the front-end
         `ProjectSymbolIndex` now records class and procedural module array-field descriptors,
         including dynamic fields, multidimensional fixed bounds, and `Option Base`-derived omitted
-        lower bounds;
-        production lowering/metadata consumption for those project/class array-field descriptors
-        and broader project-owned array shapes remains open;
+        lower bounds, and class array-field descriptors now flow into `ProjectDynamicObjectRoute`
+        metadata with stable field tokens;
+        executable get/set/indexing semantics for project/class array fields and broader
+        project-owned array shapes remain open;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
       - continuation progress: `Option Compare Text` now routes through HIR for otherwise
         completed lightweight sources and emits text comparison bytecode; `Option Explicit`,

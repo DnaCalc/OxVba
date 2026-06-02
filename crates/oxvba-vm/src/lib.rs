@@ -1087,6 +1087,7 @@ mod tests {
             project_name: "Project".to_string(),
             module_name: "Widget".to_string(),
             field_tokens: Vec::new(),
+            field_arrays: Vec::new(),
             implements_interfaces: Vec::new(),
             class_terminate: None,
             members: vec![

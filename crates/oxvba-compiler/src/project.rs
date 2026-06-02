@@ -236,11 +236,26 @@ pub struct ProjectDynamicMemberRoute {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ProjectDynamicFieldArrayBoundRoute {
+    pub lower_bound: i32,
+    pub upper_bound: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ProjectDynamicFieldArrayRoute {
+    pub field_name: String,
+    pub field_token: i32,
+    pub dynamic: bool,
+    pub bounds: Vec<ProjectDynamicFieldArrayBoundRoute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectDynamicObjectRoute {
     pub object_handle: i32,
     pub project_name: String,
     pub module_name: String,
     pub field_tokens: Vec<i32>,
+    pub field_arrays: Vec<ProjectDynamicFieldArrayRoute>,
     pub members: Vec<ProjectDynamicMemberRoute>,
     pub implements_interfaces: Vec<String>,
     /// The class's `Class_Terminate` member route, if it defines one. Unlike `members` (public
@@ -9409,6 +9424,12 @@ fn build_project_dynamic_object_routes(
                 &binding.project_name,
                 &binding.module_name,
             ),
+            field_arrays: project_class_field_arrays(
+                manifest,
+                project_symbol_index,
+                &binding.project_name,
+                &binding.module_name,
+            ),
             members,
             implements_interfaces,
             class_terminate,
@@ -9458,6 +9479,65 @@ fn project_class_field_tokens(
     tokens.sort_unstable();
     tokens.dedup();
     tokens
+}
+
+fn project_class_field_arrays(
+    manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
+    project_name: &str,
+    module_name: &str,
+) -> Vec<ProjectDynamicFieldArrayRoute> {
+    let mut field_arrays = Vec::new();
+    if !manifest.project_name.eq_ignore_ascii_case(project_name) {
+        return field_arrays;
+    }
+    let Some(module) = find_project_module(manifest, project_name, module_name) else {
+        return field_arrays;
+    };
+    if module.module_kind != ModuleKind::Class {
+        return field_arrays;
+    }
+    let mut owners = vec![module_name.to_string()];
+    if !module.attributes.vb_name.trim().is_empty()
+        && !module.attributes.vb_name.eq_ignore_ascii_case(module_name)
+    {
+        owners.push(module.attributes.vb_name.clone());
+    }
+    let mut seen_fields = BTreeSet::new();
+    for owner in owners {
+        for field_name in project_symbol_index.resolve_class_field_names(&owner) {
+            if !seen_fields.insert(normalize_identifier(&field_name)) {
+                continue;
+            }
+            let Some(descriptor) =
+                project_symbol_index.resolve_field_array_descriptor(&owner, &field_name)
+            else {
+                continue;
+            };
+            field_arrays.push(ProjectDynamicFieldArrayRoute {
+                field_token: class_state_binding_token(project_name, module_name, &field_name),
+                field_name,
+                dynamic: descriptor.dynamic,
+                bounds: descriptor
+                    .bounds
+                    .iter()
+                    .map(
+                        |(lower_bound, upper_bound)| ProjectDynamicFieldArrayBoundRoute {
+                            lower_bound: *lower_bound,
+                            upper_bound: *upper_bound,
+                        },
+                    )
+                    .collect(),
+            });
+        }
+    }
+    field_arrays.sort_by(|lhs, rhs| {
+        lhs.field_token
+            .cmp(&rhs.field_token)
+            .then(lhs.field_name.cmp(&rhs.field_name))
+    });
+    field_arrays.dedup_by(|lhs, rhs| lhs.field_token == rhs.field_token);
+    field_arrays
 }
 
 fn frontend_class_field_names_for_module(
@@ -20455,6 +20535,78 @@ mod tests {
             )],
             "ordinary field tokens should come from frontend field routes and exclude WithEvents bindings"
         );
+    }
+
+    #[test]
+    fn compile_project_dynamic_object_routes_carry_frontend_array_field_shapes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Option Base 1\n",
+                "Private scores(2) As Long\n",
+                "Private grid(0 To 1, 3 To 4) As Integer\n",
+                "Private dyn() As String\n",
+                "Public Sub Touch()\n",
+                "End Sub\n"
+            ),
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile");
+        let route = compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|route| route.module_name == "widget")
+            .expect("widget route");
+
+        let scores = route
+            .field_arrays
+            .iter()
+            .find(|array| array.field_name == "scores")
+            .expect("scores array field");
+        assert_eq!(
+            scores.field_token,
+            super::class_state_binding_token("projecta", "widget", "scores")
+        );
+        assert!(!scores.dynamic);
+        assert_eq!(scores.bounds.len(), 1);
+        assert_eq!(scores.bounds[0].lower_bound, 1);
+        assert_eq!(scores.bounds[0].upper_bound, 2);
+
+        let grid = route
+            .field_arrays
+            .iter()
+            .find(|array| array.field_name == "grid")
+            .expect("grid array field");
+        assert_eq!(grid.bounds.len(), 2);
+        assert_eq!(grid.bounds[0].lower_bound, 0);
+        assert_eq!(grid.bounds[0].upper_bound, 1);
+        assert_eq!(grid.bounds[1].lower_bound, 3);
+        assert_eq!(grid.bounds[1].upper_bound, 4);
+
+        let dyn_array = route
+            .field_arrays
+            .iter()
+            .find(|array| array.field_name == "dyn")
+            .expect("dynamic array field");
+        assert!(dyn_array.dynamic);
+        assert!(dyn_array.bounds.is_empty());
     }
 
     #[test]
