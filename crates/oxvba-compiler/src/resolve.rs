@@ -1603,9 +1603,12 @@ fn parse_procedures(
             continue;
         };
 
-        let Some((name, params, return_type)) =
-            parse_proc_signature(line, kind, default_type_table)
-        else {
+        let Some((name, params, return_type)) = parse_proc_signature_with_module_constants(
+            line,
+            kind,
+            default_type_table,
+            module_constants,
+        ) else {
             index += 1;
             continue;
         };
@@ -1794,6 +1797,15 @@ pub fn parse_proc_signature(
     kind: ProcKind,
     default_type_table: &[BoundType; 26],
 ) -> Option<(String, Vec<BoundParam>, BoundType)> {
+    parse_proc_signature_with_module_constants(line, kind, default_type_table, &HashMap::new())
+}
+
+pub(crate) fn parse_proc_signature_with_module_constants(
+    line: &str,
+    kind: ProcKind,
+    default_type_table: &[BoundType; 26],
+    module_constants: &HashMap<String, BoundExpr>,
+) -> Option<(String, Vec<BoundParam>, BoundType)> {
     let line = strip_proc_scope_prefixes_ci(line);
     let prefix_len = kind.prefix_len();
     let rest = line.get(prefix_len..)?.trim();
@@ -1858,7 +1870,10 @@ pub fn parse_proc_signature(
                 };
                 let (decl_text, default_value) = if let Some((lhs, rhs)) = remainder.split_once('=')
                 {
-                    (lhs.trim(), Some(parse_param_default(rhs.trim())?))
+                    (
+                        lhs.trim(),
+                        Some(parse_param_default(rhs.trim(), module_constants)?),
+                    )
                 } else {
                     (remainder, None)
                 };
@@ -1954,21 +1969,59 @@ pub fn parse_proc_signature(
     Some((name, params, return_type))
 }
 
-fn parse_param_default(text: &str) -> Option<i32> {
+fn parse_param_default(text: &str, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {
     let expr = parse_expr(text.trim(), &HashMap::new())?;
-    static_i32_expr(&expr)
+    static_i32_expr(&expr, module_constants)
 }
 
-fn static_i32_expr(expr: &BoundExpr) -> Option<i32> {
+fn static_i32_expr(expr: &BoundExpr, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {
+    static_i32_expr_inner(expr, module_constants, &mut HashSet::new())
+}
+
+fn static_i32_expr_inner(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<i32> {
     match expr {
         BoundExpr::IntConst(value) => Some(*value),
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value = static_i32_expr_inner(const_expr, module_constants, resolving_constants);
+            resolving_constants.remove(name);
+            value
+        }
+        BoundExpr::AddConst { var, delta } => {
+            let const_expr = module_constants.get(var)?;
+            if !resolving_constants.insert(var.clone()) {
+                return None;
+            }
+            let value = static_i32_expr_inner(const_expr, module_constants, resolving_constants)
+                .and_then(|value| value.checked_add(*delta));
+            resolving_constants.remove(var);
+            value
+        }
+        BoundExpr::SubConst { var, delta } => {
+            let const_expr = module_constants.get(var)?;
+            if !resolving_constants.insert(var.clone()) {
+                return None;
+            }
+            let value = static_i32_expr_inner(const_expr, module_constants, resolving_constants)
+                .and_then(|value| value.checked_sub(*delta));
+            resolving_constants.remove(var);
+            value
+        }
         BoundExpr::UnaryOp {
             op: ArithOp::Neg,
             operand,
-        } => static_i32_expr(operand).map(i32::saturating_neg),
+        } => static_i32_expr_inner(operand, module_constants, resolving_constants)
+            .map(i32::saturating_neg),
         BoundExpr::BinaryOp { op, lhs, rhs } => {
-            let lhs = static_i32_expr(lhs)?;
-            let rhs = static_i32_expr(rhs)?;
+            let lhs = static_i32_expr_inner(lhs, module_constants, resolving_constants)?;
+            let rhs = static_i32_expr_inner(rhs, module_constants, resolving_constants)?;
             match op {
                 ArithOp::Add => lhs.checked_add(rhs),
                 ArithOp::Sub => lhs.checked_sub(rhs),
@@ -2025,7 +2078,7 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
     }
 }
 
-fn collect_module_constants(lines: &[String]) -> ModuleConstMap {
+pub(crate) fn collect_module_constants(lines: &[String]) -> ModuleConstMap {
     let mut constants = HashMap::new();
     let mut index = 0usize;
 
@@ -7024,9 +7077,11 @@ fn strip_proc_scope_prefixes_ci(mut text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArithOp, BoundCompareMode, BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface,
-        UDT_TYPE_MARKER_PREFIX, intrinsic_surface, resolve_symbols,
+        ArithOp, BoundCompareMode, BoundCond, BoundExpr, BoundStmt, BoundType, CompareOp,
+        IntrinsicSurface, ProcKind, UDT_TYPE_MARKER_PREFIX, intrinsic_surface,
+        parse_proc_signature_with_module_constants, resolve_symbols,
     };
+    use std::collections::HashMap;
 
     #[test]
     fn resolve_if_statement_into_structured_body() {
@@ -7574,6 +7629,37 @@ mod tests {
         assert_eq!(fill.params.len(), 2);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(22));
+    }
+
+    #[test]
+    fn resolve_optional_params_with_module_constant_defaults() {
+        let source = "Const CBase = &H10 + 1\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = CBase + 2)\ntarget = value\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(fill.params[1].default_value, Some(19));
+    }
+
+    #[test]
+    fn parse_optional_module_constant_default_rejects_cycles() {
+        let mut module_constants = HashMap::new();
+        module_constants.insert("a".to_string(), BoundExpr::Var("b".to_string()));
+        module_constants.insert("b".to_string(), BoundExpr::Var("a".to_string()));
+        let default_type_table = [BoundType::Variant; 26];
+
+        let signature = parse_proc_signature_with_module_constants(
+            "Sub Fill(Optional ByVal value = a)",
+            ProcKind::Sub,
+            &default_type_table,
+            &module_constants,
+        );
+
+        assert!(signature.is_none());
     }
 
     #[test]

@@ -17,8 +17,8 @@ use crate::resolve::{
     BoundCaseClause, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor, BoundExpr,
     BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
     BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
-    RuntimeArrayDimExpr, collect_declared_external_procedures, collect_option_base,
-    collect_option_compare_mode, parse_proc_signature,
+    RuntimeArrayDimExpr, collect_declared_external_procedures, collect_module_constants,
+    collect_option_base, collect_option_compare_mode, parse_proc_signature_with_module_constants,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -597,11 +597,18 @@ fn parsed_signature_for_hir_decl(
     kind: ProcKind,
     default_type_table: &[BoundType; 26],
 ) -> Option<(Vec<BoundParam>, BoundType)> {
+    let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+    let module_constants = collect_module_constants(&lines);
     let start = decl.cst.span.start.min(source.len());
     let end = decl.cst.span.end.min(source.len());
     let text = source.get(start..end)?;
     let first_line = text.lines().next()?.trim();
-    let (_name, params, return_type) = parse_proc_signature(first_line, kind, default_type_table)?;
+    let (_name, params, return_type) = parse_proc_signature_with_module_constants(
+        first_line,
+        kind,
+        default_type_table,
+        &module_constants,
+    )?;
     Some((params, return_type))
 }
 
@@ -2917,6 +2924,9 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
     if let Ok(value) = text.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
+    if let Some(value) = parse_const_numeric_prefix_literal(text) {
+        return Some(BoundExpr::IntConst(value));
+    }
     if text.eq_ignore_ascii_case("true") {
         return Some(BoundExpr::BoolConst(true));
     }
@@ -2930,6 +2940,20 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
         ));
     }
     None
+}
+
+fn parse_const_numeric_prefix_literal(text: &str) -> Option<i32> {
+    let text = text.trim();
+    if text.len() < 3 || !text.starts_with('&') {
+        return None;
+    }
+    let prefix = text.as_bytes()[1].to_ascii_lowercase();
+    let digits = &text[2..];
+    match prefix {
+        b'h' => i32::from_str_radix(digits, 16).ok(),
+        b'o' => i32::from_str_radix(digits, 8).ok(),
+        _ => None,
+    }
 }
 
 fn strip_balanced_outer_parens(mut text: &str) -> &str {

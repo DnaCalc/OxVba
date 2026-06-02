@@ -366,6 +366,7 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
 
     let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
     let default_type_table = resolve::collect_default_type_table(&lines);
+    let module_constants = resolve::collect_module_constants(&lines);
     for line in source.lines() {
         if !contains_ascii_word(line, "property")
             || line.trim().eq_ignore_ascii_case("End Property")
@@ -383,9 +384,12 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
         ) {
             continue;
         }
-        let Some((name, params, _)) =
-            resolve::parse_proc_signature(line, kind, &default_type_table)
-        else {
+        let Some((name, params, _)) = resolve::parse_proc_signature_with_module_constants(
+            line,
+            kind,
+            &default_type_table,
+            &module_constants,
+        ) else {
             return true;
         };
         let supported = match kind {
@@ -496,6 +500,7 @@ fn source_has_hir_parameter_signature_mismatch(source: &str) -> bool {
     };
     let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
     let default_type_table = resolve::collect_default_type_table(&lines);
+    let module_constants = resolve::collect_module_constants(&lines);
     for decl_id in &typed_hir.module.declarations {
         let Some(decl) = typed_hir.module.arenas.decl(*decl_id) else {
             continue;
@@ -507,9 +512,12 @@ fn source_has_hir_parameter_signature_mismatch(source: &str) -> bool {
         let Some(kind) = proc_kind_for_signature_line(signature_line) else {
             return true;
         };
-        let Some((_, parsed_params, _)) =
-            resolve::parse_proc_signature(signature_line, kind, &default_type_table)
-        else {
+        let Some((_, parsed_params, _)) = resolve::parse_proc_signature_with_module_constants(
+            signature_line,
+            kind,
+            &default_type_table,
+            &module_constants,
+        ) else {
             return true;
         };
         if parsed_params.len() != params.len() {
@@ -1255,6 +1263,36 @@ mod tests {
             use_metadata.signature.parameters[0].optional_descriptor,
             OptionalParameterDescriptor::Optional {
                 default_value: OptionalDefaultValue::ExplicitI32(22),
+                missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
+            }
+        ));
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_optional_module_constant_defaults_through_hir()
+    {
+        let source = "Const CBase = &H10 + 1\nSub Use(Optional ByVal n As Long = CBase + 2)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "integer module-constant defaults should stay eligible for default HIR"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support module-constant defaults");
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route module-constant default through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for module-constant defaults"
+        );
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(use_metadata.signature.parameters[0].default_value, Some(19));
+        assert!(matches!(
+            use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitI32(19),
                 missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
             }
         ));
