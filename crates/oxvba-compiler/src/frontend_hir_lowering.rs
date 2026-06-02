@@ -224,13 +224,15 @@ fn validate_hir_const_diagnostics(
         let Some(span) = symbol.provenance.span else {
             continue;
         };
-        if declared_bound_type(typed_hir, symbol.id) != Some(BoundType::Long) {
+        let Some((type_name, min_value, max_value)) =
+            const_integer_range(declared_bound_type(typed_hir, symbol.id))
+        else {
             continue;
-        }
+        };
         let Some(value) = const_i64_after_span(source, span) else {
             continue;
         };
-        if value < i64::from(i32::MIN) || value > i64::from(i32::MAX) {
+        if value < min_value || value > max_value {
             let name = typed_hir
                 .module
                 .symbols
@@ -238,11 +240,22 @@ fn validate_hir_const_diagnostics(
                 .map(|name| name.folded.as_str())
                 .unwrap_or("<unknown>");
             return Err(HirProductionLoweringError::Compile(
-                CompileError::ResolveError(format!("constant {name} value {value} overflows Long")),
+                CompileError::ResolveError(format!(
+                    "constant {name} value {value} overflows {type_name}"
+                )),
             ));
         }
     }
     Ok(())
+}
+
+fn const_integer_range(ty: Option<BoundType>) -> Option<(&'static str, i64, i64)> {
+    match ty? {
+        BoundType::Byte => Some(("Byte", 0, i64::from(u8::MAX))),
+        BoundType::Integer => Some(("Integer", i64::from(i16::MIN), i64::from(i16::MAX))),
+        BoundType::Long => Some(("Long", i64::from(i32::MIN), i64::from(i32::MAX))),
+        _ => None,
+    }
 }
 
 fn reject_hir_parse_errors(source: &str) -> Result<(), HirProductionLoweringError> {
@@ -7151,6 +7164,21 @@ mod tests {
                 err,
                 HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
                     if message.contains("constant ctotal value 2147483648 overflows Long")
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_overflowing_typed_integer_const() {
+        let source = "Const CTotal As Integer = 32767 + 1\nSub Main()\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("overflowing Integer const should be diagnosed");
+        assert!(
+            matches!(
+                err,
+                HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
+                    if message.contains("constant ctotal value 32768 overflows Integer")
             ),
             "unexpected error: {err:?}"
         );

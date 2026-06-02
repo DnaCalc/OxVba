@@ -1411,6 +1411,21 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_rejects_overflowing_typed_byte_const() {
+        let source = "Const CTotal As Byte = 255 + 1\nSub Main()\nEnd Sub\n";
+        let err = super::compile_with_runtime_metadata(source)
+            .expect_err("default route should diagnose overflowing Byte const");
+        assert!(
+            matches!(
+                err,
+                super::CompileError::ResolveError(ref message)
+                    if message.contains("constant ctotal value 256 overflows Byte")
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_optional_param_through_hir() {
         let source =
             "Sub Use(Optional ByVal n As Long = 7)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
