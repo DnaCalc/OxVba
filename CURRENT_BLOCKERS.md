@@ -231,6 +231,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         VM-stateful deterministic `Rnd`/`Randomize` no-seed and seeded forms now lower through HIR;
         `TypeOf ... Is ...` now lowers through HIR as a dedicated type-test expression;
         time-locale host intrinsics `Date()`, `Time()`, `Now()`, and `Timer()` now lower through HIR;
+        host utility intrinsics `FreeFile()`/`FreeFile(range)` and `DoEvents()` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

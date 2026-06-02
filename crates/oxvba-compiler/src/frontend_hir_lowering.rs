@@ -4923,6 +4923,43 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_host_utility_intrinsics() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\na = FreeFile()\nb = FreeFile(1)\nc = DoEvents()\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFreeFileHost {
+                    range_selector: None,
+                    ..
+                }
+            )),
+            "expected FreeFile() to emit no-selector host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFreeFileHost {
+                    range_selector: Some(_),
+                    ..
+                }
+            )),
+            "expected FreeFile(1) to emit selector host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDoEventsHost { .. }
+            )),
+            "expected DoEvents() to emit host event-pump intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
         let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
         let (bytecode, _metadata) =

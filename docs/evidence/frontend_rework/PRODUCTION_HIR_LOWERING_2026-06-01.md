@@ -308,6 +308,10 @@ Follow-up time-locale host intrinsic work adds `Date()`, `Time()`, `Now()`, and 
 built-in resolution and verifies the existing host bytecode instructions through production HIR.
 This proves routing only; host policy/runtime behavior remains owned by the VM/HAL contract.
 
+Follow-up host utility intrinsic work adds `FreeFile()`/`FreeFile(range)` and `DoEvents()` to HIR
+built-in resolution and verifies the existing file-number and event-pump host bytecode through
+production HIR. This is still route proof only; HAL policy remains outside the front-end.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

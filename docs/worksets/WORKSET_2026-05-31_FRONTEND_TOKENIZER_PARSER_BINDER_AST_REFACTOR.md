@@ -1212,8 +1212,9 @@ Candidate bead units:
   existing array-literal intrinsic bytecode, plus VM-stateful deterministic `Rnd`/`Randomize`
   no-seed and seeded forms through existing RNG bytecode, plus `TypeOf ... Is ...` as a dedicated
   HIR expression that emits the existing `IntrinsicTypeOfIs` bytecode, plus time-locale host
-  intrinsics `Date()`, `Time()`, `Now()`, and `Timer()` through existing host bytecode. The
-  `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
+  intrinsics `Date()`, `Time()`, `Now()`, and `Timer()` through existing host bytecode, plus host
+  utility intrinsics `FreeFile()`/`FreeFile(range)` and `DoEvents()` through existing host bytecode.
+  The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
   FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
