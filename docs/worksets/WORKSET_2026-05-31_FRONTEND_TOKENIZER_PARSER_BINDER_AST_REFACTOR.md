@@ -1109,7 +1109,8 @@ Candidate bead units:
   plus `LateBoundDefaultMember`/`SyntheticPropertyAssignment` call-site metadata with the
   synthetic `value` argument; multiple authoritative `VB_UserMemId = 0` candidates of the required
   accessor kind now reject as default-member ambiguity instead of selecting the first sorted
-  candidate; selected active-project property/default-member rewrite routes now validate
+  candidate; selected active-project default-member accessors now validate source argument count
+  before rewrite; selected active-project property/default-member rewrite routes now validate
   `EarlyBoundProject` member-dispatch classification before retaining the compatibility carrier.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and

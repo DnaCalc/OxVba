@@ -89,6 +89,10 @@ The 2026-06-01 continuation added:
   fallback now rejects multiple explicit `VB_UserMemId = 0` candidates of the required accessor
   kind instead of sorting and selecting one. Regression coverage includes authoritative
   default-member read, `Property Let`, and indexed `Property Set` ambiguity diagnostics.
+  Follow-up arity hardening validates the selected active-project default-member accessor against
+  the source argument count before rewriting, using source parameters with `Optional` and
+  `ParamArray` awareness. Regression coverage includes authoritative default-member `Get`, `Let`,
+  and `Set` wrong-arity diagnostics.
 - `bd-aprs.8.7` active-project dispatch-classification continuation: selected active-project
   property/default-member rewrite routes now validate that the front-end member-dispatch classifier
   reports the selected route as `EarlyBoundProject` with the expected accessor kind before
@@ -117,6 +121,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member_call --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member --quiet`
 - `cargo test -p oxvba-compiler ambiguous_authoritative --quiet`
+- `cargo test -p oxvba-compiler wrong_arity_for_authoritative_default_member --quiet`
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler compile_project --quiet`
@@ -224,8 +229,12 @@ The 2026-06-01 continuation added:
   no unique route for multiple explicit `VB_UserMemId = 0` candidates, but the legacy fallback then
   sorted the same candidates and selected one. The fallback now reports
   `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` for multiple authoritative candidates, matching the
-  existing non-authoritative ambiguity policy. This closes the selected authoritative ambiguity
-  subset; broader arity/type overload validation remains open.
+  existing non-authoritative ambiguity policy. A follow-up arity review found that candidate
+  selection still ignored the actual source argument count and could rewrite a selected default
+  member into the wrong accessor shape. The default-member resolver now validates selected
+  accessors against the supplied source argument count before returning the route, with
+  `Optional`/`ParamArray`-aware bounds. This closes the selected active-project ambiguity and
+  arity subset; broader type overload validation and host/imported writeback breadth remain open.
 - Active-project route proof review found that project property/default-member rewrite paths used
   front-end symbol routes but did not assert the member-dispatch classifier at the final selected
   route. The selected route now must classify as `EarlyBoundProject` with the expected accessor kind

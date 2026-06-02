@@ -609,6 +609,14 @@ pub enum ProjectCompileError {
     )]
     DefaultMemberResolutionMissing { name: String },
     #[error(
+        "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED: default-member target `{name}` expects {expected} source argument(s), got {actual}"
+    )]
+    DefaultMemberResolutionArityUnsupported {
+        name: String,
+        expected: String,
+        actual: usize,
+    },
+    #[error(
         "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL: member read `{name}` resolves to a procedure with a required argument; reading it without arguments is invalid (VBA: \"Argument not optional\")"
     )]
     MemberReadArgumentNotOptional { name: String },
@@ -725,6 +733,9 @@ impl ProjectCompileError {
             }
             Self::DefaultMemberResolutionMissing { .. } => {
                 "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"
+            }
+            Self::DefaultMemberResolutionArityUnsupported { .. } => {
+                "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
             }
             Self::MemberReadArgumentNotOptional { .. } => "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL",
             Self::MemberReadExpectedFunctionOrVariable { .. } => {
@@ -5305,6 +5316,12 @@ fn rewrite_internal_class_member_dispatch(
             continue;
         };
         let raw_name = line[name_start..name_end].trim();
+        let args_raw = line[open + 1..close].trim();
+        let args = split_top_level_args(args_raw)?
+            .into_iter()
+            .filter(|arg| !arg.trim().is_empty())
+            .collect::<Vec<_>>();
+        let actual_arg_count = args.len();
         let (target, instance_arg) = if let Some(dot_idx) = raw_name.find('.') {
             let receiver = normalize_identifier(raw_name[..dot_idx].trim());
             let member = normalize_identifier(raw_name[dot_idx + 1..].trim());
@@ -5346,6 +5363,7 @@ fn rewrite_internal_class_member_dispatch(
                     internal_class_bindings,
                     shadowed_identifiers,
                     &[ProcedureDeclKind::PropertyGet],
+                    Some(actual_arg_count),
                 )?
             else {
                 cursor = close + 1;
@@ -5363,10 +5381,8 @@ fn rewrite_internal_class_member_dispatch(
             .unwrap_or(target);
             (target, instance_arg)
         };
-        let args_raw = line[open + 1..close].trim();
-        let args = split_top_level_args(args_raw)?;
         let mut rewritten_args = vec![instance_arg];
-        rewritten_args.extend(args.into_iter().filter(|arg| !arg.trim().is_empty()));
+        rewritten_args.extend(args);
         let replacement = format!("{target}({})", rewritten_args.join(", "));
         replacements.push((name_start, close + 1, replacement));
         cursor = close + 1;
@@ -5493,6 +5509,7 @@ fn rewrite_internal_class_default_member_statement_reads(
         internal_class_bindings,
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertyGet],
+        Some(0),
     )?
     else {
         return Ok(line.to_string());
@@ -6225,6 +6242,7 @@ fn resolve_internal_class_default_member_target_of_kinds(
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
     shadowed_identifiers: &BTreeSet<String>,
     allowed_kinds: &[ProcedureDeclKind],
+    actual_arg_count: Option<usize>,
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
     let Some((target_project, target_module, instance_arg)) =
         (if let Some(binding) = internal_class_bindings.get(receiver) {
@@ -6252,6 +6270,7 @@ fn resolve_internal_class_default_member_target_of_kinds(
         current_module,
         procedures,
         allowed_kinds,
+        actual_arg_count,
     )? {
         return Ok(Some(found));
     }
@@ -6305,7 +6324,60 @@ fn resolve_internal_class_default_member_target_of_kinds(
     candidates.sort_by_key(|decl| decl.lowered_name.clone());
     let selected = candidates[0];
     validate_host_global_dispatch_classification(selected, &selected.procedure_name)?;
+    validate_default_member_source_arity(receiver, selected, actual_arg_count)?;
     Ok(Some((selected.lowered_name.clone(), instance_arg)))
+}
+
+fn validate_default_member_source_arity(
+    receiver: &str,
+    decl: &ProcedureDecl,
+    actual_arg_count: Option<usize>,
+) -> Result<(), ProjectCompileError> {
+    let Some(actual) = actual_arg_count else {
+        return Ok(());
+    };
+    if procedure_decl_accepts_source_arg_count(decl, actual) {
+        return Ok(());
+    }
+    Err(
+        ProjectCompileError::DefaultMemberResolutionArityUnsupported {
+            name: receiver.to_string(),
+            expected: procedure_decl_source_arity_description(decl),
+            actual,
+        },
+    )
+}
+
+fn procedure_decl_accepts_source_arg_count(decl: &ProcedureDecl, actual: usize) -> bool {
+    let min = decl
+        .params
+        .iter()
+        .filter(|param| !param.optional && !param.param_array)
+        .count();
+    if actual < min {
+        return false;
+    }
+    if decl.params.iter().any(|param| param.param_array) {
+        return true;
+    }
+    actual <= decl.params.len()
+}
+
+fn procedure_decl_source_arity_description(decl: &ProcedureDecl) -> String {
+    let min = decl
+        .params
+        .iter()
+        .filter(|param| !param.optional && !param.param_array)
+        .count();
+    if decl.params.iter().any(|param| param.param_array) {
+        return format!("{min} or more");
+    }
+    let max = decl.params.len();
+    if min == max {
+        min.to_string()
+    } else {
+        format!("{min}..{max}")
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6321,6 +6393,7 @@ fn resolve_default_member_target_via_frontend_route(
     current_module: &str,
     procedures: &[ProcedureDecl],
     allowed_kinds: &[ProcedureDeclKind],
+    actual_arg_count: Option<usize>,
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
     let Some(project_symbol_index) = project_symbol_index else {
         return Ok(None);
@@ -6371,6 +6444,7 @@ fn resolve_default_member_target_via_frontend_route(
             message: format!("FE7-E-DEFAULT-MEMBER-ROUTE-DRIFT: {receiver} {expected_kind:?}"),
         });
     }
+    validate_default_member_source_arity(receiver, decl, actual_arg_count)?;
     Ok(Some((decl.lowered_name.clone(), instance_arg.to_string())))
 }
 
@@ -6464,6 +6538,14 @@ fn rewrite_internal_class_call_statement_without_parens(
         if receiver.is_empty() {
             return Ok(line.to_string());
         }
+        let actual_arg_count = if args_tail.is_empty() {
+            0
+        } else {
+            split_top_level_args(args_tail)?
+                .into_iter()
+                .filter(|arg| !arg.trim().is_empty())
+                .count()
+        };
         let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
             manifest,
             project_symbol_index,
@@ -6475,6 +6557,7 @@ fn rewrite_internal_class_call_statement_without_parens(
             internal_class_bindings,
             shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
+            Some(actual_arg_count),
         )?
         else {
             return Ok(line.to_string());
@@ -6560,6 +6643,10 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
         if receiver.is_empty() {
             return Ok(line.to_string());
         }
+        let actual_arg_count = split_top_level_args(args_tail)?
+            .into_iter()
+            .filter(|arg| !arg.trim().is_empty())
+            .count();
         let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
             manifest,
             project_symbol_index,
@@ -6571,6 +6658,7 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
             internal_class_bindings,
             shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
+            Some(actual_arg_count),
         )?
         else {
             return Ok(line.to_string());
@@ -6992,6 +7080,7 @@ fn rewrite_internal_class_set_assignment(
         internal_class_bindings,
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertySet],
+        Some(indexed_args.len() + 1),
     ) {
         Ok(Some((target, instance_arg))) => {
             let target = selected_property_target_via_frontend_route(
@@ -7223,6 +7312,7 @@ fn rewrite_internal_class_default_member_assignment(
         internal_class_bindings,
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertyLet],
+        Some(indexed_args.len() + 1),
     )?
     else {
         return Ok(line.to_string());
@@ -7337,6 +7427,7 @@ fn rewrite_internal_class_default_member_read_assignment(
         internal_class_bindings,
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertyGet],
+        Some(indexed_args.len()),
     )?;
     let Some((target, instance_arg)) = resolved_target else {
         return Ok(line.to_string());
@@ -17429,6 +17520,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_wrong_arity_for_authoritative_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("wrong authoritative default-member get arity should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("got 0"));
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_non_authoritative_default_member_let() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -17487,6 +17610,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_wrong_arity_for_authoritative_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal index, ByVal n)\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("wrong authoritative default-member let arity should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("got 1"));
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_non_authoritative_indexed_default_member_let() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -17542,6 +17697,38 @@ mod tests {
             .expect_err("ambiguous authoritative indexed default-member property set should fail");
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
         assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_authoritative_default_member_property_set() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nSet widget = x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByVal index, ByRef target)\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("wrong authoritative default-member property set arity should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("got 1"));
     }
 
     #[test]

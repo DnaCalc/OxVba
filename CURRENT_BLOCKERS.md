@@ -129,11 +129,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         hints plus `LateBoundDefaultMember`/`SyntheticPropertyAssignment` call-site metadata with
         the synthetic `value` argument; multiple authoritative `VB_UserMemId = 0` candidates of
         the required accessor kind now reject as default-member ambiguity instead of selecting the
-        first sorted candidate; selected active-project property/default-member rewrite routes now
-        validate `EarlyBoundProject` member-dispatch classification before retaining the
-        compatibility carrier;
+        first sorted candidate; selected active-project default-member accessors now validate
+        source argument count before rewrite; selected active-project property/default-member
+        rewrite routes now validate `EarlyBoundProject` member-dispatch classification before
+        retaining the compatibility carrier;
       - still open: broader project/host/imported-COM default-member writeback breadth, overload
-        arity/type validation, and replacement/quarantine of the remaining rewrite bodies;
+        type validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated
