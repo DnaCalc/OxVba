@@ -508,10 +508,9 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
-    let typed_single_const_statement =
-        "Const CTotal As Single = 1.5!\nSub Main()\nDim x As Single\nx = CTotal\nEnd Sub\n";
+    let typed_single_const_statement = "Const CBase As Double = 1.25\nConst CTotal As Single = CBase + 0.25\nSub Main()\nDim x As Single\nx = CTotal\nEnd Sub\n";
     findings.push(route_finding(
-        "typed single const fixture",
+        "typed single const expression fixture",
         typed_single_const_statement,
         "bd-aprs.9.9",
     ));

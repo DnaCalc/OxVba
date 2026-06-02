@@ -1218,7 +1218,10 @@ Candidate bead units:
   type-declaration characters to the covered `Single` and `Currency` carrier subset. Follow-up
   continuation completes the standard scalar `Const` name type-character family for the covered
   evaluator subset (`%`, `&`, `^`, `!`, `#`, `@`, `$`) and tightens declared `Double` constants so
-  integer-looking `#` constants still materialize as `FloatConst`/`LoadConstF64`.
+  integer-looking `#` constants still materialize as `FloatConst`/`LoadConstF64`. Later focused
+  typed-coercion work extends declared `Single` constants from literal-only carriers to the same
+  bounded numeric expression/source-prior evaluator used by the other covered exact numeric
+  carriers.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

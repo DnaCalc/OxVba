@@ -3824,7 +3824,15 @@ fn parse_declared_const_value(
     declared_type: Option<BoundType>,
 ) -> Option<BoundExpr> {
     match declared_type {
-        Some(BoundType::Single) => parse_const_single_literal(text).map(BoundExpr::SingleConst),
+        Some(BoundType::Single) => {
+            if let Some(value) = parse_const_single_literal(text) {
+                return Some(BoundExpr::SingleConst(value));
+            }
+            parse_const_f64_value(text, named_values, false)
+                .map(|value| value as f32)
+                .filter(|value| value.is_finite())
+                .map(|value| BoundExpr::SingleConst(value.to_bits()))
+        }
         Some(BoundType::Double) => parse_const_f64_value(text, named_values, false)
             .map(|value| BoundExpr::FloatConst(value.to_bits())),
         Some(BoundType::Currency) => {
@@ -7918,6 +7926,26 @@ mod tests {
     fn hir_production_lowering_collects_typed_single_const_literal() {
         let source =
             "Const CTotal As Single = 1.5!\nSub Main()\nDim x As Single\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF32 { bits, .. } if *bits == 1.5f32.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Single
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_single_const_expression() {
+        let source = "Const CBase As Double = 1.25\nConst CTotal As Single = CBase + 0.25\nSub Main()\nDim x As Single\nx = CTotal\nEnd Sub\n";
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(

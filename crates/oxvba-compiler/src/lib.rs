@@ -1643,7 +1643,7 @@ mod tests {
 
     #[test]
     fn compile_with_runtime_metadata_default_routes_typed_single_const_through_hir() {
-        let source = "Const CTotal As Single = 1.5!\nSub Main()\nDim x As Single\nx = CTotal: x = x + 1\nEnd Sub\n";
+        let source = "Const CBase As Double = 1.25\nConst CTotal As Single = CBase + 0.25\nSub Main()\nDim x As Single\nx = CTotal: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
             "legacy path should reject the active inline sequence after typed Single const",
         );
@@ -1666,7 +1666,7 @@ mod tests {
                 instruction,
                 Instruction::LoadConstF32 { bits, .. } if *bits == 1.5f32.to_bits()
             )),
-            "expected typed Single const bytecode: {bytecode:#?}"
+            "expected typed Single expression const bytecode: {bytecode:#?}"
         );
     }
 
