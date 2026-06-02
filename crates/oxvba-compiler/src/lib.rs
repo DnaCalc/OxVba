@@ -1537,6 +1537,26 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_named_indexed_property_let_through_hir() {
+        let source = "Sub Main()\nValue(index := 1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "same-module named indexed Property Let writeback should stay eligible for default HIR"
+        );
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support named indexed Property Let");
+
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route named indexed Property Let through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for named indexed Property Let"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_indexed_property_set_through_hir() {
         let source = "Sub Main()\nSet Value(1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
         assert!(
@@ -1561,6 +1581,26 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
             "expected indexed property set to lower as a procedure call: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_named_indexed_property_set_through_hir() {
+        let source = "Sub Main()\nSet Value(index := 1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "same-module named indexed Property Set writeback should stay eligible for default HIR"
+        );
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support named indexed Property Set");
+
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route named indexed Property Set through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for named indexed Property Set"
         );
     }
 

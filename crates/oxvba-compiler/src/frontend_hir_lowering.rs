@@ -887,12 +887,16 @@ fn lower_stmt(
                             } else {
                                 AssignmentIntent::Implicit
                             };
-                            if let Some(route) =
+                            if let Some((route, value_param_name)) =
                                 property_write_proc_for_proc_call_target(typed_hir, &name, intent)?
                             {
+                                let synthetic_name =
+                                    args.iter().any(|arg| arg.name.is_some()).then_some(
+                                        value_param_name.unwrap_or_else(|| "value".to_string()),
+                                    );
                                 let mut args = args;
                                 args.push(BoundCallArg {
-                                    name: None,
+                                    name: synthetic_name,
                                     expr,
                                     force_byval: true,
                                 });
@@ -1040,14 +1044,20 @@ fn lower_stmt(
                                 *value,
                                 context,
                             )?;
-                            if let Some(route) = property_write_proc_for_proc_call_target(
-                                typed_hir,
-                                &name,
-                                AssignmentIntent::Set,
-                            )? {
+                            if let Some((route, value_param_name)) =
+                                property_write_proc_for_proc_call_target(
+                                    typed_hir,
+                                    &name,
+                                    AssignmentIntent::Set,
+                                )?
+                            {
+                                let synthetic_name =
+                                    args.iter().any(|arg| arg.name.is_some()).then_some(
+                                        value_param_name.unwrap_or_else(|| "value".to_string()),
+                                    );
                                 let mut args = args;
                                 args.push(BoundCallArg {
-                                    name: None,
+                                    name: synthetic_name,
                                     expr,
                                     force_byval: true,
                                 });
@@ -1932,7 +1942,7 @@ fn property_write_proc_for_proc_call_target(
     typed_hir: &TypedHirModule,
     name: &str,
     intent: AssignmentIntent,
-) -> Result<Option<String>, HirProductionLoweringError> {
+) -> Result<Option<(String, Option<String>)>, HirProductionLoweringError> {
     let Some(property_group) = name
         .strip_prefix("property_get_")
         .or_else(|| name.strip_prefix("property_let_"))
@@ -1952,8 +1962,33 @@ fn property_write_proc_for_proc_call_target(
         }
         let symbol_name = symbol_name(typed_hir, symbol.id)?;
         if symbol_name.eq_ignore_ascii_case(&wanted) {
-            return Ok(Some(wanted));
+            return Ok(Some((
+                wanted,
+                property_value_param_name_for_proc(typed_hir, symbol.id)?,
+            )));
         }
+    }
+    Ok(None)
+}
+
+fn property_value_param_name_for_proc(
+    typed_hir: &TypedHirModule,
+    proc_symbol: SymbolId,
+) -> Result<Option<String>, HirProductionLoweringError> {
+    for decl_id in &typed_hir.module.declarations {
+        let Some(decl) = typed_hir.module.arenas.decl(*decl_id) else {
+            continue;
+        };
+        if decl.symbol != proc_symbol {
+            continue;
+        }
+        let HirDeclKind::Procedure { params, .. } = &decl.kind else {
+            continue;
+        };
+        let Some(last_param) = params.last() else {
+            return Ok(None);
+        };
+        return symbol_name(typed_hir, *last_param).map(Some);
     }
     Ok(None)
 }
@@ -5669,6 +5704,28 @@ mod tests {
             bytecode.instructions
         );
         assert!(metadata.contains_key("property_let_value"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_named_indexed_property_let_write() {
+        let source = "Sub Main()\nValue(index := 1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let main = metadata.get("main").expect("main metadata");
+        let call_site = main
+            .call_sites
+            .iter()
+            .find(|call_site| {
+                call_site
+                    .target_name
+                    .eq_ignore_ascii_case("property_let_value")
+            })
+            .unwrap_or_else(|| panic!("expected indexed property let call-site: {main:#?}"));
+        assert!(call_site.arguments.iter().any(|argument| {
+            argument.source_name.as_deref() == Some("index")
+                && argument.source_kind == crate::emit::ArgumentSourceKindDescriptor::Named
+        }));
     }
 
     #[test]

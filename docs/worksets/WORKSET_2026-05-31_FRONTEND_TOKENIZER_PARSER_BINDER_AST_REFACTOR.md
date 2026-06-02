@@ -1157,9 +1157,10 @@ Candidate bead units:
   `PropertySet` bytecode hints instead of the legacy project backend. Read-side indexed same-module
   `Property Get` declarations now stay on the default HIR route and lower as argument-preserving
   procedure calls; same-module indexed `Property Let`/`Property Set` writeback now lowers through
-  HIR by appending the assigned value to the matching setter call. Project/class/COM property
-  writeback, default-member writeback, named-argument writeback, and overload validation breadth
-  remain residual work. The project construction HIR candidate now rejects generated
+  HIR by appending the assigned value to the matching setter call, including named index arguments.
+  Project/class/COM property writeback, default-member writeback, broader named-argument writeback,
+  and overload validation breadth remain residual work. The project construction HIR candidate now
+  rejects generated
   `property_*_pmr_*` helper traffic so property/default-member PMR rewrite carriers do not
   accidentally inherit a construction-only HIR migration. Representative host-injected
   default-member/property get plus non-indexed and indexed let/set compatibility-helper routes now
