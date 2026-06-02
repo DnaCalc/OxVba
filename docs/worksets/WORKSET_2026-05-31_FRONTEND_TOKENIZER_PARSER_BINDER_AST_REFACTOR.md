@@ -695,8 +695,8 @@ Required newly explicit delivery beads:
   `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`, plus declared
   `Single` constants through `LoadConstF32`, plus bounded numeric arithmetic expressions for
   declared `Currency` and `Date` constants through the same exact carriers, plus `Const` name
-  type-declaration characters such as `!` and `@` for the covered carrier subset, plus declared
-  `String` constants over source-prior string constants and `&` concatenation.
+  type-declaration characters such as `!` and `@` for the covered carrier subset, plus typed and
+  untyped `String` constants over source-prior string constants and `&` concatenation.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
@@ -1228,7 +1228,7 @@ Candidate bead units:
   comparisons, Boolean equality/inequality, and binary string equality/inequality with `&`
   concatenation. A subsequent string-carrier slice folds declared `String` constants over
   source-prior string constants and `&` concatenation into `LoadConstString` instead of runtime
-  concat bytecode.
+  concat bytecode; the next slice applies the same fold to untyped string expression constants.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
