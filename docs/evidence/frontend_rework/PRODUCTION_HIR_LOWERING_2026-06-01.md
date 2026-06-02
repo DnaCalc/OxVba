@@ -389,6 +389,12 @@ Follow-up file-open route work adds HIR-owned `Open path For mode As #handle` lo
 existing file-open host bytecode for simple literal/name path and handle expressions and the
 existing `Input`/`Output`/`Append`/`Binary`/`Random` mode set.
 
+Together, the file-handle statement continuations cover the audited simple `Open`, `Close`,
+`Print #`, `Write #`, `Input #`, and `Line Input #` route fixtures through HIR production and the
+existing host bytecode. Earlier "remain open" notes in this chronological section describe the
+state before those follow-up slices, not the final state of the current evidence file. Broader VBA
+file I/O options and host behavior remain outside this claim.
+
 Follow-up expression route work adds HIR-owned `Mod`, integer division, and `Like` lowering to the
 existing arithmetic/comparison bytecode paths.
 

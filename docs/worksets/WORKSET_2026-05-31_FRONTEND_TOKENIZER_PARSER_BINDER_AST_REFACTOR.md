@@ -1259,9 +1259,10 @@ Candidate bead units:
   default route back to legacy solely to retain names. Follow-up statement-host routing covers
   console `Print` and diagnostics `Debug.Print` through existing host bytecode, including
   multi-field `Debug.Print` payload concatenation. Follow-up file-system statement routing covers
-  `Kill path` through existing host bytecode; file-handle I/O statements (`Open`, `Close`,
-  `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. Follow-up external declaration
-  routing covers simple `Declare PtrSafe Sub ...` statement calls in addition to already-covered
+  `Kill path` through existing host bytecode; at that point file-handle I/O statements (`Open`,
+  `Close`, `Print #`, `Write #`, `Input #`, `Line Input #`) were still open, but the later
+  file-handle routing continuation below covers the simple audited subset. Follow-up external
+  declaration routing covers simple `Declare PtrSafe Sub ...` statement calls in addition to already-covered
   `Declare PtrSafe Function ...` expression calls, without changing the existing non-`PtrSafe`
   VBA7 rejection policy, preserves ByRef external Sub writeback metadata through HIR, and preserves
   ordinal-alias normalization/selection metadata for `Alias "#..."` declarations. Follow-up typed
