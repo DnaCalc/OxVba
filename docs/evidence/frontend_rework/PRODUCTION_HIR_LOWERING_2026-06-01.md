@@ -264,6 +264,8 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 - explicit static integer lower-bound `To` dimensions such as `ReDim buf(1 To length - 1)` are
   represented as lower/upper HIR dimension pairs and emitted as runtime resize lower-bound
   metadata;
+- read-side dynamic-array element access such as `x = buf(1)` lowers from HIR `IndexExpr` on a
+  declared dynamic-array local to the existing `__oxvba_array_get` backend intrinsic;
 - local `Dim name() As T` declarations contribute array declaration type and runtime
   `ArrayShapeDescriptor` metadata, including element type and the lower-bound policy available to
   the HIR route;
@@ -271,13 +273,13 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
   two-dimensional resize records rank `2` instead of the declaration seed rank; and
 - the route audit now includes one-dimensional dynamic-array `ReDim buf(length - 1)`,
   two-dimensional dynamic-array `ReDim grid(rows - 1, cols - 1)`, and explicit lower-bound
-  `ReDim buf(1 To length - 1)` fixtures.
+  `ReDim buf(1 To length - 1)` fixtures, plus a read-side dynamic-array element fixture.
 
 This is intentionally not full `ReDim` parity. Runtime lower bounds currently match the old
 production constraint: the lower side of `To` must be a static integer, while upper bounds may be
-expressions. Fixed-array alias materialization, project/class array fields, array element
-read/write migration, and broader multidimensional element/fixed/project shapes remain broader HIR
-and project-semantics work.
+expressions. Fixed-array alias materialization, project/class array fields, array element write
+migration, and broader multidimensional element/fixed/project shapes remain broader HIR and
+project-semantics work.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer

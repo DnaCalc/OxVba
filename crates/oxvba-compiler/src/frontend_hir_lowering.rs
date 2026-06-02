@@ -41,6 +41,7 @@ pub struct HirNewExpressionBinding {
 #[derive(Debug, Default)]
 struct HirLoweringContext {
     new_expression_bindings: HashMap<String, VecDeque<i32>>,
+    dynamic_array_names: HashSet<String>,
 }
 
 impl HirLoweringContext {
@@ -54,6 +55,7 @@ impl HirLoweringContext {
         }
         Self {
             new_expression_bindings,
+            dynamic_array_names: HashSet::new(),
         }
     }
 
@@ -61,6 +63,15 @@ impl HirLoweringContext {
         self.new_expression_bindings
             .get_mut(&type_name.to_ascii_lowercase())
             .and_then(VecDeque::pop_front)
+    }
+
+    fn set_dynamic_array_names(&mut self, names: &HashSet<String>) {
+        self.dynamic_array_names = names.clone();
+    }
+
+    fn is_dynamic_array(&self, name: &str) -> bool {
+        self.dynamic_array_names
+            .contains(&name.to_ascii_lowercase())
     }
 }
 
@@ -396,6 +407,7 @@ fn lower_procedure(
 
     let udt_field_aliases = build_hir_udt_field_aliases(&udt_defs, &udt_instances);
     let udt_instance_fields = build_hir_udt_instance_fields(&udt_defs, &udt_instances);
+    context.set_dynamic_array_names(&dynamic_array_names);
     let mut stmts = Vec::new();
     for stmt in body {
         lower_stmt(
@@ -1256,6 +1268,15 @@ fn lower_call_expr(
         .collect::<Result<Vec<_>, _>>()?;
     match target {
         BoundExpr::Var(name) => {
+            if call_data.cst.syntax_kind == "IndexExpr" && context.is_dynamic_array(&name) {
+                let mut intrinsic_args = Vec::with_capacity(args.len() + 1);
+                intrinsic_args.push(BoundExpr::Var(name));
+                intrinsic_args.extend(args.into_iter().map(|arg| arg.expr));
+                return Ok(BoundExpr::IntrinsicCall {
+                    name: "__oxvba_array_get".to_string(),
+                    args: intrinsic_args,
+                });
+            }
             if let Some(intrinsic) = StructuralIntrinsic::from_legacy_name(&name) {
                 return Ok(BoundExpr::StructuralIntrinsicCall {
                     intrinsic,
@@ -2717,6 +2738,30 @@ mod tests {
                 } if lower_bounds == &vec![1]
             )),
             "expected explicit lower-bound runtime ReDim bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "buf")
+            .expect("dynamic array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Byte);
+        assert_eq!(shape.rank, 1);
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_dynamic_array_element_read() {
+        let source =
+            "Sub Main()\nDim buf() As Byte\nDim x As Long\nReDim buf(2)\nx = buf(1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayGet { indices, .. } if indices.len() == 1
+            )),
+            "expected dynamic array element read bytecode: {:?}",
             bytecode.instructions
         );
         let proc = metadata.get("main").expect("main metadata");
