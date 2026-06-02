@@ -93,6 +93,13 @@ frontend rework seed corpus and asserts every row with inline source produces pa
 through the HIR `BoundModule` route, not the `resolve_symbols` fallback. The fallback remains
 quarantined for unsupported residual modules; it is not counted as HIR evidence.
 
+Continuation update: FE-9.8 default compile fallback quarantine now has source-backed seed-corpus
+proof. The test
+`compile_options_default_uses_frontend_v2_for_source_backed_frontend_seed_rows` walks the frontend
+rework seed corpus and asserts every row with inline source compiles under strict `frontend_v2` and
+the default compiler with matching bytecode. Unsupported residual fallback remains available for
+out-of-scope modules, but accepted source-backed seed rows no longer depend on it.
+
 This audit no longer finds the previously tracked scoped production route residuals. The broader
 workset still remains open for unaudited language surfaces and full terminal evidence, but this
 specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
@@ -132,6 +139,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
 - `cargo test -p oxvba-compiler bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows --quiet`
+- `cargo test -p oxvba-compiler compile_options_default_uses_frontend_v2_for_source_backed_frontend_seed_rows --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
@@ -177,3 +185,6 @@ The audit result records completed reopened delivery work and remaining broader 
 - Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
   The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
   accepted-row production route.
+- Default compile fallback is now proved unused for every source-backed FE-9.7 seed row: strict
+  frontend-v2 and default compile bytecode match. The fallback remains a quarantined residual only
+  for unsupported/out-of-scope modules.

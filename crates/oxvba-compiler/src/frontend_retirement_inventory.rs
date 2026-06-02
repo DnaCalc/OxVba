@@ -28,7 +28,7 @@ pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
         replacement: "construct-by-construct HIR production lowering owned by FE-6/FE-7/FE-8 follow-up beads",
         disposition: RetirementDisposition::QuarantinedResidual,
         owner: "bd-aprs.9.6",
-        partial_work: "The default compile options now try HIR production lowering directly; unsupported constructs still compile by falling back to the existing resolver/lowering path outside explicit frontend_v2 mode.",
+        partial_work: "The default compile options now try HIR production lowering directly; unsupported constructs still compile by falling back to the existing resolver/lowering path outside explicit frontend_v2 mode. Follow-up FE-9.8 proof covers every source-backed frontend seed-corpus row: strict frontend_v2 and default compile produce matching bytecode, so accepted seed rows do not silently depend on fallback.",
         closure_condition: "every construct in the claimed scoped surface either routes to HIR production or has an explicit out-of-scope residual row before terminal closure",
     },
     LegacyRetirementRow {

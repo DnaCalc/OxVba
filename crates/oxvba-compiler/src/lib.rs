@@ -1063,6 +1063,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_options_default_uses_frontend_v2_for_source_backed_frontend_seed_rows() {
+        for fixture in super::frontend_diff::frontend_rework_seed_corpus() {
+            let Some(source) = fixture.source.as_deref() else {
+                continue;
+            };
+
+            let frontend =
+                super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "frontend_v2 seed row `{}` should compile: {err}",
+                            fixture.name
+                        )
+                    });
+            let defaulted = super::compile_with_options(source, super::CompileOptions::default())
+                .unwrap_or_else(|err| {
+                    panic!("default seed row `{}` should compile: {err}", fixture.name)
+                });
+
+            assert_eq!(
+                format!("{:?}", frontend.instructions),
+                format!("{:?}", defaulted.instructions),
+                "default compile should use frontend_v2 for source-backed seed row `{}`",
+                fixture.name
+            );
+        }
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_uses_hir_for_completed_constructs() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let hir =

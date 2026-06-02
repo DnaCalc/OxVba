@@ -706,6 +706,9 @@ Required newly explicit delivery beads:
   `BoundModule` facts for bundle context extraction rather than the `resolve_symbols` fallback;
   the bundle fallback remains a quarantined residual for unsupported modules, not accepted-row
   evidence.
+  Follow-up FE-9.8 default-compile proof now asserts every source-backed frontend seed-corpus row
+  compiles under strict `frontend_v2` and the default compiler with matching bytecode, so accepted
+  source-backed seed rows do not silently depend on the default legacy fallback.
 
 ### Epic FE-0 — Workset Preparation and Truth Repair
 
