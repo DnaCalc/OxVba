@@ -702,8 +702,11 @@ Required newly explicit delivery beads:
   signature-help assertions, not only workspace-symbol enumeration. Follow-up imported-typelib
   language-service coverage drives projected `Scripting.Dictionary.Count` through workspace search,
   navigation, and signature help with imported-typelib provenance; this is still identifier-based
-  projection evidence, not full type-directed COM member binding. Remaining work: broaden corpus
-  execution beyond the current route-overlay evidence, broaden document/host semantics beyond the
+  projection evidence, not full type-directed COM member binding. Follow-up corpus coverage adds
+  `RouteChecked` corpus rows for source-backed `INTP-001` and the two Excel oracle fixtures, folding
+  HIR production route evidence into the corpus report while preserving the need for VM/host/oracle
+  execution runners. Remaining work: broaden corpus execution beyond the current route-overlay and
+  route-checked source evidence, broaden document/host semantics beyond the
   current synthetic `ThisWorkbook.Path` and `ThisWorkbook.FullName()` route rows into real host
   object-model behavior, broaden imported COM beyond the current `TestDispatch` and
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover

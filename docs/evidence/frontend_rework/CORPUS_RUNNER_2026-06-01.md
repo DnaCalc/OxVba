@@ -17,13 +17,12 @@ The first automated route accepts fixture rows with:
   condition for classifier policy.
 
 Rows with inline source and class `CompilerUnit` or `ConformanceCase` run through the existing
-legacy-vs-v2 harness and classifier. Host project and Excel oracle rows are represented in the
-same corpus report but are marked `SkippedResidual` with an explicit reason until a higher-layer
-runner can execute VM/host/oracle observations without creating a compiler dependency cycle. This
-diff-corpus runner is intentionally narrower than the separate route audit: the route audit now
-classifies the selected host/project/imported-COM/document rows and the Excel source fixture through
-HIR production routes, while this runner still records that it cannot execute those higher-layer
-observations itself.
+legacy-vs-v2 harness and classifier. Source-backed host/oracle rows that cannot be bytecode-diffed
+inside the compiler crate are now `RouteChecked`: the corpus report records HIR production route
+evidence from the shared route-audit helper while still marking that full VM/host/oracle execution
+requires a higher-layer runner. Manifest-only project rows remain `SkippedResidual` with explicit
+reasons until that runner can execute the higher-layer observations without creating a compiler
+dependency cycle.
 
 ## Automated Smoke Route
 
@@ -39,14 +38,17 @@ reopened seed corpus with real repo fixture sources plus the route-backed v2 imp
 - `inline_statement_separator_bridge_improvement`: compiler unit row runs through the v2 bridge
   route and classifies as `IntentionalImprovement`, because legacy-default rejects the inline
   statement sequence while frontend v2 compiles it with bytecode and metadata;
-- selected host project rows are present but skipped as residuals requiring VM/host execution;
-- the Excel oracle rows are present but skipped here as residuals requiring oracle-backed execution,
-  even though the separate route audit now proves their source fixtures classify as HIR production.
+- source-backed `INTP-001` is route-checked as HIR production through the project entry point while
+  still requiring VM/host execution for a full corpus observation;
+- source-backed Excel oracle rows are route-checked as HIR production in the compiler corpus while
+  still requiring ignored live Excel oracle tests for environment-dependent behavior;
+- manifest-only host project rows remain skipped as residuals requiring VM/host execution.
 
 Expected report counts:
 
 - `ran_count = 3`
-- `skipped_count = 12`
+- `route_checked_count = 3`
+- `skipped_count = 9`
 - `equivalent_count = 1`
 - `intentional_improvement_count = 2`
 - `bug_count = 0`
@@ -54,8 +56,10 @@ Expected report counts:
 ### host/project residual rows
 
 - Class: `HostProject`
-- Current status: `SkippedResidual`
-- Reason: requires VM/host project runner in this diff-corpus harness.
+- Current status: `RouteChecked` for source-backed `INTP-001`; `SkippedResidual` for manifest-only
+  project rows.
+- Reason: `INTP-001` has compiler-local HIR production route evidence, but still requires a VM/host
+  project runner for full diff/execution observations.
 - Seed fixtures: `INTP-001`, `INTP-002`, `INTP-003`, `INTP-004`, `INTP-016`, `INTP-019`,
   inline imported `OxVba.TestDispatch`, inline imported `Scripting.Dictionary`, inline
   predeclared `ThisWorkbook` document reference, and inline predeclared `ThisWorkbook` method
@@ -66,8 +70,9 @@ Expected report counts:
 ### excel oracle rows
 
 - Class: `ExcelOracle`
-- Current status: `SkippedResidual`
-- Reason: requires targeted Excel oracle fixture execution in this diff-corpus harness.
+- Current status: `RouteChecked`
+- Reason: the compiler corpus can prove HIR production route classification for the source fixtures,
+  but still requires targeted Excel oracle fixture execution for live behavior.
 - Route-audit status: the source fixture
   `conformance/com/office/excel/excel_application_activation_smoke.bas` and the narrowed
   `conformance/com/office/excel/excel_workbook_range_smoke.bas` now classify as `HirProduction`;

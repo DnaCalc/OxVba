@@ -182,6 +182,7 @@ pub struct FrontendCorpusFixture {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrontendCorpusRowStatus {
     Ran,
+    RouteChecked,
     SkippedResidual,
 }
 
@@ -192,6 +193,7 @@ pub struct FrontendCorpusRow {
     pub class: FrontendCorpusClass,
     pub status: FrontendCorpusRowStatus,
     pub skip_reason: Option<String>,
+    pub route_evidence: Option<String>,
     pub classification: Option<DiffClassification>,
 }
 
@@ -199,6 +201,7 @@ pub struct FrontendCorpusRow {
 pub struct FrontendCorpusReport {
     pub rows: Vec<FrontendCorpusRow>,
     pub ran_count: usize,
+    pub route_checked_count: usize,
     pub skipped_count: usize,
     pub bug_count: usize,
     pub harmless_drift_count: usize,
@@ -557,7 +560,14 @@ pub fn run_frontend_diff_corpus(fixtures: &[FrontendCorpusFixture]) -> FrontendC
         .iter()
         .filter(|row| row.status == FrontendCorpusRowStatus::Ran)
         .count();
-    let skipped_count = rows.len() - ran_count;
+    let route_checked_count = rows
+        .iter()
+        .filter(|row| row.status == FrontendCorpusRowStatus::RouteChecked)
+        .count();
+    let skipped_count = rows
+        .iter()
+        .filter(|row| row.status == FrontendCorpusRowStatus::SkippedResidual)
+        .count();
     let bug_count = count_classification(&rows, DiffClassificationKind::Bug);
     let harmless_drift_count = count_classification(&rows, DiffClassificationKind::HarmlessDrift);
     let intentional_improvement_count =
@@ -566,6 +576,7 @@ pub fn run_frontend_diff_corpus(fixtures: &[FrontendCorpusFixture]) -> FrontendC
     FrontendCorpusReport {
         rows,
         ran_count,
+        route_checked_count,
         skipped_count,
         bug_count,
         harmless_drift_count,
@@ -1681,10 +1692,22 @@ fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpu
         fixture.class,
         FrontendCorpusClass::CompilerUnit | FrontendCorpusClass::ConformanceCase
     ) {
-        return skipped_corpus_row(
-            fixture,
-            "fixture class requires VM, host project, or oracle runner",
-        );
+        let route_row = frontend_corpus_route_row(fixture);
+        if route_row.status == FrontendCorpusRouteStatus::HirProduction {
+            return FrontendCorpusRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRowStatus::RouteChecked,
+                skip_reason: Some(
+                    "fixture class still requires VM, host project, or oracle runner for full diff execution"
+                        .to_string(),
+                ),
+                route_evidence: Some(route_row.evidence),
+                classification: None,
+            };
+        }
+        return skipped_corpus_row(fixture, &route_row.evidence);
     }
 
     let diff = compare_legacy_to_frontend_v2(source);
@@ -1706,6 +1729,7 @@ fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpu
         class: fixture.class,
         status: FrontendCorpusRowStatus::Ran,
         skip_reason: None,
+        route_evidence: None,
         classification: Some(classification),
     }
 }
@@ -1717,6 +1741,7 @@ fn skipped_corpus_row(fixture: &FrontendCorpusFixture, reason: &str) -> Frontend
         class: fixture.class,
         status: FrontendCorpusRowStatus::SkippedResidual,
         skip_reason: Some(reason.to_string()),
+        route_evidence: None,
         classification: None,
     }
 }
@@ -2320,7 +2345,8 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 12, "{report:#?}");
+        assert_eq!(report.route_checked_count, 3, "{report:#?}");
+        assert_eq!(report.skipped_count, 9, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -2340,15 +2366,19 @@ mod tests {
                 .any(|row| row.name == "conformance_call_coercion_mixed_variant_to_long"),
             "{report:#?}"
         );
-        assert_eq!(
-            report.rows[3].status,
-            FrontendCorpusRowStatus::SkippedResidual
-        );
+        assert_eq!(report.rows[3].status, FrontendCorpusRowStatus::RouteChecked);
         assert!(
             report.rows[3]
                 .skip_reason
                 .as_deref()
                 .is_some_and(|reason| reason.contains("requires VM")),
+            "{report:#?}"
+        );
+        assert!(
+            report.rows[3]
+                .route_evidence
+                .as_deref()
+                .is_some_and(|evidence| evidence.contains("HIR production")),
             "{report:#?}"
         );
         assert_eq!(
@@ -2378,6 +2408,28 @@ mod tests {
         assert_eq!(
             report.rows[10].status,
             FrontendCorpusRowStatus::SkippedResidual
+        );
+        assert_eq!(
+            report.rows[13].status,
+            FrontendCorpusRowStatus::RouteChecked
+        );
+        assert!(
+            report.rows[13]
+                .route_evidence
+                .as_deref()
+                .is_some_and(|evidence| evidence.contains("Excel oracle source fixture")),
+            "{report:#?}"
+        );
+        assert_eq!(
+            report.rows[14].status,
+            FrontendCorpusRowStatus::RouteChecked
+        );
+        assert!(
+            report.rows[14]
+                .route_evidence
+                .as_deref()
+                .is_some_and(|evidence| evidence.contains("Excel oracle source fixture")),
+            "{report:#?}"
         );
     }
 
