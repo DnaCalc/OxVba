@@ -254,6 +254,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let redim_multidimensional_statement = "Sub Main()\nDim rows As Long\nDim cols As Long\nDim grid() As Long\nReDim grid(rows - 1, cols - 1)\nEnd Sub\n";
+    findings.push(route_finding(
+        "redim multidimensional runtime statement fixture",
+        redim_multidimensional_statement,
+        "bd-aprs.9.5",
+    ));
+
     let raise_event_statement = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
     findings.push(route_finding(
         "raise event statement fixture",
@@ -527,6 +534,11 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("redim runtime statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("redim multidimensional runtime statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("value-side member expression")

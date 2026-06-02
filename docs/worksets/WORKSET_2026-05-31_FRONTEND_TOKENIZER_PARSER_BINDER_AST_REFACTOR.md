@@ -618,10 +618,11 @@ Required newly explicit delivery beads:
   already done: simple late-bound dot/bang/With member reads and simple member assignment targets
   lower through HIR with Let/Set hints.
 - FE-8.5.d Arrays/indexing/ReDim parity: finish array element read/write, fixed-array `ReDim`
-  alias materialization, lower-bound `To` forms, multidimensional arrays, and project/class array
-  fields through HIR. Partial work already done: dynamic-array runtime `ReDim` lowering now covers
-  one-dimensional and two-dimensional runtime bounds, updates array-shape rank metadata from
-  observed `ReDim` bounds, and carries `Option Base` default-route policy.
+  alias materialization, lower-bound `To` forms, remaining multidimensional array read/write and
+  fixed/project/class shapes, and project/class array fields through HIR. Partial work already
+  done: dynamic-array runtime `ReDim` lowering now covers one-dimensional and two-dimensional
+  runtime bounds, updates array-shape rank metadata from observed `ReDim` bounds, includes both
+  shapes in the production route audit, and carries `Option Base` default-route policy.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
@@ -1012,10 +1013,12 @@ Candidate bead units:
   module/procedure-scoped constant evaluation remains broader FE-8.5 work.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
-  metadata. Follow-up default-route correction allows `Option Base 0`, `Option Base 1`, and
-  default-equivalent `Option Compare Binary` on otherwise completed lightweight HIR sources, while
-  leaving `Option Explicit`, `Option Compare Text`/`Database`, and `Option Private Module` outside
-  the default route until their semantics are owned by HIR.
+  metadata; a later route-audit correction adds an explicit two-dimensional dynamic-array
+  `ReDim grid(rows - 1, cols - 1)` fixture for that completed lowering shape. Follow-up
+  default-route correction allows `Option Base 0`, `Option Base 1`, default-equivalent
+  `Option Compare Binary`, and `Option Compare Text` on otherwise completed lightweight HIR
+  sources, while leaving `Option Explicit`, `Option Compare Database`, and `Option Private Module`
+  outside the default route until their semantics are owned by HIR.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
   Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
@@ -1131,11 +1134,12 @@ Candidate bead units:
   identity and accessor kind; this is evidence for the current host semantics, not closure of the
   remaining host/reference HIR-ownership and rewrite-quarantine work.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
-  `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
-  project/class array fields through HIR. Partial work has already been done: dynamic-array
-  runtime `ReDim` lowering now covers one-dimensional and two-dimensional runtime bounds, updates
-  array-shape rank metadata from observed `ReDim` bounds, and carries `Option Base` default-route
-  policy.
+  `ReDim` alias materialization, explicit lower-bound `To` forms, remaining multidimensional
+  array read/write and fixed/project/class shapes, and project/class array fields through HIR.
+  Partial work has already been done: dynamic-array runtime `ReDim` lowering now covers
+  one-dimensional and two-dimensional runtime bounds, updates array-shape rank metadata from
+  observed `ReDim` bounds, includes both shapes in the production route audit, and carries
+  `Option Base` default-route policy.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial

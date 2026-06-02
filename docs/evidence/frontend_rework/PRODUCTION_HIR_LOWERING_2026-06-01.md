@@ -266,7 +266,9 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
   the HIR route;
 - dynamic-array shape metadata now widens rank from observed runtime `ReDim` bounds, so a
   two-dimensional resize records rank `2` instead of the declaration seed rank; and
-- the route audit now includes a dynamic-array `ReDim buf(length - 1)` fixture.
+- the route audit now includes both one-dimensional dynamic-array
+  `ReDim buf(length - 1)` and two-dimensional dynamic-array
+  `ReDim grid(rows - 1, cols - 1)` fixtures.
 
 This is intentionally not full `ReDim` parity. Lower-bound forms such as `1 To n`,
 fixed-array alias materialization, project/class array fields, and array element read/write
