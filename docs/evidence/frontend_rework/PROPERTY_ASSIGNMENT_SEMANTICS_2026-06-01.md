@@ -93,6 +93,10 @@ The 2026-06-01 continuation added:
   the source argument count before rewriting, using source parameters with `Optional` and
   `ParamArray` awareness. Regression coverage includes authoritative and single-candidate
   non-authoritative default-member `Get`, `Let`, and `Set` wrong-arity diagnostics.
+  Follow-up type hardening preserves accessor parameter source type text in the compatibility
+  procedure index and rejects clear default-member assignment-form mismatches after route
+  selection: `Let` into an explicitly object-typed value parameter and `Set` into a definitely
+  scalar-typed value parameter now fail with a dedicated diagnostic.
 - `bd-aprs.8.7` active-project dispatch-classification continuation: selected active-project
   property/default-member rewrite routes now validate that the front-end member-dispatch classifier
   reports the selected route as `EarlyBoundProject` with the expected accessor kind before
@@ -128,6 +132,9 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler ambiguous_authoritative --quiet`
 - `cargo test -p oxvba-compiler wrong_arity_for_authoritative_default_member --quiet`
 - `cargo test -p oxvba-compiler optional_default_member_get_arity --quiet`
+- `cargo test -p oxvba-compiler object_typed_default_member_value --quiet`
+- `cargo test -p oxvba-compiler scalar_typed_default_member_value --quiet`
+- `cargo test -p oxvba-compiler default_member --quiet`
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler compile_project --quiet`
@@ -240,7 +247,9 @@ The 2026-06-01 continuation added:
   member into the wrong accessor shape. The default-member resolver now validates selected
   accessors against the supplied source argument count before returning the route, with
   `Optional`/`ParamArray`-aware bounds. This closes the selected active-project ambiguity and
-  arity subset; broader type overload validation and host/imported writeback breadth remain open.
+  arity subset. A narrow type-validation follow-up now rejects definite Let/Object and Set/scalar
+  value-parameter mismatches on selected default-member assignment routes; broader overload
+  validation and host/imported writeback breadth remain open.
 - Active-project route proof review found that project property/default-member rewrite paths used
   front-end symbol routes but did not assert the member-dispatch classifier at the final selected
   route. The selected route now must classify as `EarlyBoundProject` with the expected accessor kind

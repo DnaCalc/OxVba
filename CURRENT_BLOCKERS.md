@@ -135,6 +135,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         retaining the compatibility carrier; predeclared `Property Get` read rewrite maps are now
         fallible and classifier-backed, requiring active-project `EarlyBoundProject` property-get
         proof or host-injected `HostGlobal` proof before retaining the compatibility carrier;
+        selected default-member assignment routes now reject clear assignment-form/type
+        mismatches, covering `Let` into explicitly object-typed value parameters and `Set` into
+        definitely scalar-typed value parameters;
       - still open: broader project/host/imported-COM default-member writeback breadth, type
         overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;

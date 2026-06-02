@@ -1114,7 +1114,9 @@ Candidate bead units:
   `EarlyBoundProject` member-dispatch classification before retaining the compatibility carrier;
   predeclared `Property Get` read rewrite maps are now fallible and classifier-backed, requiring
   active-project `EarlyBoundProject` property-get proof or host-injected `HostGlobal` proof before
-  retaining the compatibility carrier.
+  retaining the compatibility carrier; selected default-member assignment routes now reject clear
+  assignment-form/type mismatches, covering `Let` into explicitly object-typed value parameters and
+  `Set` into definitely scalar-typed value parameters.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

@@ -617,6 +617,14 @@ pub enum ProjectCompileError {
         actual: usize,
     },
     #[error(
+        "PMR-E-DEFAULT-MEMBER-RESOLUTION-TYPE-UNSUPPORTED: default-member target `{name}` has value parameter type `{declared}` which is incompatible with {assignment_form} assignment"
+    )]
+    DefaultMemberResolutionTypeUnsupported {
+        name: String,
+        declared: String,
+        assignment_form: &'static str,
+    },
+    #[error(
         "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL: member read `{name}` resolves to a procedure with a required argument; reading it without arguments is invalid (VBA: \"Argument not optional\")"
     )]
     MemberReadArgumentNotOptional { name: String },
@@ -737,6 +745,9 @@ impl ProjectCompileError {
             Self::DefaultMemberResolutionArityUnsupported { .. } => {
                 "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
             }
+            Self::DefaultMemberResolutionTypeUnsupported { .. } => {
+                "PMR-E-DEFAULT-MEMBER-RESOLUTION-TYPE-UNSUPPORTED"
+            }
             Self::MemberReadArgumentNotOptional { .. } => "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL",
             Self::MemberReadExpectedFunctionOrVariable { .. } => {
                 "PMR-E-MEMBER-READ-EXPECTED-FUNCTION-OR-VARIABLE"
@@ -796,6 +807,7 @@ struct ProcedureDecl {
     is_default_member: bool,
     params: Vec<ProjectDynamicParamRoute>,
     param_types: Vec<crate::bytecode::DeclareParamType>,
+    param_source_type_texts: Vec<Option<String>>,
     return_type: Option<crate::bytecode::DeclareParamType>,
     param_count: usize,
     module_kind: ModuleKind,
@@ -2823,6 +2835,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             if let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) {
                 let params = procedure_signature_params(&line).unwrap_or_default();
                 let param_types = procedure_signature_param_types(&line).unwrap_or_default();
+                let param_source_type_texts =
+                    procedure_signature_param_source_type_texts(&line).unwrap_or_default();
                 let return_type = procedure_signature_return_type(&line, kind);
                 let param_count = params.len();
                 let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name, kind);
@@ -2844,6 +2858,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
                     params,
                     param_types,
+                    param_source_type_texts,
                     return_type,
                     param_count,
                     module_kind: module.module_kind,
@@ -2874,6 +2889,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                 if let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) {
                     let params = procedure_signature_params(&line).unwrap_or_default();
                     let param_types = procedure_signature_param_types(&line).unwrap_or_default();
+                    let param_source_type_texts =
+                        procedure_signature_param_source_type_texts(&line).unwrap_or_default();
                     let return_type = procedure_signature_return_type(&line, kind);
                     let param_count = params.len();
                     let lowered_name =
@@ -2896,6 +2913,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                             .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
                         params,
                         param_types,
+                        param_source_type_texts,
                         return_type,
                         param_count,
                         module_kind: module.module_kind,
@@ -5372,6 +5390,7 @@ fn rewrite_internal_class_member_dispatch(
                     shadowed_identifiers,
                     &[ProcedureDeclKind::PropertyGet],
                     Some(actual_arg_count),
+                    None,
                 )?
             else {
                 cursor = close + 1;
@@ -5518,6 +5537,7 @@ fn rewrite_internal_class_default_member_statement_reads(
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertyGet],
         Some(0),
+        None,
     )?
     else {
         return Ok(line.to_string());
@@ -6251,6 +6271,7 @@ fn resolve_internal_class_default_member_target_of_kinds(
     shadowed_identifiers: &BTreeSet<String>,
     allowed_kinds: &[ProcedureDeclKind],
     actual_arg_count: Option<usize>,
+    assignment_form: Option<DefaultMemberAssignmentForm>,
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
     let Some((target_project, target_module, instance_arg)) =
         (if let Some(binding) = internal_class_bindings.get(receiver) {
@@ -6279,6 +6300,7 @@ fn resolve_internal_class_default_member_target_of_kinds(
         procedures,
         allowed_kinds,
         actual_arg_count,
+        assignment_form,
     )? {
         return Ok(Some(found));
     }
@@ -6333,6 +6355,7 @@ fn resolve_internal_class_default_member_target_of_kinds(
     let selected = candidates[0];
     validate_host_global_dispatch_classification(selected, &selected.procedure_name)?;
     validate_default_member_source_arity(receiver, selected, actual_arg_count)?;
+    validate_default_member_value_type(receiver, selected, assignment_form)?;
     Ok(Some((selected.lowered_name.clone(), instance_arg)))
 }
 
@@ -6388,6 +6411,79 @@ fn procedure_decl_source_arity_description(decl: &ProcedureDecl) -> String {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DefaultMemberAssignmentForm {
+    Let,
+    Set,
+}
+
+fn validate_default_member_value_type(
+    receiver: &str,
+    decl: &ProcedureDecl,
+    assignment_form: Option<DefaultMemberAssignmentForm>,
+) -> Result<(), ProjectCompileError> {
+    let Some(assignment_form) = assignment_form else {
+        return Ok(());
+    };
+    let Some(value_param_index) = decl.params.len().checked_sub(1) else {
+        return Ok(());
+    };
+    let declared = decl
+        .param_source_type_texts
+        .get(value_param_index)
+        .and_then(|value| value.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(declared) = declared else {
+        return Ok(());
+    };
+    let incompatible = match assignment_form {
+        DefaultMemberAssignmentForm::Set => declared_source_type_text_is_scalar(declared),
+        DefaultMemberAssignmentForm::Let => declared_source_type_text_is_explicit_object(declared),
+    };
+    if !incompatible {
+        return Ok(());
+    }
+    Err(
+        ProjectCompileError::DefaultMemberResolutionTypeUnsupported {
+            name: receiver.to_string(),
+            declared: declared.to_string(),
+            assignment_form: match assignment_form {
+                DefaultMemberAssignmentForm::Let => "Let",
+                DefaultMemberAssignmentForm::Set => "Set",
+            },
+        },
+    )
+}
+
+fn declared_source_type_text_is_scalar(type_text: &str) -> bool {
+    let normalized = type_text
+        .trim()
+        .trim_end_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "integer"
+            | "long"
+            | "single"
+            | "double"
+            | "currency"
+            | "date"
+            | "string"
+            | "boolean"
+            | "byte"
+            | "longlong"
+            | "longptr"
+    )
+}
+
+fn declared_source_type_text_is_explicit_object(type_text: &str) -> bool {
+    type_text
+        .trim()
+        .trim_end_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .eq_ignore_ascii_case("object")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn resolve_default_member_target_via_frontend_route(
     manifest: &ProjectManifest,
@@ -6402,6 +6498,7 @@ fn resolve_default_member_target_via_frontend_route(
     procedures: &[ProcedureDecl],
     allowed_kinds: &[ProcedureDeclKind],
     actual_arg_count: Option<usize>,
+    assignment_form: Option<DefaultMemberAssignmentForm>,
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
     let Some(project_symbol_index) = project_symbol_index else {
         return Ok(None);
@@ -6453,6 +6550,7 @@ fn resolve_default_member_target_via_frontend_route(
         });
     }
     validate_default_member_source_arity(receiver, decl, actual_arg_count)?;
+    validate_default_member_value_type(receiver, decl, assignment_form)?;
     Ok(Some((decl.lowered_name.clone(), instance_arg.to_string())))
 }
 
@@ -6566,6 +6664,7 @@ fn rewrite_internal_class_call_statement_without_parens(
             shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
             Some(actual_arg_count),
+            None,
         )?
         else {
             return Ok(line.to_string());
@@ -6667,6 +6766,7 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
             shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
             Some(actual_arg_count),
+            None,
         )?
         else {
             return Ok(line.to_string());
@@ -7089,6 +7189,7 @@ fn rewrite_internal_class_set_assignment(
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertySet],
         Some(indexed_args.len() + 1),
+        Some(DefaultMemberAssignmentForm::Set),
     ) {
         Ok(Some((target, instance_arg))) => {
             let target = selected_property_target_via_frontend_route(
@@ -7321,6 +7422,7 @@ fn rewrite_internal_class_default_member_assignment(
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertyLet],
         Some(indexed_args.len() + 1),
+        Some(DefaultMemberAssignmentForm::Let),
     )?
     else {
         return Ok(line.to_string());
@@ -7436,6 +7538,7 @@ fn rewrite_internal_class_default_member_read_assignment(
         shadowed_identifiers,
         &[ProcedureDeclKind::PropertyGet],
         Some(indexed_args.len()),
+        None,
     )?;
     let Some((target, instance_arg)) = resolved_target else {
         return Ok(line.to_string());
@@ -11047,6 +11150,11 @@ fn procedure_signature_param_types(line: &str) -> Option<Vec<crate::bytecode::De
         .into_iter()
         .map(parse_procedure_signature_param_type)
         .collect()
+}
+
+fn procedure_signature_param_source_type_texts(line: &str) -> Option<Vec<Option<String>>> {
+    procedure_signature_raw_args(line)
+        .map(|args| args.into_iter().map(|arg| source_type_text(&arg)).collect())
 }
 
 fn procedure_signature_return_type(
@@ -17755,6 +17863,70 @@ mod tests {
             "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
         );
         assert!(err.to_string().contains("got 1"));
+    }
+
+    #[test]
+    fn compile_project_rejects_let_for_object_typed_default_member_value() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal target As Object)\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("Let assignment into object-typed default-member value should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-TYPE-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("Object"));
+    }
+
+    #[test]
+    fn compile_project_rejects_set_for_scalar_typed_default_member_value() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim target As Object\nSet widget = target\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByVal target As Long)\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("Set assignment into scalar-typed default-member value should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-TYPE-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("Long"));
     }
 
     #[test]
