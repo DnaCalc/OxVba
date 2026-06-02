@@ -367,6 +367,11 @@ Follow-up file-print route work adds HIR-owned `Print #handle, data` lowering to
 file-print host bytecode for simple literal/name handle and payload expressions. `Open`, `Write #`,
 `Input #`, and file `Line Input #` remain open file-handle statement surfaces.
 
+Follow-up file-write route work adds HIR-owned `Write #handle, item[, ...]` lowering to the existing
+file-write host bytecode for simple literal/name handle and payload expressions, including
+multi-item writes. `Open`, `Input #`, and file `Line Input #` remain open file-handle statement
+surfaces.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

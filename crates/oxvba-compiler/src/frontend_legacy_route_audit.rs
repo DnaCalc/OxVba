@@ -597,6 +597,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let file_write_statement = "Sub Main()\nWrite #1, 42, True, \"hello,world\"\nEnd Sub\n";
+    findings.push(route_finding(
+        "file write statement fixture",
+        file_write_statement,
+        "bd-aprs.9.10",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",

@@ -312,6 +312,10 @@ pub enum HirStmtKind {
         file_number: HirExprId,
         data: HirExprId,
     },
+    FileWrite {
+        file_number: HirExprId,
+        data: Vec<HirExprId>,
+    },
     Label {
         name: String,
     },
@@ -697,6 +701,13 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::FilePrint { file_number, data },
+                })))
+            }
+            SyntaxKind::CallStmt if is_file_write_stmt(node) => {
+                let (file_number, data) = self.lower_file_handle_payloads(scope, node, "Write")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FileWrite { file_number, data },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1435,6 +1446,28 @@ impl HirBuilder {
         node: SyntaxNode<'_>,
         statement_name: &str,
     ) -> Result<(HirExprId, HirExprId), HirBuildError> {
+        let (file_number, data) = self.lower_file_handle_payloads(scope, node, statement_name)?;
+        if data.len() != 1 {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires exactly one data expression: `{}`",
+                node.text().trim()
+            )));
+        }
+        let data = data.into_iter().next().ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires data: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        Ok((file_number, data))
+    }
+
+    fn lower_file_handle_payloads(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<(HirExprId, Vec<HirExprId>), HirBuildError> {
         let raw = statement_payload_after_keyword(node, statement_name).ok_or_else(|| {
             HirBuildError::Unsupported(format!(
                 "{statement_name} statement requires a file handle: `{}`",
@@ -1450,12 +1483,21 @@ impl HirBuilder {
         };
         let file_number = self.lower_simple_statement_expr(scope, node, file_number.trim())?;
         let data = if data.trim().is_empty() {
-            self.arenas.alloc_expr(HirExpr {
+            vec![self.arenas.alloc_expr(HirExpr {
                 cst: cst(node),
                 kind: HirExprKind::Literal(HirLiteral::String(String::new())),
-            })
+            })]
         } else {
-            self.lower_simple_statement_expr(scope, node, data.trim())?
+            split_top_level_stmt_args(data)
+                .ok_or_else(|| {
+                    HirBuildError::Unsupported(format!(
+                        "unsupported {statement_name} # payload list: `{}`",
+                        node.text().trim()
+                    ))
+                })?
+                .into_iter()
+                .map(|part| self.lower_simple_statement_expr(scope, node, part.as_str()))
+                .collect::<Result<Vec<_>, _>>()?
         };
         Ok((file_number, data))
     }
@@ -2020,6 +2062,56 @@ fn is_file_print_stmt(node: SyntaxNode<'_>) -> bool {
     lower.strip_prefix("print").is_some_and(|rest| {
         rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('#')
     })
+}
+
+fn is_file_write_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("write").is_some_and(|rest| {
+        rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('#')
+    })
+}
+
+fn split_top_level_stmt_args(args: &str) -> Option<Vec<String>> {
+    if args.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let chars = args.as_bytes();
+    let mut idx = 0usize;
+    while idx < chars.len() {
+        let ch = chars[idx] as char;
+        if ch == '"' {
+            if in_string && idx + 1 < chars.len() && chars[idx + 1] as char == '"' {
+                idx += 2;
+                continue;
+            }
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(args[start..idx].trim().to_string());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    if depth != 0 || in_string {
+        return None;
+    }
+    out.push(args[start..].trim().to_string());
+    Some(out)
 }
 
 fn statement_payload_after_keyword(node: SyntaxNode<'_>, keyword: &str) -> Option<String> {

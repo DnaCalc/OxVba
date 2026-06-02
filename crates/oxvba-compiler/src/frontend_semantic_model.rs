@@ -280,6 +280,12 @@ impl SemanticModel {
                 self.index_expr_tree(file_number);
                 self.index_expr_tree(data);
             }
+            HirStmtKind::FileWrite { file_number, data } => {
+                self.index_expr_tree(file_number);
+                for expr in data {
+                    self.index_expr_tree(expr);
+                }
+            }
         }
     }
 

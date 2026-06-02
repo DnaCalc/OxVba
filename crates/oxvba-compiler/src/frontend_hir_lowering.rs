@@ -1570,6 +1570,19 @@ fn lower_stmt(
             )?,
             data: lower_expr(typed_hir, const_values, udt_field_aliases, *data, context)?,
         }),
+        HirStmtKind::FileWrite { file_number, data } => out.push(BoundStmt::FileWrite {
+            file_number: lower_expr(
+                typed_hir,
+                const_values,
+                udt_field_aliases,
+                *file_number,
+                context,
+            )?,
+            data: data
+                .iter()
+                .map(|expr| lower_expr(typed_hir, const_values, udt_field_aliases, *expr, context))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5256,6 +5269,30 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicFilePrintHost { .. }
             )),
             "expected Print # statement to emit file print host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_file_write_statement() {
+        let source = "Sub Main()\nWrite #1, 42, True, \"hello,world\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let write_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicFileWriteHost { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            write_count, 3,
+            "expected one file write host intrinsic per Write # item: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
