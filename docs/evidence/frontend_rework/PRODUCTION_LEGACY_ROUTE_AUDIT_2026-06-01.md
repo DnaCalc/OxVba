@@ -101,7 +101,7 @@ The audit result records completed reopened delivery work and remaining broader 
   error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,
   one-dimensional, two-dimensional, and explicit static lower-bound dynamic-array runtime `ReDim`,
   read/write dynamic-array element access, initial fixed-array element aliasing and fixed-array
-  `ReDim` alias rematerialization,
+  `ReDim` alias rematerialization, local multidimensional dynamic/fixed element access,
   simple function declarations with declared return
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
   multi-declarator literal `Const`, `Event` declarations paired with `RaiseEvent`, single-source

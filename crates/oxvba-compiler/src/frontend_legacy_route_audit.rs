@@ -285,11 +285,25 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.8",
     ));
 
+    let multidimensional_dynamic_array_element_statement = "Sub Main()\nDim grid() As Long\nDim x As Long\nReDim grid(1, 1)\ngrid(1, 0) = 7\nx = grid(1, 0)\nEnd Sub\n";
+    findings.push(route_finding(
+        "multidimensional dynamic array element fixture",
+        multidimensional_dynamic_array_element_statement,
+        "bd-aprs.9.8",
+    ));
+
     let fixed_array_element_alias_statement =
         "Sub Main()\nDim a(1 To 2) As Integer\nDim x As Long\na(2) = 7\nx = a(2)\nEnd Sub\n";
     findings.push(route_finding(
         "fixed array element alias fixture",
         fixed_array_element_alias_statement,
+        "bd-aprs.9.8",
+    ));
+
+    let multidimensional_fixed_array_element_alias_statement = "Sub Main()\nDim m(1 To 2, 1 To 2) As Integer\nDim x As Long\nm(2, 1) = 7\nx = m(2, 1)\nEnd Sub\n";
+    findings.push(route_finding(
+        "multidimensional fixed array element alias fixture",
+        multidimensional_fixed_array_element_alias_statement,
         "bd-aprs.9.8",
     ));
 
@@ -592,7 +606,17 @@ mod tests {
                 finding.area.contains("dynamic array element write")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("multidimensional dynamic array element")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
                 finding.area.contains("fixed array element alias")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("multidimensional fixed array element alias")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding

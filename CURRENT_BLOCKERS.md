@@ -168,9 +168,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         one-dimensional and two-dimensional runtime bounds, static integer explicit lower-bound
         `To` forms, read/write dynamic-array element access, initial fixed-array alias
         materialization plus fixed-array `ReDim` rematerialization for static integer bounds, and
+        local multidimensional dynamic/fixed element access with static integer fixed indices, and
         array-shape rank metadata updates from observed `ReDim` bounds;
-        project/class array fields and broader multidimensional element/fixed/project shapes
-        remain open;
+        project/class array fields and broader project-owned array shapes remain open;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
       - continuation progress: `Option Compare Text` now routes through HIR for otherwise
         completed lightweight sources and emits text comparison bytecode; `Option Explicit`,

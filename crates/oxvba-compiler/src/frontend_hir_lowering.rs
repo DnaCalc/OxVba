@@ -3155,6 +3155,37 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_emits_multidimensional_dynamic_array_element_access() {
+        let source = "Sub Main()\nDim grid() As Long\nDim x As Long\nReDim grid(1, 1)\ngrid(1, 0) = 7\nx = grid(1, 0)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArraySet { indices, .. } if indices.len() == 2
+            )),
+            "expected multidimensional dynamic array write bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayGet { indices, .. } if indices.len() == 2
+            )),
+            "expected multidimensional dynamic array read bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "grid")
+            .expect("dynamic array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Long);
+        assert_eq!(shape.rank, 2);
+    }
+
+    #[test]
     fn hir_production_lowering_materializes_fixed_array_aliases() {
         let source =
             "Sub Main()\nDim a(1 To 2) As Integer\nDim x As Long\na(2) = 7\nx = a(2)\nEnd Sub\n";
@@ -3184,6 +3215,40 @@ mod tests {
         assert_eq!(shape.bounds.len(), 1);
         assert_eq!(shape.bounds[0].lower_bound, 1);
         assert_eq!(shape.bounds[0].upper_bound, 2);
+        assert_eq!(shape.storage, crate::emit::ArrayStorageKind::StaticFixed);
+    }
+
+    #[test]
+    fn hir_production_lowering_materializes_multidimensional_fixed_array_aliases() {
+        let source = "Sub Main()\nDim m(1 To 2, 1 To 2) As Integer\nDim x As Long\nm(2, 1) = 7\nx = m(2, 1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "expected multidimensional fixed-array assignment value bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        assert!(
+            proc.slots.iter().any(|slot| slot.name == "m_2"),
+            "expected multidimensional fixed-array alias slot: {:?}",
+            proc.slots
+        );
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "m")
+            .expect("fixed array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Integer);
+        assert_eq!(shape.rank, 2);
+        assert_eq!(shape.bounds.len(), 2);
+        assert_eq!(shape.bounds[0].lower_bound, 1);
+        assert_eq!(shape.bounds[0].upper_bound, 2);
+        assert_eq!(shape.bounds[1].lower_bound, 1);
+        assert_eq!(shape.bounds[1].upper_bound, 2);
         assert_eq!(shape.storage, crate::emit::ArrayStorageKind::StaticFixed);
     }
 

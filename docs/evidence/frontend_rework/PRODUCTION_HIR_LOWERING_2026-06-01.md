@@ -276,6 +276,9 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 - fixed-array `ReDim` / `ReDim Preserve` with static integer bounds now rematerializes alias
   slots and updates static fixed-array shape metadata before subsequent element references are
   lowered;
+- local multidimensional dynamic-array element reads/writes lower to backend array get/set
+  intrinsics with two index operands, and local multidimensional fixed-array element reads/writes
+  resolve through the legacy-compatible linear alias calculation;
 - local `Dim name() As T` declarations contribute array declaration type and runtime
   `ArrayShapeDescriptor` metadata, including element type and the lower-bound policy available to
   the HIR route;
@@ -285,13 +288,14 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
   two-dimensional dynamic-array `ReDim grid(rows - 1, cols - 1)`, and explicit lower-bound
   `ReDim buf(1 To length - 1)` fixtures, plus read- and write-side dynamic-array element
   fixtures, an initial fixed-array alias fixture, and a fixed-array `ReDim Preserve`
-  rematerialization fixture.
+  rematerialization fixture. It also includes local multidimensional dynamic/fixed element
+  fixtures.
 
 This is intentionally not full `ReDim` parity. Runtime lower bounds currently match the old
 production constraint: the lower side of `To` must be a static integer, while upper bounds may be
 expressions. Fixed-array declaration and `ReDim` alias materialization currently require static
 integer bounds and static integer element indices. Project/class array fields and broader
-multidimensional element/fixed/project shapes remain broader HIR and project-semantics work.
+project-owned array shapes remain broader HIR and project-semantics work.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
