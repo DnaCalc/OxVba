@@ -211,6 +211,11 @@ Follow-up FE-8.5.f route work narrows that residual: optional parameters with si
 defaults now remain eligible for the default HIR path and preserve optional/default signature
 metadata for otherwise completed single-source inputs. `ParamArray`, richer default expressions,
 and broader optional missing-state call-entry behavior remain outside the lightweight default route.
+Additional property-declaration work teaches HIR lowering to derive `Property Get`/`Property Let`
+procedure kinds from the HIR property record, preserve getter return-slot metadata, and bind the
+getter self-assignment name to that return slot. Property declarations still remain outside the
+default HIR route because same-module property invocation/default-member semantics are not yet
+complete.
 
 ## RaiseEvent Continuation
 

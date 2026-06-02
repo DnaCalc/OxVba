@@ -1186,8 +1186,9 @@ Candidate bead units:
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
   simple functions with return slots, optional parameters with simple explicit defaults through the
-  default HIR route, `Declare PtrSafe` calls, simple UDT layout/field aliases, and same-shape UDT
-  assignment.
+  default HIR route, bounded `Property Get`/`Property Let` declaration metadata and getter
+  self-assignment return-slot binding, `Declare PtrSafe` calls, simple UDT layout/field aliases, and
+  same-shape UDT assignment.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

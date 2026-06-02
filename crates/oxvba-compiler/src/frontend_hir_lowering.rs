@@ -329,7 +329,8 @@ fn lower_procedure(
         return Ok(None);
     };
     let name = symbol_name(typed_hir, decl.symbol)?;
-    let is_function = decl.cst.syntax_kind == "FunctionDecl";
+    let proc_kind = proc_kind_for_hir_decl(typed_hir, decl);
+    let has_return_slot = matches!(proc_kind, ProcKind::Function | ProcKind::PropertyGet);
     let mut declarations: Vec<String> = Vec::new();
     let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
     let mut array_descriptors: HashMap<String, BoundArrayDescriptor> = HashMap::new();
@@ -338,7 +339,8 @@ fn lower_procedure(
     let mut bound_params = Vec::new();
     let udt_defs = collect_hir_udt_definitions(source);
     let mut udt_instances = HashMap::<String, String>::new();
-    let parsed_signature = parsed_signature_for_hir_decl(source, decl, default_type_table);
+    let parsed_signature =
+        parsed_signature_for_hir_decl(source, decl, proc_kind, default_type_table);
     let parsed_params = parsed_signature
         .as_ref()
         .map(|(params, _return_type)| params.clone())
@@ -471,7 +473,7 @@ fn lower_procedure(
         }
     }
 
-    if is_function {
+    if has_return_slot {
         let return_type = parsed_signature
             .as_ref()
             .map(|(_params, return_type)| *return_type)
@@ -539,7 +541,7 @@ fn lower_procedure(
         source_line_start,
         source_line_end,
         statement_line_numbers,
-        return_type: if is_function {
+        return_type: if has_return_slot {
             parsed_signature
                 .as_ref()
                 .map(|(_params, return_type)| *return_type)
@@ -559,17 +561,37 @@ fn lower_procedure(
     }))
 }
 
+fn proc_kind_for_hir_decl(
+    typed_hir: &TypedHirModule,
+    decl: &crate::frontend_hir::HirDecl,
+) -> ProcKind {
+    if decl.cst.syntax_kind == "PropertyDecl" {
+        return typed_hir
+            .module
+            .arenas
+            .properties()
+            .iter()
+            .find(|property| property.symbol == decl.symbol)
+            .map(|property| match property.kind {
+                crate::frontend_hir::HirPropertyKind::Get => ProcKind::PropertyGet,
+                crate::frontend_hir::HirPropertyKind::Let => ProcKind::PropertyLet,
+                crate::frontend_hir::HirPropertyKind::Set => ProcKind::PropertySet,
+            })
+            .unwrap_or(ProcKind::PropertyGet);
+    }
+    if decl.cst.syntax_kind == "FunctionDecl" {
+        ProcKind::Function
+    } else {
+        ProcKind::Sub
+    }
+}
+
 fn parsed_signature_for_hir_decl(
     source: &str,
     decl: &crate::frontend_hir::HirDecl,
+    kind: ProcKind,
     default_type_table: &[BoundType; 26],
 ) -> Option<(Vec<BoundParam>, BoundType)> {
-    let kind = match decl.cst.syntax_kind.as_str() {
-        "SubDecl" => ProcKind::Sub,
-        "FunctionDecl" => ProcKind::Function,
-        "PropertyDecl" => ProcKind::PropertyGet,
-        _ => return None,
-    };
     let start = decl.cst.span.start.min(source.len());
     let end = decl.cst.span.end.min(source.len());
     let text = source.get(start..end)?;
@@ -3928,6 +3950,39 @@ mod tests {
         assert_eq!(use_metadata.signature.parameters.len(), 1);
         assert!(use_metadata.signature.parameters[0].optional);
         assert_eq!(use_metadata.signature.parameters[0].default_value, Some(7));
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
+        let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let property_get = metadata
+            .get("property_get_value")
+            .expect("Property Get metadata")
+            .procedure_signature_descriptor();
+        assert_eq!(
+            property_get.kind,
+            crate::emit::ProcedureKindDescriptor::PropertyGet
+        );
+        assert_eq!(property_get.return_type, Some(crate::VbaTypeId::Long));
+        assert_eq!(property_get.property_group.as_deref(), Some("value"));
+
+        let property_let = metadata
+            .get("property_let_value")
+            .expect("Property Let metadata")
+            .procedure_signature_descriptor();
+        assert_eq!(
+            property_let.kind,
+            crate::emit::ProcedureKindDescriptor::PropertyLet
+        );
+        assert_eq!(property_let.return_type, None);
+        assert_eq!(property_let.property_group.as_deref(), Some("value"));
+        assert_eq!(
+            property_let.parameters[0].role,
+            crate::emit::ParameterRole::PropertyValue
+        );
     }
 
     #[test]

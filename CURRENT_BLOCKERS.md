@@ -198,8 +198,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `bd-aprs.9.10`: broader declaration/type surface;
       - continuation progress: optional parameters with simple explicit defaults now remain eligible
         for the default HIR route and preserve optional/default signature metadata;
+        HIR lowering now preserves `Property Get`/`Property Let` declaration metadata and binds the
+        property getter self-assignment return slot;
         `ParamArray`, richer default expressions, and broader call-entry optional/missing-state
-        behavior remain open;
+        behavior, plus property invocation/default-route semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.
 

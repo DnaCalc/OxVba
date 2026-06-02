@@ -1114,6 +1114,15 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_still_rejects_property_declaration_route() {
+        let source = "Property Get Value() As Long\nValue = 9\nEnd Property\nSub Main()\nEnd Sub\n";
+        assert!(
+            !super::source_is_eligible_for_lightweight_hir_default(source),
+            "property declarations remain outside the default HIR route until invocation semantics are complete"
+        );
+    }
+
+    #[test]
     fn compile_options_frontend_v2_is_opt_in_bridge_route() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
