@@ -210,8 +210,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         introspection/predicate intrinsics, including those forms inside a ParamArray callee;
         deterministic string/search intrinsics `Len`, `Left`, `Right`, `Mid`, `InStr`,
         `InStrRev`, `Replace`, and `StrComp` now lower through HIR;
-        richer default expressions, remaining deterministic intrinsic families, host-sensitive
-        intrinsic breadth inside ParamArray callees, and
+        deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`,
+        `Cos`, `Log`, `Exp`, `Atn`, and `Tan` now lower through HIR;
+        richer default expressions, general unary-expression parity, remaining deterministic
+        intrinsic families, host-sensitive intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and
         default-route property semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;

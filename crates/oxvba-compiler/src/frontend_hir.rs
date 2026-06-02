@@ -30,6 +30,18 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "instrrev"
             | "replace"
             | "strcomp"
+            | "abs"
+            | "int"
+            | "fix"
+            | "sgn"
+            | "round"
+            | "sqr"
+            | "sin"
+            | "cos"
+            | "log"
+            | "exp"
+            | "atn"
+            | "tan"
     )
 }
 

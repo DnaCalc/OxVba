@@ -4273,6 +4273,109 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_numeric_math_intrinsics() {
+        let source = "Sub Main()\nDim ab\nDim it\nDim fx\nDim sg\nDim rd\nDim sq\nDim sn\nDim cs\nDim lg\nDim ex\nDim at\nDim tn\nCall Capture(ab, it, fx, sg, rd, sq, sn, cs, lg, ex, at, tn)\nEnd Sub\nSub Capture(ByRef ab, ByRef it, ByRef fx, ByRef sg, ByRef rd, ByRef sq, ByRef sn, ByRef cs, ByRef lg, ByRef ex, ByRef at, ByRef tn)\nab = Abs(7)\nit = Int(7)\nfx = Fix(7)\nsg = Sgn(7)\nrd = Round(7, 1)\nsq = Sqr(9)\nsn = Sin(1)\ncs = Cos(1)\nlg = Log(2)\nex = Exp(1)\nat = Atn(1)\ntn = Tan(1)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicAbsI32 { .. }
+            )),
+            "expected Abs to emit Abs intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIntI32 { .. }
+            )),
+            "expected Int to emit Int intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFixI32 { .. }
+            )),
+            "expected Fix to emit Fix intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicSgnI32 { .. }
+            )),
+            "expected Sgn to emit Sgn intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRoundI32 { .. }
+            )),
+            "expected Round to emit Round intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicSqrI32 { .. }
+            )),
+            "expected Sqr to emit Sqr intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicSinI32 { .. }
+            )),
+            "expected Sin to emit Sin intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCosI32 { .. }
+            )),
+            "expected Cos to emit Cos intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicLogI32 { .. }
+            )),
+            "expected Log to emit Log intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicExpI32 { .. }
+            )),
+            "expected Exp to emit Exp intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicAtnI32 { .. }
+            )),
+            "expected Atn to emit Atn intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicTanI32 { .. }
+            )),
+            "expected Tan to emit Tan intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =
