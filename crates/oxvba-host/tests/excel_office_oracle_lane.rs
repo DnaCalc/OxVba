@@ -39,13 +39,13 @@ mod windows_excel_office_oracle_lane {
 
     #[test]
     #[ignore = "requires Windows Excel.Application automation"]
-    fn excel_workbook_worksheet_smoke_fixture_executes_when_available() {
+    fn excel_workbook_range_object_smoke_fixture_executes_when_available() {
         if !excel_application_available() {
             eprintln!("Excel oracle lane: Excel.Application is not available in this environment");
             return;
         }
 
         execute_with_host_policy(EXCEL_WORKBOOK_RANGE_SMOKE)
-            .expect("Excel workbook/worksheet smoke fixture should execute");
+            .expect("Excel workbook/range object smoke fixture should execute");
     }
 }

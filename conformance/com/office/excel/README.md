@@ -12,8 +12,8 @@ Current fixtures:
   `CreateObject("Excel.Application")` activation, root property-get smoke, and
   explicit `Quit` cleanup.
 - `excel_workbook_range_smoke.bas`: workbook collection, workbook creation,
-  worksheet indexing, workbook close, and explicit application cleanup. The
-  range/default-member value path that this legacy filename suggests remains a
+  worksheet indexing, native `Range("A1")` object access, workbook close, and
+  explicit application cleanup. Range value/default-member mutation remains a
   separate open oracle lane.
 - `excel_named_argument_smoke.bas`: metadata-sensitive named-argument call
   shape over an Excel object-model member.

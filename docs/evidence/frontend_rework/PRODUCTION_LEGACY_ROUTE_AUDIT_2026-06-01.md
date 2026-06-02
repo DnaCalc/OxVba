@@ -90,18 +90,19 @@ passed on this machine. The previous property-set shape is not claimed by this e
 Excel property-put, range/default-member, and member-mutation lanes remain open.
 
 Continuation update: the Excel oracle lane now includes a second source-backed fixture and ignored
-host execution test for workbook/worksheet automation. The seed corpus route audit includes
+host execution test for workbook/range-object automation. The seed corpus route audit includes
 `excel_oracle_workbook_range_smoke`, and the narrowed
 `conformance/com/office/excel/excel_workbook_range_smoke.bas` fixture classifies as
 `HirProduction` and passed live execution with:
-`cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_worksheet_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
+`cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_range_object_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
 The first broader attempt exposed two real gaps and the fixture was narrowed accordingly:
 statement-form `DispatchInvoke(app, "DisplayAlerts", False)` was not accepted by HIR as an
 expression-statement shape at that point, and live Excel `Range("A1")` dispatch failed through the
 current `DispatchInvoke` adapter with `HAL-E-ADAPTER-FAULT [dispatch_invoke]
-com-dispatch-arg-error`. This evidence proves application activation, `Workbooks`,
-`Workbooks.Add`, `Worksheets(1)`, `Close`, and `Quit`; it does not claim range/default-member value
-access, property-put, or Excel mutation parity.
+com-dispatch-arg-error`. Follow-up probing showed the native member syntax `sheet.Range("A1")`
+does execute live, so the fixture now proves application activation, `Workbooks`,
+`Workbooks.Add`, `Worksheets(1)`, native `Range("A1")` object access, `Close`, and `Quit`; it does
+not claim range value/default-member mutation, property-put, or Excel mutation parity.
 
 Continuation update: the compiler-side no-keyword statement-form `DispatchInvoke` residual from the
 Excel oracle broadening attempt is now closed. HIR production lowering accepts
@@ -110,8 +111,8 @@ no-keyword `StructuralIntrinsicCallWithArgs` as an expression statement, the reg
 arguments survive to `IntrinsicDispatchInvokeHost`, and the production route audit includes a
 no-keyword statement-form named `DispatchInvoke` fixture. `Call DispatchInvoke(...)` remains on the
 compatibility route where project/imported-COM rewrites need to attach early-bound COM metadata.
-The live Excel `Range("A1")` dispatch fault remains open and is not reclassified by this
-compiler-side fix.
+The explicit `DispatchInvoke(sheet, "Range", "A1")` adapter fault remains open and is not
+reclassified by this compiler-side fix.
 
 Continuation update: FE-9.8 bundle context facts now have source-backed seed-corpus proof. The
 test `bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows` walks the
@@ -170,7 +171,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_statement_form_dispatchinvoke_arguments --quiet`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
-- `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_worksheet_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
+- `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_range_object_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -211,12 +212,13 @@ The audit result records completed reopened delivery work and remaining broader 
 - The selected live Excel execution lane now proves activation, root property get, and cleanup. It
   also exposed that property-set behavior should not be claimed by the activation smoke; broader
   Excel object-model mutation remains a separate FE-7/FE-8/FE-9 delivery and oracle surface.
-- The follow-up live Excel workbook/worksheet lane now proves `Workbooks`, `Workbooks.Add`,
-  `Worksheets(1)`, close, and cleanup. It also exposed that statement-form `DispatchInvoke` and
-  live `Range("A1")` dispatch were not ready to be claimed at first. The compiler-side no-keyword
-  statement-form `DispatchInvoke` gap is now route-audited through HIR production, while
-  `Call DispatchInvoke(...)` remains on the compatibility route for early-bound COM metadata;
-  range/default-member value access and property-put remain open.
+- The follow-up live Excel workbook/range-object lane now proves `Workbooks`, `Workbooks.Add`,
+  `Worksheets(1)`, native `Range("A1")` object access, close, and cleanup. It also exposed that
+  no-keyword statement-form `DispatchInvoke` and explicit `DispatchInvoke(sheet, "Range", "A1")`
+  were not ready to be claimed at first. The compiler-side no-keyword statement-form
+  `DispatchInvoke` gap is now route-audited through HIR production, while `Call DispatchInvoke(...)`
+  remains on the compatibility route for early-bound COM metadata; explicit Range `DispatchInvoke`,
+  range value/default-member mutation, and property-put remain open.
 - Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
   The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
   accepted-row production route.
