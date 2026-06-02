@@ -5932,6 +5932,11 @@ fn resolve_internal_class_member_target_via_frontend_property_route(
     else {
         return Ok(None);
     };
+    validate_project_property_dispatch_classification(
+        route,
+        expected_kind,
+        &format!("{owner_name}.{member}"),
+    )?;
     let Some(decl) = procedure_decl_for_project_symbol_route(
         manifest,
         active_project,
@@ -6026,6 +6031,11 @@ fn selected_property_target_via_frontend_route(
     ) else {
         return Ok(None);
     };
+    validate_project_property_dispatch_classification(
+        route,
+        expected_kind,
+        &format!("{}.{}", owner_name, decl.procedure_name),
+    )?;
     let Some(route_decl) = procedure_decl_for_project_symbol_route(
         manifest,
         active_project,
@@ -6056,6 +6066,28 @@ fn selected_property_target_via_frontend_route(
         });
     }
     Ok(Some(route_decl.lowered_name.clone()))
+}
+
+fn validate_project_property_dispatch_classification(
+    route: ProjectSymbolRoute,
+    expected_kind: ProjectSymbolKind,
+    context: &str,
+) -> Result<(), ProjectCompileError> {
+    let decision = classify_project_member(route);
+    if !matches!(
+        decision.class,
+        MemberDispatchClass::EarlyBoundProject {
+            target,
+            kind
+        } if target == route.symbol && kind == expected_kind
+    ) {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-PROJECT-DISPATCH-CLASSIFICATION: {context} did not classify as {expected_kind:?}"
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6314,6 +6346,11 @@ fn resolve_default_member_target_via_frontend_route(
     else {
         return Ok(None);
     };
+    validate_project_property_dispatch_classification(
+        route,
+        expected_kind,
+        &format!("{owner_name}.<default>"),
+    )?;
     let Some(decl) = procedure_decl_for_project_symbol_route(
         manifest,
         active_project,

@@ -86,6 +86,10 @@ The 2026-06-01 continuation added:
   fallback now rejects multiple explicit `VB_UserMemId = 0` candidates of the required accessor
   kind instead of sorting and selecting one. Regression coverage includes authoritative
   default-member read, `Property Let`, and indexed `Property Set` ambiguity diagnostics.
+- `bd-aprs.8.7` active-project dispatch-classification continuation: selected active-project
+  property/default-member rewrite routes now validate that the front-end member-dispatch classifier
+  reports the selected route as `EarlyBoundProject` with the expected accessor kind before
+  retaining the compatibility rewrite carrier.
 
 ## Checks
 
@@ -110,6 +114,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member_call --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member --quiet`
 - `cargo test -p oxvba-compiler ambiguous_authoritative --quiet`
+- `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
@@ -213,3 +218,8 @@ The 2026-06-01 continuation added:
   `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` for multiple authoritative candidates, matching the
   existing non-authoritative ambiguity policy. This closes the selected authoritative ambiguity
   subset; broader arity/type overload validation remains open.
+- Active-project route proof review found that project property/default-member rewrite paths used
+  front-end symbol routes but did not assert the member-dispatch classifier at the final selected
+  route. The selected route now must classify as `EarlyBoundProject` with the expected accessor kind
+  before the rewrite carrier is retained. This is still route proof around the compatibility
+  rewrite body, not full HIR-native replacement.

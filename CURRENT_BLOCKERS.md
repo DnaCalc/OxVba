@@ -128,6 +128,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         indexed argument names, and emit dispatch member id `0` with `PropertyLet`/`PropertySet`
         hints; multiple authoritative `VB_UserMemId = 0` candidates of the required accessor kind
         now reject as default-member ambiguity instead of selecting the first sorted candidate;
+        selected active-project property/default-member rewrite routes now validate
+        `EarlyBoundProject` member-dispatch classification before retaining the compatibility
+        carrier;
       - still open: broader project/host/imported-COM default-member writeback breadth, overload
         arity/type validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
