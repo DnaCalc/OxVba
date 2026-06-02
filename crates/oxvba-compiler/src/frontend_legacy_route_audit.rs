@@ -449,6 +449,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let optional_enum_default_statement = "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal n As Long = Safe)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+    findings.push(route_finding(
+        "optional enum default fixture",
+        optional_enum_default_statement,
+        "bd-aprs.9.10",
+    ));
+
     let param_array_statement =
         "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
     findings.push(route_finding(
@@ -928,6 +935,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("optional integer default expression")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("optional enum default")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("simple property")

@@ -7646,6 +7646,20 @@ mod tests {
     }
 
     #[test]
+    fn resolve_optional_params_with_enum_constant_defaults() {
+        let source = "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = Safe)\ntarget = value\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(fill.params[1].default_value, Some(4));
+    }
+
+    #[test]
     fn parse_optional_module_constant_default_rejects_cycles() {
         let mut module_constants = HashMap::new();
         module_constants.insert("a".to_string(), BoundExpr::Var("b".to_string()));

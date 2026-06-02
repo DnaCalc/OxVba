@@ -1299,6 +1299,34 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_optional_enum_constant_defaults_through_hir() {
+        let source = "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal n As Long = Safe)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "integer enum defaults should stay eligible for default HIR"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support enum defaults");
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route enum default through HIR");
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for enum defaults"
+        );
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(use_metadata.signature.parameters[0].default_value, Some(4));
+        assert!(matches!(
+            use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitI32(4),
+                missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
+            }
+        ));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_param_array_through_hir() {
         let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
         assert!(

@@ -1195,13 +1195,13 @@ Candidate bead units:
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
   simple functions with return slots, optional parameters with simple explicit defaults and
-  integer constant-expression defaults, including integer module-constant references, through the
-  default HIR route within the existing `ExplicitI32` metadata shape, bounded `Property Get`/
-  `Property Let` declaration metadata and getter self-assignment return-slot binding, same-module
-  zero-argument `Property Get` reads and simple same-module `Property Let`/`Property Set` writes
-  through HIR, simple non-indexed property declarations through the default HIR route, simple
-  positional ParamArray packing through the default HIR route, `LBound`/`UBound` array-bound
-  intrinsics in HIR, one-argument `IsArray`,
+  integer constant-expression defaults, including integer module-constant and enum-member
+  references, through the default HIR route within the existing `ExplicitI32` metadata shape,
+  bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
+  binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
+  `Property Set` writes through HIR, simple non-indexed property declarations through the default
+  HIR route, simple positional ParamArray packing through the default HIR route, `LBound`/`UBound`
+  array-bound intrinsics in HIR, one-argument `IsArray`,
   `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
   introspection/predicate intrinsics in HIR, deterministic string/search intrinsics `Len`, `Left`,
   `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR,
