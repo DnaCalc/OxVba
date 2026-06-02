@@ -16,6 +16,9 @@ mod windows_excel_office_oracle_lane {
         include_str!("../../../conformance/com/office/excel/excel_find_null_result_smoke.bas");
     const EXCEL_RANGE_VALUE_PUT_SMOKE: &str =
         include_str!("../../../conformance/com/office/excel/excel_range_value_put_smoke.bas");
+    const EXCEL_RANGE_DEFAULT_MEMBER_PUT_SMOKE: &str = include_str!(
+        "../../../conformance/com/office/excel/excel_range_default_member_put_smoke.bas"
+    );
 
     fn execute_with_host_policy(source: &str) -> Result<(), String> {
         let mut engine = Engine::new(HostConfig { enable_jit: false });
@@ -103,5 +106,17 @@ mod windows_excel_office_oracle_lane {
 
         execute_with_host_policy(EXCEL_RANGE_VALUE_PUT_SMOKE)
             .expect("Excel range Value property-put smoke fixture should execute");
+    }
+
+    #[test]
+    #[ignore = "requires Windows Excel.Application automation"]
+    fn excel_range_default_member_put_smoke_fixture_executes_when_available() {
+        if !excel_application_available() {
+            eprintln!("Excel oracle lane: Excel.Application is not available in this environment");
+            return;
+        }
+
+        execute_with_host_policy(EXCEL_RANGE_DEFAULT_MEMBER_PUT_SMOKE)
+            .expect("Excel range default-member property-put smoke fixture should execute");
     }
 }

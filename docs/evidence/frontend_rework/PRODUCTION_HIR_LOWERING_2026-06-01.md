@@ -1073,7 +1073,8 @@ Excel oracle broadening attempt:
   strict dynamic-name parameterized properties as `DISPATCH_PROPERTYGET`. Follow-up Excel oracle
   work separately proved named-argument worksheet-add dispatch and null `Cells.Find` results against
   live Excel, and scoped `Range.Value` property-put after the COM dynamic-name bridge honored
-  property-put hints. Range default-member mutation and broader Excel mutation lanes remain open.
+  property-put hints. Follow-up direct-DISPID work proved scoped indexed `Range("A1")(1)`
+  default-member mutation. Broader Excel mutation lanes remain open.
 
 ## Indexed Property Default Route
 

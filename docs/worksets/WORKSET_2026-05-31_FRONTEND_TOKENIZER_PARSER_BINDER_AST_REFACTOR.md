@@ -696,7 +696,8 @@ Required newly explicit delivery beads:
   fixture to explicit `Worksheets.Add After:=sheet` and proves it through live Excel execution.
   Follow-up COM runtime-state work also proves null Excel `Cells.Find` results as runtime
   `Nothing`. Follow-up dynamic-name dispatch work honors property-put hints and proves
-  `Range("A1").Value` mutation through live Excel. Range default-member mutation and broader Excel
+  `Range("A1").Value` mutation through live Excel. Follow-up direct-DISPID dispatch work proves
+  scoped indexed `Range("A1")(1)` default-member mutation through live Excel. Broader Excel
   mutation/default-member lanes remain open. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
@@ -722,8 +723,8 @@ Required newly explicit delivery beads:
   imported-typelib projections, and broaden live
   Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup, explicit
   Range `DispatchInvoke` object access, named-argument worksheet-add dispatch, and null
-  `Cells.Find` result handling plus scoped `Range.Value` property-put into default-member mutation
-  and other
+  `Cells.Find` result handling plus scoped `Range.Value` property-put and indexed
+  `Range("A1")(1)` default-member mutation into broader Excel object-model parity and other
   environment-dependent behavior beyond source-route
   classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.

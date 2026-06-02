@@ -1326,6 +1326,28 @@ where
         );
     }
 
+    match request.invoke_kind_hint {
+        Some(crate::ComInvokeKind::PropertyPut) => {
+            return invoke_direct_dispid(
+                effective_member.raw(),
+                crate::TypeLibMemberInvokeKind::PropertyPut,
+                true,
+                args,
+                &binding.prog_id_name,
+            );
+        }
+        Some(crate::ComInvokeKind::PropertyPutRef) => {
+            return invoke_direct_dispid(
+                effective_member.raw(),
+                crate::TypeLibMemberInvokeKind::PropertyPutRef,
+                true,
+                args,
+                &binding.prog_id_name,
+            );
+        }
+        _ => {}
+    }
+
     invoke_bound_dispatch(effective_member.raw(), args, &binding.prog_id_name)
 }
 
