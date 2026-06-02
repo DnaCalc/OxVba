@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use crate::{
     Bytecode, CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy,
     frontend_hir_lowering,
+    resolve::apply_conditional_compilation_to_source,
+    syntax_bridge::{SyntaxBridgeProductionRoute, production_route_for_source},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +202,135 @@ pub struct FrontendCorpusReport {
     pub equivalent_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontendCorpusRouteStatus {
+    HirProduction,
+    LegacyFallbackResidual,
+    SkippedResidual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontendCorpusRouteRow {
+    pub name: String,
+    pub fixture_path: String,
+    pub class: FrontendCorpusClass,
+    pub status: FrontendCorpusRouteStatus,
+    pub evidence: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontendCorpusRouteReport {
+    pub rows: Vec<FrontendCorpusRouteRow>,
+}
+
+impl FrontendCorpusRouteReport {
+    pub fn terminal_gate_passed(&self) -> bool {
+        self.rows
+            .iter()
+            .all(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
+    }
+
+    pub fn source_backed_gate_passed(&self) -> bool {
+        self.rows
+            .iter()
+            .filter(|row| row.status != FrontendCorpusRouteStatus::SkippedResidual)
+            .all(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
+    }
+
+    pub fn fallback_residuals(&self) -> Vec<&FrontendCorpusRouteRow> {
+        self.rows
+            .iter()
+            .filter(|row| row.status == FrontendCorpusRouteStatus::LegacyFallbackResidual)
+            .collect()
+    }
+
+    pub fn skipped_residuals(&self) -> Vec<&FrontendCorpusRouteRow> {
+        self.rows
+            .iter()
+            .filter(|row| row.status == FrontendCorpusRouteStatus::SkippedResidual)
+            .collect()
+    }
+}
+
+pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
+    vec![
+        FrontendCorpusFixture {
+            name: "examples_basic_arithmetic".to_string(),
+            fixture_path: "examples/basic/arithmetic.bas".to_string(),
+            class: FrontendCorpusClass::CompilerUnit,
+            source: Some(include_str!("../../../examples/basic/arithmetic.bas").to_string()),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
+            name: "conformance_call_coercion_mixed_variant_to_long".to_string(),
+            fixture_path: "conformance/tests/call_coercion_mixed_variant_to_long.bas".to_string(),
+            class: FrontendCorpusClass::ConformanceCase,
+            source: Some(
+                include_str!("../../../conformance/tests/call_coercion_mixed_variant_to_long.bas")
+                    .to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: Some(ExpectedMetadataDrift::IntentionalImprovement),
+            rationale:
+                "HIR production now reaches same-module procedure call statements with matching bytecode and call metadata; its source map preserves the blank line before the second procedure where legacy metadata points one line early"
+                    .to_string(),
+            close_condition:
+                "keep as improvement only while diagnostics, bytecode, call descriptors, and non-source-map metadata match"
+                    .to_string(),
+        },
+        FrontendCorpusFixture {
+            name: "inline_statement_separator_bridge_improvement".to_string(),
+            fixture_path: "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-3"
+                .to_string(),
+            class: FrontendCorpusClass::CompilerUnit,
+            source: Some(
+                "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n".to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+            expected_metadata_drift: None,
+            rationale: "v2 accepts a CST-valid inline statement sequence that legacy-default rejects"
+                .to_string(),
+            close_condition:
+                "keep as improvement only while v2 compiles and FE-5.4 adds execution evidence"
+                    .to_string(),
+        },
+        FrontendCorpusFixture {
+            name: "integration_host_project_residual".to_string(),
+            fixture_path: "conformance/integration/projects/INTP-001/main/Main.proc.bas"
+                .to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: Some(
+                include_str!("../../../conformance/integration/projects/INTP-001/main/Main.proc.bas")
+                    .to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
+            name: "excel_oracle_residual".to_string(),
+            fixture_path:
+                "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
+                    .to_string(),
+            class: FrontendCorpusClass::ExcelOracle,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+    ]
+}
+
 pub fn compare_legacy_to_legacy(source: &str) -> FrontendDiffReport {
     make_report(
         observe_frontend(source, FrontendPath::Legacy),
@@ -321,6 +452,16 @@ pub fn run_frontend_diff_corpus(fixtures: &[FrontendCorpusFixture]) -> FrontendC
     }
 }
 
+pub fn run_frontend_corpus_route_audit(
+    fixtures: &[FrontendCorpusFixture],
+) -> FrontendCorpusRouteReport {
+    let rows = fixtures
+        .iter()
+        .map(frontend_corpus_route_row)
+        .collect::<Vec<_>>();
+    FrontendCorpusRouteReport { rows }
+}
+
 pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation {
     let compiled = match path {
         FrontendPath::Legacy => compile_with_runtime_metadata_legacy(source),
@@ -353,6 +494,59 @@ pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation
             execution_trace: runtime_not_run(),
             observable_output: runtime_not_run(),
         },
+    }
+}
+
+fn frontend_corpus_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusRouteRow {
+    let Some(source) = fixture.source.as_deref() else {
+        return skipped_corpus_route_row(fixture, "fixture has no inline source for route audit");
+    };
+    if !matches!(
+        fixture.class,
+        FrontendCorpusClass::CompilerUnit | FrontendCorpusClass::ConformanceCase
+    ) {
+        return skipped_corpus_route_row(
+            fixture,
+            "fixture class requires VM, host project, or oracle runner",
+        );
+    }
+
+    let route_source = apply_conditional_compilation_to_source(source);
+    match production_route_for_source(&route_source) {
+        Ok(SyntaxBridgeProductionRoute::HirProduction) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::HirProduction,
+            evidence: "classified as HIR production".to_string(),
+        },
+        Ok(SyntaxBridgeProductionRoute::HirUnsupportedResidual) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: "classified as HIR unsupported residual".to_string(),
+        },
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("route classification failed: {err}"),
+        },
+    }
+}
+
+fn skipped_corpus_route_row(
+    fixture: &FrontendCorpusFixture,
+    reason: &str,
+) -> FrontendCorpusRouteRow {
+    FrontendCorpusRouteRow {
+        name: fixture.name.clone(),
+        fixture_path: fixture.fixture_path.clone(),
+        class: fixture.class,
+        status: FrontendCorpusRouteStatus::SkippedResidual,
+        evidence: reason.to_string(),
     }
 }
 
@@ -1150,6 +1344,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn frontend_corpus_route_audit_routes_source_backed_rows_and_skips_residuals() {
+        let fixtures = frontend_rework_seed_corpus();
+        let report = run_frontend_corpus_route_audit(&fixtures);
+
+        assert!(!report.terminal_gate_passed(), "{report:#?}");
+        assert!(report.source_backed_gate_passed(), "{report:#?}");
+        assert!(report.fallback_residuals().is_empty(), "{report:#?}");
+        assert_eq!(report.skipped_residuals().len(), 2, "{report:#?}");
+        assert_eq!(report.rows.len(), 5, "{report:#?}");
+        assert_eq!(
+            report
+                .rows
+                .iter()
+                .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
+                .count(),
+            3,
+            "{report:#?}"
+        );
+        assert_eq!(
+            report
+                .rows
+                .iter()
+                .filter(|row| row.status == FrontendCorpusRouteStatus::SkippedResidual)
+                .count(),
+            2,
+            "{report:#?}"
+        );
+        assert!(report.rows.iter().any(|row| {
+            row.name == "examples_basic_arithmetic"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_host_project_residual"
+                && row.status == FrontendCorpusRouteStatus::SkippedResidual
+                && row.evidence.contains("requires VM")
+        }));
+    }
+
     fn bytecode_drift_report() -> FrontendDiffReport {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let mut report = compare_legacy_to_frontend_v2(source);
@@ -1170,91 +1403,5 @@ mod tests {
         compare_legacy_to_frontend_v2(
             "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n",
         )
-    }
-
-    fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
-        vec![
-            FrontendCorpusFixture {
-                name: "examples_basic_arithmetic".to_string(),
-                fixture_path: "examples/basic/arithmetic.bas".to_string(),
-                class: FrontendCorpusClass::CompilerUnit,
-                source: Some(include_str!("../../../examples/basic/arithmetic.bas").to_string()),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                expected_metadata_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-            FrontendCorpusFixture {
-                name: "conformance_call_coercion_mixed_variant_to_long".to_string(),
-                fixture_path: "conformance/tests/call_coercion_mixed_variant_to_long.bas"
-                    .to_string(),
-                class: FrontendCorpusClass::ConformanceCase,
-                source: Some(
-                    include_str!(
-                        "../../../conformance/tests/call_coercion_mixed_variant_to_long.bas"
-                    )
-                    .to_string(),
-                ),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                expected_metadata_drift: Some(ExpectedMetadataDrift::IntentionalImprovement),
-                rationale:
-                    "HIR production now reaches same-module procedure call statements with matching bytecode and call metadata; its source map preserves the blank line before the second procedure where legacy metadata points one line early"
-                        .to_string(),
-                close_condition:
-                    "keep as improvement only while diagnostics, bytecode, call descriptors, and non-source-map metadata match"
-                        .to_string(),
-            },
-            FrontendCorpusFixture {
-                name: "inline_statement_separator_bridge_improvement".to_string(),
-                fixture_path:
-                    "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-3"
-                        .to_string(),
-                class: FrontendCorpusClass::CompilerUnit,
-                source: Some(
-                    "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n".to_string(),
-                ),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
-                expected_metadata_drift: None,
-                rationale:
-                    "v2 accepts a CST-valid inline statement sequence that legacy-default rejects"
-                        .to_string(),
-                close_condition:
-                    "keep as improvement only while v2 compiles and FE-5.4 adds execution evidence"
-                        .to_string(),
-            },
-            FrontendCorpusFixture {
-                name: "integration_host_project_residual".to_string(),
-                fixture_path: "conformance/integration/projects/INTP-001/main/Main.proc.bas"
-                    .to_string(),
-                class: FrontendCorpusClass::HostProject,
-                source: Some(
-                    include_str!(
-                        "../../../conformance/integration/projects/INTP-001/main/Main.proc.bas"
-                    )
-                    .to_string(),
-                ),
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                expected_metadata_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-            FrontendCorpusFixture {
-                name: "excel_oracle_residual".to_string(),
-                fixture_path:
-                    "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
-                        .to_string(),
-                class: FrontendCorpusClass::ExcelOracle,
-                source: None,
-                expected_bytecode_drift: None,
-                expected_diagnostic_drift: None,
-                expected_metadata_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
-            },
-        ]
     }
 }

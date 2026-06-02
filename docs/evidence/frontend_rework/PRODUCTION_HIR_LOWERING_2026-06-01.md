@@ -990,6 +990,14 @@ residual fails the test instead of relying only on representative row assertions
 complete FE-9.7's broader corpus/matrix expansion requirement; it only makes the current selected
 audit self-consistent.
 
+Follow-up corpus-audit broadening makes the FE-5 seed corpus reusable outside the diff test module
+and adds a route audit over source-backed `CompilerUnit` / `ConformanceCase` rows. The current seed
+rows `examples/basic/arithmetic.bas`, `conformance/tests/call_coercion_mixed_variant_to_long.bas`,
+and the inline statement-separator improvement fixture must classify as HIR production. Current
+`HostProject` and `ExcelOracle` seed rows remain explicitly skipped because they require project,
+VM, host, or oracle runners rather than the single-source production-route classifier; therefore
+the corpus route audit's terminal gate remains open while its source-backed gate passes.
+
 ## Bang Member Read Continuation
 
 The latest FE-8.5 slice removes the read-side bang member residual:

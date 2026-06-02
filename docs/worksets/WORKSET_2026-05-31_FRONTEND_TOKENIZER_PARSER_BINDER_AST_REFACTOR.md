@@ -659,8 +659,13 @@ Required newly explicit delivery beads:
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
   and selected Excel oracle lanes. Partial work already done: the selected route-audit fixture set
   now asserts its own terminal gate, so hidden residual findings in that selected set fail the audit
-  test. Remaining work: broaden the audit beyond selected fixtures. This bead must reopen the owning
-  delivery bead for every accepted in-scope row that still reaches legacy fallback.
+  test; the FE-5 seed corpus now has a route audit for source-backed compiler/conformance rows,
+  currently proving `examples/basic/arithmetic.bas`,
+  `conformance/tests/call_coercion_mixed_variant_to_long.bas`, and the inline statement-separator
+  improvement fixture route as HIR production. Remaining work: broaden the audit beyond the seed
+  rows, and add host-project/language-service/Excel-oracle route runners instead of skipped
+  residual rows. This bead must reopen the owning delivery bead for every accepted in-scope row that
+  still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
   production entry points. Keep only explicitly named comparison/test-only helpers.
