@@ -21293,6 +21293,24 @@ mod tests {
         assert!(lowered.contains("call dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"));
         assert!(lowered.contains("call dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"));
         assert!(lowered.contains("call dispatchinvoke(obj, 16, value := 41)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(12))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                        && args[0].name.as_deref() == Some("rhs")
+                        && args[1].name.as_deref() == Some("lhs")
+                )
+            }),
+            "Call-form imported named arguments should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
