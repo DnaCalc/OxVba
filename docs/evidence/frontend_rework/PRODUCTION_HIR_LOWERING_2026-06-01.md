@@ -575,9 +575,11 @@ literal/simple-expression constant evaluator, including checked nonnegative inte
 plus integer division and `Mod`.
 Later focused diagnostic passes reject explicit `As Byte`, `As Integer`, and `As Long` integer
 expressions that overflow their VBA ranges before the unsupported-const fallback can hide them,
-including checked exponentiation overflow such as `2 ^ 31` for `Long`. Typed constant coercion,
-`LongLong`/`LongPtr` constant carriers and range diagnostics, and broader compile-time expression
-parity remain open.
+including checked exponentiation overflow such as `2 ^ 31` for `Long`. A later FE-8.5.e
+continuation extends that HIR-owned diagnostic path to explicit `As LongLong` and `As LongPtr`
+integer expressions that overflow the signed 64-bit carrier range, for example
+`9223372036854775807 + 1`. Typed constant coercion, out-of-i32 `LongLong`/`LongPtr` constant
+carriers in bytecode/lowering, and broader compile-time expression parity remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -1001,10 +1003,13 @@ constant expressions:
   `Const CBase As Long = 2147483647, CTotal As Long = CBase + 1`.
 - A second focused diagnostic pass extends the same integer-expression range checks to explicit
   `As Byte` and `As Integer` constants.
+- A third focused diagnostic pass distinguishes unsupported constant expressions from integer
+  evaluation overflow and rejects explicit `As LongLong` and `As LongPtr` expressions that exceed
+  the signed 64-bit carrier range before unsupported-const fallback can hide them.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
-  enum/literal route, plus typed constant coercion and `LongLong`/`LongPtr` constant carrier/range
-  diagnostics, remain future FE-8.5 work.
+  enum/literal route, plus typed constant coercion and out-of-i32 `LongLong`/`LongPtr` constant
+  carriers, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
