@@ -1284,6 +1284,33 @@ impl HirBuilder {
                     })?;
                 return self.lower_expr(scope, inner);
             }
+            SyntaxKind::UnaryExpr => {
+                let exprs = expression_children(node);
+                if exprs.len() != 1 {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "unary expression without one operand: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                let Some(token) = node.child_tokens().into_iter().find(|token| {
+                    matches!(
+                        token.kind,
+                        SyntaxKind::Plus | SyntaxKind::Minus | SyntaxKind::KwNot
+                    )
+                }) else {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "unary expression without direct operator: `{}`",
+                        node.text().trim()
+                    )));
+                };
+                if token.kind == SyntaxKind::Plus {
+                    return self.lower_expr(scope, exprs[0]);
+                }
+                HirExprKind::Unary {
+                    op: lower_unary_op(token.kind),
+                    expr: self.lower_expr(scope, exprs[0])?,
+                }
+            }
             SyntaxKind::BinaryExpr => {
                 let exprs = expression_children(node);
                 if exprs.len() < 2 {
@@ -1762,6 +1789,14 @@ fn lower_literal(node: SyntaxNode<'_>) -> Result<HirLiteral, HirBuildError> {
     }
 }
 
+fn lower_unary_op(kind: SyntaxKind) -> HirUnaryOp {
+    match kind {
+        SyntaxKind::Minus => HirUnaryOp::Negate,
+        SyntaxKind::KwNot => HirUnaryOp::Not,
+        _ => unreachable!("filtered unary operator token"),
+    }
+}
+
 fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
     let Some(token) = node.child_tokens().into_iter().find(|token| {
         matches!(
@@ -2182,6 +2217,43 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn hir_builder_lowers_unary_expressions_from_cst() {
+        let source = "Sub Main(ByVal ready As Boolean)\nDim x As Long\nDim y As Long\nDim flag As Boolean\nx = -7\ny = +7\nflag = Not ready\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let procedure = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("procedure declaration");
+        let unary_exprs = procedure
+            .iter()
+            .filter_map(|stmt| find_let_stmt(&module.arenas, *stmt))
+            .filter_map(|(_, value)| module.arenas.expr(value))
+            .filter_map(|expr| match expr.kind {
+                HirExprKind::Unary { op, .. } => Some(op),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            unary_exprs,
+            vec![HirUnaryOp::Negate, HirUnaryOp::Not],
+            "expected unary minus and Not expressions: {module:#?}"
+        );
+        assert!(
+            procedure
+                .iter()
+                .filter_map(|stmt| find_let_stmt(&module.arenas, *stmt))
+                .filter_map(|(_, value)| module.arenas.expr(value))
+                .any(|expr| matches!(expr.kind, HirExprKind::Literal(HirLiteral::Int(7)))),
+            "expected unary plus to lower transparently to the inner literal: {module:#?}"
+        );
     }
 
     #[test]

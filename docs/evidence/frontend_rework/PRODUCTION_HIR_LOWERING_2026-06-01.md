@@ -34,15 +34,15 @@ The initial production scope is intentionally narrow and explicit:
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
-- literals, names, and binary arithmetic/comparison/logical expressions, and
+- literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
 - typed structural `Null`/`Nothing` literals,
 - same-module procedure call statements whose targets bind to procedure symbols and whose arguments
   lower through the supported expression surface.
 
 Unsupported constructs are rejected from the HIR production path before lowering and continue through
-the tracked fallback path. This prevents silent partial lowering for general unary expressions,
-member/index/new expressions, unsupported control flow, error handling, `ReDim`, `With`, events,
-declarations, and other surfaces not yet implemented in HIR production lowering.
+the tracked fallback path. This prevents silent partial lowering for member/index/new expressions,
+unsupported control flow, error handling, `ReDim`, `With`, events, declarations, and other surfaces
+not yet implemented in HIR production lowering.
 
 ## Reopened Continuation
 
@@ -250,9 +250,13 @@ closure.
 Follow-up numeric/math intrinsic work adds `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
 `Log`, `Exp`, `Atn`, and `Tan` to the same HIR built-in allowlist and verifies their existing
 numeric intrinsic bytecode. Fresh-eyes note: the initial regression used `Abs(-7)` and exposed that
-general unary expressions are still rejected by HIR production expression building; the accepted
-test uses `Abs(7)` so unary-expression parity remains a separate FE-4/FE-8 residual rather than
-being silently bundled into this intrinsic slice.
+general unary expressions were still rejected by HIR production expression building; the accepted
+test uses `Abs(7)` so the intrinsic slice did not silently bundle unary-expression parity.
+
+Follow-up FE-4/FE-8 expression work fills that unary-expression gap directly. HIR building now
+constructs `HirExprKind::Unary` for unary minus and `Not`, treats unary plus as transparent, and the
+production lowering regression verifies `NegSlot` and `BoolNot` bytecode from ordinary assignment
+expressions.
 
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names

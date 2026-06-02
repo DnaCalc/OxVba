@@ -4376,6 +4376,29 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_general_unary_expressions() {
+        let source = "Sub Main()\nDim x\nDim flag\nx = -7\nflag = Not False\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::NegSlot { .. }
+            )),
+            "expected unary minus to emit NegSlot: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::BoolNot { .. }
+            )),
+            "expected Not to emit BoolNot: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =

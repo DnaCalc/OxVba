@@ -1196,10 +1196,10 @@ Candidate bead units:
   default HIR route, `LBound`/`UBound` array-bound intrinsics in HIR, one-argument `IsArray`,
   `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
   introspection/predicate intrinsics in HIR, deterministic string/search intrinsics `Len`, `Left`,
-  `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR, `Declare PtrSafe` calls,
+  `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR,
   deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
   `Log`, `Exp`, `Atn`, and `Tan` in HIR, `Declare PtrSafe` calls, simple UDT layout/field aliases,
-  and same-shape UDT assignment.
+  same-shape UDT assignment, and general unary minus/plus plus `Not` expressions.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
