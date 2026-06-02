@@ -1221,7 +1221,8 @@ Candidate bead units:
   integer-looking `#` constants still materialize as `FloatConst`/`LoadConstF64`. Later focused
   typed-coercion work extends declared `Single` constants from literal-only carriers to the same
   bounded numeric expression/source-prior evaluator used by the other covered exact numeric
-  carriers.
+  carriers; companion coverage hardening upgrades declared `Double` route evidence from literal-only
+  to source-prior expression coverage.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

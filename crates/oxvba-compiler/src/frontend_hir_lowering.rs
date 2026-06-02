@@ -7888,8 +7888,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_collects_typed_double_const_literal() {
-        let source =
-            "Const CTotal As Double = 1.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub\n";
+        let source = "Const CBase As Long = 1\nConst CTotal As Double = CBase + 0.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub\n";
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(

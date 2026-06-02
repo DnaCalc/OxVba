@@ -1537,7 +1537,7 @@ mod tests {
 
     #[test]
     fn compile_with_runtime_metadata_default_routes_typed_double_const_through_hir() {
-        let source = "Const CTotal As Double = 1.5\nSub Main()\nDim x As Double\nx = CTotal: x = x + 1\nEnd Sub\n";
+        let source = "Const CBase As Long = 1\nConst CTotal As Double = CBase + 0.5\nSub Main()\nDim x As Double\nx = CTotal: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
             "legacy path should reject the active inline sequence after typed Double const",
         );
