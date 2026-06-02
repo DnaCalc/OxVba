@@ -1544,6 +1544,9 @@ fn lower_stmt(
         HirStmtKind::ConsoleInput { targets } => out.push(BoundStmt::ConsoleInput {
             targets: targets.clone(),
         }),
+        HirStmtKind::ConsoleLineInput { target } => out.push(BoundStmt::ConsoleLineInput {
+            target: target.clone(),
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5172,6 +5175,23 @@ mod tests {
         assert_eq!(
             input_count, 2,
             "expected one console input host intrinsic per target: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_console_line_input_statement() {
+        let source = "Sub Main()\nDim lineText\nLine Input lineText\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicConsoleLineInputHost { .. }
+            )),
+            "expected Line Input statement to emit console line-input host intrinsic: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

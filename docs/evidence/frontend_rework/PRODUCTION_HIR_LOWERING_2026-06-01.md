@@ -355,6 +355,10 @@ Follow-up console-input route work adds HIR-owned `Input a[, b...]` statement lo
 existing console-input host bytecode, preserving one input operation per target. This does not claim
 file input closure; `Input #` and `Line Input #` remain separate file-handle statement surfaces.
 
+Follow-up console line-input route work adds HIR-owned `Line Input target` lowering to the existing
+console line-input host bytecode. This remains distinct from file `Line Input #`, which is still an
+open file-handle statement surface.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

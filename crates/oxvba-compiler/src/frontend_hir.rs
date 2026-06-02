@@ -302,6 +302,9 @@ pub enum HirStmtKind {
     ConsoleInput {
         targets: Vec<String>,
     },
+    ConsoleLineInput {
+        target: String,
+    },
     Label {
         name: String,
     },
@@ -666,6 +669,13 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::ConsoleInput { targets },
+                })))
+            }
+            SyntaxKind::CallStmt if is_console_line_input_stmt(node) => {
+                let target = console_line_input_target(node)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::ConsoleLineInput { target },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1864,6 +1874,33 @@ fn is_console_input_stmt(node: SyntaxNode<'_>) -> bool {
     let lower = node.text().trim_start().to_ascii_lowercase();
     lower.strip_prefix("input").is_some_and(|rest| {
         rest.starts_with(char::is_whitespace) && !rest.trim_start().starts_with('#')
+    })
+}
+
+fn is_console_line_input_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("line input").is_some_and(|rest| {
+        rest.starts_with(char::is_whitespace) && !rest.trim_start().starts_with('#')
+    })
+}
+
+fn console_line_input_target(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
+    let text = node.text();
+    let rest = text
+        .trim_start()
+        .get("line input".len()..)
+        .ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "Line Input statement requires a target: `{}`",
+                node.text().trim()
+            ))
+        })?
+        .trim();
+    normalize_ident(rest).ok_or_else(|| {
+        HirBuildError::Unsupported(format!(
+            "Line Input statement target must be a variable: `{}`",
+            node.text().trim()
+        ))
     })
 }
 
