@@ -59,6 +59,20 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "cdate"
             | "hex"
             | "oct"
+            | "lcase"
+            | "ucase"
+            | "trim"
+            | "ltrim"
+            | "rtrim"
+            | "space"
+            | "string"
+            | "chr"
+            | "asc"
+            | "strreverse"
+            | "strconv"
+            | "format"
+            | "split"
+            | "join"
     )
 }
 

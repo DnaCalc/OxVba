@@ -218,6 +218,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         through HIR;
         deterministic conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and
         `Oct` now lower through HIR;
+        deterministic string transform/format intrinsics `LCase`, `UCase`, `Trim`, `LTrim`,
+        `RTrim`, `Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and
+        `Join` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

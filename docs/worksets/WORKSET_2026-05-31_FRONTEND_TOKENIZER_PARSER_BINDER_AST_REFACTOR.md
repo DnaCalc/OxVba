@@ -1202,7 +1202,9 @@ Candidate bead units:
   same-shape UDT assignment, general unary minus/plus plus `Not` expressions, and deterministic
   date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`, `DateValue`, `TimeValue`,
   `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff`, plus deterministic
-  conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and `Oct`.
+  conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and `Oct`, plus
+  deterministic string transform/format intrinsics `LCase`, `UCase`, `Trim`, `LTrim`, `RTrim`,
+  `Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and `Join`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

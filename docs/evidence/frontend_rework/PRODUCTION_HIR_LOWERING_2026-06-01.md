@@ -268,6 +268,12 @@ Follow-up deterministic conversion/formatting intrinsic work adds `CStr`, `Str`,
 This remains a scalar expression subset; array-producing, collection, financial, pointer, dispatch,
 and host-sensitive intrinsic groups remain separate FE-8.5/FE-8 retirement work.
 
+Follow-up string transform/format intrinsic work adds `LCase`, `UCase`, `Trim`, `LTrim`, `RTrim`,
+`Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and `Join` to HIR
+built-in resolution and verifies the existing transformation/formatting bytecode variants. This
+continues the deterministic intrinsic migration without claiming collection, financial, pointer,
+dispatch, or host-sensitive closure.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

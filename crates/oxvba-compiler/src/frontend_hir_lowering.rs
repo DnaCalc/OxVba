@@ -4549,6 +4549,125 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_string_transform_intrinsics() {
+        let source = "Sub Main()\nDim lc\nDim uc\nDim tr\nDim lt\nDim rt\nDim sp\nDim sr\nDim ch\nDim ac\nDim rv\nDim cv\nDim fm\nDim spl\nDim jn\nCall Capture(lc, uc, tr, lt, rt, sp, sr, ch, ac, rv, cv, fm, spl, jn)\nEnd Sub\nSub Capture(ByRef lc, ByRef uc, ByRef tr, ByRef lt, ByRef rt, ByRef sp, ByRef sr, ByRef ch, ByRef ac, ByRef rv, ByRef cv, ByRef fm, ByRef spl, ByRef jn)\nlc = LCase(123)\nuc = UCase(123)\ntr = Trim(123)\nlt = LTrim(123)\nrt = RTrim(123)\nsp = Space(3)\nsr = String(3, 65)\nch = Chr(65)\nac = Asc(65)\nrv = StrReverse(123)\ncv = StrConv(123, 1)\nfm = Format(123, 0)\nspl = Split(123, 2)\njn = Join(123, 2)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicLowerDigits { .. }
+            )),
+            "expected LCase to emit lower intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicUpperDigits { .. }
+            )),
+            "expected UCase to emit upper intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicTrimDigits { .. }
+            )),
+            "expected Trim to emit trim intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicLTrimDigits { .. }
+            )),
+            "expected LTrim to emit ltrim intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRTrimDigits { .. }
+            )),
+            "expected RTrim to emit rtrim intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicSpaceDigits { .. }
+            )),
+            "expected Space to emit space intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicStringRepeatDigits { .. }
+            )),
+            "expected String to emit repeat intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicChrDigits { .. }
+            )),
+            "expected Chr to emit chr intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicAscDigits { .. }
+            )),
+            "expected Asc to emit asc intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicStrReverseDigits { .. }
+            )),
+            "expected StrReverse to emit reverse intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicStrConvDigits { .. }
+            )),
+            "expected StrConv to emit strconv intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFormatDigits { .. }
+            )),
+            "expected Format to emit format intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicSplitCountDigits { .. }
+            )),
+            "expected Split to emit split intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicJoinDigits { .. }
+            )),
+            "expected Join to emit join intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =
