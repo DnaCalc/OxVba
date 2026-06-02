@@ -225,6 +225,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         and `CollectionCount` now lower through HIR;
         deterministic financial intrinsics `FV`, `PV`, `Pmt`, `NPV`, `IRR`, `MIRR`, `Rate`, and
         `NPer` now lower through HIR;
+        pointer helpers `StrPtr`, `VarPtr`, and `ObjPtr` have explicit production-HIR proof through
+        the typed structural intrinsic route;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

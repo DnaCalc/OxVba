@@ -284,6 +284,11 @@ to HIR built-in resolution and verifies the existing financial bytecode variants
 uses the minimal accepted arity for each intrinsic; richer optional argument combinations remain
 covered by the shared emitter/runtime paths and broader call-entry optional-state work.
 
+Follow-up pointer-helper proof adds focused production-HIR coverage for `StrPtr`, `VarPtr`, and
+`ObjPtr`. No allowlist change was needed: these names were already symbol-declared and lowered as
+typed `StructuralIntrinsic` variants. The regression verifies the existing pointer bytecode
+variants through that route.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

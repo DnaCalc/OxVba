@@ -4778,6 +4778,39 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
+        let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicStrPtr { .. }
+            )),
+            "expected StrPtr to emit StrPtr intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicVarPtr { .. }
+                    | crate::bytecode::Instruction::IntrinsicVarPtrStringVar { .. }
+                    | crate::bytecode::Instruction::IntrinsicVarPtrVariantVar { .. }
+            )),
+            "expected VarPtr to emit VarPtr intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicObjPtr { .. }
+            )),
+            "expected ObjPtr to emit ObjPtr intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =

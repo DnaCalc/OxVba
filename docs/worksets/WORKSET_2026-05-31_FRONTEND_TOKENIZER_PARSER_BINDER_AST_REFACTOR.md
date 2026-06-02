@@ -1207,7 +1207,8 @@ Candidate bead units:
   `Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and `Join`, plus
   deterministic collection intrinsics `CollectionAdd`, `CollectionItem`, `CollectionRemove`, and
   `CollectionCount`, plus deterministic financial intrinsics `FV`, `PV`, `Pmt`, `NPV`, `IRR`,
-  `MIRR`, `Rate`, and `NPer`.
+  `MIRR`, `Rate`, and `NPer`, plus production-HIR pointer-helper proof for `StrPtr`, `VarPtr`, and
+  `ObjPtr` through typed structural intrinsics.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
