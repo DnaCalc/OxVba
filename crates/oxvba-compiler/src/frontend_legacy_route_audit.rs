@@ -46,6 +46,36 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let dim_declaration =
+        "Sub Main()\nDim x As Long\nDim s As String\nx = 1\ns = \"ok\"\nEnd Sub\n";
+    findings.push(route_finding(
+        "dim declaration fixture",
+        dim_declaration,
+        "bd-aprs.9.5",
+    ));
+
+    let builtin_type_declaration =
+        "Sub Main()\nDim s As String\nDim v As Variant\ns = \"x\"\nv = s\nEnd Sub\n";
+    findings.push(route_finding(
+        "builtin type declaration fixture",
+        builtin_type_declaration,
+        "bd-aprs.9.5",
+    ));
+
+    let concat_expression = "Sub Main()\nDim s\ns = \"a\" & \"b\"\nEnd Sub\n";
+    findings.push(route_finding(
+        "concat expression fixture",
+        concat_expression,
+        "bd-aprs.9.5",
+    ));
+
+    let unary_expression = "Sub Main()\nDim ok\nok = Not False\nEnd Sub\n";
+    findings.push(route_finding(
+        "unary Not expression fixture",
+        unary_expression,
+        "bd-aprs.9.5",
+    ));
+
     let call_statement = "Sub Main()\nCall Worker()\nEnd Sub\nSub Worker()\nEnd Sub\n";
     findings.push(route_finding(
         "procedure call statement fixture",

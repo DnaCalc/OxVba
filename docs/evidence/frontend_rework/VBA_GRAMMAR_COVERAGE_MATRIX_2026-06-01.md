@@ -46,7 +46,7 @@ missing proof explicit:
 those values with executable route evidence as they migrate production behavior.
 
 FE-9.7 follow-up evidence adds an executable route-proof overlay instead of hand-editing the CSV:
-`frontend_grammar_matrix_route_audit` maps 40 anchored matrix productions to current
+`frontend_grammar_matrix_route_audit` maps all 44 currently anchored matrix productions to current
 HIR-production findings from `run_production_legacy_route_audit()` and asserts that all mapped rows
 remain HIR production. The CSV remains the inventory surface for all 110 productions; the executable
 audit is the current route-proof surface for the mapped subset.
@@ -73,6 +73,6 @@ production routes are not yet retired.
   - 44 `legacy_anchor_needs_hir_lowering_route_proof`;
   - 44 `production_legacy_route_not_yet_retired`.
 - FE-9.7 follow-up:
-  - `cargo test -p oxvba-compiler frontend_grammar_matrix_route_audit --quiet`: passed for 40
-    mapped anchored productions.
+  - `cargo test -p oxvba-compiler frontend_grammar_matrix_route_audit --quiet`: passed for all 44
+    currently anchored productions.
 - `git diff --check`: passed with line-ending warnings only for touched tracked files.

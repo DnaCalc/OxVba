@@ -52,6 +52,7 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
     mapping("option_line", "top-level", "option explicit"),
     mapping("attribute_line", "top-level", "module attribute"),
     mapping("const_decl", "declaration", "const statement"),
+    mapping("dim_decl", "declaration", "dim declaration"),
     mapping("enum_decl", "declaration", "enum member constant"),
     mapping("type_decl", "declaration", "UDT layout descriptor"),
     mapping("declare_decl", "declaration", "declared external call"),
@@ -81,8 +82,10 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
     mapping("redim_stmt", "statement", "redim runtime statement"),
     mapping("raise_event_stmt", "statement", "raise event statement"),
     mapping("comparison_expr", "expression", "TypeOf Is expression"),
+    mapping("concat_expr", "expression", "concat expression"),
     mapping("additive_expr", "expression", "assignment/arithmetic"),
     mapping("multiplicative_expr", "expression", "assignment/arithmetic"),
+    mapping("unary_expr", "expression", "unary Not expression"),
     mapping("postfix_expr", "expression", "value-side member expression"),
     mapping("type_of_expr", "expression", "TypeOf Is expression"),
     mapping(
@@ -91,6 +94,7 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
         "statement-form procedure call arguments",
     ),
     mapping("named_argument", "expression", "named indexed property let"),
+    mapping("builtin_type", "lexical", "builtin type declaration"),
     mapping("literal", "lexical", "const statement"),
 ];
 
@@ -140,16 +144,20 @@ mod tests {
     fn grammar_matrix_route_audit_maps_broad_anchored_rows_to_hir_production() {
         let report = run_grammar_matrix_route_audit();
         assert!(report.terminal_gate_passed(), "{report:#?}");
-        assert_eq!(report.rows.len(), 40, "{report:#?}");
+        assert_eq!(report.rows.len(), 44, "{report:#?}");
         assert!(report.residuals().is_empty(), "{report:#?}");
         for production in [
             "source_file",
+            "dim_decl",
             "declare_decl",
             "property_get",
             "do_loop_stmt",
             "redim_stmt",
+            "concat_expr",
+            "unary_expr",
             "postfix_expr",
             "named_argument",
+            "builtin_type",
         ] {
             assert!(
                 report.rows.iter().any(|row| {
