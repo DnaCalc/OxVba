@@ -1787,6 +1787,66 @@ mod tests {
     }
 
     #[test]
+    fn optional_date_currency_defaults_route_through_hir() {
+        let source = "Const CAmount = 1.25@\nConst CStamp = 2.5\nSub Use(Optional ByVal amount As Currency = CAmount, Optional ByVal stamp As Date = CStamp, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            super::compile_with_runtime_metadata(source).expect("compile should route through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitCurrencyScaledI64(12_500),
+                ..
+            }
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[1].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitDateSerialF64(bits),
+                ..
+            } if f64::from_bits(bits) == 2.5
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[2].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitCurrencyScaledI64(0),
+                ..
+            }
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[3].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitDateSerialF64(bits),
+                ..
+            } if f64::from_bits(bits) == 0.0
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(main.call_sites.iter().any(|call_site| {
+            call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("amount")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitCurrencyScaledI64(12_500))
+            }) && call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("stamp")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitDateSerialF64(
+                            2.5f64.to_bits(),
+                        ))
+            }) && call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("blankamount")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitCurrencyScaledI64(0))
+            }) && call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("blankstamp")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitDateSerialF64(
+                            0.0f64.to_bits(),
+                        ))
+            })
+        }));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_simple_property_declarations_through_hir() {
         let source = "Sub Main()\nDim x\nx = Value\nValue = x\nEnd Sub\nProperty Get Value() As Long\nValue = 9\nEnd Property\nProperty Let Value(ByRef target)\ntarget = target + 1\nEnd Property\n";
         assert!(

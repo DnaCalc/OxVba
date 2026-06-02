@@ -450,13 +450,18 @@ pub enum BoundParamDefaultValue {
     ExplicitI32(i32),
     ExplicitBool(bool),
     ExplicitString(String),
+    ExplicitCurrencyScaledI64(i64),
+    ExplicitDateSerialF64(u64),
 }
 
 impl BoundParamDefaultValue {
     pub fn as_i32(&self) -> Option<i32> {
         match self {
             Self::ExplicitI32(value) => Some(*value),
-            Self::ExplicitBool(_) | Self::ExplicitString(_) => None,
+            Self::ExplicitBool(_)
+            | Self::ExplicitString(_)
+            | Self::ExplicitCurrencyScaledI64(_)
+            | Self::ExplicitDateSerialF64(_) => None,
         }
     }
 }
@@ -1905,18 +1910,12 @@ pub(crate) fn parse_proc_signature_with_module_constants(
                 } else {
                     (BoundParamSourceMechanism::Omitted, true, token)
                 };
-                let (decl_text, default_literal) =
-                    if let Some((lhs, rhs)) = remainder.split_once('=') {
-                        (
-                            lhs.trim(),
-                            Some(parse_param_default(rhs.trim(), module_constants)?),
-                        )
-                    } else {
-                        (remainder, None)
-                    };
-                let default_value = default_literal
-                    .as_ref()
-                    .and_then(BoundParamDefaultValue::as_i32);
+                let (decl_text, default_text) = if let Some((lhs, rhs)) = remainder.split_once('=')
+                {
+                    (lhs.trim(), Some(rhs.trim()))
+                } else {
+                    (remainder, None)
+                };
 
                 let (name_text, explicit_ty) =
                     if let Some((lhs, rhs)) = split_keyword_ci(decl_text, "as") {
@@ -1928,12 +1927,6 @@ pub(crate) fn parse_proc_signature_with_module_constants(
                         (decl_text, None)
                     };
 
-                if default_value.is_some() && !optional {
-                    return None;
-                }
-                if param_array && (optional || default_value.is_some()) {
-                    return None;
-                }
                 // `Optional` parameters are ByRef by default in VBA (e.g. `Optional b As Long`);
                 // `Optional ByRef`/`Optional ByVal` are both legal. Do not reject ByRef here.
                 if optional {
@@ -1966,6 +1959,19 @@ pub(crate) fn parse_proc_signature_with_module_constants(
                         default_type_table,
                     )
                 };
+                let default_literal = match default_text {
+                    Some(text) => Some(parse_param_default(text, module_constants, ty)?),
+                    None => None,
+                };
+                let default_value = default_literal
+                    .as_ref()
+                    .and_then(BoundParamDefaultValue::as_i32);
+                if default_literal.is_some() && !optional {
+                    return None;
+                }
+                if param_array && (optional || default_literal.is_some()) {
+                    return None;
+                }
                 params.push(BoundParam {
                     name: param_name,
                     source_mechanism,
@@ -2013,21 +2019,24 @@ pub(crate) fn parse_proc_signature_with_module_constants(
 fn parse_param_default(
     text: &str,
     module_constants: &HashMap<String, BoundExpr>,
+    declared_type: BoundType,
 ) -> Option<BoundParamDefaultValue> {
     let expr = parse_expr(text.trim(), &HashMap::new())?;
-    static_param_default_expr(&expr, module_constants)
+    static_param_default_expr(&expr, module_constants, declared_type)
 }
 
 fn static_param_default_expr(
     expr: &BoundExpr,
     module_constants: &HashMap<String, BoundExpr>,
+    declared_type: BoundType,
 ) -> Option<BoundParamDefaultValue> {
-    static_param_default_expr_inner(expr, module_constants, &mut HashSet::new())
+    static_param_default_expr_inner(expr, module_constants, declared_type, &mut HashSet::new())
 }
 
 fn static_param_default_expr_inner(
     expr: &BoundExpr,
     module_constants: &HashMap<String, BoundExpr>,
+    declared_type: BoundType,
     resolving_constants: &mut HashSet<String>,
 ) -> Option<BoundParamDefaultValue> {
     match expr {
@@ -2040,13 +2049,41 @@ fn static_param_default_expr_inner(
             if !resolving_constants.insert(name.clone()) {
                 return None;
             }
-            let value =
-                static_param_default_expr_inner(const_expr, module_constants, resolving_constants);
+            let value = static_param_default_expr_inner(
+                const_expr,
+                module_constants,
+                declared_type,
+                resolving_constants,
+            );
             resolving_constants.remove(name);
             value
         }
+        BoundExpr::IntConst(value) if declared_type == BoundType::Currency => Some(
+            BoundParamDefaultValue::ExplicitCurrencyScaledI64((*value as i64).checked_mul(10_000)?),
+        ),
+        BoundExpr::FloatConst(bits) if declared_type == BoundType::Currency => {
+            currency_scaled_i64_from_f64(f64::from_bits(*bits))
+                .map(BoundParamDefaultValue::ExplicitCurrencyScaledI64)
+        }
+        BoundExpr::IntConst(value) if declared_type == BoundType::Date => Some(
+            BoundParamDefaultValue::ExplicitDateSerialF64((*value as f64).to_bits()),
+        ),
+        BoundExpr::FloatConst(bits) if declared_type == BoundType::Date => {
+            Some(BoundParamDefaultValue::ExplicitDateSerialF64(*bits))
+        }
         _ => static_i32_expr(expr, module_constants).map(BoundParamDefaultValue::ExplicitI32),
     }
+}
+
+fn currency_scaled_i64_from_f64(value: f64) -> Option<i64> {
+    if !value.is_finite() {
+        return None;
+    }
+    let scaled = value * 10_000.0;
+    if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
+        return None;
+    }
+    Some(scaled.round() as i64)
 }
 
 fn static_i32_expr(expr: &BoundExpr, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {

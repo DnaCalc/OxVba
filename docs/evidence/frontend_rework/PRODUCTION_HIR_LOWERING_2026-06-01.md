@@ -1140,12 +1140,16 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   entry default.
 - Follow-up module-constant proof covers `Optional ... As String = SomeStringConst` and
   `Optional ... As Boolean = SomeBooleanConst` through the same descriptor/runtime route.
+- Follow-up Date/Currency carrier work adds explicit optional-default metadata and runtime binding
+  for source-backed `Currency` scaled values and `Date` serial values, including declared defaults
+  (Currency zero / Date serial zero) and unambiguous module-constant numeric expressions interpreted
+  through the parameter's declared type.
 - The same follow-up found a front-end symbol-model miss where a later parameter following a string
   default could be absent from the HIR parameter list even though the signature parser saw it.
   Procedure symbol collection now reconciles missing parameter symbols against the signature parser
   instead of letting the default-route gate reject the source.
-- This deliberately does not claim Date, Currency, typed coercion of default expressions, or
-  broader expression-default metadata expansion. Those remain FE-8.5.f residuals.
+- This deliberately does not claim arbitrary typed coercion of default expressions, Date literal
+  syntax breadth, or broader expression-default metadata expansion. Those remain FE-8.5.f residuals.
 
 ## Checks
 
@@ -1158,6 +1162,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_enum_constant_defaults_through_hir --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_string_bool_defaults_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_boolean_defaults_are_bound_for_omitted_args --quiet`
+- `cargo test -p oxvba-compiler optional_date_currency_defaults_route_through_hir --quiet`
+- `cargo test -p oxvba-compiler type_hooks_collect_parameter_descriptors_from_source_backed_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage optional_date_currency_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_integer_const --quiet`

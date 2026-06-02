@@ -719,8 +719,10 @@ Required newly explicit delivery beads:
   language-service coverage carries literal string and Boolean optional parameter defaults from the
   compiler-owned `HirParameterHook` facts into semantic snapshots and signature help. Continuation
   work extends those hooks to integer module-constant/enum-member defaults, proving richer runtime
-  descriptor metadata is visible to the IDE surface for the supported literal/constant defaults
-  while leaving Date/Currency and arbitrary default-expression breadth open; the same continuation
+  descriptor metadata is visible to the IDE surface for the supported literal/constant defaults.
+  A later continuation adds source-backed `Currency` scaled and `Date` serial optional-default
+  carriers to runtime metadata, type hooks, direct optional-entry bytecode, and package-VM omitted-
+  argument binding while leaving arbitrary default-expression breadth open; the same continuation
   proves the `ParamArray` flag on both surfaces.
   Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
@@ -1318,7 +1320,8 @@ Candidate bead units:
   integer constant-expression defaults, including integer module-constant and enum-member
   references, through the default HIR route within the existing `ExplicitI32` metadata shape,
   literal string and Boolean optional defaults through explicit optional-default descriptors,
-  default-route HIR metadata, and package-VM omitted-argument binding,
+  source-backed `Currency` scaled and `Date` serial optional-default descriptors, default-route HIR
+  metadata, type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
   `Property Set` writes through HIR, simple non-indexed property declarations through the default
@@ -1416,8 +1419,9 @@ Candidate bead units:
   multi-parameter symbol collection so `As` type-reference tokens are not declared as parameters.
   The eligibility guard deliberately still excludes surfaces whose HIR semantics are partial,
   including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
-  member property writeback, Date/Currency/coerced default-expression metadata beyond the covered
-  integer plus literal/module-constant string/Boolean defaults and typed declared defaults (`""`, `False`, `0`),
+  member property writeback, coerced/default-expression metadata beyond the covered integer plus
+  literal/module-constant string/Boolean defaults, source-backed Date/Currency carriers, and typed
+  declared defaults (`""`, `False`, integer zero, Currency zero, and Date serial zero),
   and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
@@ -1477,10 +1481,11 @@ Candidate bead units:
   coverage now drives the existing `INTP-003` and `INTP-016` seed project manifests through
   navigation/signature-help route assertions. Follow-up optional-default coverage carries literal
   string and Boolean optional parameter defaults into `SemanticSnapshot::callables` and signature
-  help; continuation work also carries integer module-constant/enum-member defaults. This is
-  IDE-surface metadata evidence, not closure for Date/Currency or arbitrary default-expression
-  coverage; the same continuation moves those parameter descriptors into compiler-owned
-  `HirParameterHook` facts and proves the `ParamArray` flag on both surfaces.
+  help; continuation work also carries integer module-constant/enum-member defaults and
+  source-backed Date/Currency optional-default carriers. This is IDE-surface metadata evidence, not
+  closure for arbitrary default-expression coverage; the same continuation moves those parameter
+  descriptors into compiler-owned `HirParameterHook` facts and proves the `ParamArray` flag on both
+  surfaces.
   Closure requires every accepted in-scope row to classify as HIR/SemanticModel production or to
   reopen/create the owning delivery bead, and richer corpus/host/reference/oracle surfaces remain
   in scope until proved through execution evidence.

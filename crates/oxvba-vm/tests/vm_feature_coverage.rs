@@ -108,6 +108,22 @@ fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn optional_date_currency_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Sub Main()\nDim amount As Variant\nDim stamp As Variant\nDim blankAmount As Variant\nDim blankStamp As Variant\nCall Fill(amount, stamp, blankAmount, blankStamp)\nEnd Sub\nSub Fill(ByRef amountTarget As Variant, ByRef stampTarget As Variant, ByRef blankAmountTarget As Variant, ByRef blankStampTarget As Variant, Optional ByVal amount As Currency = 1.25@, Optional ByVal stamp As Date = 2.5, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\namountTarget = amount\nstampTarget = stamp\nblankAmountTarget = blankAmount\nblankStampTarget = blankStamp\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_currency_scaled_i64(12_500),
+            Variant::from_date_f64(2.5),
+            Variant::from_currency_scaled_i64(0),
+            Variant::from_date_f64(0.0),
+        ]
+    );
+}
+
+#[test]
 fn string_functions_left_mid_ucase() {
     let snap = run(
         "Sub Main()\nDim a As String\nDim b As String\na = Left$(\"hello\", 3)\nb = UCase$(Mid$(\"hello\", 2, 2))\nEnd Sub",

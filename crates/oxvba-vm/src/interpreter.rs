@@ -3422,6 +3422,10 @@ fn optional_default_token(default_value: &OptionalDefaultValue) -> String {
         OptionalDefaultValue::ExplicitI32(value) => format!("i32-{value}"),
         OptionalDefaultValue::ExplicitBool(value) => format!("bool-{value}"),
         OptionalDefaultValue::ExplicitString(value) => format!("string-{value}"),
+        OptionalDefaultValue::ExplicitCurrencyScaledI64(value) => format!("currency-{value}"),
+        OptionalDefaultValue::ExplicitDateSerialF64(bits) => {
+            format!("date-{}", f64::from_bits(*bits))
+        }
         OptionalDefaultValue::DeclaredTypeDefault => "declared-type-default".to_string(),
         OptionalDefaultValue::VariantMissingError448 => "variant-missing-error-448".to_string(),
         OptionalDefaultValue::ImplementationDefined => "implementation-defined".to_string(),
@@ -3779,6 +3783,12 @@ fn optional_default_runtime_value(default: &OptionalDefaultValue) -> Variant {
         OptionalDefaultValue::ExplicitI32(value) => Variant::from_i32(*value),
         OptionalDefaultValue::ExplicitBool(value) => Variant::from_bool(*value),
         OptionalDefaultValue::ExplicitString(value) => Variant::from_string(value.as_str()),
+        OptionalDefaultValue::ExplicitCurrencyScaledI64(value) => {
+            Variant::from_currency_scaled_i64(*value)
+        }
+        OptionalDefaultValue::ExplicitDateSerialF64(bits) => {
+            Variant::from_date_f64(f64::from_bits(*bits))
+        }
         OptionalDefaultValue::Unknown
         | OptionalDefaultValue::DeclaredTypeDefault
         | OptionalDefaultValue::VariantMissingError448
@@ -5021,6 +5031,14 @@ impl Vm {
                 }
                 Instruction::LoadConstF64 { slot, bits } => {
                     self.write_variant_slot(*slot, Variant::from_f64(f64::from_bits(*bits)))?;
+                    pc += 1;
+                }
+                Instruction::LoadConstCurrency { slot, scaled } => {
+                    self.write_variant_slot(*slot, Variant::from_currency_scaled_i64(*scaled))?;
+                    pc += 1;
+                }
+                Instruction::LoadConstDate { slot, bits } => {
+                    self.write_variant_slot(*slot, Variant::from_date_f64(f64::from_bits(*bits)))?;
                     pc += 1;
                 }
                 Instruction::AddConstI32 { slot, value } => {

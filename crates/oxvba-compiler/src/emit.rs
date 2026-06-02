@@ -845,6 +845,8 @@ pub enum OptionalDefaultValue {
     ExplicitI32(i32),
     ExplicitBool(bool),
     ExplicitString(String),
+    ExplicitCurrencyScaledI64(i64),
+    ExplicitDateSerialF64(u64),
     DeclaredTypeDefault,
     VariantMissingError448,
     ImplementationDefined,
@@ -1387,9 +1389,21 @@ fn optional_default_value_for_param(param: &BoundParam) -> OptionalDefaultValue 
         Some(BoundParamDefaultValue::ExplicitString(value)) => {
             OptionalDefaultValue::ExplicitString(value.clone())
         }
+        Some(BoundParamDefaultValue::ExplicitCurrencyScaledI64(value)) => {
+            OptionalDefaultValue::ExplicitCurrencyScaledI64(*value)
+        }
+        Some(BoundParamDefaultValue::ExplicitDateSerialF64(bits)) => {
+            OptionalDefaultValue::ExplicitDateSerialF64(*bits)
+        }
         None if param.ty == BoundType::Boolean => OptionalDefaultValue::ExplicitBool(false),
         None if param.ty == BoundType::String => {
             OptionalDefaultValue::ExplicitString(String::new())
+        }
+        None if param.ty == BoundType::Currency => {
+            OptionalDefaultValue::ExplicitCurrencyScaledI64(0)
+        }
+        None if param.ty == BoundType::Date => {
+            OptionalDefaultValue::ExplicitDateSerialF64(0.0f64.to_bits())
         }
         None if matches!(
             param.ty,
@@ -2382,6 +2396,31 @@ fn collect_signature_value_state_descriptors(
                     format!(
                         "default=ExplicitString(len={}); missing-state={missing_state:?}",
                         value.len()
+                    ),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::ExplicitCurrencyScaledI64(value) => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!(
+                        "default=ExplicitCurrencyScaledI64({value}); missing-state={missing_state:?}"
+                    ),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::ExplicitDateSerialF64(bits) => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!(
+                        "default=ExplicitDateSerialF64({}); missing-state={missing_state:?}",
+                        f64::from_bits(*bits)
                     ),
                     ordinal,
                 ));
@@ -10999,6 +11038,18 @@ fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<
                 value: value.clone(),
             });
         }
+        Some(BoundParamDefaultValue::ExplicitCurrencyScaledI64(value)) => {
+            instructions.push(Instruction::LoadConstCurrency {
+                slot: dst,
+                scaled: *value,
+            });
+        }
+        Some(BoundParamDefaultValue::ExplicitDateSerialF64(bits)) => {
+            instructions.push(Instruction::LoadConstDate {
+                slot: dst,
+                bits: *bits,
+            });
+        }
         None if param.ty == BoundType::Boolean => {
             instructions.push(Instruction::LoadConstBool {
                 slot: dst,
@@ -11009,6 +11060,18 @@ fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<
             instructions.push(Instruction::LoadConstString {
                 slot: dst,
                 value: String::new(),
+            });
+        }
+        None if param.ty == BoundType::Currency => {
+            instructions.push(Instruction::LoadConstCurrency {
+                slot: dst,
+                scaled: 0,
+            });
+        }
+        None if param.ty == BoundType::Date => {
+            instructions.push(Instruction::LoadConstDate {
+                slot: dst,
+                bits: 0.0f64.to_bits(),
             });
         }
         None => {
