@@ -217,19 +217,35 @@ fn validate_hir_const_diagnostics(
     source: &str,
     typed_hir: &TypedHirModule,
 ) -> Result<(), HirProductionLoweringError> {
-    for symbol in typed_hir.module.symbols.symbols() {
-        if symbol.namespace != SymbolNamespace::Local {
-            continue;
-        }
-        let Some(span) = symbol.provenance.span else {
-            continue;
-        };
+    let mut const_i64_env = collect_hir_enum_i64_constants(source);
+    let mut symbols = typed_hir
+        .module
+        .symbols
+        .symbols()
+        .iter()
+        .filter_map(|symbol| {
+            (symbol.namespace == SymbolNamespace::Local)
+                .then_some((symbol, symbol.provenance.span?))
+        })
+        .collect::<Vec<_>>();
+    symbols.sort_by_key(|(_, span)| span.start);
+    for (symbol, span) in symbols {
         let Some((type_name, min_value, max_value)) =
             const_integer_range(declared_bound_type(typed_hir, symbol.id))
         else {
+            if let Some(ConstI64Eval::Value(value)) =
+                const_i64_eval_after_span_with_env(source, span, &const_i64_env)
+                && let Some(name) = typed_hir
+                    .module
+                    .symbols
+                    .name(symbol.name)
+                    .map(|name| name.folded.clone())
+            {
+                const_i64_env.insert(name, value);
+            }
             continue;
         };
-        let Some(value) = const_i64_eval_after_span(source, span) else {
+        let Some(value) = const_i64_eval_after_span_with_env(source, span, &const_i64_env) else {
             continue;
         };
         let name = typed_hir
@@ -254,6 +270,15 @@ fn validate_hir_const_diagnostics(
                 ));
             }
             ConstI64Eval::Value(_) => {}
+        }
+        if let ConstI64Eval::Value(value) = value
+            && let Some(name) = typed_hir
+                .module
+                .symbols
+                .name(symbol.name)
+                .map(|name| name.folded.clone())
+        {
+            const_i64_env.insert(name, value);
         }
     }
     Ok(())
@@ -283,7 +308,11 @@ fn reject_hir_parse_errors(source: &str) -> Result<(), HirProductionLoweringErro
 
 fn reject_unsupported_const_syntax(source: &str) -> Result<(), HirProductionLoweringError> {
     let parsed = oxvba_syntax::parse(source);
-    if let Some(text) = first_unsupported_const_stmt(parsed.syntax()) {
+    let mut const_values = collect_hir_enum_constants(source);
+    let mut const_i64_values = collect_hir_enum_i64_constants(source);
+    if let Some(text) =
+        first_unsupported_const_stmt(parsed.syntax(), &mut const_values, &mut const_i64_values)
+    {
         return Err(HirProductionLoweringError::Unsupported(format!(
             "const statement {text:?}"
         )));
@@ -291,29 +320,65 @@ fn reject_unsupported_const_syntax(source: &str) -> Result<(), HirProductionLowe
     Ok(())
 }
 
-fn first_unsupported_const_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> Option<String> {
+fn first_unsupported_const_stmt(
+    node: oxvba_syntax::SyntaxNode<'_>,
+    const_values: &mut HashMap<String, BoundExpr>,
+    const_i64_values: &mut HashMap<String, i64>,
+) -> Option<String> {
     if node.kind() == SyntaxKind::ConstStmt {
         let text = node.text();
-        if !const_stmt_is_supported(&text) {
+        if !const_stmt_is_supported_with_env(&text, const_values, const_i64_values) {
             return Some(text.trim().to_string());
         }
     }
     node.child_nodes()
         .into_iter()
-        .find_map(first_unsupported_const_stmt)
+        .find_map(|child| first_unsupported_const_stmt(child, const_values, const_i64_values))
 }
 
-fn const_stmt_is_supported(text: &str) -> bool {
+fn const_stmt_is_supported_with_env(
+    text: &str,
+    const_values: &mut HashMap<String, BoundExpr>,
+    const_i64_values: &mut HashMap<String, i64>,
+) -> bool {
     let lower = text.to_ascii_lowercase();
     let Some(pos) = lower.find("const") else {
         return false;
     };
     let payload = text[pos + "const".len()..].trim();
-    parse_const_statement_values(payload).is_some()
-        || parse_typed_i64_const_statement_values(payload).is_some()
+    if let Some(values) = parse_const_statement_values_with_initial(payload, const_values) {
+        for (name, value) in values {
+            if let Some(ConstI64Eval::Value(i64_value)) =
+                parse_const_i64_eval_value_from_bound_expr(&value)
+            {
+                const_i64_values.insert(name.clone(), i64_value);
+            }
+            const_values.insert(name, value);
+        }
+        return true;
+    }
+    if let Some(values) =
+        parse_typed_i64_const_statement_values_with_initial(payload, const_i64_values)
+    {
+        for (name, value) in values {
+            const_i64_values.insert(name.clone(), value);
+            const_values.insert(
+                name,
+                i32::try_from(value)
+                    .map(BoundExpr::IntConst)
+                    .unwrap_or(BoundExpr::LongLongConst(value)),
+            );
+        }
+        return true;
+    }
+    false
 }
 
-fn parse_typed_i64_const_statement_values(text: &str) -> Option<HashMap<String, i64>> {
+fn parse_typed_i64_const_statement_values_with_initial(
+    text: &str,
+    initial_values: &HashMap<String, i64>,
+) -> Option<HashMap<String, i64>> {
+    let mut visible_values = initial_values.clone();
     let mut values = HashMap::new();
     let declarators = split_const_declarators(text);
     if declarators.is_empty() {
@@ -327,7 +392,8 @@ fn parse_typed_i64_const_statement_values(text: &str) -> Option<HashMap<String, 
             return None;
         }
         let name = normalize_hir_ident(name_part.trim())?;
-        let value = parse_const_i64_value(rhs.trim(), &values)?;
+        let value = parse_const_i64_value(rhs.trim(), &visible_values)?;
+        visible_values.insert(name.clone(), value);
         values.insert(name, value);
     }
     Some(values)
@@ -2733,33 +2799,49 @@ fn symbol_name(
 
 fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<SymbolId, BoundExpr> {
     let enum_values = collect_hir_enum_constants(source);
-    typed_hir
+    let mut values_by_name = enum_values.clone();
+    let mut i64_values_by_name = collect_hir_enum_i64_constants(source);
+    let mut values_by_symbol = HashMap::new();
+    let mut symbols = typed_hir
         .module
         .symbols
         .symbols()
         .iter()
         .filter_map(|symbol| {
-            if symbol.namespace != SymbolNamespace::Local {
-                return None;
-            }
-            let span = symbol.provenance.span?;
-            let value = const_longlong_literal_after_span(
-                source,
-                span,
-                declared_bound_type(typed_hir, symbol.id),
-            )
-            .or_else(|| const_literal_after_span(source, span))
-            .or_else(|| {
-                let name = typed_hir
-                    .module
-                    .symbols
-                    .name(symbol.name)
-                    .map(|name| name.folded.as_str())?;
-                enum_values.get(name).cloned()
-            })?;
-            Some((symbol.id, value))
+            (symbol.namespace == SymbolNamespace::Local)
+                .then_some((symbol, symbol.provenance.span?))
         })
-        .collect()
+        .collect::<Vec<_>>();
+    symbols.sort_by_key(|(_, span)| span.start);
+    for (symbol, span) in symbols {
+        let Some(name) = typed_hir
+            .module
+            .symbols
+            .name(symbol.name)
+            .map(|name| name.folded.clone())
+        else {
+            continue;
+        };
+        let value = const_longlong_literal_after_span_with_env(
+            source,
+            span,
+            declared_bound_type(typed_hir, symbol.id),
+            &i64_values_by_name,
+        )
+        .or_else(|| const_literal_after_span_with_env(source, span, &values_by_name))
+        .or_else(|| enum_values.get(name.as_str()).cloned());
+        let Some(value) = value else {
+            continue;
+        };
+        if let Some(ConstI64Eval::Value(value)) =
+            const_i64_eval_after_span_with_env(source, span, &i64_values_by_name)
+        {
+            i64_values_by_name.insert(name.clone(), value);
+        }
+        values_by_name.insert(name, value.clone());
+        values_by_symbol.insert(symbol.id, value);
+    }
+    values_by_symbol
 }
 
 fn collect_hir_enum_constants(source: &str) -> HashMap<String, BoundExpr> {
@@ -2773,6 +2855,16 @@ fn collect_hir_enum_constants(source: &str) -> HashMap<String, BoundExpr> {
         }
     }
     constants
+}
+
+fn collect_hir_enum_i64_constants(source: &str) -> HashMap<String, i64> {
+    collect_hir_enum_constants(source)
+        .into_iter()
+        .filter_map(|(name, value)| match value {
+            BoundExpr::IntConst(value) => Some((name, i64::from(value))),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -3232,9 +3324,10 @@ fn is_valid_hir_identifier(text: &str) -> bool {
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
-fn const_literal_after_span(
+fn const_literal_after_span_with_env(
     source: &str,
     span: crate::frontend_symbols::FrontendSourceSpan,
+    prior_values: &HashMap<String, BoundExpr>,
 ) -> Option<BoundExpr> {
     let line_start = source[..span.start].rfind('\n').map_or(0, |idx| idx + 1);
     let line_end = span.end
@@ -3246,22 +3339,26 @@ fn const_literal_after_span(
         return None;
     }
     let line = source.get(line_start..line_end)?;
-    let const_env = const_values_before_span_on_line(line, span.start - line_start)?;
+    let const_env =
+        const_values_before_span_on_line_with_env(line, span.start - line_start, prior_values)?;
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
     parse_const_value(rhs.trim(), &const_env)
 }
 
-fn const_longlong_literal_after_span(
+fn const_longlong_literal_after_span_with_env(
     source: &str,
     span: crate::frontend_symbols::FrontendSourceSpan,
     ty: Option<BoundType>,
+    prior_values: &HashMap<String, i64>,
 ) -> Option<BoundExpr> {
     if !matches!(ty, Some(BoundType::LongLong | BoundType::LongPtr)) {
         return None;
     }
-    let ConstI64Eval::Value(value) = const_i64_eval_after_span(source, span)? else {
+    let ConstI64Eval::Value(value) =
+        const_i64_eval_after_span_with_env(source, span, prior_values)?
+    else {
         return None;
     };
     if let Ok(value) = i32::try_from(value) {
@@ -3271,9 +3368,10 @@ fn const_longlong_literal_after_span(
     }
 }
 
-fn const_i64_eval_after_span(
+fn const_i64_eval_after_span_with_env(
     source: &str,
     span: crate::frontend_symbols::FrontendSourceSpan,
+    prior_values: &HashMap<String, i64>,
 ) -> Option<ConstI64Eval> {
     let line_start = source[..span.start].rfind('\n').map_or(0, |idx| idx + 1);
     let line_end = span.end
@@ -3285,7 +3383,8 @@ fn const_i64_eval_after_span(
         return None;
     }
     let line = source.get(line_start..line_end)?;
-    let const_env = const_i64_values_before_span_on_line(line, span.start - line_start)?;
+    let const_env =
+        const_i64_values_before_span_on_line_with_env(line, span.start - line_start, prior_values)?;
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
@@ -3342,7 +3441,11 @@ fn split_const_declarators(text: &str) -> Vec<&str> {
     declarators
 }
 
-fn parse_const_statement_values(text: &str) -> Option<HashMap<String, BoundExpr>> {
+fn parse_const_statement_values_with_initial(
+    text: &str,
+    initial_values: &HashMap<String, BoundExpr>,
+) -> Option<HashMap<String, BoundExpr>> {
+    let mut visible_values = initial_values.clone();
     let mut values = HashMap::new();
     let declarators = split_const_declarators(text);
     if declarators.is_empty() {
@@ -3354,15 +3457,17 @@ fn parse_const_statement_values(text: &str) -> Option<HashMap<String, BoundExpr>
             .map(|(name, _)| name)
             .unwrap_or(name_part);
         let name = normalize_hir_ident(name_part.trim())?;
-        let value = parse_const_value(rhs.trim(), &values)?;
+        let value = parse_const_value(rhs.trim(), &visible_values)?;
+        visible_values.insert(name.clone(), value.clone());
         values.insert(name, value);
     }
     Some(values)
 }
 
-fn const_values_before_span_on_line(
+fn const_values_before_span_on_line_with_env(
     line: &str,
     span_start: usize,
+    prior_values: &HashMap<String, BoundExpr>,
 ) -> Option<HashMap<String, BoundExpr>> {
     let lower = line.to_ascii_lowercase();
     let const_pos = lower.find("const")?;
@@ -3370,14 +3475,20 @@ fn const_values_before_span_on_line(
     let before_name =
         line[const_pos + "const".len()..const_pos + "const".len() + name_offset].trim();
     if before_name.is_empty() {
-        return Some(HashMap::new());
+        return Some(prior_values.clone());
     }
-    parse_const_statement_values(before_name.trim_end_matches(','))
+    let mut values = prior_values.clone();
+    values.extend(parse_const_statement_values_with_initial(
+        before_name.trim_end_matches(','),
+        prior_values,
+    )?);
+    Some(values)
 }
 
-fn const_i64_values_before_span_on_line(
+fn const_i64_values_before_span_on_line_with_env(
     line: &str,
     span_start: usize,
+    prior_values: &HashMap<String, i64>,
 ) -> Option<HashMap<String, i64>> {
     let lower = line.to_ascii_lowercase();
     let const_pos = lower.find("const")?;
@@ -3385,9 +3496,14 @@ fn const_i64_values_before_span_on_line(
     let before_name =
         line[const_pos + "const".len()..const_pos + "const".len() + name_offset].trim();
     if before_name.is_empty() {
-        return Some(HashMap::new());
+        return Some(prior_values.clone());
     }
-    parse_const_i64_statement_values(before_name.trim_end_matches(','))
+    let mut values = prior_values.clone();
+    values.extend(parse_const_i64_statement_values_with_initial(
+        before_name.trim_end_matches(','),
+        prior_values,
+    )?);
+    Some(values)
 }
 
 fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<BoundExpr> {
@@ -3453,7 +3569,11 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
     None
 }
 
-fn parse_const_i64_statement_values(text: &str) -> Option<HashMap<String, i64>> {
+fn parse_const_i64_statement_values_with_initial(
+    text: &str,
+    initial_values: &HashMap<String, i64>,
+) -> Option<HashMap<String, i64>> {
+    let mut visible_values = initial_values.clone();
     let mut values = HashMap::new();
     let declarators = split_const_declarators(text);
     if declarators.is_empty() {
@@ -3465,7 +3585,8 @@ fn parse_const_i64_statement_values(text: &str) -> Option<HashMap<String, i64>> 
             .map(|(name, _)| name)
             .unwrap_or(name_part);
         let name = normalize_hir_ident(name_part.trim())?;
-        let value = parse_const_i64_value(rhs.trim(), &values)?;
+        let value = parse_const_i64_value(rhs.trim(), &visible_values)?;
+        visible_values.insert(name.clone(), value);
         values.insert(name, value);
     }
     Some(values)
@@ -3567,6 +3688,46 @@ fn parse_const_i64_eval_value(
         return Some(checked_i64_eval(value.checked_neg()));
     }
     None
+}
+
+fn parse_const_i64_eval_value_from_bound_expr(expr: &BoundExpr) -> Option<ConstI64Eval> {
+    match expr {
+        BoundExpr::IntConst(value) => Some(ConstI64Eval::Value(i64::from(*value))),
+        BoundExpr::LongLongConst(value) => Some(ConstI64Eval::Value(*value)),
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => {
+            let ConstI64Eval::Value(value) = parse_const_i64_eval_value_from_bound_expr(operand)?
+            else {
+                return Some(ConstI64Eval::Overflow);
+            };
+            Some(checked_i64_eval(value.checked_neg()))
+        }
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let ConstI64Eval::Value(lhs) = parse_const_i64_eval_value_from_bound_expr(lhs)? else {
+                return Some(ConstI64Eval::Overflow);
+            };
+            let ConstI64Eval::Value(rhs) = parse_const_i64_eval_value_from_bound_expr(rhs)? else {
+                return Some(ConstI64Eval::Overflow);
+            };
+            match op {
+                ArithOp::Add => Some(checked_i64_eval(lhs.checked_add(rhs))),
+                ArithOp::Sub => Some(checked_i64_eval(lhs.checked_sub(rhs))),
+                ArithOp::Mul => Some(checked_i64_eval(lhs.checked_mul(rhs))),
+                ArithOp::Div | ArithOp::IntDiv if rhs != 0 => {
+                    Some(checked_i64_eval(lhs.checked_div(rhs)))
+                }
+                ArithOp::Mod if rhs != 0 => Some(checked_i64_eval(lhs.checked_rem(rhs))),
+                ArithOp::Pow if rhs >= 0 && rhs <= i64::from(u32::MAX) => {
+                    Some(checked_i64_eval(lhs.checked_pow(rhs as u32)))
+                }
+                ArithOp::Pow if rhs >= 0 => Some(ConstI64Eval::Overflow),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn parse_const_i64_eval_literal(text: &str) -> Option<ConstI64Eval> {
@@ -7357,6 +7518,67 @@ mod tests {
             ),
             "{value:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_cross_statement_const_expression() {
+        let source = "Const CBase As Long = 2 ^ 3 \\ 2 Mod 3\nConst CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 4, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            !main
+                .slots
+                .iter()
+                .any(|slot| slot.name.eq_ignore_ascii_case("cbase")
+                    || slot.name.eq_ignore_ascii_case("ctotal")),
+            "{main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_cross_statement_overflowing_typed_long_const() {
+        let source = "Const CBase As Long = 2147483647\nConst CTotal As Long = CBase + 1\nSub Main()\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("cross-statement overflowing Long const should be diagnosed");
+        assert!(
+            matches!(
+                err,
+                HirProductionLoweringError::Compile(CompileError::ResolveError(ref message))
+                    if message.contains("constant ctotal value 2147483648 overflows Long")
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_cross_statement_longlong_const_carrier() {
+        let source = "Const CBase As LongLong = 5000000000\nConst CTotal As LongLong = CBase + 1\nSub Main()\nDim x As LongLong\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI64 {
+                    value: 5_000_000_001,
+                    ..
+                }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::LongLong
+        }));
     }
 
     #[test]
