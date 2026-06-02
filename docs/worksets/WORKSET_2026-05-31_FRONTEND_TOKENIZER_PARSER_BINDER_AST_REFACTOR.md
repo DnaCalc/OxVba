@@ -1125,10 +1125,10 @@ Candidate bead units:
   for the single-active-module type-library-only subset, compile the active module through the
   HIR-capable boundary with early-bound COM dispatch-id metadata plus `PropertyGet`/`PropertyLet`/
   `PropertySet` bytecode hints instead of the legacy project backend. Representative host-injected
-  default-member/property get/let/set compatibility-helper routes now assert patched
-  `CallProc.project_member` bytecode metadata for the expected `pmr_*` helper identity and
-  accessor kind; this is evidence for the current host semantics, not closure of the remaining
-  host/reference HIR-ownership and rewrite-quarantine work.
+  default-member/property get plus non-indexed and indexed let/set compatibility-helper routes now
+  assert patched `CallProc.project_member` bytecode metadata for the expected `pmr_*` helper
+  identity and accessor kind; this is evidence for the current host semantics, not closure of the
+  remaining host/reference HIR-ownership and rewrite-quarantine work.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

@@ -29849,6 +29849,16 @@ mod tests {
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
                 "{label}: unexpected lowered source: {lowered}"
             );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_observe",
+                ProjectMemberCallKind::PropertyGet,
+            );
         }
     }
 
@@ -29929,6 +29939,16 @@ mod tests {
             assert!(
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
                 "{label}: unexpected lowered source: {lowered}"
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_observe",
+                ProjectMemberCallKind::PropertyGet,
             );
         }
     }
@@ -30247,6 +30267,21 @@ mod tests {
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
                 "{label}: unexpected lowered source: {lowered}"
             );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_value",
+                ProjectMemberCallKind::PropertyLet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_observe",
+                ProjectMemberCallKind::PropertyGet,
+            );
         }
     }
 
@@ -30416,6 +30451,16 @@ mod tests {
             assert!(
                 lowered.contains("aftervalue = x"),
                 "{label}: unexpected lowered source: {lowered}"
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_application_value",
+                ProjectMemberCallKind::PropertyGet,
+            );
+            assert_project_member_call_metadata(
+                &compiled,
+                "pmr_hostproject_child_value",
+                ProjectMemberCallKind::PropertySet,
             );
         }
     }

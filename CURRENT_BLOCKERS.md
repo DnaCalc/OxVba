@@ -147,10 +147,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         type-library-only subset, compile the active module through the HIR-capable boundary with
         early-bound COM dispatch-id metadata plus `PropertyGet`/`PropertyLet`/`PropertySet`
         bytecode hints instead of the legacy project backend; representative host-injected
-        default-member/property get/let/set compatibility-helper routes now also assert patched
-        `CallProc.project_member` bytecode metadata for the expected `pmr_*` helper identity and
-        accessor kind, making the current rewrite-backed host semantics explicit while HIR
-        ownership remains open;
+        default-member/property get plus non-indexed and indexed let/set compatibility-helper
+        routes now also assert patched `CallProc.project_member` bytecode metadata for the
+        expected `pmr_*` helper identity and accessor kind, making the current rewrite-backed host
+        semantics explicit while HIR ownership remains open;
       - still open: broader project/host/imported-COM default-member writeback breadth, type
         overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
