@@ -641,6 +641,7 @@ mod tests {
             cst: cst("CallExpr"),
             target,
             args: vec![crate::frontend_hir::HirCallArg {
+                name: None,
                 expr: arg,
                 force_byval: false,
             }],

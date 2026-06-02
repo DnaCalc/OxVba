@@ -119,9 +119,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         kind and early-bound COM property read/put/putref rewrite paths validate dispatch id and
         invoke kind before retaining the compatibility `DispatchInvoke` carrier; selected
         host-injected property/default-member routes now validate through `HostGlobal`
-        classification before retaining the compatibility PMR rewrite carrier;
-      - still open: project default-member writeback breadth, indexed/named writeback through HIR
-        facts, overload validation, and replacement/quarantine of the remaining rewrite bodies;
+        classification before retaining the compatibility PMR rewrite carrier; statement-form
+        named arguments now survive HIR and HIR production lowering into call-site argument binding
+        metadata;
+      - still open: project default-member writeback breadth, indexed/default-member writeback
+        through HIR facts, parenthesized explicit-`Call` named-argument parser support, overload
+        validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated

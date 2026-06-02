@@ -1177,7 +1177,7 @@ fn lower_call_expr(
                 context,
             )
             .map(|expr| BoundCallArg {
-                name: None,
+                name: arg.name.clone(),
                 expr,
                 force_byval: arg.force_byval,
             })
@@ -2704,6 +2704,33 @@ mod tests {
             !bytecode.instructions.is_empty(),
             "expected statement-form call bytecode"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_named_call_arguments() {
+        let source = "Sub Use(ByVal target, ByVal value)\nEnd Sub\nSub Main()\nUse value := 9, target := 3\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let main = metadata.get("main").expect("main metadata");
+        let call_site = main
+            .call_sites
+            .iter()
+            .find(|call_site| call_site.target_name.eq_ignore_ascii_case("use"))
+            .unwrap_or_else(|| panic!("expected Use call-site metadata: {main:#?}"));
+        assert_eq!(call_site.arguments.len(), 2);
+        assert!(call_site.arguments.iter().any(|argument| {
+            argument.source_index == Some(0)
+                && argument.source_name.as_deref() == Some("value")
+                && argument.parameter_name.as_deref() == Some("value")
+                && argument.source_kind == crate::emit::ArgumentSourceKindDescriptor::Named
+        }));
+        assert!(call_site.arguments.iter().any(|argument| {
+            argument.source_index == Some(1)
+                && argument.source_name.as_deref() == Some("target")
+                && argument.parameter_name.as_deref() == Some("target")
+                && argument.source_kind == crate::emit::ArgumentSourceKindDescriptor::Named
+        }));
     }
 
     #[test]

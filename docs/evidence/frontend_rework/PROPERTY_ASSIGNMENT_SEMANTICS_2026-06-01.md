@@ -66,6 +66,10 @@ The 2026-06-01 continuation added:
 - `bd-aprs.8.7` host continuation: selected host-injected property/default-member routes now
   validate through the front-end `HostGlobal` dispatch classification before the compatibility
   project rewrite bridge emits the selected host member call.
+- `bd-aprs.8.7` named-argument HIR continuation: statement-form call arguments now preserve
+  `name := expr` in `HirCallArg` and HIR production lowering carries that name into `BoundCallArg`,
+  allowing existing call-site descriptor and argument-binding metadata to classify the argument as
+  named from HIR facts.
 
 ## Checks
 
@@ -85,6 +89,9 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler host_injected_global_namespace_property --quiet`
 - `cargo test -p oxvba-compiler host_injected_predeclared_default_member --quiet`
 - `cargo test -p oxvba-compiler host_injected_global_namespace_default_member --quiet`
+- `cargo test -p oxvba-compiler hir_builder_preserves_named_call_arguments --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_preserves_named_call_arguments --quiet`
+- `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -159,3 +166,8 @@ The 2026-06-01 continuation added:
   default-member resolver exits now validate host/global classification before returning the
   lowered PMR target. This improves route proof for host fixtures, but it remains a guard around the
   compatibility rewrite path, not full HIR ownership.
+- Named-argument HIR review found that the syntax parser preserved `:=` tokens, but HIR collapsed
+  arguments to positional expressions. `HirCallArg` now carries an optional source name and
+  statement-form HIR lowering preserves that into `BoundCallArg`. Parenthesized explicit `Call
+  Use(name := value)` still fails in the current parser and remains parser-surface work; indexed
+  property/default-member writeback is also still open.

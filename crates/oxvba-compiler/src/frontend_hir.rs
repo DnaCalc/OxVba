@@ -237,8 +237,9 @@ pub struct HirCall {
     pub args: Vec<HirCallArg>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HirCallArg {
+    pub name: Option<String>,
     pub expr: HirExprId,
     pub force_byval: bool,
 }
@@ -557,17 +558,7 @@ impl HirBuilder {
                         .child_nodes()
                         .into_iter()
                         .find(|child| child.kind() == SyntaxKind::ArgList)
-                        .map(|arg_list| {
-                            expression_children(arg_list)
-                                .into_iter()
-                                .map(|arg| {
-                                    Ok::<_, HirBuildError>(HirCallArg {
-                                        expr: self.lower_expr(scope, arg)?,
-                                        force_byval: true,
-                                    })
-                                })
-                                .collect::<Result<Vec<_>, _>>()
-                        })
+                        .map(|arg_list| self.lower_call_args(scope, arg_list, true))
                         .transpose()?
                         .unwrap_or_default();
                     let call = self.arenas.alloc_call(HirCall {
@@ -583,16 +574,7 @@ impl HirBuilder {
                     self.lower_expr(scope, expr_node)?
                 };
                 if let Some(arg_list) = direct_arg_list {
-                    let args = expression_children(arg_list)
-                        .into_iter()
-                        .map(|arg| {
-                            let force_byval = arg.kind() == SyntaxKind::ParenExpr;
-                            Ok::<_, HirBuildError>(HirCallArg {
-                                expr: self.lower_expr(scope, arg)?,
-                                force_byval,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let args = self.lower_call_args(scope, arg_list, false)?;
                     let call = self.arenas.alloc_call(HirCall {
                         cst: call_stmt_cst.clone(),
                         target: expr,
@@ -1115,6 +1097,54 @@ impl HirBuilder {
         Ok(stmts)
     }
 
+    fn lower_call_args(
+        &mut self,
+        scope: ScopeId,
+        arg_list: SyntaxNode<'_>,
+        force_byval_all: bool,
+    ) -> Result<Vec<HirCallArg>, HirBuildError> {
+        let mut out = Vec::new();
+        let mut candidate_name: Option<String> = None;
+        let mut pending_name: Option<String> = None;
+        for element in arg_list.children() {
+            match element {
+                SyntaxElement::Token(token) if token.kind.is_trivia() => {}
+                SyntaxElement::Token(token)
+                    if token.kind == SyntaxKind::Ident || token.kind.is_keyword() =>
+                {
+                    candidate_name = Some(
+                        normalize_ident(
+                            token
+                                .text
+                                .strip_prefix('[')
+                                .and_then(|value| value.strip_suffix(']'))
+                                .unwrap_or(token.text),
+                        )
+                        .unwrap_or_else(|| token.text.to_string()),
+                    );
+                }
+                SyntaxElement::Token(token) if token.kind == SyntaxKind::ColonEq => {
+                    pending_name = candidate_name.take();
+                }
+                SyntaxElement::Token(token) if token.kind == SyntaxKind::Comma => {
+                    candidate_name = None;
+                    pending_name = None;
+                }
+                SyntaxElement::Node(arg) if is_expression_node(arg.kind()) => {
+                    let force_byval = force_byval_all || arg.kind() == SyntaxKind::ParenExpr;
+                    out.push(HirCallArg {
+                        name: pending_name.take(),
+                        expr: self.lower_expr(scope, arg)?,
+                        force_byval,
+                    });
+                    candidate_name = None;
+                }
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+
     fn lower_expr(
         &mut self,
         scope: ScopeId,
@@ -1177,17 +1207,7 @@ impl HirBuilder {
                     .child_nodes()
                     .into_iter()
                     .find(|child| child.kind() == SyntaxKind::ArgList)
-                    .map(|arg_list| {
-                        expression_children(arg_list)
-                            .into_iter()
-                            .map(|arg| {
-                                Ok::<_, HirBuildError>(HirCallArg {
-                                    expr: self.lower_expr(scope, arg)?,
-                                    force_byval: false,
-                                })
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
+                    .map(|arg_list| self.lower_call_args(scope, arg_list, false))
                     .transpose()?
                     .unwrap_or_default();
                 let call = self.arenas.alloc_call(HirCall {
@@ -1358,21 +1378,23 @@ fn cst_with_kind(node: SyntaxNode<'_>, syntax_kind: &str) -> CstBackpointer {
 fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
     node.child_nodes()
         .into_iter()
-        .filter(|child| {
-            matches!(
-                child.kind(),
-                SyntaxKind::BinaryExpr
-                    | SyntaxKind::UnaryExpr
-                    | SyntaxKind::IdentExpr
-                    | SyntaxKind::LiteralExpr
-                    | SyntaxKind::ParenExpr
-                    | SyntaxKind::NewExpr
-                    | SyntaxKind::MemberExpr
-                    | SyntaxKind::IndexExpr
-                    | SyntaxKind::CallExpr
-            )
-        })
+        .filter(|child| is_expression_node(child.kind()))
         .collect()
+}
+
+fn is_expression_node(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::BinaryExpr
+            | SyntaxKind::UnaryExpr
+            | SyntaxKind::IdentExpr
+            | SyntaxKind::LiteralExpr
+            | SyntaxKind::ParenExpr
+            | SyntaxKind::NewExpr
+            | SyntaxKind::MemberExpr
+            | SyntaxKind::IndexExpr
+            | SyntaxKind::CallExpr
+    )
 }
 
 fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
@@ -2074,6 +2096,50 @@ mod tests {
             module.arenas.expr(call.target).map(|expr| &expr.kind),
             Some(HirExprKind::Name(_))
         ));
+    }
+
+    #[test]
+    fn hir_builder_preserves_named_call_arguments() {
+        let source = "Sub Main()\nUse value := 5\nEnd Sub\nSub Use(ByVal value As Long)\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. }
+                    if module
+                        .symbols
+                        .symbol(decl.symbol)
+                        .and_then(|symbol| module.symbols.name(symbol.name))
+                        .is_some_and(|name| name.folded == "main") =>
+                {
+                    Some(body)
+                }
+                _ => None,
+            })
+            .expect("main body");
+        let call_expr = main_body
+            .iter()
+            .find_map(
+                |stmt| match module.arenas.stmt(*stmt).map(|stmt| &stmt.kind) {
+                    Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                    Some(HirStmtKind::Block(children)) => children.iter().find_map(|child| {
+                        match module.arenas.stmt(*child).map(|stmt| &stmt.kind) {
+                            Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                            _ => None,
+                        }
+                    }),
+                    _ => None,
+                },
+            )
+            .expect("call expression statement");
+        let HirExprKind::Call(call) = module.arenas.expr(call_expr).expect("call expr").kind else {
+            panic!("expected call expression");
+        };
+        let call = module.arenas.call(call).expect("call data");
+        assert_eq!(call.args.len(), 1);
+        assert_eq!(call.args[0].name.as_deref(), Some("value"));
     }
 
     #[test]

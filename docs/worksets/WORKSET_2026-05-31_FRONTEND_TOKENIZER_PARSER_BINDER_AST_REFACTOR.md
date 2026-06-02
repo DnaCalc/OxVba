@@ -1100,7 +1100,8 @@ Candidate bead units:
   paths against that front-end dispatch fact before emitting the compatibility `DispatchInvoke`
   carrier; selected host-injected property/default-member routes now validate through the
   front-end `HostGlobal` dispatch classification before retaining their compatibility PMR rewrite
-  carrier.
+  carrier; statement-form named arguments now survive HIR and HIR production lowering into
+  call-site argument binding metadata.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional
