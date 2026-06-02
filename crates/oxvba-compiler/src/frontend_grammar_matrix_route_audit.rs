@@ -69,6 +69,7 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
     mapping("const_item", "declaration", "const statement"),
     mapping("dim_decl", "declaration", "dim declaration"),
     mapping("variable_decl_stmt", "declaration", "dim declaration"),
+    mapping("static_decl", "declaration", "static declaration"),
     mapping("variable_decl_list", "declaration", "dim declaration"),
     mapping("variable_decl", "declaration", "dim declaration"),
     mapping("array_rank", "declaration", "fixed array element alias"),
@@ -133,6 +134,7 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
     mapping("redim_item", "statement", "redim runtime statement"),
     mapping("raise_event_stmt", "statement", "raise event statement"),
     mapping("local_decl_stmt", "statement", "dim declaration"),
+    mapping("empty_stmt", "statement", "empty statement"),
     mapping("expression", "expression", "assignment/arithmetic"),
     mapping("comparison_expr", "expression", "TypeOf Is expression"),
     mapping("compare_op", "expression", "select case is"),
@@ -140,6 +142,7 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
     mapping("additive_expr", "expression", "assignment/arithmetic"),
     mapping("multiplicative_expr", "expression", "assignment/arithmetic"),
     mapping("unary_expr", "expression", "unary Not expression"),
+    mapping("exponent_expr", "expression", "exponent expression"),
     mapping("postfix_expr", "expression", "value-side member expression"),
     mapping("postfix_part", "expression", "value-side member expression"),
     mapping("member_part", "expression", "value-side member expression"),
@@ -176,6 +179,7 @@ const GRAMMAR_MATRIX_AUDIT_MAP: &[GrammarMatrixAuditMapping] = &[
     mapping("lvalue", "expression", "assignment/arithmetic"),
     mapping("identifier", "lexical", "assignment/arithmetic"),
     mapping("type_name", "lexical", "builtin type declaration"),
+    mapping("qualified_identifier", "lexical", "qualified identifier"),
     mapping("builtin_type", "lexical", "builtin type declaration"),
     mapping("literal", "lexical", "const statement"),
 ];
@@ -226,12 +230,13 @@ mod tests {
     fn grammar_matrix_route_audit_maps_broad_anchored_rows_to_hir_production() {
         let report = run_grammar_matrix_route_audit();
         assert!(report.terminal_gate_passed(), "{report:#?}");
-        assert_eq!(report.rows.len(), 106, "{report:#?}");
+        assert_eq!(report.rows.len(), 110, "{report:#?}");
         assert!(report.residuals().is_empty(), "{report:#?}");
         for production in [
             "source_file",
             "dim_decl",
             "line_comment",
+            "static_decl",
             "variable_decl",
             "declare_decl",
             "property_get",
@@ -240,8 +245,10 @@ mod tests {
             "redim_stmt",
             "concat_expr",
             "unary_expr",
+            "exponent_expr",
             "argument_syntax",
             "postfix_expr",
+            "qualified_identifier",
             "named_argument",
             "builtin_type",
         ] {

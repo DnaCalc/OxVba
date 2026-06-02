@@ -62,6 +62,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let static_declaration = "Sub Main()\nStatic counter As Long\ncounter = counter + 1\nEnd Sub\n";
+    findings.push(route_finding(
+        "static declaration fixture",
+        static_declaration,
+        "bd-aprs.9.5",
+    ));
+
     let builtin_type_declaration =
         "Sub Main()\nDim s As String\nDim v As Variant\ns = \"x\"\nv = s\nEnd Sub\n";
     findings.push(route_finding(
@@ -81,6 +88,27 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     findings.push(route_finding(
         "unary Not expression fixture",
         unary_expression,
+        "bd-aprs.9.5",
+    ));
+
+    let exponent_expression = "Sub Main()\nDim x\nx = 2 ^ 3\nEnd Sub\n";
+    findings.push(route_finding(
+        "exponent expression fixture",
+        exponent_expression,
+        "bd-aprs.9.5",
+    ));
+
+    let empty_statement = "Sub Main()\nEnd Sub\n";
+    findings.push(route_finding(
+        "empty statement fixture",
+        empty_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let qualified_identifier = "Sub Main()\nDim obj\nDim x\nx = obj.Child.Value\nEnd Sub\n";
+    findings.push(route_finding(
+        "qualified identifier fixture",
+        qualified_identifier,
         "bd-aprs.9.5",
     ));
 
