@@ -2100,7 +2100,8 @@ mod tests {
 
     #[test]
     fn hir_builder_preserves_named_call_arguments() {
-        let source = "Sub Main()\nUse value := 5\nEnd Sub\nSub Use(ByVal value As Long)\nEnd Sub\n";
+        let source =
+            "Sub Main()\nCall Use value := 5\nEnd Sub\nSub Use(ByVal value As Long)\nEnd Sub\n";
         let module = build_hir_from_source("Module1", source).expect("HIR module");
         let main_body = module
             .declarations

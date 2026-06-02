@@ -2708,7 +2708,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_preserves_named_call_arguments() {
-        let source = "Sub Use(ByVal target, ByVal value)\nEnd Sub\nSub Main()\nUse value := 9, target := 3\nEnd Sub\n";
+        let source = "Sub Use(ByVal target, ByVal value)\nEnd Sub\nSub Main()\nCall Use value := 9, target := 3\nEnd Sub\n";
         let (_bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
 

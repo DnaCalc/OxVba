@@ -1719,6 +1719,10 @@ impl<'a> Parser<'a> {
         if self.is_expr_start() {
             self.parse_expr();
         }
+        self.eat_whitespace();
+        if self.is_expr_start() || self.at(SyntaxKind::Comma) {
+            self.parse_bare_arg_list();
+        }
         self.eat_to_statement_end();
         self.finish_node();
     }

@@ -121,7 +121,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         host-injected property/default-member routes now validate through `HostGlobal`
         classification before retaining the compatibility PMR rewrite carrier; statement-form
         named arguments now survive HIR and HIR production lowering into call-site argument binding
-        metadata;
+        metadata, including explicit no-paren `Call Proc name := value`;
       - still open: project default-member writeback breadth, indexed/default-member writeback
         through HIR facts, parenthesized explicit-`Call` named-argument parser support, overload
         validation, and replacement/quarantine of the remaining rewrite bodies;
