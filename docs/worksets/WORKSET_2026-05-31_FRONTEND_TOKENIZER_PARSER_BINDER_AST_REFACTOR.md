@@ -702,6 +702,10 @@ Required newly explicit delivery beads:
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
   production entry points. Keep only explicitly named comparison/test-only helpers.
+  Follow-up FE-9.8 bundle proof now asserts every source-backed frontend seed-corpus row uses HIR
+  `BoundModule` facts for bundle context extraction rather than the `resolve_symbols` fallback;
+  the bundle fallback remains a quarantined residual for unsupported modules, not accepted-row
+  evidence.
 
 ### Epic FE-0 — Workset Preparation and Truth Repair
 

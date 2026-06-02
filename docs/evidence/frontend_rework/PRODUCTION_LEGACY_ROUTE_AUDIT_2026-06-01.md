@@ -87,6 +87,12 @@ proved live here: `CreateObject("Excel.Application")`, root `Visible` property g
 passed on this machine. The previous property-set shape is not claimed by this evidence; richer
 Excel property put/member/workbook/range lanes remain open.
 
+Continuation update: FE-9.8 bundle context facts now have source-backed seed-corpus proof. The
+test `bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows` walks the
+frontend rework seed corpus and asserts every row with inline source produces package/module facts
+through the HIR `BoundModule` route, not the `resolve_symbols` fallback. The fallback remains
+quarantined for unsupported residual modules; it is not counted as HIR evidence.
+
 This audit no longer finds the previously tracked scoped production route residuals. The broader
 workset still remains open for unaudited language surfaces and full terminal evidence, but this
 specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
@@ -125,6 +131,7 @@ The audit result records completed reopened delivery work and remaining broader 
 
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
+- `cargo test -p oxvba-compiler bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
@@ -167,3 +174,6 @@ The audit result records completed reopened delivery work and remaining broader 
 - The selected live Excel execution lane now proves activation, root property get, and cleanup. It
   also exposed that property-set behavior should not be claimed by the activation smoke; broader
   Excel object-model mutation remains a separate FE-7/FE-8/FE-9 delivery and oracle surface.
+- Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
+  The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
+  accepted-row production route.

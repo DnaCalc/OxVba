@@ -2768,6 +2768,30 @@ mod tests {
     }
 
     #[test]
+    fn bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows() {
+        for fixture in crate::frontend_diff::frontend_rework_seed_corpus() {
+            let Some(source) = fixture.source.as_deref() else {
+                continue;
+            };
+            let module = ModuleUnit {
+                module_name: fixture.name.clone(),
+                module_kind: ModuleKind::Procedural,
+                attributes: Default::default(),
+                source: source.to_string(),
+            };
+
+            let (_, route) = bound_module_for_bundle_facts_with_route(&module);
+
+            assert_eq!(
+                route,
+                BundleFactBoundModuleRoute::HirBoundModule,
+                "source-backed frontend seed row `{}` should use HIR bundle facts",
+                fixture.name
+            );
+        }
+    }
+
+    #[test]
     fn bundle_fact_bound_module_route_marks_legacy_residual_fallback() {
         let module = route_probe_module(
             "Declare Sub Sleep Lib \"kernel32\" (ByVal ms As Long)\nSub Main()\nEnd Sub\n",

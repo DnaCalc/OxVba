@@ -44,7 +44,7 @@ pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
         replacement: "HIR BoundModule facts from frontend_type_hooks plus frontend_hir_lowering",
         disposition: RetirementDisposition::QuarantinedResidual,
         owner: "bd-aprs.10.8",
-        partial_work: "Bundle module context fact extraction now tries HIR BoundModule construction before falling back to resolve_symbols for unsupported residual modules; the route decision is test-visible so HIR-owned facts and residual fallback cannot be conflated.",
+        partial_work: "Bundle module context fact extraction now tries HIR BoundModule construction before falling back to resolve_symbols for unsupported residual modules; the route decision is test-visible so HIR-owned facts and residual fallback cannot be conflated. Follow-up FE-9.8 proof covers every source-backed frontend seed-corpus row through the HIR bundle-fact route.",
         closure_condition: "bundle context facts for every accepted module are proven to come from HIR facts, with legacy resolver fallback deleted or marked comparison-only",
     },
     LegacyRetirementRow {
