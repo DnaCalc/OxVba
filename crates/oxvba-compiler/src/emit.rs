@@ -6584,6 +6584,7 @@ fn emit_stmt(
                     value: 0,
                 });
                 let mut invoke_args = Vec::with_capacity(args.len() + 1);
+                let mut arg_slots = Vec::with_capacity(args.len());
                 for arg in args {
                     let arg_slot = temps.alloc_temp();
                     emit_expr_into(
@@ -6601,6 +6602,7 @@ fn emit_stmt(
                         slot: Some(arg_slot),
                         name: arg.name.clone(),
                     });
+                    arg_slots.push(arg_slot);
                 }
                 let value_slot = temps.alloc_temp();
                 emit_expr_into(
@@ -6618,6 +6620,7 @@ fn emit_stmt(
                     slot: Some(value_slot),
                     name: None,
                 });
+                let call_pc = instructions.len();
                 instructions.push(Instruction::IntrinsicDispatchInvokeHost {
                     dst: temps.alloc_temp(),
                     object: object_slot,
@@ -6632,6 +6635,17 @@ fn emit_stmt(
                         }
                     }),
                 });
+                call_site_descriptors.push(
+                    build_late_bound_default_member_assignment_call_site_descriptor(
+                        current_proc_name,
+                        call_pc,
+                        receiver,
+                        args,
+                        &arg_slots,
+                        expr,
+                        value_slot,
+                    ),
+                );
             }
         }
         BoundStmt::UdtAssign {
@@ -9078,6 +9092,73 @@ fn build_late_bound_default_member_call_site_descriptor(
             assign_target_slot: assign_target,
             copyout_required: false,
         }),
+        diagnostic_policies: Vec::new(),
+    }
+}
+
+fn build_late_bound_default_member_assignment_call_site_descriptor(
+    current_proc_name: &str,
+    call_pc: usize,
+    target_name: &str,
+    args: &[BoundCallArg],
+    arg_slots: &[usize],
+    value_expr: &BoundExpr,
+    value_slot: usize,
+) -> CallSiteDescriptor {
+    let mut arguments = args
+        .iter()
+        .enumerate()
+        .map(|(idx, arg)| ArgumentBindingDescriptor {
+            argument_index: idx,
+            source_index: Some(idx),
+            source_name: arg.name.clone(),
+            parameter_index: None,
+            parameter_name: None,
+            parameter_slot: None,
+            source_kind: argument_source_kind(arg),
+            expression_kind: argument_expression_kind(&arg.expr),
+            binding_kind: ArgumentBindingKindDescriptor::ByValCopy,
+            force_byval: arg.force_byval,
+            source_slot: arg_slots.get(idx).copied(),
+            source_declared_type: None,
+            writeback: None,
+            optional_default: None,
+            param_array: None,
+        })
+        .collect::<Vec<_>>();
+    arguments.push(ArgumentBindingDescriptor {
+        argument_index: args.len(),
+        source_index: Some(args.len()),
+        source_name: None,
+        parameter_index: None,
+        parameter_name: Some("value".to_string()),
+        parameter_slot: None,
+        source_kind: ArgumentSourceKindDescriptor::Positional,
+        expression_kind: argument_expression_kind(value_expr),
+        binding_kind: ArgumentBindingKindDescriptor::ByValCopy,
+        force_byval: false,
+        source_slot: Some(value_slot),
+        source_declared_type: None,
+        writeback: None,
+        optional_default: None,
+        param_array: None,
+    });
+    CallSiteDescriptor {
+        call_site_id: format!(
+            "callsite:{}@pc:{}",
+            current_proc_name.to_ascii_lowercase(),
+            call_pc
+        ),
+        caller_procedure_name: current_proc_name.to_string(),
+        call_pc,
+        target_name: target_name.to_string(),
+        target_kind: CallTargetKindDescriptor::LateBoundDefaultMember,
+        target_entry_pc: None,
+        default_member_policy: DefaultMemberPolicyDescriptor::DefaultMemberFallback,
+        invocation_syntax: CallInvocationSyntaxDescriptor::SyntheticPropertyAssignment,
+        argument_evaluation_order: (0..arguments.len()).collect(),
+        arguments,
+        return_value: None,
         diagnostic_policies: Vec::new(),
     }
 }

@@ -2978,7 +2978,29 @@ mod tests {
             "expected indexed default-member property-let dispatch against member id 0: {:?}",
             bytecode.instructions
         );
-        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.target_kind
+                    == crate::emit::CallTargetKindDescriptor::LateBoundDefaultMember
+                    && call_site.invocation_syntax
+                        == crate::emit::CallInvocationSyntaxDescriptor::SyntheticPropertyAssignment
+                    && call_site.default_member_policy
+                        == crate::emit::DefaultMemberPolicyDescriptor::DefaultMemberFallback
+                    && call_site.arguments.len() == 2
+                    && call_site
+                        .arguments
+                        .first()
+                        .and_then(|arg| arg.source_name.as_deref())
+                        == Some("index")
+                    && call_site
+                        .arguments
+                        .get(1)
+                        .and_then(|arg| arg.parameter_name.as_deref())
+                        == Some("value")
+            }),
+            "expected default-member assignment call-site metadata: {main:#?}"
+        );
     }
 
     #[test]
@@ -3010,7 +3032,24 @@ mod tests {
             "expected indexed default-member property-set dispatch against member id 0: {:?}",
             bytecode.instructions
         );
-        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.target_kind
+                    == crate::emit::CallTargetKindDescriptor::LateBoundDefaultMember
+                    && call_site.invocation_syntax
+                        == crate::emit::CallInvocationSyntaxDescriptor::SyntheticPropertyAssignment
+                    && call_site.default_member_policy
+                        == crate::emit::DefaultMemberPolicyDescriptor::DefaultMemberFallback
+                    && call_site.arguments.len() == 2
+                    && call_site
+                        .arguments
+                        .get(1)
+                        .and_then(|arg| arg.parameter_name.as_deref())
+                        == Some("value")
+            }),
+            "expected default-member Set assignment call-site metadata: {main:#?}"
+        );
     }
 
     #[test]

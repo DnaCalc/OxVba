@@ -1105,11 +1105,12 @@ Candidate bead units:
   parenthesized `Call Proc(name := value)`; late-bound variable default-member calls such as
   `obj(42)` now lower through HIR into default-member dispatch metadata; late-bound variable
   indexed default-member assignments now lower through `BoundStmt::AssignDefaultMember`, preserve
-  indexed argument names, and emit dispatch member id `0` with `PropertyLet`/`PropertySet` hints;
-  multiple authoritative `VB_UserMemId = 0` candidates of the required accessor kind now reject as
-  default-member ambiguity instead of selecting the first sorted candidate; selected active-project
-  property/default-member rewrite routes now validate `EarlyBoundProject` member-dispatch
-  classification before retaining the compatibility carrier.
+  indexed argument names, and emit dispatch member id `0` with `PropertyLet`/`PropertySet` hints
+  plus `LateBoundDefaultMember`/`SyntheticPropertyAssignment` call-site metadata with the
+  synthetic `value` argument; multiple authoritative `VB_UserMemId = 0` candidates of the required
+  accessor kind now reject as default-member ambiguity instead of selecting the first sorted
+  candidate; selected active-project property/default-member rewrite routes now validate
+  `EarlyBoundProject` member-dispatch classification before retaining the compatibility carrier.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

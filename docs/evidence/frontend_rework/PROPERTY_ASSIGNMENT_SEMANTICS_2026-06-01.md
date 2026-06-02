@@ -82,6 +82,9 @@ The 2026-06-01 continuation added:
   member id `0`, preserves indexed argument names, and emits explicit `PropertyLet`/`PropertySet`
   hints for `obj(index := 2) = value` and `Set obj(2) = other`. Object-member binding metadata
   also records default-member `PropertyLet`/`PropertySet` rows for this late-bound variable subset.
+  Follow-up metadata hardening records matching `LateBoundDefaultMember` call-site descriptors with
+  `SyntheticPropertyAssignment`, `DefaultMemberFallback`, indexed arguments, and the synthetic
+  `value` argument.
 - `bd-aprs.8.7` default-member overload validation continuation: the compatibility project/member
   fallback now rejects multiple explicit `VB_UserMemId = 0` candidates of the required accessor
   kind instead of sorting and selecting one. Regression coverage includes authoritative
@@ -116,6 +119,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler ambiguous_authoritative --quiet`
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
+- `cargo test -p oxvba-compiler compile_project --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -209,9 +213,13 @@ The 2026-06-01 continuation added:
   receivers, checks the receiver through type checking, includes the indexed arguments in value,
   semantic, operator, and coercion descriptor collection, and emits late-bound property put/putref
   dispatch against member id `0`. Object-member binding descriptors record these writes as
-  default-member property Let/Set rows. This closes the HIR fact path for the variable
-  default-member assignment subset. Broader project/host/imported-COM default-member writeback
-  breadth, overload validation, and replacement/quarantine of remaining rewrite bodies remain open.
+  default-member property Let/Set rows. Follow-up review found that the bytecode and object-member
+  rows were present but call-site metadata still omitted the synthetic property assignment. The
+  emitter now records `LateBoundDefaultMember`/`SyntheticPropertyAssignment` call sites with the
+  indexed arguments and synthetic `value` argument. This closes the HIR fact and call-site metadata
+  path for the variable default-member assignment subset. Broader project/host/imported-COM
+  default-member writeback breadth, overload validation, and replacement/quarantine of remaining
+  rewrite bodies remain open.
 - Default-member overload review found that the front-end default-member route correctly returned
   no unique route for multiple explicit `VB_UserMemId = 0` candidates, but the legacy fallback then
   sorted the same candidates and selected one. The fallback now reports
