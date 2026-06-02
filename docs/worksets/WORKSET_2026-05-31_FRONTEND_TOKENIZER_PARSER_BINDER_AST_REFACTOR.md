@@ -1211,8 +1211,9 @@ Candidate bead units:
   source-prior constants, typed constant coercion, broader Date/Currency expression coercion beyond
   the covered numeric arithmetic subset, locale-sensitive Date literal breadth, and full platform
   `LongPtr` semantics remain broader FE-8.5 work. Later FE-8.5.e continuation adds that bounded
-  Date/Currency arithmetic-expression subset for source-prior constants and literal numeric
-  operands, keeping final bytecode on `LoadConstCurrency`/`LoadConstDate`.
+  Date/Currency arithmetic-expression subset for source-prior constants, literal numeric operands,
+  and deterministic `#...#` Date literal operands, keeping final bytecode on
+  `LoadConstCurrency`/`LoadConstDate`.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

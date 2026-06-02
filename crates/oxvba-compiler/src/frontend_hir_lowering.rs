@@ -3825,7 +3825,7 @@ fn parse_declared_const_value(
             if let Some(value) = parse_const_currency_literal(text) {
                 return Some(BoundExpr::CurrencyConst(value));
             }
-            parse_const_f64_value(text, named_values)
+            parse_const_f64_value(text, named_values, false)
                 .and_then(currency_scaled_i64_from_f64)
                 .map(BoundExpr::CurrencyConst)
         }
@@ -3833,7 +3833,7 @@ fn parse_declared_const_value(
             if let Some(value) = parse_const_date_literal(text) {
                 return Some(BoundExpr::DateConst(value));
             }
-            parse_const_f64_value(text, named_values)
+            parse_const_f64_value(text, named_values, true)
                 .filter(|value| value.is_finite())
                 .map(|value| BoundExpr::DateConst(value.to_bits()))
         }
@@ -3841,8 +3841,15 @@ fn parse_declared_const_value(
     }
 }
 
-fn parse_const_f64_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<f64> {
+fn parse_const_f64_value(
+    text: &str,
+    named_values: &HashMap<String, BoundExpr>,
+    allow_date_literals: bool,
+) -> Option<f64> {
     let text = strip_balanced_outer_parens(text.trim());
+    if allow_date_literals && let Some(bits) = parse_date_literal_serial_bits(text) {
+        return Some(f64::from_bits(bits));
+    }
     if let Some(value) = parse_const_f64_literal(text) {
         return Some(value);
     }
@@ -3852,8 +3859,8 @@ fn parse_const_f64_value(text: &str, named_values: &HashMap<String, BoundExpr>) 
         return const_expr_as_f64(value);
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-']) {
-        let lhs = parse_const_f64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_f64_value(rhs.trim(), named_values)?;
+        let lhs = parse_const_f64_value(lhs.trim(), named_values, allow_date_literals)?;
+        let rhs = parse_const_f64_value(rhs.trim(), named_values, allow_date_literals)?;
         return finite_f64(match op {
             '+' => lhs + rhs,
             '-' => lhs - rhs,
@@ -3861,8 +3868,8 @@ fn parse_const_f64_value(text: &str, named_values: &HashMap<String, BoundExpr>) 
         });
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
-        let lhs = parse_const_f64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_f64_value(rhs.trim(), named_values)?;
+        let lhs = parse_const_f64_value(lhs.trim(), named_values, allow_date_literals)?;
+        let rhs = parse_const_f64_value(rhs.trim(), named_values, allow_date_literals)?;
         return finite_f64(match op {
             '*' => lhs * rhs,
             '/' if rhs != 0.0 => lhs / rhs,
@@ -3870,15 +3877,19 @@ fn parse_const_f64_value(text: &str, named_values: &HashMap<String, BoundExpr>) 
         });
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['^']) {
-        let lhs = parse_const_f64_value(lhs.trim(), named_values)?;
-        let rhs = parse_const_f64_value(rhs.trim(), named_values)?;
+        let lhs = parse_const_f64_value(lhs.trim(), named_values, allow_date_literals)?;
+        let rhs = parse_const_f64_value(rhs.trim(), named_values, allow_date_literals)?;
         return match op {
             '^' => finite_f64(lhs.powf(rhs)),
             _ => None,
         };
     }
     if let Some(rest) = text.strip_prefix('-') {
-        return finite_f64(-parse_const_f64_value(rest.trim(), named_values)?);
+        return finite_f64(-parse_const_f64_value(
+            rest.trim(),
+            named_values,
+            allow_date_literals,
+        )?);
     }
     None
 }
@@ -7961,7 +7972,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_collects_typed_currency_date_const_expressions() {
-        let source = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CBase As Date = 2.0\nConst CStamp As Date = (CBase + 3.0) / 2.0\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub\n";
+        let source = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CStamp As Date = #2026-02-28# + 1\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub\n";
         let (bytecode, _metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
@@ -7974,7 +7985,7 @@ mod tests {
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstDate { bits, .. } if *bits == 2.5f64.to_bits()
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_082.0f64.to_bits()
             )),
             "{bytecode:#?}"
         );

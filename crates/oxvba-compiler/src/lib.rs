@@ -1603,7 +1603,7 @@ mod tests {
 
     #[test]
     fn compile_default_routes_typed_currency_date_const_expressions_through_hir() {
-        let source = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CBase As Date = 2.0\nConst CStamp As Date = (CBase + 3.0) / 2.0\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount: stamp = CStamp\nEnd Sub\n";
+        let source = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CStamp As Date = #2026-02-28# + 1\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount: stamp = CStamp\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
             "legacy path should reject the active inline sequence after typed Currency/Date const expressions",
         );
@@ -1635,7 +1635,7 @@ mod tests {
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstDate { bits, .. } if *bits == 2.5f64.to_bits()
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_082.0f64.to_bits()
             )),
             "expected typed Date const expression bytecode: {bytecode:#?}"
         );

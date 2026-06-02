@@ -62,13 +62,13 @@ fn scalar_currency_date_const_carriers_execute() {
 #[test]
 fn scalar_currency_date_const_expression_carriers_execute() {
     let snap = run(
-        "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CBase As Date = 2.0\nConst CStamp As Date = (CBase + 3.0) / 2.0\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",
+        "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CStamp As Date = #2026-02-28# + 1\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",
     );
     assert_eq!(
         snap,
         vec![
             Variant::from_currency_scaled_i64(15_000),
-            Variant::from_date_f64(2.5),
+            Variant::from_date_f64(46_082.0),
         ]
     );
 }
