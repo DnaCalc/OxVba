@@ -347,7 +347,7 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_option_stmt(parsed.syntax()) {
         return false;
     }
-    if source_has_unsupported_optional_parameter(source) {
+    if source_has_hir_parameter_count_mismatch(source) {
         return false;
     }
     if source_has_unsupported_property_declaration(source) {
@@ -399,35 +399,54 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
     false
 }
 
-fn source_has_unsupported_optional_parameter(source: &str) -> bool {
-    if !source
-        .lines()
-        .any(|line| contains_ascii_word(line, "optional"))
-    {
-        return false;
-    }
-
+fn source_has_hir_parameter_count_mismatch(source: &str) -> bool {
+    let Ok(typed_hir) = frontend_type_hooks::collect_type_hooks_from_source("Main", source) else {
+        return true;
+    };
     let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
     let default_type_table = resolve::collect_default_type_table(&lines);
-    for line in source.lines() {
-        if !contains_ascii_word(line, "optional") {
+    for decl_id in &typed_hir.module.declarations {
+        let Some(decl) = typed_hir.module.arenas.decl(*decl_id) else {
             continue;
-        }
-        let Some(kind) = proc_kind_for_signature_line(line) else {
+        };
+        let frontend_hir::HirDeclKind::Procedure { params, .. } = &decl.kind else {
+            continue;
+        };
+        let signature_line = source_line_for_span(source, decl.cst.span.start);
+        let Some(kind) = proc_kind_for_signature_line(signature_line) else {
             return true;
         };
-        let Some((_, params, _)) = resolve::parse_proc_signature(line, kind, &default_type_table)
+        let Some((_, parsed_params, _)) =
+            resolve::parse_proc_signature(signature_line, kind, &default_type_table)
         else {
             return true;
         };
-        if params
-            .iter()
-            .any(|param| param.optional && param.default_value.is_none())
-        {
+        if parsed_params.len() != params.len() {
             return true;
+        }
+        for (param, parsed_param) in params.iter().zip(parsed_params.iter()) {
+            let Some(symbol) = typed_hir.module.symbols.symbol(*param) else {
+                return true;
+            };
+            let Some(name) = typed_hir.module.symbols.name(symbol.name) else {
+                return true;
+            };
+            if !name.folded.eq_ignore_ascii_case(&parsed_param.name) {
+                return true;
+            }
         }
     }
     false
+}
+
+fn source_line_for_span(source: &str, start: usize) -> &str {
+    let prefix_start = source[..start]
+        .rfind(['\n', '\r'])
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    let suffix = &source[start..];
+    let suffix_end = suffix.find(['\n', '\r']).unwrap_or(suffix.len());
+    &source[prefix_start..start + suffix_end]
 }
 
 fn proc_kind_for_signature_line(line: &str) -> Option<resolve::ProcKind> {
@@ -1146,12 +1165,33 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_still_rejects_optional_without_default_route() {
+    fn compile_with_runtime_metadata_default_routes_optional_without_default_through_hir() {
         let source =
             "Sub Use(Optional ByVal n As Variant)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         assert!(
-            !super::source_is_eligible_for_lightweight_hir_default(source),
-            "optional parameters without explicit defaults remain outside this HIR route slice"
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "optional parameters without explicit defaults should be eligible once missing-state descriptors lower through HIR"
+        );
+
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route optional missing-state source through HIR",
+        );
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::VariantMissingError448,
+                missing_state: OptionalMissingStatePolicy::PreserveMissingArgumentState,
+            }
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.arguments.iter().any(|arg| {
+                    arg.optional_default == Some(OptionalDefaultValue::VariantMissingError448)
+                })
+            }),
+            "expected omitted optional Variant argument metadata: {main:#?}"
         );
     }
 

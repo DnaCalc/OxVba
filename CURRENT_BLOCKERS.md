@@ -266,9 +266,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         arithmetic/comparison bytecode;
         no-argument `Call <procedure>` statements now lower through HIR as zero-argument calls;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
-        intrinsic breadth inside ParamArray callees, and
-        broader call-entry optional/missing-state behavior, plus indexed property invocation and
-        default-route property semantics, remain open;
+        intrinsic breadth inside ParamArray callees, broader optional call-entry combinations, plus
+        indexed property invocation and default-route property semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine; bundle module fact extraction now
       prefers HIR `BoundModule` facts, but retains explicit `resolve_symbols` fallback for

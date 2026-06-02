@@ -1263,10 +1263,12 @@ Candidate bead units:
   continuation also flips the ordinary lightweight single-source `compile()` /
   `compile_with_runtime_metadata()` route to try HIR production before legacy resolution for
   eligible completed constructs. Follow-up continuation removes simple functions from the
-  residual set after declared return-slot facts are projected through HIR. The eligibility guard
-  deliberately still excludes surfaces whose HIR semantics are partial, including DefType,
-  properties, optional/default/ParamArray parameters, project rewrites, and class/object-local
-  compatibility contexts. The legacy baseline remains available through an explicit comparison
+  residual set after declared return-slot facts are projected through HIR. Later FE-8.5/FE-9
+  continuations also admit known DefType, simple property, explicit/defaultless optional-parameter,
+  and simple ParamArray routes as their HIR facts land. The eligibility guard deliberately still
+  excludes surfaces whose HIR semantics are partial, including project rewrites, class/object-local
+  compatibility contexts, indexed property/default-member behavior, richer default expressions, and
+  broader optional call-entry combinations. The legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
   cleanup moves the public `compile_with_options` HIR attempt off `syntax_bridge` and calls HIR
   production lowering directly; only default non-`frontend_v2` mode falls back to legacy compile on

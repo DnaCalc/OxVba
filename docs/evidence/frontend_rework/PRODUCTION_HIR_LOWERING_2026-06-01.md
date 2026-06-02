@@ -204,13 +204,17 @@ lightweight HIR route:
   allows simple functions after that return-slot projection.
 
 DefType defaults, optional/default/ParamArray parameters, properties, project rewrites, and
-class/object-local compatibility contexts remain tracked residuals until their HIR facts and route
-proofs are complete.
+class/object-local compatibility contexts were tracked residuals at this point until their HIR facts
+and route proofs were complete.
 
 Follow-up FE-8.5.f route work narrows that residual: optional parameters with simple explicit
 defaults now remain eligible for the default HIR path and preserve optional/default signature
-metadata for otherwise completed single-source inputs. Richer default expressions and broader
-optional missing-state call-entry behavior remain outside the lightweight default route.
+metadata for otherwise completed single-source inputs. A later optional-parameter continuation also
+routes optional parameters without explicit defaults through HIR, preserving the existing
+`VariantMissingError448` / declared-type-default descriptor policy and omitted-argument call-site
+metadata. The default-route eligibility guard now also checks HIR/parsed signature parameter-name
+alignment so broader typed multi-parameter shapes with known HIR symbol misclassification remain on
+the residual fallback path. Richer default expressions remain outside the lightweight default route.
 Additional property-declaration work teaches HIR lowering to derive `Property Get`/`Property Let`
 procedure kinds from the HIR property record, preserve getter return-slot metadata, and bind the
 getter self-assignment name to that return slot. Same-module zero-argument `Property Get` reads now
@@ -223,7 +227,8 @@ Further FE-8.5.f route work moves the simple `ParamArray` declaration and positi
 shape onto the default HIR route. HIR lowering preserves the `ParamArray` signature role and
 call-site `ParamArrayPack` descriptor, and the existing named ParamArray-target diagnostic still
 fires after the route flip. This does not claim broad intrinsic coverage inside ParamArray callees,
-richer default expressions, or the broader optional/missing-state call-entry matrix.
+richer default expressions, or broader optional call-entry combinations beyond the focused omitted
+argument/default-state route.
 
 Follow-up ParamArray callee work resolves and lowers the built-in array-bound intrinsics
 `LBound`/`UBound` through HIR. The focused regression covers `UBound(items)` inside a ParamArray
@@ -238,7 +243,7 @@ bytecode, and verifies the existing `IntrinsicIsArrayTag`, `IntrinsicVarType`,
 `IntrinsicTypeNameTag`, `IntrinsicIsNumeric`, `IntrinsicIsDateTag`, `IntrinsicIsObjectTag`,
 `IntrinsicIsEmpty`, `IntrinsicIsNull`, and `IntrinsicIsError` instructions. At this point it was
 still not blanket intrinsic closure; multi-argument and host-sensitive callee intrinsics plus
-broader optional/missing-state entry behavior remained open.
+broader optional call-entry combinations remained open.
 
 Follow-up deterministic intrinsic work adds the string/search subset `Len`, `Left`, `Right`, `Mid`,
 `InStr`, `InStrRev`, `Replace`, and `StrComp` to the shared HIR built-in allowlist. The focused
