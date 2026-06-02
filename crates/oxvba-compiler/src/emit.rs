@@ -72,6 +72,20 @@ fn com_member_call_descriptor_for_dispatch_intrinsic(
     Some(ComMemberCallDescriptor { selector, arity })
 }
 
+fn dispatch_intrinsic_metadata(name: &str) -> Option<(bool, Option<ProjectMemberCallKind>)> {
+    if name.eq_ignore_ascii_case("dispatchinvoke") {
+        Some((false, None))
+    } else if name.eq_ignore_ascii_case("__OxVbaEarlyInvoke") {
+        Some((true, None))
+    } else if name.eq_ignore_ascii_case("__OxVbaEarlyPropertyLetInvoke") {
+        Some((true, Some(ProjectMemberCallKind::PropertyLet)))
+    } else if name.eq_ignore_ascii_case("__OxVbaEarlyPropertySetInvoke") {
+        Some((true, Some(ProjectMemberCallKind::PropertySet)))
+    } else {
+        None
+    }
+}
+
 fn project_member_call_descriptor_for_proc_name(
     proc_name: &str,
 ) -> Option<ProjectMemberCallDescriptor> {
@@ -3490,9 +3504,7 @@ fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescri
 fn expr_default_member_policy(expr: &BoundExpr) -> DefaultMemberPolicyDescriptor {
     match expr {
         BoundExpr::ProcCall { .. } => DefaultMemberPolicyDescriptor::ExplicitMember,
-        BoundExpr::IntrinsicCall { name, .. }
-            if matches!(name.as_str(), "dispatchinvoke" | "__oxvbaearlyinvoke") =>
-        {
+        BoundExpr::IntrinsicCall { name, .. } if dispatch_intrinsic_metadata(name).is_some() => {
             DefaultMemberPolicyDescriptor::Unknown
         }
         _ => DefaultMemberPolicyDescriptor::NotApplicable,
@@ -8177,8 +8189,7 @@ fn call_bound_type(
     if name.eq_ignore_ascii_case("createobject") {
         return BoundType::Object;
     }
-    if name.eq_ignore_ascii_case("dispatchinvoke")
-        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
+    if dispatch_intrinsic_metadata(name).is_some()
         || external_decls.contains_key(&name.to_ascii_lowercase())
     {
         return BoundType::Variant;
@@ -8225,9 +8236,7 @@ fn emit_early_call(
     call_site_descriptors: Option<&mut Vec<CallSiteDescriptor>>,
     current_proc_name: Option<&str>,
 ) -> bool {
-    if name.eq_ignore_ascii_case("dispatchinvoke")
-        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
-    {
+    if let Some((early_bound, call_kind_hint)) = dispatch_intrinsic_metadata(name) {
         return emit_dispatch_invoke_call(
             args,
             compare_mode,
@@ -8238,7 +8247,8 @@ fn emit_early_call(
             proc_meta,
             external_decls,
             assign_target,
-            name.eq_ignore_ascii_case("__OxVbaEarlyInvoke"),
+            early_bound,
+            call_kind_hint,
         );
     }
 
@@ -8676,6 +8686,7 @@ fn emit_dispatch_invoke_call(
     external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
     early_bound: bool,
+    call_kind_hint: Option<ProjectMemberCallKind>,
 ) -> bool {
     let [object, member, invoke_args @ ..] = args else {
         return false;
@@ -8736,7 +8747,7 @@ fn emit_dispatch_invoke_call(
         args: bytecode_args,
         early_bound,
         com_member,
-        call_kind_hint: None,
+        call_kind_hint,
     });
     true
 }
@@ -10622,7 +10633,11 @@ fn emit_expr_into(
                         prog_id: *prog_id,
                     })
                 }
-                ("dispatchinvoke" | "__oxvbaearlyinvoke", [object, member, args @ ..]) => {
+                (name, [object, member, args @ ..])
+                    if dispatch_intrinsic_metadata(name).is_some() =>
+                {
+                    let (early_bound, call_kind_hint) =
+                        dispatch_intrinsic_metadata(name).expect("checked above");
                     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
                         dst,
                         object: *object,
@@ -10634,9 +10649,9 @@ fn emit_expr_into(
                                 name: None,
                             })
                             .collect(),
-                        early_bound: name.eq_ignore_ascii_case("__OxVbaEarlyInvoke"),
+                        early_bound,
                         com_member: None,
-                        call_kind_hint: None,
+                        call_kind_hint,
                     })
                 }
                 ("__oxvba_com_subscribe_event", [object, event]) => {

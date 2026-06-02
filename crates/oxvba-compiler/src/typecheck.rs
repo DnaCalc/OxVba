@@ -42,6 +42,13 @@ fn lookup_casefold_name<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Optio
     })
 }
 
+fn is_dispatch_invoke_intrinsic(name: &str) -> bool {
+    name.eq_ignore_ascii_case("dispatchinvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyPropertyLetInvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyPropertySetInvoke")
+}
+
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
     let default_type_table = module.default_type_table;
@@ -889,9 +896,7 @@ fn validate_call_site(
     declaration_types: &mut HashMap<String, BoundType>,
     proc_context: &TypecheckProcContext<'_>,
 ) -> Result<BoundType, String> {
-    if name.eq_ignore_ascii_case("dispatchinvoke")
-        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
-    {
+    if is_dispatch_invoke_intrinsic(name) {
         return validate_dispatch_invoke_call_site(
             args,
             option_explicit,

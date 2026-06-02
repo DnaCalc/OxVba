@@ -1119,8 +1119,11 @@ Candidate bead units:
   `Set` into definitely scalar-typed value parameters; imported bare/indexed default-member
   assignment syntax now resolves through typelib metadata for the required `PropertyPut`/
   `PropertyPutRef` kind before rewrite, producing frontend/typelib diagnostics instead of backend
-  parse fallout when the imported type has no default setter and rewriting fixture-backed default
-  put/putref assignments to `DispatchInvoke` when default setter metadata exists.
+  parse fallout when the imported type has no default setter. Fixture-backed default put/putref
+  assignments now use accessor-specific internal early-invoke carriers and, for the
+  single-active-module type-library-only subset, compile the active module through the HIR-capable
+  boundary with early-bound COM dispatch-id metadata plus `PropertyLet`/`PropertySet` bytecode
+  hints instead of the legacy project backend.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

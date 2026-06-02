@@ -843,11 +843,14 @@ struct ProjectDynamicInstanceBindingDraft {
 }
 
 type ForcedObjectLocalsByProc = BTreeMap<String, BTreeSet<String>>;
-type LoweredProjectSource = (
-    String,
-    Vec<ProjectDynamicInstanceBindingDraft>,
-    ForcedObjectLocalsByProc,
-);
+
+#[derive(Debug, Clone)]
+struct LoweredProjectSource {
+    full_source: String,
+    active_project_source: String,
+    dynamic_instance_bindings: Vec<ProjectDynamicInstanceBindingDraft>,
+    forced_object_locals_by_proc: ForcedObjectLocalsByProc,
+}
 
 #[cfg(test)]
 fn hir_new_expression_bindings_from_dynamic_instances(
@@ -1207,9 +1210,25 @@ fn selected_project_lowering_strategy() -> ProjectLoweringStrategy {
 fn project_source_is_single_procedural_module_without_references(
     manifest: &ProjectManifest,
 ) -> bool {
-    manifest.reference_projects.is_empty()
+    manifest.references.is_empty()
+        && manifest.reference_projects.is_empty()
         && manifest.modules.len() == 1
         && manifest.modules[0].module_kind == ModuleKind::Procedural
+}
+
+fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
+    manifest: &ProjectManifest,
+) -> bool {
+    manifest.modules.len() == 1
+        && manifest.modules[0].module_kind == ModuleKind::Procedural
+        && manifest
+            .references
+            .iter()
+            .all(|reference| reference.reference_kind == ReferenceKind::TypeLibrary)
+        && manifest
+            .reference_projects
+            .iter()
+            .all(is_synthetic_typelib_reference_project)
 }
 
 fn compile_project_with_strategy(
@@ -1270,23 +1289,27 @@ fn compile_project_with_strategy(
         &project_symbol_index,
     )?;
 
-    let (rewritten_source, dynamic_instance_bindings, forced_object_locals_by_proc) =
-        lower_project_source(
-            strategy,
-            manifest,
-            &active_project,
-            &project_symbol_index,
-            &procedure_index,
-            &reference_order,
-            &event_dispatch_plan,
-        )?;
-    let rewritten_source = rewrite_predeclared_property_reads_for_backend(
-        &rewritten_source,
-        &collect_predeclared_property_read_rewrite_routes(
-            manifest,
-            &project_symbol_index,
-            &procedure_index,
-        )?,
+    let mut lowered_project_source = lower_project_source(
+        strategy,
+        manifest,
+        &active_project,
+        &project_symbol_index,
+        &procedure_index,
+        &reference_order,
+        &event_dispatch_plan,
+    )?;
+    let predeclared_property_read_routes = collect_predeclared_property_read_rewrite_routes(
+        manifest,
+        &project_symbol_index,
+        &procedure_index,
+    )?;
+    lowered_project_source.full_source = rewrite_predeclared_property_reads_for_backend(
+        &lowered_project_source.full_source,
+        &predeclared_property_read_routes,
+    );
+    lowered_project_source.active_project_source = rewrite_predeclared_property_reads_for_backend(
+        &lowered_project_source.active_project_source,
+        &predeclared_property_read_routes,
     );
 
     let has_class_modules = manifest
@@ -1294,10 +1317,13 @@ fn compile_project_with_strategy(
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let use_hir_capable_project_boundary =
-        project_source_is_single_procedural_module_without_references(manifest);
+        project_source_is_single_procedural_module_without_references(manifest)
+            || project_source_is_single_procedural_module_with_hir_safe_typelib_references(
+                manifest,
+            );
     let hir_construction_candidate = hir_construction_source_from_project_rewrites(
-        &rewritten_source,
-        &dynamic_instance_bindings,
+        &lowered_project_source.full_source,
+        &lowered_project_source.dynamic_instance_bindings,
     );
     let hir_construction_compile =
         hir_construction_candidate
@@ -1319,19 +1345,19 @@ fn compile_project_with_strategy(
             (compiled_source, compiled)
         } else if use_hir_capable_project_boundary {
             (
-                rewritten_source.clone(),
+                lowered_project_source.active_project_source.clone(),
                 compile_with_runtime_metadata_object_locals_class(
-                    &rewritten_source,
-                    &forced_object_locals_by_proc,
+                    &lowered_project_source.active_project_source,
+                    &lowered_project_source.forced_object_locals_by_proc,
                     has_class_modules,
                 ),
             )
         } else {
             (
-                rewritten_source.clone(),
+                lowered_project_source.full_source.clone(),
                 compile_with_runtime_metadata_legacy_object_locals_class(
-                    &rewritten_source,
-                    &forced_object_locals_by_proc,
+                    &lowered_project_source.full_source,
+                    &lowered_project_source.forced_object_locals_by_proc,
                     has_class_modules,
                 ),
             )
@@ -1356,7 +1382,7 @@ fn compile_project_with_strategy(
     let project_dynamic_objects = build_project_dynamic_object_routes(
         manifest,
         &project_symbol_index,
-        &dynamic_instance_bindings,
+        &lowered_project_source.dynamic_instance_bindings,
         &procedure_index,
         &procedure_runtime_metadata,
         &implements_map,
@@ -1366,6 +1392,10 @@ fn compile_project_with_strategy(
             message: format!("PMR-E-INTERNAL-CONTRACT: {message}"),
         })?;
     let public_rewritten_source = compiled_source
+        .replace("__OxVbaEarlyPropertyLetInvoke", "DispatchInvoke")
+        .replace("__oxvbaearlypropertyletinvoke", "dispatchinvoke")
+        .replace("__OxVbaEarlyPropertySetInvoke", "DispatchInvoke")
+        .replace("__oxvbaearlypropertysetinvoke", "dispatchinvoke")
         .replace("__OxVbaEarlyInvoke", "DispatchInvoke")
         .replace("__oxvbaearlyinvoke", "dispatchinvoke");
     let source_maps = build_compiler_source_map(manifest, &procedure_runtime_metadata);
@@ -1902,6 +1932,7 @@ fn lower_project_source(
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<LoweredProjectSource, ProjectCompileError> {
+    let mut active_project_lowered_modules = Vec::new();
     let mut lowered_modules = Vec::new();
     let mut next_internal_instance_id = 1i32;
     let mut dynamic_instance_bindings = Vec::new();
@@ -1934,6 +1965,7 @@ fn lower_project_source(
             &mut next_internal_instance_id,
             &mut dynamic_instance_bindings,
         )?;
+        active_project_lowered_modules.push(lowered.clone());
         lowered_modules.push(lowered);
         merge_forced_object_locals(&mut forced_object_locals_by_proc, object_locals);
     }
@@ -1960,11 +1992,12 @@ fn lower_project_source(
             merge_forced_object_locals(&mut forced_object_locals_by_proc, object_locals);
         }
     }
-    Ok((
-        lowered_modules.join("\n"),
+    Ok(LoweredProjectSource {
+        full_source: lowered_modules.join("\n"),
+        active_project_source: active_project_lowered_modules.join("\n"),
         dynamic_instance_bindings,
         forced_object_locals_by_proc,
-    ))
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5171,9 +5204,15 @@ fn rewrite_early_bound_property_assignment(
         .filter(|arg| !arg.is_empty())
         .collect::<Vec<_>>()
         .join(", ");
+    let invoke_carrier = if explicit_set {
+        "__OxVbaEarlyPropertySetInvoke"
+    } else {
+        "__OxVbaEarlyPropertyLetInvoke"
+    };
     Ok(format!(
-        "{}Call __OxVbaEarlyInvoke({}, {}, {})",
+        "{}Call {}({}, {}, {})",
         &line[..leading],
+        invoke_carrier,
         var_name,
         member_token,
         rendered_args
@@ -21909,6 +21948,29 @@ mod tests {
             .expect("imported default-member PropertyPut assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 14, 7, 11)"));
+        assert!(
+            !compiled
+                .rewritten_source
+                .contains(PROJECTED_TYPELIB_REFERENCE_MARKER),
+            "type-library-only active module should compile through the HIR-capable boundary without projected reference stubs"
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(14))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                )
+            }),
+            "imported default-member PropertyPut should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -21935,6 +21997,29 @@ mod tests {
             .expect("imported default-member PropertyPutRef assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 15, 8, other)"));
+        assert!(
+            !compiled
+                .rewritten_source
+                .contains(PROJECTED_TYPELIB_REFERENCE_MARKER),
+            "type-library-only active module should compile through the HIR-capable boundary without projected reference stubs"
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertySet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(15))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                )
+            }),
+            "imported default-member PropertyPutRef should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -30402,7 +30487,7 @@ mod tests {
             ("module-aware", ProjectLoweringStrategy::ModuleAwareBindPlan),
             ("rewrite-bridge", ProjectLoweringStrategy::RewriteBridge),
         ] {
-            let (rewritten_source, _, _) = super::lower_project_source(
+            let lowered_project_source = super::lower_project_source(
                 strategy,
                 &manifest,
                 &active_project,
@@ -30413,7 +30498,7 @@ mod tests {
             )
             .expect("lowering should succeed");
             let rewritten_source = super::rewrite_predeclared_property_reads_for_backend(
-                &rewritten_source,
+                &lowered_project_source.full_source,
                 &super::collect_predeclared_property_read_rewrite_routes(
                     &manifest,
                     &project_symbol_index,
