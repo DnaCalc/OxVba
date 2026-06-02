@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use crate::bytecode::Bytecode;
 use crate::emit::{ProcedureRuntimeMetadata, emit_bytecode_with_runtime_metadata};
@@ -330,11 +330,11 @@ fn lower_procedure(
     };
     let name = symbol_name(typed_hir, decl.symbol)?;
     let is_function = decl.cst.syntax_kind == "FunctionDecl";
-    let mut declarations = Vec::new();
-    let mut declaration_types = HashMap::new();
-    let mut array_descriptors = HashMap::new();
-    let mut dynamic_array_names = HashSet::new();
-    let mut fixed_array_bounds = HashMap::new();
+    let mut declarations: Vec<String> = Vec::new();
+    let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
+    let mut array_descriptors: HashMap<String, BoundArrayDescriptor> = HashMap::new();
+    let mut dynamic_array_names: HashSet<String> = HashSet::new();
+    let mut fixed_array_bounds: HashMap<String, Vec<(i32, i32)>> = HashMap::new();
     let mut bound_params = Vec::new();
     let udt_defs = collect_hir_udt_definitions(source);
     let mut udt_instances = HashMap::<String, String>::new();
@@ -343,6 +343,18 @@ fn lower_procedure(
         .as_ref()
         .map(|(params, _return_type)| params.clone())
         .unwrap_or_default();
+
+    for (module_name, module_type) in
+        collect_hir_module_scope_scalar_declarations(source, default_type_table)
+    {
+        if !declarations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&module_name))
+        {
+            declarations.push(module_name.clone());
+        }
+        declaration_types.insert(module_name, module_type);
+    }
 
     for param in params {
         let param_name = symbol_name(typed_hir, *param)?;
@@ -564,6 +576,179 @@ fn parsed_signature_for_hir_decl(
     let first_line = text.lines().next()?.trim();
     let (_name, params, return_type) = parse_proc_signature(first_line, kind, default_type_table)?;
     Some((params, return_type))
+}
+
+fn collect_hir_module_scope_scalar_declarations(
+    source: &str,
+    default_type_table: &[BoundType; 26],
+) -> Vec<(String, BoundType)> {
+    let mut declarations = BTreeMap::new();
+    let mut active_proc_end: Option<&'static str> = None;
+    let mut active_decl_block_end: Option<&'static str> = None;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+
+        if let Some(end_term) = active_proc_end {
+            if lower == end_term {
+                active_proc_end = None;
+            }
+            continue;
+        }
+
+        if let Some(end_term) = active_decl_block_end {
+            if lower == end_term {
+                active_decl_block_end = None;
+            }
+            continue;
+        }
+
+        if lower.starts_with("sub ")
+            || lower.starts_with("public sub ")
+            || lower.starts_with("private sub ")
+            || lower.starts_with("friend sub ")
+        {
+            active_proc_end = Some("end sub");
+            continue;
+        }
+        if lower.starts_with("function ")
+            || lower.starts_with("public function ")
+            || lower.starts_with("private function ")
+            || lower.starts_with("friend function ")
+        {
+            active_proc_end = Some("end function");
+            continue;
+        }
+        if lower.starts_with("property ")
+            || lower.starts_with("public property ")
+            || lower.starts_with("private property ")
+            || lower.starts_with("friend property ")
+        {
+            active_proc_end = Some("end property");
+            continue;
+        }
+        if lower.starts_with("type ")
+            || lower.starts_with("public type ")
+            || lower.starts_with("private type ")
+        {
+            active_decl_block_end = Some("end type");
+            continue;
+        }
+        if lower.starts_with("enum ")
+            || lower.starts_with("public enum ")
+            || lower.starts_with("private enum ")
+        {
+            active_decl_block_end = Some("end enum");
+            continue;
+        }
+
+        let Some(payload) = module_scope_scalar_declaration_payload(trimmed) else {
+            continue;
+        };
+        for (name, ty) in parse_module_scope_scalar_declarators(payload, default_type_table) {
+            declarations.entry(name).or_insert(ty);
+        }
+    }
+    declarations.into_iter().collect()
+}
+
+fn module_scope_scalar_declaration_payload(line: &str) -> Option<&str> {
+    let mut payload = line.trim();
+    let lower = payload.to_ascii_lowercase();
+    if lower.starts_with("dim ") {
+        return Some(payload[3..].trim_start());
+    }
+    for visibility in ["private", "public", "friend", "static"] {
+        let prefix = format!("{visibility} ");
+        if !lower.starts_with(&prefix) {
+            continue;
+        }
+        payload = payload[prefix.len()..].trim_start();
+        let payload_lower = payload.to_ascii_lowercase();
+        if payload_lower.starts_with("const ")
+            || payload_lower.starts_with("declare ")
+            || payload_lower.starts_with("sub ")
+            || payload_lower.starts_with("function ")
+            || payload_lower.starts_with("property ")
+            || payload_lower.starts_with("event ")
+            || payload_lower.starts_with("type ")
+            || payload_lower.starts_with("enum ")
+            || payload_lower.starts_with("withevents ")
+        {
+            return None;
+        }
+        if payload_lower.starts_with("dim ") {
+            payload = payload[3..].trim_start();
+        }
+        return Some(payload);
+    }
+    None
+}
+
+fn parse_module_scope_scalar_declarators(
+    payload: &str,
+    default_type_table: &[BoundType; 26],
+) -> Vec<(String, BoundType)> {
+    split_hir_declarators(payload)
+        .into_iter()
+        .filter_map(|declarator| {
+            parse_module_scope_scalar_declarator(declarator, default_type_table)
+        })
+        .collect()
+}
+
+fn split_hir_declarators(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' if !in_string => depth += 1,
+            ')' if !in_string && depth > 0 => depth -= 1,
+            ',' if !in_string && depth == 0 => {
+                parts.push(text[start..idx].trim());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(text[start..].trim());
+    parts
+}
+
+fn parse_module_scope_scalar_declarator(
+    declarator: &str,
+    default_type_table: &[BoundType; 26],
+) -> Option<(String, BoundType)> {
+    if declarator.is_empty() || declarator.contains('(') {
+        return None;
+    }
+    let lower = declarator.to_ascii_lowercase();
+    let (name_part, explicit_ty) = if let Some(as_pos) = lower.find(" as ") {
+        let ty_text = declarator[as_pos + " as ".len()..]
+            .trim_start()
+            .split_whitespace()
+            .next()?;
+        (&declarator[..as_pos], parse_hir_bound_type(ty_text))
+    } else {
+        (declarator, None)
+    };
+    let raw_name = name_part.trim();
+    let token = raw_name.split_whitespace().next()?;
+    let (name_token, type_char_ty) = match token.chars().next_back() {
+        Some(ch) if type_char_bound_type(ch).is_some() => (
+            &token[..token.len().saturating_sub(ch.len_utf8())],
+            type_char_bound_type(ch),
+        ),
+        _ => (token, None),
+    };
+    let name = normalize_hir_ident(name_token)?;
+    let ty = explicit_ty
+        .or(type_char_ty)
+        .unwrap_or_else(|| default_bound_type_for_name(&name, default_type_table));
+    Some((name, ty))
 }
 
 fn lower_stmt(
@@ -3509,6 +3694,50 @@ mod tests {
         assert_eq!(
             default_proc.declaration_types.get("alpha").copied(),
             Some(BoundType::Object)
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_applies_def_type_to_module_scope_scalar_declaration() {
+        let source = "DefLng A-Z\nDim alpha\nSub Main()\nalpha = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Module1", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert!(main.declarations.iter().any(|name| name == "alpha"));
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Long)
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_module_scope_scalar_type_precedence() {
+        let source =
+            "DefObj A-Z\nDim alpha%, beta As Long\nSub Main()\nalpha = 1\nbeta = 2\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Module1", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Integer)
+        );
+        assert_eq!(
+            main.declaration_types.get("beta").copied(),
+            Some(BoundType::Long)
         );
     }
 
