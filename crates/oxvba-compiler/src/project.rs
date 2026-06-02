@@ -22479,6 +22479,29 @@ mod tests {
             compile_project(&manifest).expect("property-put imported assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 7, 9)"));
+        assert!(
+            !compiled
+                .rewritten_source
+                .contains(PROJECTED_TYPELIB_REFERENCE_MARKER),
+            "type-library-only active module should compile named property-put through the HIR-capable boundary without projected reference stubs"
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(7))
+                        && com_member.arity == 1
+                        && args.len() == 1
+                )
+            }),
+            "imported named PropertyPut should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -22504,6 +22527,29 @@ mod tests {
             compile_project(&manifest).expect("property-putref imported assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 8, other)"));
+        assert!(
+            !compiled
+                .rewritten_source
+                .contains(PROJECTED_TYPELIB_REFERENCE_MARKER),
+            "type-library-only active module should compile named property-putref through the HIR-capable boundary without projected reference stubs"
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertySet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(8))
+                        && com_member.arity == 1
+                        && args.len() == 1
+                )
+            }),
+            "imported named PropertyPutRef should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -22529,6 +22575,23 @@ mod tests {
             .expect("indexed property-put imported assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 14, 7, 11)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(14))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                )
+            }),
+            "imported indexed PropertyPut should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -22555,6 +22618,23 @@ mod tests {
             .expect("named-argument indexed property-put imported assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 14, lhs := 7, value := 11)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(14))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                )
+            }),
+            "imported named indexed PropertyPut should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -22580,6 +22660,23 @@ mod tests {
             .expect("indexed property-putref imported assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 15, 8, other)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertySet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(15))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                )
+            }),
+            "imported indexed PropertyPutRef should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -22605,6 +22702,23 @@ mod tests {
             .expect("named-argument indexed property-putref imported assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("call dispatchinvoke(obj, 15, lhs := 8, value := other)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertySet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(15))
+                        && com_member.arity == 2
+                        && args.len() == 2
+                )
+            }),
+            "imported named indexed PropertyPutRef should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
