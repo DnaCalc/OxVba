@@ -259,7 +259,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
     let const_values = collect_const_values(source, typed_hir);
     let enum_descriptors = collect_hir_enum_descriptors(source);
     let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
-    let default_type_table = [BoundType::Variant; 26];
+    let default_type_table = crate::resolve::collect_default_type_table(&lines);
     let (external_procedures, external_declarations, external_diagnostics) =
         collect_declared_external_procedures(&lines, &default_type_table);
     if !external_diagnostics.is_empty() {
@@ -295,7 +295,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
         option_explicit: collect_option_explicit(&lines),
         is_class_module: false,
         compare_mode,
-        default_type_table: [BoundType::Variant; 26],
+        default_type_table,
         resolution_diagnostics: Vec::new(),
         declarations: Vec::new(),
         declaration_types: HashMap::new(),
@@ -450,7 +450,8 @@ fn lower_procedure(
         } else {
             declaration_types.insert(
                 local_name,
-                declared_bound_type(typed_hir, symbol.id).unwrap_or(BoundType::Variant),
+                declared_bound_type_or_default(source, typed_hir, symbol.id, default_type_table)
+                    .unwrap_or(BoundType::Variant),
             );
         }
     }
@@ -2511,6 +2512,101 @@ fn declared_bound_type(typed_hir: &TypedHirModule, symbol: SymbolId) -> Option<B
         .map(|hook| bound_type_from_vba_type_id(hook.runtime_type))
 }
 
+fn declared_bound_type_or_default(
+    source: &str,
+    typed_hir: &TypedHirModule,
+    symbol: SymbolId,
+    default_type_table: &[BoundType; 26],
+) -> Option<BoundType> {
+    let span = typed_hir.module.symbols.symbol(symbol)?.provenance.span?;
+    if let Some(ty) = explicit_bound_type_after_span(source, span) {
+        return Some(ty);
+    }
+    if let Some(ty) = type_char_bound_type_at_span(source, span) {
+        return Some(ty);
+    }
+    let name = symbol_name(typed_hir, symbol).ok()?;
+    Some(default_bound_type_for_name(&name, default_type_table))
+}
+
+fn explicit_bound_type_after_span(
+    source: &str,
+    span: crate::frontend_symbols::FrontendSourceSpan,
+) -> Option<BoundType> {
+    let suffix = source.get(span.end..)?;
+    let line_end = span.end + suffix.find('\n').unwrap_or(suffix.len());
+    let segment = source.get(span.end..line_end)?;
+    let segment = first_hir_declarator_tail(segment);
+    let lower = segment.to_ascii_lowercase();
+    let as_pos = lower.find(" as ")?;
+    let ty_text = segment
+        .get(as_pos + " as ".len()..)?
+        .trim_start()
+        .split(|ch: char| ch == ',' || ch == ')' || ch.is_whitespace())
+        .next()?;
+    parse_hir_bound_type(ty_text)
+}
+
+fn first_hir_declarator_tail(text: &str) -> &str {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' if !in_string => depth += 1,
+            ')' if !in_string && depth > 0 => depth -= 1,
+            ',' if !in_string && depth == 0 => return &text[..idx],
+            _ => {}
+        }
+    }
+    text
+}
+
+fn type_char_bound_type_at_span(
+    source: &str,
+    span: crate::frontend_symbols::FrontendSourceSpan,
+) -> Option<BoundType> {
+    let token = source.get(span.start..span.end)?.trim();
+    token
+        .chars()
+        .next_back()
+        .and_then(type_char_bound_type)
+        .or_else(|| {
+            source
+                .get(span.end..)?
+                .chars()
+                .next()
+                .and_then(type_char_bound_type)
+        })
+}
+
+fn type_char_bound_type(ch: char) -> Option<BoundType> {
+    match ch {
+        '%' => Some(BoundType::Integer),
+        '&' => Some(BoundType::Long),
+        '^' => Some(BoundType::LongLong),
+        '!' => Some(BoundType::Single),
+        '#' => Some(BoundType::Double),
+        '@' => Some(BoundType::Currency),
+        '$' => Some(BoundType::String),
+        _ => None,
+    }
+}
+
+fn default_bound_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> BoundType {
+    let Some(first) = name.chars().next() else {
+        return BoundType::Variant;
+    };
+    if !first.is_ascii_alphabetic() {
+        return BoundType::Variant;
+    }
+    let idx = (first.to_ascii_lowercase() as u8 - b'a') as usize;
+    default_type_table
+        .get(idx)
+        .copied()
+        .unwrap_or(BoundType::Variant)
+}
+
 fn hir_name_expr(
     typed_hir: &TypedHirModule,
     expr: HirExprId,
@@ -3267,6 +3363,88 @@ mod tests {
             .expect("HIR production lowering should produce bound module");
 
         assert!(bound.option_explicit);
+    }
+
+    #[test]
+    fn hir_production_lowering_applies_def_type_to_untyped_dim() {
+        let source = "DefLng A-Z\nSub Main()\nDim alpha\nalpha = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Long)
+        );
+        assert_eq!(bound.default_type_table[0], BoundType::Long);
+    }
+
+    #[test]
+    fn hir_production_lowering_type_char_overrides_def_type_for_dim() {
+        let source = "DefObj A-Z\nSub Main()\nDim alpha%\nalpha = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Integer)
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_explicit_as_variant_overrides_def_type_for_dim() {
+        let source = "DefLng A-Z\nSub Main()\nDim alpha As Variant\nalpha = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Variant)
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_later_declarator_as_type_does_not_bleed_to_prior_dim() {
+        let source =
+            "DefObj A-Z\nSub Main()\nDim alpha, beta As Long\nalpha = Nothing\nbeta = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Object)
+        );
+        assert_eq!(
+            main.declaration_types.get("beta").copied(),
+            Some(BoundType::Long)
+        );
     }
 
     #[test]

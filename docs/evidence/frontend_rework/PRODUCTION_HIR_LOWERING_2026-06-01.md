@@ -313,8 +313,12 @@ disqualify otherwise completed HIR-default sources. HIR lowering now reuses the 
 compare collector and emits text comparison bytecode (`StringCompareMode::Text`) for string
 comparisons under `Option Compare Text`. Follow-up FE-8.5.e work also preserves the
 `Option Explicit` flag in the HIR-bound module and adds production route-audit coverage for an
-otherwise completed `Option Explicit` source. Other `Option` forms remain outside the lightweight
-default route until HIR owns their semantics (database compare mode and module privacy).
+otherwise completed `Option Explicit` source. The HIR lowerer now reuses the compiler DefType
+default table collector, with route-audit coverage for `DefLng A-Z` applying to a local untyped
+`Dim`.
+Other `Option` forms remain outside the lightweight default route until HIR owns their semantics
+(database compare mode and module privacy), and broader DefType surfaces for parameters, functions,
+and module members remain open.
 
 ## Member Expression Continuation
 

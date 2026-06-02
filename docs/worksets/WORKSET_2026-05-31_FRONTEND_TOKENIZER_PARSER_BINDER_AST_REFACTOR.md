@@ -634,7 +634,8 @@ Required newly explicit delivery beads:
   compilation/compile constants, and richer constant evaluation. Partial work already done:
   `Option Explicit` HIR-bound module flag plus route audit, `Option Base 0/1`,
   `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, simple constants, enum
-  constants, and same-statement constant expression substitution.
+  constants, basic DefType default-table preservation for local untyped `Dim`, and same-statement
+  constant expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1165,7 +1166,8 @@ Candidate bead units:
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
   work has already been done: `Option Explicit` HIR-bound module flag plus route audit,
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, enum
-  constants, and simple same-statement constant expressions.
+  constants, basic DefType default-table preservation for local untyped `Dim`, and simple
+  same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:

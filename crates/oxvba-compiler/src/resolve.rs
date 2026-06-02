@@ -6572,7 +6572,7 @@ fn parse_option_compare_directive(line: &str) -> Option<BoundCompareMode> {
     }
 }
 
-fn collect_default_type_table(lines: &[String]) -> [BoundType; 26] {
+pub(crate) fn collect_default_type_table(lines: &[String]) -> [BoundType; 26] {
     let mut table = [BoundType::Variant; 26];
     for line in lines {
         if let Some((ty, indices)) = parse_def_type_directive(line) {
