@@ -993,10 +993,12 @@ audit self-consistent.
 Follow-up corpus-audit broadening makes the FE-5 seed corpus reusable outside the diff test module
 and adds a route audit over source-backed `CompilerUnit` / `ConformanceCase` rows. The current seed
 rows `examples/basic/arithmetic.bas`, `conformance/tests/call_coercion_mixed_variant_to_long.bas`,
-and the inline statement-separator improvement fixture must classify as HIR production. Current
-`HostProject` and `ExcelOracle` seed rows remain explicitly skipped because they require project,
-VM, host, or oracle runners rather than the single-source production-route classifier; therefore
-the corpus route audit's terminal gate remains open while its source-backed gate passes.
+and the inline statement-separator improvement fixture must classify as HIR production. A narrow
+project-entry continuation also promotes the `conformance/integration/projects/INTP-001` seed row:
+its single procedural module source must classify as HIR production and compile through
+`compile_project(...)`. The `ExcelOracle` seed row remains explicitly skipped because it requires
+an external oracle runner rather than the compiler/project route classifiers; therefore the corpus
+route audit's terminal gate remains open while its source-backed gate passes.
 
 ## Bang Member Read Continuation
 

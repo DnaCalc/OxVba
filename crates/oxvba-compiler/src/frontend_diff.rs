@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::{
     Bytecode, CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy,
     frontend_hir_lowering,
+    project::{ModuleKind, ProjectKind, ProjectManifest, compile_project, module_unit_from_source},
     resolve::apply_conditional_compilation_to_source,
     syntax_bridge::{SyntaxBridgeProductionRoute, production_route_for_source},
 };
@@ -501,6 +502,9 @@ fn frontend_corpus_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusR
     let Some(source) = fixture.source.as_deref() else {
         return skipped_corpus_route_row(fixture, "fixture has no inline source for route audit");
     };
+    if fixture.class == FrontendCorpusClass::HostProject {
+        return host_project_corpus_route_row(fixture, source);
+    }
     if !matches!(
         fixture.class,
         FrontendCorpusClass::CompilerUnit | FrontendCorpusClass::ConformanceCase
@@ -533,6 +537,72 @@ fn frontend_corpus_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusR
             class: fixture.class,
             status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
             evidence: format!("route classification failed: {err}"),
+        },
+    }
+}
+
+fn host_project_corpus_route_row(
+    fixture: &FrontendCorpusFixture,
+    source: &str,
+) -> FrontendCorpusRouteRow {
+    let route_source = apply_conditional_compilation_to_source(source);
+    match production_route_for_source(&route_source) {
+        Ok(SyntaxBridgeProductionRoute::HirProduction) => {}
+        Ok(SyntaxBridgeProductionRoute::HirUnsupportedResidual) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: "host project module source classified as HIR unsupported residual"
+                    .to_string(),
+            };
+        }
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("host project module route classification failed: {err}"),
+            };
+        }
+    }
+
+    let module = match module_unit_from_source("Main", ModuleKind::Procedural, source) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("host project module parse failed: {err}"),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: fixture.name.clone(),
+        project_kind: ProjectKind::Source,
+        modules: vec![module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(_) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::HirProduction,
+            evidence: "single-module host project source classified as HIR production and compiled through project entry point".to_string(),
+        },
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("host project compile failed: {err}"),
         },
     }
 }
@@ -1352,7 +1422,7 @@ mod tests {
         assert!(!report.terminal_gate_passed(), "{report:#?}");
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert!(report.fallback_residuals().is_empty(), "{report:#?}");
-        assert_eq!(report.skipped_residuals().len(), 2, "{report:#?}");
+        assert_eq!(report.skipped_residuals().len(), 1, "{report:#?}");
         assert_eq!(report.rows.len(), 5, "{report:#?}");
         assert_eq!(
             report
@@ -1360,7 +1430,7 @@ mod tests {
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            3,
+            4,
             "{report:#?}"
         );
         assert_eq!(
@@ -1369,7 +1439,7 @@ mod tests {
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::SkippedResidual)
                 .count(),
-            2,
+            1,
             "{report:#?}"
         );
         assert!(report.rows.iter().any(|row| {
@@ -1378,8 +1448,8 @@ mod tests {
         }));
         assert!(report.rows.iter().any(|row| {
             row.name == "integration_host_project_residual"
-                && row.status == FrontendCorpusRouteStatus::SkippedResidual
-                && row.evidence.contains("requires VM")
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("project entry point")
         }));
     }
 

@@ -662,8 +662,10 @@ Required newly explicit delivery beads:
   test; the FE-5 seed corpus now has a route audit for source-backed compiler/conformance rows,
   currently proving `examples/basic/arithmetic.bas`,
   `conformance/tests/call_coercion_mixed_variant_to_long.bas`, and the inline statement-separator
-  improvement fixture route as HIR production. Remaining work: broaden the audit beyond the seed
-  rows, and add host-project/language-service/Excel-oracle route runners instead of skipped
+  improvement fixture route as HIR production, and the single-module `INTP-001` host-project seed
+  row now classifies its module source as HIR production and compiles it through `compile_project`.
+  Remaining work: broaden the audit beyond the seed rows, add multi-module/reference host-project
+  and language-service route runners, and add an Excel-oracle route runner instead of skipped
   residual rows. This bead must reopen the owning delivery bead for every accepted in-scope row that
   still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
