@@ -1262,19 +1262,16 @@ Candidate bead units:
   lane selection for non-host libraries on native-FFI targets. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
   `Line Input #`. Follow-up console line-input routing covers `Line Input target` through existing
-  host bytecode, still without claiming file `Line Input #`. Follow-up file-close routing covers
-  `Close #handle` and `Close` through existing host bytecode; `Open`, file `Print #`, `Write #`,
-  `Input #`, and file `Line Input #` remain open. Follow-up file-print routing covers simple
-  `Print #handle, data` through existing host bytecode. Follow-up file-write routing covers simple
-  `Write #handle, item[, ...]` through existing host bytecode, including multi-item writes.
-  Follow-up file-input routing covers `Input #handle, target[, ...]` through existing host bytecode,
-  including multi-target input. Follow-up file-line-input routing covers `Line Input #handle,
-  target` through existing host bytecode. Follow-up file-open routing covers `Open path For mode As
-  #handle` through existing host bytecode for simple path/handle expressions and the existing mode
-  set. Follow-up expression routing covers `Mod`, integer division, and `Like` through existing
-  bytecode paths. Follow-up no-argument call routing covers `Call <procedure>` statements as
-  zero-argument calls through HIR. The `Array(...)` helper proof is not array storage/indexing/
-  `ReDim` closure; that remains in FE-8.5.d.
+  host bytecode, still without claiming file `Line Input #` at that point. Follow-up file-handle
+  routing now covers `Close #handle`, `Close`, simple `Print #handle, data`,
+  `Write #handle, item[, ...]`, `Input #handle, target[, ...]`, `Line Input #handle, target`, and
+  `Open path For mode As #handle` through existing host bytecode. The audited surface is the simple
+  path/handle/target-expression and existing `Input`/`Output`/`Append`/`Binary`/`Random` mode set;
+  broader VBA file I/O options and host behavior remain outside this claim. Follow-up expression
+  routing covers `Mod`, integer division, and `Like` through existing bytecode paths. Follow-up
+  no-argument call routing covers `Call <procedure>` statements as zero-argument calls through HIR.
+  The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
+  FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
