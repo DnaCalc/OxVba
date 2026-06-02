@@ -528,6 +528,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let declared_external_ordinal_alias_call = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#0007\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
+    findings.push(route_finding(
+        "declared external ordinal alias call fixture",
+        declared_external_ordinal_alias_call,
+        "bd-aprs.9.5",
+    ));
+
     let declared_external_sub_call = "Declare PtrSafe Sub HostTap Lib \"host\" Alias \"tap\" (ByVal x As Long)\nSub Main()\nCall HostTap(3)\nEnd Sub\n";
     findings.push(route_finding(
         "declared external Sub call fixture",

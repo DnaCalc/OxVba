@@ -703,6 +703,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
   includes a declared external Sub fixture.
 - Follow-up ByRef declaration proof confirms `Declare PtrSafe Sub ... (ByRef x As Long)` calls
   preserve the existing `ExternalCallWritebackKind::ByRefValue` metadata through HIR lowering.
+- Follow-up ordinal-alias declaration proof confirms `Declare PtrSafe Function ... Alias "#0007"`
+  normalizes to `#7`, keeps `ordinal_alias`, preserves the ordinal selection policy, and remains
+  on the audited HIR production route.
 - Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
   default compiler path can keep them on the tracked fallback/diagnostic surface.
 

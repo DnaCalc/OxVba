@@ -6581,6 +6581,28 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_preserves_declared_external_ordinal_alias() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#0007\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert_eq!(bytecode.external_call_descriptors.len(), 1);
+        let descriptor = &bytecode.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name, "hostping");
+        assert_eq!(descriptor.library, "host");
+        assert_eq!(descriptor.alias, "#7");
+        assert!(descriptor.ordinal_alias, "{descriptor:#?}");
+        assert_eq!(descriptor.selection_policy, "ordinal-literal-canonical");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 1
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
     fn hir_production_lowering_rejects_declare_without_ptrsafe_for_fallback() {
         let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
         let err = compile_source_with_runtime_metadata_via_hir(source)
