@@ -386,6 +386,17 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             close_condition: String::new(),
         },
         FrontendCorpusFixture {
+            name: "integration_imported_typelib_scripting_dictionary".to_string(),
+            fixture_path: "inline:Scripting.Dictionary imported typelib route".to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
             name: "integration_predeclared_document_project".to_string(),
             fixture_path: "inline:ThisWorkbook predeclared document reference route".to_string(),
             class: FrontendCorpusClass::HostProject,
@@ -673,6 +684,9 @@ fn host_project_corpus_route_row(
     }
     if fixture.name == "integration_imported_typelib_testdispatch" {
         return imported_typelib_testdispatch_route_row(fixture);
+    }
+    if fixture.name == "integration_imported_typelib_scripting_dictionary" {
+        return imported_typelib_scripting_dictionary_route_row(fixture);
     }
     if fixture.name == "integration_predeclared_document_project" {
         return predeclared_document_project_route_row(fixture);
@@ -1312,6 +1326,73 @@ fn imported_typelib_testdispatch_route_row(
             class: fixture.class,
             status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
             evidence: format!("imported OxVba.TestDispatch project compile failed: {err}"),
+        },
+    }
+}
+
+fn imported_typelib_scripting_dictionary_route_row(
+    fixture: &FrontendCorpusFixture,
+) -> FrontendCorpusRouteRow {
+    let main = match module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New Scripting.Dictionary\nDim countValue\ncountValue = obj.Count()\nEnd Sub",
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!(
+                    "Scripting.Dictionary imported typelib route module parse failed: {err}"
+                ),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: "ScriptingDictionaryRoute".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main],
+        references: vec![crate::ProjectReference {
+            referenced_project_name: "Scripting".to_string(),
+            reference_kind: crate::ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "imported Scripting.Dictionary project compiled through {:?}{}; imported COM HIR project boundary remains open",
+                        compiled.compile_route,
+                        render_project_route_detail(&compiled.compile_route_detail)
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence:
+                    "imported Scripting.Dictionary project compiled through HIR production project boundary"
+                        .to_string(),
+            }
+        }
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("imported Scripting.Dictionary project compile failed: {err}"),
         },
     }
 }
@@ -2094,7 +2175,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 9, "{report:#?}");
+        assert_eq!(report.skipped_count, 10, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -2274,14 +2355,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert_eq!(report.fallback_residuals().len(), 0, "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 0, "{report:#?}");
-        assert_eq!(report.rows.len(), 12, "{report:#?}");
+        assert_eq!(report.rows.len(), 13, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            12,
+            13,
             "{report:#?}"
         );
         assert_eq!(
@@ -2340,6 +2421,11 @@ mod tests {
             row.name == "integration_imported_typelib_testdispatch"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("imported OxVba.TestDispatch")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_imported_typelib_scripting_dictionary"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("imported Scripting.Dictionary")
         }));
         assert!(report.rows.iter().any(|row| {
             row.name == "integration_predeclared_document_project"

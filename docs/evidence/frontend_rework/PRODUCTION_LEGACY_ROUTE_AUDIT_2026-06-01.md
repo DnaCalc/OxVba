@@ -62,6 +62,14 @@ The audit proves the good path and exposes the remaining production residuals:
   diagnostics, signature help, and the PtrSafe quick-fix diagnostic; `semantic.rs` no longer builds
   a legacy `BoundModule` fallback when HIR binding is unavailable.
 
+Continuation update: the FE-9.7 seed-corpus route audit now includes a second imported typelib
+projection row beyond the controlled `OxVba.TestDispatch` fixture. The inline
+`Scripting.Dictionary` early-bound project (`Dim obj As New Scripting.Dictionary`;
+`countValue = obj.Count()`) compiles through the HIR production project boundary with a
+`ReferenceKind::TypeLibrary` reference to `Scripting`, so imported COM route evidence now covers
+both the OxVba-controlled typelib and a known external/registered ProgID projection shape. This is
+still route evidence, not live COM execution or full Office/versioned/broken-reference parity.
+
 This audit no longer finds the previously tracked scoped production route residuals. The broader
 workset still remains open for unaudited language surfaces and full terminal evidence, but this
 specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
@@ -131,3 +139,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - The next step is broader terminal evidence and expansion of the route-audit fixture set, plus
   deletion or compatibility quarantine of remaining project rewrite carriers, not claiming complete
   compiler front-end replacement from this audit alone.
+- Imported COM route evidence now covers both `OxVba.TestDispatch` and `Scripting.Dictionary`
+  projected typelib references through HIR production. Broader imported COM work remains open for
+  live COM execution, Office typelib/version/broken-reference behavior, richer member/property
+  families, and any residual helper-source rewrite paths that are not yet owned by front-end facts.
