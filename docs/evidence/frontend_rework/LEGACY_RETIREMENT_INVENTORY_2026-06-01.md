@@ -17,8 +17,9 @@ Rows now distinguish:
   `frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir`;
 - quarantined compatibility fallback: default `compile_with_options` now tries HIR production
   lowering directly, then falls back to the existing resolver/lowering path when HIR production
-  lowering reports `Unsupported`; explicit `frontend_v2` mode reports HIR unsupported as a
-  front-end error instead of falling back;
+  lowering reports `Unsupported`; FE-9.8 cleanup makes that fallback delegate directly to the
+  explicit `compile_with_runtime_metadata_legacy(...)` helper instead of re-entering `compile(...)`;
+  explicit `frontend_v2` mode reports HIR unsupported as a front-end error instead of falling back;
 - quarantined broad resolver parsing: `resolve::parse_expr` still exists inside the legacy
   production resolver and remains a terminal-audit residual, even though scoped HIR fixtures bypass
   it;
@@ -62,6 +63,7 @@ records this CST bridge path as `Replaced`, not a quarantined production residua
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
+- `cargo test -p oxvba-compiler compile_options_default_uses_explicit_legacy_helper_for_unsupported_residuals --quiet`
 - `cargo test -p oxvba-compiler bundle_fact_bound_module_route --quiet`
 - `cargo test -p oxvba-compiler syntax_bridge --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`

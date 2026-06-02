@@ -167,7 +167,9 @@ pub fn compile_with_options(
     }
     match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
         Ok((bytecode, _)) => Ok(bytecode),
-        Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => compile(source),
+        Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => {
+            compile_with_runtime_metadata_legacy(source).map(|(bytecode, _)| bytecode)
+        }
         Err(frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => Err(err),
     }
 }
@@ -1075,6 +1077,28 @@ mod tests {
         assert_eq!(
             hir.1, defaulted.1,
             "runtime metadata should come from the HIR production route for completed constructs"
+        );
+    }
+
+    #[test]
+    fn compile_options_default_uses_explicit_legacy_helper_for_unsupported_residuals() {
+        let source = "Sub Main()\nDim obj As Object\nSet obj = New Widget\nEnd Sub\n";
+        let strict =
+            super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+                .expect_err("strict frontend_v2 should reject unsupported residual");
+        assert!(
+            strict.to_string().contains("frontend_v2 HIR unsupported"),
+            "unexpected strict error: {strict}"
+        );
+
+        let legacy = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy helper should own the residual result");
+        let defaulted = super::compile_with_options(source, super::CompileOptions::default())
+            .expect_err("default compile should fall back to explicit legacy helper");
+        assert_eq!(
+            legacy.to_string(),
+            defaulted.to_string(),
+            "unsupported residual fallback error should match the explicit legacy helper"
         );
     }
 

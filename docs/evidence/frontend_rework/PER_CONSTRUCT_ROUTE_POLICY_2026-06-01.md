@@ -21,6 +21,11 @@ Fallback is retained for tracked residuals when the frontend route reports an un
 but completed constructs no longer require an explicit `frontend_v2: true` option and no longer
 enter the legacy resolver first through the lightweight compile API.
 
+FE-9.8 cleanup makes the default `compile_with_options(..., CompileOptions::default())` unsupported
+fallback delegate directly to `compile_with_runtime_metadata_legacy(...)` instead of re-entering
+`compile(...)` and retrying the default HIR route before reaching legacy behavior. Strict
+`frontend_v2: true` still reports HIR unsupported as a front-end error.
+
 Eligibility is deliberately narrower than "anything HIR can currently parse", but the original
 exclusion list has been narrowed by later FE-8.5 delivery. The lightweight default HIR route now
 admits known DefType directives, `Option Compare Binary`/`Text`/`Database` (with the current
@@ -37,6 +42,7 @@ tracked residual constructs still fall back rather than accepting partial HIR ou
 
 - `cargo test -p oxvba-compiler frontend_route_policy --quiet`
 - `cargo test -p oxvba-compiler compile_options_default --quiet`
+- `cargo test -p oxvba-compiler compile_options_default_uses_explicit_legacy_helper_for_unsupported_residuals --quiet`
 - `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
@@ -47,9 +53,9 @@ tracked residual constructs still fall back rather than accepting partial HIR ou
 
 - This remains construct-scoped, not a false whole-compiler flip. The route policy leaves project
   semantics as the named residual, while the default compile-with-options path tries frontend-v2 and
-  only falls back for explicitly unsupported residual constructs. The same is now true for the
-  lightweight runtime-metadata compile path when no object-local/class-module compatibility context
-  is supplied.
+  only falls back for explicitly unsupported residual constructs through the explicit legacy helper.
+  The same HIR-first policy is now true for the lightweight runtime-metadata compile path when no
+  object-local/class-module compatibility context is supplied.
 - The first attempt made the HIR default too broad and let partial HIR output bypass legacy DefType,
   optional-argument, function-return, and project-rewrite semantics. Later slices moved the
   completed DefType, function-return, optional/default, ParamArray, property, option, constant, and

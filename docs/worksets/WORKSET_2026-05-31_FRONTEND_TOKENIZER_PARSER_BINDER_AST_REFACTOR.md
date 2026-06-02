@@ -1413,10 +1413,12 @@ Candidate bead units:
   accepted surface. Follow-up FE-9 syntax-bridge cleanup makes `syntax_bridge` crate-private and
   test-gates its CST-to-legacy helpers; a continuation marks that CST bridge path as replaced in
   the retirement inventory, so current production routes must enter through HIR lowering or
-  explicit route-audit support. Follow-up correction narrows the project audit evidence to the
-  executable active-project construction route; remaining `parse_expr`, fallback, bundle
-  `resolve_symbols`, and `project.rs` helper-source carriers stay open here until deleted or
-  compatibility-quarantined with route proof.
+  explicit route-audit support. FE-9.8 fallback cleanup makes default `compile_with_options`
+  unsupported fallback call the explicit legacy helper directly instead of re-entering `compile()`.
+  Follow-up correction narrows the project audit evidence to the executable active-project
+  construction route; remaining `parse_expr`, fallback, bundle `resolve_symbols`, and `project.rs`
+  helper-source carriers stay open here until deleted or compatibility-quarantined with route
+  proof.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is
