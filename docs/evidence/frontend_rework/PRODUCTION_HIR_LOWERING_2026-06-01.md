@@ -1062,11 +1062,17 @@ constant expressions:
   text is integer-looking (`Const CDouble# = 2`). Coverage proves direct HIR lowering, default-route
   HIR selection, route audit, and VM execution for Integer, Long, LongLong, Single, Double,
   Currency, and String suffix constants.
+- An eleventh focused typed-coercion pass extends declared `Single` constants from literal-only
+  carriers to the same bounded numeric expression/source-prior evaluator used by the other covered
+  exact numeric carriers. `Const CBase As Double = 1.25` followed by `Const CTotal As Single =
+  CBase + 0.25` now materializes as `LoadConstF32` / `Variant::from_f32(1.5)` through direct HIR,
+  default-route, route-audit, and VM execution paths.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
   beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
   source-prior constants and the already handled enum/literal/type-character route, plus typed
-  constant coercion and full `LongPtr` platform semantics, remain future FE-8.5 work.
+  constant coercion outside the covered exact numeric carrier subset and full `LongPtr` platform
+  semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
