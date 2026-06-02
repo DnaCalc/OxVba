@@ -397,12 +397,16 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             close_condition: String::new(),
         },
         FrontendCorpusFixture {
-            name: "excel_oracle_residual".to_string(),
-            fixture_path:
-                "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
-                    .to_string(),
+            name: "excel_oracle_activation_smoke".to_string(),
+            fixture_path: "conformance/com/office/excel/excel_application_activation_smoke.bas"
+                .to_string(),
             class: FrontendCorpusClass::ExcelOracle,
-            source: None,
+            source: Some(
+                include_str!(
+                    "../../../conformance/com/office/excel/excel_application_activation_smoke.bas"
+                )
+                .to_string(),
+            ),
             expected_bytecode_drift: None,
             expected_diagnostic_drift: None,
             expected_metadata_drift: None,
@@ -585,6 +589,33 @@ fn frontend_corpus_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusR
     let Some(source) = fixture.source.as_deref() else {
         return skipped_corpus_route_row(fixture, "fixture has no inline source for route audit");
     };
+    if fixture.class == FrontendCorpusClass::ExcelOracle {
+        let route_source = apply_conditional_compilation_to_source(source);
+        return match production_route_for_source(&route_source) {
+            Ok(SyntaxBridgeProductionRoute::HirProduction) => FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "Excel oracle source fixture classified as HIR production; live Excel execution remains environment-dependent".to_string(),
+            },
+            Ok(SyntaxBridgeProductionRoute::HirUnsupportedResidual) => FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: "Excel oracle source fixture classified as HIR unsupported residual"
+                    .to_string(),
+            },
+            Err(err) => FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("Excel oracle source fixture route classification failed: {err}"),
+            },
+        };
+    }
     if !matches!(
         fixture.class,
         FrontendCorpusClass::CompilerUnit | FrontendCorpusClass::ConformanceCase
@@ -2235,14 +2266,14 @@ mod tests {
     }
 
     #[test]
-    fn frontend_corpus_route_audit_routes_source_backed_rows_and_skips_residuals() {
+    fn frontend_corpus_route_audit_routes_seed_rows_without_residuals() {
         let fixtures = frontend_rework_seed_corpus();
         let report = run_frontend_corpus_route_audit(&fixtures);
 
-        assert!(!report.terminal_gate_passed(), "{report:#?}");
+        assert!(report.terminal_gate_passed(), "{report:#?}");
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert_eq!(report.fallback_residuals().len(), 0, "{report:#?}");
-        assert_eq!(report.skipped_residuals().len(), 1, "{report:#?}");
+        assert_eq!(report.skipped_residuals().len(), 0, "{report:#?}");
         assert_eq!(report.rows.len(), 12, "{report:#?}");
         assert_eq!(
             report
@@ -2250,7 +2281,7 @@ mod tests {
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            11,
+            12,
             "{report:#?}"
         );
         assert_eq!(
@@ -2268,7 +2299,7 @@ mod tests {
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::SkippedResidual)
                 .count(),
-            1,
+            0,
             "{report:#?}"
         );
         assert!(report.rows.iter().any(|row| {
@@ -2314,6 +2345,11 @@ mod tests {
             row.name == "integration_predeclared_document_project"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("predeclared document project")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "excel_oracle_activation_smoke"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("Excel oracle source fixture")
         }));
     }
 

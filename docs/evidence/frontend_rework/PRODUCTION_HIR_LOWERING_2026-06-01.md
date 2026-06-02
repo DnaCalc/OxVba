@@ -996,9 +996,10 @@ rows `examples/basic/arithmetic.bas`, `conformance/tests/call_coercion_mixed_var
 and the inline statement-separator improvement fixture must classify as HIR production. A narrow
 project-entry continuation also promotes the `conformance/integration/projects/INTP-001` seed row:
 its single procedural module source must classify as HIR production and compile through
-`compile_project(...)`. The `ExcelOracle` seed row remains explicitly skipped because it requires
-an external oracle runner rather than the compiler/project route classifiers; therefore the corpus
-route audit's terminal gate remains open while its source-backed gate passes.
+`compile_project(...)`. The Excel oracle source fixture
+`conformance/com/office/excel/excel_application_activation_smoke.bas` now participates in the route
+audit and must classify as HIR production; live Excel oracle execution remains a higher-layer,
+environment-dependent lane outside the compiler route classifier.
 
 The language-service corpus continuation now consumes the same seed corpus for source-backed
 `CompilerUnit`, `ConformanceCase`, and the narrow `HostProject` row. Those sources must build
@@ -1029,8 +1030,9 @@ broader class/document semantics, and host/oracle-backed project semantics remai
 The audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM
 route: `Dim obj As New OxVba.TestDispatch` rewrites through imported activation/member metadata and
 compiles through `ProjectCompileRoute::HirProduction`. The source-backed route gate now passes; the
-terminal route gate remains open for the skipped Excel oracle row and broader uncovered project
-routes.
+selected route audit now has no skipped residual rows after adding the Excel oracle source fixture
+as an HIR-production route. Broader uncovered project routes and live host/oracle execution remain
+open work outside the selected route gate.
 Language-service workspace coverage now loads matching seed-route project manifests: `INTP-003`
 proves referenced-project exports surface through workspace symbols with `ProjectReference`
 provenance, and `INTP-016` proves active class members surface from the class project workspace

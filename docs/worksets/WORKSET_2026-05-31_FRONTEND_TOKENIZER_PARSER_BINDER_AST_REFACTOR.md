@@ -675,14 +675,17 @@ Required newly explicit delivery beads:
   helpers; route-audit HIR-production rows must assert `ProjectCompileRoute::HirProduction`. The
   audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM
   HIR-production route and `integration_predeclared_document_project` as a source-backed
-  predeclared `ThisWorkbook` document route, so the source-backed route gate now passes. Language-service
+  predeclared `ThisWorkbook` document route, plus `excel_oracle_activation_smoke` as a source-backed Excel
+  fixture route that classifies as HIR production; the selected route audit now has no skipped
+  residual rows. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
   from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, broaden
   document/host semantics beyond the `ThisWorkbook.Path` seed route, broaden imported COM beyond
   the `TestDispatch` seed route, cover broader class and deeper cross-workspace language-service
-  route runners, and add an Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
+  route runners, and add live Excel-oracle execution evidence for environment-dependent behavior
+  beyond source-route classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
