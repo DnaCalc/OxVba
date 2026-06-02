@@ -1067,6 +1067,10 @@ constant expressions:
   exact numeric carriers. `Const CBase As Double = 1.25` followed by `Const CTotal As Single =
   CBase + 0.25` now materializes as `LoadConstF32` / `Variant::from_f32(1.5)` through direct HIR,
   default-route, route-audit, and VM execution paths.
+- A companion coverage hardening pass upgrades the representative declared `Double` route from a
+  literal-only fixture to the same source-prior expression shape: `Const CBase As Long = 1` followed
+  by `Const CTotal As Double = CBase + 0.5`. Direct HIR, default-route, route-audit, and VM
+  execution coverage now prove `LoadConstF64` for the expression route, not just the literal route.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
   beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
