@@ -728,7 +728,9 @@ Required newly explicit delivery beads:
   carriers. String constant-expression defaults using `&` over literals
   and module constants now also evaluate into explicit string carriers, and Boolean constant
   expressions over literals/module constants plus `Not`/`And`/`Or` evaluate into explicit Boolean
-  carriers; broader typed coercion, comparison defaults, and expression expansion remain open. The
+  carriers. Bounded numeric comparison defaults and Boolean equality/inequality defaults now also
+  evaluate into explicit Boolean carriers; broader typed coercion, string/locale-sensitive
+  comparison defaults, `Like`/`Is`, and expression expansion remain open. The
   same continuation proves the `ParamArray` flag on both surfaces.
   Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
@@ -1329,7 +1331,8 @@ Candidate bead units:
   references, through the default HIR route within the existing `ExplicitI32` metadata shape,
   literal/module-constant string defaults plus string concatenation constant expressions through
   explicit optional-default descriptors, Boolean literal/module-constant/logical expression defaults
-  through explicit descriptors,
+  plus bounded numeric comparison and Boolean equality/inequality defaults through explicit
+  descriptors,
   source-backed `Currency` scaled and `Date` serial optional-default descriptors, default-route HIR
   metadata, deterministic `#...#` Date literal optional defaults, bounded Date/Currency additive
   numeric constant-expression defaults (`+`, `-`, unary `-`) over numeric literals/module constants,
@@ -1433,9 +1436,9 @@ Candidate bead units:
   including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
   member property writeback, coerced/default-expression metadata beyond the covered integer plus
   literal/module-constant/concat string defaults, Boolean literal/logical defaults, source-backed
-  Date/Currency carriers plus their bounded additive numeric constant-expression subset,
-  deterministic Date literal defaults, and typed declared defaults (`""`, `False`, integer zero,
-  Currency zero, and Date serial zero),
+  bounded Boolean comparison defaults, Date/Currency carriers plus their bounded additive numeric
+  constant-expression subset, deterministic Date literal defaults, and typed declared defaults
+  (`""`, `False`, integer zero, Currency zero, and Date serial zero),
   and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9

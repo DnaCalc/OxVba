@@ -103,7 +103,7 @@ fn optional_string_concat_defaults_are_bound_for_omitted_args() {
 #[test]
 fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
     let snap = run(
-        "Const Enabled = True\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Enabled And Not False)\ntarget = flag\nEnd Sub",
+        "Const Enabled = True\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\ntarget = flag\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }

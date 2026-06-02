@@ -1710,7 +1710,7 @@ mod tests {
 
     #[test]
     fn optional_boolean_expression_defaults_route_through_hir() {
-        let source = "Const Enabled = True\nSub Use(Optional ByVal flag As Boolean = Enabled And Not False)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let source = "Const Enabled = True\nSub Use(Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
             .expect("Boolean expression defaults should route through HIR");
         let use_metadata = metadata.get("use").expect("Use metadata");

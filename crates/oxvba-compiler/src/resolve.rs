@@ -2262,6 +2262,63 @@ fn static_bool_expr_inner(
                 LogicalBinOp::Or => Some(lhs || rhs),
             }
         }
+        BoundExpr::CompareOp { op, lhs, rhs } => {
+            static_compare_expr(*op, lhs, rhs, module_constants, resolving_constants)
+        }
+        _ => None,
+    }
+}
+
+fn static_compare_expr(
+    op: CompareOp,
+    lhs: &BoundExpr,
+    rhs: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<bool> {
+    if let Some(result) =
+        static_numeric_compare_expr(op, lhs, rhs, module_constants, resolving_constants)
+    {
+        return Some(result);
+    }
+    static_bool_compare_expr(op, lhs, rhs, module_constants, resolving_constants)
+}
+
+fn static_numeric_compare_expr(
+    op: CompareOp,
+    lhs: &BoundExpr,
+    rhs: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<bool> {
+    let lhs = static_f64_expr_inner(lhs, module_constants, resolving_constants)?;
+    let rhs = static_f64_expr_inner(rhs, module_constants, resolving_constants)?;
+    if !lhs.is_finite() || !rhs.is_finite() {
+        return None;
+    }
+    match op {
+        CompareOp::Eq => Some(lhs == rhs),
+        CompareOp::Ne => Some(lhs != rhs),
+        CompareOp::Lt => Some(lhs < rhs),
+        CompareOp::Le => Some(lhs <= rhs),
+        CompareOp::Gt => Some(lhs > rhs),
+        CompareOp::Ge => Some(lhs >= rhs),
+        CompareOp::Like | CompareOp::Is => None,
+    }
+}
+
+fn static_bool_compare_expr(
+    op: CompareOp,
+    lhs: &BoundExpr,
+    rhs: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<bool> {
+    let lhs = static_bool_expr_inner(lhs, module_constants, resolving_constants)?;
+    let rhs = static_bool_expr_inner(rhs, module_constants, resolving_constants)?;
+    match op {
+        CompareOp::Eq => Some(lhs == rhs),
+        CompareOp::Ne => Some(lhs != rhs),
         _ => None,
     }
 }
@@ -7996,7 +8053,7 @@ mod tests {
 
     #[test]
     fn resolve_optional_boolean_expression_default() {
-        let source = "Const Enabled = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Enabled And Not False)\ntarget = flag\nEnd Sub";
+        let source = "Const Enabled = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\ntarget = flag\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures

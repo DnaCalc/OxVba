@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn type_hooks_collect_parameter_descriptors_from_source_backed_hir() {
-        let source = "Const CBase = &H10 + 1\nConst CAmount = 1.25@\nConst CStamp = 2.0\nConst Prefix = \"re\"\nConst Enabled = True\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe, Optional ByVal amount As Currency = CAmount + 0.25@, Optional ByVal stamp As Date = CStamp + 0.5, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal joined As String = Prefix & \"ady\", Optional ByVal computedFlag As Boolean = Enabled And Not False)\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
+        let source = "Const CBase = &H10 + 1\nConst CAmount = 1.25@\nConst CStamp = 2.0\nConst Prefix = \"re\"\nConst Enabled = True\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe, Optional ByVal amount As Currency = CAmount + 0.25@, Optional ByVal stamp As Date = CStamp + 0.5, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal joined As String = Prefix & \"ady\", Optional ByVal computedFlag As Boolean = Enabled = Not False And 2 > 1)\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
         let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
 
         let parameter = |name: &str| {
