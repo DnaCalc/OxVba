@@ -569,6 +569,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let file_open_statement = "Sub Main()\nOpen \"x\" For Output As #1\nEnd Sub\n";
+    findings.push(route_finding(
+        "file open statement fixture",
+        file_open_statement,
+        "bd-aprs.9.10",
+    ));
+
     let console_input_statement = "Sub Main()\nDim a\nDim b\nInput a, b\nEnd Sub\n";
     findings.push(route_finding(
         "console input statement fixture",

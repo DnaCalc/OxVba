@@ -1541,6 +1541,21 @@ fn lower_stmt(
         HirStmtKind::FileKill { path } => out.push(BoundStmt::FileKill {
             path: lower_expr(typed_hir, const_values, udt_field_aliases, *path, context)?,
         }),
+        HirStmtKind::FileOpen {
+            path,
+            mode,
+            file_number,
+        } => out.push(BoundStmt::FileOpen {
+            path: lower_expr(typed_hir, const_values, udt_field_aliases, *path, context)?,
+            mode: *mode,
+            file_number: lower_expr(
+                typed_hir,
+                const_values,
+                udt_field_aliases,
+                *file_number,
+                context,
+            )?,
+        }),
         HirStmtKind::ConsoleInput { targets } => out.push(BoundStmt::ConsoleInput {
             targets: targets.clone(),
         }),
@@ -5213,6 +5228,23 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicFileKillHost { .. }
             )),
             "expected Kill statement to emit file kill host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_file_open_statement() {
+        let source = "Sub Main()\nOpen \"x\" For Output As #1\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFileOpenHost { .. }
+            )),
+            "expected Open statement to emit file open host intrinsic: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

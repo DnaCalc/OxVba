@@ -260,6 +260,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         host bytecode;
         file-handle `Line Input #handle, target` now lowers through HIR to the existing file
         line-input host bytecode;
+        file-handle `Open path For mode As #handle` now lowers through HIR to the existing file-open
+        host bytecode for simple path/handle expressions;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

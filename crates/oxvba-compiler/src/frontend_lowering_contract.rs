@@ -340,6 +340,12 @@ fn collect_stmt_contract_facts(
         | HirStmtKind::GoSub { .. }
         | HirStmtKind::Return
         | HirStmtKind::Erase { .. } => {}
+        HirStmtKind::FileOpen {
+            path, file_number, ..
+        } => {
+            collect_expr_structural_intrinsics(typed_hir, *path, structural_intrinsics);
+            collect_expr_structural_intrinsics(typed_hir, *file_number, structural_intrinsics);
+        }
         HirStmtKind::FileClose { file_number } => {
             if let Some(file_number) = file_number {
                 collect_expr_structural_intrinsics(typed_hir, *file_number, structural_intrinsics);

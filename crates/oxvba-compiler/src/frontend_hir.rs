@@ -299,6 +299,11 @@ pub enum HirStmtKind {
     FileKill {
         path: HirExprId,
     },
+    FileOpen {
+        path: HirExprId,
+        mode: i32,
+        file_number: HirExprId,
+    },
     ConsoleInput {
         targets: Vec<String>,
     },
@@ -681,6 +686,17 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::FileKill { path },
+                })))
+            }
+            SyntaxKind::CallStmt if is_file_open_stmt(node) => {
+                let (path, mode, file_number) = self.lower_file_open_statement(scope, node)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FileOpen {
+                        path,
+                        mode,
+                        file_number,
+                    },
                 })))
             }
             SyntaxKind::CallStmt if is_console_input_stmt(node) => {
@@ -1492,6 +1508,67 @@ impl HirBuilder {
         Ok((file_number, data))
     }
 
+    fn lower_file_open_statement(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+    ) -> Result<(HirExprId, i32, HirExprId), HirBuildError> {
+        let text = node.text();
+        let trimmed = text.trim_start();
+        let lower = trimmed.to_ascii_lowercase();
+        let for_pos = lower.find(" for ").ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "Open statement requires `For` mode: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        let path_raw = trimmed
+            .get("Open".len()..for_pos)
+            .ok_or_else(|| {
+                HirBuildError::Unsupported(format!(
+                    "Open statement requires a path: `{}`",
+                    node.text().trim()
+                ))
+            })?
+            .trim();
+        let after_for = trimmed.get(for_pos + " for ".len()..).ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "Open statement requires mode and file number: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        let after_for_lower = after_for.to_ascii_lowercase();
+        let as_pos = after_for_lower.find(" as ").ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "Open statement requires `As` file number: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        let mode_raw = after_for[..as_pos].trim();
+        let file_number_raw = after_for[as_pos + " as ".len()..].trim();
+
+        let path = self.lower_simple_statement_expr(scope, node, path_raw)?;
+        let mode = match mode_raw.to_ascii_lowercase().as_str() {
+            "input" => 0,
+            "output" => 1,
+            "append" => 2,
+            "binary" => 3,
+            "random" => 4,
+            _ => {
+                return Err(HirBuildError::Unsupported(format!(
+                    "unsupported Open mode `{mode_raw}` in `{}`",
+                    node.text().trim()
+                )));
+            }
+        };
+        let file_number_clean = file_number_raw
+            .strip_prefix('#')
+            .unwrap_or(file_number_raw)
+            .trim();
+        let file_number = self.lower_simple_statement_expr(scope, node, file_number_clean)?;
+        Ok((path, mode, file_number))
+    }
+
     fn lower_file_handle_payloads(
         &mut self,
         scope: ScopeId,
@@ -2118,6 +2195,13 @@ fn is_kill_stmt(node: SyntaxNode<'_>) -> bool {
     let lower = node.text().trim_start().to_ascii_lowercase();
     lower
         .strip_prefix("kill")
+        .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+}
+
+fn is_file_open_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower
+        .strip_prefix("open")
         .is_some_and(|rest| rest.starts_with(char::is_whitespace))
 }
 
