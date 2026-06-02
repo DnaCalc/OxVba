@@ -259,15 +259,18 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
   of treating the whole statement tail as opaque text;
 - typed HIR carries a `ReDim` statement node with normalized target name, preserve flag, and bound
   expression ids;
-- production HIR lowering maps one-dimensional dynamic-array resizes to `BoundStmt::ReDimRuntime`;
+- production HIR lowering maps dynamic-array resizes to `BoundStmt::ReDimRuntime`, including
+  two-dimensional runtime bounds such as `ReDim grid(rows - 1, cols - 1)`;
 - local `Dim name() As T` declarations contribute array declaration type and runtime
   `ArrayShapeDescriptor` metadata, including element type and the lower-bound policy available to
-  the HIR route; and
+  the HIR route;
+- dynamic-array shape metadata now widens rank from observed runtime `ReDim` bounds, so a
+  two-dimensional resize records rank `2` instead of the declaration seed rank; and
 - the route audit now includes a dynamic-array `ReDim buf(length - 1)` fixture.
 
 This is intentionally not full `ReDim` parity. Lower-bound forms such as `1 To n`,
-multi-dimensional resizes, fixed-array alias materialization, project/class array fields, and
-array element read/write migration remain broader HIR and project-semantics work.
+fixed-array alias materialization, project/class array fields, and array element read/write
+migration remain broader HIR and project-semantics work.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, and default-equivalent `Option Compare Binary` no longer disqualify otherwise

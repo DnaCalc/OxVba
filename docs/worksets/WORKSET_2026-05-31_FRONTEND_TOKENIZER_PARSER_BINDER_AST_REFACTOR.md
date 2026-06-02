@@ -619,8 +619,9 @@ Required newly explicit delivery beads:
   lower through HIR with Let/Set hints.
 - FE-8.5.d Arrays/indexing/ReDim parity: finish array element read/write, fixed-array `ReDim`
   alias materialization, lower-bound `To` forms, multidimensional arrays, and project/class array
-  fields through HIR. Partial work already done: one-dimensional dynamic-array `ReDim` runtime
-  route and `Option Base` default-route policy.
+  fields through HIR. Partial work already done: dynamic-array runtime `ReDim` lowering now covers
+  one-dimensional and two-dimensional runtime bounds, updates array-shape rank metadata from
+  observed `ReDim` bounds, and carries `Option Base` default-route policy.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
@@ -1131,8 +1132,9 @@ Candidate bead units:
   remaining host/reference HIR-ownership and rewrite-quarantine work.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
-  project/class array fields through HIR. Partial work has already been done: one-dimensional
-  dynamic-array `ReDim` runtime lowering, array shape metadata, and `Option Base` default-route
+  project/class array fields through HIR. Partial work has already been done: dynamic-array
+  runtime `ReDim` lowering now covers one-dimensional and two-dimensional runtime bounds, updates
+  array-shape rank metadata from observed `ReDim` bounds, and carries `Option Base` default-route
   policy.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional

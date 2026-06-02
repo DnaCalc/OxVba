@@ -409,6 +409,13 @@ fn lower_procedure(
             context,
         )?;
     }
+    for stmt in &stmts {
+        if let BoundStmt::ReDimRuntime { name, bounds, .. } = stmt
+            && let Some(descriptor) = array_descriptors.get_mut(name)
+        {
+            descriptor.rank = descriptor.rank.max(bounds.len());
+        }
+    }
     let (source_line_start, source_line_end) =
         span_lines(source, decl.cst.span.start, decl.cst.span.end);
     let mut statement_line_numbers = typed_hir
@@ -936,12 +943,6 @@ fn lower_stmt(
             if !dynamic_array_names.contains(&name.to_ascii_lowercase()) {
                 return Err(HirProductionLoweringError::Unsupported(format!(
                     "ReDim production lowering requires a dynamic array declaration for {name}"
-                )));
-            }
-            if bounds.len() != 1 {
-                return Err(HirProductionLoweringError::Unsupported(format!(
-                    "ReDim production lowering currently supports one runtime bound, got {} for {name}",
-                    bounds.len()
                 )));
             }
             let bounds = bounds
@@ -2644,6 +2645,34 @@ mod tests {
             .expect("dynamic array shape");
         assert_eq!(shape.element_type, VbaTypeId::Byte);
         assert_eq!(shape.rank, 1);
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_multidimensional_runtime_redim_for_dynamic_array() {
+        let source = "Sub Main()\nDim rows As Long\nDim cols As Long\nDim grid() As Long\nrows = 2\ncols = 3\nReDim grid(rows - 1, cols - 1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayResize {
+                    upper_bounds,
+                    lower_bounds,
+                    element_type: crate::bytecode::RuntimeArrayElementType::Long,
+                    ..
+                } if upper_bounds.len() == 2 && lower_bounds == &vec![0, 0]
+            )),
+            "expected two-dimensional runtime ReDim bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "grid")
+            .expect("dynamic array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Long);
+        assert_eq!(shape.rank, 2);
     }
 
     #[test]
