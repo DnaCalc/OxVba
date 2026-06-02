@@ -21,14 +21,17 @@ Fallback is retained for tracked residuals when the frontend route reports an un
 but completed constructs no longer require an explicit `frontend_v2: true` option and no longer
 enter the legacy resolver first through the lightweight compile API.
 
-Eligibility is deliberately narrower than "anything HIR can currently parse". The lightweight
-default HIR route now allows simple functions after function return slots are projected from HIR
-type hooks, and now also allows `Option Compare Text` after HIR lowering began carrying the
-compiler compare-mode policy into bytecode. The guard still excludes DefType statements,
-properties, optional/default/ParamArray parameters, `Option Explicit`, `Option Compare Database`,
-`Option Private Module`, class/object-local compatibility contexts, and project-rewritten
-compilation until those semantics are represented by HIR facts with route proof. Those sources
-continue through the legacy residual path rather than accepting partial HIR output.
+Eligibility is deliberately narrower than "anything HIR can currently parse", but the original
+exclusion list has been narrowed by later FE-8.5 delivery. The lightweight default HIR route now
+admits known DefType directives, `Option Compare Binary`/`Text`/`Database` (with the current
+Database-as-binary runtime approximation), single-source `Option Private Module`, simple function
+returns, simple property declaration/read/write shapes, explicit/defaultless/integer-expression
+optional parameters, simple `ParamArray` packing, selected typed constants, and the documented
+Declare subsets once their HIR facts and route proof landed. `Option Explicit` has direct HIR
+production evidence, but it still remains outside this lightweight-default eligibility helper until
+that guard is relaxed deliberately. Class/object-local compatibility contexts, project-rewritten
+compilation, unsupported project property/default-member/COM rewrite shapes, and other explicitly
+tracked residual constructs still fall back rather than accepting partial HIR output.
 
 ## Checks
 
@@ -48,10 +51,10 @@ continue through the legacy residual path rather than accepting partial HIR outp
   lightweight runtime-metadata compile path when no object-local/class-module compatibility context
   is supplied.
 - The first attempt made the HIR default too broad and let partial HIR output bypass legacy DefType,
-  optional-argument, function-return, and project-rewrite semantics. The follow-up function-return
-  slice moves simple functions out of that residual by projecting return-slot type facts through
-  HIR; the guard still keeps the remaining incomplete surfaces residual until their beads implement
-  the missing HIR facts.
+  optional-argument, function-return, and project-rewrite semantics. Later slices moved the
+  completed DefType, function-return, optional/default, ParamArray, property, option, constant, and
+  Declare subsets out of that residual with route proof. The guard still keeps incomplete project
+  and compatibility-context surfaces residual until their beads implement the missing HIR facts.
 - Strict `frontend_v2: true` remains useful for tests that want diagnostics from the frontend-v2
   analyzer before fallback.
 - Legacy-vs-v2 differential tests must call the explicit legacy helper; otherwise the baseline would
