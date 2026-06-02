@@ -14,10 +14,10 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy_object_locals_class,
-    compile_with_runtime_metadata_object_locals_class,
     frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
     frontend_hir_lowering::{
         HirNewExpressionBinding, HirProductionLoweringError,
+        compile_source_with_runtime_metadata_via_hir,
         compile_source_with_runtime_metadata_via_hir_with_new_bindings,
     },
     frontend_member_dispatch::{
@@ -345,12 +345,20 @@ pub struct CompiledProject {
     pub procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     pub source_maps: CompilerSourceMap,
     pub rewritten_source: String,
+    pub compile_route: ProjectCompileRoute,
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
     pub event_dispatch_bindings: Vec<ProjectEventDispatchBinding>,
     pub project_com_withevents_routes: Vec<ProjectComWithEventsRoute>,
     pub project_dynamic_objects: Vec<ProjectDynamicObjectRoute>,
     pub project_reflection: ProjectReflection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectCompileRoute {
+    HirProduction,
+    LegacyFallback,
+    LegacyFallbackAfterHirUnsupported,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1314,6 +1322,19 @@ fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundar
     }
 }
 
+fn compile_project_source_via_strict_hir(
+    source: &str,
+    forced_object_locals_by_proc: &ForcedObjectLocalsByProc,
+) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), HirProductionLoweringError> {
+    if !forced_object_locals_by_proc.is_empty() {
+        return Err(HirProductionLoweringError::Unsupported(
+            "project HIR boundary does not yet support forced object-local metadata".to_string(),
+        ));
+    }
+    let hir_source = crate::resolve::apply_conditional_compilation_to_source(source);
+    compile_source_with_runtime_metadata_via_hir(&hir_source)
+}
+
 fn compile_project_with_strategy(
     manifest: &ProjectManifest,
     strategy: ProjectLoweringStrategy,
@@ -1419,27 +1440,63 @@ fn compile_project_with_strategy(
                     }
                 }
             });
-    let (compiled_source, compile_result) =
+    let (compiled_source, compile_result, compile_route) =
         if let Some((compiled_source, compiled)) = hir_construction_compile {
-            (compiled_source, compiled)
+            (
+                compiled_source,
+                compiled,
+                ProjectCompileRoute::HirProduction,
+            )
         } else if project_compile_boundary == ProjectCompileBoundary::ActiveHir {
-            (
-                lowered_project_source.active_project_source.clone(),
-                compile_with_runtime_metadata_object_locals_class(
-                    &lowered_project_source.active_project_source,
-                    &lowered_project_source.forced_object_locals_by_proc,
-                    has_class_modules,
+            match compile_project_source_via_strict_hir(
+                &lowered_project_source.active_project_source,
+                &lowered_project_source.forced_object_locals_by_proc,
+            ) {
+                Ok(compiled) => (
+                    lowered_project_source.active_project_source.clone(),
+                    Ok(compiled),
+                    ProjectCompileRoute::HirProduction,
                 ),
-            )
+                Err(HirProductionLoweringError::Unsupported(_)) => (
+                    lowered_project_source.full_source.clone(),
+                    compile_with_runtime_metadata_legacy_object_locals_class(
+                        &lowered_project_source.full_source,
+                        &lowered_project_source.forced_object_locals_by_proc,
+                        has_class_modules,
+                    ),
+                    ProjectCompileRoute::LegacyFallbackAfterHirUnsupported,
+                ),
+                Err(HirProductionLoweringError::Compile(err)) => (
+                    lowered_project_source.active_project_source.clone(),
+                    Err(err),
+                    ProjectCompileRoute::HirProduction,
+                ),
+            }
         } else if project_compile_boundary == ProjectCompileBoundary::FullHir {
-            (
-                lowered_project_source.full_source.clone(),
-                compile_with_runtime_metadata_object_locals_class(
-                    &lowered_project_source.full_source,
-                    &lowered_project_source.forced_object_locals_by_proc,
-                    has_class_modules,
+            match compile_project_source_via_strict_hir(
+                &lowered_project_source.full_source,
+                &lowered_project_source.forced_object_locals_by_proc,
+            ) {
+                Ok(compiled) => (
+                    lowered_project_source.full_source.clone(),
+                    Ok(compiled),
+                    ProjectCompileRoute::HirProduction,
                 ),
-            )
+                Err(HirProductionLoweringError::Unsupported(_)) => (
+                    lowered_project_source.full_source.clone(),
+                    compile_with_runtime_metadata_legacy_object_locals_class(
+                        &lowered_project_source.full_source,
+                        &lowered_project_source.forced_object_locals_by_proc,
+                        has_class_modules,
+                    ),
+                    ProjectCompileRoute::LegacyFallbackAfterHirUnsupported,
+                ),
+                Err(HirProductionLoweringError::Compile(err)) => (
+                    lowered_project_source.full_source.clone(),
+                    Err(err),
+                    ProjectCompileRoute::HirProduction,
+                ),
+            }
         } else {
             (
                 lowered_project_source.full_source.clone(),
@@ -1448,6 +1505,7 @@ fn compile_project_with_strategy(
                     &lowered_project_source.forced_object_locals_by_proc,
                     has_class_modules,
                 ),
+                ProjectCompileRoute::LegacyFallback,
             )
         };
     let (bytecode, mut procedure_runtime_metadata) =
@@ -1496,6 +1554,7 @@ fn compile_project_with_strategy(
         procedure_runtime_metadata,
         source_maps,
         rewritten_source: public_rewritten_source,
+        compile_route,
         host_exports,
         reference_visible_exports,
         event_dispatch_bindings,
@@ -12313,11 +12372,12 @@ mod tests {
     use super::{
         CallingShape, ExportKind, InvocationLane, ModuleAttributes, ModuleKind, ModuleUnit,
         PROJECTED_TYPELIB_REFERENCE_MARKER, PassingMode, ProcedureKind, ProjectComWithEventsRoute,
-        ProjectCompileBoundary, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
-        ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
-        ReferencedProjectManifest, TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, VbaType,
-        compile_project, compile_project_with_strategy, expand_bound_source_line,
-        module_unit_from_source, project_compile_boundary, project_imported_typelib_reference,
+        ProjectCompileBoundary, ProjectCompileError, ProjectCompileRoute,
+        ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy, ProjectManifest,
+        ProjectReference, ReferenceKind, ReferencedProjectManifest,
+        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, VbaType, compile_project,
+        compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
+        project_compile_boundary, project_imported_typelib_reference,
         projected_typelib_reference_provenance, reflect_project,
         validate_compiled_project_contract, withevents_binding_token,
     };
@@ -24033,6 +24093,7 @@ mod tests {
         };
         let compiled = compile_project(&manifest)
             .expect("multi-module procedural project should compile through HIR boundary");
+        assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
         assert!(
             compiled
                 .rewritten_source
@@ -24082,6 +24143,7 @@ mod tests {
         };
         let compiled = compile_project(&manifest)
             .expect("procedural reference project should compile through HIR full-source boundary");
+        assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
         assert!(
             compiled
                 .rewritten_source

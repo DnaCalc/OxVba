@@ -82,7 +82,7 @@ pub use project::{
     HostProcedureExport, InvocationLane, ModuleAttributes, ModuleDescriptor, ModuleKind,
     ModuleUnit, ModuleVisibility, PassingMode, ProcedureAnnotation, ProcedureDescriptor,
     ProcedureKind, ProcedureParameterDescriptor, ProcedureSignature, ProcedureVisibility,
-    ProjectComWithEventsRoute, ProjectCompileError, ProjectDynamicMemberKind,
+    ProjectComWithEventsRoute, ProjectCompileError, ProjectCompileRoute, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     ProjectEventDispatchBinding, ProjectIdentity, ProjectKind, ProjectManifest, ProjectReference,
     ProjectReflection, ReferenceKind, ReferencedProjectManifest, RuntimeProcedureRoute, SourceSpan,

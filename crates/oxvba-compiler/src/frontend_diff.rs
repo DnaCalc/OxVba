@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use crate::{
     Bytecode, CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy,
     frontend_hir_lowering,
-    project::{ModuleKind, ProjectKind, ProjectManifest, compile_project, module_unit_from_source},
+    project::{
+        ModuleKind, ProjectCompileRoute, ProjectKind, ProjectManifest, compile_project,
+        module_unit_from_source,
+    },
     resolve::apply_conditional_compilation_to_source,
     syntax_bridge::{SyntaxBridgeProductionRoute, production_route_for_source},
 };
@@ -649,13 +652,27 @@ fn host_project_corpus_route_row(
         conditional_constants: Default::default(),
     };
     match compile_project(&manifest) {
-        Ok(_) => FrontendCorpusRouteRow {
-            name: fixture.name.clone(),
-            fixture_path: fixture.fixture_path.clone(),
-            class: fixture.class,
-            status: FrontendCorpusRouteStatus::HirProduction,
-            evidence: "single-module host project source classified as HIR production and compiled through project entry point".to_string(),
-        },
+        Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "single-module host project compiled through {:?}",
+                        compiled.compile_route
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "single-module host project source classified as HIR production and compiled through project entry point".to_string(),
+            }
+        }
         Err(err) => FrontendCorpusRouteRow {
             name: fixture.name.clone(),
             fixture_path: fixture.fixture_path.clone(),
@@ -708,13 +725,27 @@ fn intp002_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
         conditional_constants: Default::default(),
     };
     match compile_project(&manifest) {
-        Ok(_) => FrontendCorpusRouteRow {
-            name: fixture.name.clone(),
-            fixture_path: fixture.fixture_path.clone(),
-            class: fixture.class,
-            status: FrontendCorpusRouteStatus::HirProduction,
-            evidence: "INTP-002 multi-module procedural host project compiled through HIR-capable project boundary".to_string(),
-        },
+        Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "INTP-002 project compiled through {:?}",
+                        compiled.compile_route
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "INTP-002 multi-module procedural host project compiled through HIR-capable project boundary".to_string(),
+            }
+        }
         Err(err) => FrontendCorpusRouteRow {
             name: fixture.name.clone(),
             fixture_path: fixture.fixture_path.clone(),
@@ -775,13 +806,27 @@ fn intp003_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
         conditional_constants: Default::default(),
     };
     match compile_project(&manifest) {
-        Ok(_) => FrontendCorpusRouteRow {
-            name: fixture.name.clone(),
-            fixture_path: fixture.fixture_path.clone(),
-            class: fixture.class,
-            status: FrontendCorpusRouteStatus::HirProduction,
-            evidence: "INTP-003 procedural reference project compiled through HIR full-source project boundary".to_string(),
-        },
+        Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "INTP-003 project compiled through {:?}",
+                        compiled.compile_route
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "INTP-003 procedural reference project compiled through HIR full-source project boundary".to_string(),
+            }
+        }
         Err(err) => FrontendCorpusRouteRow {
             name: fixture.name.clone(),
             fixture_path: fixture.fixture_path.clone(),
@@ -843,6 +888,18 @@ fn intp004_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
     };
     match compile_project(&manifest) {
         Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "INTP-004 project compiled through {:?}",
+                        compiled.compile_route
+                    ),
+                };
+            }
             let lowered = compiled.rewritten_source.to_ascii_lowercase();
             if !lowered.contains("x = pmr_alphashadow_main_ping()") {
                 return FrontendCorpusRouteRow {
@@ -980,6 +1037,18 @@ fn intp019_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
     };
     match compile_project(&manifest) {
         Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "INTP-019 project compiled through {:?}",
+                        compiled.compile_route
+                    ),
+                };
+            }
             let lowered = compiled.rewritten_source.to_ascii_lowercase();
             let expected_rewrites = [
                 "a = pmr_liba_util_tag()",

@@ -10,8 +10,8 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     Bytecode, CompiledProject, Instruction, OxBundle, ProcedureRuntimeMetadata,
-    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectManifest, compile_project,
-    compile_with_runtime_metadata,
+    ProjectCompileRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectManifest,
+    compile_project, compile_with_runtime_metadata,
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -1239,6 +1239,7 @@ impl Engine {
             procedure_runtime_metadata: bundle.procedure_metadata.clone(),
             source_maps: oxvba_compiler::CompilerSourceMap::default(),
             rewritten_source: String::new(),
+            compile_route: ProjectCompileRoute::LegacyFallback,
             host_exports: bundle
                 .export_inventory
                 .as_ref()

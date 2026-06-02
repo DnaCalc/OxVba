@@ -1021,6 +1021,10 @@ project-qualified call into `LibMath.MathApi`, and the seed route audit now incl
 `INTP-004`, and `INTP-019` for procedural reference projects, active-project shadowing of a
 referenced procedure, and multiple project references. Class/document modules, imported COM/reference
 shapes beyond procedural project references, and host/oracle-backed project semantics remain open.
+The migrated active/full project HIR boundaries now call strict HIR compilation directly; unsupported
+HIR or forced-object-local shapes are recorded as `LegacyFallbackAfterHirUnsupported` instead of
+silently returning through the legacy fallback wrapper, and the route audit only counts rows with
+`ProjectCompileRoute::HirProduction` as HIR production.
 
 ## Bang Member Read Continuation
 
