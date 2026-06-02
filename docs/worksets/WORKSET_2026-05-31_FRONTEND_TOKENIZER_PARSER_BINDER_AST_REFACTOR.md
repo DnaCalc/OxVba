@@ -677,10 +677,15 @@ Required newly explicit delivery beads:
   `integration_imported_typelib_scripting_dictionary` as source-backed imported COM
   HIR-production routes, `integration_predeclared_document_project` and follow-up
   `integration_predeclared_document_method_project` as source-backed predeclared `ThisWorkbook`
-  document property/method routes, plus `excel_oracle_activation_smoke` as a source-backed Excel
-  fixture route that classifies as HIR production and now has an ignored host execution lane for
-  live `Excel.Application` activation/property-get/`Quit` cleanup; the selected route audit now has no skipped
-  residual rows. Language-service
+  document property/method routes, plus `excel_oracle_activation_smoke` and the narrowed
+  `excel_oracle_workbook_range_smoke` as source-backed Excel fixture routes that classify as HIR
+  production. The ignored host execution lane now proves live `Excel.Application`
+  activation/property-get/`Quit` cleanup and live workbook/worksheet automation through
+  `Workbooks`, `Workbooks.Add`, `Worksheets(1)`, `Close`, and `Quit`; the selected route audit now
+  has no skipped residual rows. The first broader workbook/range attempt exposed two remaining
+  gaps rather than closing them: HIR does not yet lower statement-form `DispatchInvoke` with
+  arguments, and live Excel `Range("A1")` dispatch currently faults through the `DispatchInvoke`
+  adapter. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
@@ -695,8 +700,8 @@ Required newly explicit delivery beads:
   object-model behavior, broaden imported COM beyond the current `TestDispatch` and
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover
   deeper cross-workspace language-service route runners beyond those seed shapes, and broaden live
-  Excel-oracle execution beyond activation/property-get/cleanup into workbook, range, named-argument,
-  property-put, and other environment-dependent behavior beyond source-route
+  Excel-oracle execution beyond activation/property-get/workbook/worksheet cleanup into range
+  access, named-argument dispatch, property-put/default-member mutation, and other environment-dependent behavior beyond source-route
   classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine

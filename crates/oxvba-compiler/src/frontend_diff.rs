@@ -435,6 +435,21 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             rationale: String::new(),
             close_condition: String::new(),
         },
+        FrontendCorpusFixture {
+            name: "excel_oracle_workbook_range_smoke".to_string(),
+            fixture_path: "conformance/com/office/excel/excel_workbook_range_smoke.bas"
+                .to_string(),
+            class: FrontendCorpusClass::ExcelOracle,
+            source: Some(
+                include_str!("../../../conformance/com/office/excel/excel_workbook_range_smoke.bas")
+                    .to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
     ]
 }
 
@@ -613,23 +628,24 @@ fn frontend_corpus_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusR
     };
     if fixture.class == FrontendCorpusClass::ExcelOracle {
         let route_source = apply_conditional_compilation_to_source(source);
-        return match production_route_for_source(&route_source) {
-            Ok(SyntaxBridgeProductionRoute::HirProduction) => FrontendCorpusRouteRow {
+        return match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(
+            &route_source,
+        ) {
+            Ok(_) => FrontendCorpusRouteRow {
                 name: fixture.name.clone(),
                 fixture_path: fixture.fixture_path.clone(),
                 class: fixture.class,
                 status: FrontendCorpusRouteStatus::HirProduction,
                 evidence: "Excel oracle source fixture classified as HIR production; live Excel execution remains environment-dependent".to_string(),
             },
-            Ok(SyntaxBridgeProductionRoute::HirUnsupportedResidual) => FrontendCorpusRouteRow {
+            Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(reason)) => FrontendCorpusRouteRow {
                 name: fixture.name.clone(),
                 fixture_path: fixture.fixture_path.clone(),
                 class: fixture.class,
                 status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
-                evidence: "Excel oracle source fixture classified as HIR unsupported residual"
-                    .to_string(),
+                evidence: format!("Excel oracle source fixture classified as HIR unsupported residual: {reason}"),
             },
-            Err(err) => FrontendCorpusRouteRow {
+            Err(frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => FrontendCorpusRouteRow {
                 name: fixture.name.clone(),
                 fixture_path: fixture.fixture_path.clone(),
                 class: fixture.class,
@@ -2304,7 +2320,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 11, "{report:#?}");
+        assert_eq!(report.skipped_count, 12, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -2484,14 +2500,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert_eq!(report.fallback_residuals().len(), 0, "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 0, "{report:#?}");
-        assert_eq!(report.rows.len(), 14, "{report:#?}");
+        assert_eq!(report.rows.len(), 15, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            14,
+            15,
             "{report:#?}"
         );
         assert_eq!(
@@ -2568,6 +2584,11 @@ mod tests {
         }));
         assert!(report.rows.iter().any(|row| {
             row.name == "excel_oracle_activation_smoke"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("Excel oracle source fixture")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "excel_oracle_workbook_range_smoke"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("Excel oracle source fixture")
         }));

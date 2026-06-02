@@ -11,8 +11,10 @@ Current fixtures:
 - `excel_application_activation_smoke.bas`: late-bound
   `CreateObject("Excel.Application")` activation, root property-get smoke, and
   explicit `Quit` cleanup.
-- `excel_workbook_range_smoke.bas`: workbook, worksheet, range value, and
-  default-member shaped object-model interactions.
+- `excel_workbook_range_smoke.bas`: workbook collection, workbook creation,
+  worksheet indexing, workbook close, and explicit application cleanup. The
+  range/default-member value path that this legacy filename suggests remains a
+  separate open oracle lane.
 - `excel_named_argument_smoke.bas`: metadata-sensitive named-argument call
   shape over an Excel object-model member.
 - `excel_unsupported_event_sink_boundary.bas`: deterministic V0.2 unsupported

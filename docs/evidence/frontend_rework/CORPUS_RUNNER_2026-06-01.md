@@ -40,13 +40,13 @@ reopened seed corpus with real repo fixture sources plus the route-backed v2 imp
   route and classifies as `IntentionalImprovement`, because legacy-default rejects the inline
   statement sequence while frontend v2 compiles it with bytecode and metadata;
 - selected host project rows are present but skipped as residuals requiring VM/host execution;
-- the Excel oracle row is present but skipped here as a residual requiring oracle-backed execution,
-  even though the separate route audit now proves its source fixture classifies as HIR production.
+- the Excel oracle rows are present but skipped here as residuals requiring oracle-backed execution,
+  even though the separate route audit now proves their source fixtures classify as HIR production.
 
 Expected report counts:
 
 - `ran_count = 3`
-- `skipped_count = 9`
+- `skipped_count = 12`
 - `equivalent_count = 1`
 - `intentional_improvement_count = 2`
 - `bug_count = 0`
@@ -57,18 +57,22 @@ Expected report counts:
 - Current status: `SkippedResidual`
 - Reason: requires VM/host project runner in this diff-corpus harness.
 - Seed fixtures: `INTP-001`, `INTP-002`, `INTP-003`, `INTP-004`, `INTP-016`, `INTP-019`,
-  inline imported `OxVba.TestDispatch`, and inline predeclared `ThisWorkbook` document reference.
+  inline imported `OxVba.TestDispatch`, inline imported `Scripting.Dictionary`, inline
+  predeclared `ThisWorkbook` document reference, and inline predeclared `ThisWorkbook` method
+  reference.
 - Next route: a crate or script that can depend on the VM/host layer should call the same
   report/classifier shape and attach execution observations.
 
-### excel-oracle-activation-smoke
+### excel oracle rows
 
 - Class: `ExcelOracle`
 - Current status: `SkippedResidual`
 - Reason: requires targeted Excel oracle fixture execution in this diff-corpus harness.
 - Route-audit status: the source fixture
-  `conformance/com/office/excel/excel_application_activation_smoke.bas` now classifies as
-  `HirProduction`; live Excel-visible behavior remains environment-dependent.
+  `conformance/com/office/excel/excel_application_activation_smoke.bas` and the narrowed
+  `conformance/com/office/excel/excel_workbook_range_smoke.bas` now classify as `HirProduction`;
+  live Excel-visible behavior remains environment-dependent and is checked by ignored
+  `oxvba-host` oracle tests.
 - Next route: oracle-backed rows need fixture evidence that records the expected Excel-visible
   behavior before they can be classified as harmless drift or intentional improvement.
 
