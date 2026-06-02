@@ -230,6 +230,14 @@ Follow-up ParamArray callee work resolves and lowers the built-in array-bound in
 callee and verifies that HIR emits the existing `IntrinsicUBoundArray` bytecode. Broader callee
 intrinsics remain tracked residual work.
 
+The next bounded ParamArray callee slice extends that same HIR intrinsic bridge to the
+legacy-recognized one-argument introspection intrinsics `IsArray`, `VarType`, `TypeName`,
+`IsNumeric`, and `IsDate`. The focused regression writes each result to a distinct ByRef parameter
+so optimizer dead-store elimination cannot hide missing bytecode, and verifies the existing
+`IntrinsicIsArrayTag`, `IntrinsicVarType`, `IntrinsicTypeNameTag`, `IntrinsicIsNumeric`, and
+`IntrinsicIsDateTag` instructions. This is still not blanket intrinsic closure; richer callee
+intrinsics and broader optional/missing-state entry behavior remain open.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

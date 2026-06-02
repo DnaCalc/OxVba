@@ -8,6 +8,13 @@ use crate::frontend_symbols::{
 };
 use crate::resolve::normalize_ident;
 
+pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct BoundHirModule {
     pub symbols: SymbolModel,
@@ -1402,7 +1409,7 @@ impl HirBuilder {
         if let Some(symbol) = self.resolve_property_write_name(scope, name)? {
             return Ok(symbol);
         }
-        if Self::is_builtin_intrinsic_name(name) {
+        if is_builtin_intrinsic_name(name) {
             return Ok(self.symbols.declare_symbol(
                 scope,
                 SymbolNamespace::Procedure,
@@ -1417,10 +1424,6 @@ impl HirBuilder {
             name: name.to_string(),
             scope,
         })
-    }
-
-    fn is_builtin_intrinsic_name(name: &str) -> bool {
-        matches!(name.to_ascii_lowercase().as_str(), "lbound" | "ubound")
     }
 
     fn resolve_property_procedure_self_name(

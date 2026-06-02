@@ -4,7 +4,7 @@ use crate::bytecode::Bytecode;
 use crate::emit::{ProcedureRuntimeMetadata, emit_bytecode_with_runtime_metadata};
 use crate::frontend_hir::{
     HirBinaryOp, HirCaseClause, HirDeclId, HirDeclKind, HirExprId, HirExprKind, HirLiteral,
-    HirStmtId, HirStmtKind, HirUnaryOp,
+    HirStmtId, HirStmtKind, HirUnaryOp, is_builtin_intrinsic_name,
 };
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::{SymbolId, SymbolNamespace};
@@ -1963,7 +1963,7 @@ fn lower_call_expr(
                     args: args.into_iter().map(|arg| arg.expr).collect(),
                 });
             }
-            if matches!(name.to_ascii_lowercase().as_str(), "lbound" | "ubound") {
+            if is_builtin_intrinsic_name(&name) {
                 return Ok(BoundExpr::IntrinsicCall {
                     name,
                     args: args.into_iter().map(|arg| arg.expr).collect(),
@@ -4118,6 +4118,53 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicUBoundArray { .. }
             )),
             "expected UBound(items) to emit array-bound intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_introspection_intrinsics_on_param_array() {
+        let source = "Sub Main()\nDim vt\nDim tn\nDim ia\nDim isn\nDim idt\nCall Capture(vt, tn, ia, isn, idt, 5, 7)\nEnd Sub\nSub Capture(ByRef vt, ByRef tn, ByRef ia, ByRef isn, ByRef idt, ParamArray items() As Variant)\nvt = VarType(items)\ntn = TypeName(items)\nia = IsArray(items)\nisn = IsNumeric(items)\nidt = IsDate(items)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicVarType { .. }
+            )),
+            "expected VarType(items) to emit VarType intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicTypeNameTag { .. }
+            )),
+            "expected TypeName(items) to emit TypeName intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsArrayTag { .. }
+            )),
+            "expected IsArray(items) to emit IsArray intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsNumeric { .. }
+            )),
+            "expected IsNumeric(items) to emit IsNumeric intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicIsDateTag { .. }
+            )),
+            "expected IsDate(items) to emit IsDate intrinsic: {:?}",
             bytecode.instructions
         );
     }
