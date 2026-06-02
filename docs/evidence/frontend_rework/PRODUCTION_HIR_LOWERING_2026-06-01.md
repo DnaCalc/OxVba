@@ -583,8 +583,9 @@ including checked exponentiation overflow such as `2 ^ 31` for `Long`. A later F
 continuation extends that HIR-owned diagnostic path to explicit `As LongLong` and `As LongPtr`
 integer expressions that overflow the signed 64-bit carrier range, for example
 `9223372036854775807 + 1`. Follow-up carrier work adds a signed-64-bit bound expression and
-bytecode carrier for explicit `As LongLong` and `As LongPtr` constants whose values do not fit the
-old i32 literal carrier, with VM execution coverage for `Const CTotal As LongLong = 5000000000`.
+bytecode carrier for explicit `As LongLong` and `As LongPtr` constants, with coverage for both
+small values and values that exceed the old i32 literal carrier, plus VM execution coverage for
+`Const CTotal As LongLong = 5000000000`.
 Typed constant coercion, broader constant-name/expression parity, and full platform `LongPtr`
 semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
@@ -1018,8 +1019,7 @@ constant expressions:
   the signed 64-bit carrier range before unsupported-const fallback can hide them.
 - A fourth focused carrier pass adds `BoundExpr::LongLongConst(i64)`,
   `Instruction::LoadConstI64`, and VM execution support, so covered explicit `As LongLong` and
-  `As LongPtr` constants outside the i32 range can lower and execute instead of being truncated or
-  rejected as unsupported.
+  `As LongPtr` constants use the signed-64-bit carrier even when the value fits in i32.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, richer literal kinds, or names beyond
   source-prior constants and the already handled enum/literal route, plus typed constant coercion
