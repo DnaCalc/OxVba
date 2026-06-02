@@ -1143,7 +1143,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Follow-up Date/Currency carrier work adds explicit optional-default metadata and runtime binding
   for source-backed `Currency` scaled values and `Date` serial values, including declared defaults
   (Currency zero / Date serial zero) and unambiguous module-constant numeric expressions interpreted
-  through the parameter's declared type.
+  through the parameter's declared type. A later focused slice extends that same carrier route to
+  bounded additive numeric constant-expression defaults (`+`, `-`, unary `-`) over numeric literals
+  and module constants.
 - Follow-up Date literal work accepts deterministic `#...#` optional Date defaults and maps them to
   the same Date serial carrier, with resolver, metadata, and VM omitted-argument proofs.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
@@ -1156,7 +1158,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   instead of letting the default-route gate reject the source.
 - This deliberately does not claim arbitrary typed coercion of default expressions, locale-sensitive
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
-  plus string/Boolean constant-expression subset. Those remain FE-8.5.f residuals.
+  plus string/Boolean constant-expression subset and bounded Date/Currency additive numeric subset.
+  Those remain FE-8.5.f residuals.
 
 ## Checks
 
@@ -1170,6 +1173,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_string_bool_defaults_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_boolean_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler optional_date_currency_defaults_route_through_hir --quiet`
+- `cargo test -p oxvba-compiler resolve_optional_date_currency_numeric_expression_defaults --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_date_literal_default --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_string_concat_default --quiet`
 - `cargo test -p oxvba-compiler optional_string_concat_defaults_route_through_hir --quiet`

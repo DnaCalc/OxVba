@@ -1833,14 +1833,14 @@ mod tests {
 
     #[test]
     fn optional_date_currency_defaults_route_through_hir() {
-        let source = "Const CAmount = 1.25@\nConst CStamp = 2.5\nSub Use(Optional ByVal amount As Currency = CAmount, Optional ByVal stamp As Date = CStamp, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let source = "Const CAmount = 1.25@\nConst CStamp = 2.0\nSub Use(Optional ByVal amount As Currency = CAmount + 0.25@, Optional ByVal stamp As Date = CStamp + 0.5, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         let (_bytecode, metadata) =
             super::compile_with_runtime_metadata(source).expect("compile should route through HIR");
         let use_metadata = metadata.get("use").expect("Use metadata");
         assert!(matches!(
             use_metadata.signature.parameters[0].optional_descriptor,
             OptionalParameterDescriptor::Optional {
-                default_value: OptionalDefaultValue::ExplicitCurrencyScaledI64(12_500),
+                default_value: OptionalDefaultValue::ExplicitCurrencyScaledI64(15_000),
                 ..
             }
         ));
@@ -1877,7 +1877,7 @@ mod tests {
             call_site.arguments.iter().any(|arg| {
                 arg.parameter_name.as_deref() == Some("amount")
                     && arg.optional_default
-                        == Some(OptionalDefaultValue::ExplicitCurrencyScaledI64(12_500))
+                        == Some(OptionalDefaultValue::ExplicitCurrencyScaledI64(15_000))
             }) && call_site.arguments.iter().any(|arg| {
                 arg.parameter_name.as_deref() == Some("stamp")
                     && arg.optional_default

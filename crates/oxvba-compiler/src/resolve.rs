@@ -2170,11 +2170,20 @@ fn static_param_default_expr_inner(
             currency_scaled_i64_from_f64(f64::from_bits(*bits))
                 .map(BoundParamDefaultValue::ExplicitCurrencyScaledI64)
         }
+        _ if declared_type == BoundType::Currency => {
+            static_f64_expr_inner(expr, module_constants, resolving_constants)
+                .and_then(currency_scaled_i64_from_f64)
+                .map(BoundParamDefaultValue::ExplicitCurrencyScaledI64)
+        }
         BoundExpr::IntConst(value) if declared_type == BoundType::Date => Some(
             BoundParamDefaultValue::ExplicitDateSerialF64((*value as f64).to_bits()),
         ),
         BoundExpr::FloatConst(bits) if declared_type == BoundType::Date => {
             Some(BoundParamDefaultValue::ExplicitDateSerialF64(*bits))
+        }
+        _ if declared_type == BoundType::Date => {
+            static_f64_expr_inner(expr, module_constants, resolving_constants)
+                .map(|value| BoundParamDefaultValue::ExplicitDateSerialF64(value.to_bits()))
         }
         _ => static_i32_expr(expr, module_constants).map(BoundParamDefaultValue::ExplicitI32),
     }
@@ -2253,6 +2262,44 @@ fn static_bool_expr_inner(
                 LogicalBinOp::Or => Some(lhs || rhs),
             }
         }
+        _ => None,
+    }
+}
+
+fn static_f64_expr_inner(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<f64> {
+    match expr {
+        BoundExpr::IntConst(value) => Some(*value as f64),
+        BoundExpr::FloatConst(bits) => Some(f64::from_bits(*bits)),
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value = static_f64_expr_inner(const_expr, module_constants, resolving_constants);
+            resolving_constants.remove(name);
+            value
+        }
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let lhs = static_f64_expr_inner(lhs, module_constants, resolving_constants)?;
+            let rhs = static_f64_expr_inner(rhs, module_constants, resolving_constants)?;
+            match op {
+                ArithOp::Add => Some(lhs + rhs),
+                ArithOp::Sub => Some(lhs - rhs),
+                _ => None,
+            }
+        }
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => Some(-static_f64_expr_inner(
+            operand,
+            module_constants,
+            resolving_constants,
+        )?),
         _ => None,
     }
 }
@@ -7993,6 +8040,32 @@ mod tests {
             fill.params[1].default_literal,
             Some(super::BoundParamDefaultValue::ExplicitDateSerialF64(
                 46_081.0f64.to_bits()
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_optional_date_currency_numeric_expression_defaults() {
+        let source = "Const CAmount = 1.25@\nConst CStamp = 2.0\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal amount As Currency = CAmount + 0.25@, Optional ByVal stamp As Date = CStamp + 0.5)\ntarget = stamp\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 3);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitCurrencyScaledI64(
+                15_000
+            ))
+        );
+        assert!(fill.params[2].optional);
+        assert_eq!(
+            fill.params[2].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitDateSerialF64(
+                2.5f64.to_bits()
             ))
         );
     }
