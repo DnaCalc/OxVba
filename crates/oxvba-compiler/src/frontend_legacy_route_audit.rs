@@ -542,6 +542,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let declared_external_native_longptr_call = "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nDim y\ny = LstrlenW(0)\nEnd Sub\n";
+    findings.push(route_finding(
+        "declared external native LongPtr call fixture",
+        declared_external_native_longptr_call,
+        "bd-aprs.9.5",
+    ));
+
     let declared_external_sub_call = "Declare PtrSafe Sub HostTap Lib \"host\" Alias \"tap\" (ByVal x As Long)\nSub Main()\nCall HostTap(3)\nEnd Sub\n";
     findings.push(route_finding(
         "declared external Sub call fixture",

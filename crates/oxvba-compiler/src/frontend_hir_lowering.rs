@@ -6627,6 +6627,30 @@ mod tests {
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn hir_production_lowering_preserves_native_declared_external_longptr_signature() {
+        let source = "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nDim y\ny = LstrlenW(0)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert_eq!(bytecode.external_call_descriptors.len(), 1);
+        let descriptor = &bytecode.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name, "lstrlenw");
+        assert_eq!(descriptor.library, "kernel32");
+        assert_eq!(descriptor.alias, "lstrlenW");
+        assert_eq!(descriptor.marshal_lane, "m1-native-ffi");
+        assert_eq!(descriptor.param_types, vec![DeclareParamType::LongPtr]);
+        assert_eq!(descriptor.return_type, Some(DeclareParamType::Long));
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 1
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
     #[test]
     fn hir_production_lowering_rejects_declare_without_ptrsafe_for_fallback() {
         let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";

@@ -709,6 +709,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Follow-up typed-signature declaration proof confirms multi-argument external functions with
   non-`Long` parameter and return metadata, such as `String` and `Integer`, preserve
   `DeclareParamType` descriptors through HIR and remain on the audited HIR production route.
+- Follow-up native declaration proof confirms a `kernel32` `Declare PtrSafe Function` with a
+  `LongPtr` parameter preserves native FFI lane selection and `DeclareParamType::LongPtr` metadata
+  through HIR on native-FFI targets, with a matching route-audit fixture for the accepted source.
 - Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
   default compiler path can keep them on the tracked fallback/diagnostic surface.
 

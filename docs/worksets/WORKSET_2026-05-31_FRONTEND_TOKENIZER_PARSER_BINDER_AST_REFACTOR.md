@@ -1258,7 +1258,8 @@ Candidate bead units:
   VBA7 rejection policy, preserves ByRef external Sub writeback metadata through HIR, and preserves
   ordinal-alias normalization/selection metadata for `Alias "#..."` declarations. Follow-up typed
   signature routing preserves multi-argument non-`Long` parameter and return descriptors through
-  HIR. Follow-up console-input routing
+  HIR. Follow-up native declaration routing preserves `LongPtr` parameter metadata and native FFI
+  lane selection for non-host libraries on native-FFI targets. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
   `Line Input #`. Follow-up console line-input routing covers `Line Input target` through existing
   host bytecode, still without claiming file `Line Input #`. Follow-up file-close routing covers
