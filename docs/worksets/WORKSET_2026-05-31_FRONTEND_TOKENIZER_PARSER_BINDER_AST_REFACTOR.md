@@ -1277,10 +1277,10 @@ Candidate bead units:
   and simple ParamArray routes as their HIR facts land; the same continuation fixes typed
   multi-parameter symbol collection so `As` type-reference tokens are not declared as parameters.
   The eligibility guard deliberately still excludes surfaces whose HIR semantics are partial,
-  including project rewrites, class/object-local compatibility contexts, indexed property/default-
-  member behavior, non-integer default-expression metadata, and broader optional call-entry
-  combinations. The legacy baseline remains available through an explicit comparison helper, and
-  fallback is preserved only for unsupported residual constructs. Follow-up FE-9
+  including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
+  member property writeback, non-integer default-expression metadata, and broader optional
+  call-entry combinations. The legacy baseline remains available through an explicit comparison
+  helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
   cleanup moves the public `compile_with_options` HIR attempt off `syntax_bridge` and calls HIR
   production lowering directly; only default non-`frontend_v2` mode falls back to legacy compile on
   HIR `Unsupported`.
