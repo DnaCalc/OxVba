@@ -141,6 +141,14 @@ fn indexed_property_let_executes_through_package_vm() {
 }
 
 #[test]
+fn named_indexed_property_let_executes_through_package_vm() {
+    let snap = run(
+        "Sub Main()\nDim value As Long\nItem(target := value) = 3\nEnd Sub\nProperty Let Item(ByRef target As Long, ByVal newValue As Long)\ntarget = newValue + 4\nEnd Property",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(7)]);
+}
+
+#[test]
 fn string_functions_left_mid_ucase() {
     let snap = run(
         "Sub Main()\nDim a As String\nDim b As String\na = Left$(\"hello\", 3)\nb = UCase$(Mid$(\"hello\", 2, 2))\nEnd Sub",
