@@ -1833,7 +1833,7 @@ mod tests {
 
     #[test]
     fn optional_date_currency_defaults_route_through_hir() {
-        let source = "Const CAmount = 1.25@\nConst CStamp = 2.0\nSub Use(Optional ByVal amount As Currency = CAmount + 0.25@, Optional ByVal stamp As Date = CStamp + 0.5, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let source = "Const CAmount = 1.25@\nConst CStamp = 2.0\nSub Use(Optional ByVal amount As Currency = CAmount * 2@ - 1.0@, Optional ByVal stamp As Date = (CStamp + 3.0) / 2.0, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         let (_bytecode, metadata) =
             super::compile_with_runtime_metadata(source).expect("compile should route through HIR");
         let use_metadata = metadata.get("use").expect("Use metadata");

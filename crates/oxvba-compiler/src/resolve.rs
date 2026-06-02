@@ -2182,8 +2182,11 @@ fn static_param_default_expr_inner(
             Some(BoundParamDefaultValue::ExplicitDateSerialF64(*bits))
         }
         _ if declared_type == BoundType::Date => {
-            static_f64_expr_inner(expr, module_constants, resolving_constants)
-                .map(|value| BoundParamDefaultValue::ExplicitDateSerialF64(value.to_bits()))
+            static_f64_expr_inner(expr, module_constants, resolving_constants).and_then(|value| {
+                value
+                    .is_finite()
+                    .then(|| BoundParamDefaultValue::ExplicitDateSerialF64(value.to_bits()))
+            })
         }
         _ => static_i32_expr(expr, module_constants).map(BoundParamDefaultValue::ExplicitI32),
     }
@@ -2346,8 +2349,11 @@ fn static_f64_expr_inner(
             match op {
                 ArithOp::Add => Some(lhs + rhs),
                 ArithOp::Sub => Some(lhs - rhs),
+                ArithOp::Mul => Some(lhs * rhs),
+                ArithOp::Div if rhs != 0.0 => Some(lhs / rhs),
                 _ => None,
             }
+            .filter(|value| value.is_finite())
         }
         BoundExpr::UnaryOp {
             op: ArithOp::Neg,
@@ -8103,7 +8109,7 @@ mod tests {
 
     #[test]
     fn resolve_optional_date_currency_numeric_expression_defaults() {
-        let source = "Const CAmount = 1.25@\nConst CStamp = 2.0\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal amount As Currency = CAmount + 0.25@, Optional ByVal stamp As Date = CStamp + 0.5)\ntarget = stamp\nEnd Sub";
+        let source = "Const CAmount = 1.25@\nConst CStamp = 2.0\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal amount As Currency = CAmount * 2@ - 1.0@, Optional ByVal stamp As Date = (CStamp + 3.0) / 2.0)\ntarget = stamp\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures

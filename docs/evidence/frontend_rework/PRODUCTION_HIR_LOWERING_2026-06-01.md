@@ -1143,9 +1143,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Follow-up Date/Currency carrier work adds explicit optional-default metadata and runtime binding
   for source-backed `Currency` scaled values and `Date` serial values, including declared defaults
   (Currency zero / Date serial zero) and unambiguous module-constant numeric expressions interpreted
-  through the parameter's declared type. A later focused slice extends that same carrier route to
-  bounded additive numeric constant-expression defaults (`+`, `-`, unary `-`) over numeric literals
-  and module constants.
+  through the parameter's declared type. Later focused slices extend that same carrier route to
+  bounded arithmetic numeric constant-expression defaults (`+`, `-`, unary `-`, `*`, and guarded
+  `/`) over numeric literals and module constants.
 - Follow-up Date literal work accepts deterministic `#...#` optional Date defaults and maps them to
   the same Date serial carrier, with resolver, metadata, and VM omitted-argument proofs.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
@@ -1161,7 +1161,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - This deliberately does not claim arbitrary typed coercion of default expressions, locale-sensitive
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
   plus string/Boolean constant-expression subset, bounded Boolean comparison subset, and bounded
-  Date/Currency additive numeric subset. String comparisons, `Like`/`Is`, and coercive comparison
+  Date/Currency arithmetic numeric subset. String comparisons, `Like`/`Is`, and coercive comparison
   defaults remain FE-8.5.f residuals.
 
 ## Checks

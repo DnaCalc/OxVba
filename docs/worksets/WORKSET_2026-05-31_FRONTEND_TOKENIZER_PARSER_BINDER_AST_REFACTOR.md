@@ -723,9 +723,9 @@ Required newly explicit delivery beads:
   A later continuation adds source-backed `Currency` scaled and `Date` serial optional-default
   carriers to runtime metadata, type hooks, direct optional-entry bytecode, and package-VM omitted-
   argument binding, then accepts deterministic `#...#` Date literal optional defaults while leaving
-  locale-sensitive Date breadth open. Bounded additive numeric constant-expression defaults (`+`,
-  `-`, unary `-`) over numeric literals/module constants now also evaluate into those Date/Currency
-  carriers. String constant-expression defaults using `&` over literals
+  locale-sensitive Date breadth open. Bounded arithmetic numeric constant-expression defaults (`+`,
+  `-`, unary `-`, `*`, and guarded `/`) over numeric literals/module constants now also evaluate
+  into those Date/Currency carriers. String constant-expression defaults using `&` over literals
   and module constants now also evaluate into explicit string carriers, and Boolean constant
   expressions over literals/module constants plus `Not`/`And`/`Or` evaluate into explicit Boolean
   carriers. Bounded numeric comparison defaults and Boolean equality/inequality defaults now also
@@ -1334,8 +1334,9 @@ Candidate bead units:
   plus bounded numeric comparison and Boolean equality/inequality defaults through explicit
   descriptors,
   source-backed `Currency` scaled and `Date` serial optional-default descriptors, default-route HIR
-  metadata, deterministic `#...#` Date literal optional defaults, bounded Date/Currency additive
-  numeric constant-expression defaults (`+`, `-`, unary `-`) over numeric literals/module constants,
+  metadata, deterministic `#...#` Date literal optional defaults, bounded Date/Currency arithmetic
+  numeric constant-expression defaults (`+`, `-`, unary `-`, `*`, and guarded `/`) over numeric
+  literals/module constants,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
@@ -1435,8 +1436,8 @@ Candidate bead units:
   The eligibility guard deliberately still excludes surfaces whose HIR semantics are partial,
   including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
   member property writeback, coerced/default-expression metadata beyond the covered integer plus
-  literal/module-constant/concat string defaults, Boolean literal/logical defaults, source-backed
-  bounded Boolean comparison defaults, Date/Currency carriers plus their bounded additive numeric
+  literal/module-constant/concat string defaults, Boolean literal/logical defaults, bounded Boolean
+  comparison defaults, source-backed Date/Currency carriers plus their bounded arithmetic numeric
   constant-expression subset, deterministic Date literal defaults, and typed declared defaults
   (`""`, `False`, integer zero, Currency zero, and Date serial zero),
   and broader optional call-entry combinations. The
