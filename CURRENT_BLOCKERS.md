@@ -208,8 +208,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         `LBound`/`UBound` array-bound intrinsics plus the one-argument `IsArray`, `VarType`,
         `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
         introspection/predicate intrinsics, including those forms inside a ParamArray callee;
-        richer default expressions, multi-argument and host-sensitive intrinsic breadth inside
-        ParamArray callees, and
+        deterministic string/search intrinsics `Len`, `Left`, `Right`, `Mid`, `InStr`,
+        `InStrRev`, `Replace`, and `StrComp` now lower through HIR;
+        richer default expressions, remaining deterministic intrinsic families, host-sensitive
+        intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and
         default-route property semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;

@@ -236,9 +236,16 @@ legacy-recognized one-argument introspection intrinsics `IsArray`, `VarType`, `T
 each result to a distinct ByRef parameter so optimizer dead-store elimination cannot hide missing
 bytecode, and verifies the existing `IntrinsicIsArrayTag`, `IntrinsicVarType`,
 `IntrinsicTypeNameTag`, `IntrinsicIsNumeric`, `IntrinsicIsDateTag`, `IntrinsicIsObjectTag`,
-`IntrinsicIsEmpty`, `IntrinsicIsNull`, and `IntrinsicIsError` instructions. This is still not
-blanket intrinsic closure; multi-argument and host-sensitive callee intrinsics plus broader
-optional/missing-state entry behavior remain open.
+`IntrinsicIsEmpty`, `IntrinsicIsNull`, and `IntrinsicIsError` instructions. At this point it was
+still not blanket intrinsic closure; multi-argument and host-sensitive callee intrinsics plus
+broader optional/missing-state entry behavior remained open.
+
+Follow-up deterministic intrinsic work adds the string/search subset `Len`, `Left`, `Right`, `Mid`,
+`InStr`, `InStrRev`, `Replace`, and `StrComp` to the shared HIR built-in allowlist. The focused
+regression writes each result to a separate ByRef parameter and verifies the existing string/search
+bytecode instructions. This covers a representative multi-argument intrinsic family without
+claiming array-producing, date/time/math/financial, pointer, host-sensitive, or optional-entry
+closure.
 
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names

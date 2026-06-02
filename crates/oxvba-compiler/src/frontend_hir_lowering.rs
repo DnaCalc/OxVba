@@ -4202,6 +4202,77 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_string_search_intrinsics() {
+        let source = "Sub Main()\nDim ln\nDim lf\nDim rt\nDim md\nDim ins\nDim rev\nDim rep\nDim cmp\nCall Capture(ln, lf, rt, md, ins, rev, rep, cmp)\nEnd Sub\nSub Capture(ByRef ln, ByRef lf, ByRef rt, ByRef md, ByRef ins, ByRef rev, ByRef rep, ByRef cmp)\nln = Len(1234)\nlf = Left(12345, 2)\nrt = Right(12345, 2)\nmd = Mid(12345, 2, 2)\nins = InStr(123231, 23)\nrev = InStrRev(123231, 23)\nrep = Replace(12345, 23, 67)\ncmp = StrComp(12, 123)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicLenDigits { .. }
+            )),
+            "expected Len to emit Len intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicLeftDigits { .. }
+            )),
+            "expected Left to emit Left intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRightDigits { .. }
+            )),
+            "expected Right to emit Right intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicMidDigits { .. }
+            )),
+            "expected Mid to emit Mid intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicInStrDigits { .. }
+            )),
+            "expected InStr to emit InStr intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicInStrRevDigits { .. }
+            )),
+            "expected InStrRev to emit InStrRev intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicReplaceDigits { .. }
+            )),
+            "expected Replace to emit Replace intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicStrCompDigits { .. }
+            )),
+            "expected StrComp to emit StrComp intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =
