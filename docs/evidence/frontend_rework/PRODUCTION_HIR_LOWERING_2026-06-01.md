@@ -571,9 +571,9 @@ Basic typed constant declarators such as `Const CBase As Long = 7` also route th
 and substitute the value into procedure bytecode. Follow-up route coverage proves typed simple
 expression declarators and same-statement typed references, for example
 `Const CBase As Long = 2 ^ 3 \ 2 Mod 3, CTotal As Long = CBase + 4`. The current typed
-`Byte`/`Integer`/`Long` subset now folds those integer expressions to `IntConst` / `LoadConstI32`
-rather than preserving runtime arithmetic bytecode, while still using the same checked
-nonnegative exponentiation, integer division, and `Mod` evaluator.
+`Byte`/`Integer`/`Long` subset now folds exact integer expressions to `IntConst` / `LoadConstI32`
+rather than preserving runtime arithmetic bytecode, while still using checked nonnegative
+exponentiation, integer division, and `Mod`. True division remains outside that exact fold.
 Later focused work carries that constant environment across source-ordered `Const` statements for
 the same bounded evaluator, so `Const CTotal As Long = CBase + 4` can reference a prior
 `Const CBase As Long = ...`, route through the default HIR path, stay out of runtime local slots,
@@ -1020,7 +1020,8 @@ constant expressions:
   `LongLong`/`LongPtr` i64 carriers.
 - Typed declarators use the same evaluator and route through the default HIR entry point for the
   covered subset, now audited with `Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`; the
-  typed `Byte`/`Integer`/`Long` subset materializes folded `IntConst` / `LoadConstI32` values.
+  exact typed `Byte`/`Integer`/`Long` subset materializes folded `IntConst` / `LoadConstI32`
+  values while leaving true-division expressions unfurled for broader coercion work.
 - A focused follow-up diagnostic rejects explicit `As Long` constants whose integer expression
   exceeds `Long` range, including same-statement reference cases such as
   `Const CBase As Long = 2147483647, CTotal As Long = CBase + 1`.
@@ -1289,6 +1290,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_same_statement_const_expression --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_byte_integer_const_expressions --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_keeps_true_division_const_expression_unfolded --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_typed_integer_const_expressions_execute --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_untyped_string_const_expression --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_untyped_string_const_expression_through_hir --quiet`
