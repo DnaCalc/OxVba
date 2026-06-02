@@ -1072,15 +1072,18 @@ constant expressions:
   by `Const CTotal As Double = CBase + 0.5`. Direct HIR, default-route, route-audit, and VM
   execution coverage now prove `LoadConstF64` for the expression route, not just the literal route.
 - A bounded Boolean typed-constant pass adds `True`/`False`, source-prior Boolean constants, `Not`,
-  `And`, and `Or` to the declared `Boolean` module-constant evaluator. `Const Enabled As Boolean =
-  True` followed by `Const CFlag As Boolean = Not Enabled Or False` now substitutes as
-  `LoadConstBool false` through direct HIR, default-route, route-audit, and VM execution paths.
+  `And`, `Or`, and simple comparisons over finite numeric values, Boolean equality/inequality, and
+  binary string equality/inequality with `&` concatenation to the declared `Boolean` module-constant
+  evaluator. `Const Prefix As String = "re"`, `Const Enabled As Boolean = True`, and
+  `Const CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & "ady" = "ready"` now
+  substitutes as `LoadConstBool true` through direct HIR, default-route, route-audit, and VM
+  execution paths.
 - This is intentionally still a bounded subset. Constant expressions that require broader
-  procedure-local scoping, conditional-branch source mapping, Boolean comparison/string expression
-  folding, Date/Currency expression coercion beyond the covered numeric arithmetic subset,
-  locale-sensitive Date literal breadth, or names beyond source-prior constants and the already
-  handled enum/literal/type-character route, plus typed constant coercion outside the covered exact
-  scalar carrier subset and full `LongPtr` platform semantics, remain future FE-8.5 work.
+  procedure-local scoping, conditional-branch source mapping, locale-sensitive string comparison,
+  Date/Currency expression coercion beyond the covered numeric arithmetic subset, locale-sensitive
+  Date literal breadth, or names beyond source-prior constants and the already handled
+  enum/literal/type-character route, plus typed constant coercion outside the covered exact scalar
+  carrier subset and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
