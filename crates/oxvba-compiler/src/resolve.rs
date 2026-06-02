@@ -2421,6 +2421,7 @@ fn static_i32_expr_inner(
                 ArithOp::Mul => lhs.checked_mul(rhs),
                 ArithOp::IntDiv => lhs.checked_div(rhs),
                 ArithOp::Mod => lhs.checked_rem(rhs),
+                ArithOp::Pow if rhs >= 0 => lhs.checked_pow(rhs as u32),
                 _ => None,
             }
         }
@@ -8012,7 +8013,7 @@ mod tests {
 
     #[test]
     fn resolve_optional_params_with_integer_constant_expression_defaults() {
-        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = &H10 + &O7 - 1)\ntarget = value\nEnd Sub";
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 2 ^ 3 + &H10 - 2)\ntarget = value\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures

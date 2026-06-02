@@ -3368,6 +3368,17 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
             rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
         });
     }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['^']) {
+        let op = match op {
+            '^' => ArithOp::Pow,
+            _ => return None,
+        };
+        return Some(BoundExpr::BinaryOp {
+            op,
+            lhs: Box::new(parse_const_value(lhs.trim(), named_values)?),
+            rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
+        });
+    }
     if let Some(rest) = text.strip_prefix('-') {
         return Some(BoundExpr::UnaryOp {
             op: ArithOp::Neg,
@@ -3420,6 +3431,14 @@ fn parse_const_i64_value(text: &str, named_values: &HashMap<String, i64>) -> Opt
         return match op {
             '*' => lhs.checked_mul(rhs),
             '/' if rhs != 0 => lhs.checked_div(rhs),
+            _ => None,
+        };
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['^']) {
+        let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
+        return match op {
+            '^' if rhs >= 0 => lhs.checked_pow(rhs as u32),
             _ => None,
         };
     }
@@ -3560,7 +3579,7 @@ fn is_unary_const_minus(text: &str, idx: usize) -> bool {
         return true;
     }
     let prior = text[..idx].trim_end().chars().next_back();
-    prior.is_none_or(|ch| matches!(ch, '(' | '+' | '-' | '*' | '/' | '&'))
+    prior.is_none_or(|ch| matches!(ch, '(' | '+' | '-' | '*' | '/' | '&' | '^'))
 }
 
 fn declared_bound_type(typed_hir: &TypedHirModule, symbol: SymbolId) -> Option<BoundType> {
@@ -7122,7 +7141,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_collects_typed_same_statement_const_expression() {
-        let source = "Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+        let source = "Const CBase As Long = 2 ^ 3, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
         let typed_hir =
             collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
         let const_values = collect_const_values(source, &typed_hir);
@@ -7148,9 +7167,13 @@ mod tests {
                 value,
                 BoundExpr::BinaryOp {
                     op: ArithOp::Add,
+                    lhs,
                     rhs,
                     ..
-                } if matches!(rhs.as_ref(), BoundExpr::IntConst(4))
+                } if matches!(
+                    lhs.as_ref(),
+                    BoundExpr::BinaryOp { op: ArithOp::Pow, .. }
+                ) && matches!(rhs.as_ref(), BoundExpr::IntConst(4))
             ),
             "{value:#?}"
         );
@@ -7158,8 +7181,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_rejects_overflowing_typed_long_const() {
-        let source =
-            "Const CBase As Long = 2147483647, CTotal As Long = CBase + 1\nSub Main()\nEnd Sub\n";
+        let source = "Const CTotal As Long = 2 ^ 31\nSub Main()\nEnd Sub\n";
         let err = compile_source_with_runtime_metadata_via_hir(source)
             .expect_err("overflowing Long const should be diagnosed");
         assert!(

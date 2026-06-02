@@ -568,11 +568,13 @@ and remain part of the broader attribute-semantics residual.
 Basic typed constant declarators such as `Const CBase As Long = 7` also route through default HIR
 and substitute the value into procedure bytecode. Follow-up route coverage proves typed simple
 expression declarators and same-statement typed references, for example
-`Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`. This covers the current
-literal/simple-expression constant evaluator. Later focused diagnostic passes reject explicit
-`As Byte`, `As Integer`, and `As Long` integer expressions that overflow their VBA ranges before
-the unsupported-const fallback can hide them. Typed constant coercion, `LongLong`/`LongPtr`
-constant carriers and range diagnostics, and broader compile-time expression parity remain open.
+`Const CBase As Long = 2 ^ 3, CTotal As Long = CBase + 4`. This covers the current
+literal/simple-expression constant evaluator, including checked nonnegative integer exponentiation.
+Later focused diagnostic passes reject explicit `As Byte`, `As Integer`, and `As Long` integer
+expressions that overflow their VBA ranges before the unsupported-const fallback can hide them,
+including checked exponentiation overflow such as `2 ^ 31` for `Long`. Typed constant coercion,
+`LongLong`/`LongPtr` constant carriers and range diagnostics, and broader compile-time expression
+parity remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -1123,7 +1125,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Procedure signature parsing now accepts integer constant-expression defaults by reusing the
   resolver expression parser and statically folding only integer-safe shapes.
 - This covers decimal, signed, prefixed hex/octal, typed integer suffixes, parentheses, and simple
-  integer arithmetic that can be represented as `OptionalDefaultValue::ExplicitI32`.
+  integer arithmetic, including checked nonnegative exponentiation, that can be represented as
+  `OptionalDefaultValue::ExplicitI32`.
 - Follow-up route work also allows those integer defaults to reference integer-valued module
   constants, including constants initialized from prefixed hex/octal arithmetic, while keeping the
   same `ExplicitI32` descriptor contract.
@@ -1187,6 +1190,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_boolean_expression_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_date_currency_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_same_statement_const_expression --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_integer_const --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const --quiet`
