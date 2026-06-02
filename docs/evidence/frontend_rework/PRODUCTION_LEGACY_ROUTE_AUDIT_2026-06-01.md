@@ -87,7 +87,11 @@ proved live here: `CreateObject("Excel.Application")`, root `Visible` property g
 `Quit` cleanup. The command
 `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 passed on this machine. The previous property-set shape is not claimed by this evidence; richer
-Excel property-put, range/default-member, and member-mutation lanes remain open.
+Excel property-put, range/default-member, and member-mutation lanes were still open at this point
+in the chronology. Later COM/Excel oracle follow-ups closed scoped live lanes for
+`DispatchInvoke(sheet, "Range", "A1")`, `Worksheets.Add After:=sheet`, null `Cells.Find` results,
+`Range("A1").Value` property-put, and indexed `Range("A1")(1)` default-member mutation; broader
+Excel object-model parity remains open.
 
 Continuation update: the Excel oracle lane now includes a second source-backed fixture and ignored
 host execution test for workbook/range-object automation. The seed corpus route audit includes
