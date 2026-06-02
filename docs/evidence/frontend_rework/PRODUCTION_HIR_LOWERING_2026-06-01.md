@@ -1006,6 +1006,14 @@ The language-service corpus continuation now consumes the same seed corpus for s
 coverage uses compiler front-end facts rather than a duplicate legacy semantic fallback. Broader
 workspace, cross-module, and reference-project IDE route coverage remains FE-9.7 work.
 
+Follow-up host-project corpus expansion widens the HIR-capable project boundary from a single
+procedural active module to active projects containing only procedural modules and no references.
+The regression fixture uses a two-module project with an inline-statement main procedure and a
+module-qualified call, proving the old legacy project boundary would have rejected the source while
+the HIR boundary compiles it. The seed route audit now includes `INTP-002` as a multi-module
+procedural host-project row. Reference projects, class/document modules, and host/oracle-backed
+project semantics remain outside this slice.
+
 ## Bang Member Read Continuation
 
 The latest FE-8.5 slice removes the read-side bang member residual:

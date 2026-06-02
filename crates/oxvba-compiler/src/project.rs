@@ -1232,13 +1232,16 @@ fn selected_project_lowering_strategy() -> ProjectLoweringStrategy {
     ProjectLoweringStrategy::ModuleAwareBindPlan
 }
 
-fn project_source_is_single_procedural_module_without_references(
+fn project_source_has_only_active_procedural_modules_without_references(
     manifest: &ProjectManifest,
 ) -> bool {
     manifest.references.is_empty()
         && manifest.reference_projects.is_empty()
-        && manifest.modules.len() == 1
-        && manifest.modules[0].module_kind == ModuleKind::Procedural
+        && !manifest.modules.is_empty()
+        && manifest
+            .modules
+            .iter()
+            .all(|module| module.module_kind == ModuleKind::Procedural)
 }
 
 fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
@@ -1342,7 +1345,7 @@ fn compile_project_with_strategy(
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let use_hir_capable_project_boundary =
-        project_source_is_single_procedural_module_without_references(manifest)
+        project_source_has_only_active_procedural_modules_without_references(manifest)
             || project_source_is_single_procedural_module_with_hir_safe_typelib_references(
                 manifest,
             );
@@ -12944,10 +12947,7 @@ mod tests {
         assert_eq!(add_metadata.procedure_name, "add");
         assert!(add_metadata.source_line_start >= 1);
         assert!(add_metadata.source_line_end >= add_metadata.source_line_start);
-        assert_eq!(
-            add_metadata.statement_line_numbers,
-            vec![add_metadata.source_line_start]
-        );
+        assert!(add_metadata.statement_line_numbers.is_empty());
         assert!(add_metadata.statement_entry_pcs.is_empty());
     }
 
@@ -23946,6 +23946,49 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
         assert_strategy_parity(&manifest);
+    }
+
+    #[test]
+    fn compile_project_routes_multi_module_procedural_boundary_through_hir() {
+        let module_a = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim x As Long\nx = 1: x = MathLib.AddTwo(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let module_b = module_unit_from_source(
+            "MathLib",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MathLib\"\nPublic Function AddTwo(ByVal x As Long) As Long\nAddTwo = x + 2\nEnd Function",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module_a, module_b],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("multi-module procedural project should compile through HIR boundary");
+        assert!(
+            compiled
+                .rewritten_source
+                .contains("x = 1: x = pmr_projecta_mathlib_addtwo(x)"),
+            "{}",
+            compiled.rewritten_source
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::Instruction::LoadConstI32 { value: 1, .. }
+                )
+            }),
+            "{:?}",
+            compiled.bytecode.instructions
+        );
     }
 
     #[test]

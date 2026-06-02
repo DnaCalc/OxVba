@@ -664,10 +664,13 @@ Required newly explicit delivery beads:
   `conformance/tests/call_coercion_mixed_variant_to_long.bas`, and the inline statement-separator
   improvement fixture route as HIR production, and the single-module `INTP-001` host-project seed
   row now classifies its module source as HIR production and compiles it through `compile_project`.
+  Follow-up host-project expansion routes active projects containing only procedural modules and no
+  references through the HIR-capable project boundary and adds the multi-module `INTP-002` seed row
+  to the route audit.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
   from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, add
-  multi-module/reference host-project and cross-workspace language-service route runners, and add an
-  Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
+  reference/class/document host-project and cross-workspace language-service route runners, and add
+  an Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
