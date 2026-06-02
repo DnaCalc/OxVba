@@ -274,6 +274,11 @@ built-in resolution and verifies the existing transformation/formatting bytecode
 continues the deterministic intrinsic migration without claiming collection, financial, pointer,
 dispatch, or host-sensitive closure.
 
+Follow-up collection intrinsic work adds `CollectionAdd`, `CollectionItem`, `CollectionRemove`, and
+`CollectionCount` to HIR built-in resolution and verifies the existing collection bytecode variants.
+This covers the deterministic collection helper family but does not claim general VBA `Collection`
+object/member syntax or default-member semantics.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

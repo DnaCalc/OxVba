@@ -4668,6 +4668,45 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_collection_intrinsics() {
+        let source = "Sub Main()\nDim addResult\nDim itemResult\nDim removeResult\nDim countResult\nCall Capture(addResult, itemResult, removeResult, countResult)\nEnd Sub\nSub Capture(ByRef addResult, ByRef itemResult, ByRef removeResult, ByRef countResult)\naddResult = CollectionAdd(0, 9)\nitemResult = CollectionItem(1, 1)\nremoveResult = CollectionRemove(1, 1)\ncountResult = CollectionCount(1)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCollectionAdd { .. }
+            )),
+            "expected CollectionAdd to emit collection-add intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCollectionItem { .. }
+            )),
+            "expected CollectionItem to emit collection-item intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCollectionRemove { .. }
+            )),
+            "expected CollectionRemove to emit collection-remove intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCollectionCount { .. }
+            )),
+            "expected CollectionCount to emit collection-count intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =

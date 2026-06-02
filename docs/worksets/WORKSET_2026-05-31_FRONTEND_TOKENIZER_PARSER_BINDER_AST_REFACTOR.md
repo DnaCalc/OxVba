@@ -1204,7 +1204,9 @@ Candidate bead units:
   `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff`, plus deterministic
   conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and `Oct`, plus
   deterministic string transform/format intrinsics `LCase`, `UCase`, `Trim`, `LTrim`, `RTrim`,
-  `Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and `Join`.
+  `Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and `Join`, plus
+  deterministic collection intrinsics `CollectionAdd`, `CollectionItem`, `CollectionRemove`, and
+  `CollectionCount`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

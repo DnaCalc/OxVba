@@ -221,6 +221,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         deterministic string transform/format intrinsics `LCase`, `UCase`, `Trim`, `LTrim`,
         `RTrim`, `Space`, `String`, `Chr`, `Asc`, `StrReverse`, `StrConv`, `Format`, `Split`, and
         `Join` now lower through HIR;
+        deterministic collection intrinsics `CollectionAdd`, `CollectionItem`, `CollectionRemove`,
+        and `CollectionCount` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

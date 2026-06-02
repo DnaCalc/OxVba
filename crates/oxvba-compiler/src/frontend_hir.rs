@@ -73,6 +73,10 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "format"
             | "split"
             | "join"
+            | "collectionadd"
+            | "collectionitem"
+            | "collectionremove"
+            | "collectioncount"
     )
 }
 
