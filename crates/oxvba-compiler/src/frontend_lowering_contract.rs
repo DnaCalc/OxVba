@@ -79,6 +79,7 @@ pub fn collect_lowering_contracts_from_typed_hir(
         let locals = typed_hir
             .hooks
             .declared_types()
+            .filter(|hook| hook.symbol != decl.symbol)
             .filter(|hook| symbol_belongs_to_decl_span(typed_hir, hook.symbol, *decl_id))
             .filter(|hook| !is_declaration_modifier_symbol(typed_hir, hook.symbol))
             .enumerate()
@@ -151,7 +152,24 @@ fn expr_belongs_to_decl_span(typed_hir: &TypedHirModule, expr: HirExprId, decl: 
 fn is_declaration_modifier_symbol(typed_hir: &TypedHirModule, symbol: SymbolId) -> bool {
     matches!(
         symbol_folded_name(typed_hir, symbol),
-        Some("withevents" | "optional" | "byval" | "byref" | "paramarray")
+        Some(
+            "withevents"
+                | "optional"
+                | "byval"
+                | "byref"
+                | "paramarray"
+                | "boolean"
+                | "byte"
+                | "currency"
+                | "date"
+                | "double"
+                | "integer"
+                | "long"
+                | "object"
+                | "single"
+                | "string"
+                | "variant"
+        )
     )
 }
 
@@ -449,7 +467,7 @@ mod tests {
         let contracts = collect_lowering_contracts_from_typed_hir(&typed_hir);
         assert_eq!(contracts.len(), 1);
         let contract = &contracts[0];
-        assert_eq!(contract.frame_overlay.locals.len(), 3);
+        assert_eq!(contract.frame_overlay.locals.len(), 2);
         assert_eq!(contract.returns.len(), 1);
         assert!(!contract.uses_legacy_intrinsic_names());
         assert!(!contract.assumes_flat_slots());
@@ -465,7 +483,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(local_names.contains(&"seed"));
         assert!(local_names.contains(&"total"));
-        assert!(local_names.contains(&"main"));
+        assert!(!local_names.contains(&"main"));
+        assert!(!local_names.contains(&"long"));
     }
 
     #[test]

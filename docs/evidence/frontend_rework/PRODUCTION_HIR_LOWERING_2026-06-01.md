@@ -209,8 +209,8 @@ proofs are complete.
 
 Follow-up FE-8.5.f route work narrows that residual: optional parameters with simple explicit
 defaults now remain eligible for the default HIR path and preserve optional/default signature
-metadata for otherwise completed single-source inputs. `ParamArray`, richer default expressions,
-and broader optional missing-state call-entry behavior remain outside the lightweight default route.
+metadata for otherwise completed single-source inputs. Richer default expressions and broader
+optional missing-state call-entry behavior remain outside the lightweight default route.
 Additional property-declaration work teaches HIR lowering to derive `Property Get`/`Property Let`
 procedure kinds from the HIR property record, preserve getter return-slot metadata, and bind the
 getter self-assignment name to that return slot. Same-module zero-argument `Property Get` reads now
@@ -218,6 +218,21 @@ also lower through HIR as procedure calls, and simple same-module `Property Let`
 writes lower as synthetic property assignment calls. Simple non-indexed property declarations now
 remain eligible for the default HIR route. Indexed property invocation and broader default-member
 semantics remain open.
+
+Further FE-8.5.f route work moves the simple `ParamArray` declaration and positional packed-call
+shape onto the default HIR route. HIR lowering preserves the `ParamArray` signature role and
+call-site `ParamArrayPack` descriptor, and the existing named ParamArray-target diagnostic still
+fires after the route flip. This does not claim intrinsic coverage inside ParamArray callees
+(`UBound` is still a separate HIR intrinsic gap), richer default expressions, or the broader
+optional/missing-state call-entry matrix.
+
+The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
+issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
+and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering
+contract; fixed-array accesses after a fixed-array `ReDim` now reject static indexes outside the
+current bounds instead of falling through to runtime dynamic-array access; and assignment RHS
+forms such as `valueOut = widget x` remain rejected for internal-class/default-member
+no-parentheses getter reads rather than being accepted by the production route.
 
 ## RaiseEvent Continuation
 
@@ -754,6 +769,9 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-compiler compile_project_lazily_reconstructs_as_new_after_set_nothing --quiet`
 - `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_optional_parameter_defaults --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_preserves_param_array_metadata_and_call_pack --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_param_array_through_hir --quiet`
+- `cargo test -p oxvba-compiler compile_paramarray --quiet`
 - `cargo test -p oxvba-compiler hir_lowering_lowers_structural_intrinsic_call_targets --quiet`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_rewrites_module_qualified_calls_for_unique_names --quiet`
@@ -787,8 +805,8 @@ The latest FE-8.5 slice removes the read-side bang member residual:
   construct families are flipped and which residuals remain tracked.
 - Call-site descriptors, object/member bindings, and writebacks remain out of the current HIR
   production scope beyond the simple same-module call route above. Broader argument binding,
-  optional/default, ParamArray, member dispatch, and writeback semantics remain open FE-8.5/FE-7
-  delivery work.
+  optional/default breadth, intrinsic-backed ParamArray callee bodies, member dispatch, and
+  writeback semantics remain open FE-8.5/FE-7 delivery work.
 - The first attempt let HIR production lowering silently ignore call statements. The production guard
   now rejects unsupported syntax kinds up front, and call statements are covered by direct HIR
   lowering tests so scoped HIR lowering is not allowed to compile a partial program.

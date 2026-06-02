@@ -995,7 +995,10 @@ Candidate bead units:
   explicit legacy helper for differential comparison. Fresh-eyes correction in that slice narrowed
   eligibility so DefType, functions/properties, optional/default/ParamArray parameters, project
   rewrites, and class/object-local compatibility contexts stay on the residual path until HIR owns
-  their semantics. Fourteenth reopened continuation adds multiline `ElseIf` lowering as nested HIR
+  their semantics. Later continuation work has moved simple DefType, function return-type, explicit
+  optional-default, simple non-indexed property, and simple positional `ParamArray` pack shapes onto
+  the default HIR route with focused metadata/route proof while leaving the broader surfaces open.
+  Fourteenth reopened continuation adds multiline `ElseIf` lowering as nested HIR
   branch trees and records `If/Else` plus `If/ElseIf/Else` route-audit coverage. Fifteenth reopened
   continuation adds typed HIR and production lowering for `Exit Do`, `Exit For`, and procedure exit
   statements. Sixteenth reopened continuation changes the syntax parser to preserve single-line

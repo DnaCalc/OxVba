@@ -350,7 +350,7 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_property_declaration(source) {
         return false;
     }
-    !syntax_tree_has_any_kind(parsed.syntax(), &[oxvba_syntax::SyntaxKind::KwParamArray])
+    true
 }
 
 fn source_has_unsupported_property_declaration(source: &str) -> bool {
@@ -490,25 +490,6 @@ fn source_has_unsupported_option_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> boo
     node.child_nodes()
         .into_iter()
         .any(source_has_unsupported_option_stmt)
-}
-
-fn syntax_tree_has_any_kind(
-    node: oxvba_syntax::SyntaxNode<'_>,
-    kinds: &[oxvba_syntax::SyntaxKind],
-) -> bool {
-    if kinds.contains(&node.kind()) {
-        return true;
-    }
-    if node
-        .child_tokens()
-        .iter()
-        .any(|token| kinds.contains(&token.kind))
-    {
-        return true;
-    }
-    node.child_nodes()
-        .into_iter()
-        .any(|child| syntax_tree_has_any_kind(child, kinds))
 }
 
 fn validate_frontend_lowering_contract_metadata(
@@ -1135,11 +1116,29 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_still_rejects_param_array_route() {
+    fn compile_with_runtime_metadata_default_routes_param_array_through_hir() {
         let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
         assert!(
-            !super::source_is_eligible_for_lightweight_hir_default(source),
-            "ParamArray remains outside the lightweight default HIR route"
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "ParamArray declarations should be eligible for default HIR once packed calls lower correctly"
+        );
+
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route ParamArray source through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(
+            use_metadata.signature.parameters[0].role,
+            ParameterRole::ParamArray
+        );
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site
+                    .arguments
+                    .iter()
+                    .any(|arg| arg.binding_kind == ArgumentBindingKindDescriptor::ParamArrayPack)
+            }),
+            "expected default HIR route to preserve ParamArray pack call-site metadata: {main:#?}"
         );
     }
 
@@ -4966,7 +4965,7 @@ mod tests {
 
     #[test]
     fn compile_property_set_assignment_routes_to_call() {
-        let source = "Sub Main()\nDim x\nx = 2\nObj = x\nEnd Sub\nProperty Set Obj(ByRef target)\ntarget = target + 5\nEnd Property";
+        let source = "Sub Main()\nDim x\nx = 2\nSet Obj = x\nEnd Sub\nProperty Set Obj(ByRef target)\ntarget = target + 5\nEnd Property";
         let out = compile(source).expect("compile should succeed");
         assert!(
             out.instructions

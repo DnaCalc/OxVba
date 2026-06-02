@@ -428,6 +428,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let param_array_statement =
+        "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
+    findings.push(route_finding(
+        "ParamArray parameter fixture",
+        param_array_statement,
+        "bd-aprs.9.10",
+    ));
+
     let simple_property_statement = "Sub Main()\nDim x\nx = Value\nValue = x\nEnd Sub\nProperty Get Value() As Long\nValue = 9\nEnd Property\nProperty Let Value(ByRef target)\ntarget = target + 1\nEnd Property\n";
     findings.push(route_finding(
         "simple property fixture",

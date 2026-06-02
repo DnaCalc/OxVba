@@ -80,6 +80,11 @@ impl HirLoweringContext {
             .contains(&name.to_ascii_lowercase())
     }
 
+    fn is_fixed_array(&self, name: &str) -> bool {
+        self.fixed_array_bounds
+            .contains_key(&name.to_ascii_lowercase())
+    }
+
     fn fixed_array_alias(&self, name: &str, indices: &[BoundCallArg]) -> Option<String> {
         let bounds = self.fixed_array_bounds.get(&name.to_ascii_lowercase())?;
         let indices = indices
@@ -1935,10 +1940,13 @@ fn lower_call_expr(
         .collect::<Result<Vec<_>, _>>()?;
     match target {
         BoundExpr::Var(name) => {
-            if call_data.cst.syntax_kind == "IndexExpr"
-                && let Some(alias) = context.fixed_array_alias(&name, &args)
-            {
-                return Ok(BoundExpr::Var(alias));
+            if call_data.cst.syntax_kind == "IndexExpr" && context.is_fixed_array(&name) {
+                if let Some(alias) = context.fixed_array_alias(&name, &args) {
+                    return Ok(BoundExpr::Var(alias));
+                }
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "fixed-array index is outside the current bounds for {name}"
+                )));
             }
             if call_data.cst.syntax_kind == "IndexExpr" && context.is_dynamic_array(&name) {
                 let mut intrinsic_args = Vec::with_capacity(args.len() + 1);
@@ -2980,7 +2988,24 @@ fn symbol_belongs_to_decl_span(
 fn is_declaration_modifier_symbol(typed_hir: &TypedHirModule, symbol: SymbolId) -> bool {
     matches!(
         symbol_name(typed_hir, symbol).ok().as_deref(),
-        Some("withevents" | "optional" | "byval" | "byref" | "paramarray")
+        Some(
+            "withevents"
+                | "optional"
+                | "byval"
+                | "byref"
+                | "paramarray"
+                | "boolean"
+                | "byte"
+                | "currency"
+                | "date"
+                | "double"
+                | "integer"
+                | "long"
+                | "object"
+                | "single"
+                | "string"
+                | "variant"
+        )
     )
 }
 
@@ -4040,6 +4065,40 @@ mod tests {
         assert_eq!(use_metadata.signature.parameters.len(), 1);
         assert!(use_metadata.signature.parameters[0].optional);
         assert_eq!(use_metadata.signature.parameters[0].default_value, Some(7));
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_param_array_metadata_and_call_pack() {
+        let source = "Sub Main()\nDim x\nCall Capture(x, 5, 7)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = 1\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CallProc { .. }
+            )),
+            "expected ParamArray call to emit procedure call: {:?}",
+            bytecode.instructions
+        );
+        let capture = metadata
+            .get("capture")
+            .expect("Capture metadata")
+            .procedure_signature_descriptor();
+        assert_eq!(
+            capture.parameters[1].role,
+            crate::emit::ParameterRole::ParamArray
+        );
+
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.arguments.iter().any(|arg| {
+                    arg.binding_kind == crate::emit::ArgumentBindingKindDescriptor::ParamArrayPack
+                })
+            }),
+            "expected ParamArray pack call-site metadata: {main:#?}"
+        );
     }
 
     #[test]

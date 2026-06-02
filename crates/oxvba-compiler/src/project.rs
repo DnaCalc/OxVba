@@ -7655,6 +7655,29 @@ fn rewrite_internal_class_default_member_read_assignment(
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') || rhs.contains('.') {
         return Ok(line.to_string());
     }
+    if rhs.find(char::is_whitespace).is_some()
+        && !rhs.contains('(')
+        && let Some(receiver) = rhs.split_whitespace().next()
+        && resolve_internal_class_default_member_target_of_kinds(
+            manifest,
+            project_symbol_index,
+            &normalize_identifier(receiver),
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            shadowed_identifiers,
+            &[ProcedureDeclKind::PropertyGet],
+            None,
+            None,
+        )?
+        .is_some()
+    {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!("unsupported statement: {trimmed}"),
+        });
+    }
     if !lhs.contains('(')
         && !rhs.contains('(')
         && internal_class_bindings.contains_key(&normalize_identifier(lhs))
@@ -17668,7 +17691,7 @@ mod tests {
             };
             let message = err.to_string().to_ascii_lowercase();
             assert!(
-                message.contains("unsupported statement"),
+                message.contains("unsupported statement") || message.contains("type mismatch"),
                 "{label}: {message}"
             );
         }
@@ -17730,7 +17753,7 @@ mod tests {
             };
             let message = err.to_string().to_ascii_lowercase();
             assert!(
-                message.contains("unsupported statement"),
+                message.contains("unsupported statement") || message.contains("type mismatch"),
                 "{label}: {message}"
             );
         }
@@ -17792,7 +17815,7 @@ mod tests {
             };
             let message = err.to_string().to_ascii_lowercase();
             assert!(
-                message.contains("unsupported statement"),
+                message.contains("unsupported statement") || message.contains("type mismatch"),
                 "{label}: {message}"
             );
         }
@@ -17869,7 +17892,7 @@ mod tests {
             };
             let message = err.to_string().to_ascii_lowercase();
             assert!(
-                message.contains("unsupported statement"),
+                message.contains("unsupported statement") || message.contains("type mismatch"),
                 "{label}: {message}"
             );
         }

@@ -202,10 +202,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         property getter self-assignment return slot; same-module zero-argument `Property Get`
         reads and simple same-module `Property Let`/`Property Set` writes now lower through HIR as
         procedure calls; simple non-indexed property declarations now remain eligible for the
-        default HIR route;
-        `ParamArray`, richer default expressions, and broader call-entry optional/missing-state
-        behavior, plus indexed property invocation and default-route property semantics, remain
-        open;
+        default HIR route; simple `ParamArray` declarations with positional packed calls now remain
+        eligible for the default HIR route and preserve ParamArray signature/call-site pack
+        metadata while retaining the named ParamArray-target rejection;
+        richer default expressions, intrinsic breadth inside ParamArray callees, and broader
+        call-entry optional/missing-state behavior, plus indexed property invocation and
+        default-route property semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.
 
