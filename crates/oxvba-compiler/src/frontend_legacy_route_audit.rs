@@ -293,6 +293,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.8",
     ));
 
+    let fixed_array_redim_alias_statement =
+        "Sub Main()\nDim a(1)\nDim x As Long\na(0) = 7\nReDim Preserve a(3)\nx = a(3)\nEnd Sub\n";
+    findings.push(route_finding(
+        "fixed array redim alias rematerialization fixture",
+        fixed_array_redim_alias_statement,
+        "bd-aprs.9.8",
+    ));
+
     let raise_event_statement = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
     findings.push(route_finding(
         "raise event statement fixture",
@@ -585,6 +593,11 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("fixed array element alias")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("fixed array redim alias rematerialization")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("value-side member expression")

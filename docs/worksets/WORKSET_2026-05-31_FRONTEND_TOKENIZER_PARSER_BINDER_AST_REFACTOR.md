@@ -617,12 +617,12 @@ Required newly explicit delivery beads:
   selection and writeback through front-end facts for project/class/COM/host members. Partial work
   already done: simple late-bound dot/bang/With member reads and simple member assignment targets
   lower through HIR with Let/Set hints.
-- FE-8.5.d Arrays/indexing/ReDim parity: finish fixed-array `ReDim` alias rematerialization,
-  remaining multidimensional array read/write and fixed/project/class shapes, and project/class
-  array fields through HIR. Partial work already done: dynamic-array runtime `ReDim` lowering now
-  covers one-dimensional and two-dimensional runtime bounds, static integer explicit lower-bound
-  `To` forms, read/write dynamic-array element access, initial fixed-array alias materialization
-  for static integer bounds, array-shape rank metadata updates from observed `ReDim` bounds,
+- FE-8.5.d Arrays/indexing/ReDim parity: finish remaining multidimensional array read/write and
+  fixed/project/class shapes, and project/class array fields through HIR. Partial work already
+  done: dynamic-array runtime `ReDim` lowering now covers one-dimensional and two-dimensional
+  runtime bounds, static integer explicit lower-bound `To` forms, read/write dynamic-array element
+  access, initial fixed-array alias materialization plus fixed-array `ReDim` rematerialization for
+  static integer bounds, array-shape rank metadata updates from observed `ReDim` bounds,
   route-audit coverage for those shapes, and `Option Base` default-route policy.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
@@ -1018,9 +1018,8 @@ Candidate bead units:
   `ReDim grid(rows - 1, cols - 1)` and static lower-bound `ReDim buf(1 To length - 1)` fixtures
   for those completed lowering shapes, and later continuations route read/write dynamic-array
   element access (`x = buf(1)`, `buf(1) = 7`) through HIR `IndexExpr` to the backend array
-  get/set intrinsics. The next continuation materializes initial fixed-array declaration aliases
-  and shape metadata for static integer bounds while leaving fixed-array `ReDim` alias
-  rematerialization open.
+  get/set intrinsics. Follow-up continuations materialize initial fixed-array declaration aliases
+  and fixed-array `ReDim` alias rematerialization with shape metadata for static integer bounds.
   Follow-up default-route correction allows `Option Base 0`, `Option Base 1`, default-equivalent
   `Option Compare Binary`, and `Option Compare Text` on otherwise completed lightweight HIR
   sources, while leaving `Option Explicit`, `Option Compare Database`, and
@@ -1139,15 +1138,14 @@ Candidate bead units:
   assert patched `CallProc.project_member` bytecode metadata for the expected `pmr_*` helper
   identity and accessor kind; this is evidence for the current host semantics, not closure of the
   remaining host/reference HIR-ownership and rewrite-quarantine work.
-- FE-8.5.d Arrays, indexing, and `ReDim` parity: finish fixed-array `ReDim` alias
-  rematerialization,
-  remaining multidimensional array read/write and fixed/project/class shapes, and project/class
-  array fields through HIR.
+- FE-8.5.d Arrays, indexing, and `ReDim` parity: finish remaining multidimensional array
+  read/write and fixed/project/class shapes, and project/class array fields through HIR.
   Partial work has already been done: dynamic-array runtime `ReDim` lowering now covers
   one-dimensional and two-dimensional runtime bounds, static integer explicit lower-bound `To`
-  forms, read/write dynamic-array element access, initial fixed-array alias materialization for
-  static integer bounds, updates array-shape rank metadata from observed `ReDim` bounds, includes
-  those shapes in the production route audit, and carries `Option Base` default-route policy.
+  forms, read/write dynamic-array element access, initial fixed-array alias materialization plus
+  fixed-array `ReDim` rematerialization for static integer bounds, updates array-shape rank
+  metadata from observed `ReDim` bounds, includes those shapes in the production route audit, and
+  carries `Option Base` default-route policy.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial

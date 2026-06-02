@@ -100,7 +100,8 @@ The audit result records completed reopened delivery work and remaining broader 
   multiline and single-line If/ElseIf syntax, front-checked Do While syntax, basic Exit and
   error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,
   one-dimensional, two-dimensional, and explicit static lower-bound dynamic-array runtime `ReDim`,
-  read/write dynamic-array element access, initial fixed-array element aliasing,
+  read/write dynamic-array element access, initial fixed-array element aliasing and fixed-array
+  `ReDim` alias rematerialization,
   simple function declarations with declared return
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
   multi-declarator literal `Const`, `Event` declarations paired with `RaiseEvent`, single-source

@@ -468,6 +468,10 @@ fn lower_procedure(
             &udt_instance_fields,
             option_base,
             &dynamic_array_names,
+            &mut fixed_array_bounds,
+            &mut declarations,
+            &mut declaration_types,
+            &mut array_descriptors,
             *stmt,
             &mut stmts,
             context,
@@ -551,6 +555,10 @@ fn lower_stmt(
     udt_instance_fields: &HashMap<String, Vec<String>>,
     option_base: i32,
     dynamic_array_names: &HashSet<String>,
+    fixed_array_bounds: &mut HashMap<String, Vec<(i32, i32)>>,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    array_descriptors: &mut HashMap<String, BoundArrayDescriptor>,
     stmt: HirStmtId,
     out: &mut Vec<BoundStmt>,
     context: &mut HirLoweringContext,
@@ -817,6 +825,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *child,
                     out,
                     context,
@@ -866,6 +878,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *stmt,
                     &mut lowered_then,
                     context,
@@ -880,6 +896,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *stmt,
                     &mut lowered_else,
                     context,
@@ -912,6 +932,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *stmt,
                     &mut lowered_body,
                     context,
@@ -961,6 +985,10 @@ fn lower_stmt(
                         udt_instance_fields,
                         option_base,
                         dynamic_array_names,
+                        fixed_array_bounds,
+                        declarations,
+                        declaration_types,
+                        array_descriptors,
                         *stmt,
                         &mut lowered_body,
                         context,
@@ -977,6 +1005,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *stmt,
                     &mut lowered_else,
                     context,
@@ -1004,6 +1036,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *stmt,
                     &mut lowered_body,
                     context,
@@ -1036,6 +1072,10 @@ fn lower_stmt(
                     udt_instance_fields,
                     option_base,
                     dynamic_array_names,
+                    fixed_array_bounds,
+                    declarations,
+                    declaration_types,
+                    array_descriptors,
                     *stmt,
                     &mut lowered_body,
                     context,
@@ -1080,7 +1120,72 @@ fn lower_stmt(
             bounds,
             preserve,
         } => {
-            if !dynamic_array_names.contains(&name.to_ascii_lowercase()) {
+            let folded_name = name.to_ascii_lowercase();
+            if !dynamic_array_names.contains(&folded_name)
+                && let Some(previous_bounds) = fixed_array_bounds.get(&folded_name).cloned()
+            {
+                let bounds = bounds
+                    .iter()
+                    .map(|bound| {
+                        let lower = if let Some(lower) = bound.lower {
+                            lower_static_redim_bound(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                lower,
+                                context,
+                            )?
+                        } else {
+                            option_base
+                        };
+                        let upper = lower_static_redim_bound(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            bound.upper,
+                            context,
+                        )?;
+                        if upper < lower {
+                            return Err(HirProductionLoweringError::Unsupported(format!(
+                                "fixed-array ReDim upper bound is below lower bound for {name}"
+                            )));
+                        }
+                        Ok((lower, upper))
+                    })
+                    .collect::<Result<Vec<_>, HirProductionLoweringError>>()?;
+                let element_type = array_descriptors
+                    .get(name)
+                    .map(|descriptor| descriptor.element_type)
+                    .or_else(|| declaration_types.get(&format!("{name}_0")).copied())
+                    .unwrap_or(BoundType::Variant);
+                ensure_fixed_array_aliases(
+                    name,
+                    &bounds,
+                    element_type,
+                    declarations,
+                    declaration_types,
+                )?;
+                fixed_array_bounds.insert(folded_name, bounds.clone());
+                context.set_fixed_array_bounds(fixed_array_bounds);
+                array_descriptors.insert(
+                    name.clone(),
+                    BoundArrayDescriptor {
+                        element_type,
+                        rank: bounds.len(),
+                        bounds: bounds.clone(),
+                        dynamic: false,
+                        option_base,
+                    },
+                );
+                out.push(BoundStmt::ReDim {
+                    name: name.clone(),
+                    bounds,
+                    previous_bounds: Some(previous_bounds),
+                    preserve: *preserve,
+                });
+                return Ok(());
+            }
+            if !dynamic_array_names.contains(&folded_name) {
                 return Err(HirProductionLoweringError::Unsupported(format!(
                     "ReDim production lowering requires a dynamic array declaration for {name}"
                 )));
@@ -1250,6 +1355,31 @@ fn linearize_static_array_index(bounds: &[(i32, i32)], indices: &[i32]) -> Optio
         stride = stride.checked_mul(width)?;
     }
     Some(offset)
+}
+
+fn ensure_fixed_array_aliases(
+    name: &str,
+    bounds: &[(i32, i32)],
+    element_type: BoundType,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+) -> Result<(), HirProductionLoweringError> {
+    let element_count = static_array_element_count(bounds).ok_or_else(|| {
+        HirProductionLoweringError::Unsupported(format!(
+            "fixed-array ReDim has invalid bounds for {name}"
+        ))
+    })?;
+    for index in 0..element_count {
+        let alias = format!("{name}_{index}");
+        if !declarations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&alias))
+        {
+            declarations.push(alias.clone());
+        }
+        declaration_types.insert(alias, element_type);
+    }
+    Ok(())
 }
 
 fn bound_type_name(text: &str) -> Option<BoundType> {
@@ -3078,15 +3208,34 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_fixed_array_redim_for_fallback() {
-        let source = "Sub Main()\nDim a(1)\nReDim a(3)\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("fixed-array ReDim remains a residual");
-
+    fn hir_production_lowering_rematerializes_fixed_array_redim_aliases() {
+        let source = "Sub Main()\nDim a(1)\nDim x As Long\na(0) = 7\nReDim Preserve a(3)\nx = a(3)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
-            matches!(err, HirProductionLoweringError::Unsupported(_)),
-            "fixed-array ReDim must remain fallback-eligible, got {err:?}"
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "expected fixed-array pre-Redim assignment bytecode: {:?}",
+            bytecode.instructions
         );
+        let proc = metadata.get("main").expect("main metadata");
+        assert!(
+            proc.slots.iter().any(|slot| slot.name == "a_3"),
+            "expected rematerialized fixed-array alias slot: {:?}",
+            proc.slots
+        );
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "a")
+            .expect("fixed array shape");
+        assert_eq!(shape.rank, 1);
+        assert_eq!(shape.bounds.len(), 1);
+        assert_eq!(shape.bounds[0].lower_bound, 0);
+        assert_eq!(shape.bounds[0].upper_bound, 3);
+        assert_eq!(shape.storage, crate::emit::ArrayStorageKind::StaticFixed);
     }
 
     #[test]
