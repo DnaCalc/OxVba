@@ -1396,6 +1396,9 @@ impl HirBuilder {
         if let Some(symbol) = self.resolve_property_procedure_self_name(scope, name)? {
             return Ok(symbol);
         }
+        if let Some(symbol) = self.resolve_property_get_name(scope, name)? {
+            return Ok(symbol);
+        }
         Err(HirBuildError::UnresolvedName {
             name: name.to_string(),
             scope,
@@ -1431,6 +1434,19 @@ impl HirBuilder {
         Ok(self
             .symbols
             .resolve_in_scope_chain(scope, SymbolNamespace::Procedure, scope_name)?)
+    }
+
+    fn resolve_property_get_name(
+        &self,
+        scope: ScopeId,
+        name: &str,
+    ) -> Result<Option<SymbolId>, HirBuildError> {
+        let property_get_name = format!("property_get_{name}");
+        Ok(self.symbols.resolve_in_scope_chain(
+            scope,
+            SymbolNamespace::Procedure,
+            &property_get_name,
+        )?)
     }
 
     fn scope_by_kind_and_name(&self, kind: ScopeKind, name: &str) -> Option<ScopeId> {

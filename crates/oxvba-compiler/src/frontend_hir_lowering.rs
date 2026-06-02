@@ -1716,7 +1716,21 @@ fn lower_expr(
             if let Some(value) = const_values.get(symbol) {
                 Ok(value.clone())
             } else {
-                symbol_name(typed_hir, *symbol).map(BoundExpr::Var)
+                let name = symbol_name(typed_hir, *symbol)?;
+                if typed_hir
+                    .module
+                    .symbols
+                    .symbol(*symbol)
+                    .is_some_and(|symbol| symbol.namespace == SymbolNamespace::Procedure)
+                    && name.starts_with("property_get_")
+                {
+                    Ok(BoundExpr::ProcCall {
+                        name,
+                        args: Vec::new(),
+                    })
+                } else {
+                    Ok(BoundExpr::Var(name))
+                }
             }
         }
         HirExprKind::New { type_name } => {
@@ -3983,6 +3997,23 @@ mod tests {
             property_let.parameters[0].role,
             crate::emit::ParameterRole::PropertyValue
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_same_module_property_get_read() {
+        let source = "Sub Main()\nDim x\nx = Value\nEnd Sub\nProperty Get Value() As Long\nValue = 9\nEnd Property\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CallProc { .. }
+            )),
+            "expected same-module property get call: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("property_get_value"), "{metadata:#?}");
     }
 
     #[test]

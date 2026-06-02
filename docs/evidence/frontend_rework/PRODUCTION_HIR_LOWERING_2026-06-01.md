@@ -213,9 +213,10 @@ metadata for otherwise completed single-source inputs. `ParamArray`, richer defa
 and broader optional missing-state call-entry behavior remain outside the lightweight default route.
 Additional property-declaration work teaches HIR lowering to derive `Property Get`/`Property Let`
 procedure kinds from the HIR property record, preserve getter return-slot metadata, and bind the
-getter self-assignment name to that return slot. Property declarations still remain outside the
-default HIR route because same-module property invocation/default-member semantics are not yet
-complete.
+getter self-assignment name to that return slot. Same-module zero-argument `Property Get` reads now
+also lower through HIR as procedure calls. Property declarations still remain outside the default
+HIR route because `Property Let`/`Property Set`, indexed property invocation, and broader
+default-member semantics are not yet complete.
 
 ## RaiseEvent Continuation
 
