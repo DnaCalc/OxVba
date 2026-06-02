@@ -1075,6 +1075,7 @@ mod tests {
     #[test]
     fn audit_terminal_gate_passes_after_audited_residuals_retire() {
         let report = run_production_legacy_route_audit();
+        assert!(report.terminal_gate_passed(), "{report:#?}");
         assert!(
             report
                 .findings

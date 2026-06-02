@@ -984,6 +984,12 @@ constant expressions:
   module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
   enum/literal route remain future FE-8.5 work.
 
+Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
+now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
+residual fails the test instead of relying only on representative row assertions. This does not
+complete FE-9.7's broader corpus/matrix expansion requirement; it only makes the current selected
+audit self-consistent.
+
 ## Bang Member Read Continuation
 
 The latest FE-8.5 slice removes the read-side bang member residual:
