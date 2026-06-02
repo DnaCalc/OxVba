@@ -207,6 +207,11 @@ DefType defaults, optional/default/ParamArray parameters, properties, project re
 class/object-local compatibility contexts remain tracked residuals until their HIR facts and route
 proofs are complete.
 
+Follow-up FE-8.5.f route work narrows that residual: optional parameters with simple explicit
+defaults now remain eligible for the default HIR path and preserve optional/default signature
+metadata for otherwise completed single-source inputs. `ParamArray`, richer default expressions,
+and broader optional missing-state call-entry behavior remain outside the lightweight default route.
+
 ## RaiseEvent Continuation
 
 The twenty-third FE-8.5 slice removes the basic `RaiseEvent` statement residual:

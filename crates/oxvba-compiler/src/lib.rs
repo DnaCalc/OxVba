@@ -344,14 +344,68 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_option_stmt(parsed.syntax()) {
         return false;
     }
+    if source_has_unsupported_optional_parameter(source) {
+        return false;
+    }
     !syntax_tree_has_any_kind(
         parsed.syntax(),
         &[
             oxvba_syntax::SyntaxKind::PropertyDecl,
-            oxvba_syntax::SyntaxKind::KwOptional,
             oxvba_syntax::SyntaxKind::KwParamArray,
         ],
     )
+}
+
+fn source_has_unsupported_optional_parameter(source: &str) -> bool {
+    if !source
+        .lines()
+        .any(|line| contains_ascii_word(line, "optional"))
+    {
+        return false;
+    }
+
+    let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+    let default_type_table = resolve::collect_default_type_table(&lines);
+    for line in source.lines() {
+        if !contains_ascii_word(line, "optional") {
+            continue;
+        }
+        let Some(kind) = proc_kind_for_signature_line(line) else {
+            return true;
+        };
+        let Some((_, params, _)) = resolve::parse_proc_signature(line, kind, &default_type_table)
+        else {
+            return true;
+        };
+        if params
+            .iter()
+            .any(|param| param.optional && param.default_value.is_none())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn proc_kind_for_signature_line(line: &str) -> Option<resolve::ProcKind> {
+    if contains_ascii_word(line, "sub") {
+        Some(resolve::ProcKind::Sub)
+    } else if contains_ascii_word(line, "function") {
+        Some(resolve::ProcKind::Function)
+    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "get") {
+        Some(resolve::ProcKind::PropertyGet)
+    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "let") {
+        Some(resolve::ProcKind::PropertyLet)
+    } else if contains_ascii_word(line, "property") && contains_ascii_word(line, "set") {
+        Some(resolve::ProcKind::PropertySet)
+    } else {
+        None
+    }
+}
+
+fn contains_ascii_word(text: &str, needle: &str) -> bool {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .any(|word| word.eq_ignore_ascii_case(needle))
 }
 
 fn is_supported_def_type_line(line: &str) -> bool {
@@ -1019,6 +1073,43 @@ mod tests {
                 Instruction::LoadConstI32 { value: 7, .. }
             )),
             "expected typed const value in bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_optional_param_through_hir() {
+        let source =
+            "Sub Use(Optional ByVal n As Long = 7)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "optional parameters with explicit simple defaults should be eligible for default HIR"
+        );
+
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route optional parameter source through HIR",
+        );
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(use_metadata.signature.parameters.len(), 1);
+        assert!(use_metadata.signature.parameters[0].optional);
+        assert_eq!(use_metadata.signature.parameters[0].default_value, Some(7));
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_still_rejects_param_array_route() {
+        let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
+        assert!(
+            !super::source_is_eligible_for_lightweight_hir_default(source),
+            "ParamArray remains outside the lightweight default HIR route"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_still_rejects_optional_without_default_route() {
+        let source =
+            "Sub Use(Optional ByVal n As Variant)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        assert!(
+            !super::source_is_eligible_for_lightweight_hir_default(source),
+            "optional parameters without explicit defaults remain outside this HIR route slice"
         );
     }
 

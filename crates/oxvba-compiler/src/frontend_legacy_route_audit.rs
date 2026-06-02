@@ -420,6 +420,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let optional_parameter_statement =
+        "Sub Use(Optional ByVal n As Long = 7)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+    findings.push(route_finding(
+        "optional parameter fixture",
+        optional_parameter_statement,
+        "bd-aprs.9.10",
+    ));
+
     let enum_member_constants =
         "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
     findings.push(route_finding(
@@ -741,6 +749,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("typed const")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("optional parameter")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

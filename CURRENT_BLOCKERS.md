@@ -196,6 +196,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         attribute semantics, broader conditional-compilation/preprocessor parity, typed constant
         coercion/type validation breadth, and broader compile-time constant evaluation remain open;
     - `bd-aprs.9.10`: broader declaration/type surface;
+      - continuation progress: optional parameters with simple explicit defaults now remain eligible
+        for the default HIR route and preserve optional/default signature metadata;
+        `ParamArray`, richer default expressions, and broader call-entry optional/missing-state
+        behavior remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.
 
