@@ -2725,6 +2725,7 @@ fn line_number_at(source: &str, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resolve::BoundCompareMode;
     use crate::{Instruction, ParameterPassingMode, SourceParameterMechanism};
 
     #[test]
@@ -3462,6 +3463,31 @@ mod tests {
                 }
             )),
             "expected text comparison bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_option_compare_database_mode() {
+        let source = "Option Compare Database\nSub Main()\nDim x\nx = \"a\" = \"A\"\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        assert_eq!(bound.compare_mode, BoundCompareMode::Database);
+
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::CmpEqSlots {
+                    mode: crate::bytecode::StringCompareMode::Binary,
+                    ..
+                }
+            )),
+            "database compare currently emits binary runtime comparison: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

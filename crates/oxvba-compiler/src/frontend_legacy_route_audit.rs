@@ -359,6 +359,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let option_compare_database_statement =
+        "Option Compare Database\nSub Main()\nDim x\nx = \"a\" = \"A\"\nEnd Sub\n";
+    findings.push(route_finding(
+        "option compare database fixture",
+        option_compare_database_statement,
+        "bd-aprs.9.9",
+    ));
+
     let def_type_statement = "DefLng A-Z\nSub Main()\nDim alpha\nalpha = 1\nEnd Sub\n";
     findings.push(route_finding(
         "def type untyped dim fixture",
@@ -662,6 +670,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("option explicit")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("option compare database")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("def type untyped dim")

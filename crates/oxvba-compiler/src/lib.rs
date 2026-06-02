@@ -358,7 +358,7 @@ fn source_has_unsupported_option_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> boo
         let parts: Vec<_> = normalized.split_whitespace().collect();
         return !matches!(
             parts.as_slice(),
-            ["option", "base", "0" | "1"] | ["option", "compare", "binary" | "text"]
+            ["option", "base", "0" | "1"] | ["option", "compare", "binary" | "text" | "database"]
         );
     }
     node.child_nodes()
@@ -833,10 +833,28 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_allows_database_option_compare_hir_route() {
+        let source = "Option Compare Database\nSub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not accept inline sequence");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "Option Compare Database should not disqualify otherwise-completed HIR constructs"
+        );
+        super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route Option Compare Database source through HIR",
+        );
+    }
+
+    #[test]
     fn lightweight_hir_default_rejects_unsupported_option_statements() {
         for source in [
             "Option Explicit\nSub Main()\nEnd Sub\n",
-            "Option Compare Database\nSub Main()\nEnd Sub\n",
             "Option Private Module\nSub Main()\nEnd Sub\n",
         ] {
             assert!(

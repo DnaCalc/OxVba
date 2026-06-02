@@ -315,10 +315,12 @@ comparisons under `Option Compare Text`. Follow-up FE-8.5.e work also preserves 
 `Option Explicit` flag in the HIR-bound module and adds production route-audit coverage for an
 otherwise completed `Option Explicit` source. The HIR lowerer now reuses the compiler DefType
 default table collector, with route-audit coverage for `DefLng A-Z` applying to a local untyped
-`Dim`.
+`Dim`. `Option Compare Database` now routes through HIR/default production for otherwise completed
+sources; the current runtime intentionally maps Database compare to binary comparison rather than
+Access collation.
 Other `Option` forms remain outside the lightweight default route until HIR owns their semantics
-(database compare mode and module privacy), and broader DefType surfaces for parameters, functions,
-and module members remain open.
+(module privacy), and broader DefType surfaces for parameters, functions, and module members remain
+open.
 
 ## Member Expression Continuation
 

@@ -633,7 +633,8 @@ Required newly explicit delivery beads:
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
   `Option Explicit` HIR-bound module flag plus route audit, `Option Base 0/1`,
-  `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, simple constants, enum
+  `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, `Option Compare Database`
+  HIR/default routing with the current binary-runtime compare approximation, simple constants, enum
   constants, basic DefType default-table preservation for local untyped `Dim`, and same-statement
   constant expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
@@ -1030,10 +1031,11 @@ Candidate bead units:
   The next continuation adds route-audit and lowering evidence for local multidimensional
   dynamic/fixed element access.
   Follow-up default-route correction allows `Option Base 0`, `Option Base 1`, default-equivalent
-  `Option Compare Binary`, and `Option Compare Text` on otherwise completed lightweight HIR
-  sources. Follow-up FE-8.5.e work preserves the `Option Explicit` HIR-bound module flag and adds
-  route-audit coverage; `Option Compare Database` and `Option Private Module` remain outside the
-  default route until their semantics are owned by HIR.
+  `Option Compare Binary`, `Option Compare Text`, and `Option Compare Database` on otherwise
+  completed lightweight HIR sources. Database compare currently uses the runtime's binary compare
+  approximation rather than Access collation. Follow-up FE-8.5.e work preserves the
+  `Option Explicit` HIR-bound module flag and adds route-audit coverage; `Option Private Module`
+  remains outside the default route until its semantics are owned by HIR.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
   Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
@@ -1165,9 +1167,10 @@ Candidate bead units:
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
   work has already been done: `Option Explicit` HIR-bound module flag plus route audit,
-  `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, enum
-  constants, basic DefType default-table preservation for local untyped `Dim`, and simple
-  same-statement constant expressions.
+  `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
+  `Option Compare Database` HIR/default routing with the current binary-runtime compare
+  approximation, enum constants, basic DefType default-table preservation for local untyped `Dim`,
+  and simple same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
