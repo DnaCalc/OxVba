@@ -1214,8 +1214,9 @@ Candidate bead units:
   HIR expression that emits the existing `IntrinsicTypeOfIs` bytecode, plus time-locale host
   intrinsics `Date()`, `Time()`, `Now()`, and `Timer()` through existing host bytecode, plus host
   utility intrinsics `FreeFile()`/`FreeFile(range)` and `DoEvents()` through existing host bytecode.
-  The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
-  FE-8.5.d.
+  Follow-up file-position host intrinsic routing covers `EOF(handle)`, `LOF(handle)`,
+  `Seek(handle)`, and `Loc(handle)` through existing host bytecode. The `Array(...)` helper proof
+  is not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

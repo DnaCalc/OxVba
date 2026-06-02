@@ -94,6 +94,10 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "timer"
             | "freefile"
             | "doevents"
+            | "eof"
+            | "lof"
+            | "seek"
+            | "loc"
     )
 }
 

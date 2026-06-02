@@ -4960,6 +4960,45 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_file_position_host_intrinsics() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = EOF(1)\nb = LOF(1)\nc = Seek(1)\nd = Loc(1)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFileEofHost { .. }
+            )),
+            "expected EOF(1) to emit host EOF intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFileLofHost { .. }
+            )),
+            "expected LOF(1) to emit host LOF intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFileSeekHost { .. }
+            )),
+            "expected Seek(1) to emit host Seek intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicFileLocHost { .. }
+            )),
+            "expected Loc(1) to emit host Loc intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
         let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
         let (bytecode, _metadata) =

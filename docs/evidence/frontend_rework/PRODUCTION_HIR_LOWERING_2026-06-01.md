@@ -312,6 +312,11 @@ Follow-up host utility intrinsic work adds `FreeFile()`/`FreeFile(range)` and `D
 built-in resolution and verifies the existing file-number and event-pump host bytecode through
 production HIR. This is still route proof only; HAL policy remains outside the front-end.
 
+Follow-up file-position host intrinsic work adds `EOF(handle)`, `LOF(handle)`, `Seek(handle)`, and
+`Loc(handle)` to HIR built-in resolution and verifies the existing file-position host bytecode
+through production HIR. File statements such as `Open`, `Close`, `Kill`, `Print`, `Write`, and
+`Line Input` remain separate statement-lowering surfaces.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

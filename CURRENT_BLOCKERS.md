@@ -232,6 +232,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         `TypeOf ... Is ...` now lowers through HIR as a dedicated type-test expression;
         time-locale host intrinsics `Date()`, `Time()`, `Now()`, and `Timer()` now lower through HIR;
         host utility intrinsics `FreeFile()`/`FreeFile(range)` and `DoEvents()` now lower through HIR;
+        file-position host intrinsics `EOF(handle)`, `LOF(handle)`, `Seek(handle)`, and
+        `Loc(handle)` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and
