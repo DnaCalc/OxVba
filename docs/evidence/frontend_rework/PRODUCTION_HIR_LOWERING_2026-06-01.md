@@ -1014,6 +1014,13 @@ the HIR boundary compiles it. The seed route audit now includes `INTP-002` as a 
 procedural host-project row. Reference projects, class/document modules, and host/oracle-backed
 project semantics remain outside this slice.
 
+Follow-up reference-project expansion makes the project boundary explicit: active procedural-only
+projects compile from active source through HIR, while procedural-only projects with procedural
+reference projects compile from full lowered source through HIR. The new regression fixture covers a
+project-qualified call into `LibMath.MathApi`, and the seed route audit now includes `INTP-003`.
+Class/document modules, imported COM/reference shapes beyond procedural project references, and
+host/oracle-backed project semantics remain open.
+
 ## Bang Member Read Continuation
 
 The latest FE-8.5 slice removes the read-side bang member residual:

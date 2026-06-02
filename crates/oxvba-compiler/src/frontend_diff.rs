@@ -328,6 +328,17 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             close_condition: String::new(),
         },
         FrontendCorpusFixture {
+            name: "integration_reference_project_intp003".to_string(),
+            fixture_path: "conformance/integration/projects/INTP-003".to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
             name: "excel_oracle_residual".to_string(),
             fixture_path:
                 "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
@@ -559,6 +570,9 @@ fn host_project_corpus_route_row(
     if fixture.name == "integration_multi_module_project_intp002" {
         return intp002_host_project_route_row(fixture);
     }
+    if fixture.name == "integration_reference_project_intp003" {
+        return intp003_host_project_route_row(fixture);
+    }
     let Some(source) = source else {
         return skipped_corpus_route_row(fixture, "host project fixture has no route runner");
     };
@@ -679,6 +693,73 @@ fn intp002_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
             class: fixture.class,
             status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
             evidence: format!("INTP-002 project compile failed: {err}"),
+        },
+    }
+}
+
+fn intp003_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCorpusRouteRow {
+    let main = match module_unit_from_source(
+        "Main",
+        ModuleKind::Procedural,
+        include_str!("../../../conformance/integration/projects/INTP-003/main/Main.proc.bas"),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-003 Main module parse failed: {err}"),
+            };
+        }
+    };
+    let math_api = match module_unit_from_source(
+        "MathApi",
+        ModuleKind::Procedural,
+        include_str!(
+            "../../../conformance/integration/projects/INTP-003/references/LibMath/MathApi.proc.bas"
+        ),
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("INTP-003 MathApi module parse failed: {err}"),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: "AlphaCrossRef".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main],
+        references: vec![crate::ProjectReference {
+            referenced_project_name: "LibMath".to_string(),
+            reference_kind: crate::ReferenceKind::Project,
+        }],
+        reference_projects: vec![crate::ReferencedProjectManifest {
+            project_name: "LibMath".to_string(),
+            modules: vec![math_api],
+        }],
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(_) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::HirProduction,
+            evidence: "INTP-003 procedural reference project compiled through HIR full-source project boundary".to_string(),
+        },
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("INTP-003 project compile failed: {err}"),
         },
     }
 }
@@ -1343,7 +1424,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 3, "{report:#?}");
+        assert_eq!(report.skipped_count, 4, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -1380,6 +1461,10 @@ mod tests {
         );
         assert_eq!(
             report.rows[5].status,
+            FrontendCorpusRowStatus::SkippedResidual
+        );
+        assert_eq!(
+            report.rows[6].status,
             FrontendCorpusRowStatus::SkippedResidual
         );
     }
@@ -1503,14 +1588,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert!(report.fallback_residuals().is_empty(), "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 1, "{report:#?}");
-        assert_eq!(report.rows.len(), 6, "{report:#?}");
+        assert_eq!(report.rows.len(), 7, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            5,
+            6,
             "{report:#?}"
         );
         assert_eq!(
@@ -1535,6 +1620,11 @@ mod tests {
             row.name == "integration_multi_module_project_intp002"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("multi-module procedural")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_reference_project_intp003"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("procedural reference project")
         }));
     }
 

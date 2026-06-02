@@ -524,6 +524,13 @@ enum ProjectLoweringStrategy {
     RewriteBridge,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProjectCompileBoundary {
+    ActiveHir,
+    FullHir,
+    FullLegacy,
+}
+
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum ProjectCompileError {
     #[error("PMR-E-PROJECT-NAME-INVALID: project name `{name}` is not a valid VBA identifier")]
@@ -1244,6 +1251,42 @@ fn project_source_has_only_active_procedural_modules_without_references(
             .all(|module| module.module_kind == ModuleKind::Procedural)
 }
 
+fn project_source_has_only_procedural_modules_including_references(
+    manifest: &ProjectManifest,
+) -> bool {
+    let referenced_project_names: BTreeSet<String> = manifest
+        .reference_projects
+        .iter()
+        .map(|project| project.project_name.to_ascii_lowercase())
+        .collect();
+    let declared_project_reference_names: BTreeSet<String> = manifest
+        .references
+        .iter()
+        .filter(|reference| reference.reference_kind == ReferenceKind::Project)
+        .map(|reference| reference.referenced_project_name.to_ascii_lowercase())
+        .collect();
+
+    !manifest.modules.is_empty()
+        && !manifest.references.is_empty()
+        && !manifest.reference_projects.is_empty()
+        && manifest
+            .modules
+            .iter()
+            .all(|module| module.module_kind == ModuleKind::Procedural)
+        && manifest
+            .references
+            .iter()
+            .all(|reference| reference.reference_kind == ReferenceKind::Project)
+        && declared_project_reference_names == referenced_project_names
+        && manifest.reference_projects.iter().all(|project| {
+            !project.modules.is_empty()
+                && project
+                    .modules
+                    .iter()
+                    .all(|module| module.module_kind == ModuleKind::Procedural)
+        })
+}
+
 fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
     manifest: &ProjectManifest,
 ) -> bool {
@@ -1257,6 +1300,18 @@ fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
             .reference_projects
             .iter()
             .all(is_synthetic_typelib_reference_project)
+}
+
+fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundary {
+    if project_source_has_only_active_procedural_modules_without_references(manifest)
+        || project_source_is_single_procedural_module_with_hir_safe_typelib_references(manifest)
+    {
+        ProjectCompileBoundary::ActiveHir
+    } else if project_source_has_only_procedural_modules_including_references(manifest) {
+        ProjectCompileBoundary::FullHir
+    } else {
+        ProjectCompileBoundary::FullLegacy
+    }
 }
 
 fn compile_project_with_strategy(
@@ -1344,11 +1399,7 @@ fn compile_project_with_strategy(
         .modules
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
-    let use_hir_capable_project_boundary =
-        project_source_has_only_active_procedural_modules_without_references(manifest)
-            || project_source_is_single_procedural_module_with_hir_safe_typelib_references(
-                manifest,
-            );
+    let project_compile_boundary = project_compile_boundary(manifest);
     let hir_construction_candidate = hir_construction_source_from_project_rewrites(
         &lowered_project_source.full_source,
         &lowered_project_source.dynamic_instance_bindings,
@@ -1371,11 +1422,20 @@ fn compile_project_with_strategy(
     let (compiled_source, compile_result) =
         if let Some((compiled_source, compiled)) = hir_construction_compile {
             (compiled_source, compiled)
-        } else if use_hir_capable_project_boundary {
+        } else if project_compile_boundary == ProjectCompileBoundary::ActiveHir {
             (
                 lowered_project_source.active_project_source.clone(),
                 compile_with_runtime_metadata_object_locals_class(
                     &lowered_project_source.active_project_source,
+                    &lowered_project_source.forced_object_locals_by_proc,
+                    has_class_modules,
+                ),
+            )
+        } else if project_compile_boundary == ProjectCompileBoundary::FullHir {
+            (
+                lowered_project_source.full_source.clone(),
+                compile_with_runtime_metadata_object_locals_class(
+                    &lowered_project_source.full_source,
                     &lowered_project_source.forced_object_locals_by_proc,
                     has_class_modules,
                 ),
@@ -12253,12 +12313,13 @@ mod tests {
     use super::{
         CallingShape, ExportKind, InvocationLane, ModuleAttributes, ModuleKind, ModuleUnit,
         PROJECTED_TYPELIB_REFERENCE_MARKER, PassingMode, ProcedureKind, ProjectComWithEventsRoute,
-        ProjectCompileError, ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy,
-        ProjectManifest, ProjectReference, ReferenceKind, ReferencedProjectManifest,
-        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, VbaType, compile_project,
-        compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
-        project_imported_typelib_reference, projected_typelib_reference_provenance,
-        reflect_project, validate_compiled_project_contract, withevents_binding_token,
+        ProjectCompileBoundary, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
+        ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, VbaType,
+        compile_project, compile_project_with_strategy, expand_bound_source_line,
+        module_unit_from_source, project_compile_boundary, project_imported_typelib_reference,
+        projected_typelib_reference_provenance, reflect_project,
+        validate_compiled_project_contract, withevents_binding_token,
     };
     use crate::{
         Instruction,
@@ -23988,6 +24049,78 @@ mod tests {
             }),
             "{:?}",
             compiled.bytecode.instructions
+        );
+    }
+
+    #[test]
+    fn compile_project_routes_procedural_reference_boundary_through_hir() {
+        let module_a = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim x As Long\nx = 9: Call LibMath.MathApi.AddFour(x, 0)\nEnd Sub",
+        )
+        .expect("module parses");
+        let referenced_math = module_unit_from_source(
+            "MathApi",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MathApi\"\nPublic Sub AddFour(ByVal x As Long, ByVal y As Long)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module_a],
+            references: vec![ProjectReference {
+                referenced_project_name: "LibMath".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "LibMath".to_string(),
+                modules: vec![referenced_math],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("procedural reference project should compile through HIR full-source boundary");
+        assert!(
+            compiled
+                .rewritten_source
+                .contains("Call pmr_libmath_mathapi_addfour(x, 0)"),
+            "{}",
+            compiled.rewritten_source
+        );
+        assert!(
+            compiled
+                .procedure_runtime_metadata
+                .contains_key("pmr_libmath_mathapi_addfour"),
+            "{:?}",
+            compiled.procedure_runtime_metadata.keys()
+        );
+    }
+
+    #[test]
+    fn project_compile_boundary_keeps_host_injected_references_on_legacy() {
+        let module_a = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module_a],
+            references: vec![ProjectReference {
+                referenced_project_name: "Application".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            project_compile_boundary(&manifest),
+            ProjectCompileBoundary::FullLegacy
         );
     }
 

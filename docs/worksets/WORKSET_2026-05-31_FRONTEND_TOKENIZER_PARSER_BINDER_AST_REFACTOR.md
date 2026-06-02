@@ -666,11 +666,12 @@ Required newly explicit delivery beads:
   row now classifies its module source as HIR production and compiles it through `compile_project`.
   Follow-up host-project expansion routes active projects containing only procedural modules and no
   references through the HIR-capable project boundary and adds the multi-module `INTP-002` seed row
-  to the route audit.
+  to the route audit. Follow-up reference-project expansion routes procedural-only projects with
+  procedural reference projects through a full-source HIR boundary and adds `INTP-003`.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
   from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, add
-  reference/class/document host-project and cross-workspace language-service route runners, and add
-  an Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
+  class/document/imported host-project and cross-workspace language-service route runners, and add an
+  Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
