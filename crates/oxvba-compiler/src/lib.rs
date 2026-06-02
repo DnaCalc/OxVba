@@ -1502,32 +1502,27 @@ mod tests {
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
         assert!(
-            bytecode
-                .instructions
-                .iter()
-                .any(|instruction| matches!(instruction, Instruction::PowSlots { .. })),
-            "expected typed expression const bytecode: {bytecode:#?}"
-        );
-        assert!(
-            bytecode
-                .instructions
-                .iter()
-                .any(|instruction| matches!(instruction, Instruction::IntDivSlots { .. })),
-            "expected typed integer-division const bytecode: {bytecode:#?}"
-        );
-        assert!(
-            bytecode
-                .instructions
-                .iter()
-                .any(|instruction| matches!(instruction, Instruction::ModSlots { .. })),
-            "expected typed Mod const bytecode: {bytecode:#?}"
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 5, .. }
+            )),
+            "expected folded typed expression const bytecode: {bytecode:#?}"
         );
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstI32 { value: 4, .. }
+                Instruction::AddConstI32 { value: 1, .. } | Instruction::AddSlots { .. }
             )),
-            "expected same-statement typed const reference bytecode: {bytecode:#?}"
+            "expected post-const procedure arithmetic bytecode: {bytecode:#?}"
+        );
+        assert!(
+            !bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::PowSlots { .. }
+                    | Instruction::IntDivSlots { .. }
+                    | Instruction::ModSlots { .. }
+            )),
+            "typed integer const expression should not emit runtime arithmetic bytecode: {bytecode:#?}"
         );
     }
 
@@ -1559,7 +1554,7 @@ mod tests {
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstI32 { value: 4, .. }
+                Instruction::LoadConstI32 { value: 5, .. }
             )),
             "expected cross-statement typed const reference bytecode: {bytecode:#?}"
         );

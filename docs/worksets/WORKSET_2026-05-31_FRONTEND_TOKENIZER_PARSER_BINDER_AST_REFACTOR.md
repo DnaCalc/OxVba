@@ -683,8 +683,9 @@ Required newly explicit delivery beads:
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
   discovery/lowering plus manifest-based embedded host build requests, basic single-source module
   `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
-  declarators, typed simple-expression constants including checked nonnegative exponentiation and
-  integer division/`Mod`, same-statement constant expression substitution, and source-prior
+  declarators, typed `Byte`/`Integer`/`Long` simple-expression constants folded through
+  `IntConst`/`LoadConstI32` including checked nonnegative exponentiation and integer
+  division/`Mod`, same-statement constant expression substitution, and source-prior
   cross-statement constant references for the covered evaluator subset, plus explicit
   `As Byte`/`As Integer`/`As Long` integer-expression overflow diagnostics for the covered
   same-statement constant subset, and explicit `As LongLong`/`As LongPtr` overflow diagnostics
@@ -1198,7 +1199,9 @@ Candidate bead units:
   trees and still keeping constants out of runtime local slots. Follow-up continuation allows later
   declarators in the same `Const` statement to reference earlier declarators. Later continuation
   carries the same bounded evaluator environment across source-prior `Const` statements, including
-  typed `Long` diagnostics and typed `LongLong`/`LongPtr` i64 carriers for those references. Later focused
+  typed `Long` diagnostics and typed `LongLong`/`LongPtr` i64 carriers for those references. Later
+  focused integer-carrier work folds covered typed `Byte`/`Integer`/`Long` expressions to
+  `IntConst`/`LoadConstI32` instead of runtime arithmetic bytecode. Later focused
   diagnostic work rejects explicit `As Long` integer-expression constants that overflow 32-bit
   range, then extends that range check to explicit `As Byte` and `As Integer` constants. Follow-up
   FE-8.5.e work distinguishes unsupported constant expressions from integer evaluation overflow and

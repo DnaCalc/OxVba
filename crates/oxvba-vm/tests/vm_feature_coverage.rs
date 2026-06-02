@@ -32,6 +32,21 @@ fn scalar_longlong_const_carrier_executes() {
 }
 
 #[test]
+fn scalar_typed_integer_const_expressions_execute() {
+    let snap = run(
+        "Const CByte As Byte = 1 + 2\nConst CInteger As Integer = 32767 - 1\nConst CLong As Long = 2 ^ 3 \\ 2 Mod 3 + 4\nSub Main()\nDim b As Byte\nDim i As Integer\nDim l As Long\nb = CByte\ni = CInteger\nl = CLong\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i32(3),
+            Variant::from_i32(32_766),
+            Variant::from_i32(5),
+        ]
+    );
+}
+
+#[test]
 fn scalar_double_const_carrier_executes() {
     let snap = run(
         "Const CBase As Long = 1\nConst CTotal As Double = CBase + 0.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub",

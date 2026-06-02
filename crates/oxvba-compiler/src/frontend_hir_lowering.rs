@@ -3835,6 +3835,17 @@ fn parse_declared_const_value(
         Some(BoundType::String) => {
             parse_const_string_value(text, named_values).map(BoundExpr::StringConst)
         }
+        Some(BoundType::Byte | BoundType::Integer | BoundType::Long) => {
+            let i64_values = const_i64_env_from_bound_values(named_values);
+            let ConstI64Eval::Value(value) = parse_const_i64_eval_value(text, &i64_values)? else {
+                return None;
+            };
+            let (_, min_value, max_value) = const_integer_range(declared_type)?;
+            if value < min_value || value > max_value {
+                return None;
+            }
+            Some(BoundExpr::IntConst(value as i32))
+        }
         Some(BoundType::Single) => {
             if let Some(value) = parse_const_single_literal(text) {
                 return Some(BoundExpr::SingleConst(value));
@@ -3864,6 +3875,19 @@ fn parse_declared_const_value(
         }
         _ => None,
     }
+}
+
+fn const_i64_env_from_bound_values(values: &HashMap<String, BoundExpr>) -> HashMap<String, i64> {
+    values
+        .iter()
+        .filter_map(|(name, value)| {
+            let ConstI64Eval::Value(value) = parse_const_i64_eval_value_from_bound_expr(value)?
+            else {
+                return None;
+            };
+            Some((name.clone(), value))
+        })
+        .collect()
 }
 
 fn parse_const_bool_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<bool> {
@@ -8004,21 +8028,39 @@ mod tests {
         let value = const_values
             .get(&ctotal_symbol.id)
             .expect("ctotal const value");
+        assert!(matches!(value, BoundExpr::IntConst(5)), "{value:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_folds_typed_byte_integer_const_expressions() {
+        let source = "Const CByte As Byte = 1 + 2\nConst CInteger As Integer = 32767 - 1\nSub Main()\nDim b As Byte\nDim i As Integer\nb = CByte\ni = CInteger\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
-            matches!(
-                value,
-                BoundExpr::BinaryOp {
-                    op: ArithOp::Add,
-                    lhs,
-                    rhs,
-                    ..
-                } if matches!(
-                    lhs.as_ref(),
-                    BoundExpr::BinaryOp { op: ArithOp::Mod, .. }
-                ) && matches!(rhs.as_ref(), BoundExpr::IntConst(4))
-            ),
-            "{value:#?}"
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 3, .. }
+            )),
+            "{bytecode:#?}"
         );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 32_766, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "b"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Byte
+        }));
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "i"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Integer
+        }));
     }
 
     #[test]
@@ -8029,7 +8071,7 @@ mod tests {
         assert!(
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
-                Instruction::LoadConstI32 { value: 4, .. }
+                Instruction::LoadConstI32 { value: 5, .. }
             )),
             "{bytecode:#?}"
         );
