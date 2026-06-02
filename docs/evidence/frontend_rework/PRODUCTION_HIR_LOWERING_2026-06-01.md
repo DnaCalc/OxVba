@@ -513,20 +513,22 @@ production constraint: the lower side of `To` must be a static integer, while up
 expressions. Fixed-array declaration and `ReDim` alias materialization currently require static
 integer bounds and static integer element indices. Project/class array field shapes are now
 front-end indexed, class shapes are emitted in dynamic-object route metadata, dynamic class
-array-field `ReDim`/element get/set is executable through the current bridge, fixed class
+array-field `ReDim`/element get/set is executable through the selected module-aware plan, fixed class
 array-field element get/set is executable without resize, and fixed procedural-module array-field
 element get/set is executable without resize, and dynamic procedural-module array-field
-`ReDim`/element get/set is executable through module-state tokens. Remaining project-owned
-array-shape work is HIR ownership and metadata replacement of the current project rewrite bridge,
-not a known missing fixed/dynamic class/procedural executable get/set route.
+`ReDim`/element get/set is executable through module-state tokens. The old project rewrite bridge is
+not production-selected; it remains a `#[cfg(test)]` parity path. Remaining project-owned
+array-shape work is native HIR ownership and metadata replacement of compatibility-carrier source
+construction, not a known missing fixed/dynamic class/procedural executable get/set route.
 
 2026-06-02 array-field route-proof hardening: representative dynamic class, fixed class, and
 dynamic procedural-module array-field routes now assert that the generated compatibility carriers
 read and write through deterministic frontend field tokens (`__oxvba_withevents_get/set(owner,
-field_token, ...)`) before reaching runtime array get/set/resize bytecode. This prevents the
-current rewrite bridge from drifting away from frontend field-route metadata, but it does not
-remove the remaining project-owned array-shape rewrite body or claim native HIR ownership for those
-field-array routes.
+field_token, ...)`) before reaching runtime array get/set/resize bytecode. This prevents generated
+compatibility carriers from drifting away from frontend field-route metadata, but it does not remove
+the remaining carrier-source construction body or claim native HIR ownership for those field-array
+routes. A follow-up selector guard asserts that `compile_project(...)` selects
+`ModuleAwareBindPlan`; `RewriteBridge` is test-only parity evidence.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
@@ -1138,6 +1140,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_integer_const --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_rejects_overflowing_typed_byte_const --quiet`
+- `cargo test -p oxvba-compiler compile_project_production_selector_uses_module_aware_plan --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_same_module_indexed_property_let_write --quiet`

@@ -24070,6 +24070,14 @@ mod tests {
         assert_eq!(first.bytecode.instructions, second.bytecode.instructions);
     }
 
+    #[test]
+    fn compile_project_production_selector_uses_module_aware_plan() {
+        assert_eq!(
+            super::selected_project_lowering_strategy(),
+            ProjectLoweringStrategy::ModuleAwareBindPlan
+        );
+    }
+
     fn assert_strategy_parity(manifest: &ProjectManifest) {
         let module_aware =
             compile_project_with_strategy(manifest, ProjectLoweringStrategy::ModuleAwareBindPlan)

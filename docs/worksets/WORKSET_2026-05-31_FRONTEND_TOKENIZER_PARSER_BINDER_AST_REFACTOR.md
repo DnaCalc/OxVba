@@ -631,8 +631,9 @@ Required newly explicit delivery beads:
   element get/set through module-state field tokens without declaration rewrite or resize bytecode,
   dynamic procedural-module array-field `ReDim`/element get/set through module-state field tokens,
   and `Option Base` default-route policy.
-  Remaining work: move project-owned array-shape handling out of the project rewrite bridge and
-  into HIR-owned lowering/metadata paths.
+  Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
+  old rewrite bridge is test-only parity evidence. Remaining work: move project-owned array-shape
+  compatibility-carrier construction into native HIR-owned lowering/metadata paths.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
@@ -1280,8 +1281,9 @@ Candidate bead units:
   token-level compatibility-carrier proof for representative dynamic class, fixed class, and
   dynamic procedural-module array-field get/set/resize routes so the rewrite bridge cannot drift
   away from frontend field-route metadata.
-  Remaining work: move project-owned array-shape handling out of the project rewrite bridge and
-  into HIR-owned lowering/metadata paths.
+  Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
+  old rewrite bridge is test-only parity evidence. Remaining work: move project-owned array-shape
+  compatibility-carrier construction into native HIR-owned lowering/metadata paths.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
