@@ -42,6 +42,7 @@ pub struct HirNewExpressionBinding {
 struct HirLoweringContext {
     new_expression_bindings: HashMap<String, VecDeque<i32>>,
     dynamic_array_names: HashSet<String>,
+    fixed_array_bounds: HashMap<String, Vec<(i32, i32)>>,
 }
 
 impl HirLoweringContext {
@@ -56,6 +57,7 @@ impl HirLoweringContext {
         Self {
             new_expression_bindings,
             dynamic_array_names: HashSet::new(),
+            fixed_array_bounds: HashMap::new(),
         }
     }
 
@@ -69,9 +71,26 @@ impl HirLoweringContext {
         self.dynamic_array_names = names.clone();
     }
 
+    fn set_fixed_array_bounds(&mut self, bounds: &HashMap<String, Vec<(i32, i32)>>) {
+        self.fixed_array_bounds = bounds.clone();
+    }
+
     fn is_dynamic_array(&self, name: &str) -> bool {
         self.dynamic_array_names
             .contains(&name.to_ascii_lowercase())
+    }
+
+    fn fixed_array_alias(&self, name: &str, indices: &[BoundCallArg]) -> Option<String> {
+        let bounds = self.fixed_array_bounds.get(&name.to_ascii_lowercase())?;
+        let indices = indices
+            .iter()
+            .map(|arg| match arg.expr {
+                BoundExpr::IntConst(value) => Some(value),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let linear = linearize_static_array_index(bounds, &indices)?;
+        Some(format!("{name}_{linear}"))
     }
 }
 
@@ -309,6 +328,7 @@ fn lower_procedure(
     let mut declaration_types = HashMap::new();
     let mut array_descriptors = HashMap::new();
     let mut dynamic_array_names = HashSet::new();
+    let mut fixed_array_bounds = HashMap::new();
     let mut bound_params = Vec::new();
     let udt_defs = collect_hir_udt_definitions(source);
     let mut udt_instances = HashMap::<String, String>::new();
@@ -374,6 +394,36 @@ fn lower_procedure(
                     option_base,
                 },
             );
+        } else if let Some((bounds, element_type)) =
+            fixed_array_declaration(source, symbol.id, typed_hir, option_base)
+        {
+            fixed_array_bounds.insert(local_name.to_ascii_lowercase(), bounds.clone());
+            declaration_types.insert(local_name.clone(), BoundType::Array);
+            array_descriptors.insert(
+                local_name.clone(),
+                BoundArrayDescriptor {
+                    element_type,
+                    rank: bounds.len(),
+                    bounds: bounds.clone(),
+                    dynamic: false,
+                    option_base,
+                },
+            );
+            let element_count = static_array_element_count(&bounds).ok_or_else(|| {
+                HirProductionLoweringError::Unsupported(format!(
+                    "fixed-array declaration has invalid bounds for {local_name}"
+                ))
+            })?;
+            for index in 0..element_count {
+                let alias = format!("{local_name}_{index}");
+                if !declarations
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                {
+                    declarations.push(alias.clone());
+                }
+                declaration_types.insert(alias, element_type);
+            }
         } else if let Some(udt_name) =
             declared_udt_type_name(source, symbol.id, typed_hir, &udt_defs)
         {
@@ -408,6 +458,7 @@ fn lower_procedure(
     let udt_field_aliases = build_hir_udt_field_aliases(&udt_defs, &udt_instances);
     let udt_instance_fields = build_hir_udt_instance_fields(&udt_defs, &udt_instances);
     context.set_dynamic_array_names(&dynamic_array_names);
+    context.set_fixed_array_bounds(&fixed_array_bounds);
     let mut stmts = Vec::new();
     for stmt in body {
         lower_stmt(
@@ -514,6 +565,26 @@ fn lower_stmt(
                 Err(err) => {
                     match lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
                     {
+                        BoundExpr::Var(target) => {
+                            let expr = lower_expr(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                *value,
+                                context,
+                            )?;
+                            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                                AssignmentIntent::Let
+                            } else {
+                                AssignmentIntent::Implicit
+                            };
+                            out.push(BoundStmt::Assign {
+                                target,
+                                expr,
+                                intent,
+                            });
+                            return Ok(());
+                        }
                         BoundExpr::Member {
                             receiver,
                             member,
@@ -631,6 +702,21 @@ fn lower_stmt(
                 Err(err) => {
                     match lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
                     {
+                        BoundExpr::Var(target) => {
+                            let expr = lower_expr(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                *value,
+                                context,
+                            )?;
+                            out.push(BoundStmt::Assign {
+                                target,
+                                expr,
+                                intent: AssignmentIntent::Set,
+                            });
+                            return Ok(());
+                        }
                         BoundExpr::Member {
                             receiver,
                             member,
@@ -1081,6 +1167,91 @@ fn dynamic_array_element_type(
     bound_type_name(ty_text)
 }
 
+fn fixed_array_declaration(
+    source: &str,
+    symbol: SymbolId,
+    typed_hir: &TypedHirModule,
+    option_base: i32,
+) -> Option<(Vec<(i32, i32)>, BoundType)> {
+    let span = typed_hir
+        .module
+        .symbols
+        .symbol(symbol)
+        .and_then(|symbol| symbol.provenance.span)?;
+    let suffix = source.get(span.end..)?;
+    let line_end = suffix.find('\n').unwrap_or(suffix.len());
+    let segment = source.get(span.end..span.end + line_end)?.trim_start();
+    if !segment.starts_with('(') || segment.starts_with("()") {
+        return None;
+    }
+    let close = segment.find(')')?;
+    let bounds = parse_static_array_bounds(&segment[1..close], option_base)?;
+    let element_type = segment[close + 1..]
+        .to_ascii_lowercase()
+        .find(" as ")
+        .and_then(|as_pos| {
+            let ty_text = segment[close + 1 + as_pos + " as ".len()..]
+                .trim_start()
+                .split(|ch: char| ch == ',' || ch.is_whitespace())
+                .next()?;
+            bound_type_name(ty_text)
+        })
+        .or_else(|| declared_bound_type(typed_hir, symbol))
+        .unwrap_or(BoundType::Variant);
+    Some((bounds, element_type))
+}
+
+fn parse_static_array_bounds(raw: &str, option_base: i32) -> Option<Vec<(i32, i32)>> {
+    let mut bounds = Vec::new();
+    for dim in raw.split(',') {
+        let trimmed = dim.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let (lower, upper) = if let Some((lhs, rhs)) = split_keyword_ci(trimmed, "to") {
+            (lhs.trim().parse().ok()?, rhs.trim().parse().ok()?)
+        } else {
+            (option_base, trimmed.parse().ok()?)
+        };
+        if upper < lower {
+            return None;
+        }
+        bounds.push((lower, upper));
+    }
+    (!bounds.is_empty()).then_some(bounds)
+}
+
+fn static_array_element_count(bounds: &[(i32, i32)]) -> Option<usize> {
+    let mut total = 1usize;
+    for (lower, upper) in bounds {
+        if upper < lower {
+            return None;
+        }
+        let width = (*upper as i64 - *lower as i64 + 1) as usize;
+        total = total.checked_mul(width)?;
+    }
+    Some(total)
+}
+
+fn linearize_static_array_index(bounds: &[(i32, i32)], indices: &[i32]) -> Option<usize> {
+    if bounds.len() != indices.len() {
+        return None;
+    }
+    let mut offset = 0usize;
+    let mut stride = 1usize;
+    for dim in (0..bounds.len()).rev() {
+        let (lower, upper) = bounds[dim];
+        let idx = indices[dim];
+        if idx < lower || idx > upper {
+            return None;
+        }
+        offset = offset.checked_add(((idx - lower) as usize).checked_mul(stride)?)?;
+        let width = (upper as i64 - lower as i64 + 1) as usize;
+        stride = stride.checked_mul(width)?;
+    }
+    Some(offset)
+}
+
 fn bound_type_name(text: &str) -> Option<BoundType> {
     match text.to_ascii_lowercase().as_str() {
         "boolean" => Some(BoundType::Boolean),
@@ -1319,6 +1490,11 @@ fn lower_call_expr(
         .collect::<Result<Vec<_>, _>>()?;
     match target {
         BoundExpr::Var(name) => {
+            if call_data.cst.syntax_kind == "IndexExpr"
+                && let Some(alias) = context.fixed_array_alias(&name, &args)
+            {
+                return Ok(BoundExpr::Var(alias));
+            }
             if call_data.cst.syntax_kind == "IndexExpr" && context.is_dynamic_array(&name) {
                 let mut intrinsic_args = Vec::with_capacity(args.len() + 1);
                 intrinsic_args.push(BoundExpr::Var(name));
@@ -2846,6 +3022,39 @@ mod tests {
             .expect("dynamic array shape");
         assert_eq!(shape.element_type, VbaTypeId::Byte);
         assert_eq!(shape.rank, 1);
+    }
+
+    #[test]
+    fn hir_production_lowering_materializes_fixed_array_aliases() {
+        let source =
+            "Sub Main()\nDim a(1 To 2) As Integer\nDim x As Long\na(2) = 7\nx = a(2)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "expected fixed-array assignment value bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        assert!(
+            proc.slots.iter().any(|slot| slot.name == "a_1"),
+            "expected fixed-array alias slot: {:?}",
+            proc.slots
+        );
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "a")
+            .expect("fixed array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Integer);
+        assert_eq!(shape.rank, 1);
+        assert_eq!(shape.bounds.len(), 1);
+        assert_eq!(shape.bounds[0].lower_bound, 1);
+        assert_eq!(shape.bounds[0].upper_bound, 2);
+        assert_eq!(shape.storage, crate::emit::ArrayStorageKind::StaticFixed);
     }
 
     #[test]

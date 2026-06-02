@@ -269,6 +269,10 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 - write-side dynamic-array element access such as `buf(1) = 7` lowers from the same HIR
   `IndexExpr` target shape to `BoundStmt::AssignRuntimeArrayElement` and the backend
   `IntrinsicArraySet` instruction;
+- initial fixed-array declarations with static integer bounds such as `Dim a(1 To 2) As Integer`
+  now materialize the same `a_0`, `a_1`, ... alias slots used by the legacy fixed-array backend,
+  record static fixed-array shape metadata, and resolve static element reads/writes through those
+  aliases;
 - local `Dim name() As T` declarations contribute array declaration type and runtime
   `ArrayShapeDescriptor` metadata, including element type and the lower-bound policy available to
   the HIR route;
@@ -277,12 +281,14 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 - the route audit now includes one-dimensional dynamic-array `ReDim buf(length - 1)`,
   two-dimensional dynamic-array `ReDim grid(rows - 1, cols - 1)`, and explicit lower-bound
   `ReDim buf(1 To length - 1)` fixtures, plus read- and write-side dynamic-array element
-  fixtures.
+  fixtures and an initial fixed-array alias fixture.
 
 This is intentionally not full `ReDim` parity. Runtime lower bounds currently match the old
 production constraint: the lower side of `To` must be a static integer, while upper bounds may be
-expressions. Fixed-array alias materialization, project/class array fields, and broader
+ expressions. Fixed-array `ReDim` alias rematerialization, project/class array fields, and broader
 multidimensional element/fixed/project shapes remain broader HIR and project-semantics work.
+More specifically, this slice covers initial fixed-array declarations; fixed-array `ReDim`
+rematerialization remains open because it mutates the alias set after declaration collection.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
