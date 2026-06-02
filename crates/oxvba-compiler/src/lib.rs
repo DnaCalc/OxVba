@@ -1602,6 +1602,46 @@ mod tests {
     }
 
     #[test]
+    fn compile_default_routes_typed_currency_date_const_expressions_through_hir() {
+        let source = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CBase As Date = 2.0\nConst CStamp As Date = (CBase + 3.0) / 2.0\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount: stamp = CStamp\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
+            "legacy path should reject the active inline sequence after typed Currency/Date const expressions",
+        );
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let hir = super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(
+            source,
+        )
+        .expect(
+            "direct HIR production lowering should support typed Currency/Date const expressions",
+        );
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route typed Currency/Date const expressions through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for typed Currency/Date const expressions"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstCurrency { scaled: 15_000, .. }
+            )),
+            "expected typed Currency const expression bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 2.5f64.to_bits()
+            )),
+            "expected typed Date const expression bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_typed_single_const_through_hir() {
         let source = "Const CTotal As Single = 1.5!\nSub Main()\nDim x As Single\nx = CTotal: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(

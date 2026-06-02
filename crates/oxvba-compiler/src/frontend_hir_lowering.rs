@@ -3518,7 +3518,7 @@ fn parse_const_value_for_declared(
     declared_type: Option<BoundType>,
 ) -> Option<BoundExpr> {
     let text = strip_balanced_outer_parens(text.trim());
-    if let Some(value) = parse_declared_const_literal(text, declared_type) {
+    if let Some(value) = parse_declared_const_value(text, named_values, declared_type) {
         return Some(value);
     }
     if let Some(value) = parse_const_literal(text) {
@@ -3814,15 +3814,102 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
     None
 }
 
-fn parse_declared_const_literal(text: &str, declared_type: Option<BoundType>) -> Option<BoundExpr> {
+fn parse_declared_const_value(
+    text: &str,
+    named_values: &HashMap<String, BoundExpr>,
+    declared_type: Option<BoundType>,
+) -> Option<BoundExpr> {
     match declared_type {
         Some(BoundType::Single) => parse_const_single_literal(text).map(BoundExpr::SingleConst),
         Some(BoundType::Currency) => {
-            parse_const_currency_literal(text).map(BoundExpr::CurrencyConst)
+            if let Some(value) = parse_const_currency_literal(text) {
+                return Some(BoundExpr::CurrencyConst(value));
+            }
+            parse_const_f64_value(text, named_values)
+                .and_then(currency_scaled_i64_from_f64)
+                .map(BoundExpr::CurrencyConst)
         }
-        Some(BoundType::Date) => parse_const_date_literal(text).map(BoundExpr::DateConst),
+        Some(BoundType::Date) => {
+            if let Some(value) = parse_const_date_literal(text) {
+                return Some(BoundExpr::DateConst(value));
+            }
+            parse_const_f64_value(text, named_values)
+                .filter(|value| value.is_finite())
+                .map(|value| BoundExpr::DateConst(value.to_bits()))
+        }
         _ => None,
     }
+}
+
+fn parse_const_f64_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<f64> {
+    let text = strip_balanced_outer_parens(text.trim());
+    if let Some(value) = parse_const_f64_literal(text) {
+        return Some(value);
+    }
+    if let Some(name) = normalize_hir_ident_exact(text)
+        && let Some(value) = named_values.get(&name)
+    {
+        return const_expr_as_f64(value);
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-']) {
+        let lhs = parse_const_f64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_f64_value(rhs.trim(), named_values)?;
+        return finite_f64(match op {
+            '+' => lhs + rhs,
+            '-' => lhs - rhs,
+            _ => return None,
+        });
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
+        let lhs = parse_const_f64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_f64_value(rhs.trim(), named_values)?;
+        return finite_f64(match op {
+            '*' => lhs * rhs,
+            '/' if rhs != 0.0 => lhs / rhs,
+            _ => return None,
+        });
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['^']) {
+        let lhs = parse_const_f64_value(lhs.trim(), named_values)?;
+        let rhs = parse_const_f64_value(rhs.trim(), named_values)?;
+        return match op {
+            '^' => finite_f64(lhs.powf(rhs)),
+            _ => None,
+        };
+    }
+    if let Some(rest) = text.strip_prefix('-') {
+        return finite_f64(-parse_const_f64_value(rest.trim(), named_values)?);
+    }
+    None
+}
+
+fn parse_const_f64_literal(text: &str) -> Option<f64> {
+    let text = text.trim();
+    if let Ok(value) = text.parse::<i32>() {
+        return Some(value as f64);
+    }
+    if let Some(value) = parse_const_numeric_prefix_literal(text) {
+        return Some(value as f64);
+    }
+    if let Some(body) = text.strip_suffix('@').or_else(|| text.strip_suffix('!')) {
+        return finite_f64(body.parse::<f64>().ok()?);
+    }
+    parse_const_double_literal(text)
+}
+
+fn const_expr_as_f64(expr: &BoundExpr) -> Option<f64> {
+    match expr {
+        BoundExpr::IntConst(value) => Some(*value as f64),
+        BoundExpr::LongLongConst(value) => Some(*value as f64),
+        BoundExpr::SingleConst(bits) => Some(f32::from_bits(*bits) as f64),
+        BoundExpr::FloatConst(bits) | BoundExpr::DateConst(bits) => Some(f64::from_bits(*bits)),
+        BoundExpr::CurrencyConst(scaled) => Some(*scaled as f64 / 10_000.0),
+        _ => None,
+    }
+}
+
+fn finite_f64(value: f64) -> Option<f64> {
+    value.is_finite().then_some(value)
 }
 
 fn parse_const_single_literal(text: &str) -> Option<u32> {
@@ -7870,6 +7957,27 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Date
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_currency_date_const_expressions() {
+        let source = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CBase As Date = 2.0\nConst CStamp As Date = (CBase + 3.0) / 2.0\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstCurrency { scaled: 15_000, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 2.5f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
     }
 
     #[test]
