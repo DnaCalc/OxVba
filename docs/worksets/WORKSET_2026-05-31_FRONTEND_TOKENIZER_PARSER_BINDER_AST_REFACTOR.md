@@ -1303,7 +1303,7 @@ Candidate bead units:
   approximation, `Option Private Module` single-source/default HIR routing with project privacy
   enforcement left in the project route, enum constants, basic DefType default-table preservation
   for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations, and
-  known DefType default-route eligibility, basic `#Const`/`#If`/`#Else`/`#End If` filtering before
+  known DefType default-route eligibility, basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
   discovery/lowering plus manifest-based embedded host build requests, basic single-source module

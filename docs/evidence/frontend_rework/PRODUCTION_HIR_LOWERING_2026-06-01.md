@@ -551,7 +551,7 @@ completed sources; project module-kind and reference-visibility enforcement rema
 route.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
-`#Const`/`#If`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
+`#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
 current compiler preprocessor surface, not terminal proof of full VBA preprocessor parity or source
 mapping.
 Follow-up project-route work feeds `ProjectManifest::conditional_constants` into the same

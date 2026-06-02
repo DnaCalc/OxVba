@@ -1358,6 +1358,29 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_conditional_elseif_through_hir() {
+        let source = "#Const A = False\n#Const B = True\nSub Main()\nDim x As Long\n#If A Then\nx = 1\n#ElseIf B Then\nx = 9: x = x + 1\n#Else\nx = 3\n#End If\nEnd Sub\n";
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route filtered #ElseIf source through HIR",
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 9, .. }
+            )),
+            "expected active #ElseIf branch bytecode: {bytecode:#?}"
+        );
+        assert!(
+            !bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 3, .. }
+            )),
+            "inactive #Else branch should not be emitted: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_module_attribute_through_hir() {
         let source = "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x As Long\nx = 7: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source)
