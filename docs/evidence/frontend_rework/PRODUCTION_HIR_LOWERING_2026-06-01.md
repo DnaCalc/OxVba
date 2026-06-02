@@ -1071,9 +1071,8 @@ Excel oracle broadening attempt:
 - This closes the compiler-side HIR residual only. Follow-up COM bridge work separately closed
   explicit `DispatchInvoke(sheet, "Range", "A1")` range object access for live Excel by retrying
   strict dynamic-name parameterized properties as `DISPATCH_PROPERTYGET`. Follow-up Excel oracle
-  work separately proved named-argument worksheet-add dispatch against live Excel. Excel
-  property-put, null COM object result handling, and range value/default-member mutation lanes
-  remain open.
+  work separately proved named-argument worksheet-add dispatch and null `Cells.Find` results against
+  live Excel. Excel property-put and range value/default-member mutation lanes remain open.
 
 ## Indexed Property Default Route
 

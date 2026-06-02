@@ -123,17 +123,21 @@ the original combined-dispatch failure. The new
 `Workbooks.Add`, `Worksheets(1)`, and `DispatchInvoke(sheet, "Range", "A1")` through live Excel
 execution with:
 `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_dispatchinvoke_range_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
-This does not claim range value/default-member mutation, property-put, null COM object result
-handling, or broader Excel object-model parity.
+This does not claim range value/default-member mutation, property-put, or broader Excel object-model
+parity.
 
 Continuation update: the Excel named-argument oracle fixture is now executable and live-proven for a
 non-null object result. The previous `sheet(What:=...)` shape did not name the intended Excel member;
 the corrected fixture uses explicit `Worksheets.Add After:=sheet` through `DispatchInvoke`, proving
 named argument DISPID resolution and object-argument marshaling against live Excel with:
 `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_named_argument_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
-An attempted `Cells.Find(What:=...)` probe returned Excel `Nothing` and exposed a separate null COM
-result handling gap (`unknown COM object handle 0`); that is not closed by the worksheet-add
-fixture.
+The initial `Cells.Find(What:=...)` probe returned Excel `Nothing` and exposed a separate null COM
+result handling gap (`unknown COM object handle 0`); follow-up COM runtime-state work now
+short-circuits null native runtime-object results to `ObjectRef(0)` instead of resolving them as
+registered COM bindings. The dedicated
+`conformance/com/office/excel/excel_find_null_result_smoke.bas` fixture proves the no-match
+`Cells.Find` case through live Excel execution with:
+`cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_find_null_result_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
 
 Continuation update: FE-9.8 bundle context facts now have source-backed seed-corpus proof. The
 test `bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows` walks the
@@ -195,6 +199,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_range_object_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_dispatchinvoke_range_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_named_argument_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
+- `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_find_null_result_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -243,8 +248,9 @@ The audit result records completed reopened delivery work and remaining broader 
   remains on the compatibility route for early-bound COM metadata. The explicit Range
   `DispatchInvoke` object-access gap is now live-proven through the new Excel fixture after the COM
   bridge property-get retry. Named-argument Excel dispatch is now live-proven through
-  `Worksheets.Add After:=sheet`; range value/default-member mutation, property-put, null COM object
-  result handling, and broader object-model parity remain open.
+  `Worksheets.Add After:=sheet`; null COM object result handling is now live-proven through the
+  no-match `Cells.Find` fixture. Range value/default-member mutation, property-put, and broader
+  object-model parity remain open.
 - Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
   The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
   accepted-row production route.

@@ -725,6 +725,9 @@ pub unsafe fn bind_native_runtime_object_result_shared(
     prog_id_hint: &str,
 ) -> Result<ObjectRef, String> {
     let handle = unsafe { bind_native_dispatch_result_shared(com_state, dispatch, prog_id_hint) }?;
+    if handle.raw() == 0 {
+        return Ok(handle);
+    }
     resolve_bound_runtime_object_shared(com_state, handle)
 }
 
@@ -875,7 +878,8 @@ pub fn queue_projection_event_callbacks_shared(
 mod tests {
     use super::{
         WindowsComClientState, WindowsComSubscriptionTransport,
-        event_callback_args_from_invoke_args, queue_projection_event_callbacks_shared,
+        bind_native_runtime_object_result_shared, event_callback_args_from_invoke_args,
+        queue_projection_event_callbacks_shared,
     };
     use crate::{
         ComBinding, ComEventPath, ComEventSpec, ComEventSubscription, ComEventTriggerSpec,
@@ -883,6 +887,26 @@ mod tests {
     };
     use oxvba_runtime::{ObjectRef, bstr::BStr};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn null_native_runtime_object_result_preserves_nothing_identity() {
+        let state = Arc::new(Mutex::new(WindowsComClientState::default()));
+
+        let object = unsafe {
+            bind_native_runtime_object_result_shared(
+                &state,
+                std::ptr::null_mut(),
+                "Excel.Range.Find",
+            )
+        }
+        .expect("null native runtime object should bind as Nothing");
+
+        assert_eq!(object.raw(), 0);
+        assert!(
+            state.lock().expect("state").bindings.is_empty(),
+            "Nothing should not allocate a COM binding"
+        );
+    }
 
     #[test]
     fn projection_event_callback_args_accept_non_legacy_com_values() {

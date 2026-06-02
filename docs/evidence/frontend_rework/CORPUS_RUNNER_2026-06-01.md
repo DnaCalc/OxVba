@@ -77,7 +77,8 @@ Expected report counts:
   `conformance/com/office/excel/excel_application_activation_smoke.bas` and the narrowed
   `conformance/com/office/excel/excel_workbook_range_smoke.bas`, plus the follow-up
   `conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas` and
-  `conformance/com/office/excel/excel_named_argument_smoke.bas` fixtures, now classify as
+  `conformance/com/office/excel/excel_named_argument_smoke.bas` fixtures, and the null-result
+  `conformance/com/office/excel/excel_find_null_result_smoke.bas` fixture, now classify as
   `HirProduction`;
   live Excel-visible behavior remains environment-dependent and is checked by ignored
   `oxvba-host` oracle tests.

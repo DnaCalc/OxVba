@@ -694,8 +694,9 @@ Required newly explicit delivery beads:
   `excel_dispatchinvoke_range_smoke.bas` fixture passes live Excel execution for
   `DispatchInvoke(sheet, "Range", "A1")`. Follow-up Excel oracle work corrects the named-argument
   fixture to explicit `Worksheets.Add After:=sheet` and proves it through live Excel execution.
-  Range value/default-member mutation, property-put, null COM object results, and broader Excel
-  mutation/default-member lanes remain open. Language-service
+  Follow-up COM runtime-state work also proves null Excel `Cells.Find` results as runtime
+  `Nothing`. Range value/default-member mutation, property-put, and broader Excel mutation/
+  default-member lanes remain open. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
@@ -719,8 +720,8 @@ Required newly explicit delivery beads:
   deeper cross-workspace language-service route runners beyond those seed shapes and the current
   imported-typelib projections, and broaden live
   Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup, explicit
-  Range `DispatchInvoke` object access, and named-argument worksheet-add dispatch into
-  property-put/default-member mutation, null COM object result handling, and other
+  Range `DispatchInvoke` object access, named-argument worksheet-add dispatch, and null
+  `Cells.Find` result handling into property-put/default-member mutation and other
   environment-dependent behavior beyond source-route
   classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
