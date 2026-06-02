@@ -8013,7 +8013,7 @@ mod tests {
 
     #[test]
     fn resolve_optional_params_with_integer_constant_expression_defaults() {
-        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 2 ^ 3 + &H10 - 2)\ntarget = value\nEnd Sub";
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 2 ^ 3 \\ 2 + &H10 + 2)\ntarget = value\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures

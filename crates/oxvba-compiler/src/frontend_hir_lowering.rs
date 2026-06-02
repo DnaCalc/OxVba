@@ -3356,10 +3356,11 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
             rhs: Box::new(parse_const_value(rhs.trim(), named_values)?),
         });
     }
-    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/', '\\']) {
         let op = match op {
             '*' => ArithOp::Mul,
             '/' => ArithOp::Div,
+            '\\' => ArithOp::IntDiv,
             _ => return None,
         };
         return Some(BoundExpr::BinaryOp {
@@ -3425,12 +3426,13 @@ fn parse_const_i64_value(text: &str, named_values: &HashMap<String, i64>) -> Opt
             _ => None,
         };
     }
-    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/', '\\']) {
         let lhs = parse_const_i64_value(lhs.trim(), named_values)?;
         let rhs = parse_const_i64_value(rhs.trim(), named_values)?;
         return match op {
             '*' => lhs.checked_mul(rhs),
             '/' if rhs != 0 => lhs.checked_div(rhs),
+            '\\' if rhs != 0 => lhs.checked_div(rhs),
             _ => None,
         };
     }
@@ -3579,7 +3581,7 @@ fn is_unary_const_minus(text: &str, idx: usize) -> bool {
         return true;
     }
     let prior = text[..idx].trim_end().chars().next_back();
-    prior.is_none_or(|ch| matches!(ch, '(' | '+' | '-' | '*' | '/' | '&' | '^'))
+    prior.is_none_or(|ch| matches!(ch, '(' | '+' | '-' | '*' | '/' | '\\' | '&' | '^'))
 }
 
 fn declared_bound_type(typed_hir: &TypedHirModule, symbol: SymbolId) -> Option<BoundType> {
@@ -7141,7 +7143,7 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_collects_typed_same_statement_const_expression() {
-        let source = "Const CBase As Long = 2 ^ 3, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+        let source = "Const CBase As Long = 2 ^ 3 \\ 2, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
         let typed_hir =
             collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
         let const_values = collect_const_values(source, &typed_hir);
@@ -7172,7 +7174,7 @@ mod tests {
                     ..
                 } if matches!(
                     lhs.as_ref(),
-                    BoundExpr::BinaryOp { op: ArithOp::Pow, .. }
+                    BoundExpr::BinaryOp { op: ArithOp::IntDiv, .. }
                 ) && matches!(rhs.as_ref(), BoundExpr::IntConst(4))
             ),
             "{value:#?}"
