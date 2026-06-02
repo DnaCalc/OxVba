@@ -1081,6 +1081,10 @@ constant expressions:
   `Const CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & "ady" = "ready"` now
   substitutes as `LoadConstBool true` through direct HIR, default-route, route-audit, and VM
   execution paths.
+- Module compare mode now reaches that Boolean constant string-comparison evaluator for the covered
+  subset. `Option Compare Text` makes `Const CFlag As Boolean = "a" = "A"` fold to
+  `LoadConstBool true`; `Option Compare Database` intentionally remains on the current binary
+  approximation until Access collation semantics are implemented.
 - A companion `String` typed-constant pass reuses the same bounded string evaluator for declared
   module constants. `Const Prefix As String = "re"` followed by
   `Const CText As String = Prefix & "ady"` now substitutes as `LoadConstString "ready"` through
@@ -1296,6 +1300,10 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_untyped_string_const_expression_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_string_const_expression --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_string_const_through_hir --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_folds_option_compare_text_boolean_const --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_keeps_option_compare_database_const_binary --quiet`
+- `cargo test -p oxvba-compiler compile_default_routes_option_compare_text_boolean_const_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_option_compare_text_boolean_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
