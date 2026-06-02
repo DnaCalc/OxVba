@@ -5025,6 +5025,42 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_process_environment_host_intrinsics() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Shell(7)\nb = Environ(77)\nc = Dir()\nd = Dir(5)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicShellHost { .. }
+            )),
+            "expected Shell(7) to emit host shell intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicEnvironHost { .. }
+            )),
+            "expected Environ(77) to emit host environ intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .filter(|instruction| matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDirHost { .. }
+                ))
+                .count()
+                >= 2,
+            "expected Dir() and Dir(5) to emit host dir intrinsics: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
         let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
         let (bytecode, _metadata) =

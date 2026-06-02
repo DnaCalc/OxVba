@@ -236,6 +236,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         `Loc(handle)` now lower through HIR;
         dialog host intrinsics `MsgBox(prompt[, style])` and `InputBox(prompt[, default])` now lower
         through HIR;
+        process/environment host intrinsics `Shell(command)`, `Environ(key)`, `Dir()`, and
+        `Dir(path)` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

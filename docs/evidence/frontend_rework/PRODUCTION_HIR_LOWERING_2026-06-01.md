@@ -321,6 +321,10 @@ Follow-up dialog host intrinsic work adds `MsgBox(prompt[, style])` and
 `InputBox(prompt[, default])` to HIR built-in resolution and verifies the existing UI host bytecode
 through production HIR. This is route proof only and does not change the HAL dialog contract.
 
+Follow-up process/environment host intrinsic work adds `Shell(command)`, `Environ(key)`,
+`Dir()`, and `Dir(path)` to HIR built-in resolution and verifies the existing process/environment
+host bytecode through production HIR. COM object creation remains separate.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

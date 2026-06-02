@@ -1217,8 +1217,9 @@ Candidate bead units:
   Follow-up file-position host intrinsic routing covers `EOF(handle)`, `LOF(handle)`,
   `Seek(handle)`, and `Loc(handle)` through existing host bytecode. Follow-up dialog host intrinsic
   routing covers `MsgBox(prompt[, style])` and `InputBox(prompt[, default])` through existing host
-  bytecode. The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that
-  remains in FE-8.5.d.
+  bytecode. Follow-up process/environment host intrinsic routing covers `Shell(command)`,
+  `Environ(key)`, `Dir()`, and `Dir(path)` through existing host bytecode. The `Array(...)` helper
+  proof is not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
