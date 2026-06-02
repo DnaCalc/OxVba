@@ -1209,8 +1209,9 @@ Candidate bead units:
   `CollectionCount`, plus deterministic financial intrinsics `FV`, `PV`, `Pmt`, `NPV`, `IRR`,
   `MIRR`, `Rate`, and `NPer`, plus production-HIR pointer-helper proof for `StrPtr`, `VarPtr`, and
   `ObjPtr` through typed structural intrinsics, plus the `Array(...)` literal helper through the
-  existing array-literal intrinsic bytecode. The `Array(...)` helper proof is not array
-  storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  existing array-literal intrinsic bytecode, plus VM-stateful deterministic `Rnd`/`Randomize`
+  no-seed and seeded forms through existing RNG bytecode. The `Array(...)` helper proof is not
+  array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

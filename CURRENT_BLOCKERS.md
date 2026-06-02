@@ -228,6 +228,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         pointer helpers `StrPtr`, `VarPtr`, and `ObjPtr` have explicit production-HIR proof through
         the typed structural intrinsic route;
         `Array(...)` now lowers through HIR to the existing array-literal intrinsic bytecode;
+        VM-stateful deterministic `Rnd`/`Randomize` no-seed and seeded forms now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

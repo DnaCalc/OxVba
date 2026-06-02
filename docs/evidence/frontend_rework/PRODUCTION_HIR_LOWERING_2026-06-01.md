@@ -293,6 +293,12 @@ Follow-up array-literal intrinsic work adds `Array(...)` to HIR built-in resolut
 the existing `IntrinsicArrayLiteral` bytecode through production HIR. This proves the literal helper
 shape only; it does not close the separate array storage/indexing/`ReDim` parity lane.
 
+Follow-up RNG intrinsic work adds the VM-stateful deterministic `Rnd`/`Randomize` family to HIR
+built-in resolution and verifies no-seed and seeded forms through the existing
+`IntrinsicRndDigits` and `IntrinsicRandomizeDigits` bytecode. This deliberately excludes
+host-sensitive current-time, file, shell/environment, dialog, dispatch, and COM callback
+intrinsics.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

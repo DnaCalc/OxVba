@@ -1120,6 +1120,33 @@ fn lower_stmt(
                         args,
                     },
                 }),
+                BoundExpr::Var(name) if name.eq_ignore_ascii_case("randomize") => {
+                    out.push(BoundStmt::Call {
+                        name: "randomize".to_string(),
+                        args: Vec::new(),
+                        syntax: BoundCallSyntax::StatementNoCall,
+                    })
+                }
+                BoundExpr::IntrinsicCall { name, args } => {
+                    if name.eq_ignore_ascii_case("randomize") {
+                        out.push(BoundStmt::Call {
+                            name: "randomize".to_string(),
+                            args: args
+                                .into_iter()
+                                .map(|expr| BoundCallArg {
+                                    name: None,
+                                    expr,
+                                    force_byval: true,
+                                })
+                                .collect(),
+                            syntax: BoundCallSyntax::StatementNoCall,
+                        })
+                    } else {
+                        return Err(HirProductionLoweringError::Unsupported(format!(
+                            "expression statement IntrinsicCall {{ name: {name:?} }}"
+                        )));
+                    }
+                }
                 other => {
                     return Err(HirProductionLoweringError::Unsupported(format!(
                         "expression statement {other:?}"
@@ -4789,6 +4816,45 @@ mod tests {
                     if values.len() == 3
             )),
             "expected Array(...) to emit array-literal intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_rnd_randomize_intrinsics() {
+        let source = "Sub Main()\nDim first\nDim seeded\nfirst = Rnd()\nseeded = Rnd(1)\nRandomize\nRandomize 1\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRndDigits { seed: None, .. }
+            )),
+            "expected Rnd() to emit no-seed Rnd intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRndDigits { seed: Some(_), .. }
+            )),
+            "expected Rnd(1) to emit seeded Rnd intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRandomizeDigits { seed: None, .. }
+            )),
+            "expected Randomize to emit no-seed Randomize intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicRandomizeDigits { seed: Some(_), .. }
+            )),
+            "expected Randomize 1 to emit seeded Randomize intrinsic: {:?}",
             bytecode.instructions
         );
     }

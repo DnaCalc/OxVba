@@ -86,6 +86,8 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "mirr"
             | "rate"
             | "nper"
+            | "rnd"
+            | "randomize"
     )
 }
 
