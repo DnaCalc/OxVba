@@ -442,6 +442,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let optional_integer_default_expression_statement = "Sub Use(Optional ByVal n As Long = &H10 + &O7 - 1)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+    findings.push(route_finding(
+        "optional integer default expression fixture",
+        optional_integer_default_expression_statement,
+        "bd-aprs.9.10",
+    ));
+
     let param_array_statement =
         "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
     findings.push(route_finding(
@@ -918,6 +925,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("optional parameter")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("optional integer default expression")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("simple property")

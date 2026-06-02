@@ -957,9 +957,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 
 - `cargo test -p oxvba-compiler resolve_optional_params_with_integer_constant_expression_defaults --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_integer_expression_defaults_through_hir --quiet`
+- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_still_rejects_indexed_property_writeback_route --quiet`
-- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_does_not_inject_runtime_validation_for_rewritten_internal_class_object_locals --quiet`
 - `cargo test -p oxvba-compiler compile_project_infers_non_authoritative_single_candidate_indexed_default_member_let --quiet`
