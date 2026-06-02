@@ -61,7 +61,7 @@ AUDIT_CHILD_CLOSURE bd-embl.9 status=closed close_reason_checks=21
 |---|---|
 | VM public execution | `oxvba-vm` public helpers accept `VmExecutionPackage` or `OxBundle`. The VM instruction loop still receives package bytecode internally after package metadata is loaded. |
 | Host/project/session execution | Project, callable session, bundle, and debug preparation paths build or receive `OxBundle`-backed packages. Source-snippet snapshot execution remains a bounded non-strict evidence harness; strict support reporting classifies `VmPackageOrigin::InMemory` as `PACKAGE-INMEMORY-NOT-STRICT`. |
-| Legacy bundle format | `FORMAT_VERSION = 16`; serialized versions 1 through 15 reject with `unsupported legacy bundle version ...`, and current-version bundles missing strict sections reject with `BUNDLE-STRICT-MISSING-SECTIONS`. |
+| Legacy bundle format | `FORMAT_VERSION = 17`; serialized versions 1 through 16 reject with `unsupported legacy bundle version ...`, and current-version bundles missing strict sections reject with `BUNDLE-STRICT-MISSING-SECTIONS`. |
 | Fastpath selection | Active crate scan finds no `execute_with_typed_fastpaths`, `OXVBA_DISABLE_TYPED_FASTPATH`, public typed-fastpath selector, raw bytecode runner, or `execute_bytecode` symbol. Optimized VM paths are selected from package descriptors and recorded as `descriptor-selected-fastpaths`. |
 | VM/JIT support query | `VmExecutionPackage::support_report_for_vm_execution` and `support_report_for_proc_lowering_ir` both call `package_support_report`; strict VM execution calls `ensure_supported_for_vm_execution`; `ProcLoweringIr` rows block through the same support-report data. |
 | VM-consumption ledger | `VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv` has no deferred boundary-consumption row. Selected rows remain supported warnings; unsupported rows reject strict VM execution and block `ProcLoweringIr`. |
@@ -117,7 +117,7 @@ paths enter through `OxBundle` or `VmExecutionPackage::from_bundle`.
 Legacy bundle scan:
 
 ```powershell
-rg -n "FORMAT_VERSION: u32 = 16|unsupported legacy bundle version|BUNDLE-STRICT-MISSING-SECTIONS" crates/oxvba-compiler/src/bundle.rs docs -g"*.rs" -g"*.md"
+rg -n "FORMAT_VERSION: u32 = 17|unsupported legacy bundle version|BUNDLE-STRICT-MISSING-SECTIONS" crates/oxvba-compiler/src/bundle.rs docs -g"*.rs" -g"*.md"
 ```
 
 Result: current strict format and deterministic rejection diagnostics are the

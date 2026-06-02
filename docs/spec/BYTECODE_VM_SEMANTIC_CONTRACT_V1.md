@@ -256,7 +256,7 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v16 also carries package-owned carrier layout descriptors
+`OxBundle` format v17 also carries package-owned carrier layout descriptors
 and value-state descriptors derived from slot metadata, procedure signatures,
 bound intrinsics, and emitted value-state opcodes. The package reader rejects
 older bundle versions instead of upgrading missing descriptor vectors into
@@ -286,7 +286,7 @@ declared parameter types, parsed ByRef/ByVal mode, source parameter mechanism
 where known, resolved mechanism, Optional/default/missing policy, ParamArray
 shape, return type, return slot, property group, property value ByVal
 semantics, and class hidden-receiver/`Me` metadata where current compiler
-metadata knows them. `OxBundle` format v16 carries those facts in the current
+metadata knows them. `OxBundle` format v17 carries those facts in the current
 package; older serialized versions reject deterministically instead of
 being backfilled with `Unknown` or empty descriptor facts.
 VM call execution does not consume these descriptors yet.
@@ -311,7 +311,7 @@ default, ParamArray pack, fixed-array materialization, default-member fallback
 policy, invocation syntax (`Call` keyword, no-`Call`, expression-call, and
 synthetic property-assignment forms), source argument evaluation order,
 diagnostic-policy ownership for the current compiler-owned 448/449/450
-invalid-call cases, and return copyout. `OxBundle` format v16 carries those
+invalid-call cases, and return copyout. `OxBundle` format v17 carries those
 call policy fields as current package facts. The VM exposes these
 rows through
 `VmExecutionPackage::call_site_descriptors`, and
@@ -336,7 +336,7 @@ id for the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
 observable without generalizing coercion behavior.
 
 Current expression/operator/coercion seed surface is package metadata and VM
-identity evidence, not broad expression rewiring: `OxBundle` format v16 carries
+identity evidence, not broad expression rewiring: `OxBundle` format v17 carries
 `ExpressionSemanticsDescriptor`, `OperatorSemanticsDescriptor`,
 `CoercionDescriptor`, `NameBindingDescriptor`, and
 `ObjectMemberBindingDescriptor` rows. Older bundle versions reject rather than
@@ -373,7 +373,7 @@ element type/carrier, base-slot presence, bounds provenance, allocation/erase/
 preserve policy, element lifecycle classification, and runtime SAFEARRAY bounds
 when a base slot is allocated after VM execution. `VmPackageIdentityEvidence`
 also records selected lifecycle evidence for fixed/static array elements,
-dynamic SAFEARRAY ownership, and local SAFEARRAY slots. `OxBundle` format v16
+dynamic SAFEARRAY ownership, and local SAFEARRAY slots. `OxBundle` format v17
 carries these rows in the current package; older bundles reject instead
 of being upgraded with empty array, UDT, or object descriptor sets.
 

@@ -150,6 +150,10 @@ pub enum Instruction {
         slot: usize,
         bits: u64,
     },
+    LoadConstF32 {
+        slot: usize,
+        bits: u32,
+    },
     LoadConstCurrency {
         slot: usize,
         scaled: i64,

@@ -38,7 +38,7 @@ use crate::resolve::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current strict executable semantic package bundle format version.
-const FORMAT_VERSION: u32 = 16;
+const FORMAT_VERSION: u32 = 17;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 

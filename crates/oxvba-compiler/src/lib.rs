@@ -1602,6 +1602,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_typed_single_const_through_hir() {
+        let source = "Const CTotal As Single = 1.5!\nSub Main()\nDim x As Single\nx = CTotal: x = x + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
+            "legacy path should reject the active inline sequence after typed Single const",
+        );
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support typed Single const");
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route typed Single const through HIR");
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for typed Single const"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF32 { bits, .. } if *bits == 1.5f32.to_bits()
+            )),
+            "expected typed Single const bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const() {
         let source = "Const CTotal As Long = 2 ^ 31\nSub Main()\nEnd Sub\n";
         let err = super::compile_with_runtime_metadata(source)

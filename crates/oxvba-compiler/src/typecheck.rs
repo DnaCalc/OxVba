@@ -1207,6 +1207,7 @@ fn check_expr(
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -1511,6 +1512,7 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         BoundExpr::IntConst(_) => BoundType::Long,
         BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
+        BoundExpr::SingleConst(_) => BoundType::Single,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::CurrencyConst(_) => BoundType::Currency,
         BoundExpr::DateConst(_) => BoundType::Date,

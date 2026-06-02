@@ -280,7 +280,10 @@ fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
     match expr {
         BoundExpr::IntConst(v) => Some(*v),
         BoundExpr::BoolConst(v) => Some(if *v { -1 } else { 0 }),
-        BoundExpr::FloatConst(_) | BoundExpr::CurrencyConst(_) | BoundExpr::DateConst(_) => None,
+        BoundExpr::SingleConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::CurrencyConst(_)
+        | BoundExpr::DateConst(_) => None,
         _ => None,
     }
 }
@@ -294,6 +297,7 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -352,6 +356,7 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
         | BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)

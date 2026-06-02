@@ -692,13 +692,13 @@ Required newly explicit delivery beads:
   bound-expression/bytecode/VM carrier for covered explicit `As LongLong` and `As LongPtr`
   constants, including values that fit in the old i32 literal range, plus simple typed `Double`
   constants through `FloatConst`/`LoadConstF64`, plus declared `Currency` and deterministic
-  `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`.
+  `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`, plus declared
+  `Single` constants through `LoadConstF32`.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
-  `Single` carriers, broader Date/Currency expression coercion, locale-sensitive Date literal
-  breadth, full platform `LongPtr` semantics, separate IDE/session option plumbing for conditional
-  constants, and project-owned attribute/module-option semantics outside the current single-source
-  route.
+  broader Date/Currency expression coercion, locale-sensitive Date literal breadth, full platform
+  `LongPtr` semantics, separate IDE/session option plumbing for conditional constants, and
+  project-owned attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1204,9 +1204,11 @@ Candidate bead units:
   literal-kind work routes simple typed `Double` constants through `FloatConst`/`LoadConstF64` with
   VM execution coverage. Follow-up exact-carrier work routes declared `Currency` and deterministic
   `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`, with default-route
-  and VM execution coverage. Full constant evaluation beyond source-prior constants, typed constant
-  coercion, `Single` carriers, broader Date/Currency expression coercion, locale-sensitive Date
-  literal breadth, and full platform `LongPtr` semantics remain broader FE-8.5 work.
+  and VM execution coverage. Follow-up Single-carrier work routes declared `Single` constants
+  through `LoadConstF32` and bumps strict bundle format to v17. Full constant evaluation beyond
+  source-prior constants, typed constant coercion, broader Date/Currency expression coercion,
+  locale-sensitive Date literal breadth, and full platform `LongPtr` semantics remain broader
+  FE-8.5 work.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array

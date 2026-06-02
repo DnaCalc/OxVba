@@ -74,7 +74,7 @@ The current repository is package-capable but not package-only.
   paths are now selected from package support plus operator-semantic package
   descriptors and recorded in VM execution-selection evidence.
 - `bd-embl.4` removed the legacy bundle reader/backfill path: strict bundle
-  format v16 is now the only accepted serialized package format.
+  format v17 is now the only accepted serialized package format.
 
 Current progress:
 

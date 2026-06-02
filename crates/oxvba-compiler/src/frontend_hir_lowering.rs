@@ -3816,12 +3816,26 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
 
 fn parse_declared_const_literal(text: &str, declared_type: Option<BoundType>) -> Option<BoundExpr> {
     match declared_type {
+        Some(BoundType::Single) => parse_const_single_literal(text).map(BoundExpr::SingleConst),
         Some(BoundType::Currency) => {
             parse_const_currency_literal(text).map(BoundExpr::CurrencyConst)
         }
         Some(BoundType::Date) => parse_const_date_literal(text).map(BoundExpr::DateConst),
         _ => None,
     }
+}
+
+fn parse_const_single_literal(text: &str) -> Option<u32> {
+    let text = text.trim();
+    let body = text.strip_suffix('!').unwrap_or(text);
+    let value = if let Ok(value) = body.parse::<i32>() {
+        value as f32
+    } else if let Some(value) = parse_const_numeric_prefix_literal(body) {
+        value as f32
+    } else {
+        parse_const_double_literal(body)? as f32
+    };
+    value.is_finite().then_some(value.to_bits())
 }
 
 fn parse_const_currency_literal(text: &str) -> Option<i64> {
@@ -7794,6 +7808,27 @@ mod tests {
             )),
             "{bytecode:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_single_const_literal() {
+        let source =
+            "Const CTotal As Single = 1.5!\nSub Main()\nDim x As Single\nx = CTotal\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstF32 { bits, .. } if *bits == 1.5f32.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Single
+        }));
     }
 
     #[test]

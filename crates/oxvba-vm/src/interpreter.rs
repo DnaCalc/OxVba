@@ -5037,6 +5037,10 @@ impl Vm {
                     self.write_variant_slot(*slot, Variant::from_f64(f64::from_bits(*bits)))?;
                     pc += 1;
                 }
+                Instruction::LoadConstF32 { slot, bits } => {
+                    self.write_variant_slot(*slot, Variant::from_f32(f32::from_bits(*bits)))?;
+                    pc += 1;
+                }
                 Instruction::LoadConstCurrency { slot, scaled } => {
                     self.write_variant_slot(*slot, Variant::from_currency_scaled_i64(*scaled))?;
                     pc += 1;

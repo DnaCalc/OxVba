@@ -1358,6 +1358,7 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -2813,6 +2814,7 @@ fn collect_expr_value_states(
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -3547,6 +3549,7 @@ fn collect_expr_semantics(
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -3591,6 +3594,7 @@ fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescri
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -3675,6 +3679,7 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
         BoundExpr::IntConst(value) => format!("literal=i32:{value}"),
         BoundExpr::LongLongConst(value) => format!("literal=i64:{value}"),
         BoundExpr::BoolConst(value) => format!("literal=bool:{value}"),
+        BoundExpr::SingleConst(_) => "literal=f32".to_string(),
         BoundExpr::FloatConst(_) => "literal=f64".to_string(),
         BoundExpr::CurrencyConst(_) => "literal=currency".to_string(),
         BoundExpr::DateConst(_) => "literal=date".to_string(),
@@ -4426,6 +4431,7 @@ fn collect_expr_operator_semantics(
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -5215,6 +5221,7 @@ fn collect_expr_coercions(
         BoundExpr::IntConst(_)
         | BoundExpr::LongLongConst(_)
         | BoundExpr::BoolConst(_)
+        | BoundExpr::SingleConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::CurrencyConst(_)
         | BoundExpr::DateConst(_)
@@ -5779,6 +5786,7 @@ fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId
         }
         BoundExpr::LongLongConst(_) => VbaTypeId::LongLong,
         BoundExpr::BoolConst(_) => VbaTypeId::Boolean,
+        BoundExpr::SingleConst(_) => VbaTypeId::Single,
         BoundExpr::FloatConst(_) => VbaTypeId::Double,
         BoundExpr::CurrencyConst(_) => VbaTypeId::Currency,
         BoundExpr::DateConst(_) => VbaTypeId::Date,
@@ -8291,6 +8299,7 @@ fn expr_bound_type(
         }
         BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
+        BoundExpr::SingleConst(_) => BoundType::Single,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::CurrencyConst(_) => BoundType::Currency,
         BoundExpr::DateConst(_) => BoundType::Date,
@@ -9684,6 +9693,10 @@ fn emit_expr_into(
             value: *value,
         }),
         BoundExpr::FloatConst(bits) => instructions.push(Instruction::LoadConstF64 {
+            slot: dst,
+            bits: *bits,
+        }),
+        BoundExpr::SingleConst(bits) => instructions.push(Instruction::LoadConstF32 {
             slot: dst,
             bits: *bits,
         }),

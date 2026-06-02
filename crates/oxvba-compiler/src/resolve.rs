@@ -58,6 +58,7 @@ pub enum BoundExpr {
     IntConst(i32),
     LongLongConst(i64),
     BoolConst(bool),
+    SingleConst(u32),
     FloatConst(u64),
     CurrencyConst(i64),
     DateConst(u64),
@@ -2468,6 +2469,7 @@ fn static_f64_expr_inner(
 ) -> Option<f64> {
     match expr {
         BoundExpr::IntConst(value) => Some(*value as f64),
+        BoundExpr::SingleConst(bits) => Some(f32::from_bits(*bits) as f64),
         BoundExpr::FloatConst(bits) | BoundExpr::DateConst(bits) => Some(f64::from_bits(*bits)),
         BoundExpr::CurrencyConst(scaled) => Some(*scaled as f64 / 10_000.0),
         BoundExpr::Var(name) => {
@@ -2592,6 +2594,7 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         }
         BoundExpr::LongLongConst(_) => BoundType::LongLong,
         BoundExpr::BoolConst(_) => BoundType::Boolean,
+        BoundExpr::SingleConst(_) => BoundType::Single,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::CurrencyConst(_) => BoundType::Currency,
         BoundExpr::DateConst(_) => BoundType::Date,
