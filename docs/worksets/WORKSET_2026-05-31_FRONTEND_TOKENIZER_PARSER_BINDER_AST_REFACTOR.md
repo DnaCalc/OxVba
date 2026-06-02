@@ -684,11 +684,14 @@ Required newly explicit delivery beads:
   from compiler front-end facts. Follow-up FE-9.7 language-service coverage also snapshots
   representative grammar-matrix route-overlay shapes (`Static`, exponent expressions, qualified
   member chains, and trivia/comment-bearing sources) through the compiler front-end facts with no
-  language-service diagnostics. Remaining work: broaden corpus execution beyond the current
-  route-overlay evidence, broaden document/host semantics beyond the `ThisWorkbook.Path` seed
-  route, broaden imported COM beyond the `TestDispatch` seed route, cover broader class and deeper
-  cross-workspace language-service route runners, and add live Excel-oracle execution evidence for
-  environment-dependent behavior beyond source-route classification. This bead must reopen the owning
+  language-service diagnostics. Follow-up FE-9.7 workspace coverage drives the real `INTP-003`
+  qualified project-reference call and the real `INTP-016` class member call through navigation and
+  signature-help assertions, not only workspace-symbol enumeration. Remaining work: broaden corpus
+  execution beyond the current route-overlay evidence, broaden document/host semantics beyond the
+  `ThisWorkbook.Path` seed route, broaden imported COM beyond the `TestDispatch` seed route, cover
+  deeper cross-workspace language-service route runners beyond those seed shapes, and add live
+  Excel-oracle execution evidence for environment-dependent behavior beyond source-route
+  classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
@@ -1405,10 +1408,11 @@ Candidate bead units:
   including all 44 currently anchored rows, to executable HIR-production route findings; this is
   route-proof overlay, not full matrix/documentation closure. Follow-up FE-9.7 language-service
   coverage snapshots representative overlay shapes (`Static`, exponent expressions, qualified
-  member chains, and trivia/comment-bearing sources) through compiler front-end facts. Closure
-  requires every accepted in-scope row to classify as HIR/SemanticModel production or to
-  reopen/create the owning delivery bead, and richer corpus/host/reference/oracle surfaces remain
-  in scope until proved through execution evidence.
+  member chains, and trivia/comment-bearing sources) through compiler front-end facts; workspace
+  coverage now drives the existing `INTP-003` and `INTP-016` seed project manifests through
+  navigation/signature-help route assertions. Closure requires every accepted in-scope row to
+  classify as HIR/SemanticModel production or to reopen/create the owning delivery bead, and richer
+  corpus/host/reference/oracle surfaces remain in scope until proved through execution evidence.
 - FE-9.8 Legacy route retirement finalization: after FE-7/FE-8 delivery beads pass, remove or
   hard-quarantine legacy production entry points for `parse_expr`, CST-to-legacy lowering,
   `project.rs` helper-source rewrites, and duplicate language-service semantic fallbacks. Partial

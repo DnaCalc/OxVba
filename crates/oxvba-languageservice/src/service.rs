@@ -1874,12 +1874,10 @@ mod tests {
 
     #[test]
     fn workspace_symbols_cover_frontend_seed_project_routes() {
-        let main = module_unit_from_source(
-            "Main",
-            ModuleKind::Procedural,
-            include_str!("../../../conformance/integration/projects/INTP-003/main/Main.proc.bas"),
-        )
-        .expect("main module parses");
+        let intp_003_main_source =
+            include_str!("../../../conformance/integration/projects/INTP-003/main/Main.proc.bas");
+        let main = module_unit_from_source("Main", ModuleKind::Procedural, intp_003_main_source)
+            .expect("main module parses");
         let math_api = module_unit_from_source(
             "MathApi",
             ModuleKind::Procedural,
@@ -1909,13 +1907,30 @@ mod tests {
                 && item.symbol.name == "AddFour"
                 && item.symbol.provenance.kind == SymbolProvenanceKind::ProjectReference
         }));
+        let main_id = DocumentId::new("Main");
+        let add_four_pos = intp_003_main_source
+            .find("AddFour")
+            .expect("INTP-003 AddFour call site") as u32;
+        let add_four_definition = svc
+            .go_to_definition(&main_id, add_four_pos)
+            .expect("INTP-003 qualified reference call should navigate");
+        assert_eq!(
+            add_four_definition.document,
+            DocumentId::new("LibMath::MathApi")
+        );
+        assert_eq!(
+            add_four_definition
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.kind),
+            Some(SymbolProvenanceKind::ProjectReference)
+        );
 
-        let class_main = module_unit_from_source(
-            "Main",
-            ModuleKind::Procedural,
-            include_str!("../../../conformance/integration/projects/INTP-016/main/Main.proc.bas"),
-        )
-        .expect("class project main parses");
+        let intp_016_main_source =
+            include_str!("../../../conformance/integration/projects/INTP-016/main/Main.proc.bas");
+        let class_main =
+            module_unit_from_source("Main", ModuleKind::Procedural, intp_016_main_source)
+                .expect("class project main parses");
         let counter = module_unit_from_source(
             "Counter",
             ModuleKind::Class,
@@ -1945,6 +1960,27 @@ mod tests {
                 && item.symbol.name == "Multiply"
                 && item.symbol.provenance.kind == SymbolProvenanceKind::SourceModule
         }));
+        let class_main_id = DocumentId::new("Main");
+        let multiply_pos = intp_016_main_source
+            .find("Multiply")
+            .expect("INTP-016 Multiply call site") as u32;
+        let multiply_definition = class_svc
+            .go_to_definition(&class_main_id, multiply_pos)
+            .expect("INTP-016 class member call should navigate");
+        assert_eq!(multiply_definition.document, DocumentId::new("Adder"));
+        assert_eq!(
+            multiply_definition
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.kind),
+            Some(SymbolProvenanceKind::SourceModule)
+        );
+        let multiply_sig = class_svc
+            .signature_help(&class_main_id, multiply_pos + "Multiply(5".len() as u32)
+            .expect("INTP-016 class member call should expose signature help");
+        assert_eq!(multiply_sig.name, "Multiply");
+        assert_eq!(multiply_sig.parameters.len(), 2);
+        assert_eq!(multiply_sig.source_document, Some(DocumentId::new("Adder")));
     }
 
     #[test]

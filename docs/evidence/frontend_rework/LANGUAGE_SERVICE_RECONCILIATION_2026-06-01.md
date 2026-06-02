@@ -42,12 +42,18 @@ Executable proof:
   grammar-matrix route-overlay shapes (`Static`, exponent expressions, qualified member chains,
   and trivia/comment-bearing sources) from compiler front-end facts with no language-service
   diagnostics, so the IDE surface now samples beyond the original seed rows.
+- follow-up FE-9.7 workspace coverage now drives the existing `INTP-003` and `INTP-016` seed
+  project manifests beyond symbol enumeration: the real qualified `LibMath.MathApi.AddFour` call
+  navigates to the referenced project document with project-reference provenance, and the real
+  `Adder.Multiply` class member call navigates to the class document and exposes signature help
+  from the shared front-end callable facts.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_language_service --quiet`
 - `cargo test -p oxvba-languageservice semantic --quiet`
 - `cargo test -p oxvba-languageservice snapshot_covers_matrix_route_overlay_shapes_from_frontend_hir --quiet`
+- `cargo test -p oxvba-languageservice workspace_symbols_cover_frontend_seed_project_routes --quiet`
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler --quiet`
 - `cargo check -p oxvba-compiler --quiet`
@@ -72,3 +78,8 @@ Executable proof:
   richer host/document semantics, imported COM breadth beyond the current routed cases, live Excel
   oracle behavior, or deeper multi-project workspace interactions; those remain FE-9.7/FE-7/FE-8
   delivery surfaces rather than documentation closure.
+- The workspace route continuation deliberately uses existing integration seed project sources, not
+  synthetic mini-projects, so it catches drift between the project route audit and IDE navigation
+  route. It remains bounded to the current `INTP-003` reference-project and `INTP-016` class-member
+  shapes; imported COM, predeclared document host behavior, and live Excel execution still need
+  their own route runners.
