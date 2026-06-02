@@ -427,6 +427,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_const_expression_statement = "Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed const expression fixture",
+        typed_const_expression_statement,
+        "bd-aprs.9.9",
+    ));
+
     let mod_like_expression_statement = "Sub Main()\nDim x\nDim y\nDim ok\nx = 17 Mod 3\ny = 17 \\ 3\nok = \"123\" Like \"###\"\nEnd Sub\n";
     findings.push(route_finding(
         "mod integer-division and like expression fixture",

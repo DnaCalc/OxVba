@@ -557,9 +557,11 @@ the default HIR path as ignored metadata lines when the remaining source is othe
 Project-owned module attributes and member attributes continue to be enforced by the project route
 and remain part of the broader attribute-semantics residual.
 Basic typed constant declarators such as `Const CBase As Long = 7` also route through default HIR
-and substitute the value into procedure bytecode. This covers the current literal/simple-expression
-constant evaluator; typed constant coercion, overflow/type diagnostics, and broader compile-time
-expression parity remain open.
+and substitute the value into procedure bytecode. Follow-up route coverage proves typed simple
+expression declarators and same-statement typed references, for example
+`Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`. This covers the current
+literal/simple-expression constant evaluator; typed constant coercion, overflow/type diagnostics,
+and broader compile-time expression parity remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
@@ -976,6 +978,8 @@ constant expressions:
 - Later declarators in the same `Const` statement can reference earlier declarators, for example
   `Const CBase = 1 + 2, CTotal = CBase + 1`; those references are substituted as expression trees,
   not runtime variable reads.
+- Typed declarators use the same evaluator and route through the default HIR entry point for the
+  covered subset, now audited with `Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
   enum/literal route remain future FE-8.5 work.

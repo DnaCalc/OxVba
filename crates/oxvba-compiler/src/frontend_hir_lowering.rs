@@ -3079,6 +3079,18 @@ fn normalize_hir_ident(text: &str) -> Option<String> {
     is_valid_hir_identifier(name).then(|| name.to_ascii_lowercase())
 }
 
+fn normalize_hir_ident_exact(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.len() >= 2 {
+        let name = &trimmed[1..trimmed.len() - 1];
+        return is_valid_hir_identifier(name).then(|| name.to_ascii_lowercase());
+    }
+    is_valid_hir_identifier(trimmed).then(|| trimmed.to_ascii_lowercase())
+}
+
 fn parse_hir_bound_type(text: &str) -> Option<BoundType> {
     match text.to_ascii_lowercase().as_str() {
         "boolean" => Some(BoundType::Boolean),
@@ -3216,7 +3228,7 @@ fn parse_const_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> O
     if let Some(value) = parse_const_literal(text) {
         return Some(value);
     }
-    if let Some(name) = normalize_hir_ident(text)
+    if let Some(name) = normalize_hir_ident_exact(text)
         && let Some(value) = named_values.get(&name)
     {
         return Some(value.clone());
@@ -6904,6 +6916,42 @@ mod tests {
                     || slot.name.eq_ignore_ascii_case("coffset")
                     || slot.name.eq_ignore_ascii_case("ctotal")),
             "{main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_same_statement_const_expression() {
+        let source = "Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let const_values = collect_const_values(source, &typed_hir);
+        let ctotal_symbol = typed_hir
+            .module
+            .symbols
+            .symbols()
+            .iter()
+            .find(|symbol| {
+                symbol.namespace == SymbolNamespace::Local
+                    && typed_hir
+                        .module
+                        .symbols
+                        .name(symbol.name)
+                        .is_some_and(|name| name.folded == "ctotal")
+            })
+            .expect("ctotal symbol");
+        let value = const_values
+            .get(&ctotal_symbol.id)
+            .expect("ctotal const value");
+        assert!(
+            matches!(
+                value,
+                BoundExpr::BinaryOp {
+                    op: ArithOp::Add,
+                    rhs,
+                    ..
+                } if matches!(rhs.as_ref(), BoundExpr::IntConst(4))
+            ),
+            "{value:#?}"
         );
     }
 

@@ -1303,6 +1303,44 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_typed_const_expression_through_hir() {
+        let source = "Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4\nSub Main()\nDim x As Long\nx = CTotal: x = x + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
+            "legacy path should reject the active inline sequence after typed const expressions",
+        );
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support typed const expressions");
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route typed const expressions through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for typed const expressions"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "expected typed expression const bytecode: {bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 4, .. }
+            )),
+            "expected same-statement typed const reference bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_optional_param_through_hir() {
         let source =
             "Sub Use(Optional ByVal n As Long = 7)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
