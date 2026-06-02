@@ -21256,6 +21256,66 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_dynamic_procedural_module_array_field_accesses() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            concat!(
+                "Attribute VB_Name = \"MainModule\"\n",
+                "Private cache() As Long\n",
+                "Public Sub Main()\n",
+                "ReDim cache(2)\n",
+                "cache(1) = 7\n",
+                "Dim x As Long\n",
+                "x = cache(1)\n",
+                "End Sub\n"
+            ),
+        )
+        .expect("main module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile");
+        assert!(
+            !compiled
+                .rewritten_source
+                .to_ascii_lowercase()
+                .contains("private __oxvba_array_get"),
+            "dynamic procedural module array declaration must not be rewritten as an executable array read"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
+            "dynamic procedural module array ReDim should compile through runtime array resize"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArraySet { .. })),
+            "dynamic procedural module array element write should compile through runtime array set"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayGet { .. })),
+            "dynamic procedural module array element read should compile through runtime array get"
+        );
+    }
+
+    #[test]
     fn compile_project_library_emits_exportable_dynamic_routes_for_exposed_creatable_class() {
         let mut widget = module_unit_from_source(
             "Widget",

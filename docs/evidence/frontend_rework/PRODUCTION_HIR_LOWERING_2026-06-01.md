@@ -493,6 +493,8 @@ The twenty-fifth FE-8.5 slice removes the first runtime `ReDim` residual:
 - fixed procedural-module array fields now compile executable element writes and reads through the
   same module-state field token and runtime array get/set path without rewriting field declarations
   as executable array reads or emitting resize bytecode; and
+- dynamic procedural-module array fields now compile executable `ReDim`, element writes, and
+  element reads through the same module-state field token and runtime array resize/get/set path; and
 - the route audit now includes one-dimensional dynamic-array `ReDim buf(length - 1)`,
   two-dimensional dynamic-array `ReDim grid(rows - 1, cols - 1)`, and explicit lower-bound
   `ReDim buf(1 To length - 1)` fixtures, plus read- and write-side dynamic-array element
@@ -507,8 +509,10 @@ integer bounds and static integer element indices. Project/class array field sha
 front-end indexed, class shapes are emitted in dynamic-object route metadata, dynamic class
 array-field `ReDim`/element get/set is executable through the current bridge, fixed class
 array-field element get/set is executable without resize, and fixed procedural-module array-field
-element get/set is executable without resize. Broader project-owned array shapes remain broader HIR
-and project-semantics work.
+element get/set is executable without resize, and dynamic procedural-module array-field
+`ReDim`/element get/set is executable through module-state tokens. Remaining project-owned
+array-shape work is HIR ownership and metadata replacement of the current project rewrite bridge,
+not a known missing fixed/dynamic class/procedural executable get/set route.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
