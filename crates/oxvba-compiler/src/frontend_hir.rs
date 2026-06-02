@@ -207,6 +207,7 @@ pub enum HirBinaryOp {
     Mul,
     Div,
     Mod,
+    IntDiv,
     Pow,
     Concat,
     Eq,
@@ -2535,6 +2536,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
                 | SyntaxKind::Star
                 | SyntaxKind::Slash
                 | SyntaxKind::KwMod
+                | SyntaxKind::Backslash
                 | SyntaxKind::Caret
                 | SyntaxKind::Ampersand
                 | SyntaxKind::Eq
@@ -2560,6 +2562,7 @@ fn lower_binary_op(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> {
         SyntaxKind::Star => Ok(HirBinaryOp::Mul),
         SyntaxKind::Slash => Ok(HirBinaryOp::Div),
         SyntaxKind::KwMod => Ok(HirBinaryOp::Mod),
+        SyntaxKind::Backslash => Ok(HirBinaryOp::IntDiv),
         SyntaxKind::Caret => Ok(HirBinaryOp::Pow),
         SyntaxKind::Ampersand => Ok(HirBinaryOp::Concat),
         SyntaxKind::Eq => Ok(HirBinaryOp::Eq),

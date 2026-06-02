@@ -383,8 +383,8 @@ Follow-up file-open route work adds HIR-owned `Open path For mode As #handle` lo
 existing file-open host bytecode for simple literal/name path and handle expressions and the
 existing `Input`/`Output`/`Append`/`Binary`/`Random` mode set.
 
-Follow-up expression route work adds HIR-owned `Mod` arithmetic and `Like` comparison lowering to
-the existing modulo and like bytecode paths.
+Follow-up expression route work adds HIR-owned `Mod`, integer division, and `Like` lowering to the
+existing arithmetic/comparison bytecode paths.
 
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names

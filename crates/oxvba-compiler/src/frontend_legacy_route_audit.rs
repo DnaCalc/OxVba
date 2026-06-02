@@ -420,10 +420,9 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
-    let mod_like_expression_statement =
-        "Sub Main()\nDim x\nDim ok\nx = 17 Mod 3\nok = \"123\" Like \"###\"\nEnd Sub\n";
+    let mod_like_expression_statement = "Sub Main()\nDim x\nDim y\nDim ok\nx = 17 Mod 3\ny = 17 \\ 3\nok = \"123\" Like \"###\"\nEnd Sub\n";
     findings.push(route_finding(
-        "mod and like expression fixture",
+        "mod integer-division and like expression fixture",
         mod_like_expression_statement,
         "bd-aprs.9.10",
     ));

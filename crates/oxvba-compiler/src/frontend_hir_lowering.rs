@@ -2014,6 +2014,7 @@ fn lower_binary_expr(
         HirBinaryOp::Mul => binary(ArithOp::Mul, lhs, rhs),
         HirBinaryOp::Div => binary(ArithOp::Div, lhs, rhs),
         HirBinaryOp::Mod => binary(ArithOp::Mod, lhs, rhs),
+        HirBinaryOp::IntDiv => binary(ArithOp::IntDiv, lhs, rhs),
         HirBinaryOp::Pow => binary(ArithOp::Pow, lhs, rhs),
         HirBinaryOp::Concat => binary(ArithOp::Concat, lhs, rhs),
         HirBinaryOp::Eq => compare(CompareOp::Eq, lhs, rhs),
@@ -5994,6 +5995,21 @@ mod tests {
                 .instructions
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::ModSlots { .. })),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_integer_division_expression() {
+        let source = "Sub Main()\nDim x\nx = 17 \\ 3\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntDivSlots { .. })),
             "{bytecode:#?}"
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

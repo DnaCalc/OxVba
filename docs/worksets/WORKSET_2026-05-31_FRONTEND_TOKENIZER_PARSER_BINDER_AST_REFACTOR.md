@@ -1239,8 +1239,9 @@ Candidate bead units:
   including multi-target input. Follow-up file-line-input routing covers `Line Input #handle,
   target` through existing host bytecode. Follow-up file-open routing covers `Open path For mode As
   #handle` through existing host bytecode for simple path/handle expressions and the existing mode
-  set. Follow-up expression routing covers `Mod` and `Like` through existing bytecode paths. The
-  `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  set. Follow-up expression routing covers `Mod`, integer division, and `Like` through existing
+  bytecode paths. The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that
+  remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
