@@ -408,7 +408,14 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
                             source_property_name(&name),
                         ))
             }
-            resolve::ProcKind::PropertySet => params.len() == 1,
+            resolve::ProcKind::PropertySet => {
+                params.len() == 1
+                    || (params.len() > 1
+                        && source_uses_indexed_property_write_with_arguments(
+                            source,
+                            source_property_name(&name),
+                        ))
+            }
             _ => true,
         };
         if !supported {
@@ -1530,11 +1537,30 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_still_rejects_indexed_property_set_route() {
+    fn compile_with_runtime_metadata_default_routes_indexed_property_set_through_hir() {
         let source = "Sub Main()\nSet Value(1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
         assert!(
-            !super::source_is_eligible_for_lightweight_hir_default(source),
-            "indexed Property Set writeback remains outside the default HIR route until object value intent is proved"
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "same-module indexed Property Set writeback should be eligible once object value intent lowers through HIR"
+        );
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support indexed Property Set");
+
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route indexed Property Set source through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for indexed Property Set"
+        );
+        assert!(metadata.contains_key("property_set_value"), "{metadata:#?}");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected indexed property set to lower as a procedure call: {bytecode:#?}"
         );
     }
 

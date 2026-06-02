@@ -5689,6 +5689,23 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_same_module_indexed_property_set_write() {
+        let source = "Sub Main()\nSet Value(1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CallProc { .. }
+            )),
+            "expected same-module indexed property set call: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("property_set_value"), "{metadata:#?}");
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_statement_form_member_call_arguments() {
         let source = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
         let (bytecode, metadata) =
