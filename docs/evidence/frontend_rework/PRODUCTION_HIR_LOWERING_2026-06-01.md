@@ -340,6 +340,12 @@ bytecode argument-name preservation and the existing named-dispatch assignment-f
 This is still a compatibility carrier for explicit dynamic dispatch helpers; it does not claim
 full COM/default-member binding cleanup.
 
+Follow-up statement-host route work adds HIR statement nodes for console `Print` and diagnostics
+`Debug.Print`, lowering them to the existing console/debug host bytecode. Multi-field `Debug.Print`
+payloads are preserved as HIR concatenation expressions before bytecode emission. This is not file
+I/O statement closure; `Open`, `Close`, file `Print #`, `Write #`, `Input #`, and `Line Input #`
+remain separate statement-lowering surfaces.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

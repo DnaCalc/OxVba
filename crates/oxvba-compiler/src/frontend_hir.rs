@@ -290,6 +290,12 @@ pub enum HirStmtKind {
         name: String,
         args: Vec<HirExprId>,
     },
+    ConsolePrint {
+        data: HirExprId,
+    },
+    DebugPrint {
+        data: HirExprId,
+    },
     Label {
         name: String,
     },
@@ -626,6 +632,20 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::Set { target, value },
+                })))
+            }
+            SyntaxKind::CallStmt if is_debug_print_stmt(node) => {
+                let data = self.lower_print_payload(scope, node, "\t")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::DebugPrint { data },
+                })))
+            }
+            SyntaxKind::CallStmt if is_console_print_stmt(node) => {
+                let data = self.lower_print_payload(scope, node, "\t")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::ConsolePrint { data },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1249,6 +1269,63 @@ impl HirBuilder {
         Ok(out)
     }
 
+    fn lower_print_payload(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        delimiter: &str,
+    ) -> Result<HirExprId, HirBuildError> {
+        let args = node
+            .child_nodes()
+            .into_iter()
+            .find(|child| child.kind() == SyntaxKind::ArgList)
+            .map(|arg_list| self.lower_call_args(scope, arg_list, false))
+            .transpose()?
+            .unwrap_or_default();
+        let exprs = args.into_iter().map(|arg| arg.expr).collect::<Vec<_>>();
+        Ok(self.concat_exprs_with_delimiter(node, exprs, delimiter))
+    }
+
+    fn concat_exprs_with_delimiter(
+        &mut self,
+        node: SyntaxNode<'_>,
+        mut exprs: Vec<HirExprId>,
+        delimiter: &str,
+    ) -> HirExprId {
+        let cst = cst(node);
+        let mut acc = if exprs.is_empty() {
+            return self.arenas.alloc_expr(HirExpr {
+                cst,
+                kind: HirExprKind::Literal(HirLiteral::String(String::new())),
+            });
+        } else {
+            exprs.remove(0)
+        };
+        for expr in exprs {
+            let delimiter_expr = self.arenas.alloc_expr(HirExpr {
+                cst: cst.clone(),
+                kind: HirExprKind::Literal(HirLiteral::String(delimiter.to_string())),
+            });
+            let with_delimiter = self.arenas.alloc_expr(HirExpr {
+                cst: cst.clone(),
+                kind: HirExprKind::Binary {
+                    op: HirBinaryOp::Concat,
+                    lhs: acc,
+                    rhs: delimiter_expr,
+                },
+            });
+            acc = self.arenas.alloc_expr(HirExpr {
+                cst: cst.clone(),
+                kind: HirExprKind::Binary {
+                    op: HirBinaryOp::Concat,
+                    lhs: with_delimiter,
+                    rhs: expr,
+                },
+            });
+        }
+        acc
+    }
+
     fn lower_redim_bounds(
         &mut self,
         scope: ScopeId,
@@ -1669,6 +1746,21 @@ fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
         .into_iter()
         .filter(|child| is_expression_node(child.kind()))
         .collect()
+}
+
+fn is_debug_print_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower
+        .strip_prefix("debug.print")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+}
+
+fn is_console_print_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("print").is_some_and(|rest| {
+        (rest.is_empty() || rest.starts_with(char::is_whitespace))
+            && !rest.trim_start().starts_with('#')
+    })
 }
 
 fn is_expression_node(kind: SyntaxKind) -> bool {

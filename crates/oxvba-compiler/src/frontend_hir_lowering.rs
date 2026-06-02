@@ -1532,6 +1532,12 @@ fn lower_stmt(
                 })
                 .collect::<Result<Vec<_>, HirProductionLoweringError>>()?,
         }),
+        HirStmtKind::ConsolePrint { data } => out.push(BoundStmt::ConsolePrint {
+            data: lower_expr(typed_hir, const_values, udt_field_aliases, *data, context)?,
+        }),
+        HirStmtKind::DebugPrint { data } => out.push(BoundStmt::DebugPrint {
+            data: lower_expr(typed_hir, const_values, udt_field_aliases, *data, context)?,
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5089,6 +5095,39 @@ mod tests {
             "expected CreateObject ProgID literal to be preserved: {:?}",
             bytecode.instructions
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_console_and_debug_print_statements() {
+        let source = "Sub Main()\nPrint \"hello\"\nDebug.Print \"left\", \"right\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicConsolePrintHost { .. }
+            )),
+            "expected Print statement to emit console print host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicDebugPrintHost { .. }
+            )),
+            "expected Debug.Print statement to emit diagnostics print host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::ConcatSlots { .. }
+            )),
+            "expected multi-expression Debug.Print payload to concatenate fields: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

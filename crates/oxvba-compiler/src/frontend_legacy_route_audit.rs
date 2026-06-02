@@ -554,6 +554,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let console_debug_print_statements =
+        "Sub Main()\nPrint \"hello\"\nDebug.Print \"left\", \"right\"\nEnd Sub\n";
+    findings.push(route_finding(
+        "console and debug print statement fixture",
+        console_debug_print_statements,
+        "bd-aprs.9.10",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",

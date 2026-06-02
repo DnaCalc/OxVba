@@ -243,6 +243,9 @@ impl SemanticModel {
                     self.index_expr_tree(arg);
                 }
             }
+            HirStmtKind::ConsolePrint { data } | HirStmtKind::DebugPrint { data } => {
+                self.index_expr_tree(data);
+            }
             HirStmtKind::Block(stmts) => {
                 for stmt in stmts {
                     self.index_stmt_tree(stmt);

@@ -242,6 +242,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         bytecode;
         explicit `DispatchInvoke`/`__oxvbaearlyinvoke` structural dispatch helpers now preserve
         named arguments through HIR into the existing host dispatch bytecode;
+        console `Print` and diagnostics `Debug.Print` now lower through HIR to the existing host
+        bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and
