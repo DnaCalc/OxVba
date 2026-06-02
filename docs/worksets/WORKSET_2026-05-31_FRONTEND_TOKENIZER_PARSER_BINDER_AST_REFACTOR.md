@@ -668,14 +668,16 @@ Required newly explicit delivery beads:
   references through the HIR-capable project boundary and adds the multi-module `INTP-002` seed row
   to the route audit. Follow-up reference-project expansion routes procedural-only projects with
   procedural reference projects through a full-source HIR boundary and adds `INTP-003`, `INTP-004`,
-  and `INTP-019` route rows. The migrated project HIR boundaries now call strict HIR compilation
-  directly, so unsupported HIR/forced-object-local shapes are recorded as visible
+  and `INTP-019` route rows; the audit also now includes `INTP-016` as a simple active-project class
+  route that compiles through `ProjectCompileRoute::HirProduction`. The migrated project HIR
+  boundaries now call strict HIR compilation directly, so unsupported HIR/forced-object-local shapes
+  are recorded as visible
   `LegacyFallbackAfterHirUnsupported` routes instead of hidden legacy fallback through wrapper
   helpers; route-audit HIR-production rows must assert `ProjectCompileRoute::HirProduction`.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
   from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, add
-  class/document/imported host-project and cross-workspace language-service route runners, and add an
-  Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
+  document/imported host-project, broader class, and cross-workspace language-service route runners,
+  and add an Excel-oracle route runner instead of skipped residual rows. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from

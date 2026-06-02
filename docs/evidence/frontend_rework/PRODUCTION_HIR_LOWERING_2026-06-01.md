@@ -1019,8 +1019,11 @@ projects compile from active source through HIR, while procedural-only projects 
 reference projects compile from full lowered source through HIR. The new regression fixture covers a
 project-qualified call into `LibMath.MathApi`, and the seed route audit now includes `INTP-003`,
 `INTP-004`, and `INTP-019` for procedural reference projects, active-project shadowing of a
-referenced procedure, and multiple project references. Class/document modules, imported COM/reference
-shapes beyond procedural project references, and host/oracle-backed project semantics remain open.
+referenced procedure, and multiple project references. The same audit now also includes `INTP-016`
+as a simple active-project class route with `Dim ... As New` construction and early-bound class
+method calls compiling through `ProjectCompileRoute::HirProduction`. Document modules, imported
+COM/reference shapes beyond procedural project references, broader class semantics, and
+host/oracle-backed project semantics remain open.
 The migrated active/full project HIR boundaries now call strict HIR compilation directly; unsupported
 HIR or forced-object-local shapes are recorded as `LegacyFallbackAfterHirUnsupported` instead of
 silently returning through the legacy fallback wrapper, and the route audit only counts rows with
