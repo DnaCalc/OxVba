@@ -45,6 +45,7 @@ fn lookup_casefold_name<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Optio
 fn is_dispatch_invoke_intrinsic(name: &str) -> bool {
     name.eq_ignore_ascii_case("dispatchinvoke")
         || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyPropertyGetInvoke")
         || name.eq_ignore_ascii_case("__OxVbaEarlyPropertyLetInvoke")
         || name.eq_ignore_ascii_case("__OxVbaEarlyPropertySetInvoke")
 }

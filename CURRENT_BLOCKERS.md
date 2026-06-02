@@ -141,11 +141,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         syntax now resolves through typelib metadata for the required `PropertyPut`/`PropertyPutRef`
         kind before rewrite, producing frontend/typelib diagnostics instead of backend parse
         fallout when the imported type has no default setter; fixture-backed default put/putref
-        assignments and named/indexed imported COM property put/putref assignments now use
+        assignments, named/indexed imported COM property put/putref assignments, and selected
+        imported COM property-get read/invoke routes now use
         accessor-specific internal early-invoke carriers and, for the single-active-module
         type-library-only subset, compile the active module through the HIR-capable boundary with
-        early-bound COM dispatch-id metadata plus `PropertyLet`/`PropertySet` bytecode hints
-        instead of the legacy project backend;
+        early-bound COM dispatch-id metadata plus `PropertyGet`/`PropertyLet`/`PropertySet`
+        bytecode hints instead of the legacy project backend;
       - still open: broader project/host/imported-COM default-member writeback breadth, type
         overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;

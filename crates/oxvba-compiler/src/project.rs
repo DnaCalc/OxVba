@@ -1392,6 +1392,8 @@ fn compile_project_with_strategy(
             message: format!("PMR-E-INTERNAL-CONTRACT: {message}"),
         })?;
     let public_rewritten_source = compiled_source
+        .replace("__OxVbaEarlyPropertyGetInvoke", "DispatchInvoke")
+        .replace("__oxvbaearlypropertygetinvoke", "dispatchinvoke")
         .replace("__OxVbaEarlyPropertyLetInvoke", "DispatchInvoke")
         .replace("__oxvbaearlypropertyletinvoke", "dispatchinvoke")
         .replace("__OxVbaEarlyPropertySetInvoke", "DispatchInvoke")
@@ -4726,10 +4728,14 @@ fn rewrite_early_bound_member_dispatch(
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "__OxVbaEarlyInvoke(__OxVbaEarlyInvoke({var_name}, {member_selector}), \"Item\", {rendered_args})"
+                "__OxVbaEarlyInvoke({}({var_name}, {member_selector}), \"Item\", {rendered_args})",
+                early_bound_invoke_carrier_for_kind(member_spec.invoke_kind),
             )
         } else if args.is_empty() || args.iter().all(|arg| arg.trim().is_empty()) {
-            format!("__OxVbaEarlyInvoke({var_name}, {member_selector})")
+            format!(
+                "{}({var_name}, {member_selector})",
+                early_bound_invoke_carrier_for_kind(member_spec.invoke_kind)
+            )
         } else {
             let rendered_args = args
                 .iter()
@@ -4737,7 +4743,10 @@ fn rewrite_early_bound_member_dispatch(
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("__OxVbaEarlyInvoke({var_name}, {member_selector}, {rendered_args})")
+            format!(
+                "{}({var_name}, {member_selector}, {rendered_args})",
+                early_bound_invoke_carrier_for_kind(member_spec.invoke_kind)
+            )
         };
         replacements.push((name_start, close + 1, replacement));
         cursor = close + 1;
@@ -4874,7 +4883,7 @@ fn validate_imported_com_dispatch_classification(
 
 fn validate_early_bound_invoke_shape(
     target_name: &str,
-    member_spec: ComMemberSpec,
+    member_spec: &ComMemberSpec,
     actual_arity: usize,
 ) -> Result<(), ProjectCompileError> {
     if !matches!(
@@ -4897,9 +4906,24 @@ fn validate_early_bound_invoke_shape(
     Ok(())
 }
 
-fn render_dispatch_invoke(var_name: &str, member_token: i32, args: &[String]) -> String {
+fn early_bound_invoke_carrier_for_kind(invoke_kind: TypeLibMemberInvokeKind) -> &'static str {
+    match invoke_kind {
+        TypeLibMemberInvokeKind::PropertyGet => "__OxVbaEarlyPropertyGetInvoke",
+        TypeLibMemberInvokeKind::Method
+        | TypeLibMemberInvokeKind::PropertyPut
+        | TypeLibMemberInvokeKind::PropertyPutRef => "__OxVbaEarlyInvoke",
+    }
+}
+
+fn render_dispatch_invoke(
+    var_name: &str,
+    member_token: i32,
+    args: &[String],
+    invoke_kind: TypeLibMemberInvokeKind,
+) -> String {
+    let carrier = early_bound_invoke_carrier_for_kind(invoke_kind);
     if args.is_empty() {
-        format!("__OxVbaEarlyInvoke({var_name}, {member_token})")
+        format!("{carrier}({var_name}, {member_token})")
     } else {
         let rendered_args = args
             .iter()
@@ -4907,7 +4931,7 @@ fn render_dispatch_invoke(var_name: &str, member_token: i32, args: &[String]) ->
             .filter(|arg| !arg.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-        format!("__OxVbaEarlyInvoke({var_name}, {member_token}, {rendered_args})")
+        format!("{carrier}({var_name}, {member_token}, {rendered_args})")
     }
 }
 
@@ -4951,11 +4975,11 @@ fn rewrite_early_bound_call_statement_without_parens(
             .filter(|arg| !arg.is_empty())
             .collect::<Vec<_>>()
     };
-    validate_early_bound_invoke_shape(&target_name, member_spec, args.len())?;
+    validate_early_bound_invoke_shape(&target_name, &member_spec, args.len())?;
     Ok(format!(
         "{}Call {}",
         &line[..leading],
-        render_dispatch_invoke(&var_name, member_token, &args)
+        render_dispatch_invoke(&var_name, member_token, &args, member_spec.invoke_kind)
     ))
 }
 
@@ -4996,11 +5020,11 @@ fn rewrite_early_bound_statement_invoke_without_parentheses(
             .filter(|arg| !arg.is_empty())
             .collect::<Vec<_>>()
     };
-    validate_early_bound_invoke_shape(&target_name, member_spec, args.len())?;
+    validate_early_bound_invoke_shape(&target_name, &member_spec, args.len())?;
     Ok(format!(
         "{}{}",
         &line[..leading],
-        render_dispatch_invoke(&var_name, member_token, &args)
+        render_dispatch_invoke(&var_name, member_token, &args, member_spec.invoke_kind)
     ))
 }
 
@@ -5292,8 +5316,9 @@ fn rewrite_early_bound_property_read_assignment(
         return Ok(line.to_string());
     }
     validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
+    let invoke_carrier = early_bound_invoke_carrier_for_kind(member_spec.invoke_kind);
     Ok(format!(
-        "{}{}{} = __OxVbaEarlyInvoke({}, {})",
+        "{}{}{} = {}({}, {})",
         &line[..leading],
         if explicit_set {
             "Set "
@@ -5303,6 +5328,7 @@ fn rewrite_early_bound_property_read_assignment(
             ""
         },
         lhs,
+        invoke_carrier,
         var_name,
         member_token
     ))
@@ -21223,6 +21249,23 @@ mod tests {
         assert!(lowered.contains("call dispatchinvoke(obj, 6, 42)"));
         assert!(lowered.contains("call dispatchinvoke(obj, 9)"));
         assert!(lowered.contains("call dispatchinvoke(obj, 16, 42)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertyGet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(9))
+                        && com_member.arity == 0
+                        && args.is_empty()
+                )
+            }),
+            "Call-form imported PropertyGet should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]
@@ -21711,6 +21754,23 @@ mod tests {
             .expect("zero-arg property-get imported read-assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("x = dispatchinvoke(obj, 9)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: true,
+                        com_member: Some(com_member),
+                        call_kind_hint: Some(ProjectMemberCallKind::PropertyGet),
+                        ..
+                    } if matches!(com_member.selector, ComMemberSelectorDescriptor::DispatchId(9))
+                        && com_member.arity == 0
+                        && args.is_empty()
+                )
+            }),
+            "imported zero-arg PropertyGet should carry early-bound COM bytecode metadata"
+        );
     }
 
     #[test]

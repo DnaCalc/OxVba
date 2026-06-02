@@ -77,6 +77,8 @@ fn dispatch_intrinsic_metadata(name: &str) -> Option<(bool, Option<ProjectMember
         Some((false, None))
     } else if name.eq_ignore_ascii_case("__OxVbaEarlyInvoke") {
         Some((true, None))
+    } else if name.eq_ignore_ascii_case("__OxVbaEarlyPropertyGetInvoke") {
+        Some((true, Some(ProjectMemberCallKind::PropertyGet)))
     } else if name.eq_ignore_ascii_case("__OxVbaEarlyPropertyLetInvoke") {
         Some((true, Some(ProjectMemberCallKind::PropertyLet)))
     } else if name.eq_ignore_ascii_case("__OxVbaEarlyPropertySetInvoke") {

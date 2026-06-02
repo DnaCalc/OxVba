@@ -113,12 +113,13 @@ The 2026-06-01 continuation added:
   fixture alias, `OxVba.TestDispatchDefaultPut`, marks the indexed property put/putref members as
   default setters and proves positive `DispatchInvoke` rewrite for both Let and Set assignment
   forms.
-- `bd-aprs.8.7` imported COM setter production-route continuation: the positive named/indexed
-  property put/putref rows and `OxVba.TestDispatchDefaultPut` default-member Let/Set rows now use
-  accessor-specific internal early-invoke carriers and compile the active module through the
-  HIR-capable project boundary for the single-active-module type-library-only subset. Bytecode
-  assertions prove early-bound COM dispatch-id metadata plus `PropertyLet`/`PropertySet` hints, and
-  the compiled active source no longer includes projected typelib reference stubs on this route.
+- `bd-aprs.8.7` imported COM accessor production-route continuation: the positive property-get
+  read/call rows, named/indexed property put/putref rows, and `OxVba.TestDispatchDefaultPut`
+  default-member Let/Set rows now use accessor-specific internal early-invoke carriers and compile
+  the active module through the HIR-capable project boundary for the single-active-module
+  type-library-only subset. Bytecode assertions prove early-bound COM dispatch-id metadata plus
+  `PropertyGet`/`PropertyLet`/`PropertySet` hints, and the compiled active source no longer includes
+  projected typelib reference stubs on this route.
 
 ## Checks
 
@@ -149,6 +150,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler object_typed_default_member_value --quiet`
 - `cargo test -p oxvba-compiler scalar_typed_default_member_value --quiet`
 - `cargo test -p oxvba-compiler default_member --quiet`
+- `cargo test -p oxvba-compiler external_member --quiet`
 - `cargo test -p oxvba-compiler property_put_external --quiet`
 - `cargo test -p oxvba-compiler routes_imported_default_member --quiet`
 - `cargo test -p oxvba-compiler imported_default_member_property --quiet`
@@ -276,12 +278,12 @@ The 2026-06-01 continuation added:
   route. The selected route now must classify as `EarlyBoundProject` with the expected accessor kind
   before the rewrite carrier is retained. This is still route proof around the compatibility
   rewrite body, not full HIR-native replacement.
-- Imported-COM setter route review found that merely proving a `DispatchInvoke` source rewrite was
+- Imported-COM accessor route review found that merely proving a `DispatchInvoke` source rewrite was
   too weak: type-library-only rows could still compile through the legacy project backend and the
-  source carrier did not preserve put/putref intent. The project boundary now keeps separate full
-  compatibility source and active-project source; single procedural active modules with only
+  source carrier did not preserve get/put/putref intent. The project boundary now keeps separate
+  full compatibility source and active-project source; single procedural active modules with only
   synthetic type-library references compile the active source through HIR. The rewrite carrier
   preserves accessor intent through internal early-invoke names, and bytecode proof checks dispatch
-  id, arity, early-bound COM metadata, and `PropertyLet`/`PropertySet` hints for named, indexed,
-  named-argument indexed, and default-member setter rows. Broader reference-project, host,
-  imported-COM, and rewrite-body retirement remains open.
+  id, arity, early-bound COM metadata, and `PropertyGet`/`PropertyLet`/`PropertySet` hints for
+  property-get read/call rows plus named, indexed, named-argument indexed, and default-member setter
+  rows. Broader reference-project, host, imported-COM, and rewrite-body retirement remains open.
