@@ -23,10 +23,12 @@ enter the legacy resolver first through the lightweight compile API.
 
 Eligibility is deliberately narrower than "anything HIR can currently parse". The lightweight
 default HIR route now allows simple functions after function return slots are projected from HIR
-type hooks, but still excludes DefType statements, properties, optional/default/ParamArray
-parameters, class/object-local compatibility contexts, and project-rewritten compilation until
-those semantics are represented by HIR facts with route proof. Those sources continue through the
-legacy residual path rather than accepting partial HIR output.
+type hooks, and now also allows `Option Compare Text` after HIR lowering began carrying the
+compiler compare-mode policy into bytecode. The guard still excludes DefType statements,
+properties, optional/default/ParamArray parameters, `Option Explicit`, `Option Compare Database`,
+`Option Private Module`, class/object-local compatibility contexts, and project-rewritten
+compilation until those semantics are represented by HIR facts with route proof. Those sources
+continue through the legacy residual path rather than accepting partial HIR output.
 
 ## Checks
 

@@ -6530,7 +6530,7 @@ fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> Bo
         .unwrap_or(BoundType::Variant)
 }
 
-fn collect_option_compare_mode(lines: &[String]) -> BoundCompareMode {
+pub(crate) fn collect_option_compare_mode(lines: &[String]) -> BoundCompareMode {
     let mut mode = BoundCompareMode::Binary;
     for line in lines {
         if let Some(parsed) = parse_option_compare_directive(line) {

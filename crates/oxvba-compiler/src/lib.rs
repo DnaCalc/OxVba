@@ -358,7 +358,7 @@ fn source_has_unsupported_option_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> boo
         let parts: Vec<_> = normalized.split_whitespace().collect();
         return !matches!(
             parts.as_slice(),
-            ["option", "base", "0" | "1"] | ["option", "compare", "binary"]
+            ["option", "base", "0" | "1"] | ["option", "compare", "binary" | "text"]
         );
     }
     node.child_nodes()
@@ -821,10 +821,21 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_allows_text_option_compare_hir_route() {
+        let source = "Option Compare Text\nSub Main()\n    Dim x\n    x = \"a\" = \"A\"\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "Option Compare Text should not disqualify otherwise-completed HIR constructs"
+        );
+        super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route Option Compare Text source through HIR",
+        );
+    }
+
+    #[test]
     fn lightweight_hir_default_rejects_unsupported_option_statements() {
         for source in [
             "Option Explicit\nSub Main()\nEnd Sub\n",
-            "Option Compare Text\nSub Main()\nEnd Sub\n",
             "Option Compare Database\nSub Main()\nEnd Sub\n",
             "Option Private Module\nSub Main()\nEnd Sub\n",
         ] {

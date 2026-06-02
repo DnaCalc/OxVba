@@ -14,11 +14,11 @@ use crate::frontend_type_hooks::{
 use crate::optimize::optimize_module;
 use crate::resolve::{
     ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
-    BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
-    BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
-    BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
+    BoundCaseClause, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor, BoundExpr,
+    BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
+    BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
     RuntimeArrayDimExpr, collect_declared_external_procedures, collect_option_base,
-    parse_proc_signature,
+    collect_option_compare_mode, parse_proc_signature,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -238,6 +238,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
         )));
     }
     let option_base = collect_option_base(&lines);
+    let compare_mode = collect_option_compare_mode(&lines);
     let mut procedures = external_procedures;
     let mut hir_procedure_count = 0usize;
     for decl in &typed_hir.module.declarations {
@@ -263,7 +264,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
         source: source.to_string(),
         option_explicit: false,
         is_class_module: false,
-        compare_mode: BoundCompareMode::Binary,
+        compare_mode,
         default_type_table: [BoundType::Variant; 26],
         resolution_diagnostics: Vec::new(),
         declarations: Vec::new(),
@@ -2673,6 +2674,26 @@ mod tests {
             .expect("dynamic array shape");
         assert_eq!(shape.element_type, VbaTypeId::Long);
         assert_eq!(shape.rank, 2);
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_option_compare_text_mode() {
+        let source = "Option Compare Text\nSub Main()\nDim x\nx = \"a\" = \"A\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::CmpEqSlots {
+                    mode: crate::bytecode::StringCompareMode::Text,
+                    ..
+                }
+            )),
+            "expected text comparison bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

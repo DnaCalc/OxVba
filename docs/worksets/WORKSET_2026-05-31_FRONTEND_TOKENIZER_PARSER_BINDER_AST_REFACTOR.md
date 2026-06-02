@@ -625,8 +625,8 @@ Required newly explicit delivery beads:
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
-  `Option Base 0/1`, `Option Compare Binary`, simple constants, enum constants, and same-statement
-  constant expression substitution.
+  `Option Base 0/1`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
+  simple constants, enum constants, and same-statement constant expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1139,8 +1139,8 @@ Candidate bead units:
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
-  work has already been done: `Option Base`, `Option Compare Binary`, enum constants, and simple
-  same-statement constant expressions.
+  work has already been done: `Option Base`, `Option Compare Binary`, `Option Compare Text`
+  compare-mode bytecode, enum constants, and simple same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
