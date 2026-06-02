@@ -777,6 +777,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let statement_form_named_dispatchinvoke_intrinsic = "Sub Main()\nDim obj\nobj = CreateObject(\"OxVba.TestDispatch\")\nDispatchInvoke obj, \"SetIndexedValue\", value := 11, lhs := 7\nEnd Sub\n";
+    findings.push(route_finding(
+        "statement-form named DispatchInvoke host intrinsic fixture",
+        statement_form_named_dispatchinvoke_intrinsic,
+        "bd-aprs.9.5",
+    ));
+
     let console_debug_print_statements =
         "Sub Main()\nPrint \"hello\"\nDebug.Print \"left\", \"right\"\nEnd Sub\n";
     findings.push(route_finding(

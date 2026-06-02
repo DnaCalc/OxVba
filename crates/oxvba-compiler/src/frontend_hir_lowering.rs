@@ -1254,6 +1254,16 @@ fn lower_stmt(
                         args,
                     },
                 }),
+                BoundExpr::StructuralIntrinsicCallWithArgs { intrinsic, args } => {
+                    if stmt_data.cst.syntax_kind == "CallStmt" {
+                        return Err(HirProductionLoweringError::Unsupported(format!(
+                            "Call-keyword structural intrinsic statement {intrinsic:?}"
+                        )));
+                    }
+                    out.push(BoundStmt::Expr {
+                        expr: BoundExpr::StructuralIntrinsicCallWithArgs { intrinsic, args },
+                    })
+                }
                 BoundExpr::Var(name) if name.eq_ignore_ascii_case("randomize") => {
                     out.push(BoundStmt::Call {
                         name: "randomize".to_string(),
@@ -6035,6 +6045,28 @@ mod tests {
                 )
             }),
             "expected statement-form member call to preserve dispatch args: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_statement_form_dispatchinvoke_arguments() {
+        let source = "Sub Main()\nDim obj\nobj = CreateObject(\"OxVba.TestDispatch\")\nDispatchInvoke obj, \"SetIndexedValue\", value := 11, lhs := 7\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost { args, .. }
+                    if args.len() == 2
+                        && args.iter().any(|arg| arg.name.as_deref() == Some("value"))
+                        && args.iter().any(|arg| arg.name.as_deref() == Some("lhs"))
+                )
+            }),
+            "expected statement-form DispatchInvoke to preserve named dispatch args: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

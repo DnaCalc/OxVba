@@ -22,6 +22,8 @@ The audit proves the good path and exposes the remaining production residuals:
   residual or bytecode/call-descriptor bug;
 - same-module statement-form procedure calls with bare arguments now reach `HirProduction`;
 - statement-form member calls with bare arguments now reach `HirProduction`;
+- no-keyword statement-form `DispatchInvoke` host intrinsic calls with named arguments now reach
+  `HirProduction`;
 - simple multiline `If ... Then ... End If` fixtures now reach `HirProduction`;
 - multiline `If ... Else ... End If` and `If ... ElseIf ... Else ... End If` fixtures now reach
   `HirProduction`;
@@ -94,12 +96,22 @@ host execution test for workbook/worksheet automation. The seed corpus route aud
 `HirProduction` and passed live execution with:
 `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_worksheet_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`.
 The first broader attempt exposed two real gaps and the fixture was narrowed accordingly:
-statement-form `DispatchInvoke(app, "DisplayAlerts", False)` is still an unsupported HIR
-expression-statement shape, and live Excel `Range("A1")` dispatch failed through the current
-`DispatchInvoke` adapter with `HAL-E-ADAPTER-FAULT [dispatch_invoke] com-dispatch-arg-error`.
-This evidence proves application activation, `Workbooks`, `Workbooks.Add`, `Worksheets(1)`,
-`Close`, and `Quit`; it does not claim range/default-member value access, property-put, or Excel
-mutation parity.
+statement-form `DispatchInvoke(app, "DisplayAlerts", False)` was not accepted by HIR as an
+expression-statement shape at that point, and live Excel `Range("A1")` dispatch failed through the
+current `DispatchInvoke` adapter with `HAL-E-ADAPTER-FAULT [dispatch_invoke]
+com-dispatch-arg-error`. This evidence proves application activation, `Workbooks`,
+`Workbooks.Add`, `Worksheets(1)`, `Close`, and `Quit`; it does not claim range/default-member value
+access, property-put, or Excel mutation parity.
+
+Continuation update: the compiler-side no-keyword statement-form `DispatchInvoke` residual from the
+Excel oracle broadening attempt is now closed. HIR production lowering accepts
+no-keyword `StructuralIntrinsicCallWithArgs` as an expression statement, the regression
+`hir_production_lowering_accepts_statement_form_dispatchinvoke_arguments` proves named dispatch
+arguments survive to `IntrinsicDispatchInvokeHost`, and the production route audit includes a
+no-keyword statement-form named `DispatchInvoke` fixture. `Call DispatchInvoke(...)` remains on the
+compatibility route where project/imported-COM rewrites need to attach early-bound COM metadata.
+The live Excel `Range("A1")` dispatch fault remains open and is not reclassified by this
+compiler-side fix.
 
 Continuation update: FE-9.8 bundle context facts now have source-backed seed-corpus proof. The
 test `bundle_fact_bound_module_route_uses_hir_for_source_backed_frontend_seed_rows` walks the
@@ -156,6 +168,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - `cargo test -p oxvba-compiler compile_options_default_uses_frontend_v2_for_source_backed_frontend_seed_rows --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_statement_form_dispatchinvoke_arguments --quiet`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_application_activation_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo test -p oxvba-host --test excel_office_oracle_lane windows_excel_office_oracle_lane::excel_workbook_worksheet_smoke_fixture_executes_when_available -- --ignored --exact --test-threads=1 --nocapture`
 - `cargo fmt --check -p oxvba-compiler`
@@ -179,8 +192,9 @@ The audit result records completed reopened delivery work and remaining broader 
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
   multi-declarator literal `Const`, `Event` declarations paired with `RaiseEvent`, single-source
   `Implements` directives, explicit-receiver value-side dot-member read/call syntax, statement-form
-  member calls with bare arguments, simple dot/bang member assignment targets, and read-side `With`
-  member syntax are no longer themselves route blockers. The call/coercion fixture now has matching
+  member calls with bare arguments, no-keyword statement-form `DispatchInvoke` host intrinsic calls
+  with named arguments, simple dot/bang member assignment targets, and read-side `With` member
+  syntax are no longer themselves route blockers. The call/coercion fixture now has matching
   bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage for language surfaces
   outside this route-audited subset, but the audited fixtures in this file now classify as
   `HirProduction`.
@@ -198,9 +212,11 @@ The audit result records completed reopened delivery work and remaining broader 
   also exposed that property-set behavior should not be claimed by the activation smoke; broader
   Excel object-model mutation remains a separate FE-7/FE-8/FE-9 delivery and oracle surface.
 - The follow-up live Excel workbook/worksheet lane now proves `Workbooks`, `Workbooks.Add`,
-  `Worksheets(1)`, close, and cleanup. It also exposed that HIR statement-form `DispatchInvoke`
-  and live `Range("A1")` dispatch are not ready to be claimed, so range/default-member value access
-  and property-put remain open.
+  `Worksheets(1)`, close, and cleanup. It also exposed that statement-form `DispatchInvoke` and
+  live `Range("A1")` dispatch were not ready to be claimed at first. The compiler-side no-keyword
+  statement-form `DispatchInvoke` gap is now route-audited through HIR production, while
+  `Call DispatchInvoke(...)` remains on the compatibility route for early-bound COM metadata;
+  range/default-member value access and property-put remain open.
 - Bundle context fact extraction is now proved HIR-backed for every source-backed FE-9.7 seed row.
   The legacy resolver fallback remains a quarantined residual for unsupported modules, not an
   accepted-row production route.

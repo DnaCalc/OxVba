@@ -683,9 +683,12 @@ Required newly explicit delivery beads:
   activation/property-get/`Quit` cleanup and live workbook/worksheet automation through
   `Workbooks`, `Workbooks.Add`, `Worksheets(1)`, `Close`, and `Quit`; the selected route audit now
   has no skipped residual rows. The first broader workbook/range attempt exposed two remaining
-  gaps rather than closing them: HIR does not yet lower statement-form `DispatchInvoke` with
+  gaps rather than closing them: HIR did not yet lower statement-form `DispatchInvoke` with
   arguments, and live Excel `Range("A1")` dispatch currently faults through the `DispatchInvoke`
-  adapter. Language-service
+  adapter. Follow-up HIR lowering work now accepts no-keyword statement-form `DispatchInvoke` with
+  named arguments and adds it to the production route audit, while `Call DispatchInvoke(...)`
+  remains on the compatibility route for early-bound COM metadata. The live Excel `Range("A1")`
+  adapter fault remains open. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows

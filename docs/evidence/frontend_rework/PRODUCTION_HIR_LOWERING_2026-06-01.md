@@ -1053,6 +1053,24 @@ The latest FE-8.5 slice removes the read-side bang member residual:
   early-bound COM property-put resolution, indexed/named writeback breadth, and property Let/Set
   overload validation remain tracked residual work.
 
+## Statement-Form DispatchInvoke Continuation
+
+The latest FE-8.5 slice removes the statement-form structural-intrinsic residual exposed by the
+Excel oracle broadening attempt:
+
+- HIR production lowering now accepts no-keyword `StructuralIntrinsicCallWithArgs` statement forms
+  and lowers them to `BoundStmt::Expr`, so the existing typecheck/emit path can produce
+  `IntrinsicDispatchInvokeHost`.
+- The regression covers no-keyword statement-form `DispatchInvoke obj, "SetIndexedValue", value :=
+  11, lhs := 7` and asserts the named dispatch arguments survive into the emitted host-dispatch
+  instruction.
+- The production route audit now includes a no-keyword statement-form named `DispatchInvoke`
+  fixture in addition to the assignment-form named `DispatchInvoke` fixture.
+- `Call DispatchInvoke(...)` remains outside this HIR route so project/imported-COM compatibility
+  rewrites can still attach early-bound COM metadata where that route remains load-bearing.
+- This closes the compiler-side HIR residual only. The live Excel `Range("A1")` adapter fault and
+  Excel property-put/default-member mutation lanes remain open.
+
 ## Indexed Property Default Route
 
 The latest FE-8.5.c slice narrows the property/default-member residual without claiming indexed
@@ -1116,6 +1134,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_project_does_not_inject_runtime_validation_for_rewritten_internal_class_object_locals --quiet`
 - `cargo test -p oxvba-compiler compile_project_infers_non_authoritative_single_candidate_indexed_default_member_let --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_bang_member_access --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_statement_form_dispatchinvoke_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-host --test source_member_call_statements --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
