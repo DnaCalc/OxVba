@@ -635,8 +635,8 @@ Required newly explicit delivery beads:
   `Option Explicit` HIR-bound module flag plus route audit, `Option Base 0/1`,
   `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, `Option Compare Database`
   HIR/default routing with the current binary-runtime compare approximation, simple constants, enum
-  constants, basic DefType default-table preservation for local untyped `Dim`, and same-statement
-  constant expression substitution.
+  constants, basic DefType default-table preservation for local untyped `Dim`, parameters, and
+  function returns, and same-statement constant expression substitution.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1170,7 +1170,7 @@ Candidate bead units:
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
   `Option Compare Database` HIR/default routing with the current binary-runtime compare
   approximation, enum constants, basic DefType default-table preservation for local untyped `Dim`,
-  and simple same-statement constant expressions.
+  parameters, and function returns, and simple same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:

@@ -338,8 +338,11 @@ fn lower_procedure(
     let mut bound_params = Vec::new();
     let udt_defs = collect_hir_udt_definitions(source);
     let mut udt_instances = HashMap::<String, String>::new();
-    let parsed_params =
-        parsed_signature_params_for_hir_decl(source, decl, default_type_table).unwrap_or_default();
+    let parsed_signature = parsed_signature_for_hir_decl(source, decl, default_type_table);
+    let parsed_params = parsed_signature
+        .as_ref()
+        .map(|(params, _return_type)| params.clone())
+        .unwrap_or_default();
 
     for param in params {
         let param_name = symbol_name(typed_hir, *param)?;
@@ -457,7 +460,11 @@ fn lower_procedure(
     }
 
     if is_function {
-        let return_type = declared_bound_type(typed_hir, decl.symbol).unwrap_or(BoundType::Variant);
+        let return_type = parsed_signature
+            .as_ref()
+            .map(|(_params, return_type)| *return_type)
+            .or_else(|| declared_bound_type(typed_hir, decl.symbol))
+            .unwrap_or(BoundType::Variant);
         declarations.push(name.clone());
         declaration_types.insert(name.clone(), return_type);
     }
@@ -521,7 +528,11 @@ fn lower_procedure(
         source_line_end,
         statement_line_numbers,
         return_type: if is_function {
-            declared_bound_type(typed_hir, decl.symbol).unwrap_or(BoundType::Variant)
+            parsed_signature
+                .as_ref()
+                .map(|(_params, return_type)| *return_type)
+                .or_else(|| declared_bound_type(typed_hir, decl.symbol))
+                .unwrap_or(BoundType::Variant)
         } else {
             BoundType::Variant
         },
@@ -536,11 +547,11 @@ fn lower_procedure(
     }))
 }
 
-fn parsed_signature_params_for_hir_decl(
+fn parsed_signature_for_hir_decl(
     source: &str,
     decl: &crate::frontend_hir::HirDecl,
     default_type_table: &[BoundType; 26],
-) -> Option<Vec<BoundParam>> {
+) -> Option<(Vec<BoundParam>, BoundType)> {
     let kind = match decl.cst.syntax_kind.as_str() {
         "SubDecl" => ProcKind::Sub,
         "FunctionDecl" => ProcKind::Function,
@@ -551,8 +562,8 @@ fn parsed_signature_params_for_hir_decl(
     let end = decl.cst.span.end.min(source.len());
     let text = source.get(start..end)?;
     let first_line = text.lines().next()?.trim();
-    let (_name, params, _return_type) = parse_proc_signature(first_line, kind, default_type_table)?;
-    Some(params)
+    let (_name, params, return_type) = parse_proc_signature(first_line, kind, default_type_table)?;
+    Some((params, return_type))
 }
 
 fn lower_stmt(
@@ -3445,6 +3456,59 @@ mod tests {
         assert_eq!(
             main.declaration_types.get("beta").copied(),
             Some(BoundType::Long)
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_applies_def_type_and_type_char_precedence_for_params() {
+        let source = "DefObj A-Z\nSub Use(alpha, beta%, gamma% As Long)\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Module1", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let proc = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "use")
+            .expect("use procedure");
+
+        assert_eq!(proc.params[0].ty, BoundType::Object);
+        assert_eq!(proc.params[1].ty, BoundType::Integer);
+        assert_eq!(proc.params[2].ty, BoundType::Long);
+    }
+
+    #[test]
+    fn hir_production_lowering_applies_def_type_and_type_char_precedence_for_function_return() {
+        let typed_source = "DefObj A-Z\nFunction alpha%()\nalpha = 1\nEnd Function\n";
+        let typed_hir = collect_type_hooks_from_source("Module1", typed_source)
+            .expect("typed HIR should collect");
+        let typed_bound = lower_typed_hir_to_bound_module(typed_source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let typed_proc = typed_bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "alpha")
+            .expect("alpha function");
+        assert_eq!(typed_proc.return_type, BoundType::Integer);
+        assert_eq!(
+            typed_proc.declaration_types.get("alpha").copied(),
+            Some(BoundType::Integer)
+        );
+
+        let default_source = "DefObj A-Z\nFunction alpha()\nalpha = Nothing\nEnd Function\n";
+        let default_hir = collect_type_hooks_from_source("Module1", default_source)
+            .expect("typed HIR should collect");
+        let default_bound = lower_typed_hir_to_bound_module(default_source, &default_hir)
+            .expect("HIR production lowering should produce bound module");
+        let default_proc = default_bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "alpha")
+            .expect("alpha function");
+        assert_eq!(default_proc.return_type, BoundType::Object);
+        assert_eq!(
+            default_proc.declaration_types.get("alpha").copied(),
+            Some(BoundType::Object)
         );
     }
 
