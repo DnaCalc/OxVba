@@ -1417,7 +1417,8 @@ Candidate bead units:
   The eligibility guard deliberately still excludes surfaces whose HIR semantics are partial,
   including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
   member property writeback, Date/Currency/coerced default-expression metadata beyond the covered
-  integer plus literal string/Boolean defaults, and broader optional call-entry combinations. The
+  integer plus literal string/Boolean defaults and typed declared defaults (`""`, `False`, `0`),
+  and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
   cleanup moves the public `compile_with_options` HIR attempt off `syntax_bridge` and calls HIR

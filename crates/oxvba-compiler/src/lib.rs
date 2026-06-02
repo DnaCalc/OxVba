@@ -1699,6 +1699,49 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_routes_typed_optional_declared_defaults_through_hir() {
+        let source = "Sub Use(Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal n As Long)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            super::compile_with_runtime_metadata(source).expect("compile should route through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            &use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitString(value),
+                ..
+            } if value.is_empty()
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[1].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitBool(false),
+                ..
+            }
+        ));
+        assert!(matches!(
+            use_metadata.signature.parameters[2].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitI32(0),
+                ..
+            }
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(main.call_sites.iter().any(|call_site| {
+            call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("text")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitString(String::new()))
+            }) && call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("flag")
+                    && arg.optional_default == Some(OptionalDefaultValue::ExplicitBool(false))
+            }) && call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("n")
+                    && arg.optional_default == Some(OptionalDefaultValue::ExplicitI32(0))
+            })
+        }));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_simple_property_declarations_through_hir() {
         let source = "Sub Main()\nDim x\nx = Value\nValue = x\nEnd Sub\nProperty Get Value() As Long\nValue = 9\nEnd Property\nProperty Let Value(ByRef target)\ntarget = target + 1\nEnd Property\n";
         assert!(

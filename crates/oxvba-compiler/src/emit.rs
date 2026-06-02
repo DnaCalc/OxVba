@@ -1387,6 +1387,21 @@ fn optional_default_value_for_param(param: &BoundParam) -> OptionalDefaultValue 
         Some(BoundParamDefaultValue::ExplicitString(value)) => {
             OptionalDefaultValue::ExplicitString(value.clone())
         }
+        None if param.ty == BoundType::Boolean => OptionalDefaultValue::ExplicitBool(false),
+        None if param.ty == BoundType::String => {
+            OptionalDefaultValue::ExplicitString(String::new())
+        }
+        None if matches!(
+            param.ty,
+            BoundType::Byte
+                | BoundType::Integer
+                | BoundType::Long
+                | BoundType::LongLong
+                | BoundType::LongPtr
+        ) =>
+        {
+            OptionalDefaultValue::ExplicitI32(0)
+        }
         None if param.ty == BoundType::Variant => OptionalDefaultValue::VariantMissingError448,
         None => OptionalDefaultValue::DeclaredTypeDefault,
     }
@@ -10982,6 +10997,18 @@ fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<
             instructions.push(Instruction::LoadConstString {
                 slot: dst,
                 value: value.clone(),
+            });
+        }
+        None if param.ty == BoundType::Boolean => {
+            instructions.push(Instruction::LoadConstBool {
+                slot: dst,
+                value: false,
+            });
+        }
+        None if param.ty == BoundType::String => {
+            instructions.push(Instruction::LoadConstString {
+                slot: dst,
+                value: String::new(),
             });
         }
         None => {

@@ -1134,6 +1134,10 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `Optional ... As Boolean = True/False` defaults during procedure signature parsing, preserves
   those defaults through HIR production/default-route metadata, and binds omitted package-VM
   arguments to real string/Boolean `Variant` values.
+- Follow-up declared-default work maps omitted `Optional As String`, `Optional As Boolean`, and
+  integer optional parameters without explicit defaults to concrete descriptor/runtime defaults
+  (`""`, `False`, and `0`) instead of the vague declared-type default marker or integer-only
+  entry default.
 - The same follow-up found a front-end symbol-model miss where a later parameter following a string
   default could be absent from the HIR parameter list even though the signature parser saw it.
   Procedure symbol collection now reconciles missing parameter symbols against the signature parser

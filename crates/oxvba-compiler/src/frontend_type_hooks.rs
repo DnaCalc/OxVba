@@ -275,6 +275,21 @@ fn optional_default_value_for_bound_param(param: &BoundParam) -> Option<Optional
         Some(BoundParamDefaultValue::ExplicitString(value)) => {
             Some(OptionalDefaultValue::ExplicitString(value.clone()))
         }
+        None if param.ty == BoundType::Boolean => Some(OptionalDefaultValue::ExplicitBool(false)),
+        None if param.ty == BoundType::String => {
+            Some(OptionalDefaultValue::ExplicitString(String::new()))
+        }
+        None if matches!(
+            param.ty,
+            BoundType::Byte
+                | BoundType::Integer
+                | BoundType::Long
+                | BoundType::LongLong
+                | BoundType::LongPtr
+        ) =>
+        {
+            Some(OptionalDefaultValue::ExplicitI32(0))
+        }
         None if param.ty == BoundType::Variant => {
             Some(OptionalDefaultValue::VariantMissingError448)
         }
