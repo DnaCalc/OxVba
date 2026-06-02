@@ -675,8 +675,9 @@ Required newly explicit delivery beads:
   helpers; route-audit HIR-production rows must assert `ProjectCompileRoute::HirProduction`. The
   audit now includes `integration_imported_typelib_testdispatch` and follow-up
   `integration_imported_typelib_scripting_dictionary` as source-backed imported COM
-  HIR-production routes and `integration_predeclared_document_project` as a source-backed
-  predeclared `ThisWorkbook` document route, plus `excel_oracle_activation_smoke` as a source-backed Excel
+  HIR-production routes, `integration_predeclared_document_project` and follow-up
+  `integration_predeclared_document_method_project` as source-backed predeclared `ThisWorkbook`
+  document property/method routes, plus `excel_oracle_activation_smoke` as a source-backed Excel
   fixture route that classifies as HIR production; the selected route audit now has no skipped
   residual rows. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
@@ -689,7 +690,8 @@ Required newly explicit delivery beads:
   qualified project-reference call and the real `INTP-016` class member call through navigation and
   signature-help assertions, not only workspace-symbol enumeration. Remaining work: broaden corpus
   execution beyond the current route-overlay evidence, broaden document/host semantics beyond the
-  `ThisWorkbook.Path` seed route, broaden imported COM beyond the current `TestDispatch` and
+  current synthetic `ThisWorkbook.Path` and `ThisWorkbook.FullName()` route rows into real host
+  object-model behavior, broaden imported COM beyond the current `TestDispatch` and
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover
   deeper cross-workspace language-service route runners beyond those seed shapes, and add live
   Excel-oracle execution evidence for environment-dependent behavior beyond source-route

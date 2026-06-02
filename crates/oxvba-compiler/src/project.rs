@@ -1434,18 +1434,18 @@ fn compile_project_with_strategy(
         &reference_order,
         &event_dispatch_plan,
     )?;
-    let predeclared_property_read_routes = collect_predeclared_property_read_rewrite_routes(
+    let predeclared_member_read_routes = collect_predeclared_member_read_rewrite_routes(
         manifest,
         &project_symbol_index,
         &procedure_index,
     )?;
-    lowered_project_source.full_source = rewrite_predeclared_property_reads_for_backend(
+    lowered_project_source.full_source = rewrite_predeclared_member_reads_for_backend(
         &lowered_project_source.full_source,
-        &predeclared_property_read_routes,
+        &predeclared_member_read_routes,
     );
-    lowered_project_source.active_project_source = rewrite_predeclared_property_reads_for_backend(
+    lowered_project_source.active_project_source = rewrite_predeclared_member_reads_for_backend(
         &lowered_project_source.active_project_source,
-        &predeclared_property_read_routes,
+        &predeclared_member_read_routes,
     );
 
     let has_class_modules = manifest
@@ -1661,31 +1661,38 @@ fn build_compiler_source_map(
     CompilerSourceMap { modules }
 }
 
-fn collect_predeclared_property_read_rewrite_routes(
+fn collect_predeclared_member_read_rewrite_routes(
     manifest: &ProjectManifest,
     project_symbol_index: &ProjectSymbolIndex,
     procedure_index: &[ProcedureDecl],
 ) -> Result<BTreeMap<String, String>, ProjectCompileError> {
     let mut candidates = BTreeMap::<String, BTreeSet<String>>::new();
     for decl in procedure_index {
-        if decl.kind != ProcedureDeclKind::PropertyGet || decl.param_count != 0 || !decl.is_public {
+        if !decl.is_public {
             continue;
         }
         if !module_is_predeclared(manifest, &decl.project_name, &decl.module_name) {
             continue;
         }
-        if normalize_identifier(&decl.project_name) == normalize_identifier(&manifest.project_name)
-            && !active_project_predeclared_property_route_exists(
-                manifest,
-                project_symbol_index,
-                decl,
-            )?
-        {
-            continue;
-        }
-        validate_host_global_dispatch_classification(decl, &decl.procedure_name)?;
+        let route = match decl.kind {
+            ProcedureDeclKind::PropertyGet if decl.param_count == 0 => {
+                if normalize_identifier(&decl.project_name)
+                    == normalize_identifier(&manifest.project_name)
+                    && !active_project_predeclared_property_route_exists(
+                        manifest,
+                        project_symbol_index,
+                        decl,
+                    )?
+                {
+                    continue;
+                }
+                validate_host_global_dispatch_classification(decl, &decl.procedure_name)?;
+                format!("property_get_{}(0)", lowered_proc_signature_name(decl))
+            }
+            ProcedureDeclKind::Function => decl.lowered_name.clone(),
+            _ => continue,
+        };
         let key = format!("{}.{}", decl.module_name, decl.procedure_name).to_ascii_lowercase();
-        let route = format!("property_get_{}(0)", lowered_proc_signature_name(decl));
         candidates.entry(key).or_default().insert(route);
     }
 
@@ -1761,7 +1768,7 @@ fn module_is_predeclared(
         })
 }
 
-fn rewrite_predeclared_property_reads_for_backend(
+fn rewrite_predeclared_member_reads_for_backend(
     source: &str,
     routes: &BTreeMap<String, String>,
 ) -> String {
@@ -1770,12 +1777,12 @@ fn rewrite_predeclared_property_reads_for_backend(
     }
     source
         .lines()
-        .map(|line| rewrite_predeclared_property_reads_in_line(line, routes))
+        .map(|line| rewrite_predeclared_member_reads_in_line(line, routes))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn rewrite_predeclared_property_reads_in_line(
+fn rewrite_predeclared_member_reads_in_line(
     line: &str,
     routes: &BTreeMap<String, String>,
 ) -> String {
@@ -32036,14 +32043,14 @@ mod tests {
                 &event_dispatch_plan,
             )
             .expect("lowering should succeed");
-            let rewritten_source = super::rewrite_predeclared_property_reads_for_backend(
+            let rewritten_source = super::rewrite_predeclared_member_reads_for_backend(
                 &lowered_project_source.full_source,
-                &super::collect_predeclared_property_read_rewrite_routes(
+                &super::collect_predeclared_member_read_rewrite_routes(
                     &manifest,
                     &project_symbol_index,
                     &procedure_index,
                 )
-                .expect("predeclared property routes"),
+                .expect("predeclared member routes"),
             );
             assert!(
                 rewritten_source

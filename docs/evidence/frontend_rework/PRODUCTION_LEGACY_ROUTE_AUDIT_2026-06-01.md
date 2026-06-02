@@ -70,6 +70,15 @@ projection row beyond the controlled `OxVba.TestDispatch` fixture. The inline
 both the OxVba-controlled typelib and a known external/registered ProgID projection shape. This is
 still route evidence, not live COM execution or full Office/versioned/broken-reference parity.
 
+Continuation update: the predeclared document route audit now covers a public document method in
+addition to the original `ThisWorkbook.Path` property-get seed. The inline `ThisWorkbook.FullName()`
+project compiles through the HIR production project boundary, rewrites the backend call to the
+normal `pmr_hostworkbook_thisworkbook_fullname()` function symbol, and retains the matching runtime
+metadata entry. The compiler compatibility rewrite was generalized from predeclared property reads
+to predeclared member reads so public predeclared functions can use the same PMR-backed route.
+This is still synthetic document-module route evidence; live Excel object model behavior remains
+separate oracle work.
+
 This audit no longer finds the previously tracked scoped production route residuals. The broader
 workset still remains open for unaudited language surfaces and full terminal evidence, but this
 specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
@@ -143,3 +152,6 @@ The audit result records completed reopened delivery work and remaining broader 
   projected typelib references through HIR production. Broader imported COM work remains open for
   live COM execution, Office typelib/version/broken-reference behavior, richer member/property
   families, and any residual helper-source rewrite paths that are not yet owned by front-end facts.
+- Predeclared document route evidence now covers both `ThisWorkbook.Path` property reads and
+  `ThisWorkbook.FullName()` public method calls through HIR production. Broader document/host work
+  remains open for real host object-model semantics and live Excel oracle execution.
