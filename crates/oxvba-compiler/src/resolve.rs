@@ -1367,6 +1367,10 @@ fn strip_directive_prefix_ci<'a>(line: &'a str, prefix: &str) -> Option<&'a str>
 enum PpToken {
     LParen,
     RParen,
+    Plus,
+    Minus,
+    Star,
+    IntDiv,
     Eq,
     Ne,
     Lt,
@@ -1376,6 +1380,7 @@ enum PpToken {
     And,
     Or,
     Not,
+    Mod,
     Int(i32),
     Ident(String),
 }
@@ -1422,6 +1427,39 @@ fn tokenize_pp_expr(expr: &str) -> Option<Vec<PpToken>> {
                 i += 1;
                 continue;
             }
+            '+' => {
+                out.push(PpToken::Plus);
+                i += 1;
+                continue;
+            }
+            '-' => {
+                if i + 1 < chars.len()
+                    && chars[i + 1].is_ascii_digit()
+                    && pp_token_expects_operand(out.last())
+                {
+                    let mut j = i + 2;
+                    while j < chars.len() && chars[j].is_ascii_digit() {
+                        j += 1;
+                    }
+                    let value = chars[i..j].iter().collect::<String>().parse::<i32>().ok()?;
+                    out.push(PpToken::Int(value));
+                    i = j;
+                    continue;
+                }
+                out.push(PpToken::Minus);
+                i += 1;
+                continue;
+            }
+            '*' => {
+                out.push(PpToken::Star);
+                i += 1;
+                continue;
+            }
+            '\\' => {
+                out.push(PpToken::IntDiv);
+                i += 1;
+                continue;
+            }
             '=' => {
                 out.push(PpToken::Eq);
                 i += 1;
@@ -1457,14 +1495,8 @@ fn tokenize_pp_expr(expr: &str) -> Option<Vec<PpToken>> {
             _ => {}
         }
 
-        if ch == '-' || ch.is_ascii_digit() {
+        if ch.is_ascii_digit() {
             let mut j = i;
-            if chars[j] == '-' {
-                j += 1;
-                if j >= chars.len() || !chars[j].is_ascii_digit() {
-                    return None;
-                }
-            }
             while j < chars.len() && chars[j].is_ascii_digit() {
                 j += 1;
             }
@@ -1484,6 +1516,7 @@ fn tokenize_pp_expr(expr: &str) -> Option<Vec<PpToken>> {
                 "and" => out.push(PpToken::And),
                 "or" => out.push(PpToken::Or),
                 "not" => out.push(PpToken::Not),
+                "mod" => out.push(PpToken::Mod),
                 "true" => out.push(PpToken::Int(-1)),
                 "false" => out.push(PpToken::Int(0)),
                 _ => out.push(PpToken::Ident(ident)),
@@ -1496,6 +1529,29 @@ fn tokenize_pp_expr(expr: &str) -> Option<Vec<PpToken>> {
     }
 
     Some(out)
+}
+
+fn pp_token_expects_operand(token: Option<&PpToken>) -> bool {
+    matches!(
+        token,
+        None | Some(
+            PpToken::LParen
+                | PpToken::Plus
+                | PpToken::Minus
+                | PpToken::Star
+                | PpToken::IntDiv
+                | PpToken::Eq
+                | PpToken::Ne
+                | PpToken::Lt
+                | PpToken::Le
+                | PpToken::Gt
+                | PpToken::Ge
+                | PpToken::And
+                | PpToken::Or
+                | PpToken::Not
+                | PpToken::Mod
+        )
+    )
 }
 
 struct PpExprParser<'a> {
@@ -1531,12 +1587,12 @@ impl<'a> PpExprParser<'a> {
     }
 
     fn parse_compare(&mut self) -> Option<i32> {
-        let lhs = self.parse_primary()?;
+        let lhs = self.parse_add()?;
         let Some(op) = self.peek_compare() else {
             return Some(lhs);
         };
         self.index += 1;
-        let rhs = self.parse_primary()?;
+        let rhs = self.parse_add()?;
         let out = match op {
             PpToken::Eq => lhs == rhs,
             PpToken::Ne => lhs != rhs,
@@ -1547,6 +1603,52 @@ impl<'a> PpExprParser<'a> {
             _ => return None,
         };
         Some(pp_bool(out))
+    }
+
+    fn parse_add(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_mod()?;
+        loop {
+            if self.consume(&PpToken::Plus) {
+                lhs = lhs.checked_add(self.parse_mod()?)?;
+            } else if self.consume(&PpToken::Minus) {
+                lhs = lhs.checked_sub(self.parse_mod()?)?;
+            } else {
+                return Some(lhs);
+            }
+        }
+    }
+
+    fn parse_mod(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_mul()?;
+        while self.consume(&PpToken::Mod) {
+            let rhs = self.parse_mul()?;
+            lhs = lhs.checked_rem(rhs)?;
+        }
+        Some(lhs)
+    }
+
+    fn parse_mul(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_unary()?;
+        loop {
+            if self.consume(&PpToken::Star) {
+                lhs = lhs.checked_mul(self.parse_unary()?)?;
+            } else if self.consume(&PpToken::IntDiv) {
+                let rhs = self.parse_unary()?;
+                lhs = lhs.checked_div(rhs)?;
+            } else {
+                return Some(lhs);
+            }
+        }
+    }
+
+    fn parse_unary(&mut self) -> Option<i32> {
+        if self.consume(&PpToken::Plus) {
+            return self.parse_unary();
+        }
+        if self.consume(&PpToken::Minus) {
+            return self.parse_unary()?.checked_neg();
+        }
+        self.parse_primary()
     }
 
     fn parse_primary(&mut self) -> Option<i32> {
@@ -7632,6 +7734,17 @@ mod tests {
         };
         assert_eq!(target, "x");
         assert_eq!(expr, &BoundExpr::IntConst(9));
+    }
+
+    #[test]
+    fn resolve_conditional_compilation_arithmetic_expression_branch() {
+        let source = "#Const LIMIT = 2 * 3 + 1\n#Const CHECK = 8 Mod 5 \\ 2\n#Const NEG = -2147483648\nSub Main()\nDim x\n#If LIMIT Mod 4 = 3 And LIMIT \\ 2 = 3 And CHECK = 0 And NEG < 0 Then\nx = 11\n#Else\nx = 1\n#End If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x");
+        assert_eq!(expr, &BoundExpr::IntConst(11));
     }
 
     #[test]

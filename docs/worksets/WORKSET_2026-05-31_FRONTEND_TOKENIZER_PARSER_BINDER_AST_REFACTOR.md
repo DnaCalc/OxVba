@@ -1323,8 +1323,10 @@ Candidate bead units:
   known DefType default-route eligibility, basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
-  discovery/lowering plus manifest-based embedded host build requests, basic single-source module
-  `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
+  discovery/lowering plus manifest-based embedded host build requests, conditional-compilation
+  arithmetic with checked integer unary signs, `+`, `-`, `*`, guarded `\`, and `Mod` inside the
+  existing `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute
+  VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, and explicit `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.

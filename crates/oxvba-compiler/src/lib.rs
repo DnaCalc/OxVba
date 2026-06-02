@@ -1381,6 +1381,29 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_conditional_arithmetic_through_hir() {
+        let source = "#Const LIMIT = 2 * 3 + 1\n#Const CHECK = 8 Mod 5 \\ 2\n#Const NEG = -2147483648\nSub Main()\nDim x As Long\n#If LIMIT Mod 4 = 3 And LIMIT \\ 2 = 3 And CHECK = 0 And NEG < 0 Then\nx = 11: x = x + 1\n#Else\nx = 1\n#End If\nEnd Sub\n";
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route arithmetic #If source through HIR",
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 11, .. }
+            )),
+            "expected active arithmetic #If branch bytecode: {bytecode:#?}"
+        );
+        assert!(
+            !bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "inactive arithmetic #Else branch should not be emitted: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_module_attribute_through_hir() {
         let source = "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x As Long\nx = 7: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source)

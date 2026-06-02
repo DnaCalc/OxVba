@@ -559,8 +559,10 @@ preprocessor before project procedure discovery and HIR/project lowering, so act
 can select `#If` branches from manifest-supplied constants while source `#Const` directives remain
 able to override the initial environment. A host-facade follow-up proves embedded build-workspace
 requests that carry a compiler `ProjectManifest` observe the same constants. Separate IDE/session
-option plumbing for conditional constants, and richer compile-time expression/name parity, remain
-open.
+option plumbing for conditional constants remains open. Later bounded evaluator work accepts
+checked integer `#Const` and `#If` arithmetic with unary signs, `+`, `-`, `*`, guarded `\`, and
+`Mod`, composed with existing comparison/logical conditional expressions. Broader compile-time
+expression/name parity remains open.
 Basic single-source module attributes such as `Attribute VB_Name = "Module1"` also route through
 the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
 Project-owned module attributes and member attributes continue to be enforced by the project route
