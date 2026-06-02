@@ -105,6 +105,13 @@ The 2026-06-01 continuation added:
   for predeclared `Property Get` roots is now fallible and classifier-backed before rewrite.
   Active-project routes must classify as `EarlyBoundProject` property gets, and host-injected
   routes must classify as `HostGlobal`, before the legacy backend carrier is retained.
+- `bd-aprs.8.7` imported default-member assignment continuation: early-bound COM assignment
+  rewriting now recognizes bare/indexed imported default-member assignment syntax such as
+  `obj(41) = value` and `Set obj(41) = other`. The path resolves a default member of the required
+  `PropertyPut`/`PropertyPutRef` kind through typelib metadata before rewrite and therefore
+  produces frontend/typelib diagnostics instead of falling through to backend parsing. The current
+  fixture proves the diagnostic route for a COM type whose default member is not a setter; positive
+  default setter execution still requires a fixture with default put/putref metadata.
 
 ## Checks
 
@@ -135,6 +142,8 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler object_typed_default_member_value --quiet`
 - `cargo test -p oxvba-compiler scalar_typed_default_member_value --quiet`
 - `cargo test -p oxvba-compiler default_member --quiet`
+- `cargo test -p oxvba-compiler routes_imported_default_member --quiet`
+- `cargo test -p oxvba-compiler external_default_member --quiet`
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler compile_project --quiet`

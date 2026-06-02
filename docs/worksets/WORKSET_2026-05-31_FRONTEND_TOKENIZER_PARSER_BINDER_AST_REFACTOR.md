@@ -1116,7 +1116,10 @@ Candidate bead units:
   active-project `EarlyBoundProject` property-get proof or host-injected `HostGlobal` proof before
   retaining the compatibility carrier; selected default-member assignment routes now reject clear
   assignment-form/type mismatches, covering `Let` into explicitly object-typed value parameters and
-  `Set` into definitely scalar-typed value parameters.
+  `Set` into definitely scalar-typed value parameters; imported bare/indexed default-member
+  assignment syntax now resolves through typelib metadata for the required `PropertyPut`/
+  `PropertyPutRef` kind before rewrite, producing frontend/typelib diagnostics instead of backend
+  parse fallout when the imported type has no default setter.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

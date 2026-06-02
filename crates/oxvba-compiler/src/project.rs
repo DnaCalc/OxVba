@@ -4996,67 +4996,143 @@ fn rewrite_early_bound_property_assignment(
     if lhs.is_empty() || rhs.is_empty() {
         return Ok(line.to_string());
     }
-    let Some(dot_idx) = lhs.find('.') else {
-        return Ok(line.to_string());
-    };
-    let var_name = lhs[..dot_idx].trim();
-    let Some(binding) = early_bound.get(&normalize_identifier(var_name)) else {
-        return Ok(line.to_string());
-    };
-    let member_expr = lhs[dot_idx + 1..].trim();
-    let (member_name, mut args) = if let Some(open_idx) = member_expr.find('(') {
-        let Some(close_idx) = find_matching_paren(member_expr, open_idx) else {
-            return Ok(line.to_string());
-        };
-        if close_idx != member_expr.len().saturating_sub(1) {
-            return Ok(line.to_string());
-        }
-        let member_name = member_expr[..open_idx].trim();
-        if member_name.is_empty() {
-            return Ok(line.to_string());
-        }
-        let args = split_top_level_args(member_expr[open_idx + 1..close_idx].trim())?
-            .into_iter()
-            .filter(|arg| !arg.trim().is_empty())
-            .collect::<Vec<_>>();
-        (member_name.to_string(), args)
-    } else {
-        if member_expr.is_empty() {
-            return Ok(line.to_string());
-        }
-        (member_expr.to_string(), Vec::new())
-    };
-    let target_name = format!("{}.{}", binding.qualified_type, member_name);
     let allowed_assignment_kind = if explicit_set {
         TypeLibMemberInvokeKind::PropertyPutRef
     } else {
         TypeLibMemberInvokeKind::PropertyPut
     };
-    let (member_token, member_spec) =
-        match resolve_early_bound_binding_member_token_and_spec_of_kinds(
-            binding,
-            &member_name,
-            &[allowed_assignment_kind],
-        ) {
-            KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
-                (member_token, member_spec)
-            }
-            KnownTypeLibMemberResolution::Unsupported => {
-                return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
-                    member_name: member_name.to_string(),
-                });
-            }
-            KnownTypeLibMemberResolution::Missing => {
-                return Err(ProjectCompileError::TypeLibraryMemberNotFound {
-                    target: target_name,
-                });
-            }
-            KnownTypeLibMemberResolution::Ambiguous => {
-                return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
-                    target: target_name,
-                });
-            }
+    let (var_name, binding, target_name, mut args, member_token, member_spec) =
+        if let Some(dot_idx) = lhs.find('.') {
+            let var_name = lhs[..dot_idx].trim();
+            let Some(binding) = early_bound.get(&normalize_identifier(var_name)) else {
+                return Ok(line.to_string());
+            };
+            let member_expr = lhs[dot_idx + 1..].trim();
+            let (member_name, args) = if let Some(open_idx) = member_expr.find('(') {
+                let Some(close_idx) = find_matching_paren(member_expr, open_idx) else {
+                    return Ok(line.to_string());
+                };
+                if close_idx != member_expr.len().saturating_sub(1) {
+                    return Ok(line.to_string());
+                }
+                let member_name = member_expr[..open_idx].trim();
+                if member_name.is_empty() {
+                    return Ok(line.to_string());
+                }
+                let args = split_top_level_args(member_expr[open_idx + 1..close_idx].trim())?
+                    .into_iter()
+                    .filter(|arg| !arg.trim().is_empty())
+                    .collect::<Vec<_>>();
+                (member_name.to_string(), args)
+            } else {
+                if member_expr.is_empty() {
+                    return Ok(line.to_string());
+                }
+                (member_expr.to_string(), Vec::new())
+            };
+            let target_name = format!("{}.{}", binding.qualified_type, member_name);
+            let (member_token, member_spec) =
+                match resolve_early_bound_binding_member_token_and_spec_of_kinds(
+                    binding,
+                    &member_name,
+                    &[allowed_assignment_kind],
+                ) {
+                    KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                        (member_token, member_spec)
+                    }
+                    KnownTypeLibMemberResolution::Unsupported => {
+                        return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                            member_name: member_name.to_string(),
+                        });
+                    }
+                    KnownTypeLibMemberResolution::Missing => {
+                        return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                            target: target_name,
+                        });
+                    }
+                    KnownTypeLibMemberResolution::Ambiguous => {
+                        return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                            target: target_name,
+                        });
+                    }
+                };
+            (
+                var_name.to_string(),
+                binding,
+                target_name,
+                args,
+                member_token,
+                member_spec,
+            )
+        } else {
+            let (var_name, args) = if let Some(open_idx) = lhs.find('(') {
+                let Some(close_idx) = find_matching_paren(lhs, open_idx) else {
+                    return Ok(line.to_string());
+                };
+                if close_idx != lhs.len().saturating_sub(1) {
+                    return Ok(line.to_string());
+                }
+                let var_name = lhs[..open_idx].trim();
+                if var_name.is_empty() {
+                    return Ok(line.to_string());
+                }
+                let args = split_top_level_args(lhs[open_idx + 1..close_idx].trim())?
+                    .into_iter()
+                    .filter(|arg| !arg.trim().is_empty())
+                    .collect::<Vec<_>>();
+                (var_name, args)
+            } else {
+                if explicit_set {
+                    return Ok(line.to_string());
+                }
+                (lhs, Vec::new())
+            };
+            let Some(binding) = early_bound.get(&normalize_identifier(var_name)) else {
+                return Ok(line.to_string());
+            };
+            let target_name = format!("{}.<default>", binding.qualified_type);
+            let (member_token, member_spec) =
+                match resolve_early_bound_binding_default_member_token_and_spec_of_kinds(
+                    binding,
+                    &[allowed_assignment_kind],
+                ) {
+                    KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                        (member_token, member_spec)
+                    }
+                    KnownTypeLibMemberResolution::Unsupported => {
+                        return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                            member_name: target_name,
+                        });
+                    }
+                    KnownTypeLibMemberResolution::Missing => {
+                        return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                            target: target_name,
+                        });
+                    }
+                    KnownTypeLibMemberResolution::Ambiguous => {
+                        return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                            target: target_name,
+                        });
+                    }
+                };
+            (
+                var_name.to_string(),
+                binding,
+                target_name,
+                args,
+                member_token,
+                member_spec,
+            )
         };
+    let target_name = if target_name.ends_with(".<default>") {
+        format!("{}.{}", binding.qualified_type, member_spec.name)
+    } else {
+        target_name
+    };
+    let var_name = var_name.as_str();
+    let binding = binding;
+    let member_spec = member_spec;
+    let member_token = member_token;
     let supported_assignment_shape = if explicit_set {
         member_spec.invoke_kind == TypeLibMemberInvokeKind::PropertyPutRef
     } else {
@@ -5084,7 +5160,7 @@ fn rewrite_early_bound_property_assignment(
     let expected_arity = member_spec.parameter_names.len();
     if actual_arity != expected_arity {
         return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
-            target: format!("{}.{}", binding.qualified_type, member_spec.name),
+            target: target_name,
             expected: expected_arity,
             actual: actual_arity,
         });
@@ -8765,6 +8841,37 @@ fn resolve_early_bound_binding_default_member_token_and_spec(
         TypeLibMemberLookupResult::Missing => KnownTypeLibMemberResolution::Missing,
         TypeLibMemberLookupResult::Ambiguous => KnownTypeLibMemberResolution::Ambiguous,
     }
+}
+
+fn resolve_early_bound_binding_default_member_token_and_spec_of_kinds(
+    binding: &EarlyBoundBinding,
+    allowed_kinds: &[TypeLibMemberInvokeKind],
+) -> KnownTypeLibMemberResolution {
+    let Some(metadata) = binding.typelib_metadata.as_ref() else {
+        return KnownTypeLibMemberResolution::Unsupported;
+    };
+    let matches = metadata
+        .members
+        .iter()
+        .filter(|candidate| {
+            candidate.is_default_member && allowed_kinds.contains(&candidate.invoke_kind)
+        })
+        .collect::<Vec<_>>();
+    let member = match matches.as_slice() {
+        [] => return KnownTypeLibMemberResolution::Missing,
+        [member] => *member,
+        [_, ..] => return KnownTypeLibMemberResolution::Ambiguous,
+    };
+    KnownTypeLibMemberResolution::Resolved(
+        member.token,
+        ComMemberSpec {
+            name: member.name.clone(),
+            requires_argument: member.requires_argument,
+            invoke_kind: member.invoke_kind,
+            parameter_names: member.parameter_names.clone(),
+            is_default_member: member.is_default_member,
+        },
+    )
 }
 
 fn render_typelib_invoke_kind(invoke_kind: TypeLibMemberInvokeKind) -> &'static str {
@@ -21718,6 +21825,64 @@ mod tests {
             .expect("external default-member call should compile in supported subset");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dispatchinvoke(obj, 16, 41)"));
+    }
+
+    #[test]
+    fn compile_project_routes_imported_default_member_let_assignment_to_typelib_diagnostic() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj(41) = 9\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("imported default-member PropertyPut route should be diagnosed");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-NOT-FOUND");
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("oxvba.testdispatch.<default>")
+        );
+    }
+
+    #[test]
+    fn compile_project_routes_imported_default_member_set_assignment_to_typelib_diagnostic() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj(41) = other\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("imported default-member PropertyPutRef route should be diagnosed");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-NOT-FOUND");
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("oxvba.testdispatch.<default>")
+        );
     }
 
     #[test]

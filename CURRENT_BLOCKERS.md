@@ -137,7 +137,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         proof or host-injected `HostGlobal` proof before retaining the compatibility carrier;
         selected default-member assignment routes now reject clear assignment-form/type
         mismatches, covering `Let` into explicitly object-typed value parameters and `Set` into
-        definitely scalar-typed value parameters;
+        definitely scalar-typed value parameters; imported bare/indexed default-member assignment
+        syntax now resolves through typelib metadata for the required `PropertyPut`/`PropertyPutRef`
+        kind before rewrite, producing frontend/typelib diagnostics instead of backend parse
+        fallout when the imported type has no default setter;
       - still open: broader project/host/imported-COM default-member writeback breadth, type
         overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
