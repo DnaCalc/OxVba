@@ -400,7 +400,15 @@ fn source_has_unsupported_property_declaration(source: &str) -> bool {
                         source_property_name(&name),
                     )
             }
-            resolve::ProcKind::PropertyLet | resolve::ProcKind::PropertySet => params.len() == 1,
+            resolve::ProcKind::PropertyLet => {
+                params.len() == 1
+                    || (params.len() > 1
+                        && source_uses_indexed_property_write_with_arguments(
+                            source,
+                            source_property_name(&name),
+                        ))
+            }
+            resolve::ProcKind::PropertySet => params.len() == 1,
             _ => true,
         };
         if !supported {
@@ -453,6 +461,65 @@ fn source_uses_indexed_property_get_with_arguments(source: &str, property_name: 
     }
 
     saw_indexed_use
+}
+
+fn source_uses_indexed_property_write_with_arguments(source: &str, property_name: &str) -> bool {
+    let mut in_property_body = false;
+    let property_name = property_name.to_ascii_lowercase();
+
+    for line in source.lines() {
+        if line.trim().eq_ignore_ascii_case("End Property") {
+            in_property_body = false;
+            continue;
+        }
+        if proc_kind_for_signature_line(line).is_some_and(|kind| {
+            matches!(
+                kind,
+                resolve::ProcKind::PropertyGet
+                    | resolve::ProcKind::PropertyLet
+                    | resolve::ProcKind::PropertySet
+            )
+        }) {
+            in_property_body = true;
+            continue;
+        }
+        if in_property_body {
+            continue;
+        }
+        if line_has_indexed_property_write(line, &property_name) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn line_has_indexed_property_write(line: &str, property_name: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let mut start = 0usize;
+    while let Some(relative) = lower[start..].find(property_name) {
+        let idx = start + relative;
+        let end = idx + property_name.len();
+        let before_is_ident = lower[..idx]
+            .chars()
+            .next_back()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        let after_is_ident = lower[end..]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        if !before_is_ident && !after_is_ident {
+            let after_name = lower[end..].trim_start();
+            if let Some(rest) = after_name.strip_prefix('(')
+                && let Some(close) = rest.find(')')
+                && rest[close + 1..].trim_start().starts_with('=')
+            {
+                return true;
+            }
+        }
+        start = end;
+    }
+    false
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1435,11 +1502,39 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_still_rejects_indexed_property_writeback_route() {
+    fn compile_with_runtime_metadata_default_routes_indexed_property_let_through_hir() {
         let source = "Sub Main()\nValue(1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
         assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "same-module indexed Property Let writeback should be eligible once indices and value intent lower together"
+        );
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support indexed Property Let");
+
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route indexed Property Let source through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for indexed Property Let"
+        );
+        assert!(metadata.contains_key("property_let_value"), "{metadata:#?}");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected indexed property let to lower as a procedure call: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_still_rejects_indexed_property_set_route() {
+        let source = "Sub Main()\nSet Value(1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
+        assert!(
             !super::source_is_eligible_for_lightweight_hir_default(source),
-            "indexed Property Let/Set writeback remains outside the default HIR route until indices and value intent are lowered together"
+            "indexed Property Set writeback remains outside the default HIR route until object value intent is proved"
         );
     }
 

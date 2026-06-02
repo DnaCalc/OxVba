@@ -887,6 +887,22 @@ fn lower_stmt(
                             } else {
                                 AssignmentIntent::Implicit
                             };
+                            if let Some(route) =
+                                property_write_proc_for_proc_call_target(typed_hir, &name, intent)?
+                            {
+                                let mut args = args;
+                                args.push(BoundCallArg {
+                                    name: None,
+                                    expr,
+                                    force_byval: true,
+                                });
+                                out.push(BoundStmt::Call {
+                                    name: route,
+                                    args,
+                                    syntax: BoundCallSyntax::SyntheticPropertyAssignment,
+                                });
+                                return Ok(());
+                            }
                             out.push(BoundStmt::AssignDefaultMember {
                                 receiver: name,
                                 args,
@@ -1024,6 +1040,24 @@ fn lower_stmt(
                                 *value,
                                 context,
                             )?;
+                            if let Some(route) = property_write_proc_for_proc_call_target(
+                                typed_hir,
+                                &name,
+                                AssignmentIntent::Set,
+                            )? {
+                                let mut args = args;
+                                args.push(BoundCallArg {
+                                    name: None,
+                                    expr,
+                                    force_byval: true,
+                                });
+                                out.push(BoundStmt::Call {
+                                    name: route,
+                                    args,
+                                    syntax: BoundCallSyntax::SyntheticPropertyAssignment,
+                                });
+                                return Ok(());
+                            }
                             out.push(BoundStmt::AssignDefaultMember {
                                 receiver: name,
                                 args,
@@ -1892,6 +1926,36 @@ fn property_write_proc_for_target(
             ))
         })?;
     Ok(route.map(|_| wanted))
+}
+
+fn property_write_proc_for_proc_call_target(
+    typed_hir: &TypedHirModule,
+    name: &str,
+    intent: AssignmentIntent,
+) -> Result<Option<String>, HirProductionLoweringError> {
+    let Some(property_group) = name
+        .strip_prefix("property_get_")
+        .or_else(|| name.strip_prefix("property_let_"))
+        .or_else(|| name.strip_prefix("property_set_"))
+    else {
+        return Ok(None);
+    };
+    let wanted = match intent {
+        AssignmentIntent::Set => format!("property_set_{property_group}"),
+        AssignmentIntent::Let | AssignmentIntent::Implicit => {
+            format!("property_let_{property_group}")
+        }
+    };
+    for symbol in typed_hir.module.symbols.symbols() {
+        if symbol.namespace != SymbolNamespace::Procedure {
+            continue;
+        }
+        let symbol_name = symbol_name(typed_hir, symbol.id)?;
+        if symbol_name.eq_ignore_ascii_case(&wanted) {
+            return Ok(Some(wanted));
+        }
+    }
+    Ok(None)
 }
 
 fn lower_expr(
@@ -5585,6 +5649,23 @@ mod tests {
                 crate::bytecode::Instruction::CallProc { .. }
             )),
             "expected same-module property let call: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("property_let_value"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_same_module_indexed_property_let_write() {
+        let source = "Sub Main()\nValue(1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CallProc { .. }
+            )),
+            "expected same-module indexed property let call: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("property_let_value"), "{metadata:#?}");
