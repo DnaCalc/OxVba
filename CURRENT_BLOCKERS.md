@@ -227,6 +227,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         `NPer` now lower through HIR;
         pointer helpers `StrPtr`, `VarPtr`, and `ObjPtr` have explicit production-HIR proof through
         the typed structural intrinsic route;
+        `Array(...)` now lowers through HIR to the existing array-literal intrinsic bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

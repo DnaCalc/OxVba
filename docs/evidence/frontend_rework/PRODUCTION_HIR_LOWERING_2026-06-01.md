@@ -289,6 +289,10 @@ Follow-up pointer-helper proof adds focused production-HIR coverage for `StrPtr`
 typed `StructuralIntrinsic` variants. The regression verifies the existing pointer bytecode
 variants through that route.
 
+Follow-up array-literal intrinsic work adds `Array(...)` to HIR built-in resolution and verifies
+the existing `IntrinsicArrayLiteral` bytecode through production HIR. This proves the literal helper
+shape only; it does not close the separate array storage/indexing/`ReDim` parity lane.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

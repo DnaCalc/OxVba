@@ -4778,6 +4778,22 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_array_literal_intrinsic() {
+        let source = "Sub Main()\nDim arr\nCall Capture(arr)\nEnd Sub\nSub Capture(ByRef arr)\narr = Array(1, 2, 3)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicArrayLiteral { values, .. }
+                    if values.len() == 3
+            )),
+            "expected Array(...) to emit array-literal intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_pointer_structural_intrinsics() {
         let source = "Sub Main()\nDim s As String\nDim v\nDim obj As Object\nDim sp\nDim vp\nDim op\nsp = StrPtr(s)\nvp = VarPtr(v)\nop = ObjPtr(obj)\nEnd Sub\n";
         let (bytecode, _metadata) =
