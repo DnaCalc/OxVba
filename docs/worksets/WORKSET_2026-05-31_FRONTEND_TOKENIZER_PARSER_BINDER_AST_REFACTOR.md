@@ -1220,8 +1220,11 @@ Candidate bead units:
   bytecode. Follow-up process/environment host intrinsic routing covers `Shell(command)`,
   `Environ(key)`, `Dir()`, and `Dir(path)` through existing host bytecode. Follow-up COM creation
   routing covers `CreateObject(progId)` through existing host bytecode without claiming dispatch
-  invocation/default-member cleanup. The `Array(...)` helper proof is not array storage/indexing/
-  `ReDim` closure; that remains in FE-8.5.d.
+  invocation/default-member cleanup. Follow-up dynamic-dispatch routing preserves named
+  `DispatchInvoke`/`__oxvbaearlyinvoke` structural-call arguments through production HIR into the
+  existing host dispatch bytecode, so explicit compatibility dispatch helpers no longer force the
+  default route back to legacy solely to retain names. The `Array(...)` helper proof is not array
+  storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

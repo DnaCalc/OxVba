@@ -547,6 +547,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let named_dispatchinvoke_intrinsic = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetIndexedValue\", value := 11, lhs := 7)\nEnd Sub\n";
+    findings.push(route_finding(
+        "named DispatchInvoke host intrinsic fixture",
+        named_dispatchinvoke_intrinsic,
+        "bd-aprs.9.5",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",

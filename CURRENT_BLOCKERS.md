@@ -240,6 +240,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         `Dir(path)` now lower through HIR;
         `CreateObject(progId)` now lowers through HIR to the existing COM object creation host
         bytecode;
+        explicit `DispatchInvoke`/`__oxvbaearlyinvoke` structural dispatch helpers now preserve
+        named arguments through HIR into the existing host dispatch bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

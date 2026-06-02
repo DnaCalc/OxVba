@@ -1264,6 +1264,21 @@ fn check_expr(
             }
             Ok(())
         }
+        BoundExpr::StructuralIntrinsicCallWithArgs { args, .. } => {
+            for arg in args {
+                check_expr(
+                    &arg.expr,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                    proc_context,
+                )?;
+            }
+            Ok(())
+        }
         BoundExpr::ProcCall { name, args } => validate_call_site(
             name,
             args,
@@ -1490,6 +1505,9 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
             intrinsic_result_type(name).unwrap_or(BoundType::Variant)
         }
         BoundExpr::StructuralIntrinsicCall { intrinsic, .. } => {
+            structural_intrinsic_result_type(*intrinsic)
+        }
+        BoundExpr::StructuralIntrinsicCallWithArgs { intrinsic, .. } => {
             structural_intrinsic_result_type(*intrinsic)
         }
         BoundExpr::ProcCall { .. } => BoundType::Variant,

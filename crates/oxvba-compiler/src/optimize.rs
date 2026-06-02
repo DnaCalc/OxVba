@@ -298,6 +298,9 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::IntrinsicCall { args, .. } | BoundExpr::StructuralIntrinsicCall { args, .. } => {
             args.iter().any(|arg| expr_uses_var(arg, var))
         }
+        BoundExpr::StructuralIntrinsicCallWithArgs { args, .. } => {
+            args.iter().any(|arg| expr_uses_var(&arg.expr, var))
+        }
         BoundExpr::ProcCall { args, .. } => args.iter().any(|arg| expr_uses_var(&arg.expr, var)),
         BoundExpr::Member { receiver, args, .. } => {
             expr_uses_var(receiver, var) || args.iter().any(|arg| expr_uses_var(&arg.expr, var))
@@ -335,6 +338,7 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
                     | StructuralIntrinsic::WithEventsNextOwner
             ) || args.iter().any(expr_has_observable_effect)
         }
+        BoundExpr::StructuralIntrinsicCallWithArgs { .. } => true,
         BoundExpr::ProcCall { .. } => true,
         // A late-bound member dispatch invokes a method/property — assume observable effects.
         BoundExpr::Member { .. } => true,

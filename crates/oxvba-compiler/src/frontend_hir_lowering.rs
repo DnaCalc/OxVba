@@ -1992,6 +1992,13 @@ fn lower_call_expr(
                 });
             }
             if let Some(intrinsic) = StructuralIntrinsic::from_legacy_name(&name) {
+                if matches!(
+                    intrinsic,
+                    StructuralIntrinsic::DynamicDispatchInvoke
+                        | StructuralIntrinsic::DynamicDispatchEarlyInvoke
+                ) {
+                    return Ok(BoundExpr::StructuralIntrinsicCallWithArgs { intrinsic, args });
+                }
                 return Ok(BoundExpr::StructuralIntrinsicCall {
                     intrinsic,
                     args: args.into_iter().map(|arg| arg.expr).collect(),

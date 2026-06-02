@@ -99,6 +99,10 @@ pub enum BoundExpr {
         intrinsic: StructuralIntrinsic,
         args: Vec<BoundExpr>,
     },
+    StructuralIntrinsicCallWithArgs {
+        intrinsic: StructuralIntrinsic,
+        args: Vec<BoundCallArg>,
+    },
     ProcCall {
         name: String,
         args: Vec<BoundCallArg>,
@@ -1990,6 +1994,7 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         | BoundExpr::LogicalNot { .. }
         | BoundExpr::IntrinsicCall { .. }
         | BoundExpr::StructuralIntrinsicCall { .. }
+        | BoundExpr::StructuralIntrinsicCallWithArgs { .. }
         | BoundExpr::ProcCall { .. }
         | BoundExpr::Member { .. }
         | BoundExpr::VarPtrArrayBuffer(_) => BoundType::Variant,

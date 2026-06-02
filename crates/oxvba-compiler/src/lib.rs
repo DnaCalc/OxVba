@@ -350,16 +350,7 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if source_has_unsupported_property_declaration(source) {
         return false;
     }
-    if source_has_unsupported_dispatch_intrinsic(source) {
-        return false;
-    }
     true
-}
-
-fn source_has_unsupported_dispatch_intrinsic(source: &str) -> bool {
-    source
-        .lines()
-        .any(|line| contains_ascii_word(line, "DispatchInvoke"))
 }
 
 fn source_has_unsupported_property_declaration(source: &str) -> bool {
@@ -1211,11 +1202,58 @@ mod tests {
     }
 
     #[test]
-    fn compile_with_runtime_metadata_default_keeps_dispatchinvoke_on_legacy_route() {
+    fn compile_with_runtime_metadata_default_routes_dispatchinvoke_with_named_args_through_hir() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetIndexedValue\", value := 11, lhs := 7)\nEnd Sub\n";
         assert!(
-            !super::source_is_eligible_for_lightweight_hir_default(source),
-            "DispatchInvoke remains outside default HIR until dispatch metadata is complete"
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "DispatchInvoke with named args should be eligible once HIR preserves dispatch argument names"
+        );
+        let (bytecode, _metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route named DispatchInvoke source");
+        let args = bytecode
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                Instruction::IntrinsicDispatchInvokeHost { args, .. } => Some(args),
+                _ => None,
+            });
+        assert!(
+            matches!(
+                args,
+                Some(args)
+                    if args.first().and_then(|arg| arg.name.as_deref()) == Some("value")
+                        && args.get(1).and_then(|arg| arg.name.as_deref()) == Some("lhs")
+            ),
+            "expected named DispatchInvoke args to survive default HIR route: {bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_routes_earlyinvoke_with_named_args_through_hir() {
+        let source = "Sub Main()\nDim x\nx = __oxvbaearlyinvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetIndexedValue\", value := 11, lhs := 7)\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "__oxvbaearlyinvoke with named args should be eligible once HIR preserves dispatch argument names"
+        );
+        let (bytecode, _metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route named early invoke source");
+        let dispatch = bytecode
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                Instruction::IntrinsicDispatchInvokeHost {
+                    args, early_bound, ..
+                } => Some((args, *early_bound)),
+                _ => None,
+            });
+        assert!(
+            matches!(
+                dispatch,
+                Some((args, true))
+                    if args.first().and_then(|arg| arg.name.as_deref()) == Some("value")
+                        && args.get(1).and_then(|arg| arg.name.as_deref()) == Some("lhs")
+            ),
+            "expected named early-dispatch args to survive default HIR route: {bytecode:#?}"
         );
     }
 

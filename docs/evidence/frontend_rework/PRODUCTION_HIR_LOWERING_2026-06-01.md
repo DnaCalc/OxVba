@@ -332,6 +332,14 @@ default-route eligibility keeps `DispatchInvoke(...)` sources on the legacy rout
 preserves dispatch metadata such as named argument descriptors; simple `CreateObject(...)` remains
 eligible.
 
+Follow-up dynamic-dispatch route work replaces that temporary guard: HIR now lowers
+`DispatchInvoke`/`__oxvbaearlyinvoke` structural calls through a bound call-argument carrier that
+preserves argument names into `IntrinsicDispatchInvokeHost`. The default route now accepts named
+`DispatchInvoke(CreateObject(...), ..., value := ..., lhs := ...)` sources and verifies both
+bytecode argument-name preservation and the existing named-dispatch assignment-form regression.
+This is still a compatibility carrier for explicit dynamic dispatch helpers; it does not claim
+full COM/default-member binding cleanup.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering
