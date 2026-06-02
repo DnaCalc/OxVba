@@ -1099,6 +1099,16 @@ fn lower_stmt(
             }
         }
         HirStmtKind::Expr(expr) => {
+            if stmt_data.cst.syntax_kind != "CallStmtNoCallKeyword"
+                && let Some(name) = resolved_procedure_name(typed_hir, *expr)?
+            {
+                out.push(BoundStmt::Call {
+                    name,
+                    args: Vec::new(),
+                    syntax: BoundCallSyntax::StatementCallKeyword,
+                });
+                return Ok(());
+            }
             match lower_expr(typed_hir, const_values, udt_field_aliases, *expr, context)? {
                 BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
                     name,
@@ -2028,6 +2038,29 @@ fn lower_binary_expr(
         HirBinaryOp::And => logical(LogicalBinOp::And, lhs, rhs),
         HirBinaryOp::Or => logical(LogicalBinOp::Or, lhs, rhs),
     }
+}
+
+fn resolved_procedure_name(
+    typed_hir: &TypedHirModule,
+    expr: HirExprId,
+) -> Result<Option<String>, HirProductionLoweringError> {
+    let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
+        return Err(HirProductionLoweringError::Unsupported(
+            "missing expression".to_string(),
+        ));
+    };
+    let HirExprKind::Name(symbol) = expr_data.kind else {
+        return Ok(None);
+    };
+    if typed_hir
+        .module
+        .symbols
+        .symbol(symbol)
+        .is_some_and(|symbol| symbol.namespace == SymbolNamespace::Procedure)
+    {
+        return Ok(Some(symbol_name(typed_hir, symbol)?));
+    }
+    Ok(None)
 }
 
 fn lower_call_expr(
@@ -4171,6 +4204,22 @@ mod tests {
             !bytecode.instructions.is_empty(),
             "expected statement-form call bytecode"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_no_argument_call_keyword_statement() {
+        let source = "Sub Main()\nCall Worker\nEnd Sub\nSub Worker()\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected no-arg Call statement bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

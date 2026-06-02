@@ -104,7 +104,7 @@ mod tests {
             SyntaxBridgeProductionRoute::HirProduction
         );
 
-        let fallback_source = "Sub Main()\nCall Worker\nEnd Sub\nSub Worker()\nEnd Sub\n";
+        let fallback_source = "Sub Main()\nDim x\nx = 1 Xor 2\nEnd Sub\n";
         assert_eq!(
             production_route_for_source(fallback_source).expect("route classification"),
             SyntaxBridgeProductionRoute::HirUnsupportedResidual

@@ -53,6 +53,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let no_arg_call_statement = "Sub Main()\nCall Worker\nEnd Sub\nSub Worker()\nEnd Sub\n";
+    findings.push(route_finding(
+        "no-argument procedure call statement fixture",
+        no_arg_call_statement,
+        "bd-aprs.9.10",
+    ));
+
     let statement_form_call = "Sub Use(ByVal a, ByVal b)\nEnd Sub\nSub Main()\nUse 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form procedure call arguments fixture",

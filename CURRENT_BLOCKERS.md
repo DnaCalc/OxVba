@@ -264,6 +264,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         host bytecode for simple path/handle expressions;
         `Mod`, integer division, and `Like` expressions now lower through HIR to the existing
         arithmetic/comparison bytecode;
+        no-argument `Call <procedure>` statements now lower through HIR as zero-argument calls;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

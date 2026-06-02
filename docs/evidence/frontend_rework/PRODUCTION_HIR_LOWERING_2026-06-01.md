@@ -386,6 +386,9 @@ existing `Input`/`Output`/`Append`/`Binary`/`Random` mode set.
 Follow-up expression route work adds HIR-owned `Mod`, integer division, and `Like` lowering to the
 existing arithmetic/comparison bytecode paths.
 
+Follow-up no-argument call route work lowers resolved `Call <procedure>` statements through HIR as
+zero-argument calls, covering `Call Worker` without a parenthesized argument list.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering
