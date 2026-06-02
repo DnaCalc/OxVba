@@ -250,6 +250,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         bytecode;
         console `Line Input target` now lowers through HIR to the existing console line-input host
         bytecode;
+        file-handle `Close #handle` and close-all `Close` now lower through HIR to the existing
+        file-close host bytecode;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

@@ -305,6 +305,9 @@ pub enum HirStmtKind {
     ConsoleLineInput {
         target: String,
     },
+    FileClose {
+        file_number: Option<HirExprId>,
+    },
     Label {
         name: String,
     },
@@ -676,6 +679,13 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::ConsoleLineInput { target },
+                })))
+            }
+            SyntaxKind::CallStmt if is_file_close_stmt(node) => {
+                let file_number = self.lower_optional_file_number(scope, node, "Close")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FileClose { file_number },
                 })))
             }
             SyntaxKind::CallStmt => {
@@ -1376,6 +1386,38 @@ impl HirBuilder {
         Ok(targets)
     }
 
+    fn lower_optional_file_number(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<Option<HirExprId>, HirBuildError> {
+        let Some(raw) = statement_payload_after_keyword(node, statement_name) else {
+            return Ok(None);
+        };
+        let payload = raw.strip_prefix('#').unwrap_or(raw.as_str()).trim();
+        if payload.is_empty() {
+            return Ok(None);
+        }
+        if let Ok(value) = payload.parse::<i64>() {
+            return Ok(Some(self.arenas.alloc_expr(HirExpr {
+                cst: cst(node),
+                kind: HirExprKind::Literal(HirLiteral::Int(value)),
+            })));
+        }
+        let Some(name) = normalize_ident(payload) else {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} file number must be a literal or variable: `{}`",
+                node.text().trim()
+            )));
+        };
+        let symbol = self.resolve_name(scope, &name)?;
+        Ok(Some(self.arenas.alloc_expr(HirExpr {
+            cst: cst(node),
+            kind: HirExprKind::Name(symbol),
+        })))
+    }
+
     fn concat_exprs_with_delimiter(
         &mut self,
         node: SyntaxNode<'_>,
@@ -1882,6 +1924,20 @@ fn is_console_line_input_stmt(node: SyntaxNode<'_>) -> bool {
     lower.strip_prefix("line input").is_some_and(|rest| {
         rest.starts_with(char::is_whitespace) && !rest.trim_start().starts_with('#')
     })
+}
+
+fn is_file_close_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower
+        .strip_prefix("close")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+}
+
+fn statement_payload_after_keyword(node: SyntaxNode<'_>, keyword: &str) -> Option<String> {
+    let text = node.text();
+    let text = text.trim_start();
+    text.get(keyword.len()..)
+        .map(|value| value.trim().to_string())
 }
 
 fn console_line_input_target(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {

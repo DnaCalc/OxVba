@@ -583,6 +583,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let file_close_statement = "Sub Main()\nClose #1\nClose\nEnd Sub\n";
+    findings.push(route_finding(
+        "file close statement fixture",
+        file_close_statement,
+        "bd-aprs.9.10",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",

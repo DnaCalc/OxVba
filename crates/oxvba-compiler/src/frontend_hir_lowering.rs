@@ -1547,6 +1547,19 @@ fn lower_stmt(
         HirStmtKind::ConsoleLineInput { target } => out.push(BoundStmt::ConsoleLineInput {
             target: target.clone(),
         }),
+        HirStmtKind::FileClose { file_number } => out.push(BoundStmt::FileClose {
+            file_number: file_number
+                .map(|file_number| {
+                    lower_expr(
+                        typed_hir,
+                        const_values,
+                        udt_field_aliases,
+                        file_number,
+                        context,
+                    )
+                })
+                .transpose()?,
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5192,6 +5205,30 @@ mod tests {
                 crate::bytecode::Instruction::IntrinsicConsoleLineInputHost { .. }
             )),
             "expected Line Input statement to emit console line-input host intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_file_close_statement() {
+        let source = "Sub Main()\nClose #1\nClose\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let close_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicFileCloseHost { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            close_count, 2,
+            "expected close #handle and close-all host intrinsics: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

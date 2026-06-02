@@ -271,6 +271,11 @@ impl SemanticModel {
             | HirStmtKind::Erase { .. }
             | HirStmtKind::ConsoleInput { .. }
             | HirStmtKind::ConsoleLineInput { .. } => {}
+            HirStmtKind::FileClose { file_number } => {
+                if let Some(file_number) = file_number {
+                    self.index_expr_tree(file_number);
+                }
+            }
         }
     }
 

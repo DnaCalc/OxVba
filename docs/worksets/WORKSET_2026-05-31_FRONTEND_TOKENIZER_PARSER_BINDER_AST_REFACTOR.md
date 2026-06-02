@@ -1230,8 +1230,10 @@ Candidate bead units:
   `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
   `Line Input #`. Follow-up console line-input routing covers `Line Input target` through existing
-  host bytecode, still without claiming file `Line Input #`. The `Array(...)` helper proof is not
-  array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  host bytecode, still without claiming file `Line Input #`. Follow-up file-close routing covers
+  `Close #handle` and `Close` through existing host bytecode; `Open`, file `Print #`, `Write #`,
+  `Input #`, and file `Line Input #` remain open. The `Array(...)` helper proof is not array
+  storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
