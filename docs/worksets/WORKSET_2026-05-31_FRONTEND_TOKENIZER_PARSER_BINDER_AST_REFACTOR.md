@@ -692,8 +692,10 @@ Required newly explicit delivery beads:
   Follow-up COM bridge work now keeps the OLE Automation combined get-or-call dispatch as the first
   attempt and retries property-get for strict parameterized properties; the new
   `excel_dispatchinvoke_range_smoke.bas` fixture passes live Excel execution for
-  `DispatchInvoke(sheet, "Range", "A1")`. Range value/default-member mutation, property-put, and
-  named-argument Excel dispatch lanes remain open. Language-service
+  `DispatchInvoke(sheet, "Range", "A1")`. Follow-up Excel oracle work corrects the named-argument
+  fixture to explicit `Worksheets.Add After:=sheet` and proves it through live Excel execution.
+  Range value/default-member mutation, property-put, null COM object results, and broader Excel
+  mutation/default-member lanes remain open. Language-service
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
@@ -716,9 +718,9 @@ Required newly explicit delivery beads:
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover
   deeper cross-workspace language-service route runners beyond those seed shapes and the current
   imported-typelib projections, and broaden live
-  Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup and explicit
-  Range `DispatchInvoke` object access into named-argument dispatch,
-  property-put/default-member mutation, and other
+  Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup, explicit
+  Range `DispatchInvoke` object access, and named-argument worksheet-add dispatch into
+  property-put/default-member mutation, null COM object result handling, and other
   environment-dependent behavior beyond source-route
   classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.

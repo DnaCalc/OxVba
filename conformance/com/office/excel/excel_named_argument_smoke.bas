@@ -3,13 +3,15 @@ Sub Main()
     Dim books
     Dim book
     Dim sheet
-    Dim found
+    Dim sheets
+    Dim added
 
     app = CreateObject("Excel.Application")
     books = DispatchInvoke(app, "Workbooks")
     book = DispatchInvoke(books, "Add")
-    sheet = DispatchInvoke(book, "Worksheets", 1)
-    found = sheet(What:="needle", LookIn:=-4163, LookAt:=1)
+    sheets = DispatchInvoke(book, "Worksheets")
+    sheet = DispatchInvoke(sheets, "Item", 1)
+    added = DispatchInvoke(sheets, "Add", After:=sheet)
     DispatchInvoke(book, "Close", False)
     DispatchInvoke(app, "Quit")
 End Sub

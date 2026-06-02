@@ -20,7 +20,8 @@ Current fixtures:
   including `DispatchInvoke(sheet, "Range", "A1")`. Range value/default-member
   mutation remains a separate open oracle lane.
 - `excel_named_argument_smoke.bas`: metadata-sensitive named-argument call
-  shape over an Excel object-model member.
+  shape over an Excel object-model member through explicit `Worksheets.Add
+  After:=sheet`.
 - `excel_unsupported_event_sink_boundary.bas`: deterministic V0.2 unsupported
   row for real `Excel.Application` event sinks beyond controlled TestEventServer
   coverage.

@@ -10,6 +10,8 @@ mod windows_excel_office_oracle_lane {
         include_str!("../../../conformance/com/office/excel/excel_workbook_range_smoke.bas");
     const EXCEL_DISPATCHINVOKE_RANGE_SMOKE: &str =
         include_str!("../../../conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas");
+    const EXCEL_NAMED_ARGUMENT_SMOKE: &str =
+        include_str!("../../../conformance/com/office/excel/excel_named_argument_smoke.bas");
 
     fn execute_with_host_policy(source: &str) -> Result<(), String> {
         let mut engine = Engine::new(HostConfig { enable_jit: false });
@@ -61,5 +63,17 @@ mod windows_excel_office_oracle_lane {
 
         execute_with_host_policy(EXCEL_DISPATCHINVOKE_RANGE_SMOKE)
             .expect("Excel DispatchInvoke range smoke fixture should execute");
+    }
+
+    #[test]
+    #[ignore = "requires Windows Excel.Application automation"]
+    fn excel_named_argument_smoke_fixture_executes_when_available() {
+        if !excel_application_available() {
+            eprintln!("Excel oracle lane: Excel.Application is not available in this environment");
+            return;
+        }
+
+        execute_with_host_policy(EXCEL_NAMED_ARGUMENT_SMOKE)
+            .expect("Excel named-argument smoke fixture should execute");
     }
 }

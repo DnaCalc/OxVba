@@ -453,6 +453,38 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             rationale: String::new(),
             close_condition: String::new(),
         },
+        FrontendCorpusFixture {
+            name: "excel_oracle_dispatchinvoke_range_smoke".to_string(),
+            fixture_path: "conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas"
+                .to_string(),
+            class: FrontendCorpusClass::ExcelOracle,
+            source: Some(
+                include_str!(
+                    "../../../conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas"
+                )
+                .to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
+            name: "excel_oracle_named_argument_smoke".to_string(),
+            fixture_path: "conformance/com/office/excel/excel_named_argument_smoke.bas"
+                .to_string(),
+            class: FrontendCorpusClass::ExcelOracle,
+            source: Some(
+                include_str!("../../../conformance/com/office/excel/excel_named_argument_smoke.bas")
+                    .to_string(),
+            ),
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
     ]
 }
 
@@ -2359,7 +2391,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.route_checked_count, 12, "{report:#?}");
+        assert_eq!(report.route_checked_count, 14, "{report:#?}");
         assert_eq!(report.skipped_count, 0, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
@@ -2404,28 +2436,15 @@ mod tests {
                 "{row:#?}"
             );
         }
-        assert_eq!(
-            report.rows[13].status,
-            FrontendCorpusRowStatus::RouteChecked
-        );
-        assert!(
-            report.rows[13]
-                .route_evidence
-                .as_deref()
-                .is_some_and(|evidence| evidence.contains("Excel oracle source fixture")),
-            "{report:#?}"
-        );
-        assert_eq!(
-            report.rows[14].status,
-            FrontendCorpusRowStatus::RouteChecked
-        );
-        assert!(
-            report.rows[14]
-                .route_evidence
-                .as_deref()
-                .is_some_and(|evidence| evidence.contains("Excel oracle source fixture")),
-            "{report:#?}"
-        );
+        for row in &report.rows[13..=16] {
+            assert_eq!(row.status, FrontendCorpusRowStatus::RouteChecked);
+            assert!(
+                row.route_evidence
+                    .as_deref()
+                    .is_some_and(|evidence| evidence.contains("Excel oracle source fixture")),
+                "{row:#?}"
+            );
+        }
     }
 
     #[test]
@@ -2547,14 +2566,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert_eq!(report.fallback_residuals().len(), 0, "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 0, "{report:#?}");
-        assert_eq!(report.rows.len(), 15, "{report:#?}");
+        assert_eq!(report.rows.len(), 17, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            15,
+            17,
             "{report:#?}"
         );
         assert_eq!(
@@ -2636,6 +2655,16 @@ mod tests {
         }));
         assert!(report.rows.iter().any(|row| {
             row.name == "excel_oracle_workbook_range_smoke"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("Excel oracle source fixture")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "excel_oracle_dispatchinvoke_range_smoke"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("Excel oracle source fixture")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "excel_oracle_named_argument_smoke"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("Excel oracle source fixture")
         }));

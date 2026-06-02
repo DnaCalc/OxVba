@@ -75,7 +75,10 @@ Expected report counts:
   but still requires targeted Excel oracle fixture execution for live behavior.
 - Route-audit status: the source fixture
   `conformance/com/office/excel/excel_application_activation_smoke.bas` and the narrowed
-  `conformance/com/office/excel/excel_workbook_range_smoke.bas` now classify as `HirProduction`;
+  `conformance/com/office/excel/excel_workbook_range_smoke.bas`, plus the follow-up
+  `conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas` and
+  `conformance/com/office/excel/excel_named_argument_smoke.bas` fixtures, now classify as
+  `HirProduction`;
   live Excel-visible behavior remains environment-dependent and is checked by ignored
   `oxvba-host` oracle tests.
 - Next route: oracle-backed rows need fixture evidence that records the expected Excel-visible
