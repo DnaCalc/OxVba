@@ -204,9 +204,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         procedure calls; simple non-indexed property declarations now remain eligible for the
         default HIR route; simple `ParamArray` declarations with positional packed calls now remain
         eligible for the default HIR route and preserve ParamArray signature/call-site pack
-        metadata while retaining the named ParamArray-target rejection;
-        richer default expressions, intrinsic breadth inside ParamArray callees, and broader
-        call-entry optional/missing-state behavior, plus indexed property invocation and
+        metadata while retaining the named ParamArray-target rejection; HIR now resolves and lowers
+        `LBound`/`UBound` array-bound intrinsics, including `UBound(items)` inside a ParamArray
+        callee;
+        richer default expressions, broader intrinsic breadth inside ParamArray callees, and
+        broader call-entry optional/missing-state behavior, plus indexed property invocation and
         default-route property semantics, remain open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.

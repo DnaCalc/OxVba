@@ -1963,6 +1963,12 @@ fn lower_call_expr(
                     args: args.into_iter().map(|arg| arg.expr).collect(),
                 });
             }
+            if matches!(name.to_ascii_lowercase().as_str(), "lbound" | "ubound") {
+                return Ok(BoundExpr::IntrinsicCall {
+                    name,
+                    args: args.into_iter().map(|arg| arg.expr).collect(),
+                });
+            }
             Ok(BoundExpr::ProcCall { name, args })
         }
         BoundExpr::Member {
@@ -4098,6 +4104,21 @@ mod tests {
                 })
             }),
             "expected ParamArray pack call-site metadata: {main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_ubound_on_param_array() {
+        let source = "Sub Main()\nDim x\nCall Capture(x, 5, 7)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicUBoundArray { .. }
+            )),
+            "expected UBound(items) to emit array-bound intrinsic: {:?}",
+            bytecode.instructions
         );
     }
 

@@ -1192,8 +1192,9 @@ Candidate bead units:
   default HIR route, bounded `Property Get`/`Property Let` declaration metadata and getter
   self-assignment return-slot binding, same-module zero-argument `Property Get` reads and simple
   same-module `Property Let`/`Property Set` writes through HIR, simple non-indexed property
-  declarations through the default HIR route, `Declare PtrSafe` calls, simple UDT layout/field
-  aliases, and same-shape UDT assignment.
+  declarations through the default HIR route, simple positional ParamArray packing through the
+  default HIR route, `LBound`/`UBound` array-bound intrinsics in HIR, `Declare PtrSafe` calls,
+  simple UDT layout/field aliases, and same-shape UDT assignment.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

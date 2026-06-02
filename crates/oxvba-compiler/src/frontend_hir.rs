@@ -1380,7 +1380,7 @@ impl HirBuilder {
             .collect())
     }
 
-    fn resolve_name(&self, scope: ScopeId, name: &str) -> Result<SymbolId, HirBuildError> {
+    fn resolve_name(&mut self, scope: ScopeId, name: &str) -> Result<SymbolId, HirBuildError> {
         for namespace in [
             SymbolNamespace::Local,
             SymbolNamespace::Parameter,
@@ -1402,10 +1402,25 @@ impl HirBuilder {
         if let Some(symbol) = self.resolve_property_write_name(scope, name)? {
             return Ok(symbol);
         }
+        if Self::is_builtin_intrinsic_name(name) {
+            return Ok(self.symbols.declare_symbol(
+                scope,
+                SymbolNamespace::Procedure,
+                name,
+                SourceProvenance {
+                    module_name: None,
+                    span: None,
+                },
+            )?);
+        }
         Err(HirBuildError::UnresolvedName {
             name: name.to_string(),
             scope,
         })
+    }
+
+    fn is_builtin_intrinsic_name(name: &str) -> bool {
+        matches!(name.to_ascii_lowercase().as_str(), "lbound" | "ubound")
     }
 
     fn resolve_property_procedure_self_name(

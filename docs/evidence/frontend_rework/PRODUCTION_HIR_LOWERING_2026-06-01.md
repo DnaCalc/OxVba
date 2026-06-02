@@ -222,9 +222,13 @@ semantics remain open.
 Further FE-8.5.f route work moves the simple `ParamArray` declaration and positional packed-call
 shape onto the default HIR route. HIR lowering preserves the `ParamArray` signature role and
 call-site `ParamArrayPack` descriptor, and the existing named ParamArray-target diagnostic still
-fires after the route flip. This does not claim intrinsic coverage inside ParamArray callees
-(`UBound` is still a separate HIR intrinsic gap), richer default expressions, or the broader
-optional/missing-state call-entry matrix.
+fires after the route flip. This does not claim broad intrinsic coverage inside ParamArray callees,
+richer default expressions, or the broader optional/missing-state call-entry matrix.
+
+Follow-up ParamArray callee work resolves and lowers the built-in array-bound intrinsics
+`LBound`/`UBound` through HIR. The focused regression covers `UBound(items)` inside a ParamArray
+callee and verifies that HIR emits the existing `IntrinsicUBoundArray` bytecode. Broader callee
+intrinsics remain tracked residual work.
 
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
@@ -770,6 +774,7 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_optional_parameter_defaults --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_param_array_metadata_and_call_pack --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_ubound_on_param_array --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_param_array_through_hir --quiet`
 - `cargo test -p oxvba-compiler compile_paramarray --quiet`
 - `cargo test -p oxvba-compiler hir_lowering_lowers_structural_intrinsic_call_targets --quiet`
