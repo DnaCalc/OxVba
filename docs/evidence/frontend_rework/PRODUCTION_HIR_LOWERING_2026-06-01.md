@@ -1000,6 +1000,12 @@ its single procedural module source must classify as HIR production and compile 
 an external oracle runner rather than the compiler/project route classifiers; therefore the corpus
 route audit's terminal gate remains open while its source-backed gate passes.
 
+The language-service corpus continuation now consumes the same seed corpus for source-backed
+`CompilerUnit`, `ConformanceCase`, and the narrow `HostProject` row. Those sources must build
+`SemanticSnapshot`s without diagnostics and expose front-end symbols/callables, proving this seed
+coverage uses compiler front-end facts rather than a duplicate legacy semantic fallback. Broader
+workspace, cross-module, and reference-project IDE route coverage remains FE-9.7 work.
+
 ## Bang Member Read Continuation
 
 The latest FE-8.5 slice removes the read-side bang member residual:

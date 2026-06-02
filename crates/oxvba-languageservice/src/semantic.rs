@@ -477,4 +477,45 @@ mod tests {
                 .any(|symbol| symbol.name == "Foo")
         );
     }
+
+    #[test]
+    fn snapshot_seed_corpus_uses_frontend_facts_for_source_backed_rows() {
+        let fixtures = oxvba_compiler::frontend_diff::frontend_rework_seed_corpus();
+        let mut checked = Vec::new();
+        for fixture in fixtures {
+            if !matches!(
+                fixture.class,
+                oxvba_compiler::frontend_diff::FrontendCorpusClass::CompilerUnit
+                    | oxvba_compiler::frontend_diff::FrontendCorpusClass::ConformanceCase
+                    | oxvba_compiler::frontend_diff::FrontendCorpusClass::HostProject
+            ) {
+                continue;
+            }
+            let Some(source) = fixture.source.as_deref() else {
+                continue;
+            };
+            let snap = build_semantic_snapshot(source);
+            assert!(
+                snap.diagnostics.is_empty(),
+                "{} should build a frontend-backed semantic snapshot without diagnostics: {:?}",
+                fixture.name,
+                snap.diagnostics
+            );
+            assert!(
+                !snap.symbols.symbols.is_empty() || !snap.callables.is_empty(),
+                "{} should expose frontend symbols or callables",
+                fixture.name
+            );
+            checked.push(fixture.name);
+        }
+        assert_eq!(
+            checked,
+            vec![
+                "examples_basic_arithmetic".to_string(),
+                "conformance_call_coercion_mixed_variant_to_long".to_string(),
+                "inline_statement_separator_bridge_improvement".to_string(),
+                "integration_host_project_residual".to_string(),
+            ]
+        );
+    }
 }
