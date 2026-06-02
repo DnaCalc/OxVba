@@ -535,6 +535,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let rich_udt_layout = "Type Inner\nX As Long\nEnd Type\nType Record\nName As String * 5\nScores(1 To 2) As Long\nInner As Inner\nEnd Type\nSub Main()\nDim r As Record\nEnd Sub\n";
+    findings.push(route_finding(
+        "nested fixed array UDT descriptor fixture",
+        rich_udt_layout,
+        "bd-aprs.9.5",
+    ));
+
     let member_expression =
         "Sub Main()\nDim obj\nDim x\nDim y\nx = obj.Value\ny = obj.Method(1)\nEnd Sub\n";
     findings.push(route_finding(

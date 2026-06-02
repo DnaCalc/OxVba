@@ -692,8 +692,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 
 Remaining production residuals after this slice:
 
-- `TypeBlock`: UDT declarations require descriptor/layout/field alias/lifetime projection, and UDT
-  member syntax must not be confused with late-bound object member dispatch.
+- `TypeBlock`: richer executable UDT behavior still requires nested member-chain/indexed-field
+  access, lifetime/default initialization parity, and sharper diagnostics; UDT member declaration
+  syntax now reaches HIR and no longer falls through expression parsing.
 - `NewExpr`: object construction requires project class handles, imported/COM construction rules,
   `As New` lazy construction interactions, and assignment/writeback behavior.
 
@@ -707,17 +708,21 @@ The FE-8.5 UDT slices remove the basic UDT declaration/layout and simple field-a
   `p_y` with the declared primitive field types.
 - Lowered procedures now carry `BoundUdtDescriptor` data so emitted procedure metadata includes UDT
   type descriptors, instances, and field aliases.
+- Fixed-length string fields, fixed UDT array fields, and nested UDT field names now survive the
+  production syntax/HIR path into emitted UDT metadata, with nested fields expanded into the same
+  flattened descriptor/slot shape used by the legacy resolver.
 - Simple UDT field reads/writes now lower to flattened aliases, so `p.X = 1` and `y = p.X + 2`
   avoid the object/member dispatch path.
 - Same-shape whole-value UDT assignment lowers to the existing field-wise `BoundStmt::UdtAssign`
   copy path.
 - The production route audit includes a `Type Point ... p.X = 1 ... y = p.X + 2` fixture and
-  classifies it as `HirProduction`.
+  a nested/fixed-array/fixed-string descriptor fixture, and classifies both as `HirProduction`.
 
 Remaining production residuals after this slice:
 
-- Nested UDT fields, UDT array fields, fixed-string field storage, richer cross-type assignment
-  diagnostics, and broader UDT lifetime/default initialization parity remain open.
+- Executable nested UDT member-chain syntax, indexed UDT field access/write semantics, richer
+  cross-type assignment diagnostics, and broader UDT lifetime/default initialization parity remain
+  open.
 - `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
   construction interactions, and assignment/writeback behavior.
 
@@ -1018,6 +1023,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler declared_external_call --quiet`
 - `cargo test -p oxvba-compiler declare_without_ptrsafe --quiet`
 - `cargo test -p oxvba-compiler udt_layout --quiet`
+- `cargo test -p oxvba-syntax parses_type_block_field_declaration_shapes_losslessly --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_preserves_rich_udt_field_metadata --quiet`
 - `cargo test -p oxvba-compiler udt_field_read_write --quiet`
 - `cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`

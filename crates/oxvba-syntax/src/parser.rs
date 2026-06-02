@@ -1109,8 +1109,15 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::KwType);
         self.eat_to_eol();
 
-        // Members until End Type
-        self.parse_block(&[SyntaxKind::KwEnd]);
+        // UDT members are declaration lines, not executable statements.
+        // Consume them losslessly so field shapes such as `String * 5`
+        // and `Items(1 To 2)` do not get misparsed as expressions.
+        while !self.at_eof() && self.current_non_trivia() != SyntaxKind::KwEnd {
+            self.eat_to_eol();
+            if self.at(SyntaxKind::Newline) {
+                self.bump();
+            }
+        }
 
         self.eat_trivia();
         if self.at(SyntaxKind::KwEnd) {
@@ -2307,6 +2314,15 @@ mod tests {
         let src = "Sub Test()\nWith obj\n    .Value = 1\nEnd With\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+    }
+
+    #[test]
+    fn parses_type_block_field_declaration_shapes_losslessly() {
+        let src = "Type Inner\nX As Long\nEnd Type\nType Record\nName As String * 5\nScores(1 To 2) As Long\nInner As Inner\nEnd Type\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::TypeBlock).len(), 2);
     }
 
     // ── Expression parser tests ─────────────────────────────

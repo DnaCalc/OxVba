@@ -2574,6 +2574,9 @@ fn collect_hir_enum_constants(source: &str) -> HashMap<String, BoundExpr> {
 struct HirUdtFieldDef {
     name: String,
     bound_type: BoundType,
+    nested_udt_name: Option<String>,
+    array_bounds: Option<Vec<(i32, i32)>>,
+    fixed_string_len: Option<usize>,
 }
 
 type HirUdtDefMap = HashMap<String, Vec<HirUdtFieldDef>>;
@@ -2604,6 +2607,7 @@ fn collect_hir_udt_definitions(source: &str) -> HirUdtDefMap {
         defs.insert(type_name, fields);
         index += 1;
     }
+    expand_hir_nested_udt_fields(&mut defs);
     defs
 }
 
@@ -2613,9 +2617,103 @@ fn parse_hir_udt_field(line: &str) -> Option<HirUdtFieldDef> {
         return None;
     }
     let (name_part, type_part) = split_keyword_ci(trimmed, "as").unwrap_or((trimmed, "Variant"));
-    let name = normalize_hir_ident(name_part.split('(').next().unwrap_or(name_part).trim())?;
-    let bound_type = parse_hir_bound_type(type_part.trim()).unwrap_or(BoundType::Variant);
-    Some(HirUdtFieldDef { name, bound_type })
+    let (name_text, array_bounds) = parse_hir_udt_field_name_and_bounds(name_part);
+    let name = normalize_hir_ident(name_text)?;
+    let type_part = type_part.trim();
+    let fixed_string_len = parse_hir_fixed_string_declared_type(type_part);
+    let primitive = fixed_string_len
+        .map(|_| BoundType::String)
+        .or_else(|| parse_hir_bound_type(type_part));
+    let nested_udt_name = if primitive.is_none() {
+        normalize_hir_ident(type_part)
+    } else {
+        None
+    };
+    Some(HirUdtFieldDef {
+        name,
+        bound_type: primitive.unwrap_or(BoundType::Variant),
+        nested_udt_name,
+        array_bounds,
+        fixed_string_len,
+    })
+}
+
+fn parse_hir_udt_field_name_and_bounds(name_part: &str) -> (&str, Option<Vec<(i32, i32)>>) {
+    let Some(paren_pos) = name_part.find('(') else {
+        return (name_part.trim(), None);
+    };
+    let name = name_part[..paren_pos].trim();
+    let bounds = parse_hir_udt_field_array_bounds(name_part[paren_pos..].trim());
+    (name, bounds)
+}
+
+fn parse_hir_udt_field_array_bounds(bounds_text: &str) -> Option<Vec<(i32, i32)>> {
+    let inner = bounds_text
+        .trim()
+        .strip_prefix('(')?
+        .strip_suffix(')')?
+        .trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut bounds = Vec::new();
+    for dim in inner.split(',') {
+        let dim = dim.trim();
+        if dim.is_empty() {
+            return None;
+        }
+        let (lower, upper) = if let Some((lhs, rhs)) = split_keyword_ci(dim, "to") {
+            (lhs.trim().parse().ok()?, rhs.trim().parse().ok()?)
+        } else {
+            (0, dim.parse().ok()?)
+        };
+        if upper < lower {
+            return None;
+        }
+        bounds.push((lower, upper));
+    }
+    (!bounds.is_empty()).then_some(bounds)
+}
+
+fn parse_hir_fixed_string_declared_type(type_part: &str) -> Option<usize> {
+    let (lhs, rhs) = type_part.trim().split_once('*')?;
+    lhs.trim()
+        .eq_ignore_ascii_case("string")
+        .then(|| rhs.trim().parse::<usize>().ok().filter(|len| *len > 0))
+        .flatten()
+}
+
+fn expand_hir_nested_udt_fields(defs: &mut HirUdtDefMap) {
+    let udt_names = defs.keys().cloned().collect::<Vec<_>>();
+    let snapshot = defs.clone();
+    for udt_name in udt_names {
+        let Some(fields) = snapshot.get(&udt_name) else {
+            continue;
+        };
+        let mut expanded = Vec::new();
+        for field in fields {
+            expanded.push(field.clone());
+            let Some(nested_name) = &field.nested_udt_name else {
+                continue;
+            };
+            if nested_name == &udt_name {
+                continue;
+            }
+            let Some(nested_fields) = snapshot.get(nested_name) else {
+                continue;
+            };
+            for sub_field in nested_fields {
+                expanded.push(HirUdtFieldDef {
+                    name: format!("{}_{}", field.name, sub_field.name),
+                    bound_type: sub_field.bound_type,
+                    nested_udt_name: sub_field.nested_udt_name.clone(),
+                    array_bounds: sub_field.array_bounds.clone(),
+                    fixed_string_len: sub_field.fixed_string_len,
+                });
+            }
+        }
+        defs.insert(udt_name, expanded);
+    }
 }
 
 fn declared_udt_type_name(
@@ -2674,9 +2772,9 @@ fn build_hir_udt_descriptors(
                         index,
                         name: field.name.clone(),
                         bound_type: field.bound_type,
-                        nested_udt_name: None,
-                        array_bounds: None,
-                        fixed_string_len: None,
+                        nested_udt_name: field.nested_udt_name.clone(),
+                        array_bounds: field.array_bounds.clone(),
+                        fixed_string_len: field.fixed_string_len,
                     })
                     .collect(),
             })
@@ -6323,6 +6421,51 @@ mod tests {
         assert!(point.fields.iter().any(|field| field.name == "y"));
         assert!(main.slots.iter().any(|slot| slot.name == "p_x"));
         assert!(main.slots.iter().any(|slot| slot.name == "p_y"));
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_rich_udt_field_metadata() {
+        let source = "Type Inner\nX As Long\nEnd Type\nType Record\nName As String * 5\nScores(1 To 2) As Long\nInner As Inner\nEnd Type\nSub Main()\nDim r As Record\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let record = main
+            .udt_types
+            .iter()
+            .find(|descriptor| descriptor.type_name.eq_ignore_ascii_case("record"))
+            .expect("record UDT descriptor");
+
+        let name = record
+            .fields
+            .iter()
+            .find(|field| field.name.eq_ignore_ascii_case("name"))
+            .expect("fixed-string field");
+        assert_eq!(name.fixed_string_len, Some(5));
+
+        let scores = record
+            .fields
+            .iter()
+            .find(|field| field.name.eq_ignore_ascii_case("scores"))
+            .expect("fixed array field");
+        assert_eq!(scores.array_bounds.len(), 1);
+        assert_eq!(scores.array_bounds[0].lower_bound, 1);
+        assert_eq!(scores.array_bounds[0].upper_bound, 2);
+
+        let inner = record
+            .fields
+            .iter()
+            .find(|field| field.name.eq_ignore_ascii_case("inner"))
+            .expect("nested UDT field");
+        assert_eq!(inner.nested_udt_name.as_deref(), Some("inner"));
+
+        assert!(
+            record
+                .fields
+                .iter()
+                .any(|field| field.name.eq_ignore_ascii_case("inner_x")),
+            "{record:#?}"
+        );
+        assert!(main.slots.iter().any(|slot| slot.name == "r_inner_x"));
     }
 
     #[test]

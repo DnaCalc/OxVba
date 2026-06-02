@@ -1194,8 +1194,9 @@ Candidate bead units:
   `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
   declarators, and simple same-statement constant expressions.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
-  optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
-  fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
+  optional/default/ParamArray parameters, richer `Declare` signatures, executable UDT nested
+  member-chain/indexed-field semantics, UDT lifetime/default initialization parity, and
+  corresponding diagnostics/metadata through HIR. Partial work has already been done:
   simple functions with return slots, optional parameters with simple explicit defaults and
   integer constant-expression defaults, including integer module-constant and enum-member
   references, through the default HIR route within the existing `ExplicitI32` metadata shape,
@@ -1209,7 +1210,9 @@ Candidate bead units:
   `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR,
   deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
   `Log`, `Exp`, `Atn`, and `Tan` in HIR, `Declare PtrSafe` calls, simple UDT layout/field aliases,
-  same-shape UDT assignment, general unary minus/plus plus `Not` expressions, and deterministic
+  same-shape UDT assignment, parser reachability plus metadata projection for fixed-length string
+  UDT fields, fixed UDT array fields, and nested UDT field descriptors, general unary minus/plus
+  plus `Not` expressions, and deterministic
   date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`, `DateValue`, `TimeValue`,
   `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff`, plus deterministic
   conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and `Oct`, plus
