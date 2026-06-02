@@ -706,6 +706,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Follow-up ordinal-alias declaration proof confirms `Declare PtrSafe Function ... Alias "#0007"`
   normalizes to `#7`, keeps `ordinal_alias`, preserves the ordinal selection policy, and remains
   on the audited HIR production route.
+- Follow-up typed-signature declaration proof confirms multi-argument external functions with
+  non-`Long` parameter and return metadata, such as `String` and `Integer`, preserve
+  `DeclareParamType` descriptors through HIR and remain on the audited HIR production route.
 - Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
   default compiler path can keep them on the tracked fallback/diagnostic surface.
 

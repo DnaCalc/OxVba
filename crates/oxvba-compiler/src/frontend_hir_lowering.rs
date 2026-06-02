@@ -3608,7 +3608,7 @@ fn line_number_at(source: &str, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bytecode::ExternalCallWritebackKind;
+    use crate::bytecode::{DeclareParamType, ExternalCallWritebackKind};
     use crate::resolve::BoundCompareMode;
     use crate::{Instruction, ParameterPassingMode, SourceParameterMechanism};
 
@@ -6596,6 +6596,31 @@ mod tests {
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
                 Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 1
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_declared_external_signature_types() {
+        let source = "Declare PtrSafe Function HostEcho Lib \"host\" Alias \"echo\" (ByVal text As String, ByVal count As Integer) As String\nSub Main()\nDim y\ny = HostEcho(\"x\", 2)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert_eq!(bytecode.external_call_descriptors.len(), 1);
+        let descriptor = &bytecode.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name, "hostecho");
+        assert_eq!(descriptor.param_count, 2);
+        assert_eq!(
+            descriptor.param_types,
+            vec![DeclareParamType::String, DeclareParamType::Integer]
+        );
+        assert_eq!(descriptor.param_by_ref, vec![false, false]);
+        assert_eq!(descriptor.return_type, Some(DeclareParamType::String));
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 2
             )),
             "{bytecode:#?}"
         );

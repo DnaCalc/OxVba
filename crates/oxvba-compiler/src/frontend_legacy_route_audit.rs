@@ -535,6 +535,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let declared_external_typed_signature_call = "Declare PtrSafe Function HostEcho Lib \"host\" Alias \"echo\" (ByVal text As String, ByVal count As Integer) As String\nSub Main()\nDim y\ny = HostEcho(\"x\", 2)\nEnd Sub\n";
+    findings.push(route_finding(
+        "declared external typed signature call fixture",
+        declared_external_typed_signature_call,
+        "bd-aprs.9.5",
+    ));
+
     let declared_external_sub_call = "Declare PtrSafe Sub HostTap Lib \"host\" Alias \"tap\" (ByVal x As Long)\nSub Main()\nCall HostTap(3)\nEnd Sub\n";
     findings.push(route_finding(
         "declared external Sub call fixture",
