@@ -715,7 +715,13 @@ Required newly explicit delivery beads:
   signature-help assertions, not only workspace-symbol enumeration. Follow-up imported-typelib
   language-service coverage drives projected `Scripting.Dictionary.Count` through workspace search,
   navigation, and signature help with imported-typelib provenance; this is still identifier-based
-  projection evidence, not full type-directed COM member binding. Follow-up corpus coverage adds
+  projection evidence, not full type-directed COM member binding. Follow-up optional-default
+  language-service coverage carries literal string and Boolean optional parameter defaults from the
+  compiler signature parser into semantic snapshots and signature help, proving richer runtime
+  descriptor metadata is visible to the IDE surface for those literal defaults while leaving
+  module-constant, Date/Currency, arbitrary default-expression, and first-class HIR parameter
+  descriptor cleanup open; the same continuation proves the `ParamArray` flag on both surfaces.
+  Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
   oracle fixtures that have compiler-local HIR route helpers, folding HIR production route evidence
   into the corpus report while preserving the need for VM/host/oracle execution runners. Remaining
@@ -1467,9 +1473,15 @@ Candidate bead units:
   coverage snapshots representative overlay shapes (`Static`, exponent expressions, qualified
   member chains, and trivia/comment-bearing sources) through compiler front-end facts; workspace
   coverage now drives the existing `INTP-003` and `INTP-016` seed project manifests through
-  navigation/signature-help route assertions. Closure requires every accepted in-scope row to
-  classify as HIR/SemanticModel production or to reopen/create the owning delivery bead, and richer
-  corpus/host/reference/oracle surfaces remain in scope until proved through execution evidence.
+  navigation/signature-help route assertions. Follow-up optional-default coverage carries literal
+  string and Boolean optional parameter defaults into `SemanticSnapshot::callables` and signature
+  help; this is IDE-surface metadata evidence, not closure for module-constant, Date/Currency, or
+  arbitrary default-expression coverage, and the recovered parameter descriptors still need to move
+  into first-class HIR/SemanticModel facts before final Roslyn-style callable parity is claimed;
+  the same continuation proves the `ParamArray` flag on both surfaces. Closure requires every
+  accepted in-scope row to classify as HIR/SemanticModel production or to reopen/create the owning
+  delivery bead, and richer corpus/host/reference/oracle surfaces remain in scope until proved
+  through execution evidence.
 - FE-9.8 Legacy route retirement finalization: after FE-7/FE-8 delivery beads pass, remove or
   hard-quarantine legacy production entry points for `parse_expr`, CST-to-legacy lowering,
   `project.rs` helper-source rewrites, and duplicate language-service semantic fallbacks. Partial

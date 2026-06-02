@@ -6,8 +6,8 @@ use crate::span::{
 };
 use crate::workspace::Workspace;
 
-use oxvba_compiler::ProjectManifest;
 use oxvba_compiler::lsp_support::intrinsic_spec;
+use oxvba_compiler::{OptionalDefaultValue, ProjectManifest};
 use oxvba_syntax::SyntaxKind;
 
 /// A position in a document (byte offset).
@@ -102,6 +102,9 @@ pub struct SignatureHelp {
 pub struct ParameterInfo {
     pub name: String,
     pub type_name: String,
+    pub optional: bool,
+    pub param_array: bool,
+    pub default_value: Option<OptionalDefaultValue>,
 }
 
 /// Hover information for a symbol.
@@ -757,6 +760,9 @@ impl LanguageService {
             .map(|p| ParameterInfo {
                 name: p.name.clone(),
                 type_name: format!("{:?}", p.ty),
+                optional: p.optional,
+                param_array: p.param_array,
+                default_value: p.default_value.clone(),
             })
             .collect();
 
@@ -2408,6 +2414,48 @@ mod tests {
                 h.active_parameter
             );
         }
+    }
+
+    #[test]
+    fn signature_help_preserves_optional_string_boolean_defaults() {
+        let src = "Sub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\nEnd Sub\nSub Test()\n    Call Use()\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+        let pos = src.find("Use()").expect("call") as u32 + "Use(".len() as u32;
+        let help = svc
+            .signature_help(&id, pos)
+            .expect("signature help for optional defaults");
+
+        assert_eq!(help.name, "Use");
+        assert_eq!(help.parameters.len(), 2);
+        assert_eq!(help.parameters[0].name, "text");
+        assert!(help.parameters[0].optional);
+        assert_eq!(
+            help.parameters[0].default_value,
+            Some(OptionalDefaultValue::ExplicitString("ready".to_string()))
+        );
+        assert_eq!(help.parameters[1].name, "flag");
+        assert!(help.parameters[1].optional);
+        assert_eq!(
+            help.parameters[1].default_value,
+            Some(OptionalDefaultValue::ExplicitBool(true))
+        );
+    }
+
+    #[test]
+    fn signature_help_preserves_param_array_flag() {
+        let src = "Sub Collect(ParamArray values() As Variant)\nEnd Sub\nSub Test()\n    Call Collect()\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+        let pos = src.find("Collect()").expect("call") as u32 + "Collect(".len() as u32;
+        let help = svc
+            .signature_help(&id, pos)
+            .expect("signature help for ParamArray");
+
+        assert_eq!(help.name, "Collect");
+        assert_eq!(help.parameters.len(), 1);
+        assert_eq!(help.parameters[0].name, "values");
+        assert!(help.parameters[0].param_array);
+        assert!(!help.parameters[0].optional);
+        assert_eq!(help.parameters[0].default_value, None);
     }
 
     #[test]
