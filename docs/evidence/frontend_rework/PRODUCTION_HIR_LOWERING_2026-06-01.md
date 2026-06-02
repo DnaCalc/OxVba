@@ -718,19 +718,21 @@ The FE-8.5 UDT slices remove the basic UDT declaration/layout and simple field-a
 - Fixed UDT array-field reads/writes now reuse the fixed-array alias path for static integer
   indices, so `r.Scores(1) = 7` and `y = r.Scores(2) + 2` lower through scalar element aliases
   such as `r_scores_0` and `r_scores_1`.
+- Non-static fixed UDT array-field indices now produce a precise HIR unsupported diagnostic instead
+  of being reported as an out-of-bounds static index.
 - Same-shape whole-value UDT assignment lowers to the existing field-wise `BoundStmt::UdtAssign`
   copy path.
 - Cross-type whole-value UDT assignment now preserves the legacy unsupported diagnostic instead of
   silently copying same-shaped fields across distinct UDT type names.
 - The production route audit includes a `Type Point ... p.X = 1 ... y = p.X + 2` fixture and
   nested/fixed-array/fixed-string descriptor, nested member-chain, and fixed UDT array-field index
-  fixtures as `HirProduction`, plus a cross-type whole-value UDT assignment fixture classified as
-  a HIR production diagnostic.
+  fixtures as `HirProduction`, plus a cross-type whole-value UDT assignment fixture classified as a
+  HIR production diagnostic.
 
 Remaining production residuals after this slice:
 
-- Dynamic/non-static UDT array field indexing and broader UDT lifetime/default initialization
-  parity remain open.
+- Dynamic/non-static UDT array-field storage/indexing and broader UDT lifetime/default
+  initialization parity remain open.
 - `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
   construction interactions, and assignment/writeback behavior.
 
@@ -1036,6 +1038,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler udt_field_read_write --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_nested_udt_member_chain_aliases --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_udt_array_field_index_aliases --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_rejects_non_static_udt_array_field_index --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_cross_type_udt_whole_assignment --quiet`
 - `cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`

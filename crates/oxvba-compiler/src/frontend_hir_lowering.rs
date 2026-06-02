@@ -1857,6 +1857,13 @@ fn linearize_static_array_index(bounds: &[(i32, i32)], indices: &[i32]) -> Optio
     Some(offset)
 }
 
+fn fixed_array_indices_are_static_ints(indices: &[BoundCallArg]) -> bool {
+    !indices.is_empty()
+        && indices
+            .iter()
+            .all(|arg| matches!(arg.expr, BoundExpr::IntConst(_)))
+}
+
 fn ensure_fixed_array_aliases(
     name: &str,
     bounds: &[(i32, i32)],
@@ -2268,6 +2275,11 @@ fn lower_call_expr(
             if call_data.cst.syntax_kind == "IndexExpr" && context.is_fixed_array(&name) {
                 if let Some(alias) = context.fixed_array_alias(&name, &args) {
                     return Ok(BoundExpr::Var(alias));
+                }
+                if !fixed_array_indices_are_static_ints(&args) {
+                    return Err(HirProductionLoweringError::Unsupported(format!(
+                        "fixed-array index for {name} requires static integer indices"
+                    )));
                 }
                 return Err(HirProductionLoweringError::Unsupported(format!(
                     "fixed-array index is outside the current bounds for {name}"
@@ -6625,6 +6637,21 @@ mod tests {
                 Instruction::AddConstI32 { value: 2, .. } | Instruction::AddSlots { .. }
             )),
             "{bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_non_static_udt_array_field_index() {
+        let source = "Type Record\nScores(1 To 2) As Long\nEnd Type\nSub Main()\nDim r As Record\nDim i As Long\nDim y As Long\ni = 1\ny = r.Scores(i)\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("non-static UDT array field index should remain unsupported");
+        assert!(
+            matches!(
+                err,
+                HirProductionLoweringError::Unsupported(ref message)
+                    if message.contains("fixed-array index for r_scores requires static integer indices")
+            ),
+            "unexpected error: {err:?}"
         );
     }
 
