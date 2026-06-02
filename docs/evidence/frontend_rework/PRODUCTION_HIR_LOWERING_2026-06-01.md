@@ -1049,7 +1049,12 @@ constant expressions:
   result still materializes through the exact carrier (`LoadConstCurrency` scaled `i64` or
   `LoadConstDate` f64 bits), with default-route, route-audit, and VM execution coverage for
   `Const CAmount As Currency = 1.25@ * 2@ - 1.0@` and
-  `Const CStamp As Date = #2026-02-28# + 1`.
+`Const CStamp As Date = #2026-02-28# + 1`.
+- A ninth focused declaration-shape pass applies VBA type-declaration characters on `Const` names
+  to the same bounded evaluator. `Const CTotal! = 1.5` now strips the `!` from the symbol name,
+  records `Single`, and emits `LoadConstF32`; `Const CAmount@ = 1.25` records `Currency` and emits
+  `LoadConstCurrency`. The direct HIR, default-route, route-audit, and VM execution checks prove the
+  values materialize as typed carriers rather than widened Double constants.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
   beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
