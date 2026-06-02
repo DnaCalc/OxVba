@@ -268,9 +268,11 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
     let (external_procedures, external_declarations, external_diagnostics) =
         collect_declared_external_procedures(&lines, &default_type_table);
     if !external_diagnostics.is_empty() {
-        return Err(HirProductionLoweringError::Unsupported(format!(
-            "external declaration diagnostics: {external_diagnostics:?}"
-        )));
+        return Err(CompileError::ResolveError(format!(
+            "external declaration diagnostics: {}",
+            external_diagnostics.join("; ")
+        ))
+        .into());
     }
     let option_base = collect_option_base(&lines);
     let compare_mode = collect_option_compare_mode(&lines);
@@ -6652,14 +6654,14 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_declare_without_ptrsafe_for_fallback() {
+    fn hir_production_lowering_reports_declare_without_ptrsafe_diagnostic() {
         let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
         let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("unsupported Declare shapes remain fallback-eligible");
+            .expect_err("missing PtrSafe should be a HIR production diagnostic");
 
         assert!(
-            matches!(err, HirProductionLoweringError::Unsupported(_)),
-            "Declare diagnostics must remain fallback-eligible, got {err:?}"
+            matches!(err, HirProductionLoweringError::Compile(CompileError::ResolveError(ref message)) if message.contains("PtrSafe keyword is required")),
+            "Declare diagnostics must be reported without legacy fallback, got {err:?}"
         );
     }
 

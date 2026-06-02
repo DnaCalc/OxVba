@@ -712,8 +712,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Follow-up native declaration proof confirms a `kernel32` `Declare PtrSafe Function` with a
   `LongPtr` parameter preserves native FFI lane selection and `DeclareParamType::LongPtr` metadata
   through HIR on native-FFI targets, with a matching route-audit fixture for the accepted source.
-- Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
-  default compiler path can keep them on the tracked fallback/diagnostic surface.
+- Unsupported declaration shapes that the shared declaration parser can diagnose, including missing
+  `PtrSafe`, now return HIR production diagnostics instead of falling back to the legacy declaration
+  route solely to report the policy error.
 
 Remaining production residuals after this slice:
 
