@@ -1229,6 +1229,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_optional_integer_expression_defaults_through_hir()
+     {
+        let source = "Sub Use(Optional ByVal n As Long = &H10 + &O7 - 1)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "integer constant-expression defaults should stay eligible for default HIR"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect(
+                    "direct HIR production lowering should support integer default expressions",
+                );
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route integer default expression through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for integer default expressions"
+        );
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert_eq!(use_metadata.signature.parameters[0].default_value, Some(22));
+        assert!(matches!(
+            use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitI32(22),
+                missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
+            }
+        ));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_param_array_through_hir() {
         let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
         assert!(

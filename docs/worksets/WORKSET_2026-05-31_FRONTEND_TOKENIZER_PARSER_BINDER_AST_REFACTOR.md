@@ -1194,8 +1194,9 @@ Candidate bead units:
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
   fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
-  simple functions with return slots, optional parameters with simple explicit defaults through the
-  default HIR route, bounded `Property Get`/`Property Let` declaration metadata and getter
+  simple functions with return slots, optional parameters with simple explicit defaults and
+  integer constant-expression defaults through the default HIR route within the existing
+  `ExplicitI32` metadata shape, bounded `Property Get`/`Property Let` declaration metadata and getter
   self-assignment return-slot binding, same-module zero-argument `Property Get` reads and simple
   same-module `Property Let`/`Property Set` writes through HIR, simple non-indexed property
   declarations through the default HIR route, simple positional ParamArray packing through the

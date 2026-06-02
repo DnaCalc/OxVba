@@ -1955,7 +1955,31 @@ pub fn parse_proc_signature(
 }
 
 fn parse_param_default(text: &str) -> Option<i32> {
-    text.trim().parse::<i32>().ok()
+    let expr = parse_expr(text.trim(), &HashMap::new())?;
+    static_i32_expr(&expr)
+}
+
+fn static_i32_expr(expr: &BoundExpr) -> Option<i32> {
+    match expr {
+        BoundExpr::IntConst(value) => Some(*value),
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => static_i32_expr(operand).map(i32::saturating_neg),
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let lhs = static_i32_expr(lhs)?;
+            let rhs = static_i32_expr(rhs)?;
+            match op {
+                ArithOp::Add => lhs.checked_add(rhs),
+                ArithOp::Sub => lhs.checked_sub(rhs),
+                ArithOp::Mul => lhs.checked_mul(rhs),
+                ArithOp::IntDiv => lhs.checked_div(rhs),
+                ArithOp::Mod => lhs.checked_rem(rhs),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn sorted_module_constants(constants: &ModuleConstMap) -> Vec<(String, BoundExpr)> {
@@ -7536,6 +7560,20 @@ mod tests {
         assert!(!fill.params[1].by_ref);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(7));
+    }
+
+    #[test]
+    fn resolve_optional_params_with_integer_constant_expression_defaults() {
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = &H10 + &O7 - 1)\ntarget = value\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(fill.params[1].default_value, Some(22));
     }
 
     #[test]

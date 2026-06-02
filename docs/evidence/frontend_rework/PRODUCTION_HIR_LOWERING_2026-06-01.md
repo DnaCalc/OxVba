@@ -940,8 +940,23 @@ writeback closure:
   lanes. The final route keeps generated `property_*_pmr_*` helpers out of that construction
   candidate while allowing ordinary same-module indexed getter reads through HIR.
 
+## Optional Integer Default Expression Continuation
+
+The latest FE-8.5.f slice narrows the optional-parameter default residual within the existing
+`ExplicitI32` descriptor shape:
+
+- Procedure signature parsing now accepts integer constant-expression defaults by reusing the
+  resolver expression parser and statically folding only integer-safe shapes.
+- This covers decimal, signed, prefixed hex/octal, typed integer suffixes, parentheses, and simple
+  integer arithmetic that can be represented as `OptionalDefaultValue::ExplicitI32`.
+- This deliberately does not claim string, Boolean, date, currency, enum/module constant, or
+  expression-default metadata expansion. Those need a broader optional-default descriptor decision
+  before they can be production-routed honestly.
+
 ## Checks
 
+- `cargo test -p oxvba-compiler resolve_optional_params_with_integer_constant_expression_defaults --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_integer_expression_defaults_through_hir --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_still_rejects_indexed_property_writeback_route --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
