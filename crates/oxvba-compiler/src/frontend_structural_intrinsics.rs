@@ -39,6 +39,12 @@ impl StructuralIntrinsic {
     }
 
     pub fn from_legacy_name(name: &str) -> Option<Self> {
+        if name.eq_ignore_ascii_case("__OxVbaEarlyPropertyGetInvoke")
+            || name.eq_ignore_ascii_case("__OxVbaEarlyPropertyLetInvoke")
+            || name.eq_ignore_ascii_case("__OxVbaEarlyPropertySetInvoke")
+        {
+            return Some(Self::DynamicDispatchEarlyInvoke);
+        }
         ALL_STRUCTURAL_INTRINSICS
             .iter()
             .copied()
@@ -87,6 +93,20 @@ mod tests {
         assert!(ALL_STRUCTURAL_INTRINSICS.contains(&StructuralIntrinsic::WithEventsSet));
         assert!(ALL_STRUCTURAL_INTRINSICS.contains(&StructuralIntrinsic::DynamicDispatchInvoke));
         assert!(ALL_STRUCTURAL_INTRINSICS.contains(&StructuralIntrinsic::ObjPtr));
+    }
+
+    #[test]
+    fn structural_intrinsics_accept_early_bound_property_aliases() {
+        for alias in [
+            "__OxVbaEarlyPropertyGetInvoke",
+            "__OxVbaEarlyPropertyLetInvoke",
+            "__OxVbaEarlyPropertySetInvoke",
+        ] {
+            assert_eq!(
+                StructuralIntrinsic::from_legacy_name(alias),
+                Some(StructuralIntrinsic::DynamicDispatchEarlyInvoke)
+            );
+        }
     }
 
     #[test]

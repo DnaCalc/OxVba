@@ -1029,8 +1029,8 @@ residual: `Dim obj As New OxVba.TestDispatch` compiles through
 `LegacyFallbackAfterHirUnsupported`, so the source-backed gate intentionally remains open until
 imported COM construction/member lowering is strict-HIR backed.
 The migrated active/full project HIR boundaries now call strict HIR compilation directly; unsupported
-HIR or forced-object-local shapes are recorded as `LegacyFallbackAfterHirUnsupported` instead of
-silently returning through the legacy fallback wrapper, and the route audit only counts rows with
+HIR shapes are recorded as `LegacyFallbackAfterHirUnsupported` instead of silently returning through
+the legacy fallback wrapper, and the route audit only counts rows with
 `ProjectCompileRoute::HirProduction` as HIR production.
 
 ## Bang Member Read Continuation

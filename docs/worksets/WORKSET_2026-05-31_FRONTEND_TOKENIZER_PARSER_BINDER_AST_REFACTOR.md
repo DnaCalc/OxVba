@@ -670,8 +670,7 @@ Required newly explicit delivery beads:
   procedural reference projects through a full-source HIR boundary and adds `INTP-003`, `INTP-004`,
   and `INTP-019` route rows; the audit also now includes `INTP-016` as a simple active-project class
   route that compiles through `ProjectCompileRoute::HirProduction`. The migrated project HIR
-  boundaries now call strict HIR compilation directly, so unsupported HIR/forced-object-local shapes
-  are recorded as visible
+  boundaries now call strict HIR compilation directly, so unsupported HIR shapes are recorded as visible
   `LegacyFallbackAfterHirUnsupported` routes instead of hidden legacy fallback through wrapper
   helpers; route-audit HIR-production rows must assert `ProjectCompileRoute::HirProduction`. The
   audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM

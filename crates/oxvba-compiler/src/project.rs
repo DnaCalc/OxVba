@@ -1324,13 +1324,8 @@ fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundar
 
 fn compile_project_source_via_strict_hir(
     source: &str,
-    forced_object_locals_by_proc: &ForcedObjectLocalsByProc,
+    _forced_object_locals_by_proc: &ForcedObjectLocalsByProc,
 ) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), HirProductionLoweringError> {
-    if !forced_object_locals_by_proc.is_empty() {
-        return Err(HirProductionLoweringError::Unsupported(
-            "project HIR boundary does not yet support forced object-local metadata".to_string(),
-        ));
-    }
     let hir_source = crate::resolve::apply_conditional_compilation_to_source(source);
     compile_source_with_runtime_metadata_via_hir(&hir_source)
 }
