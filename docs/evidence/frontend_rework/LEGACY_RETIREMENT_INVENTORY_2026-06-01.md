@@ -29,9 +29,9 @@ Rows now distinguish:
 - quarantined project/class/COM/default-member rewrites: `project.rs` production compilation now
   selects the module-aware plan unconditionally; the old rewrite bridge remains for internal parity
   tests while FE-7.1 through FE-7.6 own broader replacement of source-text lowering internals;
-- quarantined CST-to-legacy expression bridge: `syntax_bridge::lower_cst_expr` remains a
-  compatibility/test bridge until the terminal route audit proves it is outside the claimed
-  production surface or deletes it;
+- quarantined CST-to-legacy expression bridge: `syntax_bridge::lower_cst_expr` is now compiled
+  only for internal bridge tests; current code search finds no production caller, so it is outside
+  the public compiler API and cannot be an external production entry point;
 - replaced structural intrinsic names where FE-8.1 moved compiler-owned structural concepts to
   `frontend_structural_intrinsics::StructuralIntrinsic`.
 
@@ -49,10 +49,20 @@ module produces facts from the HIR `BoundModule` path, while
 declaration shape is still classified as a legacy-resolver residual instead of being mistaken for
 retirement.
 
+The `syntax_bridge` module is now `pub(crate)`, and its CST-to-legacy expression/source bridge
+helpers are behind `#[cfg(test)]`. They remain available to internal compatibility tests, but they
+are no longer public compiler API and are not compiled into ordinary production builds. Current
+repository search finds no production caller of `lower_expression_to_legacy_bound_expr`,
+`compile_source_via_syntax_bridge`, or
+`compile_source_with_runtime_metadata_via_syntax_bridge`; the only non-test internal use of the
+module is the HIR route classifier consumed by the legacy route audit.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
 - `cargo test -p oxvba-compiler bundle_fact_bound_module_route --quiet`
+- `cargo test -p oxvba-compiler syntax_bridge --quiet`
+- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler syntax_bridge::tests::bridge_compiles_supported_statement_sequence_after_cst_validation --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -69,8 +79,8 @@ retirement.
   route-visible bundle fact tests so that fallback-derived package context facts cannot satisfy a
   terminal HIR ownership claim.
 - This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrite-era internals.
-  The project rewrite bridge is no longer production-selected, but source-text lowering internals
-  remain compatibility scaffolding until FE-7/FE-9 retirement beads finish replacing or
-  quarantining them.
+  The project rewrite bridge is no longer production-selected, and the CST-to-legacy syntax bridge
+  helpers are test-only, but source-text lowering internals remain compatibility scaffolding until
+  FE-7/FE-9 retirement beads finish replacing or quarantining them.
 - Every residual row has an owner, replacement surface, partial-work note, and closure condition,
   so legacy fallback is not silent.

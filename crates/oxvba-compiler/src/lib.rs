@@ -29,7 +29,7 @@ pub mod lsp_support;
 pub mod optimize;
 pub mod project;
 pub mod resolve;
-pub mod syntax_bridge;
+pub(crate) mod syntax_bridge;
 pub mod typecheck;
 
 use thiserror::Error;
@@ -1679,10 +1679,10 @@ mod tests {
     }
 
     #[test]
-    fn compile_options_frontend_v2_is_opt_in_bridge_route() {
+    fn compile_options_frontend_v2_is_opt_in_hir_route() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
-            .expect("frontend_v2 bridge compile should succeed");
+            .expect("frontend_v2 HIR compile should succeed");
         assert!(!out.instructions.is_empty());
     }
 
@@ -1732,7 +1732,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_options_default_enables_completed_bridge_construct() {
+    fn compile_options_default_enables_completed_hir_construct() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source)
             .expect_err("legacy path should not accept inline sequence");
@@ -1746,7 +1746,7 @@ mod tests {
         assert!(!defaulted.instructions.is_empty());
 
         let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
-            .expect("frontend_v2 bridge should compile completed inline construct");
+            .expect("frontend_v2 HIR should compile completed inline construct");
         assert!(!out.instructions.is_empty());
     }
 
@@ -1797,7 +1797,7 @@ mod tests {
             "Sub Main()\n    x = (1 + 2\nEnd Sub\n",
             super::CompileOptions { frontend_v2: true },
         )
-        .expect_err("frontend_v2 bridge should reject syntax parse errors first");
+        .expect_err("frontend_v2 HIR route should reject syntax parse errors first");
         assert!(
             err.to_string().contains("frontend_v2 diagnostics"),
             "unexpected error: {err}"

@@ -43,6 +43,11 @@ bridge remains as an explicit compatibility helper for focused tests, but the br
 an internal "CST validation then legacy compile" production path. Inline statement separator and
 bare object identity fixtures still compile because they now route through HIR production.
 
+FE-9 retirement continuation then made `syntax_bridge` crate-private and moved the CST-to-legacy
+expression/source bridge helpers behind `#[cfg(test)]`. Those helpers remain available to internal
+compatibility tests, but they are no longer a public compiler API surface or part of ordinary
+production builds. The route-audit classifier remains compiled and calls direct HIR lowering.
+
 ## Verification
 
 Commands run from repository root:
@@ -56,6 +61,8 @@ Commands run from repository root:
   - FE-4.5 reopen result: passed, 8 tests after adding recovered-syntax diagnostic route proof.
   - FE-4.4 second reopen result: passed, 9 tests after removing the hidden legacy compile fallback
     from the bridge.
+  - FE-9 retirement continuation result: passed, 9 tests after making the bridge module
+    crate-private and test-gating the CST-to-legacy helpers.
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
   - FE-4.4 second reopen result: passed, proving route classification now distinguishes HIR
     production from HIR-unsupported residuals.
@@ -84,7 +91,9 @@ parser. FE-4.2 postfix forms are also lowered from CST for the scoped bridge tes
 statement forms are validated by CST first. The FE-9.6 audit showed that the bridge was still
 acting as a hidden production fallback, so this second reopen removed that fallback. Full
 statement/source compilation gaps now surface as HIR `Unsupported` residuals for FE-8.5/project
-beads instead of being handled inside the CST bridge.
+beads instead of being handled inside the CST bridge. The FE-9 retirement continuation further
+quarantines the bridge by removing it from the public compiler module surface and compiling its
+CST-to-legacy lowering helpers only for tests.
 
 The test assertion initially referenced a nonexistent `StoreSlot` bytecode instruction. The final
 test checks the actual instruction family emitted by this compiler for the assignment/arithmetic

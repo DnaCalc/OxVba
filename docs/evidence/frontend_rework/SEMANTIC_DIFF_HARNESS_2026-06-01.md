@@ -18,12 +18,13 @@ The harness can now compare:
   value states, expression/operator semantics, coercions, and name/member bindings;
 - execution-trace and observable-output lanes as explicit `NotRun` statuses.
 
-Reopened update: the front-end v2 side now uses the same syntax-bridge compile route as
-`compile_with_options(... frontend_v2: true)`, including runtime metadata. This is still a
-transitional CST-to-legacy bridge, not the terminal binder/HIR route, but the harness no longer
-compares a CST-only precheck followed by the unmodified legacy compiler. A v2-only inline
-statement-separator fixture now proves the harness can see a construct that the legacy default
-route rejects and the opt-in bridge accepts.
+Reopened update: the front-end v2 side originally used the same syntax-bridge compile route as
+`compile_with_options(... frontend_v2: true)`, including runtime metadata, so the harness no
+longer compared a CST-only precheck followed by the unmodified legacy compiler. FE-8/FE-9
+continuations then moved the v2 observer to direct
+`frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir`, matching the current
+`frontend_v2` production route. A v2-only inline statement-separator fixture proves the harness can
+see a construct that the legacy baseline rejects and HIR accepts.
 
 This preserves default compiler behavior while giving FE-5.3 and FE-5.4 a single report shape to
 extend with classifier rows and VM/host execution observations.
@@ -43,17 +44,17 @@ extend with classifier rows and VM/host execution observations.
   creating a compiler-to-VM dependency cycle. The report shape records execution trace and
   observable output as explicit `NotRun` values rather than silently omitting them. FE-5.4 should
   add a higher-layer runner for VM/host observations.
-- Metadata comparison is available for v2 because `syntax_bridge` now exposes
-  `compile_source_with_runtime_metadata_via_syntax_bridge`, so bytecode and metadata are produced
-  by the same bridge route.
+- Metadata comparison is available for v2 because the diff observer now calls HIR production
+  lowering directly and receives bytecode plus runtime metadata from the same front-end route.
 - The fresh regression fixture `x = 1: x = x + 1` catches the prior blunder where v2 validation
   would have been reported even though real compilation still took the legacy-default path. The
-  left side records the legacy diagnostic; the right side records bridge bytecode and metadata.
+  left side records the legacy diagnostic; the right side records HIR bytecode and metadata.
 - Bytecode comparison is not required to be byte-identical as the final rule for the workset.
   This bead only supplies the normalized diff surface; FE-5.3 classifies differences as bugs,
   harmless drift, or intentional improvements.
-- Default compile behavior remains unchanged. `compile_with_options(... frontend_v2: true)` still
-  routes through the existing bridge, and the diff harness is opt-in test/support surface.
+- Default compile behavior remains HIR-first with fallback only for unsupported residuals.
+  `compile_with_options(... frontend_v2: true)` reports HIR unsupported as a front-end error, and
+  the diff harness is opt-in test/support surface.
 - Remaining limitation: execution trace and host-visible output are still explicit `NotRun`
   compiler-layer placeholders. FE-5.4 must add higher-level VM/host runners before terminal
   production replacement can claim execution-observation parity.

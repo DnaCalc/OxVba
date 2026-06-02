@@ -1295,8 +1295,8 @@ Candidate bead units:
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
   splitting and retired `project.rs` rewrite paths once their matrix rows are covered. Partial work
   already done: `compile_with_options` no longer uses `syntax_bridge` as its production HIR route;
-  the CST-to-legacy expression bridge remains quarantined to bridge/diff harness surfaces until
-  terminal route audit deletion or test-only proof.
+  the CST-to-legacy expression/source bridge helpers are now crate-private and `#[cfg(test)]`,
+  leaving the production route-audit classifier on direct HIR lowering.
   Evidence: `docs/evidence/frontend_rework/LEGACY_RETIREMENT_INVENTORY_2026-06-01.md`.
 - FE-9.3 Salsa/query integration: wrap parse, bind, typecheck, diagnostics, and SemanticModel
   queries for incremental recompute.
@@ -1340,7 +1340,9 @@ Candidate bead units:
   unsupported residual modules; a continuation makes that bundle fact route decision test-visible
   so fallback-derived facts cannot be counted as HIR retirement evidence. Closure requires code
   search and route proof that remaining legacy helpers are comparison/test-only or outside the
-  accepted surface.
+  accepted surface. Follow-up FE-9 syntax-bridge cleanup makes `syntax_bridge` crate-private and
+  test-gates its CST-to-legacy helpers, so current production routes must enter through HIR lowering
+  or explicit route-audit support.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is

@@ -1,10 +1,16 @@
 use thiserror::Error;
 
+#[cfg(test)]
 use std::collections::BTreeMap;
 
+use crate::CompileError;
+#[cfg(test)]
+use crate::ProcedureRuntimeMetadata;
+#[cfg(test)]
 use crate::bytecode::Bytecode;
+#[cfg(test)]
 use crate::resolve::{ArithOp, BoundCallArg, BoundExpr, CompareOp, LogicalBinOp, normalize_ident};
-use crate::{CompileError, ProcedureRuntimeMetadata};
+#[cfg(test)]
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 /// Errors produced by the temporary CST-to-legacy bridge.
@@ -12,6 +18,7 @@ use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 pub enum SyntaxBridgeError {
     #[error("syntax parse failed: {0}")]
     Syntax(String),
+    #[cfg(test)]
     #[error("unsupported syntax bridge shape: {0}")]
     Unsupported(String),
     #[error(transparent)]
@@ -24,6 +31,7 @@ pub enum SyntaxBridgeError {
 /// This is intentionally a bridge, not the final HIR binder. It proves that a
 /// selected CST construct can be accepted by the new syntax layer and lowered
 /// from the CST shape while later FE beads build the real HIR.
+#[cfg(test)]
 pub fn lower_expression_to_legacy_bound_expr(
     expression_source: &str,
 ) -> Result<BoundExpr, SyntaxBridgeError> {
@@ -58,10 +66,12 @@ pub fn lower_expression_to_legacy_bound_expr(
 /// This helper is retained for bridge/diff harnesses while production compile
 /// entry points call HIR lowering directly and apply fallback policy outside
 /// this module.
+#[cfg(test)]
 pub fn compile_source_via_syntax_bridge(source: &str) -> Result<Bytecode, SyntaxBridgeError> {
     compile_source_with_runtime_metadata_via_syntax_bridge(source).map(|(bytecode, _)| bytecode)
 }
 
+#[cfg(test)]
 pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
     source: &str,
 ) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), SyntaxBridgeError> {
@@ -108,6 +118,7 @@ pub fn validate_source_with_cst(source: &str) -> Result<(), SyntaxBridgeError> {
     Ok(())
 }
 
+#[cfg(test)]
 fn has_node_kind(node: &oxvba_syntax::SyntaxNode<'_>, kind: oxvba_syntax::SyntaxKind) -> bool {
     if node.kind() == kind {
         return true;
@@ -117,6 +128,7 @@ fn has_node_kind(node: &oxvba_syntax::SyntaxNode<'_>, kind: oxvba_syntax::Syntax
         .any(|child| has_node_kind(child, kind))
 }
 
+#[cfg(test)]
 fn find_node_kind<'a>(node: &SyntaxNode<'a>, kind: SyntaxKind) -> Option<SyntaxNode<'a>> {
     if node.kind() == kind {
         return Some(*node);
@@ -126,6 +138,7 @@ fn find_node_kind<'a>(node: &SyntaxNode<'a>, kind: SyntaxKind) -> Option<SyntaxN
         .find_map(|child| find_node_kind(&child, kind))
 }
 
+#[cfg(test)]
 fn is_expression_node(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -141,6 +154,7 @@ fn is_expression_node(kind: SyntaxKind) -> bool {
     )
 }
 
+#[cfg(test)]
 fn lower_cst_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     match node.kind() {
         SyntaxKind::LiteralExpr => lower_literal_expr(node),
@@ -163,6 +177,7 @@ fn lower_cst_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> 
     }
 }
 
+#[cfg(test)]
 fn lower_literal_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     let token = first_nontrivia_token(node)
         .ok_or_else(|| unsupported_expr(node, "literal expression without token"))?;
@@ -193,6 +208,7 @@ fn lower_literal_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeErr
     }
 }
 
+#[cfg(test)]
 fn lower_ident_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     let mut text = String::new();
     for token in nontrivia_tokens(node) {
@@ -203,6 +219,7 @@ fn lower_ident_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError
         .ok_or_else(|| unsupported_expr(node, &format!("unsupported identifier `{text}`")))
 }
 
+#[cfg(test)]
 fn lower_member_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     let receiver_node = expression_children(node)
         .into_iter()
@@ -219,6 +236,7 @@ fn lower_member_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeErro
     })
 }
 
+#[cfg(test)]
 fn lower_index_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     let target_node = expression_children(node)
         .into_iter()
@@ -241,6 +259,7 @@ fn lower_index_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError
     }
 }
 
+#[cfg(test)]
 fn lower_unary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     let op = first_nontrivia_token(node)
         .ok_or_else(|| unsupported_expr(node, "unary expression without operator"))?;
@@ -262,6 +281,7 @@ fn lower_unary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError
     }
 }
 
+#[cfg(test)]
 fn lower_binary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
     let exprs = expression_children(node);
     if exprs.len() < 2 {
@@ -356,6 +376,7 @@ fn lower_binary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeErro
     }
 }
 
+#[cfg(test)]
 fn compare_expr(
     op: CompareOp,
     lhs: BoundExpr,
@@ -368,6 +389,7 @@ fn compare_expr(
     })
 }
 
+#[cfg(test)]
 fn logical_expr(
     op: LogicalBinOp,
     lhs: BoundExpr,
@@ -380,6 +402,7 @@ fn logical_expr(
     })
 }
 
+#[cfg(test)]
 fn is_object_identity_operand_syntax(node: SyntaxNode<'_>) -> bool {
     match node.kind() {
         SyntaxKind::IdentExpr
@@ -398,6 +421,7 @@ fn is_object_identity_operand_syntax(node: SyntaxNode<'_>) -> bool {
     }
 }
 
+#[cfg(test)]
 fn lower_arg_list(node: SyntaxNode<'_>) -> Result<Vec<BoundCallArg>, SyntaxBridgeError> {
     let arg_list = node
         .child_nodes()
@@ -416,6 +440,7 @@ fn lower_arg_list(node: SyntaxNode<'_>) -> Result<Vec<BoundCallArg>, SyntaxBridg
         .collect()
 }
 
+#[cfg(test)]
 fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
     node.child_nodes()
         .into_iter()
@@ -423,6 +448,7 @@ fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
         .collect()
 }
 
+#[cfg(test)]
 fn direct_member_name(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     let mut after_member_operator = false;
     for element in node.children() {
@@ -450,6 +476,7 @@ fn direct_member_name(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     None
 }
 
+#[cfg(test)]
 fn normalize_member_token(text: &str) -> Option<String> {
     if let Some(unbracketed) = text
         .strip_prefix('[')
@@ -460,10 +487,12 @@ fn normalize_member_token(text: &str) -> Option<String> {
     normalize_ident(text)
 }
 
+#[cfg(test)]
 fn first_nontrivia_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     nontrivia_tokens(node).into_iter().next()
 }
 
+#[cfg(test)]
 fn nontrivia_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
     node.child_tokens()
         .into_iter()
@@ -471,6 +500,7 @@ fn nontrivia_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
         .collect()
 }
 
+#[cfg(test)]
 fn direct_operator_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     node.children()
         .into_iter()
@@ -480,6 +510,7 @@ fn direct_operator_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
         })
 }
 
+#[cfg(test)]
 fn is_expression_operator(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -504,6 +535,7 @@ fn is_expression_operator(kind: SyntaxKind) -> bool {
     )
 }
 
+#[cfg(test)]
 fn parse_int_literal(text: &str) -> Result<i32, SyntaxBridgeError> {
     let trimmed = text.trim_end_matches(['%', '&', '^']);
     trimmed.parse::<i32>().map_err(|_| {
@@ -511,6 +543,7 @@ fn parse_int_literal(text: &str) -> Result<i32, SyntaxBridgeError> {
     })
 }
 
+#[cfg(test)]
 fn parse_prefixed_int_literal(
     text: &str,
     prefix: &str,
@@ -525,6 +558,7 @@ fn parse_prefixed_int_literal(
         .map_err(|_| SyntaxBridgeError::Unsupported(format!("unsupported literal `{text}`")))
 }
 
+#[cfg(test)]
 fn parse_float_literal(text: &str) -> Result<u64, SyntaxBridgeError> {
     let trimmed = text.trim_end_matches(['!', '#', '@']);
     trimmed
@@ -533,6 +567,7 @@ fn parse_float_literal(text: &str) -> Result<u64, SyntaxBridgeError> {
         .map_err(|_| SyntaxBridgeError::Unsupported(format!("unsupported float literal `{text}`")))
 }
 
+#[cfg(test)]
 fn parse_string_literal(text: &str) -> Result<String, SyntaxBridgeError> {
     if !text.starts_with('"') || !text.ends_with('"') || text.len() < 2 {
         return Err(SyntaxBridgeError::Unsupported(format!(
@@ -542,6 +577,7 @@ fn parse_string_literal(text: &str) -> Result<String, SyntaxBridgeError> {
     Ok(text[1..text.len() - 1].replace("\"\"", "\""))
 }
 
+#[cfg(test)]
 fn unsupported_expr(node: SyntaxNode<'_>, reason: &str) -> SyntaxBridgeError {
     SyntaxBridgeError::Unsupported(format!("{reason}: `{}`", node.text().trim()))
 }

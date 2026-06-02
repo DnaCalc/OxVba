@@ -60,8 +60,8 @@ pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
         replacement: "typed HIR expression facts lowered through frontend_hir_lowering",
         disposition: RetirementDisposition::QuarantinedResidual,
         owner: "bd-aprs.9.6",
-        partial_work: "CST expression lowering still exists as a compatibility bridge for bridge-specific tests and unsupported HIR constructs.",
-        closure_condition: "terminal route audit proves the expression bridge is test-only/compatibility-only or deletes it",
+        partial_work: "CST expression lowering is compiled only for bridge-specific tests; production compile, route audit, and diff routes call HIR lowering directly.",
+        closure_condition: "terminal route audit proves the expression bridge has no production caller and remains test-only, or deletes it",
     },
     LegacyRetirementRow {
         legacy_path: "stringly structural intrinsic names",
