@@ -1055,11 +1055,18 @@ constant expressions:
   records `Single`, and emits `LoadConstF32`; `Const CAmount@ = 1.25` records `Currency` and emits
   `LoadConstCurrency`. The direct HIR, default-route, route-audit, and VM execution checks prove the
   values materialize as typed carriers rather than widened Double constants.
+- A tenth focused declaration-shape pass completes the standard scalar `Const` name
+  type-declaration character family for the covered evaluator subset: `%`, `&`, `^`, `!`, `#`, `@`,
+  and `$`. The frontend guard and collector now share the same declarator parser for `Const C^ =
+  5000000000`, and declared `Double` constants use `FloatConst`/`LoadConstF64` even when the literal
+  text is integer-looking (`Const CDouble# = 2`). Coverage proves direct HIR lowering, default-route
+  HIR selection, route audit, and VM execution for Integer, Long, LongLong, Single, Double,
+  Currency, and String suffix constants.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, Date/Currency expression coercion
   beyond the covered numeric arithmetic subset, locale-sensitive Date literal breadth, or names beyond
-  source-prior constants and the already handled enum/literal route, plus typed constant coercion
-  and full `LongPtr` platform semantics, remain future FE-8.5 work.
+  source-prior constants and the already handled enum/literal/type-character route, plus typed
+  constant coercion and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
