@@ -2138,6 +2138,10 @@ fn static_param_default_expr_inner(
 ) -> Option<BoundParamDefaultValue> {
     match expr {
         BoundExpr::BoolConst(value) => Some(BoundParamDefaultValue::ExplicitBool(*value)),
+        _ if declared_type == BoundType::Boolean => {
+            static_bool_expr_inner(expr, module_constants, resolving_constants)
+                .map(BoundParamDefaultValue::ExplicitBool)
+        }
         BoundExpr::StringConst(value) => {
             Some(BoundParamDefaultValue::ExplicitString(value.clone()))
         }
@@ -2215,6 +2219,39 @@ fn static_string_expr_inner(
                 resolving_constants,
             )?);
             Some(value)
+        }
+        _ => None,
+    }
+}
+
+fn static_bool_expr_inner(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<bool> {
+    match expr {
+        BoundExpr::BoolConst(value) => Some(*value),
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value = static_bool_expr_inner(const_expr, module_constants, resolving_constants);
+            resolving_constants.remove(name);
+            value
+        }
+        BoundExpr::LogicalNot { operand } => Some(!static_bool_expr_inner(
+            operand,
+            module_constants,
+            resolving_constants,
+        )?),
+        BoundExpr::LogicalBinaryOp { op, lhs, rhs } => {
+            let lhs = static_bool_expr_inner(lhs, module_constants, resolving_constants)?;
+            let rhs = static_bool_expr_inner(rhs, module_constants, resolving_constants)?;
+            match op {
+                LogicalBinOp::And => Some(lhs && rhs),
+                LogicalBinOp::Or => Some(lhs || rhs),
+            }
         }
         _ => None,
     }
@@ -7907,6 +7944,23 @@ mod tests {
             Some(super::BoundParamDefaultValue::ExplicitString(
                 "ready".to_string()
             ))
+        );
+    }
+
+    #[test]
+    fn resolve_optional_boolean_expression_default() {
+        let source = "Const Enabled = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Enabled And Not False)\ntarget = flag\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitBool(true))
         );
     }
 

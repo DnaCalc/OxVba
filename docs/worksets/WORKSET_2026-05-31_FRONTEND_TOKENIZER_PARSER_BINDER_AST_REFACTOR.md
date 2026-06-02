@@ -724,9 +724,10 @@ Required newly explicit delivery beads:
   carriers to runtime metadata, type hooks, direct optional-entry bytecode, and package-VM omitted-
   argument binding, then accepts deterministic `#...#` Date literal optional defaults while leaving
   locale-sensitive Date breadth open. String constant-expression defaults using `&` over literals
-  and module constants now also evaluate into explicit string carriers; broader typed coercion and
-  expression expansion remain open. The same continuation proves the `ParamArray` flag on both
-  surfaces.
+  and module constants now also evaluate into explicit string carriers, and Boolean constant
+  expressions over literals/module constants plus `Not`/`And`/`Or` evaluate into explicit Boolean
+  carriers; broader typed coercion, comparison defaults, and expression expansion remain open. The
+  same continuation proves the `ParamArray` flag on both surfaces.
   Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
   oracle fixtures that have compiler-local HIR route helpers, folding HIR production route evidence
@@ -1325,7 +1326,8 @@ Candidate bead units:
   integer constant-expression defaults, including integer module-constant and enum-member
   references, through the default HIR route within the existing `ExplicitI32` metadata shape,
   literal/module-constant string defaults plus string concatenation constant expressions through
-  explicit optional-default descriptors, Boolean optional defaults through explicit descriptors,
+  explicit optional-default descriptors, Boolean literal/module-constant/logical expression defaults
+  through explicit descriptors,
   source-backed `Currency` scaled and `Date` serial optional-default descriptors, default-route HIR
   metadata, deterministic `#...#` Date literal optional defaults, type hooks, direct optional-entry
   bytecode, and package-VM omitted-argument binding,
@@ -1427,9 +1429,9 @@ Candidate bead units:
   The eligibility guard deliberately still excludes surfaces whose HIR semantics are partial,
   including project rewrites, class/object-local compatibility contexts, project/class/COM/default-
   member property writeback, coerced/default-expression metadata beyond the covered integer plus
-  literal/module-constant/concat string defaults, Boolean defaults, source-backed Date/Currency
-  carriers, deterministic Date literal defaults, and typed declared defaults (`""`, `False`,
-  integer zero, Currency zero, and Date serial zero),
+  literal/module-constant/concat string defaults, Boolean literal/logical defaults, source-backed
+  Date/Currency carriers, deterministic Date literal defaults, and typed declared defaults (`""`,
+  `False`, integer zero, Currency zero, and Date serial zero),
   and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
@@ -1490,8 +1492,8 @@ Candidate bead units:
   navigation/signature-help route assertions. Follow-up optional-default coverage carries literal
   string and Boolean optional parameter defaults into `SemanticSnapshot::callables` and signature
   help; continuation work also carries integer module-constant/enum-member defaults, string
-  concatenation constant defaults, and source-backed Date/Currency optional-default carriers plus
-  deterministic Date literal defaults.
+  concatenation constant defaults, Boolean logical constant defaults, and source-backed
+  Date/Currency optional-default carriers plus deterministic Date literal defaults.
   This is IDE-surface metadata evidence, not closure for arbitrary default-expression coverage; the
   same continuation moves those parameter descriptors into compiler-owned `HirParameterHook` facts
   and proves the `ParamArray` flag on both surfaces.

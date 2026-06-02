@@ -1709,6 +1709,28 @@ mod tests {
     }
 
     #[test]
+    fn optional_boolean_expression_defaults_route_through_hir() {
+        let source = "Const Enabled = True\nSub Use(Optional ByVal flag As Boolean = Enabled And Not False)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("Boolean expression defaults should route through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitBool(true),
+                ..
+            }
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(main.call_sites.iter().any(|call_site| {
+            call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("flag")
+                    && arg.optional_default == Some(OptionalDefaultValue::ExplicitBool(true))
+            })
+        }));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_param_array_through_hir() {
         let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
         assert!(

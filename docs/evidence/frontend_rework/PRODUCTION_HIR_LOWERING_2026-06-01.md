@@ -1148,13 +1148,15 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   the same Date serial carrier, with resolver, metadata, and VM omitted-argument proofs.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
   literals and module constants into the existing explicit string optional-default carrier.
+- Follow-up Boolean constant-expression work evaluates Boolean literals, module constants, `Not`,
+  `And`, and `Or` into the existing explicit Boolean optional-default carrier.
 - The same follow-up found a front-end symbol-model miss where a later parameter following a string
   default could be absent from the HIR parameter list even though the signature parser saw it.
   Procedure symbol collection now reconciles missing parameter symbols against the signature parser
   instead of letting the default-route gate reject the source.
 - This deliberately does not claim arbitrary typed coercion of default expressions, locale-sensitive
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
-  and string constant-expression subset. Those remain FE-8.5.f residuals.
+  plus string/Boolean constant-expression subset. Those remain FE-8.5.f residuals.
 
 ## Checks
 
@@ -1171,8 +1173,11 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler resolve_optional_date_literal_default --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_string_concat_default --quiet`
 - `cargo test -p oxvba-compiler optional_string_concat_defaults_route_through_hir --quiet`
+- `cargo test -p oxvba-compiler resolve_optional_boolean_expression_default --quiet`
+- `cargo test -p oxvba-compiler optional_boolean_expression_defaults_route_through_hir --quiet`
 - `cargo test -p oxvba-compiler type_hooks_collect_parameter_descriptors_from_source_backed_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_concat_defaults_are_bound_for_omitted_args --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage optional_boolean_expression_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_date_currency_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
