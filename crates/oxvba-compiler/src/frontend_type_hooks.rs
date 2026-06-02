@@ -359,7 +359,8 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::ConsoleLineInput { .. }
         | HirStmtKind::FileClose { .. }
         | HirStmtKind::FilePrint { .. }
-        | HirStmtKind::FileWrite { .. } => {}
+        | HirStmtKind::FileWrite { .. }
+        | HirStmtKind::FileInput { .. } => {}
     }
 }
 

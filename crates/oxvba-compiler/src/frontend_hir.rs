@@ -316,6 +316,10 @@ pub enum HirStmtKind {
         file_number: HirExprId,
         data: Vec<HirExprId>,
     },
+    FileInput {
+        file_number: HirExprId,
+        targets: Vec<String>,
+    },
     Label {
         name: String,
     },
@@ -687,6 +691,17 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::ConsoleLineInput { target },
+                })))
+            }
+            SyntaxKind::CallStmt if is_file_input_stmt(node) => {
+                let (file_number, targets) =
+                    self.lower_file_handle_targets(scope, node, "Input")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::FileInput {
+                        file_number,
+                        targets,
+                    },
                 })))
             }
             SyntaxKind::CallStmt if is_file_close_stmt(node) => {
@@ -1502,6 +1517,39 @@ impl HirBuilder {
         Ok((file_number, data))
     }
 
+    fn lower_file_handle_targets(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        statement_name: &str,
+    ) -> Result<(HirExprId, Vec<String>), HirBuildError> {
+        let raw = statement_payload_after_keyword(node, statement_name).ok_or_else(|| {
+            HirBuildError::Unsupported(format!(
+                "{statement_name} statement requires a file handle: `{}`",
+                node.text().trim()
+            ))
+        })?;
+        let payload = raw.strip_prefix('#').unwrap_or(raw.as_str()).trim();
+        let Some((file_number, targets)) = payload.split_once(',') else {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires comma-separated targets: `{}`",
+                node.text().trim()
+            )));
+        };
+        let file_number = self.lower_simple_statement_expr(scope, node, file_number.trim())?;
+        let targets = targets
+            .split(',')
+            .filter_map(|target| normalize_ident(target.trim()))
+            .collect::<Vec<_>>();
+        if targets.is_empty() {
+            return Err(HirBuildError::Unsupported(format!(
+                "{statement_name} # statement requires at least one target: `{}`",
+                node.text().trim()
+            )));
+        }
+        Ok((file_number, targets))
+    }
+
     fn lower_simple_statement_expr(
         &mut self,
         scope: ScopeId,
@@ -2067,6 +2115,13 @@ fn is_file_print_stmt(node: SyntaxNode<'_>) -> bool {
 fn is_file_write_stmt(node: SyntaxNode<'_>) -> bool {
     let lower = node.text().trim_start().to_ascii_lowercase();
     lower.strip_prefix("write").is_some_and(|rest| {
+        rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('#')
+    })
+}
+
+fn is_file_input_stmt(node: SyntaxNode<'_>) -> bool {
+    let lower = node.text().trim_start().to_ascii_lowercase();
+    lower.strip_prefix("input").is_some_and(|rest| {
         rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('#')
     })
 }

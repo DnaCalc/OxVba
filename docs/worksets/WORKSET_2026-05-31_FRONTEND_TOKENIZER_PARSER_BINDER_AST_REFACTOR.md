@@ -1234,9 +1234,10 @@ Candidate bead units:
   `Close #handle` and `Close` through existing host bytecode; `Open`, file `Print #`, `Write #`,
   `Input #`, and file `Line Input #` remain open. Follow-up file-print routing covers simple
   `Print #handle, data` through existing host bytecode. Follow-up file-write routing covers simple
-  `Write #handle, item[, ...]` through existing host bytecode, including multi-item writes. `Open`,
-  `Input #`, and file `Line Input #` remain open. The `Array(...)` helper proof is not array
-  storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
+  `Write #handle, item[, ...]` through existing host bytecode, including multi-item writes.
+  Follow-up file-input routing covers `Input #handle, target[, ...]` through existing host bytecode,
+  including multi-target input. `Open` and file `Line Input #` remain open. The `Array(...)` helper
+  proof is not array storage/indexing/`ReDim` closure; that remains in FE-8.5.d.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

@@ -286,6 +286,9 @@ impl SemanticModel {
                     self.index_expr_tree(expr);
                 }
             }
+            HirStmtKind::FileInput { file_number, .. } => {
+                self.index_expr_tree(file_number);
+            }
         }
     }
 

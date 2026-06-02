@@ -355,6 +355,9 @@ fn collect_stmt_contract_facts(
                 collect_expr_structural_intrinsics(typed_hir, *expr, structural_intrinsics);
             }
         }
+        HirStmtKind::FileInput { file_number, .. } => {
+            collect_expr_structural_intrinsics(typed_hir, *file_number, structural_intrinsics);
+        }
         HirStmtKind::ConsoleInput { .. } | HirStmtKind::ConsoleLineInput { .. } => {}
     }
 }

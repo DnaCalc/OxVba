@@ -1583,6 +1583,19 @@ fn lower_stmt(
                 .map(|expr| lower_expr(typed_hir, const_values, udt_field_aliases, *expr, context))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        HirStmtKind::FileInput {
+            file_number,
+            targets,
+        } => out.push(BoundStmt::FileInput {
+            file_number: lower_expr(
+                typed_hir,
+                const_values,
+                udt_field_aliases,
+                *file_number,
+                context,
+            )?,
+            targets: targets.clone(),
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -5293,6 +5306,30 @@ mod tests {
         assert_eq!(
             write_count, 3,
             "expected one file write host intrinsic per Write # item: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_file_input_statement() {
+        let source = "Sub Main()\nDim a\nDim b\nInput #1, a, b\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        let input_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicFileInputHost { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            input_count, 2,
+            "expected one file input host intrinsic per Input # target: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
