@@ -460,6 +460,27 @@ fn lower_procedure(
             if let Some(fields) = udt_defs.get(&udt_name) {
                 for field in fields {
                     let alias = format!("{local_name}_{}", field.name);
+                    if field.is_dynamic_array {
+                        if !declarations
+                            .iter()
+                            .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                        {
+                            declarations.push(alias.clone());
+                        }
+                        dynamic_array_names.insert(alias.to_ascii_lowercase());
+                        declaration_types.insert(alias.clone(), BoundType::Array);
+                        array_descriptors.insert(
+                            alias,
+                            BoundArrayDescriptor {
+                                element_type: field.bound_type,
+                                rank: 1,
+                                bounds: Vec::new(),
+                                dynamic: true,
+                                option_base,
+                            },
+                        );
+                        continue;
+                    }
                     if let Some(bounds) = &field.array_bounds {
                         if !declarations
                             .iter()
@@ -2644,6 +2665,7 @@ struct HirUdtFieldDef {
     name: String,
     bound_type: BoundType,
     nested_udt_name: Option<String>,
+    is_dynamic_array: bool,
     array_bounds: Option<Vec<(i32, i32)>>,
     fixed_string_len: Option<usize>,
 }
@@ -2686,7 +2708,8 @@ fn parse_hir_udt_field(line: &str) -> Option<HirUdtFieldDef> {
         return None;
     }
     let (name_part, type_part) = split_keyword_ci(trimmed, "as").unwrap_or((trimmed, "Variant"));
-    let (name_text, array_bounds) = parse_hir_udt_field_name_and_bounds(name_part);
+    let (name_text, array_bounds, is_dynamic_array) =
+        parse_hir_udt_field_name_and_bounds(name_part);
     let name = normalize_hir_ident(name_text)?;
     let type_part = type_part.trim();
     let fixed_string_len = parse_hir_fixed_string_declared_type(type_part);
@@ -2702,18 +2725,21 @@ fn parse_hir_udt_field(line: &str) -> Option<HirUdtFieldDef> {
         name,
         bound_type: primitive.unwrap_or(BoundType::Variant),
         nested_udt_name,
+        is_dynamic_array,
         array_bounds,
         fixed_string_len,
     })
 }
 
-fn parse_hir_udt_field_name_and_bounds(name_part: &str) -> (&str, Option<Vec<(i32, i32)>>) {
+fn parse_hir_udt_field_name_and_bounds(name_part: &str) -> (&str, Option<Vec<(i32, i32)>>, bool) {
     let Some(paren_pos) = name_part.find('(') else {
-        return (name_part.trim(), None);
+        return (name_part.trim(), None, false);
     };
     let name = name_part[..paren_pos].trim();
-    let bounds = parse_hir_udt_field_array_bounds(name_part[paren_pos..].trim());
-    (name, bounds)
+    let bounds_text = name_part[paren_pos..].trim();
+    let bounds = parse_hir_udt_field_array_bounds(bounds_text);
+    let is_dynamic_array = bounds.is_none() && udt_field_bounds_are_empty(bounds_text);
+    (name, bounds, is_dynamic_array)
 }
 
 fn parse_hir_udt_field_array_bounds(bounds_text: &str) -> Option<Vec<(i32, i32)>> {
@@ -2742,6 +2768,14 @@ fn parse_hir_udt_field_array_bounds(bounds_text: &str) -> Option<Vec<(i32, i32)>
         bounds.push((lower, upper));
     }
     (!bounds.is_empty()).then_some(bounds)
+}
+
+fn udt_field_bounds_are_empty(bounds_text: &str) -> bool {
+    bounds_text
+        .trim()
+        .strip_prefix('(')
+        .and_then(|text| text.strip_suffix(')'))
+        .is_some_and(|inner| inner.trim().is_empty())
 }
 
 fn parse_hir_fixed_string_declared_type(type_part: &str) -> Option<usize> {
@@ -2776,6 +2810,7 @@ fn expand_hir_nested_udt_fields(defs: &mut HirUdtDefMap) {
                     name: format!("{}_{}", field.name, sub_field.name),
                     bound_type: sub_field.bound_type,
                     nested_udt_name: sub_field.nested_udt_name.clone(),
+                    is_dynamic_array: sub_field.is_dynamic_array,
                     array_bounds: sub_field.array_bounds.clone(),
                     fixed_string_len: sub_field.fixed_string_len,
                 });
@@ -6637,6 +6672,38 @@ mod tests {
                 Instruction::AddConstI32 { value: 2, .. } | Instruction::AddSlots { .. }
             )),
             "{bytecode:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_dynamic_udt_array_field_index_aliases() {
+        let source = "Type Record\nScores() As Long\nEnd Type\nSub Main()\nDim r As Record\nDim i As Long\nDim y As Long\ni = 1\nr.Scores(i) = 7\ny = r.Scores(i)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| slot.name == "r_scores"));
+        let shape = main
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "r_scores")
+            .expect("dynamic UDT array field shape");
+        assert_eq!(shape.element_type, VbaTypeId::Long);
+        assert_eq!(shape.rank, 1);
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArraySet { indices, .. } if indices.len() == 1
+            )),
+            "expected dynamic UDT array field write bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayGet { indices, .. } if indices.len() == 1
+            )),
+            "expected dynamic UDT array field read bytecode: {:?}",
+            bytecode.instructions
         );
     }
 

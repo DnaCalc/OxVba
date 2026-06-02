@@ -41,6 +41,7 @@ The audit proves the good path and exposes the remaining production residuals:
 - identifier and numeric-label `GoTo` fixtures now reach `HirProduction`;
 - `GoSub` / `Return` fixtures now reach `HirProduction`;
 - `Erase` fixtures now reach `HirProduction`;
+- fixed and dynamic UDT array-field index fixtures now reach `HirProduction`;
 - `Event` declaration plus `RaiseEvent` fixtures now reach `HirProduction`;
 - single-source `Implements` directive fixtures now reach `HirProduction`;
 - explicit-receiver value-side dot-member read/call fixtures now reach `HirProduction`;
@@ -101,7 +102,8 @@ The audit result records completed reopened delivery work and remaining broader 
   error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,
   one-dimensional, two-dimensional, and explicit static lower-bound dynamic-array runtime `ReDim`,
   read/write dynamic-array element access, initial fixed-array element aliasing and fixed-array
-  `ReDim` alias rematerialization, local multidimensional dynamic/fixed element access,
+  `ReDim` alias rematerialization, local multidimensional dynamic/fixed element access, fixed and
+  dynamic UDT array-field indexed read/write access,
   simple function declarations with declared return
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
   multi-declarator literal `Const`, `Event` declarations paired with `RaiseEvent`, single-source

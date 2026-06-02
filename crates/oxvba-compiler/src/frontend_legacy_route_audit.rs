@@ -556,6 +556,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let dynamic_udt_array_field_index = "Type Record\nScores() As Long\nEnd Type\nSub Main()\nDim r As Record\nDim i As Long\nDim y As Long\ni = 1\nr.Scores(i) = 7\ny = r.Scores(i)\nEnd Sub\n";
+    findings.push(route_finding(
+        "dynamic UDT array field index fixture",
+        dynamic_udt_array_field_index,
+        "bd-aprs.9.5",
+    ));
+
     let cross_type_udt_assignment = "Type PairA\nX As Long\nY As Long\nEnd Type\nType PairB\nX As Long\nY As Long\nEnd Type\nSub Main()\nDim a As PairA\nDim b As PairB\nb = a\nEnd Sub\n";
     findings.push(route_diagnostic_finding(
         "cross-type UDT assignment diagnostic fixture",
@@ -972,6 +979,9 @@ mod tests {
                 finding
                     .area
                     .contains("fixed array redim alias rematerialization")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("dynamic UDT array field index")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("value-side member expression")
