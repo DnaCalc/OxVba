@@ -718,6 +718,10 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Bundle fact extraction now has an accepted-declaration route probe proving `Declare PtrSafe`
   module facts, including `LongPtr` usage, come from HIR `BoundModule` construction rather than the
   legacy resolver fallback.
+- The retirement-inventory fallback example now uses the explicitly tracked project construction
+  residual (`Set obj = New Widget` without project construction bindings) instead of `Xor`, avoiding
+  pressure to add a truthiness-only logical `Xor` route where full VBA bitwise/value semantics are
+  not yet implemented.
 
 Remaining production residuals after this slice:
 

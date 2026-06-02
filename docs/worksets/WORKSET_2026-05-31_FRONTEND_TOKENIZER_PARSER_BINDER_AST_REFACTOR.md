@@ -1263,7 +1263,9 @@ Candidate bead units:
   now report missing `PtrSafe` policy errors from the HIR production route instead of using legacy
   fallback solely to reject them. Follow-up bundle fact routing proves accepted `Declare PtrSafe`
   module facts, including `LongPtr`, are sourced from HIR `BoundModule` construction rather than
-  `resolve_symbols` fallback. Follow-up console-input routing
+  `resolve_symbols` fallback. Follow-up retirement-inventory cleanup replaces the misleading `Xor`
+  fallback probe with the tracked project-construction `New` residual so operator work is not
+  nudged toward incomplete truthiness-only semantics. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
   `Line Input #`. Follow-up console line-input routing covers `Line Input target` through existing
   host bytecode, still without claiming file `Line Input #` at that point. Follow-up file-handle
