@@ -67,6 +67,14 @@ fn scalar_type_char_const_carriers_execute() {
 }
 
 #[test]
+fn scalar_boolean_const_expression_executes() {
+    let snap = run(
+        "Const Enabled As Boolean = True\nConst CFlag As Boolean = Not Enabled Or False\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_bool(false)]);
+}
+
+#[test]
 fn scalar_currency_date_const_carriers_execute() {
     let snap = run(
         "Const CAmount As Currency = 1.25@\nConst CStamp As Date = #2026-02-28#\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",

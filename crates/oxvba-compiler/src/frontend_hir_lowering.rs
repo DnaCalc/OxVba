@@ -3824,6 +3824,9 @@ fn parse_declared_const_value(
     declared_type: Option<BoundType>,
 ) -> Option<BoundExpr> {
     match declared_type {
+        Some(BoundType::Boolean) => {
+            parse_const_bool_value(text, named_values).map(BoundExpr::BoolConst)
+        }
         Some(BoundType::Single) => {
             if let Some(value) = parse_const_single_literal(text) {
                 return Some(BoundExpr::SingleConst(value));
@@ -3853,6 +3856,49 @@ fn parse_declared_const_value(
         }
         _ => None,
     }
+}
+
+fn parse_const_bool_value(text: &str, named_values: &HashMap<String, BoundExpr>) -> Option<bool> {
+    let text = strip_balanced_outer_parens(text.trim());
+    if text.eq_ignore_ascii_case("true") {
+        return Some(true);
+    }
+    if text.eq_ignore_ascii_case("false") {
+        return Some(false);
+    }
+    if let Some(name) = normalize_hir_ident_exact(text)
+        && let Some(BoundExpr::BoolConst(value)) = named_values.get(&name)
+    {
+        return Some(*value);
+    }
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "or") {
+        return Some(
+            parse_const_bool_value(lhs.trim(), named_values)?
+                || parse_const_bool_value(rhs.trim(), named_values)?,
+        );
+    }
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "and") {
+        return Some(
+            parse_const_bool_value(lhs.trim(), named_values)?
+                && parse_const_bool_value(rhs.trim(), named_values)?,
+        );
+    }
+    if let Some(rest) = strip_const_keyword_prefix(text, "not") {
+        return Some(!parse_const_bool_value(rest.trim(), named_values)?);
+    }
+    None
+}
+
+fn strip_const_keyword_prefix<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    let text = text.trim_start();
+    let keyword_len = keyword.len();
+    if text.len() < keyword_len || !text[..keyword_len].eq_ignore_ascii_case(keyword) {
+        return None;
+    }
+    let after = text[keyword_len..].chars().next();
+    after
+        .is_none_or(|ch| !is_const_ident_char(ch))
+        .then_some(&text[keyword_len..])
 }
 
 fn parse_const_f64_value(
@@ -8079,6 +8125,26 @@ mod tests {
             slot.name == "s"
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::String
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_boolean_const_expression() {
+        let source = "Const Enabled As Boolean = True\nConst CFlag As Boolean = Not Enabled Or False\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstBool { value: false, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "flag"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Boolean
         }));
     }
 
