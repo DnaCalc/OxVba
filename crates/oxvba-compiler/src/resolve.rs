@@ -182,6 +182,12 @@ pub enum BoundStmt {
         expr: BoundExpr,
         intent: AssignmentIntent,
     },
+    AssignDefaultMember {
+        receiver: String,
+        args: Vec<BoundCallArg>,
+        expr: BoundExpr,
+        intent: AssignmentIntent,
+    },
     UdtAssign {
         target: String,
         source: String,

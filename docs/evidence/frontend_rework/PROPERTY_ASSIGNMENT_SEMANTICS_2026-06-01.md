@@ -76,6 +76,12 @@ The 2026-06-01 continuation added:
   variable call targets such as `obj(42)` to lower as `BoundExpr::ProcCall`, which reaches the
   existing late-bound default-member emitter and records `LateBoundDefaultMember` call-site
   metadata with `DefaultMemberFallback` policy.
+- `bd-aprs.8.7` indexed default-member assignment continuation: HIR assignment lowering now
+  represents late-bound variable default-member writes as `BoundStmt::AssignDefaultMember`
+  instead of trying to encode dispatch id `0` as a string member name. Emission targets dispatch
+  member id `0`, preserves indexed argument names, and emits explicit `PropertyLet`/`PropertySet`
+  hints for `obj(index := 2) = value` and `Set obj(2) = other`. Object-member binding metadata
+  also records default-member `PropertyLet`/`PropertySet` rows for this late-bound variable subset.
 
 ## Checks
 
@@ -98,6 +104,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler hir_builder_preserves_named_call_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_named_call_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member_call --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
@@ -167,7 +174,7 @@ The 2026-06-01 continuation added:
   checked the imported-COM dispatch classifier. The classifier now records invocation kind and the
   early-bound property read/setter rewrite paths validate the classifier before keeping the
   compatibility `DispatchInvoke` source rewrite. This is still not full closure for the bead:
-  host/project default-member writeback breadth, indexed/named writeback through HIR facts, and
+  host/project/imported-COM default-member writeback breadth, overload validation, and
   replacement/quarantine of the remaining project rewrite bodies remain open.
 - Host continuation fresh-eyes review found that `classify_host_global` existed only as a model
   test and did not protect the production host-injected route. The selected host member and
@@ -178,9 +185,20 @@ The 2026-06-01 continuation added:
   arguments to positional expressions. `HirCallArg` now carries an optional source name and
   statement-form HIR lowering preserves that into `BoundCallArg`; explicit no-paren `Call` parses
   the same bare argument list, and parenthesized argument lists now parse `name := expr` through the
-  same argument parser. Indexed property/default-member writeback remains open.
+  same argument parser. The late-bound variable indexed default-member assignment subset now
+  consumes those named argument facts through `AssignDefaultMember`; broader project/host/imported
+  COM writeback breadth remains open.
 - Default-member HIR review found that `IndexExpr` on a variable receiver lowered as a call and was
   rejected before the emitter could apply its existing late-bound default-member fallback. HIR now
   lets that bound call reach the default-member emitter, preserving dispatch invoke bytecode and
-  call-site metadata. This covers read/invoke fallback, not indexed property/default-member
-  assignment writeback.
+  call-site metadata. This covers read/invoke fallback; the following continuation covers the
+  late-bound variable indexed assignment subset.
+- Indexed default-member assignment review found that using `AssignMember` would have been the
+  wrong carrier because it emits a string selector and cannot faithfully represent default member
+  dispatch id `0`. HIR now uses a separate `AssignDefaultMember` statement for late-bound variable
+  receivers, checks the receiver through type checking, includes the indexed arguments in value,
+  semantic, operator, and coercion descriptor collection, and emits late-bound property put/putref
+  dispatch against member id `0`. Object-member binding descriptors record these writes as
+  default-member property Let/Set rows. This closes the HIR fact path for the variable
+  default-member assignment subset. Broader project/host/imported-COM default-member writeback
+  breadth, overload validation, and replacement/quarantine of remaining rewrite bodies remain open.

@@ -269,6 +269,44 @@ fn check_stmt(
                 proc_context,
             )
         }
+        BoundStmt::AssignDefaultMember {
+            receiver,
+            args,
+            expr,
+            ..
+        } => {
+            ensure_declared(
+                receiver,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            for arg in args {
+                check_expr(
+                    &arg.expr,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                    proc_context,
+                )?;
+            }
+            check_expr(
+                expr,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )
+        }
         BoundStmt::UdtAssign {
             target,
             source,

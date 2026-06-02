@@ -123,10 +123,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         named arguments now survive HIR and HIR production lowering into call-site argument binding
         metadata, including explicit no-paren `Call Proc name := value` and parenthesized
         `Call Proc(name := value)`; late-bound variable default-member calls such as `obj(42)` now
-        lower through HIR into default-member dispatch metadata;
-      - still open: project default-member writeback breadth, indexed/default-member assignment
-        writeback through HIR facts, overload validation, and replacement/quarantine of the
-        remaining rewrite bodies;
+        lower through HIR into default-member dispatch metadata; late-bound variable indexed
+        default-member assignments now lower through `BoundStmt::AssignDefaultMember`, preserve
+        indexed argument names, and emit dispatch member id `0` with `PropertyLet`/`PropertySet`
+        hints;
+      - still open: broader project/host/imported-COM default-member writeback breadth, overload
+        validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated

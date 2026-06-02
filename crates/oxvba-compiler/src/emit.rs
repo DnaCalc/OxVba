@@ -2389,6 +2389,12 @@ fn collect_stmt_value_states(
             }
             collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
         }
+        BoundStmt::AssignDefaultMember { args, expr, .. } => {
+            for arg in args {
+                collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
+        }
         BoundStmt::UdtAssign { .. } => {}
         BoundStmt::MidAssign {
             start,
@@ -2896,6 +2902,26 @@ fn collect_stmt_expression_semantics(
                 ordinal,
                 descriptors,
             );
+            for arg in args {
+                collect_expr_semantics(
+                    &arg.expr,
+                    ExpressionSourceContextDescriptor::CallArgument,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_semantics(
+                expr,
+                ExpressionSourceContextDescriptor::AssignmentRhs,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::AssignDefaultMember { args, expr, .. } => {
             for arg in args {
                 collect_expr_semantics(
                     &arg.expr,
@@ -3592,6 +3618,26 @@ fn collect_stmt_operator_semantics(
                 ordinal,
                 descriptors,
             );
+            for arg in args {
+                collect_expr_operator_semantics(
+                    &arg.expr,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_operator_semantics(
+                expr,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::AssignDefaultMember { args, expr, .. } => {
             for arg in args {
                 collect_expr_operator_semantics(
                     &arg.expr,
@@ -4706,6 +4752,22 @@ fn collect_stmt_coercions(
             }
             collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
         }
+        BoundStmt::AssignDefaultMember {
+            args, expr, intent, ..
+        } => {
+            descriptors.push(assignment_coercion_descriptor(
+                procedure_id,
+                *intent,
+                expr,
+                VbaTypeId::Variant,
+                type_by_name,
+                ordinal,
+            ));
+            for arg in args {
+                collect_expr_coercions(&arg.expr, type_by_name, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+        }
         BoundStmt::MidAssign {
             start,
             count,
@@ -5413,6 +5475,40 @@ fn collect_stmt_member_bindings(
             "incompatible-object-shapes-must-diagnose-or-runtime-error".to_string(),
             "current-slot-policy-evidence-backed-subset".to_string(),
             "metadata-package-descriptor; full binding descriptor remains open".to_string(),
+            ordinal,
+        )),
+        BoundStmt::AssignDefaultMember {
+            receiver,
+            args,
+            intent,
+            ..
+        } => descriptors.push(object_member_binding_descriptor(
+            procedure_id,
+            match intent {
+                AssignmentIntent::Set => "BIND-SET-DEFAULT-MEMBER",
+                AssignmentIntent::Implicit | AssignmentIntent::Let => "BIND-LET-DEFAULT-MEMBER",
+            },
+            VbaTypeId::Object,
+            receiver.clone(),
+            match intent {
+                AssignmentIntent::Set => ObjectMemberKindDescriptor::PropertySet,
+                AssignmentIntent::Implicit | AssignmentIntent::Let => {
+                    ObjectMemberKindDescriptor::PropertyLet
+                }
+            },
+            true,
+            Some("default-member-group".to_string()),
+            MemberDispatchKindDescriptor::DefaultMemberFallback,
+            format!(
+                "indexed-arguments={};rhs-appended-as-property-value",
+                args.len()
+            ),
+            Some(VbaTypeId::Variant),
+            "receiver-object-identity-preserved-while-default-member-value-is-written".to_string(),
+            "route-cache-by-default-member-id".to_string(),
+            "Set-context-routes-to-property-set; Let-context-routes-to-property-let".to_string(),
+            "current-HIR-late-bound-variable-subset".to_string(),
+            "metadata-package-descriptor; project/host/COM breadth remains open".to_string(),
             ordinal,
         )),
         BoundStmt::IfCond {
@@ -6474,6 +6570,69 @@ fn emit_stmt(
                     }
                 }),
             });
+        }
+        BoundStmt::AssignDefaultMember {
+            receiver,
+            args,
+            expr,
+            intent,
+        } => {
+            if let Some(object_slot) = slot_map.get(receiver.as_str()).copied() {
+                let member_slot = temps.alloc_temp();
+                instructions.push(Instruction::LoadConstI32 {
+                    slot: member_slot,
+                    value: 0,
+                });
+                let mut invoke_args = Vec::with_capacity(args.len() + 1);
+                for arg in args {
+                    let arg_slot = temps.alloc_temp();
+                    emit_expr_into(
+                        &arg.expr,
+                        compare_mode,
+                        arg_slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
+                    );
+                    invoke_args.push(DispatchInvokeArg {
+                        slot: Some(arg_slot),
+                        name: arg.name.clone(),
+                    });
+                }
+                let value_slot = temps.alloc_temp();
+                emit_expr_into(
+                    expr,
+                    compare_mode,
+                    value_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                invoke_args.push(DispatchInvokeArg {
+                    slot: Some(value_slot),
+                    name: None,
+                });
+                instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+                    dst: temps.alloc_temp(),
+                    object: object_slot,
+                    member: member_slot,
+                    args: invoke_args,
+                    early_bound: false,
+                    com_member: None,
+                    call_kind_hint: Some(match intent {
+                        AssignmentIntent::Set => ProjectMemberCallKind::PropertySet,
+                        AssignmentIntent::Implicit | AssignmentIntent::Let => {
+                            ProjectMemberCallKind::PropertyLet
+                        }
+                    }),
+                });
+            }
         }
         BoundStmt::UdtAssign {
             target,

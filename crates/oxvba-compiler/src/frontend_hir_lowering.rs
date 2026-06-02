@@ -492,32 +492,56 @@ fn lower_stmt(
             let target = match lower_assignment_target(typed_hir, udt_field_aliases, *target) {
                 Ok(target) => target,
                 Err(err) => {
-                    if let BoundExpr::Member {
-                        receiver,
-                        member,
-                        args,
-                    } = lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
+                    match lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
                     {
-                        let expr = lower_expr(
-                            typed_hir,
-                            const_values,
-                            udt_field_aliases,
-                            *value,
-                            context,
-                        )?;
-                        let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
-                            AssignmentIntent::Let
-                        } else {
-                            AssignmentIntent::Implicit
-                        };
-                        out.push(BoundStmt::AssignMember {
-                            receiver: *receiver,
+                        BoundExpr::Member {
+                            receiver,
                             member,
                             args,
-                            expr,
-                            intent,
-                        });
-                        return Ok(());
+                        } => {
+                            let expr = lower_expr(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                *value,
+                                context,
+                            )?;
+                            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                                AssignmentIntent::Let
+                            } else {
+                                AssignmentIntent::Implicit
+                            };
+                            out.push(BoundStmt::AssignMember {
+                                receiver: *receiver,
+                                member,
+                                args,
+                                expr,
+                                intent,
+                            });
+                            return Ok(());
+                        }
+                        BoundExpr::ProcCall { name, args } => {
+                            let expr = lower_expr(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                *value,
+                                context,
+                            )?;
+                            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                                AssignmentIntent::Let
+                            } else {
+                                AssignmentIntent::Implicit
+                            };
+                            out.push(BoundStmt::AssignDefaultMember {
+                                receiver: name,
+                                args,
+                                expr,
+                                intent,
+                            });
+                            return Ok(());
+                        }
+                        _ => {}
                     }
                     return Err(err);
                 }
@@ -562,27 +586,46 @@ fn lower_stmt(
             let target = match lower_assignment_target(typed_hir, udt_field_aliases, *target) {
                 Ok(target) => target,
                 Err(err) => {
-                    if let BoundExpr::Member {
-                        receiver,
-                        member,
-                        args,
-                    } = lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
+                    match lower_expr(typed_hir, const_values, udt_field_aliases, *target, context)?
                     {
-                        let expr = lower_expr(
-                            typed_hir,
-                            const_values,
-                            udt_field_aliases,
-                            *value,
-                            context,
-                        )?;
-                        out.push(BoundStmt::AssignMember {
-                            receiver: *receiver,
+                        BoundExpr::Member {
+                            receiver,
                             member,
                             args,
-                            expr,
-                            intent: AssignmentIntent::Set,
-                        });
-                        return Ok(());
+                        } => {
+                            let expr = lower_expr(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                *value,
+                                context,
+                            )?;
+                            out.push(BoundStmt::AssignMember {
+                                receiver: *receiver,
+                                member,
+                                args,
+                                expr,
+                                intent: AssignmentIntent::Set,
+                            });
+                            return Ok(());
+                        }
+                        BoundExpr::ProcCall { name, args } => {
+                            let expr = lower_expr(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                *value,
+                                context,
+                            )?;
+                            out.push(BoundStmt::AssignDefaultMember {
+                                receiver: name,
+                                args,
+                                expr,
+                                intent: AssignmentIntent::Set,
+                            });
+                            return Ok(());
+                        }
+                        _ => {}
                     }
                     return Err(err);
                 }
@@ -2903,6 +2946,71 @@ mod tests {
             }),
             "expected late-bound default-member call-site metadata: {main:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_late_bound_default_member_let_assignment() {
+        let source = "Sub Main()\nDim obj\nobj(index := 2) = 9\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        member,
+                        args,
+                        early_bound: false,
+                        call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if args.len() == 2
+                        && args.first().and_then(|arg| arg.name.as_deref()) == Some("index")
+                        && bytecode.instructions.iter().any(|candidate| matches!(
+                            candidate,
+                            crate::bytecode::Instruction::LoadConstI32 {
+                                slot,
+                                value: 0,
+                            } if slot == member
+                        ))
+                )
+            }),
+            "expected indexed default-member property-let dispatch against member id 0: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_late_bound_default_member_set_assignment() {
+        let source = "Sub Main()\nDim obj\nDim other\nSet obj(2) = other\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        member,
+                        args,
+                        early_bound: false,
+                        call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertySet),
+                        ..
+                    } if args.len() == 2
+                        && bytecode.instructions.iter().any(|candidate| matches!(
+                            candidate,
+                            crate::bytecode::Instruction::LoadConstI32 {
+                                slot,
+                                value: 0,
+                            } if slot == member
+                        ))
+                )
+            }),
+            "expected indexed default-member property-set dispatch against member id 0: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]
