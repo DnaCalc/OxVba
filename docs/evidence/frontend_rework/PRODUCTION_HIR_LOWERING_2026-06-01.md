@@ -1028,6 +1028,10 @@ The audit now includes `integration_imported_typelib_testdispatch` as a source-b
 residual: `Dim obj As New OxVba.TestDispatch` compiles through
 `LegacyFallbackAfterHirUnsupported`, so the source-backed gate intentionally remains open until
 imported COM construction/member lowering is strict-HIR backed.
+Language-service workspace coverage now loads matching seed-route project manifests: `INTP-003`
+proves referenced-project exports surface through workspace symbols with `ProjectReference`
+provenance, and `INTP-016` proves active class members surface from the class project workspace
+route.
 The migrated active/full project HIR boundaries now call strict HIR compilation directly; unsupported
 HIR shapes are recorded as `LegacyFallbackAfterHirUnsupported` instead of silently returning through
 the legacy fallback wrapper, and the route audit only counts rows with

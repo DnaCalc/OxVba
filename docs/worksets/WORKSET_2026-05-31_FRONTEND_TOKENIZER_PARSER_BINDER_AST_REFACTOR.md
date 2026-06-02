@@ -674,12 +674,14 @@ Required newly explicit delivery beads:
   `LegacyFallbackAfterHirUnsupported` routes instead of hidden legacy fallback through wrapper
   helpers; route-audit HIR-production rows must assert `ProjectCompileRoute::HirProduction`. The
   audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM
-  fallback residual, so the source-backed route gate correctly remains open.
+  fallback residual, so the source-backed route gate correctly remains open. Language-service
+  workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
+  and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
   from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, add
   document host-project, migrate imported COM fallback residuals, cover broader class and
-  cross-workspace language-service route runners, and add an Excel-oracle route runner instead of
-  skipped residual rows. This bead must reopen the owning
+  deeper cross-workspace language-service route runners, and add an Excel-oracle route runner instead
+  of skipped residual rows. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from

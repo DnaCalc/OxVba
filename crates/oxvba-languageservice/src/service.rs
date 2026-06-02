@@ -1626,7 +1626,7 @@ mod tests {
     use crate::workspace::Workspace;
     use oxvba_compiler::{
         ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
-        ReferenceKind, ReferencedProjectManifest,
+        ReferenceKind, ReferencedProjectManifest, module_unit_from_source,
     };
 
     fn setup_single_module(source: &str) -> (LanguageService, DocumentId) {
@@ -1870,6 +1870,81 @@ mod tests {
             }),
             "expected workspace symbol search to include referenced-project exports"
         );
+    }
+
+    #[test]
+    fn workspace_symbols_cover_frontend_seed_project_routes() {
+        let main = module_unit_from_source(
+            "Main",
+            ModuleKind::Procedural,
+            include_str!("../../../conformance/integration/projects/INTP-003/main/Main.proc.bas"),
+        )
+        .expect("main module parses");
+        let math_api = module_unit_from_source(
+            "MathApi",
+            ModuleKind::Procedural,
+            include_str!(
+                "../../../conformance/integration/projects/INTP-003/references/LibMath/MathApi.proc.bas"
+            ),
+        )
+        .expect("reference module parses");
+        let project = ProjectManifest {
+            project_name: "AlphaCrossRef".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main],
+            references: vec![ProjectReference {
+                referenced_project_name: "LibMath".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "LibMath".to_string(),
+                modules: vec![math_api],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let svc = LanguageService::from_project(project);
+        let add_four = svc.workspace_symbols("AddFour");
+        assert!(add_four.iter().any(|item| {
+            item.document == DocumentId::new("LibMath::MathApi")
+                && item.symbol.name == "AddFour"
+                && item.symbol.provenance.kind == SymbolProvenanceKind::ProjectReference
+        }));
+
+        let class_main = module_unit_from_source(
+            "Main",
+            ModuleKind::Procedural,
+            include_str!("../../../conformance/integration/projects/INTP-016/main/Main.proc.bas"),
+        )
+        .expect("class project main parses");
+        let counter = module_unit_from_source(
+            "Counter",
+            ModuleKind::Class,
+            include_str!(
+                "../../../conformance/integration/projects/INTP-016/main/Counter.class.bas"
+            ),
+        )
+        .expect("counter class parses");
+        let adder = module_unit_from_source(
+            "Adder",
+            ModuleKind::Class,
+            include_str!("../../../conformance/integration/projects/INTP-016/main/Adder.class.bas"),
+        )
+        .expect("adder class parses");
+        let class_project = ProjectManifest {
+            project_name: "AlphaClasses".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_main, counter, adder],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let class_svc = LanguageService::from_project(class_project);
+        let multiply = class_svc.workspace_symbols("Multiply");
+        assert!(multiply.iter().any(|item| {
+            item.document == DocumentId::new("Adder")
+                && item.symbol.name == "Multiply"
+                && item.symbol.provenance.kind == SymbolProvenanceKind::SourceModule
+        }));
     }
 
     #[test]
