@@ -91,8 +91,8 @@ The 2026-06-01 continuation added:
   default-member read, `Property Let`, and indexed `Property Set` ambiguity diagnostics.
   Follow-up arity hardening validates the selected active-project default-member accessor against
   the source argument count before rewriting, using source parameters with `Optional` and
-  `ParamArray` awareness. Regression coverage includes authoritative default-member `Get`, `Let`,
-  and `Set` wrong-arity diagnostics.
+  `ParamArray` awareness. Regression coverage includes authoritative and single-candidate
+  non-authoritative default-member `Get`, `Let`, and `Set` wrong-arity diagnostics.
 - `bd-aprs.8.7` active-project dispatch-classification continuation: selected active-project
   property/default-member rewrite routes now validate that the front-end member-dispatch classifier
   reports the selected route as `EarlyBoundProject` with the expected accessor kind before
@@ -193,7 +193,7 @@ The 2026-06-01 continuation added:
   checked the imported-COM dispatch classifier. The classifier now records invocation kind and the
   early-bound property read/setter rewrite paths validate the classifier before keeping the
   compatibility `DispatchInvoke` source rewrite. This is still not full closure for the bead:
-  host/project/imported-COM default-member writeback breadth, overload validation, and
+  host/project/imported-COM default-member writeback breadth, type overload validation, and
   replacement/quarantine of the remaining project rewrite bodies remain open.
 - Host continuation fresh-eyes review found that `classify_host_global` existed only as a model
   test and did not protect the production host-injected route. The selected host member and
@@ -223,8 +223,8 @@ The 2026-06-01 continuation added:
   emitter now records `LateBoundDefaultMember`/`SyntheticPropertyAssignment` call sites with the
   indexed arguments and synthetic `value` argument. This closes the HIR fact and call-site metadata
   path for the variable default-member assignment subset. Broader project/host/imported-COM
-  default-member writeback breadth, overload validation, and replacement/quarantine of remaining
-  rewrite bodies remain open.
+  default-member writeback breadth, type overload validation, and replacement/quarantine of
+  remaining rewrite bodies remain open.
 - Default-member overload review found that the front-end default-member route correctly returned
   no unique route for multiple explicit `VB_UserMemId = 0` candidates, but the legacy fallback then
   sorted the same candidates and selected one. The fallback now reports

@@ -17581,6 +17581,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_wrong_arity_for_non_authoritative_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("wrong non-authoritative default-member get arity should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("got 0"));
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_authoritative_default_member_let() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -17634,6 +17666,38 @@ mod tests {
 
         let err = compile_project(&manifest)
             .expect_err("wrong authoritative default-member let arity should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("got 1"));
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_non_authoritative_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal index, ByVal n)\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("wrong non-authoritative default-member let arity should fail");
         assert_eq!(
             err.code(),
             "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
@@ -17758,6 +17822,38 @@ mod tests {
             .expect_err("ambiguous non-authoritative default-member property set should fail");
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
         assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_non_authoritative_default_member_property_set() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nSet widget = x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByVal index, ByRef target)\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("wrong non-authoritative default-member property set arity should fail");
+        assert_eq!(
+            err.code(),
+            "PMR-E-DEFAULT-MEMBER-RESOLUTION-ARITY-UNSUPPORTED"
+        );
+        assert!(err.to_string().contains("got 1"));
     }
 
     #[test]

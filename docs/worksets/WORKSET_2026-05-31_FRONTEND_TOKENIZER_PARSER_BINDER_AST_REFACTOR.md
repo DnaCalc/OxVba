@@ -1022,7 +1022,7 @@ Candidate bead units:
   simple explicit-receiver and `With` shorthand member assignment targets by emitting late-bound
   dispatch with explicit property Let/Set hints, including dot and bang member selectors. Object
   construction, default-member/property selection, project/class binding, COM binding,
-  indexed/named writeback breadth, and overload validation remain residual work.
+  indexed/named writeback breadth, and type overload validation remain residual work.
   Follow-up continuation adds read-side `With obj ... .Member ... End With` lowering by binding
   dot-prefixed member reads to the active With receiver.
   Follow-up continuation adds module-level `Enum` blocks to the production HIR route by declaring
