@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn type_hooks_collect_parameter_descriptors_from_source_backed_hir() {
-        let source = "Const CBase = &H10 + 1\nConst CAmount = 1.25@\nConst CStamp = 2.5\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe, Optional ByVal amount As Currency = CAmount, Optional ByVal stamp As Date = CStamp, Optional ByVal literalStamp As Date = #2026-02-28#)\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
+        let source = "Const CBase = &H10 + 1\nConst CAmount = 1.25@\nConst CStamp = 2.5\nConst Prefix = \"re\"\nEnum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True, Optional ByVal value As Long = CBase + Safe, Optional ByVal amount As Currency = CAmount, Optional ByVal stamp As Date = CStamp, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal joined As String = Prefix & \"ady\")\nEnd Sub\nSub Collect(ParamArray rest() As Variant)\nEnd Sub\n";
         let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
 
         let parameter = |name: &str| {
@@ -986,6 +986,10 @@ mod tests {
             .hooks
             .parameter(parameter("literalstamp"))
             .expect("literalStamp parameter hook");
+        let joined = typed
+            .hooks
+            .parameter(parameter("joined"))
+            .expect("joined parameter hook");
         let rest = typed
             .hooks
             .parameter(parameter("rest"))
@@ -1031,6 +1035,12 @@ mod tests {
             Some(OptionalDefaultValue::ExplicitDateSerialF64(
                 46_081.0f64.to_bits()
             ))
+        );
+        assert_eq!(joined.declared_type, VbaTypeId::String);
+        assert!(joined.optional);
+        assert_eq!(
+            joined.default_value,
+            Some(OptionalDefaultValue::ExplicitString("ready".to_string()))
         );
         assert_eq!(rest.declared_type, VbaTypeId::Array);
         assert!(rest.param_array);

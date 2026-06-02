@@ -1686,6 +1686,29 @@ mod tests {
     }
 
     #[test]
+    fn optional_string_concat_defaults_route_through_hir() {
+        let source = "Const Prefix = \"re\"\nSub Use(Optional ByVal text As String = Prefix & \"ady\")\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("string concat defaults should route through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            &use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitString(value),
+                ..
+            } if value == "ready"
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(main.call_sites.iter().any(|call_site| {
+            call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("text")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitString("ready".to_string()))
+            })
+        }));
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_param_array_through_hir() {
         let source = "Sub Use(ParamArray items() As Variant)\nEnd Sub\nSub Main()\nCall Use(1, 2)\nEnd Sub\n";
         assert!(

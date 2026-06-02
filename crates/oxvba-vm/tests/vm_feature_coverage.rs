@@ -93,6 +93,14 @@ fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args()
 }
 
 #[test]
+fn optional_string_concat_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Const Prefix = \"re\"\nSub Main()\nDim s As String\nCall Fill(s)\nEnd Sub\nSub Fill(ByRef target As String, Optional ByVal text As String = Prefix & \"ady\")\ntarget = text\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_string(BStr::from("ready"))]);
+}
+
+#[test]
 fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nDim n As Long\nCall Fill(s, b, n)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, ByRef numberTarget As Long, Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal value As Long)\ntarget = text\nflagTarget = flag\nnumberTarget = value\nEnd Sub",

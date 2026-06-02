@@ -2141,6 +2141,10 @@ fn static_param_default_expr_inner(
         BoundExpr::StringConst(value) => {
             Some(BoundParamDefaultValue::ExplicitString(value.clone()))
         }
+        _ if declared_type == BoundType::String => {
+            static_string_expr_inner(expr, module_constants, resolving_constants)
+                .map(BoundParamDefaultValue::ExplicitString)
+        }
         BoundExpr::Var(name) => {
             let const_expr = module_constants.get(name)?;
             if !resolving_constants.insert(name.clone()) {
@@ -2181,6 +2185,39 @@ fn currency_scaled_i64_from_f64(value: f64) -> Option<i64> {
         return None;
     }
     Some(scaled.round() as i64)
+}
+
+fn static_string_expr_inner(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<String> {
+    match expr {
+        BoundExpr::StringConst(value) => Some(value.clone()),
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value = static_string_expr_inner(const_expr, module_constants, resolving_constants);
+            resolving_constants.remove(name);
+            value
+        }
+        BoundExpr::BinaryOp {
+            op: ArithOp::Concat,
+            lhs,
+            rhs,
+        } => {
+            let mut value = static_string_expr_inner(lhs, module_constants, resolving_constants)?;
+            value.push_str(&static_string_expr_inner(
+                rhs,
+                module_constants,
+                resolving_constants,
+            )?);
+            Some(value)
+        }
+        _ => None,
+    }
 }
 
 fn static_i32_expr(expr: &BoundExpr, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {
@@ -7852,6 +7889,25 @@ mod tests {
         assert_eq!(fill.params.len(), 2);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(19));
+    }
+
+    #[test]
+    fn resolve_optional_string_concat_default() {
+        let source = "Const Prefix = \"re\"\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal text As String = Prefix & \"ady\")\ntarget = text\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitString(
+                "ready".to_string()
+            ))
+        );
     }
 
     #[test]
