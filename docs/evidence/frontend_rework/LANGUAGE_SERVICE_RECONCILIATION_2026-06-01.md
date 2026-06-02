@@ -38,11 +38,16 @@ Executable proof:
   `BoundModule` build for otherwise HIR-supported snapshots;
 - full `oxvba-languageservice` tests still pass, covering hover, completions, symbols,
   diagnostics, navigation, rename analysis, and host-session surfaces.
+- follow-up FE-9.7 language-service coverage builds semantic snapshots for representative
+  grammar-matrix route-overlay shapes (`Static`, exponent expressions, qualified member chains,
+  and trivia/comment-bearing sources) from compiler front-end facts with no language-service
+  diagnostics, so the IDE surface now samples beyond the original seed rows.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_language_service --quiet`
 - `cargo test -p oxvba-languageservice semantic --quiet`
+- `cargo test -p oxvba-languageservice snapshot_covers_matrix_route_overlay_shapes_from_frontend_hir --quiet`
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler --quiet`
 - `cargo check -p oxvba-compiler --quiet`
@@ -63,3 +68,7 @@ Executable proof:
   unsupported front-end syntax no longer gets a second, divergent semantic answer from the
   language-service layer; it gets front-end diagnostics until the relevant compiler-front-end facts
   are implemented.
+- The matrix-overlay snapshot check is deliberately source-level IDE evidence. It does not prove
+  richer host/document semantics, imported COM breadth beyond the current routed cases, live Excel
+  oracle behavior, or deeper multi-project workspace interactions; those remain FE-9.7/FE-7/FE-8
+  delivery surfaces rather than documentation closure.

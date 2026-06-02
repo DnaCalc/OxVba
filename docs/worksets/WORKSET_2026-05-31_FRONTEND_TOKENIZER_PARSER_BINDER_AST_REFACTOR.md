@@ -681,11 +681,14 @@ Required newly explicit delivery beads:
   workspace route coverage now loads matching `INTP-003` and `INTP-016` seed-style project manifests
   and verifies referenced-project/class symbols through workspace symbol queries.
   Language-service seed coverage now builds semantic snapshots for those source-backed seed rows
-  from compiler front-end facts. Remaining work: broaden the audit beyond the seed rows, broaden
-  document/host semantics beyond the `ThisWorkbook.Path` seed route, broaden imported COM beyond
-  the `TestDispatch` seed route, cover broader class and deeper cross-workspace language-service
-  route runners, and add live Excel-oracle execution evidence for environment-dependent behavior
-  beyond source-route classification. This bead must reopen the owning
+  from compiler front-end facts. Follow-up FE-9.7 language-service coverage also snapshots
+  representative grammar-matrix route-overlay shapes (`Static`, exponent expressions, qualified
+  member chains, and trivia/comment-bearing sources) through the compiler front-end facts with no
+  language-service diagnostics. Remaining work: broaden corpus execution beyond the current
+  route-overlay evidence, broaden document/host semantics beyond the `ThisWorkbook.Path` seed
+  route, broaden imported COM beyond the `TestDispatch` seed route, cover broader class and deeper
+  cross-workspace language-service route runners, and add live Excel-oracle execution evidence for
+  environment-dependent behavior beyond source-route classification. This bead must reopen the owning
   delivery bead for every accepted in-scope row that still reaches legacy fallback.
 - FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
   legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
@@ -1400,9 +1403,12 @@ Candidate bead units:
   the diff classifier's frontend-v2 observer with direct HIR production lowering rather than the
   syntax bridge. Follow-up FE-9.7 grammar-matrix audit maps all 110 matrix productions,
   including all 44 currently anchored rows, to executable HIR-production route findings; this is
-  route-proof overlay, not full matrix/documentation closure. Closure requires every accepted
-  in-scope row to classify as HIR/SemanticModel production or to reopen/create the owning delivery
-  bead.
+  route-proof overlay, not full matrix/documentation closure. Follow-up FE-9.7 language-service
+  coverage snapshots representative overlay shapes (`Static`, exponent expressions, qualified
+  member chains, and trivia/comment-bearing sources) through compiler front-end facts. Closure
+  requires every accepted in-scope row to classify as HIR/SemanticModel production or to
+  reopen/create the owning delivery bead, and richer corpus/host/reference/oracle surfaces remain
+  in scope until proved through execution evidence.
 - FE-9.8 Legacy route retirement finalization: after FE-7/FE-8 delivery beads pass, remove or
   hard-quarantine legacy production entry points for `parse_expr`, CST-to-legacy lowering,
   `project.rs` helper-source rewrites, and duplicate language-service semantic fallbacks. Partial

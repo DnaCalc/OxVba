@@ -479,6 +479,58 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_covers_matrix_route_overlay_shapes_from_frontend_hir() {
+        let cases = [
+            (
+                "static declaration",
+                "Sub Main()\nStatic counter As Long\ncounter = counter + 1\nEnd Sub\n",
+                "counter",
+                BoundType::Long,
+            ),
+            (
+                "exponent expression",
+                "Sub Main()\nDim x\nx = 2 ^ 3\nEnd Sub\n",
+                "x",
+                BoundType::Variant,
+            ),
+            (
+                "qualified identifier",
+                "Sub Main()\nDim obj\nDim x\nx = obj.Child.Value\nEnd Sub\n",
+                "obj",
+                BoundType::Variant,
+            ),
+            (
+                "trivia and comments",
+                "' leading comment\n\nSub Main()\nDim x\nx = 1 ' trailing comment\nEnd Sub\n",
+                "x",
+                BoundType::Variant,
+            ),
+        ];
+
+        for (label, source, symbol_name, expected_type) in cases {
+            let snap = build_semantic_snapshot(source);
+            assert!(
+                snap.diagnostics.is_empty(),
+                "{label} should build without language-service diagnostics: {:?}",
+                snap.diagnostics
+            );
+            let symbol = snap
+                .symbols
+                .symbols
+                .iter()
+                .find(|symbol| symbol.name == symbol_name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{label} should expose `{symbol_name}` from frontend HIR facts: {:?}",
+                        snap.symbols.symbols
+                    )
+                });
+            assert_eq!(symbol.kind, SymbolKind::Variable, "{label}");
+            assert_eq!(symbol.bound_type, expected_type, "{label}");
+        }
+    }
+
+    #[test]
     fn snapshot_seed_corpus_uses_frontend_facts_for_source_backed_rows() {
         let fixtures = oxvba_compiler::frontend_diff::frontend_rework_seed_corpus();
         let mut checked = Vec::new();
