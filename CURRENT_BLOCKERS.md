@@ -132,7 +132,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         first sorted candidate; selected active-project default-member accessors now validate
         source argument count before rewrite; selected active-project property/default-member
         rewrite routes now validate `EarlyBoundProject` member-dispatch classification before
-        retaining the compatibility carrier;
+        retaining the compatibility carrier; predeclared `Property Get` read rewrite maps are now
+        fallible and classifier-backed, requiring active-project `EarlyBoundProject` property-get
+        proof or host-injected `HostGlobal` proof before retaining the compatibility carrier;
       - still open: broader project/host/imported-COM default-member writeback breadth, type
         overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;

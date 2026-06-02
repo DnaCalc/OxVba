@@ -1111,7 +1111,10 @@ Candidate bead units:
   accessor kind now reject as default-member ambiguity instead of selecting the first sorted
   candidate; selected active-project default-member accessors now validate source argument count
   before rewrite; selected active-project property/default-member rewrite routes now validate
-  `EarlyBoundProject` member-dispatch classification before retaining the compatibility carrier.
+  `EarlyBoundProject` member-dispatch classification before retaining the compatibility carrier;
+  predeclared `Property Get` read rewrite maps are now fallible and classifier-backed, requiring
+  active-project `EarlyBoundProject` property-get proof or host-injected `HostGlobal` proof before
+  retaining the compatibility carrier.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

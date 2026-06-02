@@ -97,6 +97,10 @@ The 2026-06-01 continuation added:
   property/default-member rewrite routes now validate that the front-end member-dispatch classifier
   reports the selected route as `EarlyBoundProject` with the expected accessor kind before
   retaining the compatibility rewrite carrier.
+- `bd-aprs.8.7` predeclared-property rewrite-map continuation: the compatibility read-rewrite map
+  for predeclared `Property Get` roots is now fallible and classifier-backed before rewrite.
+  Active-project routes must classify as `EarlyBoundProject` property gets, and host-injected
+  routes must classify as `HostGlobal`, before the legacy backend carrier is retained.
 
 ## Checks
 
@@ -113,6 +117,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler property_put_external --quiet`
 - `cargo test -p oxvba-compiler imported_property --quiet`
 - `cargo test -p oxvba-compiler host_injected_predeclared_property --quiet`
+- `cargo test -p oxvba-compiler predeclared_property --quiet`
 - `cargo test -p oxvba-compiler host_injected_global_namespace_property --quiet`
 - `cargo test -p oxvba-compiler host_injected_predeclared_default_member --quiet`
 - `cargo test -p oxvba-compiler host_injected_global_namespace_default_member --quiet`

@@ -1274,7 +1274,7 @@ fn compile_project_with_strategy(
             manifest,
             &project_symbol_index,
             &procedure_index,
-        ),
+        )?,
     );
 
     let has_class_modules = manifest
@@ -1433,7 +1433,7 @@ fn collect_predeclared_property_read_rewrite_routes(
     manifest: &ProjectManifest,
     project_symbol_index: &ProjectSymbolIndex,
     procedure_index: &[ProcedureDecl],
-) -> BTreeMap<String, String> {
+) -> Result<BTreeMap<String, String>, ProjectCompileError> {
     let mut candidates = BTreeMap::<String, BTreeSet<String>>::new();
     for decl in procedure_index {
         if decl.kind != ProcedureDeclKind::PropertyGet || decl.param_count != 0 || !decl.is_public {
@@ -1447,16 +1447,17 @@ fn collect_predeclared_property_read_rewrite_routes(
                 manifest,
                 project_symbol_index,
                 decl,
-            )
+            )?
         {
             continue;
         }
+        validate_host_global_dispatch_classification(decl, &decl.procedure_name)?;
         let key = format!("{}.{}", decl.module_name, decl.procedure_name).to_ascii_lowercase();
         let route = format!("property_get_{}(0)", lowered_proc_signature_name(decl));
         candidates.entry(key).or_default().insert(route);
     }
 
-    candidates
+    Ok(candidates
         .into_iter()
         .filter_map(|(key, values)| {
             if values.len() == 1 {
@@ -1465,36 +1466,43 @@ fn collect_predeclared_property_read_rewrite_routes(
                 None
             }
         })
-        .collect()
+        .collect())
 }
 
 fn active_project_predeclared_property_route_exists(
     manifest: &ProjectManifest,
     project_symbol_index: &ProjectSymbolIndex,
     decl: &ProcedureDecl,
-) -> bool {
+) -> Result<bool, ProjectCompileError> {
     let Some(module) = manifest
         .modules
         .iter()
         .find(|module| normalize_identifier(&module.module_name) == decl.module_name)
     else {
-        return false;
+        return Ok(false);
     };
     let mut owner_names = vec![decl.module_name.as_str()];
     if !module.attributes.vb_name.trim().is_empty() {
         owner_names.push(module.attributes.vb_name.as_str());
     }
-    owner_names.into_iter().any(|owner| {
-        project_symbol_index.resolve_class_route(owner).is_some()
-            && project_symbol_index
-                .tables
-                .resolve_property_accessor(
-                    owner,
-                    &decl.procedure_name,
-                    ProjectSymbolKind::PropertyGet,
-                )
-                .is_some()
-    })
+    for owner in owner_names {
+        if project_symbol_index.resolve_class_route(owner).is_none() {
+            continue;
+        }
+        if let Some(route) = project_symbol_index.tables.resolve_property_accessor(
+            owner,
+            &decl.procedure_name,
+            ProjectSymbolKind::PropertyGet,
+        ) {
+            validate_project_property_dispatch_classification(
+                route,
+                ProjectSymbolKind::PropertyGet,
+                &format!("{owner}.{}", decl.procedure_name),
+            )?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn module_is_predeclared(
@@ -30021,7 +30029,8 @@ mod tests {
                     &manifest,
                     &project_symbol_index,
                     &procedure_index,
-                ),
+                )
+                .expect("predeclared property routes"),
             );
             assert!(
                 rewritten_source
