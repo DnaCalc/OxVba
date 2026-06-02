@@ -46,6 +46,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let trivia_comment_blank_line =
+        "' leading comment\n\nSub Main()\nDim x\nx = 1 ' trailing comment\nEnd Sub\n";
+    findings.push(route_finding(
+        "trivia comment and blank-line fixture",
+        trivia_comment_blank_line,
+        "bd-aprs.9.5",
+    ));
+
     let dim_declaration =
         "Sub Main()\nDim x As Long\nDim s As String\nx = 1\ns = \"ok\"\nEnd Sub\n";
     findings.push(route_finding(

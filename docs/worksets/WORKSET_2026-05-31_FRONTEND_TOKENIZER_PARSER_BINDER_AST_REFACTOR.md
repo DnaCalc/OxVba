@@ -1398,10 +1398,10 @@ Candidate bead units:
   and selected Excel oracle lanes. Partial work has already been done: the bounded route audit,
   retirement inventory, corpus inventory, and diff classifier exist. Follow-up FE-9 cleanup aligns
   the diff classifier's frontend-v2 observer with direct HIR production lowering rather than the
-  syntax bridge. Follow-up FE-9.7 grammar-matrix audit maps all 44 currently anchored matrix
-  productions to executable HIR-production route findings; this is route-proof overlay, not full
-  matrix closure. Closure requires every accepted in-scope row to classify as HIR/SemanticModel
-  production or to reopen/create the owning delivery bead.
+  syntax bridge. Follow-up FE-9.7 grammar-matrix audit maps 106 of 110 matrix productions,
+  including all 44 currently anchored rows, to executable HIR-production route findings; this is
+  route-proof overlay, not full matrix closure. Closure requires every accepted in-scope row to
+  classify as HIR/SemanticModel production or to reopen/create the owning delivery bead.
 - FE-9.8 Legacy route retirement finalization: after FE-7/FE-8 delivery beads pass, remove or
   hard-quarantine legacy production entry points for `parse_expr`, CST-to-legacy lowering,
   `project.rs` helper-source rewrites, and duplicate language-service semantic fallbacks. Partial
