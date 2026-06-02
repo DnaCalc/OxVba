@@ -294,8 +294,9 @@ The 2026-06-01 continuation added:
 - Imported-COM accessor route review found that merely proving a `DispatchInvoke` source rewrite was
   too weak: type-library-only rows could still compile through the legacy project backend and the
   source carrier did not preserve get/put/putref intent. The project boundary now keeps separate
-  full compatibility source and active-project source; single procedural active modules with only
-  synthetic type-library references compile the active source through HIR. The rewrite carrier
+  full compatibility source and active-project source; all-procedural active projects with only
+  synthetic type-library references compile the active source through HIR, including a two-module
+  route proof where a helper module owns the imported COM use. The rewrite carrier
   preserves accessor intent through internal early-invoke names, and bytecode proof checks dispatch
   id, arity, early-bound COM metadata, and `PropertyGet`/`PropertyLet`/`PropertySet` hints for
   property-get read/call rows plus named, indexed, named-argument indexed, and default-member setter

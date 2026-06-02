@@ -1199,9 +1199,10 @@ Candidate bead units:
   Follow-up continuation adds a compile-to-bytecode HIR entry point that accepts those
   `HirNewExpressionBinding` facts and emits project-object reference bytecode, so the remaining
   project compile work can call HIR directly instead of duplicating lowering internals.
-  Follow-up project-boundary continuation routes single active procedural-module projects with no
-  reference projects through the HIR-capable metadata compiler, preserving legacy routing for
-  multi-module, class/document, forced-object-local, and reference-project shapes.
+  Follow-up project-boundary continuation routes all-procedural active projects with no reference
+  projects, or with only HIR-safe synthetic/declared typelib references, through the HIR-capable
+  metadata compiler, preserving legacy routing for class/document, forced-object-local, and
+  unresolved reference-project shapes.
   Follow-up project continuation now records normalized constructor type names in dynamic instance
   drafts and materializes `HirNewExpressionBinding` facts in source order at the project compile
   boundary; the direct `Set obj = New Class` gap is now closed by `bd-aprs.9.6`, while broader

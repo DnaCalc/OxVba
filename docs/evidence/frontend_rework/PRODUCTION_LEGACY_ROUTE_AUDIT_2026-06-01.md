@@ -285,3 +285,8 @@ The audit result records completed reopened delivery work and remaining broader 
   reference now routes through `ActiveHir`/`HirProduction`. Matching guards keep projects that
   actually name `OtherProject` or `Application` on the existing project/host rewrite or
   compatibility path until those bindings are structurally owned by FE-7.6.
+- Imported-typelib route admission is no longer limited to a single active procedural module:
+  all-procedural active projects with only synthetic/declared typelib references now use
+  `ActiveHir`/`HirProduction`, with a two-module `OxVba.TestDispatch` fixture proving both modules'
+  runtime metadata survives the active-source HIR route. Broader imported-COM rewrite-body
+  retirement remains open.

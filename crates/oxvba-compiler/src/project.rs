@@ -1384,11 +1384,14 @@ fn project_source_has_predeclared_document_reference_modules(manifest: &ProjectM
         })
 }
 
-fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
+fn project_source_has_only_procedural_modules_with_hir_safe_typelib_references(
     manifest: &ProjectManifest,
 ) -> bool {
-    manifest.modules.len() == 1
-        && manifest.modules[0].module_kind == ModuleKind::Procedural
+    !manifest.modules.is_empty()
+        && manifest
+            .modules
+            .iter()
+            .all(|module| module.module_kind == ModuleKind::Procedural)
         && manifest
             .references
             .iter()
@@ -1404,7 +1407,7 @@ fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundar
         || project_source_has_only_active_procedural_modules_with_unused_declared_references(
             manifest,
         )
-        || project_source_is_single_procedural_module_with_hir_safe_typelib_references(manifest)
+        || project_source_has_only_procedural_modules_with_hir_safe_typelib_references(manifest)
     {
         ProjectCompileBoundary::ActiveHir
     } else if project_source_has_only_procedural_modules_including_references(manifest)
@@ -24512,6 +24515,55 @@ mod tests {
         let compiled = compile_project(&manifest)
             .expect("predeclared document project should compile through HIR full-source boundary");
         assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
+    }
+
+    #[test]
+    fn project_compile_boundary_routes_multimodule_typelib_references_through_active_hir() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Helper.Run\nEnd Sub",
+        )
+        .expect("main module parses");
+        let helper = module_unit_from_source(
+            "Helper",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"Helper\"\nPublic Sub Run()\nDim obj As New OxVba.TestDispatch\nDim x\nx = obj.Count()\nEnd Sub",
+        )
+        .expect("helper module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main, helper],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            project_compile_boundary(&manifest),
+            ProjectCompileBoundary::ActiveHir
+        );
+        let compiled =
+            compile_project(&manifest).expect("multi-module typelib project should use HIR");
+        assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
+        assert!(
+            compiled
+                .procedure_runtime_metadata
+                .contains_key("pmr_projecta_mainmodule_main"),
+            "{:?}",
+            compiled.procedure_runtime_metadata.keys()
+        );
+        assert!(
+            compiled
+                .procedure_runtime_metadata
+                .contains_key("pmr_projecta_helper_run"),
+            "{:?}",
+            compiled.procedure_runtime_metadata.keys()
+        );
     }
 
     #[test]
