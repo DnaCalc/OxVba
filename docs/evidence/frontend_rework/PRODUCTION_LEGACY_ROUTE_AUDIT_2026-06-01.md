@@ -99,7 +99,8 @@ The audit result records completed reopened delivery work and remaining broader 
 - Procedure-call syntax, including same-module statement-form procedure calls with bare arguments,
   multiline and single-line If/ElseIf syntax, front-checked Do While syntax, basic Exit and
   error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,
-  one-dimensional and two-dimensional dynamic-array runtime `ReDim`, simple function declarations with declared return
+  one-dimensional, two-dimensional, and explicit static lower-bound dynamic-array runtime `ReDim`,
+  simple function declarations with declared return
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
   multi-declarator literal `Const`, `Event` declarations paired with `RaiseEvent`, single-source
   `Implements` directives, explicit-receiver value-side dot-member read/call syntax, statement-form

@@ -177,7 +177,7 @@ pub enum HirStmtKind {
     },
     ReDim {
         name: String,
-        bounds: Vec<HirExprId>,
+        bounds: Vec<HirArrayBound>,
         preserve: bool,
     },
     Erase {
@@ -205,6 +205,12 @@ pub enum HirCaseClause {
     Value(HirExprId),
     Range { start: HirExprId, end: HirExprId },
     Is { op: HirBinaryOp, value: HirExprId },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HirArrayBound {
+    pub lower: Option<HirExprId>,
+    pub upper: HirExprId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -896,12 +902,7 @@ impl HirBuilder {
                     .child_nodes()
                     .into_iter()
                     .find(|child| child.kind() == SyntaxKind::ArgList)
-                    .map(|arg_list| {
-                        expression_children(arg_list)
-                            .into_iter()
-                            .map(|expr| self.lower_expr(scope, expr))
-                            .collect::<Result<Vec<_>, _>>()
-                    })
+                    .map(|arg_list| self.lower_redim_bounds(scope, arg_list))
                     .transpose()?
                     .unwrap_or_default();
                 if bounds.is_empty() {
@@ -1143,6 +1144,74 @@ impl HirBuilder {
             }
         }
         Ok(out)
+    }
+
+    fn lower_redim_bounds(
+        &mut self,
+        scope: ScopeId,
+        arg_list: SyntaxNode<'_>,
+    ) -> Result<Vec<HirArrayBound>, HirBuildError> {
+        let mut bounds = Vec::new();
+        let mut pending_lower: Option<HirExprId> = None;
+        let mut pending_upper: Option<HirExprId> = None;
+        let mut saw_to = false;
+
+        for element in arg_list.children() {
+            match element {
+                SyntaxElement::Node(child) if is_expression_node(child.kind()) => {
+                    let expr = self.lower_expr(scope, child)?;
+                    if saw_to {
+                        bounds.push(HirArrayBound {
+                            lower: pending_lower.take(),
+                            upper: expr,
+                        });
+                        saw_to = false;
+                    } else if pending_upper.is_none() {
+                        pending_upper = Some(expr);
+                    } else {
+                        return Err(HirBuildError::Unsupported(format!(
+                            "ReDim bound contains adjacent expressions: `{}`",
+                            arg_list.text().trim()
+                        )));
+                    }
+                }
+                SyntaxElement::Token(token) if token.kind == SyntaxKind::KwTo => {
+                    if saw_to || pending_upper.is_none() {
+                        return Err(HirBuildError::Unsupported(format!(
+                            "ReDim bound contains unsupported `To`: `{}`",
+                            arg_list.text().trim()
+                        )));
+                    }
+                    pending_lower = pending_upper.take();
+                    saw_to = true;
+                }
+                SyntaxElement::Token(token) if token.kind == SyntaxKind::Comma => {
+                    if saw_to {
+                        return Err(HirBuildError::Unsupported(format!(
+                            "ReDim bound missing upper expression: `{}`",
+                            arg_list.text().trim()
+                        )));
+                    }
+                    if let Some(upper) = pending_upper.take() {
+                        bounds.push(HirArrayBound { lower: None, upper });
+                    }
+                    pending_lower = None;
+                }
+                _ => {}
+            }
+        }
+
+        if saw_to {
+            return Err(HirBuildError::Unsupported(format!(
+                "ReDim bound missing upper expression: `{}`",
+                arg_list.text().trim()
+            )));
+        }
+        if let Some(upper) = pending_upper {
+            bounds.push(HirArrayBound { lower: None, upper });
+        }
+
+        Ok(bounds)
     }
 
     fn lower_expr(

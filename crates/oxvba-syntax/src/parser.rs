@@ -615,6 +615,10 @@ impl<'a> Parser<'a> {
 
     /// Parse a single bare argument, handling name:=expr syntax.
     fn parse_bare_arg(&mut self) {
+        self.parse_bare_arg_with_optional_to(false);
+    }
+
+    fn parse_bare_arg_with_optional_to(&mut self, allow_to: bool) {
         // Check for named argument: Ident := expr
         if (self.at(SyntaxKind::Ident) || self.current().is_keyword()) && self.peek_is_colon_eq() {
             self.bump(); // name
@@ -623,6 +627,49 @@ impl<'a> Parser<'a> {
             self.eat_expr_whitespace();
         }
         self.parse_expr_bp(0);
+        self.eat_expr_whitespace();
+        if allow_to && self.at(SyntaxKind::KwTo) {
+            self.bump(); // To
+            self.eat_expr_whitespace();
+            if !self.is_expr_stop(self.current()) && !self.at(SyntaxKind::Comma) {
+                self.parse_expr_bp(0);
+            }
+        }
+    }
+
+    fn parse_redim_arg_list(&mut self) {
+        self.start_node(SyntaxKind::ArgList);
+        if self.at(SyntaxKind::LParen) {
+            self.bump_lparen();
+        }
+
+        self.eat_expr_whitespace();
+        if !self.at(SyntaxKind::RParen) && !self.at_eof() {
+            if !self.at(SyntaxKind::Comma) {
+                self.parse_bare_arg_with_optional_to(true);
+            }
+
+            while self.at(SyntaxKind::Comma) || {
+                self.eat_expr_whitespace();
+                self.at(SyntaxKind::Comma)
+            } {
+                self.bump(); // ,
+                self.eat_expr_whitespace();
+                if !self.at(SyntaxKind::Comma) && !self.at(SyntaxKind::RParen) && !self.at_eof() {
+                    self.parse_bare_arg_with_optional_to(true);
+                }
+                self.eat_expr_whitespace();
+            }
+        }
+
+        self.eat_expr_whitespace();
+        if self.at(SyntaxKind::RParen) {
+            self.bump_rparen();
+        } else {
+            self.error("expected `)`".into());
+        }
+
+        self.finish_node(); // ArgList
     }
 
     /// Check if the next non-trivia token after current is ColonEq.
@@ -1776,7 +1823,7 @@ impl<'a> Parser<'a> {
         }
         self.eat_whitespace();
         if self.at(SyntaxKind::LParen) {
-            self.parse_arg_list();
+            self.parse_redim_arg_list();
         }
         self.eat_to_statement_end();
         self.finish_node();
@@ -2242,6 +2289,17 @@ mod tests {
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ReDimStmt));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::BinaryExpr));
+    }
+
+    #[test]
+    fn parses_redim_explicit_lower_bound_expression() {
+        let src = "Sub Main()\nReDim buf(1 To length - 1, 0 To cols - 1)\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ReDimStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr).len(), 2);
     }
 
     #[test]

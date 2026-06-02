@@ -232,7 +232,10 @@ impl SemanticModel {
             }
             HirStmtKind::ReDim { bounds, .. } => {
                 for bound in bounds {
-                    self.index_expr_tree(bound);
+                    if let Some(lower) = bound.lower {
+                        self.index_expr_tree(lower);
+                    }
+                    self.index_expr_tree(bound.upper);
                 }
             }
             HirStmtKind::RaiseEvent { args, .. } => {

@@ -949,13 +949,24 @@ fn lower_stmt(
             let bounds = bounds
                 .iter()
                 .map(|bound| {
+                    let lower_bound = if let Some(lower) = bound.lower {
+                        lower_static_redim_bound(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            lower,
+                            context,
+                        )?
+                    } else {
+                        option_base
+                    };
                     Ok(RuntimeArrayDimExpr {
-                        lower_bound: option_base,
+                        lower_bound,
                         upper_bound: lower_expr(
                             typed_hir,
                             const_values,
                             udt_field_aliases,
-                            *bound,
+                            bound.upper,
                             context,
                         )?,
                     })
@@ -1033,6 +1044,21 @@ fn bound_type_name(text: &str) -> Option<BoundType> {
         "object" => Some(BoundType::Object),
         "variant" => Some(BoundType::Variant),
         _ => None,
+    }
+}
+
+fn lower_static_redim_bound(
+    typed_hir: &TypedHirModule,
+    const_values: &HashMap<SymbolId, BoundExpr>,
+    udt_field_aliases: &HashMap<(String, String), String>,
+    expr: HirExprId,
+    context: &mut HirLoweringContext,
+) -> Result<i32, HirProductionLoweringError> {
+    match lower_expr(typed_hir, const_values, udt_field_aliases, expr, context)? {
+        BoundExpr::IntConst(value) => Ok(value),
+        other => Err(HirProductionLoweringError::Unsupported(format!(
+            "ReDim lower bound must be a static integer, got {other:?}"
+        ))),
     }
 }
 
@@ -2674,6 +2700,33 @@ mod tests {
             .expect("dynamic array shape");
         assert_eq!(shape.element_type, VbaTypeId::Long);
         assert_eq!(shape.rank, 2);
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_explicit_lower_bound_runtime_redim() {
+        let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim buf(1 To length - 1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayResize {
+                    lower_bounds,
+                    element_type: crate::bytecode::RuntimeArrayElementType::Byte,
+                    ..
+                } if lower_bounds == &vec![1]
+            )),
+            "expected explicit lower-bound runtime ReDim bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "buf")
+            .expect("dynamic array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Byte);
+        assert_eq!(shape.rank, 1);
     }
 
     #[test]

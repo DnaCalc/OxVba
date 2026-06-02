@@ -261,6 +261,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let redim_explicit_lower_bound_statement =
+        "Sub Main()\nDim length As Long\nDim buf() As Byte\nReDim buf(1 To length - 1)\nEnd Sub\n";
+    findings.push(route_finding(
+        "redim explicit lower-bound runtime statement fixture",
+        redim_explicit_lower_bound_statement,
+        "bd-aprs.9.5",
+    ));
+
     let raise_event_statement = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
     findings.push(route_finding(
         "raise event statement fixture",
@@ -539,6 +547,11 @@ mod tests {
                 finding
                     .area
                     .contains("redim multidimensional runtime statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding
+                    .area
+                    .contains("redim explicit lower-bound runtime statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("value-side member expression")

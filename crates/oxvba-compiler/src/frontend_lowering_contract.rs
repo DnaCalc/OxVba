@@ -279,7 +279,10 @@ fn collect_stmt_contract_facts(
         }
         HirStmtKind::ReDim { bounds, .. } => {
             for bound in bounds {
-                collect_expr_structural_intrinsics(typed_hir, *bound, structural_intrinsics);
+                if let Some(lower) = bound.lower {
+                    collect_expr_structural_intrinsics(typed_hir, lower, structural_intrinsics);
+                }
+                collect_expr_structural_intrinsics(typed_hir, bound.upper, structural_intrinsics);
             }
         }
         HirStmtKind::RaiseEvent { args, .. } => {

@@ -165,10 +165,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       semantics by FE-7/FE-9 coverage;
     - `bd-aprs.9.8`: arrays, indexing, and `ReDim` parity;
       - continuation progress: dynamic-array runtime `ReDim` lowering now covers
-        one-dimensional and two-dimensional runtime bounds and updates array-shape rank metadata
-        from observed `ReDim` bounds; explicit lower-bound `To` forms, fixed-array alias
-        materialization, array element read/write migration, and project/class array fields remain
-        open;
+        one-dimensional and two-dimensional runtime bounds, static integer explicit lower-bound
+        `To` forms, and array-shape rank metadata updates from observed `ReDim` bounds;
+        fixed-array alias materialization, array element read/write migration, project/class array
+        fields, and broader multidimensional element/fixed/project shapes remain open;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
       - continuation progress: `Option Compare Text` now routes through HIR for otherwise
         completed lightweight sources and emits text comparison bytecode; `Option Explicit`,
