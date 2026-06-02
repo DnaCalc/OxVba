@@ -573,6 +573,10 @@ expression declarators and same-statement typed references, for example
 `Const CBase As Long = 2 ^ 3 \ 2 Mod 3, CTotal As Long = CBase + 4`. This covers the current
 literal/simple-expression constant evaluator, including checked nonnegative integer exponentiation
 plus integer division and `Mod`.
+Later focused work carries that constant environment across source-ordered `Const` statements for
+the same bounded evaluator, so `Const CTotal As Long = CBase + 4` can reference a prior
+`Const CBase As Long = ...`, route through the default HIR path, stay out of runtime local slots,
+and still receive range diagnostics.
 Later focused diagnostic passes reject explicit `As Byte`, `As Integer`, and `As Long` integer
 expressions that overflow their VBA ranges before the unsupported-const fallback can hide them,
 including checked exponentiation overflow such as `2 ^ 31` for `Long`. A later FE-8.5.e
@@ -999,6 +1003,9 @@ constant expressions:
 - Later declarators in the same `Const` statement can reference earlier declarators, for example
   `Const CBase = 1 + 2, CTotal = CBase + 1`; those references are substituted as expression trees,
   not runtime variable reads.
+- Later `Const` statements can reference earlier constants through the same source-ordered
+  environment for the covered evaluator subset, including typed `Long` diagnostics and typed
+  `LongLong`/`LongPtr` i64 carriers.
 - Typed declarators use the same evaluator and route through the default HIR entry point for the
   covered subset, now audited with `Const CBase As Long = 1 + 2, CTotal As Long = CBase + 4`.
 - A focused follow-up diagnostic rejects explicit `As Long` constants whose integer expression
@@ -1014,9 +1021,9 @@ constant expressions:
   `As LongPtr` constants outside the i32 range can lower and execute instead of being truncated or
   rejected as unsupported.
 - This is intentionally still a bounded subset. Constant expressions that require broader
-  module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
-  enum/literal route, plus typed constant coercion and full `LongPtr` platform semantics, remain
-  future FE-8.5 work.
+  procedure-local scoping, conditional-branch source mapping, richer literal kinds, or names beyond
+  source-prior constants and the already handled enum/literal route, plus typed constant coercion
+  and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
