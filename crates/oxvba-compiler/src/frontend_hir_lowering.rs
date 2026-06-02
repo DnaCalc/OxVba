@@ -6529,6 +6529,31 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_declared_external_sub_call() {
+        let source = "Declare PtrSafe Sub HostTap Lib \"host\" Alias \"tap\" (ByVal x As Long)\nSub Main()\nCall HostTap(3)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert_eq!(bytecode.external_call_descriptors.len(), 1);
+        let descriptor = &bytecode.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name, "hosttap");
+        assert_eq!(descriptor.library, "host");
+        assert_eq!(descriptor.alias, "tap");
+        assert_eq!(descriptor.param_count, 1);
+        assert!(
+            descriptor.return_type.is_none(),
+            "external Sub descriptor must not carry a function return type: {descriptor:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 1
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
     fn hir_production_lowering_rejects_declare_without_ptrsafe_for_fallback() {
         let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
         let err = compile_source_with_runtime_metadata_via_hir(source)

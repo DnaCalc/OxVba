@@ -1252,7 +1252,10 @@ Candidate bead units:
   console `Print` and diagnostics `Debug.Print` through existing host bytecode, including
   multi-field `Debug.Print` payload concatenation. Follow-up file-system statement routing covers
   `Kill path` through existing host bytecode; file-handle I/O statements (`Open`, `Close`,
-  `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. Follow-up console-input routing
+  `Print #`, `Write #`, `Input #`, `Line Input #`) remain open. Follow-up external declaration
+  routing covers simple `Declare PtrSafe Sub ...` statement calls in addition to already-covered
+  `Declare PtrSafe Function ...` expression calls, without changing the existing non-`PtrSafe`
+  VBA7 rejection policy. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
   `Line Input #`. Follow-up console line-input routing covers `Line Input target` through existing
   host bytecode, still without claiming file `Line Input #`. Follow-up file-close routing covers

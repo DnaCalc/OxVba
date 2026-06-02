@@ -698,6 +698,9 @@ The latest FE-8.5 slice removes the basic declared external call residual:
   typechecking.
 - Calls such as `y = HostPing(3)` lower as ordinary HIR `ProcCall` expressions and emit the
   existing `IntrinsicInvokeSymbolHost` bytecode plus `ExternalCallDescriptor` metadata.
+- Follow-up declaration routing also covers simple `Declare PtrSafe Sub ...` statement calls
+  through the same HIR-owned external descriptor and host invocation bytecode path; the route audit
+  includes a declared external Sub fixture.
 - Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
   default compiler path can keep them on the tracked fallback/diagnostic surface.
 
