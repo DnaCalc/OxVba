@@ -77,7 +77,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       `Set obj.Ref = ...`, and `With obj: .Value = ...` now lower through HIR to late-bound
       dispatch with explicit property Let/Set hints; default-member/property selection,
       project/class property routing, early-bound COM property-put resolution, indexed/named
-      writeback breadth, and overload validation remain open;
+      writeback breadth, and type overload validation remain open;
     - `Option Base 0`, `Option Base 1`, and default-equivalent `Option Compare Binary` no longer
       disqualify otherwise completed lightweight HIR default-route sources; other `Option` forms
       remain fallback-only until HIR owns explicit declaration enforcement, text/database compare
@@ -133,8 +133,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         source argument count before rewrite; selected active-project property/default-member
         rewrite routes now validate `EarlyBoundProject` member-dispatch classification before
         retaining the compatibility carrier;
-      - still open: broader project/host/imported-COM default-member writeback breadth, overload
-        type validation, and replacement/quarantine of the remaining rewrite bodies;
+      - still open: broader project/host/imported-COM default-member writeback breadth, type
+        overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated

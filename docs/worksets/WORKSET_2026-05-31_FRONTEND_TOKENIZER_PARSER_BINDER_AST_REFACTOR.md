@@ -1093,7 +1093,7 @@ Candidate bead units:
   until the broad route audit; broader event semantics remain under FE-7/FE-9 coverage.
 - FE-8.5.c Property/default-member/writeback lowering: finish the semantic and lowering route for
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
-  indexed/named writeback, and overload validation. Partial work has already been done: simple
+  indexed/named writeback, and type overload validation. Partial work has already been done: simple
   late-bound member reads/calls and simple dot/bang/With member assignment targets lower through
   HIR with Let/Set hints. Continuation progress now makes imported-COM dispatch classification
   carry typelib invocation kind and validates early-bound COM property read plus put/putref rewrite

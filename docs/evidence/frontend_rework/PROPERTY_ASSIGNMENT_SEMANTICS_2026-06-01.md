@@ -122,6 +122,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member --quiet`
 - `cargo test -p oxvba-compiler ambiguous_authoritative --quiet`
 - `cargo test -p oxvba-compiler wrong_arity_for_authoritative_default_member --quiet`
+- `cargo test -p oxvba-compiler optional_default_member_get_arity --quiet`
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler compile_project --quiet`

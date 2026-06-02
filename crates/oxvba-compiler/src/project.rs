@@ -17613,6 +17613,50 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_accepts_optional_default_member_get_arity() {
+        let cases = [
+            ("authoritative", "\nAttribute Value.VB_UserMemId = 0"),
+            ("non-authoritative", ""),
+        ];
+        for (label, default_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim firstOut\nDim secondOut\nfirstOut = widget\nsecondOut = widget(4)\nEnd Sub",
+            )
+            .expect("main module parses");
+            let widget = module_unit_from_source(
+                "Widget",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(Optional ByVal index = 1)\nValue = index\nEnd Property{default_attr}"
+                ),
+            )
+            .expect("widget module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let compiled = compile_project(&manifest)
+                .unwrap_or_else(|err| panic!("{label} optional default-member arity: {err}"));
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("firstout = property_get_pmr_projecta_widget_value(widget)"),
+                "{label}: {lowered}"
+            );
+            assert!(
+                lowered.contains("secondout = property_get_pmr_projecta_widget_value(widget, 4)"),
+                "{label}: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_authoritative_default_member_let() {
         let main_module = module_unit_from_source(
             "MainModule",
