@@ -200,10 +200,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         for the default HIR route and preserve optional/default signature metadata;
         HIR lowering now preserves `Property Get`/`Property Let` declaration metadata and binds the
         property getter self-assignment return slot; same-module zero-argument `Property Get`
-        reads now lower through HIR as procedure calls;
+        reads and simple same-module `Property Let`/`Property Set` writes now lower through HIR as
+        procedure calls;
         `ParamArray`, richer default expressions, and broader call-entry optional/missing-state
-        behavior, plus `Property Let`/`Property Set`, indexed property invocation, and
-        default-route property semantics, remain open;
+        behavior, plus indexed property invocation and default-route property semantics, remain
+        open;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.
 

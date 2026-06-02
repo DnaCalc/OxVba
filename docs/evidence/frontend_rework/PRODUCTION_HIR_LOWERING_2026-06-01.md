@@ -214,9 +214,10 @@ and broader optional missing-state call-entry behavior remain outside the lightw
 Additional property-declaration work teaches HIR lowering to derive `Property Get`/`Property Let`
 procedure kinds from the HIR property record, preserve getter return-slot metadata, and bind the
 getter self-assignment name to that return slot. Same-module zero-argument `Property Get` reads now
-also lower through HIR as procedure calls. Property declarations still remain outside the default
-HIR route because `Property Let`/`Property Set`, indexed property invocation, and broader
-default-member semantics are not yet complete.
+also lower through HIR as procedure calls, and simple same-module `Property Let`/`Property Set`
+writes lower as synthetic property assignment calls. Property declarations still remain outside the
+default HIR route because indexed property invocation and broader default-member semantics are not
+yet complete.
 
 ## RaiseEvent Continuation
 

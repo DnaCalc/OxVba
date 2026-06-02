@@ -793,6 +793,24 @@ fn lower_stmt(
     };
     match &stmt_data.kind {
         HirStmtKind::Let { target, value } => {
+            let write_intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                AssignmentIntent::Let
+            } else {
+                AssignmentIntent::Implicit
+            };
+            if let Some(name) = property_write_proc_for_target(typed_hir, *target, write_intent)? {
+                let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value, context)?;
+                out.push(BoundStmt::Call {
+                    name,
+                    args: vec![BoundCallArg {
+                        name: None,
+                        expr,
+                        force_byval: true,
+                    }],
+                    syntax: BoundCallSyntax::SyntheticPropertyAssignment,
+                });
+                return Ok(());
+            }
             let target = match lower_assignment_target(typed_hir, udt_field_aliases, *target) {
                 Ok(target) => target,
                 Err(err) => {
@@ -930,6 +948,21 @@ fn lower_stmt(
             }
         }
         HirStmtKind::Set { target, value } => {
+            if let Some(name) =
+                property_write_proc_for_target(typed_hir, *target, AssignmentIntent::Set)?
+            {
+                let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value, context)?;
+                out.push(BoundStmt::Call {
+                    name,
+                    args: vec![BoundCallArg {
+                        name: None,
+                        expr,
+                        force_byval: true,
+                    }],
+                    syntax: BoundCallSyntax::SyntheticPropertyAssignment,
+                });
+                return Ok(());
+            }
             let target = match lower_assignment_target(typed_hir, udt_field_aliases, *target) {
                 Ok(target) => target,
                 Err(err) => {
@@ -1675,6 +1708,49 @@ fn lower_assignment_target(
             expr.kind
         ))),
     }
+}
+
+fn property_write_proc_for_target(
+    typed_hir: &TypedHirModule,
+    target: HirExprId,
+    intent: AssignmentIntent,
+) -> Result<Option<String>, HirProductionLoweringError> {
+    let Some(expr) = typed_hir.module.arenas.expr(target) else {
+        return Ok(None);
+    };
+    let HirExprKind::Name(symbol) = expr.kind else {
+        return Ok(None);
+    };
+    let Some(symbol_data) = typed_hir.module.symbols.symbol(symbol) else {
+        return Ok(None);
+    };
+    if symbol_data.namespace != SymbolNamespace::Procedure {
+        return Ok(None);
+    }
+    let name = symbol_name(typed_hir, symbol)?;
+    let Some(property_group) = name
+        .strip_prefix("property_get_")
+        .or_else(|| name.strip_prefix("property_let_"))
+        .or_else(|| name.strip_prefix("property_set_"))
+    else {
+        return Ok(None);
+    };
+    let wanted = match intent {
+        AssignmentIntent::Set => format!("property_set_{property_group}"),
+        AssignmentIntent::Let | AssignmentIntent::Implicit => {
+            format!("property_let_{property_group}")
+        }
+    };
+    let route = typed_hir
+        .module
+        .symbols
+        .resolve_in_scope_chain(symbol_data.scope, SymbolNamespace::Procedure, &wanted)
+        .map_err(|err| {
+            HirProductionLoweringError::Unsupported(format!(
+                "property write route lookup failed: {err}"
+            ))
+        })?;
+    Ok(route.map(|_| wanted))
 }
 
 fn lower_expr(
@@ -4014,6 +4090,40 @@ mod tests {
             bytecode.instructions
         );
         assert!(metadata.contains_key("property_get_value"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_same_module_property_let_write() {
+        let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CallProc { .. }
+            )),
+            "expected same-module property let call: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("property_let_value"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_same_module_property_set_write() {
+        let source = "Sub Main()\nSet Obj = Nothing\nEnd Sub\nProperty Set Obj(ByRef target)\nEnd Property\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CallProc { .. }
+            )),
+            "expected same-module property set call: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("property_set_obj"), "{metadata:#?}");
     }
 
     #[test]

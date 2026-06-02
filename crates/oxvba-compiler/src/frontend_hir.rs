@@ -1399,6 +1399,9 @@ impl HirBuilder {
         if let Some(symbol) = self.resolve_property_get_name(scope, name)? {
             return Ok(symbol);
         }
+        if let Some(symbol) = self.resolve_property_write_name(scope, name)? {
+            return Ok(symbol);
+        }
         Err(HirBuildError::UnresolvedName {
             name: name.to_string(),
             scope,
@@ -1447,6 +1450,24 @@ impl HirBuilder {
             SymbolNamespace::Procedure,
             &property_get_name,
         )?)
+    }
+
+    fn resolve_property_write_name(
+        &self,
+        scope: ScopeId,
+        name: &str,
+    ) -> Result<Option<SymbolId>, HirBuildError> {
+        for prefix in ["property_let_", "property_set_"] {
+            let property_write_name = format!("{prefix}{name}");
+            if let Some(symbol) = self.symbols.resolve_in_scope_chain(
+                scope,
+                SymbolNamespace::Procedure,
+                &property_write_name,
+            )? {
+                return Ok(Some(symbol));
+            }
+        }
+        Ok(None)
     }
 
     fn scope_by_kind_and_name(&self, kind: ScopeKind, name: &str) -> Option<ScopeId> {
