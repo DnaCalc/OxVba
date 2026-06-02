@@ -1296,6 +1296,40 @@ fn project_source_has_only_procedural_modules_including_references(
         })
 }
 
+fn project_source_has_predeclared_document_reference_modules(manifest: &ProjectManifest) -> bool {
+    let referenced_project_names: BTreeSet<String> = manifest
+        .reference_projects
+        .iter()
+        .map(|project| project.project_name.to_ascii_lowercase())
+        .collect();
+    let declared_project_reference_names: BTreeSet<String> = manifest
+        .references
+        .iter()
+        .filter(|reference| reference.reference_kind == ReferenceKind::Project)
+        .map(|reference| reference.referenced_project_name.to_ascii_lowercase())
+        .collect();
+
+    !manifest.modules.is_empty()
+        && !manifest.references.is_empty()
+        && !manifest.reference_projects.is_empty()
+        && manifest
+            .modules
+            .iter()
+            .all(|module| module.module_kind == ModuleKind::Procedural)
+        && manifest
+            .references
+            .iter()
+            .all(|reference| reference.reference_kind == ReferenceKind::Project)
+        && declared_project_reference_names == referenced_project_names
+        && manifest.reference_projects.iter().all(|project| {
+            !project.modules.is_empty()
+                && project.modules.iter().all(|module| {
+                    matches!(module.module_kind, ModuleKind::Class | ModuleKind::Document)
+                        && module.attributes.vb_predeclared_id
+                })
+        })
+}
+
 fn project_source_is_single_procedural_module_with_hir_safe_typelib_references(
     manifest: &ProjectManifest,
 ) -> bool {
@@ -1316,7 +1350,9 @@ fn project_compile_boundary(manifest: &ProjectManifest) -> ProjectCompileBoundar
         || project_source_is_single_procedural_module_with_hir_safe_typelib_references(manifest)
     {
         ProjectCompileBoundary::ActiveHir
-    } else if project_source_has_only_procedural_modules_including_references(manifest) {
+    } else if project_source_has_only_procedural_modules_including_references(manifest)
+        || project_source_has_predeclared_document_reference_modules(manifest)
+    {
         ProjectCompileBoundary::FullHir
     } else {
         ProjectCompileBoundary::FullLegacy
@@ -24189,6 +24225,44 @@ mod tests {
             project_compile_boundary(&manifest),
             ProjectCompileBoundary::FullLegacy
         );
+    }
+
+    #[test]
+    fn project_compile_boundary_routes_predeclared_document_references_through_hir() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path\nEnd Sub",
+        )
+        .expect("main module parses");
+        let workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Document,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("workbook module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostWorkbook".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostWorkbook".to_string(),
+                modules: vec![workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            project_compile_boundary(&manifest),
+            ProjectCompileBoundary::FullHir
+        );
+        let compiled = compile_project(&manifest)
+            .expect("predeclared document project should compile through HIR full-source boundary");
+        assert_eq!(compiled.compile_route, ProjectCompileRoute::HirProduction);
     }
 
     #[test]

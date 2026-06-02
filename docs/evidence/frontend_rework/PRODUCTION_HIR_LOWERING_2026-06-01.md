@@ -1021,9 +1021,11 @@ project-qualified call into `LibMath.MathApi`, and the seed route audit now incl
 `INTP-004`, and `INTP-019` for procedural reference projects, active-project shadowing of a
 referenced procedure, and multiple project references. The same audit now also includes `INTP-016`
 as a simple active-project class route with `Dim ... As New` construction and early-bound class
-method calls compiling through `ProjectCompileRoute::HirProduction`. Document modules, imported
-COM/reference shapes beyond procedural project references, broader class semantics, and
-host/oracle-backed project semantics remain open.
+method calls compiling through `ProjectCompileRoute::HirProduction`. The audit also includes
+`integration_predeclared_document_project`, proving a project-shaped predeclared `ThisWorkbook`
+document reference and synthetic receiver property read (`ThisWorkbook.Path`) compile through
+`ProjectCompileRoute::HirProduction`. Imported COM/reference shapes beyond the current seeds,
+broader class/document semantics, and host/oracle-backed project semantics remain open.
 The audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM
 route: `Dim obj As New OxVba.TestDispatch` rewrites through imported activation/member metadata and
 compiles through `ProjectCompileRoute::HirProduction`. The source-backed route gate now passes; the

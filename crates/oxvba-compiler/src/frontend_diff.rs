@@ -386,6 +386,17 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             close_condition: String::new(),
         },
         FrontendCorpusFixture {
+            name: "integration_predeclared_document_project".to_string(),
+            fixture_path: "inline:ThisWorkbook predeclared document reference route".to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
             name: "excel_oracle_residual".to_string(),
             fixture_path:
                 "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
@@ -631,6 +642,9 @@ fn host_project_corpus_route_row(
     }
     if fixture.name == "integration_imported_typelib_testdispatch" {
         return imported_typelib_testdispatch_route_row(fixture);
+    }
+    if fixture.name == "integration_predeclared_document_project" {
+        return predeclared_document_project_route_row(fixture);
     }
     let Some(source) = source else {
         return skipped_corpus_route_row(fixture, "host project fixture has no route runner");
@@ -1267,6 +1281,117 @@ fn imported_typelib_testdispatch_route_row(
             class: fixture.class,
             status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
             evidence: format!("imported OxVba.TestDispatch project compile failed: {err}"),
+        },
+    }
+}
+
+fn predeclared_document_project_route_row(
+    fixture: &FrontendCorpusFixture,
+) -> FrontendCorpusRouteRow {
+    let main = match module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path\nEnd Sub",
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("predeclared document route main module parse failed: {err}"),
+            };
+        }
+    };
+    let workbook = match module_unit_from_source(
+        "ThisWorkbook",
+        ModuleKind::Document,
+        "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("predeclared document route workbook module parse failed: {err}"),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: "DocumentRouteProject".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main],
+        references: vec![crate::ProjectReference {
+            referenced_project_name: "HostWorkbook".to_string(),
+            reference_kind: crate::ReferenceKind::Project,
+        }],
+        reference_projects: vec![crate::ReferencedProjectManifest {
+            project_name: "HostWorkbook".to_string(),
+            modules: vec![workbook],
+        }],
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "predeclared document project compiled through {:?}{}",
+                        compiled.compile_route,
+                        render_project_route_detail(&compiled.compile_route_detail)
+                    ),
+                };
+            }
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            if !lowered.contains("property_get_pmr_hostworkbook_thisworkbook_path(0)") {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "predeclared document property rewrite was not preserved: {lowered}"
+                    ),
+                };
+            }
+            if !compiled
+                .procedure_runtime_metadata
+                .contains_key("property_get_pmr_hostworkbook_thisworkbook_path")
+            {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "predeclared document property metadata missing: {:?}",
+                        compiled.procedure_runtime_metadata.keys()
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence:
+                    "predeclared document project compiled through HIR full-source project boundary"
+                        .to_string(),
+            }
+        }
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("predeclared document project compile failed: {err}"),
         },
     }
 }
@@ -1938,7 +2063,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 8, "{report:#?}");
+        assert_eq!(report.skipped_count, 9, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -2118,14 +2243,14 @@ mod tests {
         assert!(report.source_backed_gate_passed(), "{report:#?}");
         assert_eq!(report.fallback_residuals().len(), 0, "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 1, "{report:#?}");
-        assert_eq!(report.rows.len(), 11, "{report:#?}");
+        assert_eq!(report.rows.len(), 12, "{report:#?}");
         assert_eq!(
             report
                 .rows
                 .iter()
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
-            10,
+            11,
             "{report:#?}"
         );
         assert_eq!(
@@ -2184,6 +2309,11 @@ mod tests {
             row.name == "integration_imported_typelib_testdispatch"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("imported OxVba.TestDispatch")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_predeclared_document_project"
+                && row.status == FrontendCorpusRouteStatus::HirProduction
+                && row.evidence.contains("predeclared document project")
         }));
     }
 

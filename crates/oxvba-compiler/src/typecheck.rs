@@ -927,16 +927,33 @@ fn validate_call_site(
         return Ok(BoundType::Variant);
     }
 
+    let params_for_call = lookup_casefold_name(proc_context.proc_params, name);
+    let (synthetic_receiver_arg, effective_args) = params_for_call
+        .map(|params| pmr_property_args_excluding_receiver(name, args, params))
+        .unwrap_or((None, args));
+    if let Some(receiver) = synthetic_receiver_arg {
+        check_expr(
+            &receiver.expr,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+            proc_context,
+        )?;
+    }
+
     let call_mode = classify_call_mode(
         name,
-        args,
+        effective_args,
         proc_context.proc_names,
         proc_context.proc_params,
         declared_types,
     )?;
 
-    if let Some(params) = lookup_casefold_name(proc_context.proc_params, name) {
-        let arg_mapping = map_call_args_to_params(name, args, params)?;
+    if let Some(params) = params_for_call {
+        let arg_mapping = map_call_args_to_params(name, effective_args, params)?;
         for (idx, param) in params.iter().enumerate() {
             if param.param_array {
                 for extra in &arg_mapping.extras {
@@ -2072,6 +2089,26 @@ fn map_call_args_to_params<'a>(
         fixed: mapped,
         extras,
     })
+}
+
+fn pmr_property_args_excluding_receiver<'a>(
+    proc_name: &str,
+    args: &'a [BoundCallArg],
+    params: &[BoundParam],
+) -> (Option<&'a BoundCallArg>, &'a [BoundCallArg]) {
+    let lower = proc_name.to_ascii_lowercase();
+    if (lower.starts_with("property_get_pmr_")
+        || lower.starts_with("property_let_pmr_")
+        || lower.starts_with("property_set_pmr_"))
+        && !args.is_empty()
+        && !params
+            .first()
+            .is_some_and(|param| param.name.eq_ignore_ascii_case("__oxvba_this_instance"))
+    {
+        (args.first(), &args[1..])
+    } else {
+        (None, args)
+    }
 }
 
 struct CallArgMapping<'a> {
