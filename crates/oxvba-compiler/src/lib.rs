@@ -977,6 +977,29 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_module_attribute_through_hir() {
+        let source = "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x As Long\nx = 7: x = x + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should reject the active inline sequence after an attribute");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route attribute-bearing source through HIR",
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "expected post-attribute procedure bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_options_frontend_v2_is_opt_in_bridge_route() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })

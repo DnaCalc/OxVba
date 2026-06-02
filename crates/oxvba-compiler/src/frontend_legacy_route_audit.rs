@@ -405,6 +405,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let module_attribute_statement =
+        "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x\nx = 7\nEnd Sub\n";
+    findings.push(route_finding(
+        "module attribute fixture",
+        module_attribute_statement,
+        "bd-aprs.9.9",
+    ));
+
     let enum_member_constants =
         "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
     findings.push(route_finding(
@@ -720,6 +728,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("conditional compilation")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("module attribute")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

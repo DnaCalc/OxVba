@@ -329,6 +329,10 @@ completed single-source inputs, using the resolver's physical-line normalization
 `#Const`/`#If`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
 current compiler preprocessor surface, not terminal proof of full VBA preprocessor parity or source
 mapping.
+Basic single-source module attributes such as `Attribute VB_Name = "Module1"` also route through
+the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
+Project-owned module attributes and member attributes continue to be enforced by the project route
+and remain part of the broader attribute-semantics residual.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.
