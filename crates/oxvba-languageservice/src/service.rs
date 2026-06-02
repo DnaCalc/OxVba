@@ -2564,7 +2564,7 @@ mod tests {
                     vb_name: "Main".to_string(),
                     ..ModuleAttributes::default()
                 },
-                source: "Public Sub Main()\n    GetBaseName\nEnd Sub\n".to_string(),
+                source: "Public Sub Main()\n    GetBaseName\n    countValue = dictionary.Count()\nEnd Sub\n".to_string(),
             }],
             references: vec![ProjectReference {
                 referenced_project_name: "Scripting".to_string(),
@@ -2572,24 +2572,35 @@ mod tests {
             }],
             reference_projects: vec![ReferencedProjectManifest {
                 project_name: "Scripting".to_string(),
-                modules: vec![ModuleUnit {
-                    module_name: "FileSystemObject".to_string(),
-                    module_kind: ModuleKind::Class,
-                    attributes: ModuleAttributes {
-                        vb_name: "FileSystemObject".to_string(),
-                        ..ModuleAttributes::default()
+                modules: vec![
+                    ModuleUnit {
+                        module_name: "FileSystemObject".to_string(),
+                        module_kind: ModuleKind::Class,
+                        attributes: ModuleAttributes {
+                            vb_name: "FileSystemObject".to_string(),
+                            ..ModuleAttributes::default()
+                        },
+                        source: "Attribute VB_Name = \"FileSystemObject\"\nPublic Function GetBaseName(Path As Variant) As Variant\nEnd Function\n".to_string(),
                     },
-                    source: "Attribute VB_Name = \"FileSystemObject\"\nPublic Function GetBaseName(Path As Variant) As Variant\nEnd Function\n".to_string(),
-                }],
+                    ModuleUnit {
+                        module_name: "Dictionary".to_string(),
+                        module_kind: ModuleKind::Class,
+                        attributes: ModuleAttributes {
+                            vb_name: "Dictionary".to_string(),
+                            ..ModuleAttributes::default()
+                        },
+                        source: "Attribute VB_Name = \"Dictionary\"\nPublic Function Count() As Variant\nEnd Function\n".to_string(),
+                    },
+                ],
             }],
             conditional_constants: std::collections::BTreeMap::new(),
         };
 
         let svc = LanguageService::from_project(project);
         let main_id = DocumentId::new("Main");
-        let pos = "Public Sub Main()\n    GetBaseName\nEnd Sub\n"
-            .find("GetBaseName")
-            .expect("call site") as u32;
+        let main_source =
+            "Public Sub Main()\n    GetBaseName\n    countValue = dictionary.Count()\nEnd Sub\n";
+        let pos = main_source.find("GetBaseName").expect("call site") as u32;
         let loc = svc
             .go_to_definition(&main_id, pos)
             .expect("typelib-projected definition should resolve");
@@ -2599,6 +2610,48 @@ mod tests {
             Some(SymbolProvenanceKind::ImportedTypeLibraryProjection)
         );
         assert!(loc.symbol_identity.is_some());
+
+        let count_workspace_symbol = svc
+            .workspace_symbols("Count")
+            .into_iter()
+            .find(|symbol| symbol.document == DocumentId::new("Scripting::Dictionary"))
+            .expect("projected Dictionary.Count should be visible to workspace search");
+        assert_eq!(count_workspace_symbol.symbol.name, "Count");
+        assert_eq!(
+            count_workspace_symbol.symbol.provenance.kind,
+            SymbolProvenanceKind::ImportedTypeLibraryProjection
+        );
+
+        let count_pos = main_source.find("Count").expect("Count call site") as u32;
+        let count_loc = svc
+            .go_to_definition(&main_id, count_pos)
+            .expect("projected Dictionary.Count should navigate");
+        assert_eq!(count_loc.document, DocumentId::new("Scripting::Dictionary"));
+        assert_eq!(
+            count_loc
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.kind),
+            Some(SymbolProvenanceKind::ImportedTypeLibraryProjection)
+        );
+        assert!(count_loc.symbol_identity.is_some());
+
+        let count_signature = svc
+            .signature_help(&main_id, count_pos + "Count(".len() as u32)
+            .expect("projected Dictionary.Count should expose signature help");
+        assert_eq!(count_signature.name, "Count");
+        assert_eq!(
+            count_signature.source_document,
+            Some(DocumentId::new("Scripting::Dictionary"))
+        );
+        assert_eq!(
+            count_signature
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.kind),
+            Some(SymbolProvenanceKind::ImportedTypeLibraryProjection)
+        );
+        assert!(count_signature.parameters.is_empty());
     }
 
     #[test]

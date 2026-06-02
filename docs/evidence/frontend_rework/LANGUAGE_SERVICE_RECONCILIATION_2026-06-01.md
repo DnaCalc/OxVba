@@ -47,6 +47,10 @@ Executable proof:
   navigates to the referenced project document with project-reference provenance, and the real
   `Adder.Multiply` class member call navigates to the class document and exposes signature help
   from the shared front-end callable facts.
+- follow-up FE-9.7 imported-typelib coverage now loads multiple projected `Scripting` classes and
+  drives projected `Dictionary.Count` through workspace search, go-to-definition, and signature
+  help with imported-typelib provenance. This is still identifier-based IDE resolution evidence,
+  not proof of complete type-directed COM member binding.
 
 ## Checks
 
@@ -54,6 +58,7 @@ Executable proof:
 - `cargo test -p oxvba-languageservice semantic --quiet`
 - `cargo test -p oxvba-languageservice snapshot_covers_matrix_route_overlay_shapes_from_frontend_hir --quiet`
 - `cargo test -p oxvba-languageservice workspace_symbols_cover_frontend_seed_project_routes --quiet`
+- `cargo test -p oxvba-languageservice project_aware_workspace_loads_projected_typelib_references --quiet`
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler --quiet`
 - `cargo check -p oxvba-compiler --quiet`
@@ -81,5 +86,10 @@ Executable proof:
 - The workspace route continuation deliberately uses existing integration seed project sources, not
   synthetic mini-projects, so it catches drift between the project route audit and IDE navigation
   route. It remains bounded to the current `INTP-003` reference-project and `INTP-016` class-member
-  shapes; imported COM, predeclared document host behavior, and live Excel execution still need
-  their own route runners.
+  shapes.
+- The imported-typelib continuation now covers more than the original single unqualified
+  `FileSystemObject.GetBaseName` case by adding projected `Scripting.Dictionary.Count` to workspace
+  search, navigation, and signature help. The resolver still chooses projected callables by
+  identifier, so this does not close richer typed COM member/property/default-member or live
+  reference behavior; predeclared document host behavior and live Excel execution still need their
+  own route runners.

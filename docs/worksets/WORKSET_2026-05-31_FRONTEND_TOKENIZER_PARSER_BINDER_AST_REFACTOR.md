@@ -699,12 +699,16 @@ Required newly explicit delivery beads:
   member chains, and trivia/comment-bearing sources) through the compiler front-end facts with no
   language-service diagnostics. Follow-up FE-9.7 workspace coverage drives the real `INTP-003`
   qualified project-reference call and the real `INTP-016` class member call through navigation and
-  signature-help assertions, not only workspace-symbol enumeration. Remaining work: broaden corpus
+  signature-help assertions, not only workspace-symbol enumeration. Follow-up imported-typelib
+  language-service coverage drives projected `Scripting.Dictionary.Count` through workspace search,
+  navigation, and signature help with imported-typelib provenance; this is still identifier-based
+  projection evidence, not full type-directed COM member binding. Remaining work: broaden corpus
   execution beyond the current route-overlay evidence, broaden document/host semantics beyond the
   current synthetic `ThisWorkbook.Path` and `ThisWorkbook.FullName()` route rows into real host
   object-model behavior, broaden imported COM beyond the current `TestDispatch` and
   `Scripting.Dictionary` route rows into richer member/property/live-reference behavior, cover
-  deeper cross-workspace language-service route runners beyond those seed shapes, and broaden live
+  deeper cross-workspace language-service route runners beyond those seed shapes and the current
+  imported-typelib projections, and broaden live
   Excel-oracle execution beyond activation/property-get/workbook/range-object cleanup into explicit
   Range `DispatchInvoke`, named-argument dispatch, property-put/default-member mutation, and other
   environment-dependent behavior beyond source-route
