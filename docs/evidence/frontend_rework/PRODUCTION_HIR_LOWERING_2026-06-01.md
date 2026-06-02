@@ -701,6 +701,8 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Follow-up declaration routing also covers simple `Declare PtrSafe Sub ...` statement calls
   through the same HIR-owned external descriptor and host invocation bytecode path; the route audit
   includes a declared external Sub fixture.
+- Follow-up ByRef declaration proof confirms `Declare PtrSafe Sub ... (ByRef x As Long)` calls
+  preserve the existing `ExternalCallWritebackKind::ByRefValue` metadata through HIR lowering.
 - Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
   default compiler path can keep them on the tracked fallback/diagnostic surface.
 

@@ -3608,6 +3608,7 @@ fn line_number_at(source: &str, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytecode::ExternalCallWritebackKind;
     use crate::resolve::BoundCompareMode;
     use crate::{Instruction, ParameterPassingMode, SourceParameterMechanism};
 
@@ -6549,6 +6550,32 @@ mod tests {
                 Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 1
             )),
             "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_declared_external_sub_byref_writeback() {
+        let source = "Declare PtrSafe Sub HostTap Lib \"host\" Alias \"tap\" (ByRef x As Long)\nSub Main()\nDim value As Long\nvalue = 3\nCall HostTap(value)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let writebacks = bytecode
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                Instruction::IntrinsicInvokeSymbolHost {
+                    writeback_slots, ..
+                } => Some(writeback_slots),
+                _ => None,
+            })
+            .next()
+            .expect("external Sub invocation bytecode");
+        assert!(
+            writebacks.iter().any(|writeback| {
+                writeback.arg_index == 0
+                    && matches!(writeback.kind, ExternalCallWritebackKind::ByRefValue)
+            }),
+            "expected ByRef external Sub writeback metadata: {bytecode:#?}"
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
