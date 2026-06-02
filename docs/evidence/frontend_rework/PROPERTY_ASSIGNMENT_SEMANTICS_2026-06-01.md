@@ -72,6 +72,10 @@ The 2026-06-01 continuation added:
   named from HIR facts. The syntax parser now accepts named arguments in both explicit no-paren
   `Call Proc name := value` and parenthesized `Call Proc(name := value)` forms so those routes
   reach the HIR call-argument path.
+- `bd-aprs.8.7` default-member HIR continuation: HIR call lowering now allows non-procedure
+  variable call targets such as `obj(42)` to lower as `BoundExpr::ProcCall`, which reaches the
+  existing late-bound default-member emitter and records `LateBoundDefaultMember` call-site
+  metadata with `DefaultMemberFallback` policy.
 
 ## Checks
 
@@ -93,6 +97,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler host_injected_global_namespace_default_member --quiet`
 - `cargo test -p oxvba-compiler hir_builder_preserves_named_call_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_named_call_arguments --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member_call --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
@@ -174,3 +179,8 @@ The 2026-06-01 continuation added:
   statement-form HIR lowering preserves that into `BoundCallArg`; explicit no-paren `Call` parses
   the same bare argument list, and parenthesized argument lists now parse `name := expr` through the
   same argument parser. Indexed property/default-member writeback remains open.
+- Default-member HIR review found that `IndexExpr` on a variable receiver lowered as a call and was
+  rejected before the emitter could apply its existing late-bound default-member fallback. HIR now
+  lets that bound call reach the default-member emitter, preserving dispatch invoke bytecode and
+  call-site metadata. This covers read/invoke fallback, not indexed property/default-member
+  assignment writeback.

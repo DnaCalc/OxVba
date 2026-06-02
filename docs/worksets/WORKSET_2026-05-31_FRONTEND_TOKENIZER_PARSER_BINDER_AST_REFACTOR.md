@@ -1102,7 +1102,8 @@ Candidate bead units:
   front-end `HostGlobal` dispatch classification before retaining their compatibility PMR rewrite
   carrier; statement-form named arguments now survive HIR and HIR production lowering into
   call-site argument binding metadata, including explicit no-paren `Call Proc name := value` and
-  parenthesized `Call Proc(name := value)`.
+  parenthesized `Call Proc(name := value)`; late-bound variable default-member calls such as
+  `obj(42)` now lower through HIR into default-member dispatch metadata.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

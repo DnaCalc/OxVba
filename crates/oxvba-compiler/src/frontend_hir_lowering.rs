@@ -1191,23 +1191,6 @@ fn lower_call_expr(
                     args: args.into_iter().map(|arg| arg.expr).collect(),
                 });
             }
-            let target_symbol = typed_hir
-                .module
-                .arenas
-                .expr(call_data.target)
-                .and_then(|expr| match expr.kind {
-                    crate::frontend_hir::HirExprKind::Name(symbol) => {
-                        typed_hir.module.symbols.symbol(symbol)
-                    }
-                    _ => None,
-                });
-            if !target_symbol.is_some_and(|symbol| {
-                symbol.namespace == crate::frontend_symbols::SymbolNamespace::Procedure
-            }) {
-                return Err(HirProductionLoweringError::Unsupported(
-                    "call target is not a procedure symbol".to_string(),
-                ));
-            }
             Ok(BoundExpr::ProcCall { name, args })
         }
         BoundExpr::Member {
@@ -2887,6 +2870,39 @@ mod tests {
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_late_bound_default_member_call() {
+        let source = "Sub Main()\nDim obj\nDim x\nx = obj(42)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        early_bound: false,
+                        ..
+                    } if args.len() == 1
+                )
+            }),
+            "expected default-member dispatch invoke: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.target_kind
+                    == crate::emit::CallTargetKindDescriptor::LateBoundDefaultMember
+                    && call_site.default_member_policy
+                        == crate::emit::DefaultMemberPolicyDescriptor::DefaultMemberFallback
+                    && call_site.arguments.len() == 1
+            }),
+            "expected late-bound default-member call-site metadata: {main:#?}"
+        );
     }
 
     #[test]
