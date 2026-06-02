@@ -1024,6 +1024,10 @@ as a simple active-project class route with `Dim ... As New` construction and ea
 method calls compiling through `ProjectCompileRoute::HirProduction`. Document modules, imported
 COM/reference shapes beyond procedural project references, broader class semantics, and
 host/oracle-backed project semantics remain open.
+The audit now includes `integration_imported_typelib_testdispatch` as a source-backed imported COM
+residual: `Dim obj As New OxVba.TestDispatch` compiles through
+`LegacyFallbackAfterHirUnsupported`, so the source-backed gate intentionally remains open until
+imported COM construction/member lowering is strict-HIR backed.
 The migrated active/full project HIR boundaries now call strict HIR compilation directly; unsupported
 HIR or forced-object-local shapes are recorded as `LegacyFallbackAfterHirUnsupported` instead of
 silently returning through the legacy fallback wrapper, and the route audit only counts rows with

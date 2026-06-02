@@ -375,6 +375,17 @@ pub fn frontend_rework_seed_corpus() -> Vec<FrontendCorpusFixture> {
             close_condition: String::new(),
         },
         FrontendCorpusFixture {
+            name: "integration_imported_typelib_testdispatch".to_string(),
+            fixture_path: "inline:OxVba.TestDispatch imported typelib route".to_string(),
+            class: FrontendCorpusClass::HostProject,
+            source: None,
+            expected_bytecode_drift: None,
+            expected_diagnostic_drift: None,
+            expected_metadata_drift: None,
+            rationale: String::new(),
+            close_condition: String::new(),
+        },
+        FrontendCorpusFixture {
             name: "excel_oracle_residual".to_string(),
             fixture_path:
                 "docs/evidence/frontend_rework/CORPUS_RUNNER_2026-06-01.md#excel-oracle-residual"
@@ -617,6 +628,9 @@ fn host_project_corpus_route_row(
     }
     if fixture.name == "integration_class_project_intp016" {
         return intp016_host_project_route_row(fixture);
+    }
+    if fixture.name == "integration_imported_typelib_testdispatch" {
+        return imported_typelib_testdispatch_route_row(fixture);
     }
     let Some(source) = source else {
         return skipped_corpus_route_row(fixture, "host project fixture has no route runner");
@@ -1190,6 +1204,68 @@ fn intp016_host_project_route_row(fixture: &FrontendCorpusFixture) -> FrontendCo
             class: fixture.class,
             status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
             evidence: format!("INTP-016 project compile failed: {err}"),
+        },
+    }
+}
+
+fn imported_typelib_testdispatch_route_row(
+    fixture: &FrontendCorpusFixture,
+) -> FrontendCorpusRouteRow {
+    let main = match module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New OxVba.TestDispatch\nDim x\nx = obj.Count()\nEnd Sub",
+    ) {
+        Ok(module) => module,
+        Err(err) => {
+            return FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                evidence: format!("imported typelib route module parse failed: {err}"),
+            };
+        }
+    };
+    let manifest = ProjectManifest {
+        project_name: "ImportedTypeLibRoute".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main],
+        references: vec![crate::ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: crate::ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: Default::default(),
+    };
+    match compile_project(&manifest) {
+        Ok(compiled) => {
+            if compiled.compile_route != ProjectCompileRoute::HirProduction {
+                return FrontendCorpusRouteRow {
+                    name: fixture.name.clone(),
+                    fixture_path: fixture.fixture_path.clone(),
+                    class: fixture.class,
+                    status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+                    evidence: format!(
+                        "imported OxVba.TestDispatch project compiled through {:?}; imported COM HIR project boundary remains open",
+                        compiled.compile_route
+                    ),
+                };
+            }
+            FrontendCorpusRouteRow {
+                name: fixture.name.clone(),
+                fixture_path: fixture.fixture_path.clone(),
+                class: fixture.class,
+                status: FrontendCorpusRouteStatus::HirProduction,
+                evidence: "imported OxVba.TestDispatch project compiled through HIR production project boundary".to_string(),
+            }
+        }
+        Err(err) => FrontendCorpusRouteRow {
+            name: fixture.name.clone(),
+            fixture_path: fixture.fixture_path.clone(),
+            class: fixture.class,
+            status: FrontendCorpusRouteStatus::LegacyFallbackResidual,
+            evidence: format!("imported OxVba.TestDispatch project compile failed: {err}"),
         },
     }
 }
@@ -1854,7 +1930,7 @@ mod tests {
         let report = run_frontend_diff_corpus(&fixtures);
 
         assert_eq!(report.ran_count, 3, "{report:#?}");
-        assert_eq!(report.skipped_count, 7, "{report:#?}");
+        assert_eq!(report.skipped_count, 8, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
         assert_eq!(report.bug_count, 0, "{report:#?}");
@@ -1907,6 +1983,10 @@ mod tests {
         );
         assert_eq!(
             report.rows[9].status,
+            FrontendCorpusRowStatus::SkippedResidual
+        );
+        assert_eq!(
+            report.rows[10].status,
             FrontendCorpusRowStatus::SkippedResidual
         );
     }
@@ -2027,10 +2107,10 @@ mod tests {
         let report = run_frontend_corpus_route_audit(&fixtures);
 
         assert!(!report.terminal_gate_passed(), "{report:#?}");
-        assert!(report.source_backed_gate_passed(), "{report:#?}");
-        assert!(report.fallback_residuals().is_empty(), "{report:#?}");
+        assert!(!report.source_backed_gate_passed(), "{report:#?}");
+        assert_eq!(report.fallback_residuals().len(), 1, "{report:#?}");
         assert_eq!(report.skipped_residuals().len(), 1, "{report:#?}");
-        assert_eq!(report.rows.len(), 10, "{report:#?}");
+        assert_eq!(report.rows.len(), 11, "{report:#?}");
         assert_eq!(
             report
                 .rows
@@ -2038,6 +2118,15 @@ mod tests {
                 .filter(|row| row.status == FrontendCorpusRouteStatus::HirProduction)
                 .count(),
             9,
+            "{report:#?}"
+        );
+        assert_eq!(
+            report
+                .rows
+                .iter()
+                .filter(|row| row.status == FrontendCorpusRouteStatus::LegacyFallbackResidual)
+                .count(),
+            1,
             "{report:#?}"
         );
         assert_eq!(
@@ -2082,6 +2171,11 @@ mod tests {
             row.name == "integration_class_project_intp016"
                 && row.status == FrontendCorpusRouteStatus::HirProduction
                 && row.evidence.contains("class project")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.name == "integration_imported_typelib_testdispatch"
+                && row.status == FrontendCorpusRouteStatus::LegacyFallbackResidual
+                && row.evidence.contains("LegacyFallbackAfterHirUnsupported")
         }));
     }
 
