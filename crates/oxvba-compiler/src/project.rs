@@ -6239,6 +6239,11 @@ fn resolve_internal_class_default_member_target_of_kinds(
                 )
         })
         .collect::<Vec<_>>();
+    if candidates.len() > 1 {
+        return Err(ProjectCompileError::DefaultMemberResolutionAmbiguous {
+            name: receiver.to_string(),
+        });
+    }
     if candidates.is_empty() {
         candidates = procedures
             .iter()
@@ -17358,6 +17363,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_ambiguous_authoritative_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Get Observe()\nObserve = 2\nEnd Property\nAttribute Observe.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous authoritative default-member get should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_non_authoritative_default_member_let() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -17387,6 +17421,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_ambiguous_authoritative_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal n)\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Let Observe(ByVal n)\nEnd Property\nAttribute Observe.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous authoritative default-member let should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_non_authoritative_indexed_default_member_let() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -17411,6 +17474,35 @@ mod tests {
 
         let err = compile_project(&manifest)
             .expect_err("ambiguous indexed non-authoritative default-member let should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_ambiguous_authoritative_indexed_default_member_property_set() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nSet widget(1) = x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByVal index, ByRef target)\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Set Observe(ByVal index, ByRef target)\nEnd Property\nAttribute Observe.VB_UserMemId = 0",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous authoritative indexed default-member property set should fail");
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
         assert!(err.to_string().contains("widget"));
     }

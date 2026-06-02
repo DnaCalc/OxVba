@@ -126,9 +126,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         lower through HIR into default-member dispatch metadata; late-bound variable indexed
         default-member assignments now lower through `BoundStmt::AssignDefaultMember`, preserve
         indexed argument names, and emit dispatch member id `0` with `PropertyLet`/`PropertySet`
-        hints;
+        hints; multiple authoritative `VB_UserMemId = 0` candidates of the required accessor kind
+        now reject as default-member ambiguity instead of selecting the first sorted candidate;
       - still open: broader project/host/imported-COM default-member writeback breadth, overload
-        validation, and replacement/quarantine of the remaining rewrite bodies;
+        arity/type validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated

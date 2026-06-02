@@ -82,6 +82,10 @@ The 2026-06-01 continuation added:
   member id `0`, preserves indexed argument names, and emits explicit `PropertyLet`/`PropertySet`
   hints for `obj(index := 2) = value` and `Set obj(2) = other`. Object-member binding metadata
   also records default-member `PropertyLet`/`PropertySet` rows for this late-bound variable subset.
+- `bd-aprs.8.7` default-member overload validation continuation: the compatibility project/member
+  fallback now rejects multiple explicit `VB_UserMemId = 0` candidates of the required accessor
+  kind instead of sorting and selecting one. Regression coverage includes authoritative
+  default-member read, `Property Let`, and indexed `Property Set` ambiguity diagnostics.
 
 ## Checks
 
@@ -105,6 +109,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler hir_production_lowering_preserves_named_call_arguments --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member_call --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_late_bound_default_member --quiet`
+- `cargo test -p oxvba-compiler ambiguous_authoritative --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
@@ -202,3 +207,9 @@ The 2026-06-01 continuation added:
   default-member property Let/Set rows. This closes the HIR fact path for the variable
   default-member assignment subset. Broader project/host/imported-COM default-member writeback
   breadth, overload validation, and replacement/quarantine of remaining rewrite bodies remain open.
+- Default-member overload review found that the front-end default-member route correctly returned
+  no unique route for multiple explicit `VB_UserMemId = 0` candidates, but the legacy fallback then
+  sorted the same candidates and selected one. The fallback now reports
+  `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` for multiple authoritative candidates, matching the
+  existing non-authoritative ambiguity policy. This closes the selected authoritative ambiguity
+  subset; broader arity/type overload validation remains open.
