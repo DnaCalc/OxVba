@@ -26,6 +26,13 @@ accepted compiler surfaces still depend on legacy `parse_expr` string parsing, C
 lowering, `project.rs` source rewriting, duplicate language-service semantics, or fallback
 eligibility for constructs that are inside the intended production surface.
 
+Confirmation: the current wording already says this is the production compiler front-end
+migration. The rework below does not change the goal; it removes any possible reading that
+"front-end v2 exists", "terminal smoke tests pass", or "residuals are documented" is enough. The
+terminal outcome is the clean shape we would have designed from the start: production source enters
+one compiler-owned front-end, compiler and IDE queries share its facts, and legacy source parsing
+or source rewriting survives only as named comparison/test/out-of-scope machinery.
+
 Architecture decision, 2026-05-31:
 
 The syntactic layer will be a **Roslyn-style green/red concrete syntax tree** (lossless,
@@ -294,6 +301,16 @@ This gate is binding for workset closure. The workset is not complete until all 
 11. Terminal route-audit evidence must cover the accepted grammar matrix and corpus lanes, not only
     a hand-picked smoke set. A passing bounded audit row may close that row; it does not close the
     production replacement workset.
+12. The scoped language surface is not an ad hoc "what v2 happens to support" subset. It includes
+    the production VBA compiler behavior already accepted by the repository, including lightweight
+    single-source compile, project compile, host/session compile, language-service semantic
+    surfaces, project/class/member/property/default-member/reference/COM surfaces that current
+    OxVba claims to support, and compiler diagnostics for those accepted constructs. Any intentional
+    exclusion must be named as out of scope or a separate accepted work owner before closure.
+13. Support beads can prepare, audit, classify, and prove routes, but they cannot close a capability
+    lane by themselves. If an audit/support bead finds an in-scope legacy route, the owning delivery
+    bead remains open or a new delivery bead is created before the audit bead can claim a clean
+    terminal result.
 
 ### 6.3 Lowering-target maturity and current VM contract
 
@@ -578,6 +595,7 @@ Created child bead mapping:
 | FE-8.5.d Arrays/indexing/ReDim parity | `bd-aprs.9.8` |
 | FE-8.5.e Compile-time options/declarations/constants | `bd-aprs.9.9` |
 | FE-8.5.f Broader declaration/type surface | `bd-aprs.9.10` |
+| FE-8.5.g Accepted-surface residual delivery sweep | `bd-aprs.9.11` |
 | FE-9.1 Per-construct default flip | `bd-aprs.10.1` |
 | FE-9.2 Legacy parser/rewriter retirement | `bd-aprs.10.2` |
 | FE-9.3 Salsa/query integration | `bd-aprs.10.3` |
@@ -601,6 +619,22 @@ graph is therefore repaired in place:
 | FE-7 project semantics | Active-project slices landed, but project/class/default-member/COM/property behavior is not fully retired from text rewrites. | Reopen FE-7 epic and affected child beads for direct production replacement or explicit compatibility quarantine. Partial work must be noted as already done. |
 | FE-8 production HIR lowering | Many statement/expression families are HIR-routed. `bd-aprs.9.5` remains open and is too broad to be the only executable unit. | Add child delivery beads under FE-8/FE-8.5 for remaining concrete HIR-lowering lanes: direct project construction, properties/default members, arrays/ReDim/indexing, compile-time options/constants, declarations/attributes, and final broad matrix sweep. |
 | FE-9 flip/retirement/IDE | Default route and audit scaffolding exist; bounded audit fixtures pass. | Reopen or add terminal retirement beads so no accepted route closes on bounded smoke evidence. Terminal closure waits for broad matrix/corpus route proof. |
+
+Tracker audit, 2026-06-02:
+
+- Confirmed open root: `bd-aprs` remains open.
+- Confirmed open implementation epics: FE-7 (`bd-aprs.8`), FE-8 (`bd-aprs.9`), and FE-9
+  (`bd-aprs.10`) remain open.
+- Confirmed reopened/open delivery beads already cover the main partial areas:
+  `bd-aprs.8.3`, `bd-aprs.8.4`, `bd-aprs.8.6`, `bd-aprs.8.7`, `bd-aprs.8.8`,
+  `bd-aprs.9.5`, `bd-aprs.9.8`, `bd-aprs.9.9`, `bd-aprs.9.10`, `bd-aprs.9.11`,
+  `bd-aprs.10.2`, and `bd-aprs.10.8`.
+- Closed FE-0 through FE-6 beads are treated as scoped foundation evidence, not proof that the
+  production compiler front-end has been replaced. They do not need to be reopened unless later
+  delivery/audit work finds a concrete defect in their stated scope.
+- New delivery beads should be created only where a required implementation area is missing from
+  this graph. Audit-only findings must not remain audit-only when they describe accepted compiler
+  behavior.
 
 Required newly explicit delivery beads:
 
@@ -762,6 +796,11 @@ Required newly explicit delivery beads:
   Follow-up FE-9.8 default-compile proof now asserts every source-backed frontend seed-corpus row
   compiles under strict `frontend_v2` and the default compiler with matching bytecode, so accepted
   source-backed seed rows do not silently depend on the default legacy fallback.
+- FE-8.5.g Accepted-surface residual delivery sweep: implementation bead created after the rework
+  audit so broad FE-9 audits have a delivery owner for accepted compiler behavior that does not fit
+  FE-8.5.a through FE-8.5.f. This bead must not replace the specific beads above; it catches the
+  missing implementation work exposed by matrix/corpus/host/language-service route audits and either
+  implements it directly or splits it into a narrower delivery bead before closing.
 
 ### Epic FE-0 — Workset Preparation and Truth Repair
 
