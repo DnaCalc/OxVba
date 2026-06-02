@@ -263,6 +263,11 @@ Follow-up deterministic date/time intrinsic work adds `Year`, `Month`, `Day`, `W
 HIR built-in allowlist and verifies the existing date/time bytecode variants. This intentionally
 excludes host current-time intrinsics such as `Date()`, `Time()`, `Now()`, and `Timer()`.
 
+Follow-up deterministic conversion/formatting intrinsic work adds `CStr`, `Str`, `Val`, `CDate`,
+`Hex`, and `Oct` to the same HIR built-in allowlist and verifies their existing bytecode variants.
+This remains a scalar expression subset; array-producing, collection, financial, pointer, dispatch,
+and host-sensitive intrinsic groups remain separate FE-8.5/FE-8 retirement work.
+
 The broad compiler-suite run for that route flip exposed three adjacent HIR-default correctness
 issues that were fixed in the same slice: declaration annotation symbols such as builtin type names
 and procedure return symbols are no longer treated as runtime frame locals by the HIR lowering

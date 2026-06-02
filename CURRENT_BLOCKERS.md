@@ -216,6 +216,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         deterministic date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`,
         `DateValue`, `TimeValue`, `DateSerial`, `TimeSerial`, `DateAdd`, and `DateDiff` now lower
         through HIR;
+        deterministic conversion/formatting intrinsics `CStr`, `Str`, `Val`, `CDate`, `Hex`, and
+        `Oct` now lower through HIR;
         richer default expressions, remaining deterministic intrinsic families, host-sensitive
         intrinsic breadth inside ParamArray callees, and
         broader call-entry optional/missing-state behavior, plus indexed property invocation and

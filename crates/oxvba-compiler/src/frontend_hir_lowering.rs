@@ -4494,6 +4494,61 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_conversion_format_intrinsics() {
+        let source = "Sub Main()\nDim cs\nDim st\nDim vl\nDim cd\nDim hx\nDim oc\nCall Capture(cs, st, vl, cd, hx, oc)\nEnd Sub\nSub Capture(ByRef cs, ByRef st, ByRef vl, ByRef cd, ByRef hx, ByRef oc)\ncs = CStr(7)\nst = Str(7)\nvl = Val(1234)\ncd = CDate(45000)\nhx = Hex(255)\noc = Oct(8)\nEnd Sub\n";
+        let (bytecode, _metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCStrDigits { .. }
+            )),
+            "expected CStr to emit CStr intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicStrFuncDigits { .. }
+            )),
+            "expected Str to emit Str intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicValDigits { .. }
+            )),
+            "expected Val to emit Val intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicCDateValue { .. }
+            )),
+            "expected CDate to emit CDate intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicHexDigits { .. }
+            )),
+            "expected Hex to emit Hex intrinsic: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicOctDigits { .. }
+            )),
+            "expected Oct to emit Oct intrinsic: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_property_get_and_let_signature_metadata() {
         let source = "Property Get Value() As Long\nValue = 1\nEnd Property\nProperty Let Value(ByRef newValue As Long)\nEnd Property\nSub Main()\nEnd Sub\n";
         let (_bytecode, metadata) =

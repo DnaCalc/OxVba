@@ -53,6 +53,12 @@ pub(crate) fn is_builtin_intrinsic_name(name: &str) -> bool {
             | "timeserial"
             | "dateadd"
             | "datediff"
+            | "cstr"
+            | "str"
+            | "val"
+            | "cdate"
+            | "hex"
+            | "oct"
     )
 }
 
