@@ -1170,7 +1170,12 @@ Candidate bead units:
   default-member/property get plus non-indexed and indexed let/set compatibility-helper routes now
   assert patched `CallProc.project_member` bytecode metadata for the expected `pmr_*` helper
   identity and accessor kind; this is evidence for the current host semantics, not closure of the
-  remaining host/reference HIR-ownership and rewrite-quarantine work.
+  remaining host/reference HIR-ownership and rewrite-quarantine work. Representative
+  active-project property/default-member compatibility-helper rows now assert the same bytecode
+  metadata shape for normalized `pmr_*` helper identity plus `PropertyGet`,
+  indexed/default-member `PropertyLet`, and indexed/default-member `PropertySet` kind, so
+  source-carrier proof alone cannot mask loss of property intent; this remains route-proof
+  hardening around the compatibility carrier, not native-HIR property rewrite closure.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish project/class array fields and broader
   project-owned array shapes through HIR.
   Partial work has already been done: dynamic-array runtime `ReDim` lowering now covers

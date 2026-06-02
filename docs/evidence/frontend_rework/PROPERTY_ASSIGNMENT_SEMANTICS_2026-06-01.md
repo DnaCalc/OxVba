@@ -285,6 +285,12 @@ The 2026-06-01 continuation added:
   route. The selected route now must classify as `EarlyBoundProject` with the expected accessor kind
   before the rewrite carrier is retained. This is still route proof around the compatibility
   rewrite body, not full HIR-native replacement.
+- Active-project compatibility-helper metadata review found the same source-only evidence weakness
+  in representative project PMR rows. The `PropertyGet`, indexed/default-member `PropertyLet`, and
+  indexed/default-member `PropertySet` rows now assert patched `CallProc.project_member` bytecode
+  metadata for the expected normalized `pmr_projecta_widget_value` helper identity plus accessor
+  kind. This hardens the current active-project compatibility route; broader HIR-native property
+  writeback and rewrite-body quarantine remain open.
 - Imported-COM accessor route review found that merely proving a `DispatchInvoke` source rewrite was
   too weak: type-library-only rows could still compile through the legacy project backend and the
   source carrier did not preserve get/put/putref intent. The project boundary now keeps separate
