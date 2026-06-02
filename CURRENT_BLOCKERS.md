@@ -190,9 +190,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
         otherwise completed single-source inputs;
         basic single-source module `Attribute VB_Name` lines now route through default HIR as
         ignored metadata;
+        basic `Const Name As Long = <literal/simple-expression>` declarators now route through
+        default HIR;
         broader DefType surfaces for visibility-prefixed class/project fields, project/member
-        attribute semantics, broader conditional-compilation/preprocessor parity, typed constants,
-        and broader compile-time constant evaluation remain open;
+        attribute semantics, broader conditional-compilation/preprocessor parity, typed constant
+        coercion/type validation breadth, and broader compile-time constant evaluation remain open;
     - `bd-aprs.9.10`: broader declaration/type surface;
     - `bd-aprs.10.7`: broad matrix/corpus route audit;
     - `bd-aprs.10.8`: final legacy route retirement/quarantine.

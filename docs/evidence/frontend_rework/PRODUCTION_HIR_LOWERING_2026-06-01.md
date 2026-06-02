@@ -333,6 +333,10 @@ Basic single-source module attributes such as `Attribute VB_Name = "Module1"` al
 the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
 Project-owned module attributes and member attributes continue to be enforced by the project route
 and remain part of the broader attribute-semantics residual.
+Basic typed constant declarators such as `Const CBase As Long = 7` also route through default HIR
+and substitute the value into procedure bytecode. This covers the current literal/simple-expression
+constant evaluator; typed constant coercion, overflow/type diagnostics, and broader compile-time
+expression parity remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
 open.

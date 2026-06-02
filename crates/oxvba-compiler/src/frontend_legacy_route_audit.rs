@@ -413,6 +413,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_const_statement = "Const CBase As Long = 7\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed const fixture",
+        typed_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let enum_member_constants =
         "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
     findings.push(route_finding(
@@ -731,6 +738,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("module attribute")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("typed const")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"
