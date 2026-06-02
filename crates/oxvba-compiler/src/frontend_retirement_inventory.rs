@@ -58,10 +58,10 @@ pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
     LegacyRetirementRow {
         legacy_path: "syntax_bridge::lower_cst_expr CST-to-legacy expression bridge",
         replacement: "typed HIR expression facts lowered through frontend_hir_lowering",
-        disposition: RetirementDisposition::QuarantinedResidual,
+        disposition: RetirementDisposition::Replaced,
         owner: "bd-aprs.9.6",
         partial_work: "CST expression lowering is compiled only for bridge-specific tests; production compile, route audit, and diff routes call HIR lowering directly.",
-        closure_condition: "terminal route audit proves the expression bridge has no production caller and remains test-only, or deletes it",
+        closure_condition: "syntax_bridge is crate-private, CST-to-legacy helpers are test-gated, and production route classification validates CST before calling HIR lowering directly",
     },
     LegacyRetirementRow {
         legacy_path: "stringly structural intrinsic names",
@@ -100,6 +100,32 @@ mod tests {
             row.legacy_path.contains("structural intrinsic")
                 && row.disposition == RetirementDisposition::Replaced
         }));
+    }
+
+    #[test]
+    fn retirement_inventory_records_cst_bridge_as_test_only_replaced_path() {
+        let row = LEGACY_RETIREMENT_ROWS
+            .iter()
+            .find(|row| row.legacy_path.contains("CST-to-legacy expression bridge"))
+            .expect("CST bridge retirement row");
+        assert_eq!(row.disposition, RetirementDisposition::Replaced);
+
+        let lib_source = include_str!("lib.rs");
+        assert!(lib_source.contains("pub(crate) mod syntax_bridge;"));
+        assert!(!lib_source.contains("pub mod syntax_bridge;"));
+
+        let bridge_source = include_str!("syntax_bridge.rs");
+        assert!(
+            bridge_source.contains("#[cfg(test)]\r\npub fn lower_expression_to_legacy_bound_expr")
+                || bridge_source
+                    .contains("#[cfg(test)]\npub fn lower_expression_to_legacy_bound_expr"),
+            "CST expression bridge must stay test-gated"
+        );
+        assert!(
+            bridge_source.contains("#[cfg(test)]\r\npub fn compile_source_via_syntax_bridge")
+                || bridge_source.contains("#[cfg(test)]\npub fn compile_source_via_syntax_bridge"),
+            "CST source bridge must stay test-gated"
+        );
     }
 
     #[test]

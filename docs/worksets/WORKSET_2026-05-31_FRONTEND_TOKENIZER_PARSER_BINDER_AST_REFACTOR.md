@@ -1411,10 +1411,12 @@ Candidate bead units:
   so fallback-derived facts cannot be counted as HIR retirement evidence. Closure requires code
   search and route proof that remaining legacy helpers are comparison/test-only or outside the
   accepted surface. Follow-up FE-9 syntax-bridge cleanup makes `syntax_bridge` crate-private and
-  test-gates its CST-to-legacy helpers, so current production routes must enter through HIR lowering
-  or explicit route-audit support. Follow-up correction narrows the project audit evidence to the
-  executable active-project construction route; remaining `project.rs` helper-source rewrite
-  carriers stay open here until deleted or compatibility-quarantined with route proof.
+  test-gates its CST-to-legacy helpers; a continuation marks that CST bridge path as replaced in
+  the retirement inventory, so current production routes must enter through HIR lowering or
+  explicit route-audit support. Follow-up correction narrows the project audit evidence to the
+  executable active-project construction route; remaining `parse_expr`, fallback, bundle
+  `resolve_symbols`, and `project.rs` helper-source carriers stay open here until deleted or
+  compatibility-quarantined with route proof.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is

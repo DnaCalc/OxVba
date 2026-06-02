@@ -29,14 +29,15 @@ Rows now distinguish:
 - quarantined project/class/COM/default-member rewrites: `project.rs` production compilation now
   selects the module-aware plan unconditionally; the old rewrite bridge remains for internal parity
   tests while FE-7.1 through FE-7.6 own broader replacement of source-text lowering internals;
-- quarantined CST-to-legacy expression bridge: `syntax_bridge::lower_cst_expr` is now compiled
-  only for internal bridge tests; current code search finds no production caller, so it is outside
-  the public compiler API and cannot be an external production entry point;
+- replaced/test-only CST-to-legacy expression bridge: `syntax_bridge::lower_cst_expr` and the
+  source bridge helpers are compiled only for internal bridge tests; `syntax_bridge` is
+  crate-private, current code search finds no production caller, and production route
+  classification validates CST before calling HIR lowering directly;
 - replaced structural intrinsic names where FE-8.1 moved compiler-owned structural concepts to
   `frontend_structural_intrinsics::StructuralIntrinsic`.
 
-Each row carries the partial work already done and the concrete closure condition needed before it
-can be treated as retired rather than merely inventoried.
+Each row carries the partial work already done and the concrete closure condition needed before any
+remaining residual can be treated as retired rather than merely inventoried.
 
 Executable route proof was added through a test-only route classifier in `syntax_bridge`: scoped
 assignment/arithmetic and simple same-module `Call` statement fixtures classify as
@@ -55,7 +56,8 @@ are no longer public compiler API and are not compiled into ordinary production 
 repository search finds no production caller of `lower_expression_to_legacy_bound_expr`,
 `compile_source_via_syntax_bridge`, or
 `compile_source_with_runtime_metadata_via_syntax_bridge`; the only non-test internal use of the
-module is the HIR route classifier consumed by the legacy route audit.
+module is the HIR route classifier consumed by the legacy route audit. The retirement inventory now
+records this CST bridge path as `Replaced`, not a quarantined production residual.
 
 ## Checks
 
@@ -71,16 +73,16 @@ module is the HIR route classifier consumed by the legacy route audit.
 
 - The previous evidence was stale after FE-8.5: it still described `syntax_bridge::lower_cst_expr`
   as the replacement route. That is now corrected to HIR production lowering for the scoped
-  surface, with the CST bridge classified as residual. A later FE-9 route cleanup moved the public
-  `compile_with_options` HIR attempt off `syntax_bridge` entirely; only the explicit default
-  fallback policy reaches legacy compilation after `Unsupported`. A subsequent FE-9 package-context
-  cleanup moved bundle module fact extraction to prefer HIR `BoundModule` facts, with
-  `resolve_symbols` retained as an explicit unsupported-module fallback. This continuation adds
-  route-visible bundle fact tests so that fallback-derived package context facts cannot satisfy a
-  terminal HIR ownership claim.
+  surface, with the CST bridge classified as a replaced, test-only compatibility helper rather than
+  a production residual. A later FE-9 route cleanup moved the public `compile_with_options` HIR
+  attempt off `syntax_bridge` entirely; only the explicit default fallback policy reaches legacy
+  compilation after `Unsupported`. A subsequent FE-9 package-context cleanup moved bundle module
+  fact extraction to prefer HIR `BoundModule` facts, with `resolve_symbols` retained as an explicit
+  unsupported-module fallback. This continuation adds route-visible bundle fact tests so that
+  fallback-derived package context facts cannot satisfy a terminal HIR ownership claim.
 - This bead does not claim broad deletion of `parse_expr` or `project.rs` rewrite-era internals.
   The project rewrite bridge is no longer production-selected, and the CST-to-legacy syntax bridge
-  helpers are test-only, but source-text lowering internals remain compatibility scaffolding until
-  FE-7/FE-9 retirement beads finish replacing or quarantining them.
+  helpers are test-only/replaced for production purposes, but source-text lowering internals remain
+  compatibility scaffolding until FE-7/FE-9 retirement beads finish replacing or quarantining them.
 - Every residual row has an owner, replacement surface, partial-work note, and closure condition,
   so legacy fallback is not silent.
