@@ -942,12 +942,14 @@ fn split_hir_declarators(text: &str) -> Vec<&str> {
     let mut start = 0usize;
     let mut depth = 0i32;
     let mut in_string = false;
+    let mut in_date_literal = false;
     for (idx, ch) in text.char_indices() {
         match ch {
-            '"' => in_string = !in_string,
-            '(' if !in_string => depth += 1,
-            ')' if !in_string && depth > 0 => depth -= 1,
-            ',' if !in_string && depth == 0 => {
+            '"' if !in_date_literal => in_string = !in_string,
+            '#' if !in_string => in_date_literal = !in_date_literal,
+            '(' if !in_string && !in_date_literal => depth += 1,
+            ')' if !in_string && !in_date_literal && depth > 0 => depth -= 1,
+            ',' if !in_string && !in_date_literal && depth == 0 => {
                 parts.push(text[start..idx].trim());
                 start = idx + 1;
             }
@@ -3408,17 +3410,19 @@ fn const_i64_eval_after_span_with_env(
 
 fn first_const_declarator_tail(text: &str) -> &str {
     let mut in_string = false;
+    let mut in_date_literal = false;
     let mut chars = text.char_indices().peekable();
     while let Some((idx, ch)) = chars.next() {
         match ch {
-            '"' => {
+            '"' if !in_date_literal => {
                 if in_string && matches!(chars.peek(), Some((_, '"'))) {
                     chars.next();
                 } else {
                     in_string = !in_string;
                 }
             }
-            ',' if !in_string => return &text[..idx],
+            '#' if !in_string => in_date_literal = !in_date_literal,
+            ',' if !in_string && !in_date_literal => return &text[..idx],
             _ => {}
         }
     }
@@ -3429,17 +3433,19 @@ fn split_const_declarators(text: &str) -> Vec<&str> {
     let mut declarators = Vec::new();
     let mut start = 0;
     let mut in_string = false;
+    let mut in_date_literal = false;
     let mut chars = text.char_indices().peekable();
     while let Some((idx, ch)) = chars.next() {
         match ch {
-            '"' => {
+            '"' if !in_date_literal => {
                 if in_string && matches!(chars.peek(), Some((_, '"'))) {
                     chars.next();
                 } else {
                     in_string = !in_string;
                 }
             }
-            ',' if !in_string => {
+            '#' if !in_string => in_date_literal = !in_date_literal,
+            ',' if !in_string && !in_date_literal => {
                 let part = text[start..idx].trim();
                 if !part.is_empty() {
                     declarators.push(part);
@@ -8681,6 +8687,38 @@ mod tests {
         let main = metadata.get("main").expect("main metadata");
         assert!(main.slots.iter().any(|slot| {
             slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Date
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_typed_month_name_date_const_literal() {
+        let source = "Const CStamp As Date = #February 28, 2026#, CNext As Date = CStamp + 1\nSub Main()\nDim x As Date\nDim y As Date\nx = CStamp\ny = CNext\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_081.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_082.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Date
+        }));
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "y"
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Date
         }));

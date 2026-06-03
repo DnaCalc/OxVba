@@ -702,11 +702,13 @@ Required newly explicit delivery beads:
   untyped `String` constants over source-prior string constants and `&` concatenation, plus
   `Option Compare Text` folding for covered string equality/inequality Boolean constants, plus
   language-service workspace semantic snapshots that honor active-project manifest conditional
-  constants for diagnostics/symbols through the shared compiler preprocessor.
+  constants for diagnostics/symbols through the shared compiler preprocessor, plus month-name Date
+  constants with commas inside `#...#` literals without breaking same-statement Const declarator
+  splitting.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
-  locale-sensitive Date literal breadth, full platform `LongPtr` semantics, lossless
+  locale-sensitive numeric Date literal breadth, full platform `LongPtr` semantics, lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
@@ -1439,7 +1441,8 @@ Candidate bead units:
   evaluator, basic single-source module `Attribute VB_Name` lines as ignored metadata, basic typed
   `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
-  exponentiation plus integer division/`Mod`, and explicit `As Byte`/`As Integer`/`As Long`
+  exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe
+  same-statement declarator splitting, and explicit `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT

@@ -136,6 +136,20 @@ fn scalar_currency_date_const_carriers_execute() {
 }
 
 #[test]
+fn scalar_month_name_date_const_carrier_executes() {
+    let snap = run(
+        "Const CStamp As Date = #February 28, 2026#, CNext As Date = CStamp + 1\nSub Main()\nDim stamp As Date\nDim nextStamp As Date\nstamp = CStamp\nnextStamp = CNext\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_date_f64(46_081.0),
+            Variant::from_date_f64(46_082.0),
+        ]
+    );
+}
+
+#[test]
 fn scalar_currency_date_const_expression_carriers_execute() {
     let snap = run(
         "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CStamp As Date = #2026-02-28# + 1\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub",
