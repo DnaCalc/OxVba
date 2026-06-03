@@ -1093,12 +1093,13 @@ constant expressions:
   by `Const CTotal As Double = CBase + 0.5`. Direct HIR, default-route, route-audit, and VM
   execution coverage now prove `LoadConstF64` for the expression route, not just the literal route.
 - A bounded Boolean typed-constant pass adds `True`/`False`, source-prior Boolean constants, `Not`,
-  `And`, `Or`, `Xor`, and simple comparisons over finite numeric values, Boolean
+  `And`, `Or`, `Xor`, `Eqv`, `Imp`, and simple comparisons over finite numeric values, Boolean
   equality/inequality, and binary string equality/inequality with `&` concatenation to the declared
   `Boolean` module-constant evaluator. `Const Prefix As String = "re"`, `Const Enabled As Boolean =
   True`, and `Const CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & "ady" = "ready"`
-  now substitutes as `LoadConstBool true`; `Const CFlag As Boolean = Enabled Xor True` substitutes
-  as `LoadConstBool false` through direct HIR, default-route, route-audit, and VM execution paths.
+  now substitutes as `LoadConstBool true`; `Const CFlag As Boolean = Enabled Xor True`,
+  `Enabled Eqv False`, and `Enabled Imp False` substitute as `LoadConstBool false` through direct
+  HIR, default-route, route-audit, and VM execution paths.
 - Module compare mode now reaches that Boolean constant string-comparison evaluator for the covered
   subset. `Option Compare Text` makes `Const CFlag As Boolean = "a" = "A"` fold to
   `LoadConstBool true`; `Option Compare Database` intentionally remains on the current binary
@@ -1340,6 +1341,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_boolean_xor_const_expression --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_xor_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_xor_const_expression_executes --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_boolean_eqv_imp_const_expressions --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_eqv_imp_const_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_eqv_imp_const_expressions_execute --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_scalar_concat_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
