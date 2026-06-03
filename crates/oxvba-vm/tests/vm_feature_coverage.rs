@@ -166,6 +166,14 @@ fn scalar_month_name_date_const_carrier_executes() {
 }
 
 #[test]
+fn scalar_numeric_month_day_date_const_carrier_executes() {
+    let snap = run(
+        "Const CStamp As Date = #2/28/2026#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_date_f64(46_081.0)]);
+}
+
+#[test]
 fn scalar_untyped_date_const_carrier_executes() {
     let snap =
         run("Const CStamp = #2026-02-28#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub");

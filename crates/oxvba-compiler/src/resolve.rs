@@ -2158,6 +2158,12 @@ fn parse_date_literal_to_packed(text: &str) -> Option<i32> {
             let year = year.parse::<i32>().ok()?;
             year.saturating_mul(10_000) + month.saturating_mul(100) + day
         }
+        [month, day, year] if is_unambiguous_numeric_month_day(month, day) => {
+            let month = month.parse::<i32>().ok()?;
+            let day = day.parse::<i32>().ok()?;
+            let year = year.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
         [day, month, year] => {
             let day = day.parse::<i32>().ok()?;
             let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
@@ -2168,6 +2174,16 @@ fn parse_date_literal_to_packed(text: &str) -> Option<i32> {
     };
     packed_date_components(packed)?;
     Some(packed)
+}
+
+fn is_unambiguous_numeric_month_day(month: &str, day: &str) -> bool {
+    let Ok(month) = month.parse::<i32>() else {
+        return false;
+    };
+    let Ok(day) = day.parse::<i32>() else {
+        return false;
+    };
+    (1..=12).contains(&month) && day > 12
 }
 
 fn parse_month_token(text: &str) -> Option<i32> {
@@ -8259,6 +8275,25 @@ mod tests {
     #[test]
     fn resolve_optional_date_literal_default() {
         let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal stamp As Date = #2026-02-28#)\ntarget = stamp\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitDateSerialF64(
+                46_081.0f64.to_bits()
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_optional_unambiguous_numeric_month_day_date_literal_default() {
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal stamp As Date = #2/28/2026#)\ntarget = stamp\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures

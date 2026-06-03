@@ -704,12 +704,13 @@ Required newly explicit delivery beads:
   language-service workspace semantic snapshots that honor active-project manifest conditional
   constants for diagnostics/symbols through the shared compiler preprocessor, plus month-name Date
   constants with commas inside `#...#` literals without breaking same-statement Const declarator
-  splitting, plus untyped Date literal constants through `DateConst`/`LoadConstDate`.
+  splitting, plus untyped Date literal constants through `DateConst`/`LoadConstDate`, plus
+  unambiguous numeric month/day Date literals such as `#2/28/2026#`.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion
   outside the covered scalar-to-string concat operands and exact scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
-  locale-sensitive numeric Date literal breadth, full platform `LongPtr` semantics, lossless
+  ambiguous locale-sensitive numeric Date literal breadth, full platform `LongPtr` semantics, lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
@@ -1443,8 +1444,9 @@ Candidate bead units:
   `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe
-  same-statement declarator splitting, untyped Date literal constants, scalar-to-string `&`
-  operand coercion for covered typed and untyped `String` constants, and explicit
+  same-statement declarator splitting, untyped Date literal constants, unambiguous numeric
+  month/day Date literals, scalar-to-string `&` operand coercion for covered typed and untyped
+  `String` constants, and explicit
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,

@@ -4402,6 +4402,12 @@ fn parse_date_literal_to_packed(text: &str) -> Option<i32> {
             let year = year.parse::<i32>().ok()?;
             year.saturating_mul(10_000) + month.saturating_mul(100) + day
         }
+        [month, day, year] if is_unambiguous_numeric_month_day(month, day) => {
+            let month = month.parse::<i32>().ok()?;
+            let day = day.parse::<i32>().ok()?;
+            let year = year.parse::<i32>().ok()?;
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
+        }
         [day, month, year] => {
             let day = day.parse::<i32>().ok()?;
             let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
@@ -4412,6 +4418,16 @@ fn parse_date_literal_to_packed(text: &str) -> Option<i32> {
     };
     packed_date_components(packed)?;
     Some(packed)
+}
+
+fn is_unambiguous_numeric_month_day(month: &str, day: &str) -> bool {
+    let Ok(month) = month.parse::<i32>() else {
+        return false;
+    };
+    let Ok(day) = day.parse::<i32>() else {
+        return false;
+    };
+    (1..=12).contains(&month) && day > 12
 }
 
 fn parse_month_token(text: &str) -> Option<i32> {
@@ -8837,6 +8853,27 @@ mod tests {
         }));
         assert!(main.slots.iter().any(|slot| {
             slot.name == "y"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Date
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_unambiguous_numeric_month_day_date_const_literal() {
+        let source =
+            "Const CStamp As Date = #2/28/2026#\nSub Main()\nDim x As Date\nx = CStamp\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_081.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Date
         }));

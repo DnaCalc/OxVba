@@ -556,6 +556,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_numeric_month_day_date_const_statement = "Const CStamp As Date = #2/28/2026#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed numeric month-day date const fixture",
+        typed_numeric_month_day_date_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let untyped_date_const_statement =
         "Const CStamp = #2026-02-28#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub\n";
     findings.push(route_finding(
