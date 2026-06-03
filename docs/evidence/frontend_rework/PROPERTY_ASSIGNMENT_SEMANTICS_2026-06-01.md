@@ -136,9 +136,10 @@ The 2026-06-01 continuation added:
   identity, so go-to-definition and find-references for the getter use and setter declaration share
   the compiler HIR property-group fact instead of exposing duplicate IDE property symbols. The
   coalesced group prefers the getter accessor when present, preserving the read type and getter
-  definition span even if a setter appears first in source order. This covers the same-module
-  property-group query surface; broader project/class/COM/default-member writeback and rewrite
-  quarantine remain open.
+  definition span even if a setter appears first in source order. The public callable surface now
+  hides canonical `property_get_*`/`property_let_*`/`property_set_*` implementation names and keeps
+  the logical getter alias for signature help. This covers the same-module property-group query
+  surface; broader project/class/COM/default-member writeback and rewrite quarantine remain open.
 
 ## Checks
 
