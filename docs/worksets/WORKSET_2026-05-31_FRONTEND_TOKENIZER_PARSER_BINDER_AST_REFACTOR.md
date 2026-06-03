@@ -1439,6 +1439,14 @@ Candidate bead units:
   `Property Get` signature help (`Value(1)`) uses shared compiler front-end facts instead of a
   duplicate IDE semantic model. Broader project/class/COM/default-member writeback and rewrite
   quarantine remain open.
+
+  Fresh review, 2026-06-03: do not treat frontend route validation as production ownership. The
+  active-project class/default-member property rows now prove that PMR compatibility helpers carry
+  the selected `EarlyBoundProject` accessor kind into bytecode metadata, but any row whose
+  executable carrier is still `property_*_pmr_*` helper source is not yet a clean HIR-owned
+  property/default-member route. Closing FE-7.3.a/FE-8.5.c requires either native frontend/HIR
+  ownership of those rows or an explicitly named compatibility quarantine that is outside the
+  accepted production replacement surface.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish project/class array fields and broader
   project-owned array shapes through HIR.
   Partial work has already been done: dynamic-array runtime `ReDim` lowering now covers
