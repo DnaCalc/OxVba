@@ -628,6 +628,7 @@ mod kani_proofs {
             option_explicit: false,
             option_private_module: false,
             vb_name_attribute: None,
+            module_attributes: Vec::new(),
             vb_predeclared_id_attribute: false,
             vb_global_namespace_attribute: false,
             vb_exposed_attribute: false,

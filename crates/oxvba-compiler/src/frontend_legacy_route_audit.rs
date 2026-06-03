@@ -513,8 +513,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
-    let module_attribute_statement =
-        "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x\nx = 7\nEnd Sub\n";
+    let module_attribute_statement = "Attribute VB_Name = \"Module1\"\nAttribute VB_Description = \"demo module\"\nSub Main()\nDim x\nx = 7\nEnd Sub\n";
     findings.push(route_finding(
         "module attribute fixture",
         module_attribute_statement,

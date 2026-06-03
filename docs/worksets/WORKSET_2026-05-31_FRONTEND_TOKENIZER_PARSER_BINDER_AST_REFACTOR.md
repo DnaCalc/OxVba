@@ -1544,9 +1544,9 @@ Candidate bead units:
   workspace semantic snapshots, conditional-compilation arithmetic with checked integer unary signs,
   `+`, `-`, `*`, guarded `\`, and `Mod` plus Boolean `Xor`/`Eqv`/`Imp` inside the existing
   `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute VB_Name`,
-  Boolean module attribute lines, and member attribute lines such as `Attribute Value.VB_UserMemId`
-  / `Attribute Value.VB_MemberFlags` preserved on front-end `BoundModule`/`BoundProcedure` facts,
-  basic typed
+  general module attributes such as `VB_Description`, Boolean module attribute lines, and member
+  attribute lines such as `Attribute Value.VB_UserMemId` / `Attribute Value.VB_MemberFlags`
+  preserved on front-end `BoundModule`/`BoundProcedure` facts, basic typed
   `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe

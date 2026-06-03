@@ -383,6 +383,7 @@ pub struct BoundModule {
     pub option_explicit: bool,
     pub option_private_module: bool,
     pub vb_name_attribute: Option<String>,
+    pub module_attributes: Vec<BoundModuleAttribute>,
     pub vb_predeclared_id_attribute: bool,
     pub vb_global_namespace_attribute: bool,
     pub vb_exposed_attribute: bool,
@@ -398,6 +399,12 @@ pub struct BoundModule {
     pub external_declarations: HashMap<String, BoundExternalDecl>,
     pub body: Vec<BoundStmt>,
     pub procedures: Vec<BoundProcedure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundModuleAttribute {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone)]
@@ -526,6 +533,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let lines = normalize_source_lines(source);
     let option_private_module = collect_option_private_module(&lines);
     let vb_name_attribute = collect_vb_name_attribute(&lines);
+    let module_attributes = collect_module_attributes(&lines);
     let vb_predeclared_id_attribute = collect_vb_bool_attribute(&lines, "VB_PredeclaredId");
     let vb_global_namespace_attribute = collect_vb_bool_attribute(&lines, "VB_GlobalNamespace");
     let vb_exposed_attribute = collect_vb_bool_attribute(&lines, "VB_Exposed");
@@ -640,6 +648,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         option_explicit,
         option_private_module,
         vb_name_attribute,
+        module_attributes,
         vb_predeclared_id_attribute,
         vb_global_namespace_attribute,
         vb_exposed_attribute,
@@ -7483,6 +7492,22 @@ pub(crate) fn collect_vb_name_attribute(lines: &[String]) -> Option<String> {
     lines.iter().find_map(|line| parse_vb_name_attribute(line))
 }
 
+pub(crate) fn collect_module_attributes(lines: &[String]) -> Vec<BoundModuleAttribute> {
+    lines
+        .iter()
+        .filter_map(|line| {
+            let (lhs, rhs) = parse_attribute_assignment(line)?;
+            if lhs.contains('.') {
+                return None;
+            }
+            Some(BoundModuleAttribute {
+                name: lhs.trim().to_string(),
+                value: rhs.trim().trim_matches('"').trim().to_string(),
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn collect_vb_bool_attribute(lines: &[String], attr_name: &str) -> bool {
     lines
         .iter()
@@ -8026,6 +8051,29 @@ mod tests {
 
         assert_eq!(module.vb_name_attribute.as_deref(), Some("LogicalModule"));
         assert_eq!(module.declarations, vec!["x"]);
+    }
+
+    #[test]
+    fn resolve_records_general_module_attributes() {
+        let source = concat!(
+            "Attribute VB_Name = \"LogicalModule\"\n",
+            "Attribute VB_Description = \"demo module\"\n",
+            "Sub Main()\nDim x\nx = 1\nEnd Sub",
+        );
+        let module = resolve_symbols(source);
+
+        assert!(
+            module
+                .module_attributes
+                .iter()
+                .any(|attr| { attr.name == "VB_Description" && attr.value == "demo module" })
+        );
+        assert!(
+            module
+                .module_attributes
+                .iter()
+                .all(|attr| !attr.name.contains('.'))
+        );
     }
 
     #[test]
