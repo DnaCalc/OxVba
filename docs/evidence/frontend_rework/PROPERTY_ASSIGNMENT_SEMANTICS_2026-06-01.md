@@ -126,6 +126,13 @@ The 2026-06-01 continuation added:
   and accessor kind. This hardens the current rewrite-backed host route so it cannot silently lose
   property/default-member intent in bytecode metadata, while the broader host/reference HIR
   ownership and rewrite-body quarantine work remains open.
+- `bd-aprs.8.7` language-service property continuation: compiler HIR property arena facts now
+  project into IDE-facing `SemanticSnapshot` symbols as `SymbolKind::Property` with the
+  user-facing property name, and `SemanticSnapshot::callables` also exposes a user-facing property
+  callable alias backed by the canonical `property_get_*` HIR procedure. Signature help for
+  `Value(1)` now resolves through those compiler-owned property facts rather than requiring a
+  duplicate language-service semantic model. This covers the same-module `Property Get` query
+  surface; broader project/class/COM/default-member writeback and rewrite quarantine remain open.
 
 ## Checks
 
@@ -167,6 +174,10 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler compile_project --quiet`
+- `cargo test -p oxvba-languageservice snapshot_symbols_classify_properties_from_frontend_hir --quiet`
+- `cargo test -p oxvba-languageservice signature_help_resolves_property_get_alias_from_frontend_hir --quiet`
+- `cargo test -p oxvba-languageservice --quiet`
+- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo check -p oxvba-compiler --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`

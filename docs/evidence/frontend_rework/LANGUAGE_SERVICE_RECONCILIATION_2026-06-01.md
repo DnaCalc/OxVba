@@ -57,6 +57,11 @@ Executable proof:
   This proves the IDE callable surface can expose the same richer optional metadata now used by
   runtime descriptors for these supported defaults; it does not claim Date/Currency or arbitrary
   default-expression coverage.
+- follow-up FE-7.3.a property coverage now projects compiler HIR property arena facts into
+  `SemanticSnapshot` as user-facing property symbols and callable aliases. Signature help for a
+  same-module indexed `Property Get` call such as `Value(1)` now resolves through the shared HIR
+  property/callable facts. This closes the IDE-query gap for that same-module property-get shape,
+  not broader project/class/COM/default-member writeback or rewrite retirement.
 
 ## Checks
 
@@ -70,6 +75,8 @@ Executable proof:
 - `cargo test -p oxvba-languageservice signature_help_preserves_optional_string_boolean_defaults --quiet`
 - `cargo test -p oxvba-languageservice snapshot_callables_preserve_param_array_flag --quiet`
 - `cargo test -p oxvba-languageservice signature_help_preserves_param_array_flag --quiet`
+- `cargo test -p oxvba-languageservice snapshot_symbols_classify_properties_from_frontend_hir --quiet`
+- `cargo test -p oxvba-languageservice signature_help_resolves_property_get_alias_from_frontend_hir --quiet`
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler --quiet`
 - `cargo check -p oxvba-compiler --quiet`
