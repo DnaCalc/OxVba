@@ -33,6 +33,23 @@ terminal outcome is the clean shape we would have designed from the start: produ
 one compiler-owned front-end, compiler and IDE queries share its facts, and legacy source parsing
 or source rewriting survives only as named comparison/test/out-of-scope machinery.
 
+Fresh re-open pass, 2026-06-03:
+
+Confirmed again: the current workset is the correct owner for the intended end goal. The wording
+already says "production compiler front-end migration" and the bead graph already keeps the root,
+FE-7, FE-8, and FE-9 open. The remaining failure mode to guard against is not a missing workset; it
+is an overly narrow reading of "scoped language surface." For this workset, the scoped surface means
+the production VBA compiler behavior the repository already accepts across lightweight compile,
+project compile, host/session compile, package/metadata production, language-service semantic
+queries, and accepted corpus/oracle rows. A construct cannot be silently excluded merely because the
+new pipeline does not yet support it. It must be implemented by the open delivery graph or named as
+out of scope/separately owned before terminal closure.
+
+The 2026-06-03 bead audit found one missing delivery split: FE-8.5.c had been described in the
+workset as the lowering half of property/default-member/writeback migration, but the tracker only
+had the FE-7 binding-side bead (`bd-aprs.8.7`). The graph now includes `bd-aprs.9.12` for that
+FE-8 lowering lane. This is a focused addition to the existing bead graph, not a new bead set.
+
 Architecture decision, 2026-05-31:
 
 The syntactic layer will be a **Roslyn-style green/red concrete syntax tree** (lossless,
@@ -311,6 +328,10 @@ This gate is binding for workset closure. The workset is not complete until all 
     lane by themselves. If an audit/support bead finds an in-scope legacy route, the owning delivery
     bead remains open or a new delivery bead is created before the audit bead can claim a clean
     terminal result.
+14. Closure must be entry-point complete for the accepted behavior, not helper-complete. A construct
+    is not replaced until the ordinary user-facing compiler route, project/package route,
+    host/session route, and language-service route that apply to that construct all consume the same
+    compiler-owned front-end facts or are explicitly marked comparison/test/out-of-scope.
 
 ### 6.3 Lowering-target maturity and current VM contract
 
@@ -592,6 +613,7 @@ Created child bead mapping:
 | FE-8.5 Production HIR-to-bytecode lowering | `bd-aprs.9.5` |
 | FE-8.5.a Direct project construction on HIR | `bd-aprs.9.6` |
 | FE-8.5.b As New initializer construction metadata | `bd-aprs.9.7` |
+| FE-8.5.c Property/default-member/writeback HIR lowering | `bd-aprs.9.12` |
 | FE-8.5.d Arrays/indexing/ReDim parity | `bd-aprs.9.8` |
 | FE-8.5.e Compile-time options/declarations/constants | `bd-aprs.9.9` |
 | FE-8.5.f Broader declaration/type surface | `bd-aprs.9.10` |
@@ -628,7 +650,7 @@ Tracker audit, 2026-06-02:
 - Confirmed reopened/open delivery beads already cover the main partial areas:
   `bd-aprs.8.3`, `bd-aprs.8.4`, `bd-aprs.8.6`, `bd-aprs.8.7`, `bd-aprs.8.8`,
   `bd-aprs.9.5`, `bd-aprs.9.8`, `bd-aprs.9.9`, `bd-aprs.9.10`, `bd-aprs.9.11`,
-  `bd-aprs.10.2`, and `bd-aprs.10.8`.
+  `bd-aprs.9.12`, `bd-aprs.10.2`, and `bd-aprs.10.8`.
 - Closed FE-0 through FE-6 beads are treated as scoped foundation evidence, not proof that the
   production compiler front-end has been replaced. They do not need to be reopened unless later
   delivery/audit work finds a concrete defect in their stated scope.
@@ -651,6 +673,8 @@ Required newly explicit delivery beads:
   selection and writeback through front-end facts for project/class/COM/host members. Partial work
   already done: simple late-bound dot/bang/With member reads and simple member assignment targets
   lower through HIR with Let/Set hints.
+  Tracker split: `bd-aprs.8.7` owns binding/classification; `bd-aprs.9.12` owns HIR lowering,
+  bytecode, metadata, writeback, and route retirement for the accepted lowering surface.
 - FE-8.5.d Arrays/indexing/ReDim parity: finish project/class array fields and broader
   project-owned array shapes through HIR. Partial work already done: dynamic-array runtime `ReDim`
   lowering now covers one-dimensional and two-dimensional runtime bounds, static integer explicit
@@ -826,6 +850,9 @@ Required newly explicit delivery beads:
   FE-8.5.a through FE-8.5.f. This bead must not replace the specific beads above; it catches the
   missing implementation work exposed by matrix/corpus/host/language-service route audits and either
   implements it directly or splits it into a narrower delivery bead before closing.
+  The 2026-06-03 graph repair split the known property/default-member lowering residual into
+  `bd-aprs.9.12`; FE-8.5.g remains the catch-all only for residuals not already covered by a
+  specific delivery bead.
 
 ### Epic FE-0 — Workset Preparation and Truth Repair
 
@@ -1356,7 +1383,9 @@ Candidate bead units:
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
   indexed/named writeback, and type overload validation. Partial work has already been done: simple
   late-bound member reads/calls and simple dot/bang/With member assignment targets lower through
-  HIR with Let/Set hints. Continuation progress now makes imported-COM dispatch classification
+  HIR with Let/Set hints.
+  Tracker bead: `bd-aprs.9.12`, blocked on FE-7 binding/classification bead `bd-aprs.8.7`.
+  Continuation progress now makes imported-COM dispatch classification
   carry typelib invocation kind and validates early-bound COM property read plus put/putref rewrite
   paths against that front-end dispatch fact before emitting the compatibility `DispatchInvoke`
   carrier; selected host-injected property/default-member routes now validate through the
