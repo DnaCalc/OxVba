@@ -5834,9 +5834,13 @@ fn intrinsic_result_type(
     type_by_name: &HashMap<String, VbaTypeId>,
 ) -> VbaTypeId {
     match name {
-        "__empty" | "__null" | "cverr" | "cdec" | "array" | "__oxvba_array_get" => {
-            VbaTypeId::Variant
-        }
+        "__empty"
+        | "__null"
+        | "cverr"
+        | "cdec"
+        | "array"
+        | "__oxvba_array_get"
+        | "__oxvba_array_field_set" => VbaTypeId::Variant,
         "vbnullstring" | "cstr" | "str" | "left" | "right" | "mid" | "replace" | "lcase"
         | "ucase" | "trim" | "ltrim" | "rtrim" | "space" | "chr" | "format" | "hex" | "oct"
         | "typename" => VbaTypeId::String,
@@ -10438,6 +10442,26 @@ fn emit_expr_into(
                         array: *array,
                         indices: indices.to_vec(),
                     }),
+                ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    let value = *tail.last().expect("field array setter value");
+                    instructions.push(Instruction::IntrinsicArraySet {
+                        array: array_slot,
+                        indices: tail[..tail.len() - 1].to_vec(),
+                        src: value,
+                    });
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: array_slot,
+                    });
+                }
                 ("objptr", [src]) => {
                     instructions.push(Instruction::IntrinsicObjPtr { dst, src: *src })
                 }
@@ -10762,6 +10786,26 @@ fn emit_expr_into(
                         dst,
                         array: *array,
                         item: *item,
+                    });
+                }
+                ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    let value = *tail.last().expect("field array setter value");
+                    instructions.push(Instruction::IntrinsicArraySet {
+                        array: array_slot,
+                        indices: tail[..tail.len() - 1].to_vec(),
+                        src: value,
+                    });
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: array_slot,
                     });
                 }
                 ("lbound", [src]) => {

@@ -8744,7 +8744,7 @@ fn rewrite_internal_class_dynamic_array_field_redim(
 fn rewrite_internal_class_dynamic_array_field_assignment(
     line: &str,
     module_state_bindings: &ModuleStateBindings,
-    rewrite_suffix: usize,
+    _rewrite_suffix: usize,
 ) -> String {
     if module_state_bindings.dynamic_array_field_tokens.is_empty()
         || class_state_line_is_non_executable(line)
@@ -8774,26 +8774,16 @@ fn rewrite_internal_class_dynamic_array_field_assignment(
     let rewritten_rhs =
         rewrite_internal_class_dynamic_array_field_reads(rhs, module_state_bindings);
     let indent = &line[..leading];
-    let temp_name = dynamic_array_field_temp_name("assign", &field_name, line, rewrite_suffix);
-    [
-        format!("{indent}Dim {temp_name}()"),
-        format!(
-            "{indent}{temp_name} = __oxvba_withevents_get({}, {})",
-            module_state_bindings.owner_expr, binding_token
-        ),
-        format!("{indent}{temp_name}({indices}) = {rewritten_rhs}"),
-        format!(
-            "{indent}__oxvba_field_set_discard = __oxvba_withevents_set({}, {}, {temp_name})",
-            module_state_bindings.owner_expr, binding_token
-        ),
-    ]
-    .join("\n")
+    format!(
+        "{indent}__oxvba_field_set_discard = __oxvba_array_field_set({}, {}, {}, {})",
+        module_state_bindings.owner_expr, binding_token, indices, rewritten_rhs
+    )
 }
 
 fn rewrite_internal_class_fixed_array_field_assignment(
     line: &str,
     module_state_bindings: &ModuleStateBindings,
-    rewrite_suffix: usize,
+    _rewrite_suffix: usize,
 ) -> String {
     if module_state_bindings.fixed_array_field_tokens.is_empty()
         || class_state_line_is_non_executable(line)
@@ -8822,20 +8812,10 @@ fn rewrite_internal_class_fixed_array_field_assignment(
     };
     let rewritten_rhs = rewrite_internal_class_array_field_reads(rhs, module_state_bindings);
     let indent = &line[..leading];
-    let temp_name = array_field_temp_name("fixed_assign", &field_name, line, rewrite_suffix);
-    [
-        format!("{indent}Dim {temp_name}()"),
-        format!(
-            "{indent}{temp_name} = __oxvba_withevents_get({}, {})",
-            module_state_bindings.owner_expr, binding_token
-        ),
-        format!("{indent}{temp_name}({indices}) = {rewritten_rhs}"),
-        format!(
-            "{indent}__oxvba_field_set_discard = __oxvba_withevents_set({}, {}, {temp_name})",
-            module_state_bindings.owner_expr, binding_token
-        ),
-    ]
-    .join("\n")
+    format!(
+        "{indent}__oxvba_field_set_discard = __oxvba_array_field_set({}, {}, {}, {})",
+        module_state_bindings.owner_expr, binding_token, indices, rewritten_rhs
+    )
 }
 
 fn rewrite_internal_class_array_field_reads(
@@ -9003,25 +8983,6 @@ fn dynamic_array_field_temp_name(
     rewrite_suffix.hash(&mut hasher);
     format!(
         "__oxvba_dynamic_array_field_{}_{}_{}",
-        kind,
-        field_name,
-        hasher.finish()
-    )
-}
-
-fn array_field_temp_name(
-    kind: &str,
-    field_name: &str,
-    line: &str,
-    rewrite_suffix: usize,
-) -> String {
-    let mut hasher = DefaultHasher::new();
-    kind.hash(&mut hasher);
-    field_name.hash(&mut hasher);
-    line.hash(&mut hasher);
-    rewrite_suffix.hash(&mut hasher);
-    format!(
-        "__oxvba_array_field_{}_{}_{}",
         kind,
         field_name,
         hasher.finish()
@@ -21423,6 +21384,10 @@ mod tests {
             "dynamic class array route should write through the frontend field token: {lowered}"
         );
         assert!(
+            lowered.contains("__oxvba_array_field_set(__oxvba_this_instance,"),
+            "dynamic class array element write should use the direct field-array setter: {lowered}"
+        );
+        assert!(
             compiled
                 .bytecode
                 .instructions
@@ -21494,10 +21459,16 @@ mod tests {
             "fixed class array route should read through the frontend field token: {lowered}"
         );
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_withevents_set(__oxvba_this_instance, {field_token},"
-            )),
-            "fixed class array route should write through the frontend field token: {lowered}"
+            lowered.contains("__oxvba_array_field_set(__oxvba_this_instance,"),
+            "fixed class array element write should use the direct field-array setter: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(", {field_token},")),
+            "fixed class array setter should carry the frontend field token: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_array_field_fixed_assign"),
+            "fixed class array assignment must not use the old synthetic temp carrier: {lowered}"
         );
         assert!(
             compiled
@@ -21562,6 +21533,15 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("private __oxvba_array_get"),
             "fixed procedural module array declaration must not be rewritten as an executable array read"
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_array_field_set("),
+            "fixed procedural module array element write should use the direct field-array setter: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_array_field_fixed_assign"),
+            "fixed procedural module array assignment must not use the old synthetic temp carrier: {lowered}"
         );
         assert!(
             compiled
@@ -21638,6 +21618,12 @@ mod tests {
                 "__oxvba_withevents_set({owner_token}, {field_token},"
             )),
             "dynamic procedural array route should write through the module-state field token: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_array_field_set({owner_token}, {field_token},"
+            )),
+            "dynamic procedural array element write should use the direct field-array setter: {lowered}"
         );
         assert!(
             compiled
