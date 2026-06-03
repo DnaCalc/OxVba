@@ -543,7 +543,9 @@ default table collector, with route-audit coverage for `DefLng A-Z` applying to 
 `Dim`, module-scope scalar `Dim` declarations, and DefType/type-character/explicit-`As` precedence
 in parameters and function returns. Known DefType directives now remain eligible for default HIR
 production routing for otherwise completed sources; unknown `Def*` directives remain outside that
-route.
+route. Later coverage hardening proves visibility-prefixed procedural module scalar fields such as
+`Private alpha` and `Public beta%` use the same DefType/type-character precedence through direct
+HIR lowering, the lightweight default route, and route-audit classification.
 `Option Compare Database` now routes through HIR/default production for otherwise completed sources;
 the current runtime intentionally maps Database compare to binary comparison rather than Access
 collation. `Option Private Module` now routes through single-source/default HIR for otherwise
@@ -605,8 +607,7 @@ coercion, broader constant-name/expression parity, Date/Currency expression coer
 covered numeric arithmetic subset, locale-sensitive Date literal breadth, and full platform
 `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
-their semantics, and broader DefType surfaces for visibility-prefixed class/project fields remain
-open.
+their semantics, and broader DefType surfaces for class/project field semantics remain open.
 
 ## Member Expression Continuation
 
