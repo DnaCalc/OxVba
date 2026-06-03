@@ -1475,6 +1475,7 @@ Candidate bead units:
   explicit i64 optional-default descriptors for covered `LongLong` and `LongPtr`
   source-prior integer constant expressions with package-VM omitted-argument binding for
   `LongLong`,
+  optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/

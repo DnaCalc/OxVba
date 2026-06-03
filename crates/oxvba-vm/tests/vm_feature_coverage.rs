@@ -299,6 +299,14 @@ fn optional_string_concat_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn optional_string_scalar_concat_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nSub Main()\nDim s As String\nCall Fill(s)\nEnd Sub\nSub Fill(ByRef target As String, Optional ByVal text As String = Prefix & CNumber & CFlag)\ntarget = text\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_string(BStr::from("v7True"))]);
+}
+
+#[test]
 fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Enabled = True\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\ntarget = flag\nEnd Sub",

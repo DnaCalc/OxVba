@@ -2337,6 +2337,29 @@ mod tests {
     }
 
     #[test]
+    fn optional_string_scalar_concat_defaults_route_through_hir() {
+        let source = "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nSub Use(Optional ByVal text As String = Prefix & CNumber & CFlag)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("string scalar concat defaults should route through HIR");
+        let use_metadata = metadata.get("use").expect("Use metadata");
+        assert!(matches!(
+            &use_metadata.signature.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitString(value),
+                ..
+            } if value == "v7True"
+        ));
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(main.call_sites.iter().any(|call_site| {
+            call_site.arguments.iter().any(|arg| {
+                arg.parameter_name.as_deref() == Some("text")
+                    && arg.optional_default
+                        == Some(OptionalDefaultValue::ExplicitString("v7True".to_string()))
+            })
+        }));
+    }
+
+    #[test]
     fn optional_boolean_expression_defaults_route_through_hir() {
         let source = "Const Prefix = \"re\"\nConst Enabled = True\nSub Use(Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\")\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
         let (_bytecode, metadata) = super::compile_with_runtime_metadata(source)

@@ -670,6 +670,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let optional_string_scalar_concat_default_statement = "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nSub Use(Optional ByVal text As String = Prefix & CNumber & CFlag)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
+    findings.push(route_finding(
+        "optional string scalar concat default fixture",
+        optional_string_scalar_concat_default_statement,
+        "bd-aprs.9.9",
+    ));
+
     let optional_enum_default_statement = "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Use(Optional ByVal n As Long = Safe)\nEnd Sub\nSub Main()\nCall Use()\nEnd Sub\n";
     findings.push(route_finding(
         "optional enum default fixture",

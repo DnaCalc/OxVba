@@ -2394,8 +2394,9 @@ fn static_string_expr_inner(
             lhs,
             rhs,
         } => {
-            let mut value = static_string_expr_inner(lhs, module_constants, resolving_constants)?;
-            value.push_str(&static_string_expr_inner(
+            let mut value =
+                static_string_concat_operand(lhs, module_constants, resolving_constants)?;
+            value.push_str(&static_string_concat_operand(
                 rhs,
                 module_constants,
                 resolving_constants,
@@ -2404,6 +2405,69 @@ fn static_string_expr_inner(
         }
         _ => None,
     }
+}
+
+fn static_string_concat_operand(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<String> {
+    static_string_expr_inner(expr, module_constants, resolving_constants).or_else(|| match expr {
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value = static_const_expr_as_string(const_expr);
+            resolving_constants.remove(name);
+            value
+        }
+        _ => static_const_expr_as_string(expr),
+    })
+}
+
+fn static_const_expr_as_string(expr: &BoundExpr) -> Option<String> {
+    match expr {
+        BoundExpr::StringConst(value) => Some(value.clone()),
+        BoundExpr::BoolConst(value) => Some(if *value { "True" } else { "False" }.to_string()),
+        BoundExpr::IntConst(value) => Some(value.to_string()),
+        BoundExpr::LongLongConst(value) => Some(value.to_string()),
+        BoundExpr::SingleConst(bits) => Some(format_static_const_f64(f32::from_bits(*bits) as f64)),
+        BoundExpr::FloatConst(bits) | BoundExpr::DateConst(bits) => {
+            Some(format_static_const_f64(f64::from_bits(*bits)))
+        }
+        BoundExpr::CurrencyConst(scaled) => Some(format_static_const_currency(*scaled)),
+        _ => None,
+    }
+}
+
+fn format_static_const_currency(scaled: i64) -> String {
+    let whole = scaled / 10_000;
+    let frac = (scaled % 10_000).unsigned_abs();
+    if frac == 0 {
+        whole.to_string()
+    } else {
+        let frac = format!("{frac:04}").trim_end_matches('0').to_string();
+        format!("{whole}.{frac}")
+    }
+}
+
+fn format_static_const_f64(value: f64) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
+    }
+    let mut text = value.to_string();
+    if text.ends_with(".0") {
+        text.truncate(text.len() - 2);
+    }
+    text
 }
 
 fn static_bool_expr_inner(
@@ -8358,6 +8422,25 @@ mod tests {
             fill.params[1].default_literal,
             Some(super::BoundParamDefaultValue::ExplicitString(
                 "ready".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_optional_string_scalar_concat_default() {
+        let source = "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal text As String = Prefix & CNumber & CFlag)\ntarget = text\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitString(
+                "v7True".to_string()
             ))
         );
     }
