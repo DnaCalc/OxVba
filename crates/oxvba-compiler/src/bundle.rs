@@ -1781,7 +1781,7 @@ fn module_fact_from_manifest_module(
             .unwrap_or_else(|| stable_id(["module", &module.module_name])),
         name: module.module_name.clone(),
         kind: module_kind_name(module.module_kind).to_string(),
-        option_private_module: module.attributes.option_private_module,
+        option_private_module: bound.option_private_module,
         option_explicit: bound.option_explicit,
         option_compare: compare_mode_name(bound.compare_mode).to_string(),
         option_base: bound
@@ -2740,6 +2740,18 @@ mod tests {
 
         assert_eq!(route, BundleFactBoundModuleRoute::HirBoundModule);
         assert!(bound.option_explicit);
+    }
+
+    #[test]
+    fn bundle_fact_bound_module_route_preserves_option_private_module_from_hir() {
+        let module = route_probe_module(
+            "Option Private Module\nSub Main()\nDim x As Long\nx = 1 + 2\nEnd Sub\n",
+        );
+
+        let (bound, route) = bound_module_for_bundle_facts_with_route(&module);
+
+        assert_eq!(route, BundleFactBoundModuleRoute::HirBoundModule);
+        assert!(bound.option_private_module);
     }
 
     #[test]

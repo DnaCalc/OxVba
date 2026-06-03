@@ -1312,10 +1312,12 @@ Candidate bead units:
   `Option Compare Binary`, `Option Compare Text`, and `Option Compare Database` on otherwise
   completed lightweight HIR sources. Database compare currently uses the runtime's binary compare
   approximation rather than Access collation. Follow-up FE-8.5.e work preserves the
-  `Option Explicit` HIR-bound module flag, adds route-audit coverage, and admits otherwise
-  completed `Option Explicit` sources to the lightweight default HIR route. `Option Private Module`
-  now routes through single-source/default HIR for otherwise completed sources; project
-  module-kind/reference visibility enforcement remains in the project route. Later FE-8.5.e
+	  `Option Explicit` HIR-bound module flag, adds route-audit coverage, and admits otherwise
+	  completed `Option Explicit` sources to the lightweight default HIR route. `Option Private Module`
+	  now routes through single-source/default HIR for otherwise completed sources, is preserved on
+	  the production `BoundModule`, and feeds compile-derived bundle module facts from the bound
+	  front-end surface; project module-kind/reference visibility enforcement remains in the project route.
+	  Later FE-8.5.e
   IDE/session integration threads active-project `ProjectManifest::conditional_constants` through
   language-service workspace semantic snapshots using the same compiler preprocessor as production
   project compile; this is diagnostics/symbol consistency for manifest-selected branches, not yet a
@@ -1522,8 +1524,9 @@ Candidate bead units:
   lightweight-default route admission,
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
   `Option Compare Database` HIR/default routing with the current binary-runtime compare
-  approximation, `Option Private Module` single-source/default HIR routing with project privacy
-  enforcement left in the project route, enum constants, basic DefType default-table preservation
+	  approximation, `Option Private Module` single-source/default HIR routing plus bound-module and
+	  compile-derived bundle-module metadata preservation with project privacy enforcement left in the
+	  project route, enum constants, basic DefType default-table preservation
   for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations,
   visibility-prefixed procedural-module scalar fields, and known DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before

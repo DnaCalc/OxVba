@@ -626,6 +626,7 @@ mod kani_proofs {
         let module = BoundModule {
             source: "Sub Main()\nEnd Sub".to_string(),
             option_explicit: false,
+            option_private_module: false,
             compare_mode: crate::resolve::BoundCompareMode::Binary,
             default_type_table: [crate::resolve::BoundType::Variant; 26],
             resolution_diagnostics: Vec::new(),

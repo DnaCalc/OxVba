@@ -18,7 +18,8 @@ use crate::resolve::{
     BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
     BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
     RuntimeArrayDimExpr, collect_declared_external_procedures, collect_module_constants,
-    collect_option_base, collect_option_compare_mode, parse_proc_signature_with_module_constants,
+    collect_option_base, collect_option_compare_mode, collect_option_private_module,
+    parse_proc_signature_with_module_constants,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -452,6 +453,7 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
     Ok(BoundModule {
         source: source.to_string(),
         option_explicit: collect_option_explicit(&lines),
+        option_private_module: collect_option_private_module(&lines),
         is_class_module: false,
         compare_mode,
         default_type_table,
@@ -5552,6 +5554,17 @@ mod tests {
             .expect("HIR production lowering should produce bound module");
 
         assert!(bound.option_explicit);
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_option_private_module_flag() {
+        let source = "Option Private Module\nSub Main()\nDim x\nx = 1\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+
+        assert!(bound.option_private_module);
     }
 
     #[test]

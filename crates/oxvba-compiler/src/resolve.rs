@@ -381,6 +381,7 @@ pub enum BoundCond {
 pub struct BoundModule {
     pub source: String,
     pub option_explicit: bool,
+    pub option_private_module: bool,
     pub is_class_module: bool,
     pub compare_mode: BoundCompareMode,
     pub default_type_table: [BoundType; 26],
@@ -509,6 +510,7 @@ pub enum IntrinsicSurface {
 pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
     let lines = normalize_source_lines(source);
+    let option_private_module = collect_option_private_module(&lines);
     let compare_mode = collect_option_compare_mode(&lines);
     let option_base = collect_option_base(&lines);
     let default_type_table = collect_default_type_table(&lines);
@@ -616,6 +618,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     BoundModule {
         source: source.to_string(),
         option_explicit,
+        option_private_module,
         is_class_module: false,
         compare_mode,
         default_type_table,
@@ -3426,6 +3429,10 @@ fn parse_block(
             continue;
         }
         if parse_option_base_directive(line).is_some() {
+            *index += 1;
+            continue;
+        }
+        if is_option_private_module_directive(line) {
             *index += 1;
             continue;
         }
@@ -7374,6 +7381,16 @@ pub(crate) fn collect_option_base(lines: &[String]) -> i32 {
     base
 }
 
+pub(crate) fn collect_option_private_module(lines: &[String]) -> bool {
+    lines
+        .iter()
+        .any(|line| is_option_private_module_directive(line))
+}
+
+fn is_option_private_module_directive(line: &str) -> bool {
+    line.trim().eq_ignore_ascii_case("Option Private Module")
+}
+
 fn parse_option_base_directive(line: &str) -> Option<i32> {
     let trimmed = line.trim();
     let tail = strip_keyword_prefix_ci(trimmed, "option base")?;
@@ -7813,6 +7830,15 @@ mod tests {
         parse_proc_signature_with_module_constants, resolve_symbols,
     };
     use std::collections::HashMap;
+
+    #[test]
+    fn resolve_records_option_private_module_flag() {
+        let source = "Option Private Module\nSub Main()\nDim x\nx = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+
+        assert!(module.option_private_module);
+        assert_eq!(module.declarations, vec!["x"]);
+    }
 
     #[test]
     fn resolve_if_statement_into_structured_body() {
