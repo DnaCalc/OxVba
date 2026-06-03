@@ -106,6 +106,17 @@ fn scalar_boolean_xor_const_expression_executes() {
 }
 
 #[test]
+fn scalar_boolean_eqv_imp_const_expressions_execute() {
+    let snap = run(
+        "Const Enabled As Boolean = True\nConst CEqv As Boolean = Enabled Eqv False\nConst CImp As Boolean = Enabled Imp False\nSub Main()\nDim sameFlag As Boolean\nDim impliesFlag As Boolean\nsameFlag = CEqv\nimpliesFlag = CImp\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![Variant::from_bool(false), Variant::from_bool(false)]
+    );
+}
+
+#[test]
 fn scalar_option_compare_text_boolean_const_expression_executes() {
     let snap = run(
         "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",

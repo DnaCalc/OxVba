@@ -4050,6 +4050,17 @@ fn parse_const_bool_value(
                 ^ parse_const_bool_value(rhs.trim(), named_values, compare_mode)?,
         );
     }
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "eqv") {
+        return Some(
+            parse_const_bool_value(lhs.trim(), named_values, compare_mode)?
+                == parse_const_bool_value(rhs.trim(), named_values, compare_mode)?,
+        );
+    }
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "imp") {
+        let lhs = parse_const_bool_value(lhs.trim(), named_values, compare_mode)?;
+        let rhs = parse_const_bool_value(rhs.trim(), named_values, compare_mode)?;
+        return Some(!lhs || rhs);
+    }
     if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "and") {
         return Some(
             parse_const_bool_value(lhs.trim(), named_values, compare_mode)?
@@ -8736,6 +8747,32 @@ mod tests {
         let main = metadata.get("main").expect("main metadata");
         assert!(main.slots.iter().any(|slot| {
             slot.name == "flag"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Boolean
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_folds_typed_boolean_eqv_imp_const_expressions() {
+        let source = "Const Enabled As Boolean = True\nConst CEqv As Boolean = Enabled Eqv False\nConst CImp As Boolean = Enabled Imp False\nSub Main()\nDim sameFlag As Boolean\nDim impliesFlag As Boolean\nsameFlag = CEqv\nimpliesFlag = CImp\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let false_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(instruction, Instruction::LoadConstBool { value: false, .. })
+            })
+            .count();
+        assert!(false_count >= 2, "{bytecode:#?}");
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "sameflag"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Boolean
+        }));
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "impliesflag"
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Boolean
         }));

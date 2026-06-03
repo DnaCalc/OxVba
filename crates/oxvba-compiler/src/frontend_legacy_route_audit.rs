@@ -599,6 +599,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_boolean_eqv_imp_const_statement = "Const Enabled As Boolean = True\nConst CEqv As Boolean = Enabled Eqv False\nConst CImp As Boolean = Enabled Imp False\nSub Main()\nDim sameFlag As Boolean\nDim impliesFlag As Boolean\nsameFlag = CEqv\nimpliesFlag = CImp\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed boolean Eqv/Imp const expression fixture",
+        typed_boolean_eqv_imp_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let typed_string_const_statement = "Const Prefix As String = \"re\"\nConst CText As String = Prefix & \"ady\"\nSub Main()\nDim text As String\ntext = CText\nEnd Sub\n";
     findings.push(route_finding(
         "typed string const expression fixture",
