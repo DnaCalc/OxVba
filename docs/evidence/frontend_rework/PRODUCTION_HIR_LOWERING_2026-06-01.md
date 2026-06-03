@@ -607,8 +607,9 @@ treated as declarator separators; the same statement can still split a following
 untyped Date literal work adds `Const CStamp = #2026-02-28#` to the generic literal collector so it
 materializes as `DateConst`/`LoadConstDate` instead of an unsupported Const or runtime expression.
 The numeric Date literal follow-up accepts unambiguous `month/day/year` forms such as
-`#2/28/2026#` in both module constants and optional Date defaults; ambiguous locale-sensitive numeric
-dates remain open. A subsequent `Single` carrier slice adds `BoundExpr::SingleConst(u32)` and
+`#2/28/2026#` in module constants and optional Date defaults, including omitted-argument VM binding;
+ambiguous locale-sensitive numeric dates remain open. A subsequent `Single` carrier slice adds
+`BoundExpr::SingleConst(u32)` and
 serialized `LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As
 Single = 1.5!`. Later scalar-to-string concat work lets covered typed and untyped `String` constants
 fold source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
