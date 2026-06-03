@@ -8724,6 +8724,18 @@ fn rewrite_internal_class_dynamic_array_field_redim(
         return line.to_string();
     };
     let indent = &line[..leading];
+    let lower_bounds = bounds.to_ascii_lowercase();
+    if !lower_bounds.contains(" to ") {
+        let intrinsic = if preserve {
+            "__oxvba_array_field_redim_preserve"
+        } else {
+            "__oxvba_array_field_redim"
+        };
+        return format!(
+            "{indent}__oxvba_field_set_discard = {intrinsic}({}, {}, {})",
+            module_state_bindings.owner_expr, binding_token, bounds
+        );
+    }
     let temp_name = dynamic_array_field_temp_name("redim", &field_name, line, rewrite_suffix);
     let redim_kind = if preserve { "ReDim Preserve" } else { "ReDim" };
     [
@@ -21372,20 +21384,20 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         let field_token = super::class_state_binding_token("projecta", "widget", "buf");
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_withevents_get(__oxvba_this_instance, {field_token})"
-            )),
-            "dynamic class array route should read through the frontend field token: {lowered}"
+            lowered.contains("__oxvba_array_field_redim(__oxvba_this_instance,"),
+            "dynamic class array ReDim should use the direct field-array resize intrinsic: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_dynamic_array_field_redim_"),
+            "dynamic class array upper-only ReDim must not use the old synthetic temp carrier: {lowered}"
         );
         assert!(
             lowered.contains("__oxvba_array_field_get(__oxvba_this_instance,"),
             "dynamic class array element read should use the direct field-array getter: {lowered}"
         );
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_withevents_set(__oxvba_this_instance, {field_token},"
-            )),
-            "dynamic class array route should write through the frontend field token: {lowered}"
+            lowered.contains(&format!(", {field_token},")),
+            "dynamic class array route should carry the frontend field token: {lowered}"
         );
         assert!(
             lowered.contains("__oxvba_array_field_set(__oxvba_this_instance,"),
@@ -21397,7 +21409,8 @@ mod tests {
                 .instructions
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
-            "dynamic class array ReDim should compile through runtime array resize"
+            "dynamic class array ReDim should compile through runtime array resize; source={lowered}; instructions={:?}",
+            compiled.bytecode.instructions
         );
         assert!(
             compiled
@@ -21615,21 +21628,19 @@ mod tests {
         );
         assert!(
             lowered.contains(&format!(
-                "__oxvba_withevents_get({owner_token}, {field_token})"
+                "__oxvba_array_field_redim({owner_token}, {field_token},"
             )),
-            "dynamic procedural array route should read through the module-state field token: {lowered}"
+            "dynamic procedural array ReDim should use the direct field-array resize intrinsic: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_dynamic_array_field_redim_"),
+            "dynamic procedural upper-only ReDim must not use the old synthetic temp carrier: {lowered}"
         );
         assert!(
             lowered.contains(&format!(
                 "__oxvba_array_field_get({owner_token}, {field_token},"
             )),
             "dynamic procedural array element read should use the direct field-array getter: {lowered}"
-        );
-        assert!(
-            lowered.contains(&format!(
-                "__oxvba_withevents_set({owner_token}, {field_token},"
-            )),
-            "dynamic procedural array route should write through the module-state field token: {lowered}"
         );
         assert!(
             lowered.contains(&format!(
@@ -21643,7 +21654,8 @@ mod tests {
                 .instructions
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
-            "dynamic procedural module array ReDim should compile through runtime array resize"
+            "dynamic procedural module array ReDim should compile through runtime array resize; source={lowered}; instructions={:?}",
+            compiled.bytecode.instructions
         );
         assert!(
             compiled

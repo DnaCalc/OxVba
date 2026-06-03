@@ -5383,6 +5383,22 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_emits_array_field_redim_intrinsic() {
+        let source = "Sub Main()\nDim discard\nDim owner\nowner = 1\ndiscard = __oxvba_array_field_redim(owner, 111, 2)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
+            "expected field-array ReDim intrinsic to emit runtime resize: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
     fn hir_production_lowering_emits_dynamic_array_element_read() {
         let source =
             "Sub Main()\nDim buf() As Byte\nDim x As Long\nReDim buf(2)\nx = buf(1)\nEnd Sub\n";

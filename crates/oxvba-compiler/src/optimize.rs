@@ -327,6 +327,9 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
     match expr {
         BoundExpr::IntrinsicCall { name, args } => {
             let call_has_effect = name.eq_ignore_ascii_case("__oxvba_withevents_set")
+                || name.eq_ignore_ascii_case("__oxvba_array_field_redim")
+                || name.eq_ignore_ascii_case("__oxvba_array_field_redim_preserve")
+                || name.eq_ignore_ascii_case("__oxvba_array_field_set")
                 || name.eq_ignore_ascii_case("__oxvba_withevents_clear_owner")
                 || name.eq_ignore_ascii_case("__oxvba_withevents_first_owner")
                 || name.eq_ignore_ascii_case("__oxvba_withevents_next_owner")
@@ -541,6 +544,29 @@ mod tests {
             })
             .count();
         assert_eq!(intrinsic_set_count, 1);
+    }
+
+    #[test]
+    fn formal_v19_dead_store_preserves_field_array_writeback_intrinsics() {
+        let module = resolve_symbols(
+            "Sub Main()\nDim x\nx = __oxvba_array_field_redim(1, 7, 2)\nx = __oxvba_array_field_set(1, 7, 1, 11)\nEnd Sub",
+        );
+        let optimized = optimize_module(module);
+        let effectful_field_array_calls = optimized
+            .body
+            .iter()
+            .filter(|stmt| {
+                matches!(
+                    stmt,
+                    BoundStmt::Assign {
+                        expr: crate::resolve::BoundExpr::IntrinsicCall { name, .. },
+                        ..
+                    } if name == "__oxvba_array_field_redim"
+                        || name == "__oxvba_array_field_set"
+                )
+            })
+            .count();
+        assert_eq!(effectful_field_array_calls, 2);
     }
 
     #[test]

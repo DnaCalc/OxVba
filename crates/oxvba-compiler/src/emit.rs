@@ -5840,6 +5840,8 @@ fn intrinsic_result_type(
         | "cdec"
         | "array"
         | "__oxvba_array_field_get"
+        | "__oxvba_array_field_redim"
+        | "__oxvba_array_field_redim_preserve"
         | "__oxvba_array_get"
         | "__oxvba_array_field_set" => VbaTypeId::Variant,
         "vbnullstring" | "cstr" | "str" | "left" | "right" | "mid" | "replace" | "lcase"
@@ -10458,6 +10460,39 @@ fn emit_expr_into(
                         indices: indices.to_vec(),
                     });
                 }
+                ("__oxvba_array_field_redim", [owner, binding, upper_bounds @ ..])
+                | ("__oxvba_array_field_redim_preserve", [owner, binding, upper_bounds @ ..])
+                    if !upper_bounds.is_empty() =>
+                {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    let lower_bounds = vec![0; upper_bounds.len()];
+                    if name == "__oxvba_array_field_redim_preserve" {
+                        instructions.push(Instruction::IntrinsicArrayResizePreserve {
+                            dst: array_slot,
+                            upper_bounds: upper_bounds.to_vec(),
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    } else {
+                        instructions.push(Instruction::IntrinsicArrayResize {
+                            dst: array_slot,
+                            upper_bounds: upper_bounds.to_vec(),
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    }
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: array_slot,
+                    });
+                }
                 ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {
                     let array_slot = temps.alloc_temp();
                     instructions.push(Instruction::IntrinsicWithEventsGet {
@@ -10817,6 +10852,39 @@ fn emit_expr_into(
                         dst,
                         array: array_slot,
                         indices: indices.to_vec(),
+                    });
+                }
+                ("__oxvba_array_field_redim", [owner, binding, upper_bounds @ ..])
+                | ("__oxvba_array_field_redim_preserve", [owner, binding, upper_bounds @ ..])
+                    if !upper_bounds.is_empty() =>
+                {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    let lower_bounds = vec![0; upper_bounds.len()];
+                    if name == "__oxvba_array_field_redim_preserve" {
+                        instructions.push(Instruction::IntrinsicArrayResizePreserve {
+                            dst: array_slot,
+                            upper_bounds: upper_bounds.to_vec(),
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    } else {
+                        instructions.push(Instruction::IntrinsicArrayResize {
+                            dst: array_slot,
+                            upper_bounds: upper_bounds.to_vec(),
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    }
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: array_slot,
                     });
                 }
                 ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {

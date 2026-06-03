@@ -700,11 +700,14 @@ Required newly explicit delivery beads:
   bytecode-lowered intrinsic that performs field get, array element set, and field writeback through
   the frontend field token; field-array reads similarly use a direct internal
   `__oxvba_array_field_get` bytecode-lowered intrinsic instead of nested generated
-  `__oxvba_array_get(__oxvba_withevents_get(...), ...)` source. Production-selector correction:
-  `compile_project(...)` already selects the module-aware plan; the old rewrite bridge is parity
-  evidence, not native production ownership. Closure requires moving remaining project-owned
-  array-shape compatibility-carrier construction, especially field-array `ReDim` and project field
-  metadata ownership, into native HIR-owned lowering/metadata paths.
+  `__oxvba_array_get(__oxvba_withevents_get(...), ...)` source; upper-bound-only field-array
+  `ReDim`/`ReDim Preserve` now use direct internal `__oxvba_array_field_redim*` bytecode-lowered
+  intrinsics that perform field get, runtime resize, and field writeback. Production-selector
+  correction: `compile_project(...)` already selects the module-aware plan; the old rewrite bridge
+  is parity evidence, not native production ownership. Closure requires moving remaining
+  project-owned array-shape compatibility-carrier construction, especially explicit lower-bound
+  field-array `ReDim To` forms and project field metadata ownership, into native HIR-owned
+  lowering/metadata paths.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
@@ -1493,11 +1496,14 @@ Candidate bead units:
   bytecode-lowered intrinsic that performs field get, array element set, and field writeback through
   the frontend field token; field-array reads similarly use a direct internal
   `__oxvba_array_field_get` bytecode-lowered intrinsic instead of nested generated
-  `__oxvba_array_get(__oxvba_withevents_get(...), ...)` source.
+  `__oxvba_array_get(__oxvba_withevents_get(...), ...)` source; upper-bound-only field-array
+  `ReDim`/`ReDim Preserve` now use direct internal `__oxvba_array_field_redim*` bytecode-lowered
+  intrinsics that perform field get, runtime resize, and field writeback.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
   old rewrite bridge is parity evidence, not native production ownership. Remaining work: move
-  project-owned array-shape compatibility-carrier construction, especially field-array `ReDim` and
-  project field metadata ownership, into native HIR-owned lowering/metadata paths.
+  project-owned array-shape compatibility-carrier construction, especially explicit lower-bound
+  field-array `ReDim To` forms and project field metadata ownership, into native HIR-owned
+  lowering/metadata paths.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
