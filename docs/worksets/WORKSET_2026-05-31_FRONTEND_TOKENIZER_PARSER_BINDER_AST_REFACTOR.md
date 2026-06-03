@@ -1476,6 +1476,7 @@ Candidate bead units:
   source-prior integer constant expressions with package-VM omitted-argument binding for
   `LongLong`,
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
+  optional `Boolean` defaults over bounded equality-based string `Like`,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
