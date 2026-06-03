@@ -699,13 +699,15 @@ Required newly explicit delivery beads:
   declared `Currency` and `Date` constants through the same exact carriers, plus `Const` name
   type-declaration characters such as `!` and `@` for the covered carrier subset, plus typed and
   untyped `String` constants over source-prior string constants and `&` concatenation, plus
-  `Option Compare Text` folding for covered string equality/inequality Boolean constants.
+  `Option Compare Text` folding for covered string equality/inequality Boolean constants, plus
+  language-service workspace semantic snapshots that honor active-project manifest conditional
+  constants for diagnostics/symbols through the shared compiler preprocessor.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
-  locale-sensitive Date literal breadth, full platform `LongPtr` semantics, separate IDE/session
-  option plumbing for conditional constants, and project-owned attribute/module-option semantics
-  outside the current single-source route.
+  locale-sensitive Date literal breadth, full platform `LongPtr` semantics, lossless
+  conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
+  project-owned attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
@@ -1257,7 +1259,11 @@ Candidate bead units:
   `Option Explicit` HIR-bound module flag, adds route-audit coverage, and admits otherwise
   completed `Option Explicit` sources to the lightweight default HIR route. `Option Private Module`
   now routes through single-source/default HIR for otherwise completed sources; project
-  module-kind/reference visibility enforcement remains in the project route.
+  module-kind/reference visibility enforcement remains in the project route. Later FE-8.5.e
+  IDE/session integration threads active-project `ProjectManifest::conditional_constants` through
+  language-service workspace semantic snapshots using the same compiler preprocessor as production
+  project compile; this is diagnostics/symbol consistency for manifest-selected branches, not yet a
+  lossless conditional CST with original-source span preservation for inactive editor regions.
   Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
   expressions through HIR member facts and the existing backend late-bound member expression shape.
   Follow-up continuation accepts read-side bang member access such as `obj!Field` through the same
@@ -1425,10 +1431,11 @@ Candidate bead units:
   known DefType default-route eligibility, basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
-  discovery/lowering plus manifest-based embedded host build requests, conditional-compilation
-  arithmetic with checked integer unary signs, `+`, `-`, `*`, guarded `\`, and `Mod` inside the
-  existing `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute
-  VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
+  discovery/lowering plus manifest-based embedded host build requests and language-service
+  workspace semantic snapshots, conditional-compilation arithmetic with checked integer unary signs,
+  `+`, `-`, `*`, guarded `\`, and `Mod` inside the existing `#Const`/`#If` comparison/logical
+  evaluator, basic single-source module `Attribute VB_Name` lines as ignored metadata, basic typed
+  `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, and explicit `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.

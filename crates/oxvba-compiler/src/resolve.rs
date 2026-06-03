@@ -1284,7 +1284,7 @@ pub(crate) fn apply_conditional_compilation_to_source(source: &str) -> String {
     apply_conditional_compilation(&lines).join("\n")
 }
 
-pub(crate) fn apply_conditional_compilation_to_source_with_constants(
+pub fn apply_conditional_compilation_to_source_with_constants(
     source: &str,
     initial_constants: &BTreeMap<String, i32>,
 ) -> String {

@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use oxvba_compiler::{ProjectManifest, ReferenceKind, ReferencedProjectManifest};
 
 use crate::document::{Document, DocumentId};
-use crate::semantic::{SemanticSnapshot, build_semantic_snapshot_with_provenance};
+use crate::semantic::{
+    SemanticSnapshot, build_semantic_snapshot_with_provenance_and_conditional_constants,
+};
 use crate::span::{SymbolInfo, SymbolProvenanceKind};
 
 /// The workspace model: manages a set of documents and their semantic snapshots.
@@ -88,9 +90,10 @@ impl Workspace {
             self.stats.change_operations += 1;
             let doc = existing.with_source(source);
             self.stats.analysis_builds += 1;
-            let snapshot = Arc::new(build_semantic_snapshot_with_provenance(
+            let snapshot = Arc::new(build_semantic_snapshot_for_document(
                 source,
                 doc.semantic_provenance(),
+                self.conditional_constants_for_document(&doc),
             ));
             let doc = doc.with_snapshot(snapshot);
             self.documents.insert(id.clone(), Arc::new(doc));
@@ -223,13 +226,42 @@ impl Workspace {
     fn insert_document(&mut self, doc: Document) {
         let id = doc.id.clone();
         self.stats.analysis_builds += 1;
-        let snapshot = Arc::new(build_semantic_snapshot_with_provenance(
+        let snapshot = Arc::new(build_semantic_snapshot_for_document(
             doc.source.as_ref(),
             doc.semantic_provenance(),
+            self.conditional_constants_for_document(&doc),
         ));
         let doc = doc.with_snapshot(snapshot);
         self.documents.insert(id, Arc::new(doc));
     }
+
+    fn conditional_constants_for_document(&self, doc: &Document) -> &BTreeMap<String, i32> {
+        match self.project.as_ref() {
+            Some(manifest)
+                if doc.project_name.as_deref() == Some(manifest.project_name.as_str()) =>
+            {
+                &manifest.conditional_constants
+            }
+            _ => empty_conditional_constants(),
+        }
+    }
+}
+
+fn build_semantic_snapshot_for_document(
+    source: &str,
+    provenance: crate::span::SemanticProvenance,
+    conditional_constants: &BTreeMap<String, i32>,
+) -> SemanticSnapshot {
+    build_semantic_snapshot_with_provenance_and_conditional_constants(
+        source,
+        provenance,
+        conditional_constants,
+    )
+}
+
+fn empty_conditional_constants() -> &'static BTreeMap<String, i32> {
+    static EMPTY: std::sync::OnceLock<BTreeMap<String, i32>> = std::sync::OnceLock::new();
+    EMPTY.get_or_init(BTreeMap::new)
 }
 
 #[cfg(test)]
@@ -415,5 +447,76 @@ mod tests {
             SymbolProvenanceKind::ProjectReference
         );
         assert_eq!(reference.project_name.as_deref(), Some("Core"));
+    }
+
+    #[test]
+    fn workspace_project_manifest_constants_drive_conditional_semantics() {
+        let mut conditional_constants = std::collections::BTreeMap::new();
+        conditional_constants.insert("FEATURE_ON".to_string(), -1);
+        let manifest = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "#If FEATURE_ON Then\nPublic Sub EnabledProc()\nEnd Sub\n#Else\nPublic Sub Broken(\n#End If\n"
+                    .to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants,
+        };
+
+        let mut ws = Workspace::new().with_project(manifest);
+        let snapshot = ws
+            .snapshot(&DocumentId::new("Main"))
+            .expect("conditional snapshot");
+
+        assert!(
+            snapshot.diagnostics.is_empty(),
+            "inactive conditional branch should not produce diagnostics: {:?}",
+            snapshot.diagnostics
+        );
+        assert!(
+            snapshot
+                .symbols
+                .symbols
+                .iter()
+                .any(|symbol| symbol.name == "EnabledProc"),
+            "active conditional branch should contribute symbols"
+        );
+        assert!(
+            snapshot
+                .symbols
+                .symbols
+                .iter()
+                .all(|symbol| symbol.name != "Broken"),
+            "inactive conditional branch should not contribute symbols"
+        );
+
+        ws.change_document(
+            &DocumentId::new("Main"),
+            "#If FEATURE_ON Then\nPublic Sub ChangedProc()\nEnd Sub\n#Else\nPublic Sub BrokenAgain(\n#End If\n",
+        );
+        let changed_snapshot = ws
+            .snapshot(&DocumentId::new("Main"))
+            .expect("changed conditional snapshot");
+        assert!(
+            changed_snapshot.diagnostics.is_empty(),
+            "changed inactive branch should stay hidden from diagnostics: {:?}",
+            changed_snapshot.diagnostics
+        );
+        assert!(
+            changed_snapshot
+                .symbols
+                .symbols
+                .iter()
+                .any(|symbol| symbol.name == "ChangedProc"),
+            "changed active branch should contribute symbols"
+        );
     }
 }

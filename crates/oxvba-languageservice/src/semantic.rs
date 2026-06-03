@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use oxvba_compiler::frontend_diagnostics::{FrontendDiagnostic, FrontendDiagnosticSeverity};
@@ -89,13 +90,39 @@ pub fn build_semantic_snapshot_with_provenance(
     source: &str,
     provenance: SemanticProvenance,
 ) -> SemanticSnapshot {
-    let source_arc: Arc<str> = source.into();
+    build_semantic_snapshot_with_provenance_and_conditional_constants(
+        source,
+        provenance,
+        &BTreeMap::new(),
+    )
+}
+
+/// Build a semantic snapshot with project/session conditional constants.
+///
+/// This currently reuses the compiler's production conditional-compilation
+/// filter, so inactive branches are removed before the front-end query stack
+/// sees the module. That matches production compile semantics but is not yet a
+/// lossless conditional CST for editor span preservation.
+pub fn build_semantic_snapshot_with_provenance_and_conditional_constants(
+    source: &str,
+    provenance: SemanticProvenance,
+    conditional_constants: &BTreeMap<String, i32>,
+) -> SemanticSnapshot {
+    let analysis_source = if conditional_constants.is_empty() {
+        source.to_string()
+    } else {
+        oxvba_compiler::resolve::apply_conditional_compilation_to_source_with_constants(
+            source,
+            conditional_constants,
+        )
+    };
+    let source_arc: Arc<str> = analysis_source.as_str().into();
 
     // Step 1: Parse → lossless CST
-    let cst = parse(source);
+    let cst = parse(&analysis_source);
     let parse_arc = Arc::new(cst);
     let mut frontend_queries =
-        FrontendQueryDatabase::new(provenance.document_id.clone(), source.to_string());
+        FrontendQueryDatabase::new(provenance.document_id.clone(), analysis_source);
     let frontend_diagnostics = frontend_queries
         .diagnostics()
         .into_iter()
