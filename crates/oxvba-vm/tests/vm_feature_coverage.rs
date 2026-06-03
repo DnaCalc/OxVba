@@ -47,6 +47,14 @@ fn scalar_typed_integer_const_expressions_execute() {
 }
 
 #[test]
+fn scalar_untyped_integer_const_expression_executes() {
+    let snap = run(
+        "Const CBase = 1 + 2\nConst COffset = -1 + 2\nConst CTotal = CBase + COffset\nSub Main()\nDim x\nx = CTotal\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(4)]);
+}
+
+#[test]
 fn scalar_double_const_carrier_executes() {
     let snap = run(
         "Const CBase As Long = 1\nConst CTotal As Double = CBase + 0.5\nSub Main()\nDim x As Double\nx = CTotal\nEnd Sub",

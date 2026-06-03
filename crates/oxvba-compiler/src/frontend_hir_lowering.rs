@@ -3551,6 +3551,14 @@ fn parse_const_value_for_declared(
     {
         return Some(BoundExpr::StringConst(value));
     }
+    if declared_type.is_none() && !const_expr_contains_true_division(text) {
+        let i64_values = const_i64_env_from_bound_values(named_values);
+        if let Some(ConstI64Eval::Value(value)) = parse_const_i64_eval_value(text, &i64_values)
+            && let Ok(value) = i32::try_from(value)
+        {
+            return Some(BoundExpr::IntConst(value));
+        }
+    }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-', '&']) {
         let op = match op {
             '+' => ArithOp::Add,
@@ -8114,7 +8122,28 @@ mod tests {
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(
-            bytecode
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 3, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 4, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            !bytecode
                 .instructions
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::AddSlots { .. })),
@@ -8129,6 +8158,46 @@ mod tests {
                     || slot.name.eq_ignore_ascii_case("coffset")
                     || slot.name.eq_ignore_ascii_case("ctotal")),
             "{main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_keeps_untyped_true_division_const_expression_unfolded() {
+        let source = "Const CBase = 3 / 2\nConst CTotal = CBase + 1\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let const_values = collect_const_values(source, &typed_hir);
+        let ctotal_symbol = typed_hir
+            .module
+            .symbols
+            .symbols()
+            .iter()
+            .find(|symbol| {
+                symbol.namespace == SymbolNamespace::Local
+                    && typed_hir
+                        .module
+                        .symbols
+                        .name(symbol.name)
+                        .is_some_and(|name| name.folded == "ctotal")
+            })
+            .expect("ctotal symbol");
+        let value = const_values
+            .get(&ctotal_symbol.id)
+            .expect("ctotal const value");
+        assert!(
+            matches!(
+                value,
+                BoundExpr::BinaryOp {
+                    op: ArithOp::Add,
+                    lhs,
+                    rhs,
+                    ..
+                } if matches!(
+                    lhs.as_ref(),
+                    BoundExpr::BinaryOp { op: ArithOp::Div, .. }
+                ) && matches!(rhs.as_ref(), BoundExpr::IntConst(1))
+            ),
+            "{value:#?}"
         );
     }
 
