@@ -727,8 +727,8 @@ Required newly explicit delivery beads:
   basic `#Const`/`#If`/`#Else`/`#End If` filtering before the
   default HIR route for otherwise completed single-source inputs, active project
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
-  discovery/lowering plus manifest-based embedded host build requests, basic single-source module
-  `Attribute VB_Name` lines as ignored metadata, basic typed `Const Name As Long = ...`
+	  discovery/lowering plus manifest-based embedded host build requests, basic single-source module
+	  `Attribute VB_Name` lines preserved as `BoundModule` metadata, basic typed `Const Name As Long = ...`
   declarators, typed `Byte`/`Integer`/`Long` exact integer-expression constants folded through
   `IntConst`/`LoadConstI32` including checked nonnegative exponentiation and integer
   division/`Mod` while leaving true division for broader coercion work, same-statement constant
@@ -1535,8 +1535,8 @@ Candidate bead units:
   discovery/lowering plus manifest-based embedded host build requests and language-service
   workspace semantic snapshots, conditional-compilation arithmetic with checked integer unary signs,
   `+`, `-`, `*`, guarded `\`, and `Mod` plus Boolean `Xor`/`Eqv`/`Imp` inside the existing
-  `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute VB_Name` lines
-  as ignored metadata, basic typed
+	  `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute VB_Name` lines
+	  preserved as `BoundModule` metadata, basic typed
   `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe

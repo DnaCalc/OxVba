@@ -2755,6 +2755,18 @@ mod tests {
     }
 
     #[test]
+    fn bundle_fact_bound_module_route_preserves_vb_name_attribute_from_hir() {
+        let module = route_probe_module(
+            "Attribute VB_Name = \"LogicalModule\"\nSub Main()\nDim x As Long\nx = 1 + 2\nEnd Sub\n",
+        );
+
+        let (bound, route) = bound_module_for_bundle_facts_with_route(&module);
+
+        assert_eq!(route, BundleFactBoundModuleRoute::HirBoundModule);
+        assert_eq!(bound.vb_name_attribute.as_deref(), Some("LogicalModule"));
+    }
+
+    #[test]
     fn bundle_fact_bound_module_route_uses_hir_for_accepted_declare_facts() {
         let module = route_probe_module(
             "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nEnd Sub\n",

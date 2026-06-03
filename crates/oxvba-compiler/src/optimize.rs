@@ -627,6 +627,7 @@ mod kani_proofs {
             source: "Sub Main()\nEnd Sub".to_string(),
             option_explicit: false,
             option_private_module: false,
+            vb_name_attribute: None,
             compare_mode: crate::resolve::BoundCompareMode::Binary,
             default_type_table: [crate::resolve::BoundType::Variant; 26],
             resolution_diagnostics: Vec::new(),

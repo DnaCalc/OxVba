@@ -382,6 +382,7 @@ pub struct BoundModule {
     pub source: String,
     pub option_explicit: bool,
     pub option_private_module: bool,
+    pub vb_name_attribute: Option<String>,
     pub is_class_module: bool,
     pub compare_mode: BoundCompareMode,
     pub default_type_table: [BoundType; 26],
@@ -511,6 +512,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
     let lines = normalize_source_lines(source);
     let option_private_module = collect_option_private_module(&lines);
+    let vb_name_attribute = collect_vb_name_attribute(&lines);
     let compare_mode = collect_option_compare_mode(&lines);
     let option_base = collect_option_base(&lines);
     let default_type_table = collect_default_type_table(&lines);
@@ -619,6 +621,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         source: source.to_string(),
         option_explicit,
         option_private_module,
+        vb_name_attribute,
         is_class_module: false,
         compare_mode,
         default_type_table,
@@ -3433,6 +3436,10 @@ fn parse_block(
             continue;
         }
         if is_option_private_module_directive(line) {
+            *index += 1;
+            continue;
+        }
+        if is_attribute_line(line) {
             *index += 1;
             continue;
         }
@@ -7387,8 +7394,30 @@ pub(crate) fn collect_option_private_module(lines: &[String]) -> bool {
         .any(|line| is_option_private_module_directive(line))
 }
 
+pub(crate) fn collect_vb_name_attribute(lines: &[String]) -> Option<String> {
+    lines.iter().find_map(|line| parse_vb_name_attribute(line))
+}
+
 fn is_option_private_module_directive(line: &str) -> bool {
     line.trim().eq_ignore_ascii_case("Option Private Module")
+}
+
+fn is_attribute_line(line: &str) -> bool {
+    strip_keyword_prefix_ci(line.trim(), "attribute").is_some()
+}
+
+fn parse_vb_name_attribute(line: &str) -> Option<String> {
+    let rest = strip_keyword_prefix_ci(line.trim(), "attribute")?;
+    let (lhs, rhs) = rest.split_once('=')?;
+    if !lhs.trim().eq_ignore_ascii_case("VB_Name") {
+        return None;
+    }
+    let value = rhs.trim().trim_matches('"').trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
 }
 
 fn parse_option_base_directive(line: &str) -> Option<i32> {
@@ -7837,6 +7866,15 @@ mod tests {
         let module = resolve_symbols(source);
 
         assert!(module.option_private_module);
+        assert_eq!(module.declarations, vec!["x"]);
+    }
+
+    #[test]
+    fn resolve_records_vb_name_attribute() {
+        let source = "Attribute VB_Name = \"LogicalModule\"\nSub Main()\nDim x\nx = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+
+        assert_eq!(module.vb_name_attribute.as_deref(), Some("LogicalModule"));
         assert_eq!(module.declarations, vec!["x"]);
     }
 
