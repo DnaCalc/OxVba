@@ -3881,25 +3881,28 @@ fn parse_u128_i64_eval_literal(digits: &str, radix: u32) -> Option<ConstI64Eval>
 }
 
 fn parse_const_literal(text: &str) -> Option<BoundExpr> {
-    if let Ok(value) = text.parse::<i32>() {
+    let trimmed = text.trim();
+    if trimmed.starts_with('#') && trimmed.ends_with('#') {
+        return parse_date_literal_serial_bits(trimmed).map(BoundExpr::DateConst);
+    }
+    if let Ok(value) = trimmed.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
-    if let Some(value) = parse_const_numeric_prefix_literal(text) {
+    if let Some(value) = parse_const_numeric_prefix_literal(trimmed) {
         return Some(BoundExpr::IntConst(value));
     }
-    if let Some(value) = parse_const_double_literal(text) {
+    if let Some(value) = parse_const_double_literal(trimmed) {
         return Some(BoundExpr::FloatConst(value.to_bits()));
     }
-    if text.eq_ignore_ascii_case("true") {
+    if trimmed.eq_ignore_ascii_case("true") {
         return Some(BoundExpr::BoolConst(true));
     }
-    if text.eq_ignore_ascii_case("false") {
+    if trimmed.eq_ignore_ascii_case("false") {
         return Some(BoundExpr::BoolConst(false));
     }
-    let text = text.trim();
-    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+    if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
         return Some(BoundExpr::StringConst(
-            text[1..text.len() - 1].replace("\"\"", "\""),
+            trimmed[1..trimmed.len() - 1].replace("\"\"", "\""),
         ));
     }
     None
@@ -8719,6 +8722,27 @@ mod tests {
         }));
         assert!(main.slots.iter().any(|slot| {
             slot.name == "y"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Date
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_collects_untyped_date_const_literal() {
+        let source =
+            "Const CStamp = #2026-02-28#\nSub Main()\nDim x As Date\nx = CStamp\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstDate { bits, .. } if *bits == 46_081.0f64.to_bits()
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Date
         }));

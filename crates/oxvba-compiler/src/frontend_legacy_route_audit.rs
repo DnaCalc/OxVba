@@ -549,6 +549,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let untyped_date_const_statement =
+        "Const CStamp = #2026-02-28#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub\n";
+    findings.push(route_finding(
+        "untyped date const fixture",
+        untyped_date_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let typed_currency_date_const_expression_statement = "Const CAmount As Currency = 1.25@ * 2@ - 1.0@\nConst CStamp As Date = #2026-02-28# + 1\nSub Main()\nDim amount As Currency\nDim stamp As Date\namount = CAmount\nstamp = CStamp\nEnd Sub\n";
     findings.push(route_finding(
         "typed currency/date const expression fixture",

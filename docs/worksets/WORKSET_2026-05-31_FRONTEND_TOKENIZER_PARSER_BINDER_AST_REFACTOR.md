@@ -704,7 +704,7 @@ Required newly explicit delivery beads:
   language-service workspace semantic snapshots that honor active-project manifest conditional
   constants for diagnostics/symbols through the shared compiler preprocessor, plus month-name Date
   constants with commas inside `#...#` literals without breaking same-statement Const declarator
-  splitting.
+  splitting, plus untyped Date literal constants through `DateConst`/`LoadConstDate`.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
@@ -1442,7 +1442,8 @@ Candidate bead units:
   `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe
-  same-statement declarator splitting, and explicit `As Byte`/`As Integer`/`As Long`
+  same-statement declarator splitting, untyped Date literal constants, and explicit
+  `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
