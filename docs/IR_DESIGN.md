@@ -4,13 +4,24 @@
 
 Implementation-linked current-truth document.
 
-The active OxVba compiler path does not currently use a real HIR/MIR/CFG
-pipeline. Source and project analysis in `oxvba-compiler` emits
+This document concerns the **mid-level / procedure-lowering optimization IR**
+(the `VbaHir`/`VbaMir`/`CfgIr` family). There is no active optimization IR of
+that kind: source and project analysis in `oxvba-compiler` emits
 `oxvba-compiler::Bytecode` plus runtime/project metadata, and executable
 behavior is defined by the VM/JIT/runtime lanes documented in
 [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md),
 [`ARCHITECTURE.md`](ARCHITECTURE.md), and the executable semantic package draft
 [`spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md).
+
+Distinct from this document: a separate **front-end bound HIR** is being built in
+`oxvba-compiler/src/frontend_hir*.rs` as the replacement for the legacy
+string-rewriting front-end (`source → oxvba-syntax CST → binder → bound HIR →
+lowering → bytecode`), tracked under `bd-aprs` and described in
+[`ARCHITECTURE.md`](ARCHITECTURE.md) ("End-State Destination") and
+[`FRONTEND_STATE_REPORT_2026-06-03.md`](FRONTEND_STATE_REPORT_2026-06-03.md). That
+front-end HIR is a source-level resolved tree, not the removed `oxvba-ir`
+optimization IR, and it does not change the conclusion here that no mid-level
+optimization IR is active.
 
 ## Removed Historical Scaffold
 

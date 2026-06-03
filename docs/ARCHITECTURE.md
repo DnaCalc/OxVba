@@ -41,6 +41,56 @@ or ELF objects. Native compilation is a planned later lane after the
 native-ready rebase worksets establish a coherent value substrate, correctness
 corpus, runner schema, and real procedure-lowering IR decision.
 
+## End-State Destination (North Star)
+
+OxVba targets a state-of-the-art VBA compiler with **one compiler-owned
+front-end** feeding **one shared executable artifact** consumed by **two runtime
+targets**:
+
+```
+source
+  -> oxvba-syntax lossless CST
+  -> binder -> bound HIR + SemanticModel
+  -> lowering
+  -> bytecode + metadata  (the executable semantic package)
+        |-- interpreting VM   reference oracle; runs anywhere, incl. browser (WASM) and desktop (Tauri)
+        \-- Cranelift JIT     optimizing fast path, lowering from the same package
+```
+
+Binding properties of the destination:
+- **One front-end, no source surgery.** VBA source enters exactly one pipeline;
+  the production compiler and the language service answer every
+  symbol/type/diagnostic question from the same HIR/SemanticModel facts. No
+  production path performs source-text rewriting or substring parsing.
+- **One shared package.** The bytecode-plus-metadata package is the single
+  source of truth (IL-style, in the CLR/JVM/Wasm sense). Any fact a JIT tracer
+  needs must live in the package and be visible to VM execution — no
+  source-to-JIT or side-channel reconstruction. There is no separate front-end
+  "lowering IR" between HIR and bytecode beyond what the package already is; the
+  only motivated lowering IR is the JIT's consumer-side `ProcLoweringIr`.
+- **VM is the permanent reference.** The interpreting VM stays the correctness
+  oracle even after the JIT lands; the JIT is a performance fast path validated
+  against the VM, never a replacement for it.
+
+The destination is reached in **two strictly ordered phases**:
+
+1. **Phase 1 — full correctness on the VM.** The entire imaginable feature and
+   deployment matrix runs correctly through the interpreting VM:
+   - all COM scenarios (early/late-bound client and COM-server hosting);
+   - native interop (`Declare`, pointer helpers);
+   - execution in the browser (WASM) and on the desktop (Tauri);
+   - all build targets — `Bundle`, `WrapperExe`, `WrapperLibrary`, and
+     `WrappedComServer` (`BuildTarget` in `oxvba-project`); native-image
+     `NativeExe`/`NativeDll` are a later evolution.
+   The in-flight front-end HIR migration (tracked under `bd-aprs`; see
+   [`FRONTEND_STATE_REPORT_2026-06-03.md`](FRONTEND_STATE_REPORT_2026-06-03.md))
+   is part of making this phase correct. The package must be designed JIT-ready
+   during this phase so Phase 2 need not reopen it.
+2. **Phase 2 — Cranelift JIT.** Only after Phase 1, build the Cranelift-based
+   JIT on the same bytecode + metadata, with deep optimization, while the VM
+   remains the stable reference. JIT activation is gated on Phase-1 correctness,
+   not on a schedule.
+
 ## Next Execution-Layer Evolution
 
 The next architectural evolution is a complete executable semantic package:
@@ -106,13 +156,28 @@ execution truth.
 
 ## Current IR Truth
 
-The active compiler path is source/project analysis to `Bytecode`; it does not
-flow through a semantic HIR/MIR/CFG pipeline. The previous `oxvba-ir`
-HIR/MIR/CFG crate and `lower_to_hir` no-op lowering were removed during the
-native-ready rebase because they were sequence-preserving scaffolds rather than
-semantic compiler layers. They did not carry the block, terminator, slot-effect,
-helper-call, diagnostic, or source/bytecode mapping structure needed for native
-compilation.
+Two different things have been called "IR" in this repo; they must not be
+conflated:
+
+- The **removed `oxvba-ir` mid-level optimization IR** (`VbaHir`/`VbaMir`/`CfgIr`
+  plus the `lower_to_hir` no-op lowering). It was removed during the native-ready
+  rebase because it was a sequence-preserving scaffold rather than a semantic
+  compiler layer: it did not carry the block, terminator, slot-effect,
+  helper-call, diagnostic, or source/bytecode mapping structure needed for native
+  compilation. There is still **no** active multi-level (HIR→MIR→CFG)
+  *optimization* pipeline of this kind.
+- The **active front-end bound HIR** (`oxvba-compiler/src/frontend_hir*.rs`): a
+  source-level, resolved, arena-allocated tree with CST back-pointers, plus a
+  `SemanticModel` overlay for IDE queries. This is the in-flight replacement for
+  the legacy string-rewriting front-end (`project.rs` rewrites + legacy
+  `resolve::parse_expr`), tracked under `bd-aprs` (see
+  [`FRONTEND_STATE_REPORT_2026-06-03.md`](FRONTEND_STATE_REPORT_2026-06-03.md) and
+  the End-State Destination above). For the migrated construct subset the default
+  production path is now `source → oxvba-syntax CST → binder → bound HIR →
+  lowering → bytecode`, with a legacy fallback for not-yet-migrated constructs.
+  This front-end HIR is **not** the removed `oxvba-ir`; it currently lowers (via
+  the existing `BoundModule`/`emit` backend) to the same bytecode the VM already
+  executes, and is not a separate optimization pipeline.
 
 JIT v2 planning now names the future procedure-lowering IR
 `ProcLoweringIr`. It may be introduced only as a real contract with:
