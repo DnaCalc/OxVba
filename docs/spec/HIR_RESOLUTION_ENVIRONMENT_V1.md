@@ -1,0 +1,135 @@
+# HIR Resolution Environment — Design V1
+
+- **Date:** 2026-06-04
+- **Status:** design / accepted direction (implementation not started)
+- **Owner:** DNA Kode
+- **Supersedes framing of:** the staged "Option A" single-module-binder + flattening approach, and the interim in-compiler table ("Stage B") of `WORKSET_2026-05-30_DEFAULT_HOST_PROJECT_VBA_LIBRARY.md`.
+- **Builds on:** [`docs/HIR_COVERAGE_GAPS_AND_WIDENING_PLAN_2026-06-03.md`](../HIR_COVERAGE_GAPS_AND_WIDENING_PLAN_2026-06-03.md), [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) §End-State Destination, the `DEFAULT_HOST_PROJECT_VBA_LIBRARY` workset, [`docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md), [`docs/spec/VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md).
+
+## 1. Problem this design closes
+
+The front-end HIR binder is **single-module** (`build_hir_from_source(module_name, source)`, `collect_type_hooks_from_source("Main", source)`) and has **no type/member model**. Two consequences, proven by the 2026-06-03 gap audit:
+
+- Multi-module projects only "work" because `project.rs` *flattens all modules into one source string* and feeds it to the single-module binder; `resolve_name` (`frontend_hir.rs:2058`) errors on any non-local name, and calls lower to `BoundExpr::ProcCall { name }` *by string* — never bound.
+- `x.Member` lowers blindly to `BoundExpr::Member { receiver, member }` by name; the binder cannot resolve a member to a method, a COM dispatch token, or a library impl. That resolution lives only in legacy `project.rs` source rewrites.
+- The VBA standard library is hardcoded at every layer (3 parallel intrinsic name tables, ~11 `is_*_stmt` text-prefix recognizers + ~12 dedicated `HirStmtKind` built-in variants, `Debug`/`Err`/`Collection` name-rewrites, ~80 `Instruction::Intrinsic*` opcodes). There is no library abstraction.
+
+Every "references HIR can't bind / classes force legacy / default-members need carriers" symptom is downstream of these. This design replaces them with **one resolution environment**, and makes the VBA base library the first proving ground for it.
+
+## 2. End-state architecture
+
+The binder resolves every name and member against a single **`ResolutionEnvironment`**: an ordered stack of **symbol sources**, each a uniform provider that can answer *"bind name N (in context C)"* and *"describe type/members of T"*. User modules, referenced projects, the VBA base library, host globals, and COM typelibs are all symbol sources — the same kind of thing, different providers.
+
+```
+ResolutionEnvironment (per compilation)
+  layer 0  local / procedure scope        (params, locals)
+  layer 1  current module                  (module-level decls)
+  layer 2  sibling project modules         (other modules, this project)
+  layer 3  referenced projects             (public symbols, project-qualified)
+  layer 4  VBA base library (implicit)     (Constants/Math/Strings/…, Debug/Err/Collection)
+  layer 5  host library (host-injected)    (Application, ThisWorkbook, … — may be empty)
+  layer 6  COM typelib references          (explicit COMReferences → TypeLibMetadataBlob)
+```
+
+Name resolution walks the stack in order; first match wins. A **qualified** name (`VBA.Len`, `Module1.Foo`, `OtherProject.X`, `Scripting.FileSystemObject`) selects a specific layer/namespace directly. The binder produces a **typed `Binding`** (below) for every resolved name; lowering emits from the binding kind. Source-flattening is retired — each module is bound against the environment, which includes the other modules as layer 2.
+
+This is the same architecture `ARCHITECTURE.md` already mandates for the runtime ("every fact lives in the package"): here, every *name/member fact* lives in one resolution environment rather than in scattered parser arms and legacy rewrites.
+
+## 3. Typed bindings and member dispatch (the decisive layer)
+
+### 3.1 `Binding` — the result of resolving a name
+Generalizes today's stringly `ProcCall { name }` / `IntrinsicCall { name }` / `Member { … }` into a resolved, lowerable fact:
+
+```
+Binding =
+  | LocalVar(SymbolId)                         // params/locals
+  | ModuleItem(SymbolId)                        // proc/const/type/field in this project
+  | ProjectRefItem(ProjectId, SymbolId)         // referenced-project public symbol
+  | LibraryConst(typed value)                   // base-library constant (vbCrLf, …)
+  | LibraryCallable(LibImplId, signature)       // base-library function/sub → native impl
+  | LibraryObject(LibTypeId)                     // Debug / Err / Collection instance
+  | ComCoclass(TypeLibId, coclass)               // a local typed As Scripting.FileSystemObject
+  | HostGlobal(HostItemId)                        // host-injected global
+  | NativeDeclare(DeclareDescriptor)             // Declare Lib (already HIR-bound today)
+  | Type(TypeId)                                  // a type name used in a type position
+```
+
+### 3.2 Member dispatch — one mechanism for all receivers
+`x.Member(args)` resolves uniformly:
+1. Resolve `x` to a `Binding` carrying a **type** (`As Class1`, `As Scripting.FileSystemObject`, predeclared `Debug`, a referenced-project class, …).
+2. Look up `Member` in that type's member set, from the type's provider: project class descriptor (`ProjectSymbolIndex`), COM `TypeLibMetadataBlob` (`member_name → token`/vtable slot/spec), base-library object descriptor, or host catalog.
+3. Produce a **member binding** with a dispatch route: `ProjectProc` (call by symbol), `ComMember(token | vtable_slot, spec)`, `LibraryMember(LibImplId)`, `HostMember(dynamic dispatch)`.
+4. Lower to the matching instruction.
+
+This single path replaces: `rewrite_early_bound_member_dispatch` (COM, `project.rs:5078`), the `Debug.Print`/`Err.*` special-cases, `MemberDispatchClass` routing, project-class member/default-member rewrites, and the field-array/PMR carriers. **Default members** are just a member lookup with the type's `is_default_member` entry.
+
+## 4. The VBA base library — representation (iii): declarations + native-impl binding
+
+The base library is a **built-in reference, injected by default into every compilation**, resolved through the *same* reference path as project and COM references. It is authored as a **descriptor**, not as `.bas` source, but it binds at the same level as any reference:
+
+- **Namespaces/modules**: `Constants`, `Math`, `Strings`, `Information`, `Interaction`, `FileSystem`, … (global namespace `VBA`).
+- **Constants**: name → typed literal (`vbCrLf`, `vbYesNo = 4`, …) → `Binding::LibraryConst`.
+- **Callables**: name, signature (param types/optionality, return type), host-sensitivity (`DeterministicCore`/`HostSensitive`), and a **`LibImplId`** — a stable typed id of the native implementation → `Binding::LibraryCallable`.
+- **Predeclared objects**: `Debug`, `Err`, `Collection` as declared types with members, each member carrying a `LibImplId` → `Binding::LibraryObject` + member dispatch (§3.2).
+
+**The `LibImplId` is the (iii) seam.** It maps a declared library member to its existing Rust implementation — a VM inline op (`Instruction::Intrinsic*` over `oxvba-runtime`) or a HAL call (`oxvba-hal::HostServices`). We do **not** reimplement the impls. The emit dispatch becomes `(LibImplId, args) → Instruction::…` (typed) instead of `(name: &str, args) → …`. Resolution of *what is callable* comes from the descriptor; the descriptor is built once and cached (`OnceLock`).
+
+**Statement-syntax built-ins** (`Open … For … As #`, `Print #`, `Input #`, `Line Input #`, `Close`, `Get`/`Put`): VBA's grammar genuinely requires dedicated statement syntax (they are not plain calls), so the parser keeps recognizing them. But their *semantics* resolve to base-library callables via `LibImplId` — the builder no longer hardcodes `is_*_stmt` text matching → fixed opcode. A statement node carries the resolved `LibImplId` instead.
+
+**Host library** (`Application`, etc.) is a *separate* host-injected layer (layer 5) with the same shape; it needs a host-supplied member catalog (new data — the one genuinely-missing metadata source). The base library never contains host globals.
+
+## 5. What this deletes (the payoff)
+
+Once Phases 1–4 land, these are removed (not quarantined):
+- The 3 intrinsic name tables: `is_builtin_intrinsic_name` (`frontend_hir.rs`), `intrinsic_spec` / `is_intrinsic_call_name` (`resolve.rs`).
+- The `is_*_stmt` text-prefix recognizers and hardcoded built-in `HirStmtKind`→opcode mappings (`frontend_hir.rs`).
+- `Debug`/`Err`/`Collection` name-rewrites (`resolve.rs`) → real declared library objects.
+- `rewrite_early_bound_member_dispatch` and the `project.rs` class-construction / member / default-member / field-array source rewrites (incl. the `bd-aprs.9.13` carrier and the PMR carriers).
+- Source-flattening (`full_hir_source` / `active_project_hir_source` concatenation).
+- `project_compile_boundary` and its `ActiveHir`/`FullHir`/`FullLegacy` split (the binder handles all shapes) — and with it the `LegacyFallbackAfterHirUnsupported` route and the legacy `resolve.rs` compile path.
+
+## 6. Build sequence (each step is a real piece of the end state — no throwaway scaffolding)
+
+- **Phase 1 — Resolution environment skeleton + base library (proving ground).**
+  Introduce `ResolutionEnvironment` + the `SymbolSource` layer interface; refactor `resolve_name`/member resolution to consult it. Implement the base-library layer (iii): descriptor + `LibImplId` binding to existing VM/HAL impls; route constants/functions/predeclared-objects through it. Delete the 3 name tables, the `Debug`/`Err`/`Collection` rewrites, and the `is_*_stmt` hardcoding. Self-contained (no project loading); proves the environment + member dispatch on `Debug`/`Err`/`Collection`; net-deletes the most hardcoding.
+- **Phase 2 — Multi-module project binding.** Add the sibling-module source (layer 2). Bind each module against the environment; retire source-flattening for project compiles. `resolve_name` binds cross-module procs/types/classes to real symbols.
+- **Phase 3 — Project references + project-class member dispatch.** Referenced-project layer (layer 3, qualified). Declared-type member dispatch for project classes (§3.2) → retires the project.rs class/member/default-member/field-array rewrites (closes `bd-aprs.9.13`, `8.3/8.4/8.7`, `9.12` by deletion, not quarantine).
+- **Phase 4 — COM typelib + host globals.** COM layer consuming `TypeLibMetadataBlob` (member dispatch by token) → retires `rewrite_early_bound_member_dispatch` (`8.6/8.8`). Host-global layer + host member catalog.
+- **Phase 5 — Boundary collapse + legacy deletion.** Remove `project_compile_boundary`, the legacy rewrite/compile paths, and the per-construct fallbacks. The new path is the only path (`bd-aprs.10.2`, `10.8`).
+
+Each phase is independently shippable, net-deletes code, and is validated by the differential harness (HIR vs legacy) until the legacy path is removed in Phase 5.
+
+## 7. Design decisions (alternatives + trade-offs)
+
+1. **Base-library representation — CHOSEN: (iii) declarations + native-impl binding.**
+   - (i) VBA-source library: maximal dogfood, but needs a "body is native" marker and can't express operator/statement surface; (ii) pure descriptor blob: precise but a second representation; **(iii)** declarations resolved like any reference + `LibImplId`→native impl: matches real VBA (`VBA` typelib + native impl), reuses the reference/dispatch path, satisfies "partially VBA-level binding to Rust." We are **not** writing `.bas` for built-ins; we bind to them at the reference level.
+
+2. **`LibImplId` seam — recommend a typed enum, not a name string.** A typed id mapping declared members → VM op / HAL call gives compile-time exhaustiveness (the lesson from the `syntax_kind` typing). Trade-off: the existing emit dispatch is string-keyed; we re-key it to the enum (mechanical, and removes the silent `_ => {}` fall-through).
+
+3. **Symbol-source acquisition — recommend a lazy `SymbolSource` trait stack, not an eager merged `SymbolModel`.** Lazy querying scales to large reference sets and supports COM-on-demand resolution; eager merge is simpler but rebuilds everything per compile and bloats the hot path. Base-library descriptor cached via `OnceLock`.
+
+4. **Statement-syntax built-ins — keep dedicated grammar, drop hardcoded lowering.** VBA requires the statement syntax; but the node resolves to a `LibImplId` rather than a builder text-match → fixed opcode. Alternative (generic "library statement call") rejected: loses the syntactic fidelity the CST needs.
+
+5. **Typed-symbol model — recommend resolved bindings as attached facts, keep HIR node kinds.** Extend the existing side-table pattern (`HirTypeHooks`) so each name/member expr carries its resolved `Binding`; lowering reads the binding. Avoids a disruptive rewrite of `HirExprKind` while giving lowering everything it needs.
+
+6. **Resolution/shadowing order — explicit, tested.** Layer order as in §2; user-defined names may shadow library names within scope (VBA semantics — confirm and regression-test); qualified prefix selects the layer. This is a behavior contract, not an implementation detail.
+
+7. **Descriptor home — base library compiler-owned initially; host library host-injected.** The base-library descriptor lives in `oxvba-compiler` (compile-time, cached). The host library arrives through a host-injection seam so a host (Excel/CLI/headless) extends or swaps it with no compiler edit. Revisit a shared-crate home if the host must read the base descriptor.
+
+## 8. Risks
+- **Hot-path cost** — base-library descriptor must be built once (`OnceLock`); per-compile rebuild would regress compile time.
+- **Resolution-order regressions** — introducing default layers changes lookup; mitigate with an explicit tested order + shadowing regressions.
+- **Schema scope for predeclared objects** — `Debug`/`Err`/`Collection` are more than constants; Phase 1 pins the member-descriptor schema against exactly today's consumers before expanding coverage.
+- **Differential safety** — keep the legacy path runnable behind the differential harness through Phases 1–4; delete only in Phase 5 once parity is proven.
+- **Host-global metadata is genuinely new data** — host catalog has no existing source; scope it conservatively in Phase 4.
+
+## 9. Out of scope / unchanged
+- Conditional-compilation constants (`#If`, `VBA7`, `Win64`) stay a preprocessor concern (`builtin_pp_constants`), not a library layer.
+- The bytecode/metadata package contract and the VM/JIT consumers are unchanged — this is a front-end (source → package) design; impls remain the existing VM ops + HAL.
+- No Office/host object-model parity is claimed; only the injection seam.
+
+## 10. Bead mapping
+- Resolution environment + base library (Phase 1): the unstarted `DEFAULT_HOST_PROJECT_VBA_LIBRARY` workset (assign a bead), built directly to its end-state ("C") on the new environment.
+- Multi-module + project-class dispatch (Phases 2–3): FE-7.3/7.4 (`bd-aprs.8.3`, `8.4`, `8.7`), FE-8.5.c (`9.12`), and the field-array carrier `bd-aprs.9.13` (now a *deletion*, not a quarantine).
+- COM/host references (Phase 4): FE-7.6/7.6.a (`bd-aprs.8.6`, `8.8`).
+- Boundary collapse + legacy deletion (Phase 5): FE-9.2/9.8 (`bd-aprs.10.2`, `10.8`).
