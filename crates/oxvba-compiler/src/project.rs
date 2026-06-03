@@ -8848,7 +8848,7 @@ fn rewrite_internal_class_dynamic_array_field_reads(
         out.push_str(&text[cursor..name_start]);
         let binding_token = module_state_bindings.dynamic_array_field_tokens[&field_name];
         out.push_str(&format!(
-            "__oxvba_array_get(__oxvba_withevents_get({}, {}), {})",
+            "__oxvba_array_field_get({}, {}, {})",
             module_state_bindings.owner_expr, binding_token, args
         ));
         cursor = close_idx.max(name_end);
@@ -8875,7 +8875,7 @@ fn rewrite_internal_class_fixed_array_field_reads(
         out.push_str(&text[cursor..name_start]);
         let binding_token = module_state_bindings.fixed_array_field_tokens[&field_name];
         out.push_str(&format!(
-            "__oxvba_array_get(__oxvba_withevents_get({}, {}), {})",
+            "__oxvba_array_field_get({}, {}, {})",
             module_state_bindings.owner_expr, binding_token, args
         ));
         cursor = close_idx.max(name_end);
@@ -21378,6 +21378,10 @@ mod tests {
             "dynamic class array route should read through the frontend field token: {lowered}"
         );
         assert!(
+            lowered.contains("__oxvba_array_field_get(__oxvba_this_instance,"),
+            "dynamic class array element read should use the direct field-array getter: {lowered}"
+        );
+        assert!(
             lowered.contains(&format!(
                 "__oxvba_withevents_set(__oxvba_this_instance, {field_token},"
             )),
@@ -21453,10 +21457,8 @@ mod tests {
             "fixed array field declaration must not be rewritten as an executable array read"
         );
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_withevents_get(__oxvba_this_instance, {field_token})"
-            )),
-            "fixed class array route should read through the frontend field token: {lowered}"
+            lowered.contains("__oxvba_array_field_get(__oxvba_this_instance,"),
+            "fixed class array element read should use the direct field-array getter: {lowered}"
         );
         assert!(
             lowered.contains("__oxvba_array_field_set(__oxvba_this_instance,"),
@@ -21540,6 +21542,10 @@ mod tests {
             "fixed procedural module array element write should use the direct field-array setter: {lowered}"
         );
         assert!(
+            lowered.contains("__oxvba_array_field_get("),
+            "fixed procedural module array element read should use the direct field-array getter: {lowered}"
+        );
+        assert!(
             !lowered.contains("__oxvba_array_field_fixed_assign"),
             "fixed procedural module array assignment must not use the old synthetic temp carrier: {lowered}"
         );
@@ -21612,6 +21618,12 @@ mod tests {
                 "__oxvba_withevents_get({owner_token}, {field_token})"
             )),
             "dynamic procedural array route should read through the module-state field token: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_array_field_get({owner_token}, {field_token},"
+            )),
+            "dynamic procedural array element read should use the direct field-array getter: {lowered}"
         );
         assert!(
             lowered.contains(&format!(

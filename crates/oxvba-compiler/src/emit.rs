@@ -5839,6 +5839,7 @@ fn intrinsic_result_type(
         | "cverr"
         | "cdec"
         | "array"
+        | "__oxvba_array_field_get"
         | "__oxvba_array_get"
         | "__oxvba_array_field_set" => VbaTypeId::Variant,
         "vbnullstring" | "cstr" | "str" | "left" | "right" | "mid" | "replace" | "lcase"
@@ -10442,6 +10443,21 @@ fn emit_expr_into(
                         array: *array,
                         indices: indices.to_vec(),
                     }),
+                ("__oxvba_array_field_get", [owner, binding, indices @ ..])
+                    if !indices.is_empty() =>
+                {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    instructions.push(Instruction::IntrinsicArrayGet {
+                        dst,
+                        array: array_slot,
+                        indices: indices.to_vec(),
+                    });
+                }
                 ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {
                     let array_slot = temps.alloc_temp();
                     instructions.push(Instruction::IntrinsicWithEventsGet {
@@ -10786,6 +10802,21 @@ fn emit_expr_into(
                         dst,
                         array: *array,
                         item: *item,
+                    });
+                }
+                ("__oxvba_array_field_get", [owner, binding, indices @ ..])
+                    if !indices.is_empty() =>
+                {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    instructions.push(Instruction::IntrinsicArrayGet {
+                        dst,
+                        array: array_slot,
+                        indices: indices.to_vec(),
                     });
                 }
                 ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {

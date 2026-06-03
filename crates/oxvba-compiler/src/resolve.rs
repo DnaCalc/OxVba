@@ -6458,6 +6458,7 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "npv" => Some(IntrinsicSpec::range(2, usize::MAX, DeterministicCore)),
         "array" => Some(IntrinsicSpec::range(1, usize::MAX, DeterministicCore)),
         "__oxvba_array_append" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
+        "__oxvba_array_field_get" => Some(IntrinsicSpec::range(3, usize::MAX, DeterministicCore)),
         "__oxvba_array_get" => Some(IntrinsicSpec::range(2, usize::MAX, DeterministicCore)),
         "__oxvba_array_field_set" => Some(IntrinsicSpec::range(4, usize::MAX, DeterministicCore)),
         "__oxvba_object_is" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
