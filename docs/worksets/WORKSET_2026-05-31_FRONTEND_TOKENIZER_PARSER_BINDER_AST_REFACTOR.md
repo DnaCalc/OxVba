@@ -693,7 +693,9 @@ Required newly explicit delivery beads:
   same-statement constant subset, and explicit `As LongLong`/`As LongPtr` overflow diagnostics
   for signed 64-bit integer expressions that exceed the current carrier range, plus a signed-64-bit
   bound-expression/bytecode/VM carrier for covered explicit `As LongLong` and `As LongPtr`
-  constants, including values that fit in the old i32 literal range, plus simple typed `Double`
+  constants, including values that fit in the old i32 literal range, plus optional `LongLong`/
+  `LongPtr` defaults through an explicit i64 metadata/default carrier with omitted-argument VM
+  binding for the covered source-prior integer evaluator subset, plus simple typed `Double`
   constants through `FloatConst`/`LoadConstF64`, plus declared `Currency` and deterministic
   `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`, plus declared
   `Single` constants through `LoadConstF32`, plus bounded numeric arithmetic expressions for
@@ -1449,7 +1451,8 @@ Candidate bead units:
   month/day Date literals, scalar-to-string `&` operand coercion for covered typed and untyped
   `String` constants, and explicit
   `As Byte`/`As Integer`/`As Long`
-  integer-expression overflow diagnostics for that covered subset.
+  integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
+  default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
@@ -1467,6 +1470,9 @@ Candidate bead units:
   metadata, deterministic `#...#` Date literal optional defaults, bounded Date/Currency arithmetic
   numeric constant-expression defaults (`+`, `-`, unary `-`, `*`, and guarded `/`) over numeric
   literals/module constants,
+  explicit i64 optional-default descriptors for covered `LongLong` and `LongPtr`
+  source-prior integer constant expressions with package-VM omitted-argument binding for
+  `LongLong`,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
@@ -1570,6 +1576,7 @@ Candidate bead units:
   comparison defaults, source-backed Date/Currency carriers plus their bounded arithmetic numeric
   constant-expression subset, deterministic Date literal defaults, and typed declared defaults
   (`""`, `False`, integer zero, Currency zero, and Date serial zero),
+  exact i64 optional defaults outside the covered source-prior integer evaluator subset,
   and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9

@@ -452,6 +452,7 @@ pub struct BoundParam {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundParamDefaultValue {
     ExplicitI32(i32),
+    ExplicitI64(i64),
     ExplicitBool(bool),
     ExplicitString(String),
     ExplicitCurrencyScaledI64(i64),
@@ -462,7 +463,8 @@ impl BoundParamDefaultValue {
     pub fn as_i32(&self) -> Option<i32> {
         match self {
             Self::ExplicitI32(value) => Some(*value),
-            Self::ExplicitBool(_)
+            Self::ExplicitI64(_)
+            | Self::ExplicitBool(_)
             | Self::ExplicitString(_)
             | Self::ExplicitCurrencyScaledI64(_)
             | Self::ExplicitDateSerialF64(_) => None,
@@ -2352,6 +2354,10 @@ fn static_param_default_expr_inner(
                     .then(|| BoundParamDefaultValue::ExplicitDateSerialF64(value.to_bits()))
             })
         }
+        _ if matches!(declared_type, BoundType::LongLong | BoundType::LongPtr) => {
+            static_i64_expr_inner(expr, module_constants, resolving_constants)
+                .map(BoundParamDefaultValue::ExplicitI64)
+        }
         _ => static_i32_expr(expr, module_constants).map(BoundParamDefaultValue::ExplicitI32),
     }
 }
@@ -2559,6 +2565,65 @@ fn static_f64_expr_inner(
 
 fn static_i32_expr(expr: &BoundExpr, module_constants: &HashMap<String, BoundExpr>) -> Option<i32> {
     static_i32_expr_inner(expr, module_constants, &mut HashSet::new())
+}
+
+fn static_i64_expr_inner(
+    expr: &BoundExpr,
+    module_constants: &HashMap<String, BoundExpr>,
+    resolving_constants: &mut HashSet<String>,
+) -> Option<i64> {
+    match expr {
+        BoundExpr::IntConst(value) => Some(i64::from(*value)),
+        BoundExpr::LongLongConst(value) => Some(*value),
+        BoundExpr::Var(name) => {
+            let const_expr = module_constants.get(name)?;
+            if !resolving_constants.insert(name.clone()) {
+                return None;
+            }
+            let value = static_i64_expr_inner(const_expr, module_constants, resolving_constants);
+            resolving_constants.remove(name);
+            value
+        }
+        BoundExpr::AddConst { var, delta } => {
+            let const_expr = module_constants.get(var)?;
+            if !resolving_constants.insert(var.clone()) {
+                return None;
+            }
+            let value = static_i64_expr_inner(const_expr, module_constants, resolving_constants)
+                .and_then(|value| value.checked_add(i64::from(*delta)));
+            resolving_constants.remove(var);
+            value
+        }
+        BoundExpr::SubConst { var, delta } => {
+            let const_expr = module_constants.get(var)?;
+            if !resolving_constants.insert(var.clone()) {
+                return None;
+            }
+            let value = static_i64_expr_inner(const_expr, module_constants, resolving_constants)
+                .and_then(|value| value.checked_sub(i64::from(*delta)));
+            resolving_constants.remove(var);
+            value
+        }
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => static_i64_expr_inner(operand, module_constants, resolving_constants)
+            .and_then(i64::checked_neg),
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let lhs = static_i64_expr_inner(lhs, module_constants, resolving_constants)?;
+            let rhs = static_i64_expr_inner(rhs, module_constants, resolving_constants)?;
+            match op {
+                ArithOp::Add => lhs.checked_add(rhs),
+                ArithOp::Sub => lhs.checked_sub(rhs),
+                ArithOp::Mul => lhs.checked_mul(rhs),
+                ArithOp::IntDiv => lhs.checked_div(rhs),
+                ArithOp::Mod => lhs.checked_rem(rhs),
+                ArithOp::Pow if rhs >= 0 => lhs.checked_pow(u32::try_from(rhs).ok()?),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn static_i32_expr_inner(
@@ -5838,6 +5903,9 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
+    if let Ok(value) = expr.parse::<i64>() {
+        return Some(BoundExpr::LongLongConst(value));
+    }
     if (expr.contains('.') || expr.contains('e') || expr.contains('E'))
         && let Ok(value) = expr.parse::<f64>()
     {
@@ -8253,6 +8321,23 @@ mod tests {
         assert_eq!(fill.params.len(), 2);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(19));
+    }
+
+    #[test]
+    fn resolve_optional_longlong_module_constant_defaults() {
+        let source = "Const Big As LongLong = 5000000000\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value As LongLong = Big + 7)\ntarget = value\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitI64(5_000_000_007))
+        );
     }
 
     #[test]

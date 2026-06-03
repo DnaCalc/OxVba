@@ -269,6 +269,9 @@ fn optional_default_value_for_bound_param(param: &BoundParam) -> Option<Optional
         Some(BoundParamDefaultValue::ExplicitI32(value)) => {
             Some(OptionalDefaultValue::ExplicitI32(*value))
         }
+        Some(BoundParamDefaultValue::ExplicitI64(value)) => {
+            Some(OptionalDefaultValue::ExplicitI64(*value))
+        }
         Some(BoundParamDefaultValue::ExplicitBool(value)) => {
             Some(OptionalDefaultValue::ExplicitBool(*value))
         }
@@ -291,13 +294,12 @@ fn optional_default_value_for_bound_param(param: &BoundParam) -> Option<Optional
         None if param.ty == BoundType::Date => Some(OptionalDefaultValue::ExplicitDateSerialF64(
             0.0f64.to_bits(),
         )),
+        None if matches!(param.ty, BoundType::LongLong | BoundType::LongPtr) => {
+            Some(OptionalDefaultValue::ExplicitI64(0))
+        }
         None if matches!(
             param.ty,
-            BoundType::Byte
-                | BoundType::Integer
-                | BoundType::Long
-                | BoundType::LongLong
-                | BoundType::LongPtr
+            BoundType::Byte | BoundType::Integer | BoundType::Long
         ) =>
         {
             Some(OptionalDefaultValue::ExplicitI32(0))

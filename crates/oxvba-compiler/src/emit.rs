@@ -843,6 +843,7 @@ pub enum OptionalParameterDescriptor {
 pub enum OptionalDefaultValue {
     Unknown,
     ExplicitI32(i32),
+    ExplicitI64(i64),
     ExplicitBool(bool),
     ExplicitString(String),
     ExplicitCurrencyScaledI64(i64),
@@ -1387,6 +1388,9 @@ fn optional_default_value_for_param(param: &BoundParam) -> OptionalDefaultValue 
         Some(BoundParamDefaultValue::ExplicitI32(value)) => {
             OptionalDefaultValue::ExplicitI32(*value)
         }
+        Some(BoundParamDefaultValue::ExplicitI64(value)) => {
+            OptionalDefaultValue::ExplicitI64(*value)
+        }
         Some(BoundParamDefaultValue::ExplicitBool(value)) => {
             OptionalDefaultValue::ExplicitBool(*value)
         }
@@ -1409,13 +1413,12 @@ fn optional_default_value_for_param(param: &BoundParam) -> OptionalDefaultValue 
         None if param.ty == BoundType::Date => {
             OptionalDefaultValue::ExplicitDateSerialF64(0.0f64.to_bits())
         }
+        None if matches!(param.ty, BoundType::LongLong | BoundType::LongPtr) => {
+            OptionalDefaultValue::ExplicitI64(0)
+        }
         None if matches!(
             param.ty,
-            BoundType::Byte
-                | BoundType::Integer
-                | BoundType::Long
-                | BoundType::LongLong
-                | BoundType::LongPtr
+            BoundType::Byte | BoundType::Integer | BoundType::Long
         ) =>
         {
             OptionalDefaultValue::ExplicitI32(0)
@@ -2378,6 +2381,16 @@ fn collect_signature_value_state_descriptors(
                     ValueStateSource::OptionalParameter,
                     (parameter.slot, None, Some(parameter.name.clone())),
                     format!("default=ExplicitI32({value}); missing-state={missing_state:?}"),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::ExplicitI64(value) => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!("default=ExplicitI64({value}); missing-state={missing_state:?}"),
                     ordinal,
                 ));
             }
@@ -11078,6 +11091,12 @@ fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<
                 value: *value,
             });
         }
+        Some(BoundParamDefaultValue::ExplicitI64(value)) => {
+            instructions.push(Instruction::LoadConstI64 {
+                slot: dst,
+                value: *value,
+            });
+        }
         Some(BoundParamDefaultValue::ExplicitBool(value)) => {
             instructions.push(Instruction::LoadConstBool {
                 slot: dst,
@@ -11124,6 +11143,12 @@ fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<
             instructions.push(Instruction::LoadConstDate {
                 slot: dst,
                 bits: 0.0f64.to_bits(),
+            });
+        }
+        None if matches!(param.ty, BoundType::LongLong | BoundType::LongPtr) => {
+            instructions.push(Instruction::LoadConstI64 {
+                slot: dst,
+                value: 0,
             });
         }
         None => {

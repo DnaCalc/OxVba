@@ -3420,6 +3420,7 @@ fn optional_default_token(default_value: &OptionalDefaultValue) -> String {
     match default_value {
         OptionalDefaultValue::Unknown => "unknown".to_string(),
         OptionalDefaultValue::ExplicitI32(value) => format!("i32-{value}"),
+        OptionalDefaultValue::ExplicitI64(value) => format!("i64-{value}"),
         OptionalDefaultValue::ExplicitBool(value) => format!("bool-{value}"),
         OptionalDefaultValue::ExplicitString(value) => format!("string-{value}"),
         OptionalDefaultValue::ExplicitCurrencyScaledI64(value) => format!("currency-{value}"),
@@ -3781,6 +3782,7 @@ fn leak_runtime_descriptor_str(value: String) -> &'static str {
 fn optional_default_runtime_value(default: &OptionalDefaultValue) -> Variant {
     match default {
         OptionalDefaultValue::ExplicitI32(value) => Variant::from_i32(*value),
+        OptionalDefaultValue::ExplicitI64(value) => Variant::from_i64(*value),
         OptionalDefaultValue::ExplicitBool(value) => Variant::from_bool(*value),
         OptionalDefaultValue::ExplicitString(value) => Variant::from_string(value.as_str()),
         OptionalDefaultValue::ExplicitCurrencyScaledI64(value) => {
