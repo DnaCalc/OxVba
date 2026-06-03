@@ -1052,6 +1052,12 @@ constant expressions:
 - A fourth focused carrier pass adds `BoundExpr::LongLongConst(i64)`,
   `Instruction::LoadConstI64`, and VM execution support, so covered explicit `As LongLong` and
   `As LongPtr` constants use the signed-64-bit carrier even when the value fits in i32.
+- A related optional-default carrier pass adds `OptionalDefaultValue::ExplicitI64`, accepts plain
+  integral literals outside `i32` range as `LongLongConst`, and routes covered source-prior
+  integer expressions such as `Optional ... As LongLong = Big + 7` and
+  `Optional ... As LongPtr = Big` through HIR/default metadata and omitted-argument binding. This
+  bumps the strict `OxBundle` format to v18 because serialized optional-default metadata gained a
+  new enum arm. Full platform-width `LongPtr` semantics remain outside this focused i64 carrier.
 - A fifth focused literal-kind pass lets the same bounded evaluator substitute simple typed
   `Double` constants as `BoundExpr::FloatConst`/`LoadConstF64`, including `#`-suffixed Double
   literals and VM execution coverage.
@@ -1283,6 +1289,10 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   expressions where both static string operands are byte-identical, including string concatenation
   and module constants, into the same explicit Boolean optional-default carrier. Collation-sensitive
   unequal strings, ordering comparisons, `Like`, and `Is` remain outside this bounded evaluator.
+- Follow-up i64 optional-default work adds an explicit `OptionalDefaultValue::ExplicitI64` carrier
+  and binds covered `LongLong`/`LongPtr` source-prior integer constant defaults through resolver,
+  HIR/default metadata, direct optional-entry bytecode, and VM omitted-argument execution for
+  `LongLong`. This is an exact carrier fix, not a full platform `LongPtr` semantics claim.
 - The same follow-up found a front-end symbol-model miss where a later parameter following a string
   default could be absent from the HIR parameter list even though the signature parser saw it.
   Procedure symbol collection now reconciles missing parameter symbols against the signature parser
@@ -1290,7 +1300,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - This deliberately does not claim arbitrary typed coercion of default expressions, locale-sensitive
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
   plus string/Boolean constant-expression subset, bounded Boolean comparison subset, exact
-  same-string equality/inequality subset, and bounded Date/Currency arithmetic numeric subset.
+  same-string equality/inequality subset, bounded Date/Currency arithmetic numeric subset, and
+  exact i64 optional-default carrier subset.
   Collation-sensitive string comparisons, `Like`/`Is`, and coercive comparison defaults remain
   FE-8.5.f residuals.
 
@@ -1357,6 +1368,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_project_source_const_overrides_manifest_conditional_constant --quiet`
 - `cargo test -p oxvba-compiler resolve_conditional_compilation_boolean_xor_eqv_imp_branch --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_conditional_boolean_xor_eqv_imp_through_hir --quiet`
+- `cargo test -p oxvba-compiler resolve_optional_longlong_module_constant_defaults --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_optional_longlong_defaults_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage optional_longlong_module_constant_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-host embedded_host_build_workspace_applies_manifest_conditional_constants --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
