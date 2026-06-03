@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use oxvba_compiler::frontend_diagnostics::{FrontendDiagnostic, FrontendDiagnosticSeverity};
@@ -169,7 +169,7 @@ fn callables_from_frontend_hir(typed: &TypedHirModule) -> Vec<CallableSignatureI
         else {
             continue;
         };
-        let params = params
+        let params: Vec<CallableParameterInfo> = params
             .iter()
             .filter_map(|param| {
                 let name = typed
@@ -199,10 +199,17 @@ fn callables_from_frontend_hir(typed: &TypedHirModule) -> Vec<CallableSignatureI
             .map(|hook| bound_type_from_vba_type(hook.runtime_type))
             .unwrap_or(BoundType::Variant);
         callables.push(CallableSignatureInfo {
-            name,
-            params,
+            name: name.clone(),
+            params: params.clone(),
             return_type,
         });
+        if let Some(property_name) = property_get_callable_alias(&name) {
+            callables.push(CallableSignatureInfo {
+                name: property_name.to_string(),
+                params,
+                return_type,
+            });
+        }
     }
     callables.sort_by(|left, right| left.name.cmp(&right.name));
     callables
@@ -214,6 +221,7 @@ fn symbol_table_from_frontend_hir(
     provenance: &SemanticProvenance,
 ) -> SymbolTable {
     let mut symbols = Vec::new();
+    let property_symbols = property_procedure_symbols(typed);
     for symbol in typed.module.symbols.symbols() {
         let Some(name) = typed.module.symbols.name(symbol.name) else {
             continue;
@@ -221,7 +229,9 @@ fn symbol_table_from_frontend_hir(
         if is_frontend_modifier_residue(&name.folded) {
             continue;
         }
-        let Some(kind) = frontend_symbol_kind(symbol.namespace) else {
+        let Some(kind) =
+            frontend_symbol_kind(symbol.namespace, property_symbols.contains(&symbol.id))
+        else {
             continue;
         };
         let Some(span) = symbol.provenance.span else {
@@ -233,8 +243,15 @@ fn symbol_table_from_frontend_hir(
             .declared_type(symbol.id)
             .map(|hook| bound_type_from_vba_type(hook.runtime_type))
             .unwrap_or(BoundType::Variant);
+        let display_name = if kind == SymbolKind::Property {
+            property_display_alias(&name.first_spelling)
+                .unwrap_or(&name.first_spelling)
+                .to_string()
+        } else {
+            name.first_spelling.clone()
+        };
         symbols.push(make_symbol(
-            name.first_spelling.clone(),
+            display_name,
             kind,
             bound_type,
             text_span_from_frontend(span),
@@ -246,8 +263,33 @@ fn symbol_table_from_frontend_hir(
     SymbolTable { symbols }
 }
 
-fn frontend_symbol_kind(namespace: SymbolNamespace) -> Option<SymbolKind> {
+fn property_procedure_symbols(
+    typed: &TypedHirModule,
+) -> BTreeSet<oxvba_compiler::frontend_symbols::SymbolId> {
+    typed
+        .module
+        .arenas
+        .properties()
+        .iter()
+        .map(|property| property.symbol)
+        .collect()
+}
+
+fn property_get_callable_alias(name: &str) -> Option<&str> {
+    name.strip_prefix("property_get_")
+        .filter(|property_name| !property_name.is_empty())
+}
+
+fn property_display_alias(name: &str) -> Option<&str> {
+    name.strip_prefix("property_get_")
+        .or_else(|| name.strip_prefix("property_let_"))
+        .or_else(|| name.strip_prefix("property_set_"))
+        .filter(|property_name| !property_name.is_empty())
+}
+
+fn frontend_symbol_kind(namespace: SymbolNamespace, is_property: bool) -> Option<SymbolKind> {
     match namespace {
+        SymbolNamespace::Procedure if is_property => Some(SymbolKind::Property),
         SymbolNamespace::Procedure => Some(SymbolKind::Procedure),
         SymbolNamespace::Parameter => Some(SymbolKind::Parameter),
         SymbolNamespace::Local => Some(SymbolKind::Variable),
@@ -501,6 +543,37 @@ mod tests {
         assert_eq!(callable.params[0].ty, BoundType::Long);
         assert_eq!(callable.params[1].name, "second");
         assert_eq!(callable.params[1].ty, BoundType::String);
+    }
+
+    #[test]
+    fn snapshot_symbols_classify_properties_from_frontend_hir() {
+        let src = "Property Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
+        let snap = build_semantic_snapshot(src);
+
+        let property = snap
+            .symbols
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "Value")
+            .expect("property symbol from compiler HIR facts");
+        assert_eq!(property.kind, SymbolKind::Property);
+        assert_eq!(property.bound_type, BoundType::Long);
+
+        let value_callables = snap
+            .callables
+            .iter()
+            .filter(|callable| callable.name == "Value")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            value_callables.len(),
+            1,
+            "only Property Get should expose user-facing call signature"
+        );
+        let callable = value_callables[0];
+        assert_eq!(callable.params.len(), 1);
+        assert_eq!(callable.params[0].name, "index");
+        assert_eq!(callable.params[0].ty, BoundType::Long);
+        assert_eq!(callable.return_type, BoundType::Long);
     }
 
     #[test]

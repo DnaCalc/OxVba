@@ -2448,6 +2448,22 @@ mod tests {
     }
 
     #[test]
+    fn signature_help_resolves_property_get_alias_from_frontend_hir() {
+        let src = "Property Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\nSub Test()\n    Dim text\n    text = Value(1)\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+        let pos = src.find("Value(1)").expect("property call") as u32 + "Value(".len() as u32;
+        let help = svc
+            .signature_help(&id, pos)
+            .expect("signature help for property get alias");
+
+        assert_eq!(help.name, "Value");
+        assert_eq!(help.parameters.len(), 1);
+        assert_eq!(help.parameters[0].name, "index");
+        assert_eq!(help.parameters[0].type_name, "Long");
+        assert_eq!(help.return_type, "Long");
+    }
+
+    #[test]
     fn signature_help_preserves_param_array_flag() {
         let src = "Sub Collect(ParamArray values() As Variant)\nEnd Sub\nSub Test()\n    Call Collect()\nEnd Sub\n";
         let (svc, id) = setup_single_module(src);

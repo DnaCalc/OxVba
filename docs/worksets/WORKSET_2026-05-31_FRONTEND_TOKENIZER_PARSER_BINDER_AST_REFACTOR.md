@@ -1433,7 +1433,12 @@ Candidate bead units:
   metadata shape for normalized `pmr_*` helper identity plus `PropertyGet`,
   indexed/default-member `PropertyLet`, and indexed/default-member `PropertySet` kind, so
   source-carrier proof alone cannot mask loss of property intent; this remains route-proof
-  hardening around the compatibility carrier, not native-HIR property rewrite closure.
+  hardening around the compatibility carrier, not native-HIR property rewrite closure. Follow-up
+  FE-7.3.a language-service coverage projects compiler HIR property arena facts into
+  user-facing `SemanticSnapshot` property symbols and callable aliases, so same-module indexed
+  `Property Get` signature help (`Value(1)`) uses shared compiler front-end facts instead of a
+  duplicate IDE semantic model. Broader project/class/COM/default-member writeback and rewrite
+  quarantine remain open.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish project/class array fields and broader
   project-owned array shapes through HIR.
   Partial work has already been done: dynamic-array runtime `ReDim` lowering now covers
