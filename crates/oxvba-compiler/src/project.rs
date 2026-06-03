@@ -8736,6 +8736,17 @@ fn rewrite_internal_class_dynamic_array_field_redim(
             module_state_bindings.owner_expr, binding_token, bounds
         );
     }
+    if let Some(bound_args) = parse_field_redim_bound_args(&bounds) {
+        let intrinsic = if preserve {
+            "__oxvba_array_field_redim_preserve_bounds"
+        } else {
+            "__oxvba_array_field_redim_bounds"
+        };
+        return format!(
+            "{indent}__oxvba_field_set_discard = {intrinsic}({}, {}, {})",
+            module_state_bindings.owner_expr, binding_token, bound_args
+        );
+    }
     let temp_name = dynamic_array_field_temp_name("redim", &field_name, line, rewrite_suffix);
     let redim_kind = if preserve { "ReDim Preserve" } else { "ReDim" };
     [
@@ -8751,6 +8762,37 @@ fn rewrite_internal_class_dynamic_array_field_redim(
         ),
     ]
     .join("\n")
+}
+
+fn parse_field_redim_bound_args(bounds: &str) -> Option<String> {
+    let dims = split_top_level_args(bounds).ok()?;
+    if dims.is_empty() {
+        return None;
+    }
+    let mut args = Vec::with_capacity(dims.len() * 2);
+    for dim in dims {
+        let Some((lower, upper)) = split_keyword_ci_project(&dim, "to") else {
+            args.push("0".to_string());
+            args.push(dim.trim().to_string());
+            continue;
+        };
+        let lower = lower.trim();
+        lower.parse::<i32>().ok()?;
+        let upper = upper.trim();
+        if lower.is_empty() || upper.is_empty() {
+            return None;
+        }
+        args.push(lower.to_string());
+        args.push(upper.to_string());
+    }
+    Some(args.join(", "))
+}
+
+fn split_keyword_ci_project<'a>(text: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let marker = format!(" {keyword} ");
+    let idx = lower.find(&marker)?;
+    Some((text[..idx].trim(), text[idx + marker.len()..].trim()))
 }
 
 fn rewrite_internal_class_dynamic_array_field_assignment(
@@ -21672,6 +21714,78 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayGet { .. })),
             "dynamic procedural module array element read should compile through runtime array get"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_explicit_lower_bound_dynamic_array_field_redim() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            concat!(
+                "Attribute VB_Name = \"MainModule\"\n",
+                "Private cache() As Long\n",
+                "Public Sub Main()\n",
+                "Dim widget As New Widget\n",
+                "ReDim cache(1 To 3)\n",
+                "cache(1) = 7\n",
+                "Call widget.Touch\n",
+                "End Sub\n"
+            ),
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Private buf() As Long\n",
+                "Public Sub Touch()\n",
+                "ReDim buf(1 To 3)\n",
+                "buf(1) = 7\n",
+                "End Sub\n"
+            ),
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_array_field_redim_bounds(__oxvba_this_instance,"),
+            "explicit lower-bound class array ReDim should use paired-bound intrinsic: {lowered}"
+        );
+        assert!(
+            lowered.contains("__oxvba_array_field_redim_bounds("),
+            "explicit lower-bound procedural array ReDim should use paired-bound intrinsic: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_dynamic_array_field_redim_"),
+            "explicit lower-bound array-field ReDim must not use synthetic temp carriers: {lowered}"
+        );
+        let resize_lower_bound_ones = compiled
+            .bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicArrayResize { lower_bounds, .. }
+                        if lower_bounds == &vec![1]
+                )
+            })
+            .count();
+        assert!(
+            resize_lower_bound_ones >= 2,
+            "expected class and procedural field-array ReDim lower bounds in bytecode; source={lowered}; instructions={:?}",
+            compiled.bytecode.instructions
         );
     }
 

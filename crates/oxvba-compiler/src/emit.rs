@@ -5841,7 +5841,9 @@ fn intrinsic_result_type(
         | "array"
         | "__oxvba_array_field_get"
         | "__oxvba_array_field_redim"
+        | "__oxvba_array_field_redim_bounds"
         | "__oxvba_array_field_redim_preserve"
+        | "__oxvba_array_field_redim_preserve_bounds"
         | "__oxvba_array_get"
         | "__oxvba_array_field_set" => VbaTypeId::Variant,
         "vbnullstring" | "cstr" | "str" | "left" | "right" | "mid" | "replace" | "lcase"
@@ -10493,6 +10495,51 @@ fn emit_expr_into(
                         value: array_slot,
                     });
                 }
+                ("__oxvba_array_field_redim_bounds", [owner, binding, bound_args @ ..])
+                | (
+                    "__oxvba_array_field_redim_preserve_bounds",
+                    [owner, binding, bound_args @ ..],
+                ) if !bound_args.is_empty() && bound_args.len() % 2 == 0 => {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    let mut lower_bounds = Vec::with_capacity(bound_args.len() / 2);
+                    let mut upper_bounds = Vec::with_capacity(bound_args.len() / 2);
+                    for (index, pair) in bound_args.chunks(2).enumerate() {
+                        let lower = match &args[2 + index * 2] {
+                            BoundExpr::IntConst(value) => *value,
+                            other => panic!(
+                                "field-array ReDim lower bound should be static integer, got {other:?}"
+                            ),
+                        };
+                        lower_bounds.push(lower);
+                        upper_bounds.push(pair[1]);
+                    }
+                    if name == "__oxvba_array_field_redim_preserve_bounds" {
+                        instructions.push(Instruction::IntrinsicArrayResizePreserve {
+                            dst: array_slot,
+                            upper_bounds,
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    } else {
+                        instructions.push(Instruction::IntrinsicArrayResize {
+                            dst: array_slot,
+                            upper_bounds,
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    }
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: array_slot,
+                    });
+                }
                 ("__oxvba_array_field_set", [owner, binding, tail @ ..]) if tail.len() >= 2 => {
                     let array_slot = temps.alloc_temp();
                     instructions.push(Instruction::IntrinsicWithEventsGet {
@@ -10876,6 +10923,51 @@ fn emit_expr_into(
                         instructions.push(Instruction::IntrinsicArrayResize {
                             dst: array_slot,
                             upper_bounds: upper_bounds.to_vec(),
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    }
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        owner: *owner,
+                        binding: *binding,
+                        value: array_slot,
+                    });
+                }
+                ("__oxvba_array_field_redim_bounds", [owner, binding, bound_args @ ..])
+                | (
+                    "__oxvba_array_field_redim_preserve_bounds",
+                    [owner, binding, bound_args @ ..],
+                ) if !bound_args.is_empty() && bound_args.len() % 2 == 0 => {
+                    let array_slot = temps.alloc_temp();
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst: array_slot,
+                        owner: *owner,
+                        binding: *binding,
+                    });
+                    let mut lower_bounds = Vec::with_capacity(bound_args.len() / 2);
+                    let mut upper_bounds = Vec::with_capacity(bound_args.len() / 2);
+                    for (index, pair) in bound_args.chunks(2).enumerate() {
+                        let lower = match &args[2 + index * 2] {
+                            BoundExpr::IntConst(value) => *value,
+                            other => panic!(
+                                "field-array ReDim lower bound should be static integer, got {other:?}"
+                            ),
+                        };
+                        lower_bounds.push(lower);
+                        upper_bounds.push(pair[1]);
+                    }
+                    if name == "__oxvba_array_field_redim_preserve_bounds" {
+                        instructions.push(Instruction::IntrinsicArrayResizePreserve {
+                            dst: array_slot,
+                            upper_bounds,
+                            lower_bounds,
+                            element_type: RuntimeArrayElementType::Variant,
+                        });
+                    } else {
+                        instructions.push(Instruction::IntrinsicArrayResize {
+                            dst: array_slot,
+                            upper_bounds,
                             lower_bounds,
                             element_type: RuntimeArrayElementType::Variant,
                         });
