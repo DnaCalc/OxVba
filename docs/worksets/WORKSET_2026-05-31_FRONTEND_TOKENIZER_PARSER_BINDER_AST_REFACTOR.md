@@ -708,9 +708,11 @@ Required newly explicit delivery beads:
   Procedural module array-field token discovery now uses frontend project-symbol field names rather
   than the legacy declaration-line scan when the symbol index is available.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
-  old rewrite bridge is parity evidence, not native production ownership. Closure requires moving
-  remaining project-owned array-shape compatibility-carrier construction, especially project field
-  metadata ownership, into native HIR-owned lowering/metadata paths.
+  old rewrite bridge is parity evidence, not native production ownership. Remaining structural
+  residual: `lower_module_source_module_aware` still injects internal field-array intrinsic source
+  lines before `build_line_bind_plan` and `compile_source_with_runtime_metadata_via_hir`; native
+  closure requires a project-aware HIR lowering boundary that can bind original field-array
+  statements from project-symbol facts without that pre-HIR source rewrite bridge.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
   compilation/compile constants, and richer constant evaluation. Partial work already done:
@@ -1507,9 +1509,10 @@ Candidate bead units:
   Procedural module array-field token discovery now uses frontend project-symbol field names rather
   than the legacy declaration-line scan when the symbol index is available.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
-  old rewrite bridge is parity evidence, not native production ownership. Remaining work: move
-  project-owned array-shape compatibility-carrier construction, especially project field metadata
-  ownership, into native HIR-owned lowering/metadata paths.
+  old rewrite bridge is parity evidence, not native production ownership. Remaining work: replace
+  the `lower_module_source_module_aware` pre-HIR field-array intrinsic source rewrite bridge with a
+  project-aware HIR lowering boundary that binds original field-array statements from
+  project-symbol facts.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
