@@ -222,7 +222,7 @@ fn symbol_table_from_frontend_hir(
 ) -> SymbolTable {
     let mut symbols = Vec::new();
     let property_symbols = property_procedure_symbols(typed);
-    let mut seen_property_groups = BTreeSet::new();
+    let selected_property_groups = selected_property_group_symbols(typed);
     for symbol in typed.module.symbols.symbols() {
         let Some(name) = typed.module.symbols.name(symbol.name) else {
             continue;
@@ -252,7 +252,9 @@ fn symbol_table_from_frontend_hir(
             name.first_spelling.clone()
         };
         if kind == SymbolKind::Property
-            && !seen_property_groups.insert(display_name.to_ascii_lowercase())
+            && selected_property_groups
+                .get(&display_name.to_ascii_lowercase())
+                .is_some_and(|selected| *selected != symbol.id)
         {
             continue;
         }
@@ -279,6 +281,44 @@ fn property_procedure_symbols(
         .iter()
         .map(|property| property.symbol)
         .collect()
+}
+
+fn selected_property_group_symbols(
+    typed: &TypedHirModule,
+) -> BTreeMap<String, oxvba_compiler::frontend_symbols::SymbolId> {
+    let mut selected = BTreeMap::new();
+    for property in typed.module.arenas.properties() {
+        let Some(name) = typed
+            .module
+            .symbols
+            .symbol(property.symbol)
+            .and_then(|symbol| typed.module.symbols.name(symbol.name))
+            .map(|name| name.first_spelling.clone())
+        else {
+            continue;
+        };
+        let Some(display_name) = property_display_alias(&name) else {
+            continue;
+        };
+        let key = display_name.to_ascii_lowercase();
+        let is_getter = property_get_callable_alias(&name).is_some();
+        let should_replace = selected
+            .get(&key)
+            .and_then(|existing| {
+                typed
+                    .module
+                    .symbols
+                    .symbol(*existing)
+                    .and_then(|symbol| typed.module.symbols.name(symbol.name))
+            })
+            .is_some_and(|existing_name| {
+                property_get_callable_alias(&existing_name.first_spelling).is_none() && is_getter
+            });
+        if !selected.contains_key(&key) || should_replace {
+            selected.insert(key, property.symbol);
+        }
+    }
+    selected
 }
 
 fn property_get_callable_alias(name: &str) -> Option<&str> {
@@ -599,6 +639,24 @@ mod tests {
             "Property Get/Let/Set accessors should expose one user-facing property symbol"
         );
         assert_eq!(properties[0].bound_type, BoundType::Long);
+    }
+
+    #[test]
+    fn snapshot_property_group_symbol_prefers_getter_accessor() {
+        let src = "Property Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\nProperty Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\n";
+        let snap = build_semantic_snapshot(src);
+        let property = snap
+            .symbols
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "Value" && symbol.kind == SymbolKind::Property)
+            .expect("coalesced property symbol");
+
+        assert_eq!(property.bound_type, BoundType::Long);
+        assert_eq!(
+            property.definition_span.start,
+            (src.find("Property Get Value").expect("getter") + "Property Get ".len()) as u32
+        );
     }
 
     #[test]
