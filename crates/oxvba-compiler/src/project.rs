@@ -16661,9 +16661,19 @@ mod tests {
             lowered.contains("beforevalue = property_get_pmr_projecta_widget_value(widget)"),
             "{lowered}"
         );
+        assert_project_member_call_metadata(
+            &compiled,
+            "pmr_projecta_widget_value",
+            ProjectMemberCallKind::PropertyGet,
+        );
         assert!(
             lowered.contains("property_let_pmr_projecta_widget_value(widget, 9)"),
             "{lowered}"
+        );
+        assert_project_member_call_metadata(
+            &compiled,
+            "pmr_projecta_widget_value",
+            ProjectMemberCallKind::PropertyLet,
         );
         assert!(
             lowered.contains("aftervalue = property_get_pmr_projecta_widget_value(widget)"),
@@ -16699,6 +16709,11 @@ mod tests {
         assert!(
             lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget, x)"),
             "{lowered}"
+        );
+        assert_project_member_call_metadata(
+            &compiled,
+            "pmr_projecta_widget_value",
+            ProjectMemberCallKind::PropertyGet,
         );
     }
 
@@ -17998,6 +18013,11 @@ mod tests {
         assert!(
             lowered.contains("call property_get_pmr_projecta_widget_value(widget, x)"),
             "{lowered}"
+        );
+        assert_project_member_call_metadata(
+            &compiled,
+            "pmr_projecta_widget_value",
+            ProjectMemberCallKind::PropertyGet,
         );
     }
 

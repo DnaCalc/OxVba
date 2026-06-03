@@ -1455,7 +1455,9 @@ Candidate bead units:
   indexed/default-member `PropertyLet`, and indexed/default-member `PropertySet` kind, so
   source-carrier proof alone cannot mask loss of property intent; this remains route-proof
   hardening around the compatibility carrier, not native-HIR property rewrite closure. Follow-up
-  FE-7.3.a language-service coverage projects compiler HIR property arena facts into
+  hardening extends those bytecode metadata assertions to representative bare default-member
+  `Property Let`, indexed default-member `Property Get`, and call-statement indexed `Property Get`
+  compatibility-helper rows. FE-7.3.a language-service coverage projects compiler HIR property arena facts into
   user-facing `SemanticSnapshot` property symbols and callable aliases, so same-module indexed
   `Property Get` signature help (`Value(1)`) uses shared compiler front-end facts instead of a
   duplicate IDE semantic model. A later fresh-eyes fix coalesces `Property Get`/`Property Let`/
