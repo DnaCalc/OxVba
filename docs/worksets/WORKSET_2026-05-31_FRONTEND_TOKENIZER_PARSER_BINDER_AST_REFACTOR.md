@@ -1238,7 +1238,7 @@ Candidate bead units:
   bounded numeric expression/source-prior evaluator used by the other covered exact numeric
   carriers; companion coverage hardening upgrades declared `Double` route evidence from literal-only
   to source-prior expression coverage. Later bounded Boolean work adds declared `Boolean` constants
-  over `True`/`False`, source-prior Boolean constants, `Not`, `And`, `Or`, finite numeric
+  over `True`/`False`, source-prior Boolean constants, `Not`, `And`, `Or`, `Xor`, finite numeric
   comparisons, Boolean equality/inequality, and binary string equality/inequality with `&`
   concatenation. A subsequent string-carrier slice folds declared `String` constants over
   source-prior string constants and `&` concatenation into `LoadConstString` instead of runtime

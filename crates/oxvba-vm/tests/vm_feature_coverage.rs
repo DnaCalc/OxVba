@@ -98,6 +98,14 @@ fn scalar_boolean_const_expression_executes() {
 }
 
 #[test]
+fn scalar_boolean_xor_const_expression_executes() {
+    let snap = run(
+        "Const Enabled As Boolean = True\nConst CFlag As Boolean = Enabled Xor True\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_bool(false)]);
+}
+
+#[test]
 fn scalar_option_compare_text_boolean_const_expression_executes() {
     let snap = run(
         "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
