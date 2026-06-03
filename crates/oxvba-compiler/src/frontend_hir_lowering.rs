@@ -4134,6 +4134,7 @@ fn eval_const_compare(
         return match op {
             CompareOp::Eq => Some(equal),
             CompareOp::Ne => Some(!equal),
+            CompareOp::Like => Some(equal),
             _ => None,
         };
     }
@@ -4178,6 +4179,9 @@ fn parse_const_string_concat_operand(
 }
 
 fn split_const_compare_expr<'a>(text: &'a str) -> Option<(&'a str, CompareOp, &'a str)> {
+    if let Some((lhs, rhs)) = split_const_binary_keyword_expr(text, "like") {
+        return Some((lhs.trim(), CompareOp::Like, rhs.trim()));
+    }
     let mut depth = 0i32;
     let mut in_string = false;
     let mut chars = text.char_indices().peekable();

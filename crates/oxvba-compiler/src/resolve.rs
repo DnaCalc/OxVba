@@ -2510,6 +2510,9 @@ fn static_string_compare_expr(
 ) -> Option<bool> {
     let lhs = static_string_expr_inner(lhs, module_constants, resolving_constants)?;
     let rhs = static_string_expr_inner(rhs, module_constants, resolving_constants)?;
+    if op == CompareOp::Like {
+        return Some(lhs == rhs);
+    }
     if lhs != rhs {
         return None;
     }
@@ -8362,6 +8365,23 @@ mod tests {
     #[test]
     fn resolve_optional_boolean_expression_default() {
         let source = "Const Prefix = \"re\"\nConst Enabled = True\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\")\ntarget = flag\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert!(fill.params[1].optional);
+        assert_eq!(
+            fill.params[1].default_literal,
+            Some(super::BoundParamDefaultValue::ExplicitBool(true))
+        );
+    }
+
+    #[test]
+    fn resolve_optional_boolean_like_default() {
+        let source = "Const Prefix = \"he\"\nSub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal flag As Boolean = Prefix & \"llo\" Like \"hello\")\ntarget = flag\nEnd Sub";
         let module = resolve_symbols(source);
         let fill = module
             .procedures

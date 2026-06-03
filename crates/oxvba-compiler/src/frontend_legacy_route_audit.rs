@@ -613,6 +613,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let typed_boolean_like_const_statement = "Option Compare Text\nConst Prefix As String = \"he\"\nConst CFlag As Boolean = Prefix & \"llo\" Like \"HELLO\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub\n";
+    findings.push(route_finding(
+        "typed boolean Like const expression fixture",
+        typed_boolean_like_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let typed_string_const_statement = "Const Prefix As String = \"re\"\nConst CText As String = Prefix & \"ady\"\nSub Main()\nDim text As String\ntext = CText\nEnd Sub\n";
     findings.push(route_finding(
         "typed string const expression fixture",

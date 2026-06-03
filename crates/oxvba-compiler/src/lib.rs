@@ -1939,6 +1939,36 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_typed_boolean_like_const_through_hir() {
+        let source = "Option Compare Text\nConst Prefix As String = \"he\"\nConst CFlag As Boolean = Prefix & \"llo\" Like \"HELLO\"\nSub Main()\nDim flag As Boolean\nflag = CFlag: flag = Not flag\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
+            "legacy path should reject the active inline sequence after typed Boolean Like const",
+        );
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("direct HIR production lowering should support typed Boolean Like const");
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route typed Boolean Like const through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for typed Boolean Like const"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstBool { value: true, .. }
+            )),
+            "expected typed Boolean Like const bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_default_routes_option_compare_text_boolean_const_through_hir() {
         let source = "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag: flag = Not flag\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(

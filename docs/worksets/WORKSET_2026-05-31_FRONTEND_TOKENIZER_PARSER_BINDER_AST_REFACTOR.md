@@ -702,7 +702,8 @@ Required newly explicit delivery beads:
   declared `Currency` and `Date` constants through the same exact carriers, plus `Const` name
   type-declaration characters such as `!` and `@` for the covered carrier subset, plus typed and
   untyped `String` constants over source-prior string/scalar constants and `&` concatenation, plus
-  `Option Compare Text` folding for covered string equality/inequality Boolean constants, plus
+  `Option Compare Text` folding for covered string equality/inequality and equality-based `Like`
+  Boolean constants, plus
   language-service workspace semantic snapshots that honor active-project manifest conditional
   constants for diagnostics/symbols through the shared compiler preprocessor, plus month-name Date
   constants with commas inside `#...#` literals without breaking same-statement Const declarator
@@ -1452,7 +1453,8 @@ Candidate bead units:
   `String` constants, and explicit
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
-  default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults.
+  default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults, plus bounded
+  equality-based `Like` folding for covered string Boolean constants.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
