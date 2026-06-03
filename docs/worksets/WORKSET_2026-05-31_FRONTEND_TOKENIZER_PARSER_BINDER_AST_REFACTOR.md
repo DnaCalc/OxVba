@@ -1441,8 +1441,10 @@ Candidate bead units:
   `Property Set` accessors for the same group into one user-facing property symbol identity for
   go-to-definition/find-references, preventing accessor-specific HIR procedure symbols from
   leaking as duplicate IDE properties; the coalesced symbol prefers the getter accessor when
-  present, preserving the read type and getter definition span. Broader
-  project/class/COM/default-member writeback and rewrite quarantine remain open.
+  present, preserving the read type and getter definition span. The IDE callable surface also hides
+  canonical `property_get_*`/`property_let_*`/`property_set_*` implementation names and keeps the
+  logical getter alias for signature help. Broader project/class/COM/default-member writeback and
+  rewrite quarantine remain open.
 
   Fresh review, 2026-06-03: do not treat frontend route validation as production ownership. The
   active-project class/default-member property rows now prove that PMR compatibility helpers carry

@@ -198,14 +198,15 @@ fn callables_from_frontend_hir(typed: &TypedHirModule) -> Vec<CallableSignatureI
             .declared_type(decl.symbol)
             .map(|hook| bound_type_from_vba_type(hook.runtime_type))
             .unwrap_or(BoundType::Variant);
-        callables.push(CallableSignatureInfo {
-            name: name.clone(),
-            params: params.clone(),
-            return_type,
-        });
         if let Some(property_name) = property_get_callable_alias(&name) {
             callables.push(CallableSignatureInfo {
                 name: property_name.to_string(),
+                params,
+                return_type,
+            });
+        } else if property_display_alias(&name).is_none() {
+            callables.push(CallableSignatureInfo {
+                name: name.clone(),
                 params,
                 return_type,
             });
@@ -620,6 +621,12 @@ mod tests {
         assert_eq!(callable.params[0].name, "index");
         assert_eq!(callable.params[0].ty, BoundType::Long);
         assert_eq!(callable.return_type, BoundType::Long);
+        assert!(
+            snap.callables
+                .iter()
+                .all(|callable| !callable.name.starts_with("property_")),
+            "IDE callables should not expose canonical property accessor procedure names"
+        );
     }
 
     #[test]
