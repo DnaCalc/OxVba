@@ -1598,6 +1598,7 @@ Candidate bead units:
   reads/writes through flattened field aliases, fixed UDT array-field reads/writes for static
   integer indices through scalar field aliases, precise non-static fixed UDT array-field index
   diagnostics, dynamic UDT array-field read/write indexing through array-valued field aliases,
+  dynamic UDT array-field `ReDim` through flattened dynamic field aliases,
   cross-type whole-value UDT assignment diagnostics for distinct UDT type names, general unary
   minus/plus plus `Not` expressions, and deterministic
   date/time intrinsics `Year`, `Month`, `Day`, `Weekday`, `MonthName`, `DateValue`, `TimeValue`,

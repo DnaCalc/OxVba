@@ -8808,6 +8808,37 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_redims_dynamic_udt_array_field_alias() {
+        let source = "Type Record\nScores() As Long\nEnd Type\nSub Main()\nDim r As Record\nReDim r.Scores(2)\nr.Scores(1) = 7\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let shape = main
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "r_scores")
+            .expect("dynamic UDT array field shape");
+        assert_eq!(shape.element_type, VbaTypeId::Long);
+        assert_eq!(shape.rank, 1);
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
+            "expected dynamic UDT array field ReDim bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArraySet { indices, .. } if indices.len() == 1
+            )),
+            "expected dynamic UDT array field write bytecode after ReDim: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_rejects_non_static_udt_array_field_index() {
         let source = "Type Record\nScores(1 To 2) As Long\nEnd Type\nSub Main()\nDim r As Record\nDim i As Long\nDim y As Long\ni = 1\ny = r.Scores(i)\nEnd Sub\n";
         let err = compile_source_with_runtime_metadata_via_hir(source)

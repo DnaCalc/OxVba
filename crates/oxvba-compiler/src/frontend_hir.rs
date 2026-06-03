@@ -1139,10 +1139,7 @@ impl HirBuilder {
                     .child_tokens()
                     .into_iter()
                     .any(|token| token.kind == SyntaxKind::KwPreserve);
-                let bounds = node
-                    .child_nodes()
-                    .into_iter()
-                    .find(|child| child.kind() == SyntaxKind::ArgList)
+                let bounds = find_descendant_node(node, SyntaxKind::ArgList)
                     .map(|arg_list| self.lower_redim_bounds(scope, arg_list))
                     .transpose()?
                     .unwrap_or_default();
@@ -2764,23 +2761,64 @@ fn name_after_keyword(
 
 fn redim_name(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
     let mut after_redim = false;
+    let mut collecting = false;
+    let mut parts = Vec::new();
+
     for token in node.child_tokens() {
         if token.kind == SyntaxKind::KwReDim {
             after_redim = true;
             continue;
         }
-        if !after_redim || token.kind.is_trivia() || token.kind == SyntaxKind::KwPreserve {
+        if !after_redim || token.kind.is_trivia() {
             continue;
         }
-        if let Some(name) = normalize_ident(token.text) {
-            return Ok(name);
+        if !collecting && token.kind == SyntaxKind::KwPreserve {
+            continue;
         }
-        break;
+        match token.kind {
+            SyntaxKind::Ident | SyntaxKind::BracketedIdent => {
+                if let Some(name) = normalize_ident(token.text) {
+                    parts.push(name);
+                    collecting = true;
+                    continue;
+                }
+                break;
+            }
+            kind if kind.is_keyword() => {
+                if let Some(name) = normalize_ident(token.text) {
+                    parts.push(name);
+                    collecting = true;
+                    continue;
+                }
+                break;
+            }
+            SyntaxKind::Dot | SyntaxKind::Bang | SyntaxKind::TypeSuffix if collecting => {
+                continue;
+            }
+            _ => break,
+        }
     }
+
+    if !parts.is_empty() {
+        return Ok(parts.join("_"));
+    }
+
     Err(HirBuildError::Unsupported(format!(
         "ReDim statement without supported name: `{}`",
         node.text().trim()
     )))
+}
+
+fn find_descendant_node(node: SyntaxNode<'_>, kind: SyntaxKind) -> Option<SyntaxNode<'_>> {
+    for child in node.child_nodes() {
+        if child.kind() == kind {
+            return Some(child);
+        }
+        if let Some(found) = find_descendant_node(child, kind) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

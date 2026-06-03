@@ -839,7 +839,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     findings.push(route_finding(
         "dynamic UDT array field index fixture",
         dynamic_udt_array_field_index,
-        "bd-aprs.9.5",
+        "bd-aprs.9.10",
+    ));
+
+    let dynamic_udt_array_field_redim = "Type Record\nScores() As Long\nEnd Type\nSub Main()\nDim r As Record\nReDim r.Scores(2)\nr.Scores(1) = 7\nEnd Sub\n";
+    findings.push(route_finding(
+        "dynamic UDT array field ReDim fixture",
+        dynamic_udt_array_field_redim,
+        "bd-aprs.9.10",
     ));
 
     let cross_type_udt_assignment = "Type PairA\nX As Long\nY As Long\nEnd Type\nType PairB\nX As Long\nY As Long\nEnd Type\nSub Main()\nDim a As PairA\nDim b As PairB\nb = a\nEnd Sub\n";

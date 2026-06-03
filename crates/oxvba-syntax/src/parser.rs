@@ -1827,6 +1827,18 @@ impl<'a> Parser<'a> {
             if self.at(SyntaxKind::TypeSuffix) {
                 self.bump();
             }
+            while self.at(SyntaxKind::Dot) || self.at(SyntaxKind::Bang) {
+                self.bump();
+                self.eat_whitespace();
+                if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+                    self.bump();
+                    if self.at(SyntaxKind::TypeSuffix) {
+                        self.bump();
+                    }
+                } else {
+                    break;
+                }
+            }
         }
         self.eat_whitespace();
         if self.at(SyntaxKind::LParen) {
@@ -2307,6 +2319,18 @@ mod tests {
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ReDimStmt));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr).len(), 2);
+    }
+
+    #[test]
+    fn parses_redim_member_target_bounds() {
+        let src = "Sub Main()\nReDim r.Scores(2)\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let redim = collect_nodes(&p.syntax(), SyntaxKind::ReDimStmt);
+        assert_eq!(redim.len(), 1);
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::LiteralExpr));
     }
 
     #[test]
