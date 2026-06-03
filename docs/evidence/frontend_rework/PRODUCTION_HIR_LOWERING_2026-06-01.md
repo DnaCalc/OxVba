@@ -1111,6 +1111,11 @@ constant expressions:
   subset. `Option Compare Text` makes `Const CFlag As Boolean = "a" = "A"` fold to
   `LoadConstBool true`; `Option Compare Database` intentionally remains on the current binary
   approximation until Access collation semantics are implemented.
+- A bounded `Like` follow-up extends that same string Boolean-constant lane to the current runtime
+  `Like` subset, which is equality after compare-mode normalization rather than full VBA pattern
+  matching. `Option Compare Text` now lets
+  `Const CFlag As Boolean = Prefix & "llo" Like "HELLO"` fold to `LoadConstBool true` through
+  resolver optional-default parsing, HIR/default route selection, route audit, and VM execution.
 - A companion `String` typed-constant pass reuses the same bounded string evaluator for declared
   module constants. `Const Prefix As String = "re"` followed by
   `Const CText As String = Prefix & "ady"` now substitutes as `LoadConstString "ready"` through
@@ -1356,6 +1361,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_boolean_eqv_imp_const_expressions --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_eqv_imp_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_eqv_imp_const_expressions_execute --quiet`
+- `cargo test -p oxvba-compiler resolve_optional_boolean_like_default --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_like_const_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_like_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_scalar_concat_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
