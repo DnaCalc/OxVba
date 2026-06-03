@@ -63,8 +63,10 @@ Executable proof:
   property/callable facts. A later fresh-eyes fix coalesces `Property Get`/`Property Let`/
   `Property Set` accessors for the same group into one IDE property symbol identity, so
   go-to-definition/find-references no longer expose duplicate `Value` property symbols for one
-  property group. This closes the IDE-query gap for that same-module property-group shape, not
-  broader project/class/COM/default-member writeback or rewrite retirement.
+  property group. Getter accessors are preferred for the coalesced symbol when present, preserving
+  the property read type and definition span. This closes the IDE-query gap for that same-module
+  property-group shape, not broader project/class/COM/default-member writeback or rewrite
+  retirement.
 
 ## Checks
 
