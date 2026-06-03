@@ -6547,11 +6547,7 @@ fn build_external_call_descriptors(
             decl.name.as_str(),
         );
         let param_count = decl.params.len();
-        let param_types = decl
-            .params
-            .iter()
-            .map(|p| bound_type_to_declare_param_type(&p.ty))
-            .collect();
+        let param_types = decl.param_types.clone();
         let param_by_ref = decl.params.iter().map(|p| p.by_ref).collect();
         let return_type = if decl.is_function {
             Some(bound_type_to_declare_param_type(&decl.return_type))

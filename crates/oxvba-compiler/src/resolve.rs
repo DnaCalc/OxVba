@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::frontend_structural_intrinsics::StructuralIntrinsic;
+use crate::{bytecode::DeclareParamType, frontend_structural_intrinsics::StructuralIntrinsic};
 
 type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
 type ModuleConstMap = HashMap<String, BoundExpr>;
@@ -493,6 +493,7 @@ pub struct BoundExternalDecl {
     pub ptr_safe: bool,
     pub ordinal_alias: bool,
     pub params: Vec<BoundParam>,
+    pub param_types: Vec<DeclareParamType>,
     pub return_type: BoundType,
     pub is_function: bool,
 }
@@ -3006,6 +3007,7 @@ pub(crate) fn collect_declared_external_procedures(
                 ptr_safe: declare.ptr_safe,
                 ordinal_alias: declare.ordinal_alias,
                 params: external_params,
+                param_types: declare.param_types,
                 return_type,
                 is_function: declare.is_function,
             },
@@ -3058,6 +3060,7 @@ fn is_procedural_module_context(lines: &[String]) -> bool {
 struct ParsedDeclareSignature {
     name: String,
     params: Vec<BoundParam>,
+    param_types: Vec<DeclareParamType>,
     return_type: BoundType,
     is_function: bool,
     library: String,
@@ -3149,6 +3152,7 @@ fn parse_declare_signature_line(
         .ok_or_else(|| {
             "external procedure declaration rejected: unable to parse signature".to_string()
         })?;
+    let param_types = parse_declare_param_types(params_text, &params);
 
     let lib = extract_quoted_after_keyword(tail, "lib").ok_or_else(|| {
         "external procedure declaration rejected: missing `Lib \"...\"` clause".to_string()
@@ -3160,6 +3164,7 @@ fn parse_declare_signature_line(
     Ok(Some(ParsedDeclareSignature {
         name,
         params,
+        param_types,
         return_type,
         is_function: matches!(kind, ProcKind::Function),
         library: lib.trim().to_ascii_lowercase(),
@@ -3167,6 +3172,60 @@ fn parse_declare_signature_line(
         ptr_safe,
         ordinal_alias,
     }))
+}
+
+fn parse_declare_param_types(params_text: &str, params: &[BoundParam]) -> Vec<DeclareParamType> {
+    let inner = params_text
+        .trim()
+        .strip_prefix('(')
+        .and_then(|text| text.strip_suffix(')'))
+        .unwrap_or(params_text);
+    let raw_parts = if inner.trim().is_empty() {
+        Vec::new()
+    } else {
+        inner.split(',').collect::<Vec<_>>()
+    };
+    params
+        .iter()
+        .enumerate()
+        .map(|(index, param)| {
+            raw_parts
+                .get(index)
+                .and_then(|raw| declare_param_type_from_raw(raw, param.ty))
+                .unwrap_or_else(|| declare_param_type_from_bound_type(param.ty))
+        })
+        .collect()
+}
+
+fn declare_param_type_from_raw(raw: &str, fallback: BoundType) -> Option<DeclareParamType> {
+    let (lhs, rhs) = split_keyword_ci(raw, "as")?;
+    if lhs.trim().is_empty() {
+        return None;
+    }
+    if rhs.trim().eq_ignore_ascii_case("any") {
+        Some(DeclareParamType::Any)
+    } else {
+        Some(declare_param_type_from_bound_type(fallback))
+    }
+}
+
+fn declare_param_type_from_bound_type(ty: BoundType) -> DeclareParamType {
+    match ty {
+        BoundType::Long => DeclareParamType::Long,
+        BoundType::Integer => DeclareParamType::Integer,
+        BoundType::String => DeclareParamType::String,
+        BoundType::Boolean => DeclareParamType::Boolean,
+        BoundType::Double => DeclareParamType::Double,
+        BoundType::Single => DeclareParamType::Single,
+        BoundType::Currency => DeclareParamType::Currency,
+        BoundType::Date => DeclareParamType::Date,
+        BoundType::Byte => DeclareParamType::Byte,
+        BoundType::LongLong => DeclareParamType::LongLong,
+        BoundType::LongPtr => DeclareParamType::LongPtr,
+        BoundType::Variant | BoundType::Object | BoundType::Array | BoundType::Decimal => {
+            DeclareParamType::Variant
+        }
+    }
 }
 
 fn extract_quoted_after_keyword(text: &str, keyword: &str) -> Option<String> {
@@ -9951,6 +10010,19 @@ mod tests {
         assert_eq!(module.external_declarations.len(), 1);
         let decl = &module.external_declarations["hostping"];
         assert!(decl.params[0].by_ref);
+    }
+
+    #[test]
+    fn resolve_declare_any_parameter_preserves_interop_type() {
+        let source = "Declare PtrSafe Sub HostAny Lib \"host\" Alias \"any\" (ByVal payload As Any, ByVal count As Long)\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert_eq!(module.external_declarations.len(), 1);
+        let decl = &module.external_declarations["hostany"];
+        assert_eq!(decl.params[0].ty, super::BoundType::Variant);
+        assert_eq!(
+            decl.param_types,
+            vec![super::DeclareParamType::Any, super::DeclareParamType::Long]
+        );
     }
 
     #[test]

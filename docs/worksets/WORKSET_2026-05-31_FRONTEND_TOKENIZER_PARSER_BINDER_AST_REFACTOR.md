@@ -1581,7 +1581,8 @@ Candidate bead units:
   introspection/predicate intrinsics in HIR, deterministic string/search intrinsics `Len`, `Left`,
   `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR,
   deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
-  `Log`, `Exp`, `Atn`, and `Tan` in HIR, `Declare PtrSafe` calls, simple UDT layout/field aliases,
+  `Log`, `Exp`, `Atn`, and `Tan` in HIR, `Declare PtrSafe` calls including `As Any`
+  interop parameter metadata, simple UDT layout/field aliases,
   same-shape UDT assignment, parser reachability plus metadata projection, default
   space-filled alias initialization and literal plus runtime assignment padding/truncation for
   scalar fixed-length string UDT fields and static fixed-length string UDT array element aliases,

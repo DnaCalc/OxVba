@@ -8118,6 +8118,27 @@ mod tests {
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
+    #[test]
+    fn hir_production_lowering_preserves_declared_external_any_param_type() {
+        let source = "Declare PtrSafe Sub HostAny Lib \"host\" Alias \"any\" (ByVal payload As Any, ByVal count As Long)\nSub Main()\nCall HostAny(0, 1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert_eq!(bytecode.external_call_descriptors.len(), 1);
+        let descriptor = &bytecode.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name, "hostany");
+        assert_eq!(descriptor.param_count, 2);
+        assert_eq!(
+            descriptor.param_types,
+            vec![DeclareParamType::Any, DeclareParamType::Long]
+        );
+        assert_eq!(descriptor.param_by_ref, vec![false, false]);
+        assert!(
+            descriptor.return_type.is_none(),
+            "external Sub descriptor must not carry a function return type: {descriptor:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     #[test]
     fn hir_production_lowering_preserves_native_declared_external_longptr_signature() {
