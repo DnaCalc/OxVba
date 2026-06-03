@@ -551,9 +551,15 @@ of a generated `Dim temp() / temp = field / ReDim temp(...) / field = temp` bloc
 emit `IntrinsicWithEventsGet`, runtime array resize with the same Variant element type as the old
 untyped temp carrier, and `IntrinsicWithEventsSet`; the optimizer now treats these field-array
 resize/writeback intrinsics as observable effects so discard-slot dead-store elimination cannot
-drop them. Explicit lower-bound `To` field-array `ReDim` forms still use the old generated-source
-fallback until lower-bound metadata is carried natively. Full closure still requires native
-HIR-owned project/class field-array lowering and metadata.
+drop them.
+
+2026-06-03 explicit lower-bound field-array `ReDim` carrier reduction: explicit literal
+lower-bound field-array `ReDim To`/`ReDim Preserve To` forms now rewrite to paired-bound
+`__oxvba_array_field_redim*_bounds` intrinsics instead of a generated temp-array block. The paired
+form keeps lower bounds as static resize metadata and upper bounds as runtime expression slots, then
+emits field get, runtime resize, and field writeback. This matches the existing accepted dynamic
+array `ReDim` contract: lower bounds are static integers, while upper bounds may be expressions.
+Full closure still requires native HIR-owned project/class field-array lowering and metadata.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
