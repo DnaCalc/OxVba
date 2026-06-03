@@ -7769,6 +7769,37 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_folds_untyped_string_const_scalar_concat_expression() {
+        let source = "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nConst CText = Prefix & CNumber & CFlag\nSub Main()\nDim text\ntext = CText\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "v7True"
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            !bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ConcatSlots { .. })),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            !main.slots.iter().any(|slot| {
+                slot.name.eq_ignore_ascii_case("prefix")
+                    || slot.name.eq_ignore_ascii_case("cnumber")
+                    || slot.name.eq_ignore_ascii_case("cflag")
+                    || slot.name.eq_ignore_ascii_case("ctext")
+            }),
+            "{main:#?}"
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_enum_member_constants() {
         let source = "Public Enum Mode\n' ignored enum comment\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
         let (bytecode, metadata) =

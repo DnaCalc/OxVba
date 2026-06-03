@@ -433,6 +433,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let untyped_string_scalar_concat_const_statement = "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nConst CText = Prefix & CNumber & CFlag\nSub Main()\nDim text\ntext = CText\nEnd Sub\n";
+    findings.push(route_finding(
+        "untyped string scalar-concat const fixture",
+        untyped_string_scalar_concat_const_statement,
+        "bd-aprs.9.9",
+    ));
+
     let option_explicit_statement = "Option Explicit\nSub Main()\nDim x\nx = 1\nEnd Sub\n";
     findings.push(route_finding(
         "option explicit fixture",

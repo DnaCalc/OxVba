@@ -1444,7 +1444,7 @@ Candidate bead units:
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe
   same-statement declarator splitting, untyped Date literal constants, scalar-to-string `&`
-  operand coercion for covered typed `String` constants, and explicit
+  operand coercion for covered typed and untyped `String` constants, and explicit
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
