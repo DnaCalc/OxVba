@@ -600,11 +600,14 @@ default-route and VM execution coverage for `Const CTotal As Double = 1.5`. A la
 continuation adds declared `Currency` and deterministic `#...#` `Date` literals to the same
 production substitution path using `BoundExpr::CurrencyConst(i64)` / `LoadConstCurrency` and
 `BoundExpr::DateConst(u64)` / `LoadConstDate`, with default-route and VM execution coverage for
-`Const CAmount As Currency = 1.25@` and `Const CStamp As Date = #2026-02-28#`. A subsequent
+`Const CAmount As Currency = 1.25@` and `Const CStamp As Date = #2026-02-28#`. Later month-name
+Date coverage fixes HIR Const declarator splitting so commas inside `#February 28, 2026#` are not
+treated as declarator separators; the same statement can still split a following declarator such as
+`CNext As Date = CStamp + 1`, with direct HIR, route-audit, and VM execution proof. A subsequent
 `Single` carrier slice adds `BoundExpr::SingleConst(u32)` and serialized `LoadConstF32`, with
 bundle format v17 and VM execution coverage for `Const CTotal As Single = 1.5!`. Typed constant
 coercion, broader constant-name/expression parity, Date/Currency expression coercion beyond the
-covered numeric arithmetic subset, locale-sensitive Date literal breadth, and full platform
+covered numeric arithmetic subset, locale-sensitive numeric Date literal breadth, and full platform
 `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for class/project field semantics remain open.
