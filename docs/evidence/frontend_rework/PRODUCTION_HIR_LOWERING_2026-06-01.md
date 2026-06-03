@@ -606,14 +606,16 @@ treated as declarator separators; the same statement can still split a following
 `CNext As Date = CStamp + 1`, with direct HIR, route-audit, and VM execution proof. Follow-up
 untyped Date literal work adds `Const CStamp = #2026-02-28#` to the generic literal collector so it
 materializes as `DateConst`/`LoadConstDate` instead of an unsupported Const or runtime expression.
-A subsequent `Single` carrier slice adds `BoundExpr::SingleConst(u32)` and serialized
-`LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As Single =
-1.5!`. Later scalar-to-string concat work lets covered typed and untyped `String` constants fold
-source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
+The numeric Date literal follow-up accepts unambiguous `month/day/year` forms such as
+`#2/28/2026#` in both module constants and optional Date defaults; ambiguous locale-sensitive numeric
+dates remain open. A subsequent `Single` carrier slice adds `BoundExpr::SingleConst(u32)` and
+serialized `LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As
+Single = 1.5!`. Later scalar-to-string concat work lets covered typed and untyped `String` constants
+fold source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
 `LoadConstString "v7True"`. Typed constant coercion outside those string-concat operands, broader
 constant-name/expression parity, Date/Currency expression coercion beyond the covered numeric
-arithmetic subset, locale-sensitive numeric Date literal breadth, and full platform `LongPtr`
-semantics remain open.
+arithmetic subset, ambiguous locale-sensitive numeric Date literal breadth, and full platform
+`LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for class/project field semantics remain open.
 
@@ -1303,6 +1305,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler optional_date_currency_defaults_route_through_hir --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_date_currency_numeric_expression_defaults --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_date_literal_default --quiet`
+- `cargo test -p oxvba-compiler resolve_optional_unambiguous_numeric_month_day_date_literal_default --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_string_concat_default --quiet`
 - `cargo test -p oxvba-compiler optional_string_concat_defaults_route_through_hir --quiet`
 - `cargo test -p oxvba-compiler resolve_optional_boolean_expression_default --quiet`
@@ -1314,6 +1317,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_keeps_untyped_true_division_const_expression_unfolded --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_integer_const_expression_executes --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_collects_unambiguous_numeric_month_day_date_const_literal --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_numeric_month_day_date_const_carrier_executes --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_same_statement_const_expression --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_byte_integer_const_expressions --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_keeps_true_division_const_expression_unfolded --quiet`
