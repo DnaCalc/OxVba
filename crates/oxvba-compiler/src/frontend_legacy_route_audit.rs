@@ -770,6 +770,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let declared_external_any_signature_call = "Declare PtrSafe Sub HostAny Lib \"host\" Alias \"any\" (ByVal payload As Any, ByVal count As Long)\nSub Main()\nCall HostAny(0, 1)\nEnd Sub\n";
+    findings.push(route_finding(
+        "declared external Any signature call fixture",
+        declared_external_any_signature_call,
+        "bd-aprs.9.10",
+    ));
+
     let declared_external_native_longptr_call = "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nDim y\ny = LstrlenW(0)\nEnd Sub\n";
     findings.push(route_finding(
         "declared external native LongPtr call fixture",
