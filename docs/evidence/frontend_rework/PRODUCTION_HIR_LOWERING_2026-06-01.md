@@ -535,6 +535,14 @@ bead. The remaining project/class field-array carrier retirement is explicit `bd
 because native ownership requires field get/mutate/writeback lowering and metadata instead of only
 the local array element path or token-backed generated source proof.
 
+2026-06-03 array-field assignment carrier reduction: field-array element assignment now rewrites to
+the internal `__oxvba_array_field_set(owner, field_token, index..., value)` intrinsic instead of a
+generated `Dim temp() / temp = field / temp(i) = value / field = temp` source block. The intrinsic
+emits `IntrinsicWithEventsGet`, `IntrinsicArraySet`, and `IntrinsicWithEventsSet` directly, so the
+writeback sequence is bytecode-owned and token-backed. This is still partial `bd-aprs.9.13`
+progress: field-array `ReDim` and read carriers still use generated source, and full closure still
+requires native HIR-owned project/class field-array lowering and metadata.
+
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option
