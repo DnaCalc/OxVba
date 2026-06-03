@@ -1383,6 +1383,9 @@ enum PpToken {
     Ge,
     And,
     Or,
+    Xor,
+    Eqv,
+    Imp,
     Not,
     Mod,
     Int(i32),
@@ -1400,7 +1403,7 @@ fn eval_pp_expr(expr: &str, constants: &HashMap<String, i32>) -> Option<i32> {
         index: 0,
         constants,
     };
-    let value = parser.parse_or()?;
+    let value = parser.parse_imp()?;
     if parser.index == tokens.len() {
         Some(value)
     } else {
@@ -1519,6 +1522,9 @@ fn tokenize_pp_expr(expr: &str) -> Option<Vec<PpToken>> {
             match ident.as_str() {
                 "and" => out.push(PpToken::And),
                 "or" => out.push(PpToken::Or),
+                "xor" => out.push(PpToken::Xor),
+                "eqv" => out.push(PpToken::Eqv),
+                "imp" => out.push(PpToken::Imp),
                 "not" => out.push(PpToken::Not),
                 "mod" => out.push(PpToken::Mod),
                 "true" => out.push(PpToken::Int(-1)),
@@ -1552,6 +1558,9 @@ fn pp_token_expects_operand(token: Option<&PpToken>) -> bool {
                 | PpToken::Ge
                 | PpToken::And
                 | PpToken::Or
+                | PpToken::Xor
+                | PpToken::Eqv
+                | PpToken::Imp
                 | PpToken::Not
                 | PpToken::Mod
         )
@@ -1565,6 +1574,33 @@ struct PpExprParser<'a> {
 }
 
 impl<'a> PpExprParser<'a> {
+    fn parse_imp(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_eqv()?;
+        while self.consume(&PpToken::Imp) {
+            let rhs = self.parse_eqv()?;
+            lhs = pp_bool(lhs == 0 || rhs != 0);
+        }
+        Some(lhs)
+    }
+
+    fn parse_eqv(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_xor()?;
+        while self.consume(&PpToken::Eqv) {
+            let rhs = self.parse_xor()?;
+            lhs = pp_bool((lhs != 0) == (rhs != 0));
+        }
+        Some(lhs)
+    }
+
+    fn parse_xor(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_or()?;
+        while self.consume(&PpToken::Xor) {
+            let rhs = self.parse_or()?;
+            lhs = pp_bool((lhs != 0) ^ (rhs != 0));
+        }
+        Some(lhs)
+    }
+
     fn parse_or(&mut self) -> Option<i32> {
         let mut lhs = self.parse_and()?;
         while self.consume(&PpToken::Or) {
@@ -1668,7 +1704,7 @@ impl<'a> PpExprParser<'a> {
             }
             PpToken::LParen => {
                 self.index += 1;
-                let value = self.parse_or()?;
+                let value = self.parse_imp()?;
                 if !self.consume(&PpToken::RParen) {
                     return None;
                 }
@@ -7777,6 +7813,17 @@ mod tests {
         };
         assert_eq!(target, "x");
         assert_eq!(expr, &BoundExpr::IntConst(11));
+    }
+
+    #[test]
+    fn resolve_conditional_compilation_boolean_xor_eqv_imp_branch() {
+        let source = "#Const ENABLE = True\n#Const DISABLE = False\nSub Main()\nDim x\n#If ENABLE Xor DISABLE And (ENABLE Eqv True) And (ENABLE Imp True) Then\nx = 13\n#Else\nx = 1\n#End If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x");
+        assert_eq!(expr, &BoundExpr::IntConst(13));
     }
 
     #[test]

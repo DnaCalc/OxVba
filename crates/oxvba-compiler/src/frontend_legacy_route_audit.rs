@@ -506,6 +506,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let conditional_boolean_xor_eqv_imp_statement = "#Const ENABLE = True\n#Const DISABLE = False\nSub Main()\nDim x\n#If ENABLE Xor DISABLE And (ENABLE Eqv True) And (ENABLE Imp True) Then\nx = 13\n#Else\nx = 1\n#End If\nEnd Sub\n";
+    findings.push(route_finding(
+        "conditional Boolean Xor/Eqv/Imp fixture",
+        conditional_boolean_xor_eqv_imp_statement,
+        "bd-aprs.9.9",
+    ));
+
     let module_attribute_statement =
         "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x\nx = 7\nEnd Sub\n";
     findings.push(route_finding(

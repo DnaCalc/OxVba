@@ -1437,6 +1437,28 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_conditional_boolean_xor_eqv_imp_through_hir() {
+        let source = "#Const ENABLE = True\n#Const DISABLE = False\nSub Main()\nDim x As Long\n#If ENABLE Xor DISABLE And (ENABLE Eqv True) And (ENABLE Imp True) Then\nx = 13: x = x + 1\n#Else\nx = 1\n#End If\nEnd Sub\n";
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route Boolean #If source through HIR");
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 13, .. }
+            )),
+            "expected active Boolean #If branch bytecode: {bytecode:#?}"
+        );
+        assert!(
+            !bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 1, .. }
+            )),
+            "inactive Boolean #Else branch should not be emitted: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_module_attribute_through_hir() {
         let source = "Attribute VB_Name = \"Module1\"\nSub Main()\nDim x As Long\nx = 7: x = x + 1\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source)

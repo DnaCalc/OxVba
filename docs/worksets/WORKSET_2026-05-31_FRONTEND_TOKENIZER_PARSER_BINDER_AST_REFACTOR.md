@@ -1439,8 +1439,9 @@ Candidate bead units:
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
   discovery/lowering plus manifest-based embedded host build requests and language-service
   workspace semantic snapshots, conditional-compilation arithmetic with checked integer unary signs,
-  `+`, `-`, `*`, guarded `\`, and `Mod` inside the existing `#Const`/`#If` comparison/logical
-  evaluator, basic single-source module `Attribute VB_Name` lines as ignored metadata, basic typed
+  `+`, `-`, `*`, guarded `\`, and `Mod` plus Boolean `Xor`/`Eqv`/`Imp` inside the existing
+  `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute VB_Name` lines
+  as ignored metadata, basic typed
   `Const Name As Long = ...`
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe
