@@ -406,6 +406,7 @@ pub struct BoundProcedure {
     pub source_line_start: usize,
     pub source_line_end: usize,
     pub statement_line_numbers: Vec<usize>,
+    pub member_attributes: Vec<BoundMemberAttribute>,
     pub return_type: BoundType,
     pub params: Vec<BoundParam>,
     pub module_scope_names: Vec<String>,
@@ -415,6 +416,13 @@ pub struct BoundProcedure {
     pub udt_descriptors: Vec<BoundUdtDescriptor>,
     pub duplicate_declarations: Vec<String>,
     pub body: Vec<BoundStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundMemberAttribute {
+    pub target: String,
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -605,6 +613,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             source_line_start: 1,
             source_line_end: lines.len().max(1),
             statement_line_numbers: Vec::new(),
+            member_attributes: Vec::new(),
             return_type: BoundType::Variant,
             params: Vec::new(),
             module_scope_names: Vec::new(),
@@ -679,6 +688,7 @@ fn build_whole_file_main_procedure(
         source_line_start: 1,
         source_line_end: lines.len().max(1),
         statement_line_numbers: collect_candidate_statement_line_numbers(lines, 1),
+        member_attributes: Vec::new(),
         return_type: BoundType::Variant,
         params: Vec::new(),
         module_scope_names: Vec::new(),
@@ -801,6 +811,7 @@ fn build_mainline_procedure_from_lines(
         source_line_start,
         source_line_end,
         statement_line_numbers,
+        member_attributes: Vec::new(),
         return_type: BoundType::Variant,
         params: Vec::new(),
         module_scope_names: Vec::new(),
@@ -1920,11 +1931,13 @@ fn parse_procedures(
             index += 1;
         }
 
+        let member_attributes = collect_member_attributes_for_procedure(lines, &name);
         procedures.push(BoundProcedure {
             name,
             source_line_start,
             source_line_end,
             statement_line_numbers,
+            member_attributes,
             return_type,
             params,
             module_scope_names,
@@ -2988,6 +3001,7 @@ pub(crate) fn collect_declared_external_procedures(
             source_line_start: 1,
             source_line_end: 1,
             statement_line_numbers: vec![1],
+            member_attributes: Vec::new(),
             return_type,
             params,
             module_scope_names: Vec::new(),
@@ -7477,6 +7491,28 @@ pub(crate) fn collect_vb_bool_attribute(lines: &[String], attr_name: &str) -> bo
         .unwrap_or(false)
 }
 
+pub(crate) fn collect_member_attributes_for_procedure(
+    lines: &[String],
+    procedure_name: &str,
+) -> Vec<BoundMemberAttribute> {
+    let mut aliases = vec![procedure_name.to_ascii_lowercase()];
+    for prefix in ["property_get_", "property_let_", "property_set_"] {
+        if let Some(base) = procedure_name.strip_prefix(prefix) {
+            aliases.push(base.to_ascii_lowercase());
+        }
+    }
+
+    lines
+        .iter()
+        .filter_map(|line| parse_member_attribute(line))
+        .filter(|attr| {
+            aliases
+                .iter()
+                .any(|alias| attr.target.eq_ignore_ascii_case(alias))
+        })
+        .collect()
+}
+
 fn is_option_private_module_directive(line: &str) -> bool {
     line.trim().eq_ignore_ascii_case("Option Private Module")
 }
@@ -7511,6 +7547,21 @@ fn parse_vb_bool_attribute(line: &str, attr_name: &str) -> Option<bool> {
     } else {
         None
     }
+}
+
+fn parse_member_attribute(line: &str) -> Option<BoundMemberAttribute> {
+    let (lhs, rhs) = parse_attribute_assignment(line)?;
+    let (target, name) = lhs.split_once('.')?;
+    let target = target.trim();
+    let name = name.trim();
+    if target.is_empty() || name.is_empty() {
+        return None;
+    }
+    Some(BoundMemberAttribute {
+        target: target.to_string(),
+        name: name.to_string(),
+        value: rhs.trim().trim_matches('"').trim().to_string(),
+    })
 }
 
 fn parse_attribute_assignment(line: &str) -> Option<(String, String)> {
@@ -7993,6 +8044,31 @@ mod tests {
         assert!(module.vb_exposed_attribute);
         assert!(!module.vb_creatable_attribute);
         assert_eq!(module.declarations, vec!["x"]);
+    }
+
+    #[test]
+    fn resolve_records_member_attributes_on_canonical_property_procedure() {
+        let source = concat!(
+            "Property Get Value()\n",
+            "Value = 1\n",
+            "End Property\n",
+            "Attribute Value.VB_UserMemId = 0\n",
+            "Attribute Value.VB_MemberFlags = \"40\"\n",
+        );
+        let module = resolve_symbols(source);
+        let property_get = module
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "property_get_value")
+            .expect("property get procedure");
+
+        assert_eq!(property_get.member_attributes.len(), 2);
+        assert!(property_get.member_attributes.iter().any(|attr| {
+            attr.target == "Value" && attr.name == "VB_UserMemId" && attr.value == "0"
+        }));
+        assert!(property_get.member_attributes.iter().any(|attr| {
+            attr.target == "Value" && attr.name == "VB_MemberFlags" && attr.value == "40"
+        }));
     }
 
     #[test]

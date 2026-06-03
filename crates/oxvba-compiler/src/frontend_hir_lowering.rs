@@ -17,10 +17,10 @@ use crate::resolve::{
     BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
     BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
     BoundType, BoundUdtDescriptor, BoundUdtFieldDescriptor, CompareOp, LogicalBinOp, ProcKind,
-    RuntimeArrayDimExpr, collect_declared_external_procedures, collect_module_constants,
-    collect_option_base, collect_option_compare_mode, collect_option_private_module,
-    collect_vb_bool_attribute, collect_vb_name_attribute,
-    parse_proc_signature_with_module_constants,
+    RuntimeArrayDimExpr, collect_declared_external_procedures,
+    collect_member_attributes_for_procedure, collect_module_constants, collect_option_base,
+    collect_option_compare_mode, collect_option_private_module, collect_vb_bool_attribute,
+    collect_vb_name_attribute, parse_proc_signature_with_module_constants,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -564,6 +564,7 @@ fn lower_procedure(
         return Ok(None);
     };
     let name = symbol_name(typed_hir, decl.symbol)?;
+    let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
     let proc_kind = proc_kind_for_hir_decl(typed_hir, decl);
     let has_return_slot = matches!(proc_kind, ProcKind::Function | ProcKind::PropertyGet);
     let mut declarations: Vec<String> = Vec::new();
@@ -823,11 +824,13 @@ fn lower_procedure(
     statement_line_numbers.sort_unstable();
     statement_line_numbers.dedup();
 
+    let member_attributes = collect_member_attributes_for_procedure(&lines, &name);
     Ok(Some(BoundProcedure {
         name,
         source_line_start,
         source_line_end,
         statement_line_numbers,
+        member_attributes,
         return_type: if has_return_slot {
             parsed_signature
                 .as_ref()
@@ -5881,6 +5884,34 @@ mod tests {
         assert!(bound.vb_global_namespace_attribute);
         assert!(bound.vb_exposed_attribute);
         assert!(!bound.vb_creatable_attribute);
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_member_attributes() {
+        let source = concat!(
+            "Property Get Value()\n",
+            "Value = 1\n",
+            "End Property\n",
+            "Attribute Value.VB_UserMemId = 0\n",
+            "Attribute Value.VB_MemberFlags = \"40\"\n",
+        );
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let property_get = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "property_get_value")
+            .expect("property get procedure");
+
+        assert_eq!(property_get.member_attributes.len(), 2);
+        assert!(property_get.member_attributes.iter().any(|attr| {
+            attr.target == "Value" && attr.name == "VB_UserMemId" && attr.value == "0"
+        }));
+        assert!(property_get.member_attributes.iter().any(|attr| {
+            attr.target == "Value" && attr.name == "VB_MemberFlags" && attr.value == "40"
+        }));
     }
 
     #[test]

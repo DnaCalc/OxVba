@@ -1599,6 +1599,7 @@ pub fn emit_bytecode_with_runtime_metadata(
             source_line_start: 1,
             source_line_end: module.source.lines().count().max(1),
             statement_line_numbers: vec![1],
+            member_attributes: Vec::new(),
             return_type: crate::resolve::BoundType::Variant,
             params: Vec::new(),
             module_scope_names: Vec::new(),

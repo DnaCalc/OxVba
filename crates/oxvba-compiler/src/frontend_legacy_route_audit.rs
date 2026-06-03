@@ -528,6 +528,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let member_attributes_statement = "Property Get Value()\nValue = 1\nEnd Property\nAttribute Value.VB_UserMemId = 0\nAttribute Value.VB_MemberFlags = \"40\"\nSub Main()\nDim x\nx = Value\nEnd Sub\n";
+    findings.push(route_finding(
+        "member attributes fixture",
+        member_attributes_statement,
+        "bd-aprs.9.9",
+    ));
+
     let typed_const_statement = "Const CBase As Long = 7\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
     findings.push(route_finding(
         "typed const fixture",
