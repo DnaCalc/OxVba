@@ -2767,6 +2767,25 @@ mod tests {
     }
 
     #[test]
+    fn bundle_fact_bound_module_route_preserves_boolean_module_attributes_from_hir() {
+        let module = route_probe_module(concat!(
+            "Attribute VB_PredeclaredId = True\n",
+            "Attribute VB_GlobalNamespace = True\n",
+            "Attribute VB_Exposed = True\n",
+            "Attribute VB_Creatable = False\n",
+            "Sub Main()\nDim x As Long\nx = 1 + 2\nEnd Sub\n",
+        ));
+
+        let (bound, route) = bound_module_for_bundle_facts_with_route(&module);
+
+        assert_eq!(route, BundleFactBoundModuleRoute::HirBoundModule);
+        assert!(bound.vb_predeclared_id_attribute);
+        assert!(bound.vb_global_namespace_attribute);
+        assert!(bound.vb_exposed_attribute);
+        assert!(!bound.vb_creatable_attribute);
+    }
+
+    #[test]
     fn bundle_fact_bound_module_route_uses_hir_for_accepted_declare_facts() {
         let module = route_probe_module(
             "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nEnd Sub\n",

@@ -383,6 +383,10 @@ pub struct BoundModule {
     pub option_explicit: bool,
     pub option_private_module: bool,
     pub vb_name_attribute: Option<String>,
+    pub vb_predeclared_id_attribute: bool,
+    pub vb_global_namespace_attribute: bool,
+    pub vb_exposed_attribute: bool,
+    pub vb_creatable_attribute: bool,
     pub is_class_module: bool,
     pub compare_mode: BoundCompareMode,
     pub default_type_table: [BoundType; 26],
@@ -513,6 +517,10 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let lines = normalize_source_lines(source);
     let option_private_module = collect_option_private_module(&lines);
     let vb_name_attribute = collect_vb_name_attribute(&lines);
+    let vb_predeclared_id_attribute = collect_vb_bool_attribute(&lines, "VB_PredeclaredId");
+    let vb_global_namespace_attribute = collect_vb_bool_attribute(&lines, "VB_GlobalNamespace");
+    let vb_exposed_attribute = collect_vb_bool_attribute(&lines, "VB_Exposed");
+    let vb_creatable_attribute = collect_vb_bool_attribute(&lines, "VB_Creatable");
     let compare_mode = collect_option_compare_mode(&lines);
     let option_base = collect_option_base(&lines);
     let default_type_table = collect_default_type_table(&lines);
@@ -622,6 +630,10 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         option_explicit,
         option_private_module,
         vb_name_attribute,
+        vb_predeclared_id_attribute,
+        vb_global_namespace_attribute,
+        vb_exposed_attribute,
+        vb_creatable_attribute,
         is_class_module: false,
         compare_mode,
         default_type_table,
@@ -7398,6 +7410,14 @@ pub(crate) fn collect_vb_name_attribute(lines: &[String]) -> Option<String> {
     lines.iter().find_map(|line| parse_vb_name_attribute(line))
 }
 
+pub(crate) fn collect_vb_bool_attribute(lines: &[String], attr_name: &str) -> bool {
+    lines
+        .iter()
+        .rev()
+        .find_map(|line| parse_vb_bool_attribute(line, attr_name))
+        .unwrap_or(false)
+}
+
 fn is_option_private_module_directive(line: &str) -> bool {
     line.trim().eq_ignore_ascii_case("Option Private Module")
 }
@@ -7407,9 +7427,8 @@ fn is_attribute_line(line: &str) -> bool {
 }
 
 fn parse_vb_name_attribute(line: &str) -> Option<String> {
-    let rest = strip_keyword_prefix_ci(line.trim(), "attribute")?;
-    let (lhs, rhs) = rest.split_once('=')?;
-    if !lhs.trim().eq_ignore_ascii_case("VB_Name") {
+    let (lhs, rhs) = parse_attribute_assignment(line)?;
+    if !lhs.eq_ignore_ascii_case("VB_Name") {
         return None;
     }
     let value = rhs.trim().trim_matches('"').trim();
@@ -7418,6 +7437,27 @@ fn parse_vb_name_attribute(line: &str) -> Option<String> {
     } else {
         Some(value.to_string())
     }
+}
+
+fn parse_vb_bool_attribute(line: &str, attr_name: &str) -> Option<bool> {
+    let (lhs, rhs) = parse_attribute_assignment(line)?;
+    if !lhs.eq_ignore_ascii_case(attr_name) {
+        return None;
+    }
+    let value = rhs.trim().trim_matches('"').trim();
+    if value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn parse_attribute_assignment(line: &str) -> Option<(String, String)> {
+    let rest = strip_keyword_prefix_ci(line.trim(), "attribute")?;
+    let (lhs, rhs) = rest.split_once('=')?;
+    Some((lhs.trim().to_string(), rhs.trim().to_string()))
 }
 
 fn parse_option_base_directive(line: &str) -> Option<i32> {
@@ -7875,6 +7915,24 @@ mod tests {
         let module = resolve_symbols(source);
 
         assert_eq!(module.vb_name_attribute.as_deref(), Some("LogicalModule"));
+        assert_eq!(module.declarations, vec!["x"]);
+    }
+
+    #[test]
+    fn resolve_records_boolean_module_attributes() {
+        let source = concat!(
+            "Attribute VB_PredeclaredId = True\n",
+            "Attribute VB_GlobalNamespace = True\n",
+            "Attribute VB_Exposed = True\n",
+            "Attribute VB_Creatable = False\n",
+            "Sub Main()\nDim x\nx = 1\nEnd Sub",
+        );
+        let module = resolve_symbols(source);
+
+        assert!(module.vb_predeclared_id_attribute);
+        assert!(module.vb_global_namespace_attribute);
+        assert!(module.vb_exposed_attribute);
+        assert!(!module.vb_creatable_attribute);
         assert_eq!(module.declarations, vec!["x"]);
     }
 
