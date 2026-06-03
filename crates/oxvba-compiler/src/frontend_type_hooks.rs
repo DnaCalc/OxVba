@@ -165,7 +165,7 @@ pub fn collect_type_hooks_from_source(
         };
         let hir_type = module.arenas.alloc_type(HirType {
             cst: CstBackpointer {
-                syntax_kind: "TypeRef".to_string(),
+                syntax_kind: SyntaxKind::TypeRef,
                 span: type_span,
             },
             kind: HirTypeKind::Builtin(hir_builtin_type(runtime_type)),
@@ -409,7 +409,7 @@ fn record_procedure_return_type_hook(
     let (start, end) = type_ref.text_range();
     let hir_type = module.arenas.alloc_type(HirType {
         cst: CstBackpointer {
-            syntax_kind: "TypeRef".to_string(),
+            syntax_kind: SyntaxKind::TypeRef,
             span: FrontendSourceSpan {
                 start: start as usize,
                 end: end as usize,
@@ -466,7 +466,7 @@ fn collect_stmt_type_hooks(
         return;
     };
     match stmt_data.kind {
-        HirStmtKind::Let { target, value } => {
+        HirStmtKind::Let { target, value, .. } => {
             hooks.record_assignment_intent(stmt, HirAssignmentIntent::Let);
             record_assignment_coercion(hir, symbol_types, hooks, value, target);
         }
@@ -513,7 +513,7 @@ fn collect_stmt_type_hooks(
             }
         }
         HirStmtKind::Empty
-        | HirStmtKind::Expr(_)
+        | HirStmtKind::Expr { .. }
         | HirStmtKind::ExitDo
         | HirStmtKind::ExitFor
         | HirStmtKind::ExitProcedure
@@ -697,9 +697,9 @@ mod tests {
         FrontendSourceSpan, SourceProvenance, SymbolModel, SymbolNamespace,
     };
 
-    fn cst(kind: &str) -> CstBackpointer {
+    fn cst(kind: SyntaxKind) -> CstBackpointer {
         CstBackpointer {
-            syntax_kind: kind.to_string(),
+            syntax_kind: kind,
             span: FrontendSourceSpan { start: 0, end: 1 },
         }
     }
@@ -724,7 +724,7 @@ mod tests {
             .expect("symbol");
         let mut hir = HirArenas::default();
         let ty = hir.alloc_type(HirType {
-            cst: cst("TypeExpr"),
+            cst: cst(SyntaxKind::TypeRef),
             kind: HirTypeKind::Builtin(crate::frontend_hir::HirBuiltinType::Long),
         });
 
@@ -749,16 +749,20 @@ mod tests {
     fn type_hooks_record_let_set_assignment_intent_and_coercion() {
         let mut hir = HirArenas::default();
         let target = hir.alloc_expr(HirExpr {
-            cst: cst("NameExpr"),
+            cst: cst(SyntaxKind::IdentExpr),
             kind: HirExprKind::Missing,
         });
         let value = hir.alloc_expr(HirExpr {
-            cst: cst("StringLiteral"),
+            cst: cst(SyntaxKind::StringLiteral),
             kind: HirExprKind::Literal(HirLiteral::String("1".to_string())),
         });
         let stmt = hir.alloc_stmt(HirStmt {
-            cst: cst("AssignStmt"),
-            kind: HirStmtKind::Let { target, value },
+            cst: cst(SyntaxKind::AssignStmt),
+            kind: HirStmtKind::Let {
+                target,
+                value,
+                keyword_explicit: false,
+            },
         });
 
         let mut hooks = HirTypeHooks::default();
@@ -819,21 +823,22 @@ mod tests {
 
         let mut hir = HirArenas::default();
         let target = hir.alloc_expr(HirExpr {
-            cst: cst("NameExpr"),
+            cst: cst(SyntaxKind::IdentExpr),
             kind: HirExprKind::Name(proc_symbol),
         });
         let arg = hir.alloc_expr(HirExpr {
-            cst: cst("IntLiteral"),
+            cst: cst(SyntaxKind::IntLiteral),
             kind: HirExprKind::Literal(HirLiteral::Int(7)),
         });
         let call = hir.alloc_call(HirCall {
-            cst: cst("CallExpr"),
+            cst: cst(SyntaxKind::CallExpr),
             target,
             args: vec![crate::frontend_hir::HirCallArg {
                 name: None,
                 expr: arg,
                 force_byval: false,
             }],
+            index_syntax: false,
         });
 
         let mut hooks = HirTypeHooks::default();
@@ -1121,7 +1126,7 @@ mod tests {
         stmt: HirStmtId,
     ) -> Option<(HirStmtId, HirExprId, HirExprId)> {
         match hir.stmt(stmt).map(|stmt| &stmt.kind) {
-            Some(HirStmtKind::Let { target, value }) => Some((stmt, *target, *value)),
+            Some(HirStmtKind::Let { target, value, .. }) => Some((stmt, *target, *value)),
             Some(HirStmtKind::Block(children)) => {
                 children.iter().find_map(|child| find_let_stmt(hir, *child))
             }

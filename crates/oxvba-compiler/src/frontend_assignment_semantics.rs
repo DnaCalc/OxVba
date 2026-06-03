@@ -105,7 +105,7 @@ pub fn collect_assignment_semantics_from_typed_hir(
             continue;
         };
         let (target, value) = match stmt_data.kind {
-            HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value } => {
+            HirStmtKind::Let { target, value, .. } | HirStmtKind::Set { target, value } => {
                 (target, value)
             }
             _ => continue,

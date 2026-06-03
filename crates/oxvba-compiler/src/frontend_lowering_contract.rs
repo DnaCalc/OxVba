@@ -184,7 +184,7 @@ fn collect_stmt_contract_facts(
         return;
     };
     match &stmt_data.kind {
-        HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value } => {
+        HirStmtKind::Let { target, value, .. } | HirStmtKind::Set { target, value } => {
             if matches!(
                 typed_hir.module.arenas.expr(*target).map(|expr| &expr.kind),
                 Some(HirExprKind::Name(symbol)) if *symbol == proc_symbol
@@ -194,7 +194,7 @@ fn collect_stmt_contract_facts(
             collect_expr_structural_intrinsics(typed_hir, *target, structural_intrinsics);
             collect_expr_structural_intrinsics(typed_hir, *value, structural_intrinsics);
         }
-        HirStmtKind::Expr(expr) => {
+        HirStmtKind::Expr { expr, .. } => {
             collect_expr_structural_intrinsics(typed_hir, *expr, structural_intrinsics)
         }
         HirStmtKind::If {

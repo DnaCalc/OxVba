@@ -2,7 +2,7 @@
 ///
 /// Token kinds are leaf nodes (produced by the lexer).
 /// Node kinds are interior nodes (produced by the parser).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
 pub enum SyntaxKind {
     // ── Trivia ───────────────────────────────────────────────

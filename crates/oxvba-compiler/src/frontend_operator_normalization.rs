@@ -52,11 +52,12 @@ mod tests {
     use super::*;
     use crate::frontend_hir::CstBackpointer;
     use crate::frontend_symbols::FrontendSourceSpan;
+    use oxvba_syntax::SyntaxKind;
 
     fn expr(kind: HirExprKind) -> HirExpr {
         HirExpr {
             cst: CstBackpointer {
-                syntax_kind: "Expr".to_string(),
+                syntax_kind: SyntaxKind::BinaryExpr,
                 span: FrontendSourceSpan { start: 0, end: 1 },
             },
             kind,

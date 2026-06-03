@@ -5,17 +5,18 @@ use crate::frontend_hir::{
     HirStmtKind, HirTypeId,
 };
 use crate::frontend_symbols::{FrontendSourceSpan, SymbolId, SymbolModel};
+use oxvba_syntax::SyntaxKind;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SemanticNodeKey {
-    pub syntax_kind: String,
+    pub syntax_kind: SyntaxKind,
     pub span: FrontendSourceSpan,
 }
 
 impl From<&CstBackpointer> for SemanticNodeKey {
     fn from(cst: &CstBackpointer) -> Self {
         Self {
-            syntax_kind: cst.syntax_kind.clone(),
+            syntax_kind: cst.syntax_kind,
             span: cst.span,
         }
     }
@@ -167,11 +168,11 @@ impl SemanticModel {
         };
         self.bind_stmt_node(&stmt_data.cst, stmt);
         match stmt_data.kind {
-            HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value } => {
+            HirStmtKind::Let { target, value, .. } | HirStmtKind::Set { target, value } => {
                 self.index_expr_tree(target);
                 self.index_expr_tree(value);
             }
-            HirStmtKind::Expr(expr) => self.index_expr_tree(expr),
+            HirStmtKind::Expr { expr, .. } => self.index_expr_tree(expr),
             HirStmtKind::If {
                 condition,
                 then_body,
@@ -361,9 +362,9 @@ mod tests {
     };
     use crate::frontend_symbols::{ScopeKind, SourceProvenance, SymbolModel, SymbolNamespace};
 
-    fn cst(kind: &str, start: usize, end: usize) -> CstBackpointer {
+    fn cst(kind: SyntaxKind, start: usize, end: usize) -> CstBackpointer {
         CstBackpointer {
-            syntax_kind: kind.to_string(),
+            syntax_kind: kind,
             span: FrontendSourceSpan { start, end },
         }
     }
@@ -386,13 +387,13 @@ mod tests {
             .expect("symbol");
 
         let mut hir = HirArenas::default();
-        let name_cst = cst("NameExpr", 30, 31);
+        let name_cst = cst(SyntaxKind::IdentExpr, 30, 31);
         let expr = hir.alloc_expr(HirExpr {
             cst: name_cst.clone(),
             kind: HirExprKind::Name(value_symbol),
         });
         let ty = hir.alloc_type(HirType {
-            cst: cst("TypeExpr", 12, 16),
+            cst: cst(SyntaxKind::TypeRef, 12, 16),
             kind: HirTypeKind::Builtin(HirBuiltinType::Long),
         });
 
@@ -418,7 +419,7 @@ mod tests {
             .expect("procedure symbol");
 
         let mut hir = HirArenas::default();
-        let literal_cst = cst("IntLiteral", 20, 21);
+        let literal_cst = cst(SyntaxKind::IntLiteral, 20, 21);
         let literal = hir.alloc_expr(HirExpr {
             cst: literal_cst.clone(),
             kind: HirExprKind::Literal(HirLiteral::Int(1)),
@@ -488,7 +489,7 @@ mod tests {
             .stmt_for_span(assign_span)
             .and_then(|stmt| model.hir().stmt(stmt))
             .expect("assignment statement");
-        assert_eq!(stmt.cst.syntax_kind, "AssignStmt");
+        assert_eq!(stmt.cst.syntax_kind, SyntaxKind::AssignStmt);
     }
 
     #[test]

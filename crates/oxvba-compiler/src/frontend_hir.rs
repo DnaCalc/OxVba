@@ -154,9 +154,13 @@ pub struct HirPropertyId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HirTypeId(pub usize);
 
+/// Provenance back-reference from a HIR node to the CST node it was lowered
+/// from. `syntax_kind` is the real `oxvba_syntax::SyntaxKind` of that node and
+/// is used only for source mapping and IDE node identity — never branched on to
+/// decide semantics. Semantic distinctions live on the HIR nodes themselves.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CstBackpointer {
-    pub syntax_kind: String,
+    pub syntax_kind: SyntaxKind,
     pub span: FrontendSourceSpan,
 }
 
@@ -241,12 +245,21 @@ pub enum HirStmtKind {
     Let {
         target: HirExprId,
         value: HirExprId,
+        /// True when the `Let` keyword was written explicitly (`Let x = 1`)
+        /// rather than an implicit assignment (`x = 1`). Affects Let/Set
+        /// coercion diagnostics.
+        keyword_explicit: bool,
     },
     Set {
         target: HirExprId,
         value: HirExprId,
     },
-    Expr(HirExprId),
+    /// A VBA expression statement, which is always a call statement.
+    /// `call_keyword` records whether the `Call` keyword was written.
+    Expr {
+        expr: HirExprId,
+        call_keyword: bool,
+    },
     If {
         condition: HirExprId,
         then_body: Vec<HirStmtId>,
@@ -376,6 +389,7 @@ pub struct HirDecl {
 pub enum HirDeclKind {
     Module,
     Procedure {
+        kind: HirProcedureKind,
         params: Vec<SymbolId>,
         return_type: Option<HirTypeId>,
         body: Vec<HirStmtId>,
@@ -388,11 +402,26 @@ pub enum HirDeclKind {
     },
 }
 
+/// The kind of procedure a `HirDeclKind::Procedure` represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HirProcedureKind {
+    Sub,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HirCall {
     pub cst: CstBackpointer,
     pub target: HirExprId,
     pub args: Vec<HirCallArg>,
+    /// True when this call was written with index/array syntax (`a(i)` parsed as
+    /// an `IndexExpr`) rather than call syntax (`f(x)` / a statement call). The
+    /// binder records the syntactic form; array-vs-call resolution combines it
+    /// with resolved symbol facts during lowering.
+    pub index_syntax: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -610,6 +639,7 @@ impl HirBuilder {
                     cst: cst(node),
                     symbol,
                     kind: HirDeclKind::Procedure {
+                        kind: hir_procedure_kind(node),
                         params,
                         return_type: None,
                         body,
@@ -659,7 +689,11 @@ impl HirBuilder {
                 let value = self.lower_expr(scope, exprs[1])?;
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
-                    kind: HirStmtKind::Let { target, value },
+                    kind: HirStmtKind::Let {
+                        target,
+                        value,
+                        keyword_explicit: node.kind() == SyntaxKind::LetStmt,
+                    },
                 })))
             }
             SyntaxKind::SetStmt => {
@@ -771,11 +805,6 @@ impl HirBuilder {
                     .child_tokens()
                     .into_iter()
                     .any(|token| token.kind == SyntaxKind::KwCall);
-                let call_stmt_cst = if has_call_keyword {
-                    cst(node)
-                } else {
-                    cst_with_kind(node, "CallStmtNoCallKeyword")
-                };
                 let expr_node = expression_children(node)
                     .into_iter()
                     .next()
@@ -809,12 +838,13 @@ impl HirBuilder {
                         .transpose()?
                         .unwrap_or_default();
                     let call = self.arenas.alloc_call(HirCall {
-                        cst: call_stmt_cst.clone(),
+                        cst: cst(node),
                         target,
                         args,
+                        index_syntax: false,
                     });
                     self.arenas.alloc_expr(HirExpr {
-                        cst: call_stmt_cst.clone(),
+                        cst: cst(node),
                         kind: HirExprKind::Call(call),
                     })
                 } else {
@@ -823,18 +853,22 @@ impl HirBuilder {
                 if let Some(arg_list) = direct_arg_list {
                     let args = self.lower_call_args(scope, arg_list, false)?;
                     let call = self.arenas.alloc_call(HirCall {
-                        cst: call_stmt_cst.clone(),
+                        cst: cst(node),
                         target: expr,
                         args,
+                        index_syntax: false,
                     });
                     expr = self.arenas.alloc_expr(HirExpr {
-                        cst: call_stmt_cst.clone(),
+                        cst: cst(node),
                         kind: HirExprKind::Call(call),
                     });
                 }
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
-                    cst: call_stmt_cst,
-                    kind: HirStmtKind::Expr(expr),
+                    cst: cst(node),
+                    kind: HirStmtKind::Expr {
+                        expr,
+                        call_keyword: has_call_keyword,
+                    },
                 })))
             }
             SyntaxKind::WithStmt => {
@@ -1923,6 +1957,7 @@ impl HirBuilder {
                     cst: cst(node),
                     target,
                     args,
+                    index_syntax: node.kind() == SyntaxKind::IndexExpr,
                 });
                 HirExprKind::Call(call)
             }
@@ -2153,17 +2188,25 @@ impl HirBuilder {
 }
 
 fn cst(node: SyntaxNode<'_>) -> CstBackpointer {
-    cst_with_kind(node, &format!("{:?}", node.kind()))
-}
-
-fn cst_with_kind(node: SyntaxNode<'_>, syntax_kind: &str) -> CstBackpointer {
     let (start, end) = node.text_range();
     CstBackpointer {
-        syntax_kind: syntax_kind.to_string(),
+        syntax_kind: node.kind(),
         span: FrontendSourceSpan {
             start: start as usize,
             end: end as usize,
         },
+    }
+}
+
+fn hir_procedure_kind(node: SyntaxNode<'_>) -> HirProcedureKind {
+    match node.kind() {
+        SyntaxKind::FunctionDecl => HirProcedureKind::Function,
+        SyntaxKind::PropertyDecl => match property_kind(node) {
+            HirPropertyKind::Get => HirProcedureKind::PropertyGet,
+            HirPropertyKind::Let => HirProcedureKind::PropertyLet,
+            HirPropertyKind::Set => HirProcedureKind::PropertySet,
+        },
+        _ => HirProcedureKind::Sub,
     }
 }
 
@@ -2844,9 +2887,9 @@ mod tests {
     use super::*;
     use crate::frontend_symbols::{ScopeKind, SourceProvenance, SymbolModel, SymbolNamespace};
 
-    fn cst(kind: &str, start: usize, end: usize) -> CstBackpointer {
+    fn cst(kind: SyntaxKind, start: usize, end: usize) -> CstBackpointer {
         CstBackpointer {
-            syntax_kind: kind.to_string(),
+            syntax_kind: kind,
             span: FrontendSourceSpan { start, end },
         }
     }
@@ -2870,21 +2913,25 @@ mod tests {
 
         let mut hir = HirArenas::default();
         let target = hir.alloc_expr(HirExpr {
-            cst: cst("NameExpr", 30, 31),
+            cst: cst(SyntaxKind::IdentExpr, 30, 31),
             kind: HirExprKind::Name(value_symbol),
         });
         let value = hir.alloc_expr(HirExpr {
-            cst: cst("IntLiteral", 34, 35),
+            cst: cst(SyntaxKind::IntLiteral, 34, 35),
             kind: HirExprKind::Literal(HirLiteral::Int(1)),
         });
         let stmt = hir.alloc_stmt(HirStmt {
-            cst: cst("AssignStmt", 30, 35),
-            kind: HirStmtKind::Let { target, value },
+            cst: cst(SyntaxKind::AssignStmt, 30, 35),
+            kind: HirStmtKind::Let {
+                target,
+                value,
+                keyword_explicit: false,
+            },
         });
 
         assert_eq!(
             hir.stmt(stmt).map(|stmt| &stmt.cst),
-            Some(&cst("AssignStmt", 30, 35))
+            Some(&cst(SyntaxKind::AssignStmt, 30, 35))
         );
         assert!(matches!(
             hir.expr(target).map(|expr| &expr.kind),
@@ -2914,29 +2961,30 @@ mod tests {
 
         let mut hir = HirArenas::default();
         let receiver = hir.alloc_expr(HirExpr {
-            cst: cst("NameExpr", 0, 4),
+            cst: cst(SyntaxKind::IdentExpr, 0, 4),
             kind: HirExprKind::Missing,
         });
         let member = hir.alloc_member(HirMember {
-            cst: cst("MemberExpr", 0, 10),
+            cst: cst(SyntaxKind::MemberExpr, 0, 10),
             receiver: Some(receiver),
             symbol: member_symbol,
         });
         let member_expr = hir.alloc_expr(HirExpr {
-            cst: cst("MemberExpr", 0, 10),
+            cst: cst(SyntaxKind::MemberExpr, 0, 10),
             kind: HirExprKind::Member(member),
         });
         let call = hir.alloc_call(HirCall {
-            cst: cst("CallExpr", 0, 12),
+            cst: cst(SyntaxKind::CallExpr, 0, 12),
             target: member_expr,
             args: Vec::new(),
+            index_syntax: false,
         });
         let object_type = hir.alloc_type(HirType {
-            cst: cst("TypeExpr", 11, 21),
+            cst: cst(SyntaxKind::TypeRef, 11, 21),
             kind: HirTypeKind::Object(type_symbol),
         });
         let property = hir.alloc_property(HirProperty {
-            cst: cst("PropertyGetDecl", 30, 50),
+            cst: cst(SyntaxKind::PropertyDecl, 30, 50),
             symbol: member_symbol,
             kind: HirPropertyKind::Get,
             value_type: Some(object_type),
@@ -2968,13 +3016,14 @@ mod tests {
 
         let mut hir = HirArenas::default();
         let body_stmt = hir.alloc_stmt(HirStmt {
-            cst: cst("EmptyStmt", 12, 12),
+            cst: cst(SyntaxKind::Block, 12, 12),
             kind: HirStmtKind::Empty,
         });
         let decl = hir.alloc_decl(HirDecl {
-            cst: cst("SubDecl", 0, 20),
+            cst: cst(SyntaxKind::SubDecl, 0, 20),
             symbol: proc_symbol,
             kind: HirDeclKind::Procedure {
+                kind: HirProcedureKind::Sub,
                 params: Vec::new(),
                 return_type: None,
                 body: vec![body_stmt],
@@ -3146,10 +3195,10 @@ mod tests {
             .iter()
             .find_map(
                 |stmt| match module.arenas.stmt(*stmt).map(|stmt| &stmt.kind) {
-                    Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                    Some(HirStmtKind::Expr { expr, .. }) => Some(*expr),
                     Some(HirStmtKind::Block(children)) => children.iter().find_map(|child| {
                         match module.arenas.stmt(*child).map(|stmt| &stmt.kind) {
-                            Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                            Some(HirStmtKind::Expr { expr, .. }) => Some(*expr),
                             _ => None,
                         }
                     }),
@@ -3194,10 +3243,10 @@ mod tests {
             .iter()
             .find_map(
                 |stmt| match module.arenas.stmt(*stmt).map(|stmt| &stmt.kind) {
-                    Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                    Some(HirStmtKind::Expr { expr, .. }) => Some(*expr),
                     Some(HirStmtKind::Block(children)) => children.iter().find_map(|child| {
                         match module.arenas.stmt(*child).map(|stmt| &stmt.kind) {
-                            Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                            Some(HirStmtKind::Expr { expr, .. }) => Some(*expr),
                             _ => None,
                         }
                     }),
@@ -3626,7 +3675,7 @@ mod tests {
         assert_eq!(
             procedure.cst,
             CstBackpointer {
-                syntax_kind: "SubDecl".to_string(),
+                syntax_kind: SyntaxKind::SubDecl,
                 span: FrontendSourceSpan {
                     start: 0,
                     end: source.trim_end_matches('\n').len()
@@ -3641,7 +3690,7 @@ mod tests {
             .find_map(|stmt| find_let_stmt_id(&module.arenas, *stmt))
             .and_then(|stmt| module.arenas.stmt(stmt))
             .expect("assignment statement");
-        assert_eq!(assignment.cst.syntax_kind, "AssignStmt");
+        assert_eq!(assignment.cst.syntax_kind, SyntaxKind::AssignStmt);
         assert_eq!(
             source[assignment.cst.span.start..assignment.cst.span.end].trim(),
             "total = 1"
@@ -3654,7 +3703,7 @@ mod tests {
 
     fn find_let_stmt(hir: &HirArenas, stmt: HirStmtId) -> Option<(HirExprId, HirExprId)> {
         match hir.stmt(stmt).map(|stmt| &stmt.kind) {
-            Some(HirStmtKind::Let { target, value }) => Some((*target, *value)),
+            Some(HirStmtKind::Let { target, value, .. }) => Some((*target, *value)),
             Some(HirStmtKind::Block(children)) => {
                 children.iter().find_map(|child| find_let_stmt(hir, *child))
             }

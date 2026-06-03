@@ -45,6 +45,7 @@ mod tests {
     };
     use crate::frontend_semantic_model::SemanticModel;
     use crate::frontend_symbols::{SourceProvenance, SymbolModel, SymbolNamespace};
+    use oxvba_syntax::SyntaxKind;
 
     #[test]
     fn language_service_answers_from_shared_semantic_model_facts() {
@@ -62,7 +63,7 @@ mod tests {
             .expect("symbol");
         let mut hir = HirArenas::default();
         let cst = CstBackpointer {
-            syntax_kind: "NameExpr".to_string(),
+            syntax_kind: SyntaxKind::IdentExpr,
             span: FrontendSourceSpan { start: 10, end: 11 },
         };
         let expr = hir.alloc_expr(HirExpr {
@@ -101,7 +102,7 @@ mod tests {
             end: count_start + "count".len(),
         };
         let key = SemanticNodeKey {
-            syntax_kind: "IdentExpr".to_string(),
+            syntax_kind: SyntaxKind::IdentExpr,
             span,
         };
 

@@ -4,7 +4,7 @@ use crate::bytecode::Bytecode;
 use crate::emit::{ProcedureRuntimeMetadata, emit_bytecode_with_runtime_metadata};
 use crate::frontend_hir::{
     HirBinaryOp, HirCaseClause, HirDeclId, HirDeclKind, HirExprId, HirExprKind, HirLiteral,
-    HirStmtId, HirStmtKind, HirUnaryOp, is_builtin_intrinsic_name,
+    HirProcedureKind, HirStmtId, HirStmtKind, HirUnaryOp, is_builtin_intrinsic_name,
 };
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::{SymbolId, SymbolNamespace};
@@ -204,7 +204,7 @@ fn validate_hir_assignment_diagnostics(
         let Some(stmt_data) = typed_hir.module.arenas.stmt(stmt) else {
             continue;
         };
-        let (HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value }) =
+        let (HirStmtKind::Let { target, value, .. } | HirStmtKind::Set { target, value }) =
             stmt_data.kind
         else {
             continue;
@@ -214,7 +214,8 @@ fn validate_hir_assignment_diagnostics(
         };
         let target_type = hir_expr_bound_type(typed_hir, target).unwrap_or(BoundType::Variant);
         let value_type = hir_expr_bound_type(typed_hir, value).unwrap_or(BoundType::Variant);
-        let explicit_let = stmt_data.cst.syntax_kind == "LetStmt";
+        let explicit_let =
+            matches!(stmt_data.kind, HirStmtKind::Let { keyword_explicit: true, .. });
         if matches!(intent, HirAssignmentIntent::Let)
             && explicit_let
             && target_type == BoundType::Object
@@ -854,27 +855,18 @@ fn lower_procedure(
 }
 
 fn proc_kind_for_hir_decl(
-    typed_hir: &TypedHirModule,
+    _typed_hir: &TypedHirModule,
     decl: &crate::frontend_hir::HirDecl,
 ) -> ProcKind {
-    if decl.cst.syntax_kind == "PropertyDecl" {
-        return typed_hir
-            .module
-            .arenas
-            .properties()
-            .iter()
-            .find(|property| property.symbol == decl.symbol)
-            .map(|property| match property.kind {
-                crate::frontend_hir::HirPropertyKind::Get => ProcKind::PropertyGet,
-                crate::frontend_hir::HirPropertyKind::Let => ProcKind::PropertyLet,
-                crate::frontend_hir::HirPropertyKind::Set => ProcKind::PropertySet,
-            })
-            .unwrap_or(ProcKind::PropertyGet);
-    }
-    if decl.cst.syntax_kind == "FunctionDecl" {
-        ProcKind::Function
-    } else {
-        ProcKind::Sub
+    match &decl.kind {
+        HirDeclKind::Procedure { kind, .. } => match kind {
+            HirProcedureKind::Sub => ProcKind::Sub,
+            HirProcedureKind::Function => ProcKind::Function,
+            HirProcedureKind::PropertyGet => ProcKind::PropertyGet,
+            HirProcedureKind::PropertyLet => ProcKind::PropertyLet,
+            HirProcedureKind::PropertySet => ProcKind::PropertySet,
+        },
+        _ => ProcKind::Sub,
     }
 }
 
@@ -1094,8 +1086,12 @@ fn lower_stmt(
         return Ok(());
     };
     match &stmt_data.kind {
-        HirStmtKind::Let { target, value } => {
-            let write_intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+        HirStmtKind::Let {
+            target,
+            value,
+            keyword_explicit,
+        } => {
+            let write_intent = if *keyword_explicit {
                 AssignmentIntent::Let
             } else {
                 AssignmentIntent::Implicit
@@ -1126,7 +1122,7 @@ fn lower_stmt(
                                 *value,
                                 context,
                             )?;
-                            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                            let intent = if *keyword_explicit {
                                 AssignmentIntent::Let
                             } else {
                                 AssignmentIntent::Implicit
@@ -1150,7 +1146,7 @@ fn lower_stmt(
                                 *value,
                                 context,
                             )?;
-                            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                            let intent = if *keyword_explicit {
                                 AssignmentIntent::Let
                             } else {
                                 AssignmentIntent::Implicit
@@ -1172,7 +1168,7 @@ fn lower_stmt(
                                 *value,
                                 context,
                             )?;
-                            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                            let intent = if *keyword_explicit {
                                 AssignmentIntent::Let
                             } else {
                                 AssignmentIntent::Implicit
@@ -1214,7 +1210,7 @@ fn lower_stmt(
                                     *value,
                                     context,
                                 )?;
-                                let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+                                let intent = if *keyword_explicit {
                                     AssignmentIntent::Let
                                 } else {
                                     AssignmentIntent::Implicit
@@ -1281,7 +1277,7 @@ fn lower_stmt(
                 }
             }
             let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value, context)?;
-            let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
+            let intent = if *keyword_explicit {
                 AssignmentIntent::Let
             } else {
                 AssignmentIntent::Implicit
@@ -1504,8 +1500,8 @@ fn lower_stmt(
                 )?;
             }
         }
-        HirStmtKind::Expr(expr) => {
-            if stmt_data.cst.syntax_kind != "CallStmtNoCallKeyword"
+        HirStmtKind::Expr { expr, call_keyword } => {
+            if *call_keyword
                 && let Some(name) = resolved_procedure_name(typed_hir, *expr)?
             {
                 out.push(BoundStmt::Call {
@@ -1519,10 +1515,10 @@ fn lower_stmt(
                 BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
                     name,
                     args,
-                    syntax: if stmt_data.cst.syntax_kind == "CallStmtNoCallKeyword" {
-                        BoundCallSyntax::StatementNoCall
-                    } else {
+                    syntax: if *call_keyword {
                         BoundCallSyntax::StatementCallKeyword
+                    } else {
+                        BoundCallSyntax::StatementNoCall
                     },
                 }),
                 BoundExpr::Member {
@@ -1537,7 +1533,7 @@ fn lower_stmt(
                     },
                 }),
                 BoundExpr::StructuralIntrinsicCallWithArgs { intrinsic, args } => {
-                    if stmt_data.cst.syntax_kind == "CallStmt" {
+                    if *call_keyword {
                         return Err(HirProductionLoweringError::Unsupported(format!(
                             "Call-keyword structural intrinsic statement {intrinsic:?}"
                         )));
@@ -2661,7 +2657,7 @@ fn lower_call_expr(
         .collect::<Result<Vec<_>, _>>()?;
     match target {
         BoundExpr::Var(name) => {
-            if call_data.cst.syntax_kind == "IndexExpr" && context.is_fixed_array(&name) {
+            if call_data.index_syntax && context.is_fixed_array(&name) {
                 if let Some(alias) = context.fixed_array_alias(&name, &args) {
                     return Ok(BoundExpr::Var(alias));
                 }
@@ -2674,7 +2670,7 @@ fn lower_call_expr(
                     "fixed-array index is outside the current bounds for {name}"
                 )));
             }
-            if call_data.cst.syntax_kind == "IndexExpr" && context.is_dynamic_array(&name) {
+            if call_data.index_syntax && context.is_dynamic_array(&name) {
                 let mut intrinsic_args = Vec::with_capacity(args.len() + 1);
                 intrinsic_args.push(BoundExpr::Var(name));
                 intrinsic_args.extend(args.into_iter().map(|arg| arg.expr));
@@ -2683,7 +2679,7 @@ fn lower_call_expr(
                     args: intrinsic_args,
                 });
             }
-            if call_data.cst.syntax_kind == "IndexExpr"
+            if call_data.index_syntax
                 && let Some(binding) = context.field_array_binding(&name)
             {
                 let mut intrinsic_args = Vec::with_capacity(args.len() + 2);
@@ -2730,7 +2726,7 @@ fn lower_call_expr(
             name,
             args: mut target_args,
         } => {
-            if call_data.cst.syntax_kind != "IndexExpr" || args.is_empty() {
+            if !call_data.index_syntax || args.is_empty() {
                 return Err(HirProductionLoweringError::Unsupported(format!(
                     "call target ProcCall {{ name: {name:?}, args: {target_args:?} }}"
                 )));
