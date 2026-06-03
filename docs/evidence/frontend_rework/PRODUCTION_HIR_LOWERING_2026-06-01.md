@@ -567,9 +567,10 @@ symbol facts hide inactive conditional branches consistently with production pro
 This is not a lossless conditional CST yet: semantic snapshot spans are still based on the filtered
 analysis source when manifest constants are present, so editor-grade inactive-region/span
 preservation remains open. Later bounded evaluator work accepts checked integer `#Const` and `#If`
-arithmetic with unary signs, `+`, `-`, `*`, guarded `\`, and `Mod`, composed with existing
-comparison/logical conditional expressions. Broader compile-time expression/name parity remains
-open.
+arithmetic with unary signs, `+`, `-`, `*`, guarded `\`, and `Mod`, composed with comparison/logical
+conditional expressions. A follow-up Boolean operator pass adds `Xor`, `Eqv`, and `Imp` to that
+preprocessor evaluator and proves the selected branch reaches the default HIR route. Broader
+compile-time expression/name parity remains open.
 Basic single-source module attributes such as `Attribute VB_Name = "Module1"` also route through
 the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
 Project-owned module attributes and member attributes continue to be enforced by the project route
@@ -1354,6 +1355,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_project_production_selector_uses_module_aware_plan --quiet`
 - `cargo test -p oxvba-compiler compile_project_applies_manifest_conditional_constants --quiet`
 - `cargo test -p oxvba-compiler compile_project_source_const_overrides_manifest_conditional_constant --quiet`
+- `cargo test -p oxvba-compiler resolve_conditional_compilation_boolean_xor_eqv_imp_branch --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_conditional_boolean_xor_eqv_imp_through_hir --quiet`
 - `cargo test -p oxvba-host embedded_host_build_workspace_applies_manifest_conditional_constants --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_indexed_property_get_through_hir --quiet`
