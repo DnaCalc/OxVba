@@ -1595,8 +1595,8 @@ Candidate bead units:
   same-shape UDT assignment, parser reachability plus metadata projection, default
   space-filled alias initialization and literal plus runtime assignment padding/truncation for
   scalar fixed-length string UDT fields and static fixed-length string UDT array element aliases,
-  `Erase` reset-to-spaces for those fixed-length string UDT aliases and reset-to-`Nothing` for
-  scalar plus static fixed-array object UDT field aliases,
+  whole-UDT and targeted member-array `Erase` reset-to-spaces for those fixed-length string UDT
+  aliases and reset-to-`Nothing` for scalar plus static fixed-array object UDT field aliases,
   fixed UDT array fields, and nested UDT field descriptors, nested UDT member-chain
   reads/writes through flattened field aliases, fixed UDT array-field reads/writes for static
   integer indices through scalar field aliases, precise non-static fixed UDT array-field index

@@ -5551,6 +5551,37 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_erases_member_array_target_aliases() {
+        let source = "Type Record\nNames(1 To 2) As String * 4\nEnd Type\nSub Main()\nDim r As Record\nr.Names(1) = \"abcde\"\nErase r.Names\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let array_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_0")
+            .expect("fixed-string array field alias slot")
+            .slot;
+        let space_writes = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::LoadConstString { slot, value }
+                        if *slot == array_slot && value == "    "
+                )
+            })
+            .count();
+
+        assert!(
+            space_writes >= 2,
+            "expected initializer and targeted Erase reset space writes for slot {array_slot}: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_erase_resets_object_udt_aliases_to_nothing() {
         let source = "Type Record\nChild As Object\nEnd Type\nSub Main()\nDim r As Record\nErase r\nEnd Sub\n";
         let (bytecode, metadata) =

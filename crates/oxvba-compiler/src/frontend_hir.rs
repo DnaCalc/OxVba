@@ -1127,7 +1127,7 @@ impl HirBuilder {
                 kind: HirStmtKind::Return,
             }))),
             SyntaxKind::EraseStmt => {
-                let name = name_after_keyword(node, SyntaxKind::KwErase, "Erase")?;
+                let name = erase_name(node)?;
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::Erase { name },
@@ -2760,19 +2760,37 @@ fn name_after_keyword(
 }
 
 fn redim_name(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
+    flattened_name_after_keyword(
+        node,
+        SyntaxKind::KwReDim,
+        "ReDim",
+        &[SyntaxKind::KwPreserve],
+    )
+}
+
+fn erase_name(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
+    flattened_name_after_keyword(node, SyntaxKind::KwErase, "Erase", &[])
+}
+
+fn flattened_name_after_keyword(
+    node: SyntaxNode<'_>,
+    keyword: SyntaxKind,
+    label: &str,
+    skipped_initial_keywords: &[SyntaxKind],
+) -> Result<String, HirBuildError> {
     let mut after_redim = false;
     let mut collecting = false;
     let mut parts = Vec::new();
 
     for token in node.child_tokens() {
-        if token.kind == SyntaxKind::KwReDim {
+        if token.kind == keyword {
             after_redim = true;
             continue;
         }
         if !after_redim || token.kind.is_trivia() {
             continue;
         }
-        if !collecting && token.kind == SyntaxKind::KwPreserve {
+        if !collecting && skipped_initial_keywords.contains(&token.kind) {
             continue;
         }
         match token.kind {
@@ -2804,7 +2822,7 @@ fn redim_name(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
     }
 
     Err(HirBuildError::Unsupported(format!(
-        "ReDim statement without supported name: `{}`",
+        "{label} statement without supported name: `{}`",
         node.text().trim()
     )))
 }
