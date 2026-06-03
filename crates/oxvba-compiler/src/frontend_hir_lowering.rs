@@ -5615,6 +5615,32 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_applies_def_type_to_visibility_prefixed_module_fields() {
+        let source =
+            "DefLng A-Z\nPrivate alpha\nPublic beta%\nSub Main()\nalpha = 1\nbeta = 2\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Module1", source).expect("typed HIR should collect");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("HIR production lowering should produce bound module");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name == "main")
+            .expect("main procedure");
+
+        assert!(main.declarations.iter().any(|name| name == "alpha"));
+        assert!(main.declarations.iter().any(|name| name == "beta"));
+        assert_eq!(
+            main.declaration_types.get("alpha").copied(),
+            Some(BoundType::Long)
+        );
+        assert_eq!(
+            main.declaration_types.get("beta").copied(),
+            Some(BoundType::Integer)
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_preserves_option_compare_text_mode() {
         let source = "Option Compare Text\nSub Main()\nDim x\nx = \"a\" = \"A\"\nEnd Sub\n";
         let (bytecode, metadata) =

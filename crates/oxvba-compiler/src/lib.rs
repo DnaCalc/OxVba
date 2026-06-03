@@ -1328,6 +1328,39 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_visibility_prefixed_deftype_fields_through_hir()
+    {
+        let source = "DefLng A-Z\nPrivate alpha\nPublic beta%\nSub Main()\nalpha = 1: alpha = alpha + 1\nbeta = 2\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not accept visibility-prefixed module fields");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "visibility-prefixed scalar fields should not disqualify otherwise-completed HIR constructs"
+        );
+        let (_bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route visibility-prefixed fields through HIR",
+        );
+        let main = metadata.get("main").expect("main metadata");
+        let alpha_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "alpha")
+            .expect("alpha slot");
+        let beta_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "beta")
+            .expect("beta slot");
+        assert_eq!(alpha_slot.declared_type, super::VbaTypeId::Long);
+        assert_eq!(beta_slot.declared_type, super::VbaTypeId::Integer);
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_routes_conditional_compilation_through_hir() {
         let source = "#Const ENABLE = True\nSub Main()\nDim x As Long\n#If ENABLE Then\nx = 7: x = x + 1\n#Else\nx = 1\n#End If\nEnd Sub\n";
         let legacy_err = super::compile_with_runtime_metadata_legacy(source)

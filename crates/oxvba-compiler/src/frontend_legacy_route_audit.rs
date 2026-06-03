@@ -485,6 +485,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let def_type_visibility_prefixed_module_field_statement = "DefLng A-Z\nPrivate alpha\nPublic beta%\nSub Main()\nalpha = 1: alpha = alpha + 1\nbeta = 2\nEnd Sub\n";
+    findings.push(route_finding(
+        "def type visibility-prefixed module field fixture",
+        def_type_visibility_prefixed_module_field_statement,
+        "bd-aprs.9.9",
+    ));
+
     let conditional_compilation_statement = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub\n";
     findings.push(route_finding(
         "conditional compilation fixture",
