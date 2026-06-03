@@ -543,8 +543,17 @@ writeback sequence is bytecode-owned and token-backed. Field-array reads now sim
 `__oxvba_array_field_get(owner, field_token, index...)`, which emits `IntrinsicWithEventsGet` plus
 `IntrinsicArrayGet` directly instead of nested generated
 `__oxvba_array_get(__oxvba_withevents_get(...), ...)` source. This is still partial
-`bd-aprs.9.13` progress: field-array `ReDim` still uses generated source, and full closure still
-requires native HIR-owned project/class field-array lowering and metadata.
+`bd-aprs.9.13` progress.
+
+2026-06-03 upper-bound field-array `ReDim` carrier reduction: upper-bound-only field-array
+`ReDim`/`ReDim Preserve` now rewrites to internal `__oxvba_array_field_redim*` intrinsics instead
+of a generated `Dim temp() / temp = field / ReDim temp(...) / field = temp` block. The intrinsics
+emit `IntrinsicWithEventsGet`, runtime array resize with the same Variant element type as the old
+untyped temp carrier, and `IntrinsicWithEventsSet`; the optimizer now treats these field-array
+resize/writeback intrinsics as observable effects so discard-slot dead-store elimination cannot
+drop them. Explicit lower-bound `To` field-array `ReDim` forms still use the old generated-source
+fallback until lower-bound metadata is carried natively. Full closure still requires native
+HIR-owned project/class field-array lowering and metadata.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
