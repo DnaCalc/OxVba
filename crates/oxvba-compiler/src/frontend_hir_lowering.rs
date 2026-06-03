@@ -8295,6 +8295,77 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_initializes_fixed_string_udt_array_field_aliases() {
+        let source = "Type Record\nNames(1 To 2) As String * 4\nEnd Type\nSub Main()\nDim r As Record\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let first_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_0")
+            .expect("first fixed-string array field alias slot")
+            .slot;
+        let second_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_1")
+            .expect("second fixed-string array field alias slot")
+            .slot;
+
+        for slot in [first_slot, second_slot] {
+            assert!(
+                bytecode.instructions.iter().any(|instruction| matches!(
+                    instruction,
+                    crate::bytecode::Instruction::LoadConstString { slot: actual, value }
+                        if *actual == slot && value == "    "
+                )),
+                "expected fixed-string UDT array alias initializer for slot {slot}: {:?}",
+                bytecode.instructions
+            );
+        }
+    }
+
+    #[test]
+    fn hir_production_lowering_normalizes_fixed_string_udt_array_literal_assignment() {
+        let source = "Type Record\nNames(1 To 2) As String * 4\nEnd Type\nSub Main()\nDim r As Record\nr.Names(1) = \"xy\"\nr.Names(2) = \"abcde\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let first_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_0")
+            .expect("first fixed-string array field alias slot")
+            .slot;
+        let second_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_1")
+            .expect("second fixed-string array field alias slot")
+            .slot;
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::LoadConstString { slot, value }
+                    if *slot == first_slot && value == "xy  "
+            )),
+            "expected padded fixed-string array assignment: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::LoadConstString { slot, value }
+                    if *slot == second_slot && value == "abcd"
+            )),
+            "expected truncated fixed-string array assignment: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_udt_field_read_write_aliases() {
         let source = "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\nDim y As Long\np.X = 1\ny = p.X + 2\nEnd Sub\n";
         let (bytecode, metadata) =

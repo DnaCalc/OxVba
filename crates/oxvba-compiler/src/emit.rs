@@ -6474,18 +6474,36 @@ fn fixed_string_alias_lengths(proc: &BoundProcedure) -> HashMap<String, usize> {
     for descriptor in &proc.udt_descriptors {
         for variable_name in &descriptor.variable_names {
             for field in &descriptor.fields {
-                if field.array_bounds.is_some() {
-                    continue;
-                }
                 let Some(len) = field.fixed_string_len else {
                     continue;
                 };
                 let alias = format!("{variable_name}_{}", field.name);
-                insert_casefold_key(&mut lengths, &alias, len);
+                if let Some(bounds) = field.array_bounds.as_deref() {
+                    let Some(element_count) = fixed_array_element_count(bounds) else {
+                        continue;
+                    };
+                    for index in 0..element_count {
+                        insert_casefold_key(&mut lengths, &format!("{alias}_{index}"), len);
+                    }
+                } else {
+                    insert_casefold_key(&mut lengths, &alias, len);
+                }
             }
         }
     }
     lengths
+}
+
+fn fixed_array_element_count(bounds: &[(i32, i32)]) -> Option<usize> {
+    let mut total = 1usize;
+    for (lower, upper) in bounds {
+        if upper < lower {
+            return None;
+        }
+        let width = (*upper as i64 - *lower as i64 + 1) as usize;
+        total = total.checked_mul(width)?;
+    }
+    Some(total)
 }
 
 fn normalize_fixed_string_const_assignment(

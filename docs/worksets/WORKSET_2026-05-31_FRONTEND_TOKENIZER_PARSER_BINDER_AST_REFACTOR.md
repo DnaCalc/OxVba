@@ -1573,18 +1573,19 @@ Candidate bead units:
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
-	  `Property Set` writes through HIR, simple non-indexed property declarations through the default
-	  HIR route, simple positional ParamArray packing including empty packs through the default HIR
-	  route, `LBound`/`UBound`
+  `Property Set` writes through HIR, simple non-indexed property declarations through the default
+  HIR route, simple positional ParamArray packing including empty packs through the default HIR
+  route, `LBound`/`UBound`
   array-bound intrinsics in HIR, one-argument `IsArray`,
   `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
   introspection/predicate intrinsics in HIR, deterministic string/search intrinsics `Len`, `Left`,
   `Right`, `Mid`, `InStr`, `InStrRev`, `Replace`, and `StrComp` in HIR,
   deterministic numeric/math intrinsics `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
   `Log`, `Exp`, `Atn`, and `Tan` in HIR, `Declare PtrSafe` calls, simple UDT layout/field aliases,
-	  same-shape UDT assignment, parser reachability plus metadata projection, default
-	  space-filled alias initialization, and literal assignment padding/truncation for scalar
-	  fixed-length string UDT fields, fixed UDT array fields, and nested UDT field descriptors, nested UDT member-chain
+  same-shape UDT assignment, parser reachability plus metadata projection, default
+  space-filled alias initialization and literal assignment padding/truncation for scalar
+  fixed-length string UDT fields and static fixed-length string UDT array element aliases,
+  fixed UDT array fields, and nested UDT field descriptors, nested UDT member-chain
   reads/writes through flattened field aliases, fixed UDT array-field reads/writes for static
   integer indices through scalar field aliases, precise non-static fixed UDT array-field index
   diagnostics, dynamic UDT array-field read/write indexing through array-valued field aliases,
