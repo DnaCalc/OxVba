@@ -561,6 +561,14 @@ emits field get, runtime resize, and field writeback. This matches the existing 
 array `ReDim` contract: lower bounds are static integers, while upper bounds may be expressions.
 Full closure still requires native HIR-owned project/class field-array lowering and metadata.
 
+2026-06-03 procedural module array-field metadata ownership reduction: `ProjectSymbolIndex` now
+exposes frontend-owned module field names, and `ModuleStateBindings` uses those names for procedural
+module field-token discovery when the project symbol index is available. This keeps procedural
+field-array fixed/dynamic classification tied to frontend project facts instead of depending on the
+legacy declaration-line scan as the authoritative name source. Full closure still requires retiring
+or quarantining the remaining project rewrite bridge that injects internal field-array intrinsics
+before HIR lowering.
+
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option
