@@ -569,6 +569,13 @@ legacy declaration-line scan as the authoritative name source. Full closure stil
 or quarantining the remaining project rewrite bridge that injects internal field-array intrinsics
 before HIR lowering.
 
+Fresh residual after the 2026-06-03 reductions: the remaining `bd-aprs.9.13` gap is structural, not
+another temp-carrier source pattern. `lower_module_source_module_aware` still rewrites original
+project/class field-array statements into internal intrinsic source before `build_line_bind_plan`
+and `compile_source_with_runtime_metadata_via_hir`. Native closure requires a project-aware HIR
+lowering boundary that can bind those original field-array statements from frontend project-symbol
+facts directly.
+
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option
