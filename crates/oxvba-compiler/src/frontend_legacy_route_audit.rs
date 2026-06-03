@@ -521,6 +521,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.9",
     ));
 
+    let boolean_module_attributes_statement = "Attribute VB_PredeclaredId = True\nAttribute VB_GlobalNamespace = True\nAttribute VB_Exposed = True\nAttribute VB_Creatable = False\nSub Main()\nDim x\nx = 7\nEnd Sub\n";
+    findings.push(route_finding(
+        "boolean module attributes fixture",
+        boolean_module_attributes_statement,
+        "bd-aprs.9.9",
+    ));
+
     let typed_const_statement = "Const CBase As Long = 7\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
     findings.push(route_finding(
         "typed const fixture",
