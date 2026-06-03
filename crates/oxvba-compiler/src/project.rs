@@ -8094,44 +8094,57 @@ fn collect_module_state_bindings(
         }
     };
 
-    let frontend_field_names = project_symbol_index
-        .filter(|_| module.module_kind == ModuleKind::Class)
-        .map(|index| {
-            let mut names = index.resolve_class_field_names(current_module);
-            if names.is_empty() && !module.attributes.vb_name.trim().is_empty() {
-                names = index.resolve_class_field_names(&module.attributes.vb_name);
-            }
-            names.into_iter().collect::<BTreeSet<_>>()
-        });
+    let frontend_field_names = project_symbol_index.map(|index| {
+        let mut names = match module.module_kind {
+            ModuleKind::Class => index.resolve_class_field_names(current_module),
+            ModuleKind::Procedural => index.resolve_module_field_names(current_module),
+            _ => Vec::new(),
+        };
+        if names.is_empty() && !module.attributes.vb_name.trim().is_empty() {
+            names = match module.module_kind {
+                ModuleKind::Class => index.resolve_class_field_names(&module.attributes.vb_name),
+                ModuleKind::Procedural => {
+                    index.resolve_module_field_names(&module.attributes.vb_name)
+                }
+                _ => Vec::new(),
+            };
+        }
+        names.into_iter().collect::<BTreeSet<_>>()
+    });
     let mut field_tokens = BTreeMap::new();
     let mut fixed_array_field_tokens = BTreeMap::new();
     let mut dynamic_array_field_tokens = BTreeMap::new();
     let mut in_procedure = false;
-    for line in module.source.lines() {
-        let normalized = normalize_visibility_prefixed_procedure_signature(line);
-        if parse_procedure_signature_line(&normalized).is_some() {
-            in_procedure = true;
-            continue;
-        }
-        let lower = line.trim().to_ascii_lowercase();
-        if lower == "end sub" || lower == "end function" || lower == "end property" {
-            in_procedure = false;
-            continue;
-        }
-        if in_procedure {
-            continue;
-        }
-        for field_name in parse_class_state_field_names(line) {
-            if let Some(frontend_names) = &frontend_field_names
-                && !frontend_names.is_empty()
-                && !frontend_names.contains(&normalize_identifier(&field_name))
-            {
-                continue;
-            }
+    if let Some(frontend_names) = &frontend_field_names
+        && !frontend_names.is_empty()
+    {
+        for field_name in frontend_names {
             field_tokens.insert(
                 normalize_identifier(&field_name),
                 class_state_binding_token(current_project, current_module, &field_name),
             );
+        }
+    } else {
+        for line in module.source.lines() {
+            let normalized = normalize_visibility_prefixed_procedure_signature(line);
+            if parse_procedure_signature_line(&normalized).is_some() {
+                in_procedure = true;
+                continue;
+            }
+            let lower = line.trim().to_ascii_lowercase();
+            if lower == "end sub" || lower == "end function" || lower == "end property" {
+                in_procedure = false;
+                continue;
+            }
+            if in_procedure {
+                continue;
+            }
+            for field_name in parse_class_state_field_names(line) {
+                field_tokens.insert(
+                    normalize_identifier(&field_name),
+                    class_state_binding_token(current_project, current_module, &field_name),
+                );
+            }
         }
     }
     if let Some(index) = project_symbol_index.filter(|_| {

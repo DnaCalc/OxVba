@@ -339,6 +339,25 @@ impl ProjectSymbolIndex {
         names
     }
 
+    pub fn resolve_module_field_names(&self, owner: &str) -> Vec<String> {
+        let owner = fold_identifier(owner);
+        let mut names = self
+            .tables
+            .module_members
+            .iter()
+            .filter_map(|((route_owner, member), routes)| {
+                (route_owner == &owner
+                    && routes
+                        .iter()
+                        .any(|route| route.kind == ProjectSymbolKind::Field))
+                .then_some(member.clone())
+            })
+            .collect::<Vec<_>>();
+        names.sort();
+        names.dedup();
+        names
+    }
+
     pub fn resolve_class_withevents_field_names(&self, owner: &str) -> Vec<String> {
         let owner = fold_identifier(owner);
         let mut names = self
@@ -1262,6 +1281,10 @@ mod tests {
         let cache = index
             .resolve_field_array_descriptor("MainModule", "cache")
             .expect("module field array descriptor");
+        assert_eq!(
+            index.resolve_module_field_names("MainModule"),
+            vec!["cache".to_string()]
+        );
         assert_eq!(cache.bounds, vec![(0, 2)]);
         assert!(!cache.dynamic);
     }

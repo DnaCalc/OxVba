@@ -705,6 +705,8 @@ Required newly explicit delivery beads:
   intrinsics that perform field get, runtime resize, and field writeback; explicit literal
   lower-bound field-array `ReDim To`/`ReDim Preserve To` forms use paired-bound
   `__oxvba_array_field_redim*_bounds` intrinsics instead of generated temp-array source carriers.
+  Procedural module array-field token discovery now uses frontend project-symbol field names rather
+  than the legacy declaration-line scan when the symbol index is available.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
   old rewrite bridge is parity evidence, not native production ownership. Closure requires moving
   remaining project-owned array-shape compatibility-carrier construction, especially project field
@@ -1502,6 +1504,8 @@ Candidate bead units:
   intrinsics that perform field get, runtime resize, and field writeback; explicit literal
   lower-bound field-array `ReDim To`/`ReDim Preserve To` forms use paired-bound
   `__oxvba_array_field_redim*_bounds` intrinsics instead of generated temp-array source carriers.
+  Procedural module array-field token discovery now uses frontend project-symbol field names rather
+  than the legacy declaration-line scan when the symbol index is available.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
   old rewrite bridge is parity evidence, not native production ownership. Remaining work: move
   project-owned array-shape compatibility-carrier construction, especially project field metadata
