@@ -618,6 +618,7 @@ Created child bead mapping:
 | FE-8.5.e Compile-time options/declarations/constants | `bd-aprs.9.9` |
 | FE-8.5.f Broader declaration/type surface | `bd-aprs.9.10` |
 | FE-8.5.g Accepted-surface residual delivery sweep | `bd-aprs.9.11` |
+| FE-8.5.h Project/class array-field carrier retirement | `bd-aprs.9.13` |
 | FE-9.1 Per-construct default flip | `bd-aprs.10.1` |
 | FE-9.2 Legacy parser/rewriter retirement | `bd-aprs.10.2` |
 | FE-9.3 Salsa/query integration | `bd-aprs.10.3` |
@@ -650,7 +651,7 @@ Tracker audit, 2026-06-02:
 - Confirmed reopened/open delivery beads already cover the main partial areas:
   `bd-aprs.8.3`, `bd-aprs.8.4`, `bd-aprs.8.6`, `bd-aprs.8.7`, `bd-aprs.8.8`,
   `bd-aprs.9.5`, `bd-aprs.9.8`, `bd-aprs.9.9`, `bd-aprs.9.10`, `bd-aprs.9.11`,
-  `bd-aprs.9.12`, `bd-aprs.10.2`, and `bd-aprs.10.8`.
+  `bd-aprs.9.12`, `bd-aprs.9.13`, `bd-aprs.10.2`, and `bd-aprs.10.8`.
 - Closed FE-0 through FE-6 beads are treated as scoped foundation evidence, not proof that the
   production compiler front-end has been replaced. They do not need to be reopened unless later
   delivery/audit work finds a concrete defect in their stated scope.
@@ -675,22 +676,28 @@ Required newly explicit delivery beads:
   lower through HIR with Let/Set hints.
   Tracker split: `bd-aprs.8.7` owns binding/classification; `bd-aprs.9.12` owns HIR lowering,
   bytecode, metadata, writeback, and route retirement for the accepted lowering surface.
-- FE-8.5.d Arrays/indexing/ReDim parity: finish project/class array fields and broader
-  project-owned array shapes through HIR. Partial work already done: dynamic-array runtime `ReDim`
-  lowering now covers one-dimensional and two-dimensional runtime bounds, static integer explicit
-  lower-bound `To` forms, read/write dynamic-array element access, local multidimensional
-  dynamic/fixed element access, initial fixed-array alias materialization plus fixed-array `ReDim`
-  rematerialization for static integer bounds, array-shape rank metadata updates from observed
-  `ReDim` bounds, project-symbol indexing for class/procedural-module array-field descriptors,
-  class field-array metadata emission through `ProjectDynamicObjectRoute`, route-audit coverage for
-  local procedure array shapes, dynamic class array-field `ReDim`/element get/set through
+- FE-8.5.d Arrays/indexing/ReDim parity: finish local procedure array, indexing, and `ReDim`
+  parity through HIR, and split project/class field-array carrier retirement to FE-8.5.h instead
+  of treating token-backed rewrite proof as production ownership. Partial work already done:
+  dynamic-array runtime `ReDim` lowering covers one-dimensional and two-dimensional runtime
+  bounds, static integer explicit lower-bound `To` forms, read/write dynamic-array element access,
+  local multidimensional dynamic/fixed element access, initial fixed-array alias materialization
+  plus fixed-array `ReDim` rematerialization for static integer bounds, array-shape rank metadata
+  updates from observed `ReDim` bounds, route-audit coverage for local procedure array shapes, and
+  `Option Base` default-route policy.
+- FE-8.5.h Project/class array-field carrier retirement: replace the remaining generated
+  compatibility-carrier source construction for project/class field arrays with native HIR-owned
+  field get/mutate/writeback lowering and metadata. Partial work already done: project-symbol
+  indexing for class/procedural-module array-field descriptors, class field-array metadata emission
+  through `ProjectDynamicObjectRoute`, dynamic class array-field `ReDim`/element get/set through
   per-instance field tokens, fixed class array-field element get/set through per-instance field
   tokens without declaration rewrite or resize bytecode, fixed procedural-module array-field
   element get/set through module-state field tokens without declaration rewrite or resize bytecode,
   dynamic procedural-module array-field `ReDim`/element get/set through module-state field tokens,
-  and `Option Base` default-route policy.
-  Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
-  old rewrite bridge is test-only parity evidence. Remaining work: move project-owned array-shape
+  and token-level compatibility-carrier proof for representative dynamic class, fixed class, and
+  dynamic procedural-module array-field get/set/resize routes. Production-selector correction:
+  `compile_project(...)` already selects the module-aware plan; the old rewrite bridge is parity
+  evidence, not native production ownership. Closure requires moving project-owned array-shape
   compatibility-carrier construction into native HIR-owned lowering/metadata paths.
 - FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
   `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
@@ -1453,27 +1460,33 @@ Candidate bead units:
   property/default-member route. Closing FE-7.3.a/FE-8.5.c requires either native frontend/HIR
   ownership of those rows or an explicitly named compatibility quarantine that is outside the
   accepted production replacement surface.
-- FE-8.5.d Arrays, indexing, and `ReDim` parity: finish project/class array fields and broader
-  project-owned array shapes through HIR.
+- FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
+  `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
+  to FE-8.5.h.
   Partial work has already been done: dynamic-array runtime `ReDim` lowering now covers
   one-dimensional and two-dimensional runtime bounds, static integer explicit lower-bound `To`
   forms, read/write dynamic-array element access, local multidimensional dynamic/fixed element
   access, initial fixed-array alias materialization plus fixed-array `ReDim` rematerialization for
-  static integer bounds, updates array-shape rank metadata from observed `ReDim` bounds, indexes
-  class/procedural-module array-field descriptors in `ProjectSymbolIndex`, emits class field-array
-  metadata through `ProjectDynamicObjectRoute`, includes local procedure array shapes in the
-  production route audit, supports dynamic class array-field `ReDim`/element get/set through
-  per-instance field tokens, supports fixed class array-field element get/set through per-instance
-  field tokens without declaration rewrite or resize bytecode, supports fixed procedural-module
-  array-field element get/set through module-state field tokens without declaration rewrite or
-  resize bytecode, supports dynamic procedural-module array-field `ReDim`/element get/set through
-  module-state field tokens, carries `Option Base` default-route policy, and now asserts
-  token-level compatibility-carrier proof for representative dynamic class, fixed class, and
-  dynamic procedural-module array-field get/set/resize routes so the rewrite bridge cannot drift
-  away from frontend field-route metadata.
+  static integer bounds, updates array-shape rank metadata from observed `ReDim` bounds, includes
+  local procedure array shapes in the production route audit, and carries `Option Base`
+  default-route policy.
+- FE-8.5.h Project/class array-field carrier retirement: replace generated compatibility-carrier
+  source construction for project/class field arrays with native HIR-owned field get/mutate/
+  writeback lowering and metadata.
+  Partial work has already been done: indexes class/procedural-module array-field descriptors in
+  `ProjectSymbolIndex`, emits class field-array metadata through `ProjectDynamicObjectRoute`,
+  supports dynamic class array-field `ReDim`/element get/set through per-instance field tokens,
+  supports fixed class array-field element get/set through per-instance field tokens without
+  declaration rewrite or resize bytecode, supports fixed procedural-module array-field element
+  get/set through module-state field tokens without declaration rewrite or resize bytecode,
+  supports dynamic procedural-module array-field `ReDim`/element get/set through module-state field
+  tokens, and asserts token-level compatibility-carrier proof for representative dynamic class,
+  fixed class, and dynamic procedural-module array-field get/set/resize routes so the rewrite
+  bridge cannot drift away from frontend field-route metadata.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
-  old rewrite bridge is test-only parity evidence. Remaining work: move project-owned array-shape
-  compatibility-carrier construction into native HIR-owned lowering/metadata paths.
+  old rewrite bridge is parity evidence, not native production ownership. Remaining work: move
+  project-owned array-shape compatibility-carrier construction into native HIR-owned
+  lowering/metadata paths.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
