@@ -710,35 +710,35 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     findings.push(route_finding(
         "indexed property get fixture",
         indexed_property_get_statement,
-        "bd-aprs.9.9",
+        "bd-aprs.9.12",
     ));
 
     let indexed_property_let_statement = "Sub Main()\nValue(1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
     findings.push(route_finding(
         "indexed property let fixture",
         indexed_property_let_statement,
-        "bd-aprs.9.9",
+        "bd-aprs.9.12",
     ));
 
     let indexed_property_set_statement = "Sub Main()\nSet Value(1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
     findings.push(route_finding(
         "indexed property set fixture",
         indexed_property_set_statement,
-        "bd-aprs.9.9",
+        "bd-aprs.9.12",
     ));
 
     let named_indexed_property_let_statement = "Sub Main()\nValue(index := 1) = 7\nEnd Sub\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\n";
     findings.push(route_finding(
         "named indexed property let fixture",
         named_indexed_property_let_statement,
-        "bd-aprs.9.9",
+        "bd-aprs.9.12",
     ));
 
     let named_indexed_property_set_statement = "Sub Main()\nSet Value(index := 1) = Nothing\nEnd Sub\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
     findings.push(route_finding(
         "named indexed property set fixture",
         named_indexed_property_set_statement,
-        "bd-aprs.9.9",
+        "bd-aprs.9.12",
     ));
 
     let enum_member_constants =
