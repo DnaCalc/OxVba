@@ -619,9 +619,10 @@ conditional expressions. A follow-up Boolean operator pass adds `Xor`, `Eqv`, an
 preprocessor evaluator and proves the selected branch reaches the default HIR route. Broader
 compile-time expression/name parity remains open.
 Basic single-source module attributes such as `Attribute VB_Name = "Module1"` also route through
-the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
-Project-owned module attributes and member attributes continue to be enforced by the project route
-and remain part of the broader attribute-semantics residual.
+the default HIR path when the remaining source is otherwise completed, and the declared name is
+preserved on the production `BoundModule`. Project-owned module attributes such as
+`VB_PredeclaredId`/`VB_GlobalNamespace` and member attributes continue to be enforced by the project
+route and remain part of the broader attribute-semantics residual.
 Basic typed constant declarators such as `Const CBase As Long = 7` also route through default HIR
 and substitute the value into procedure bytecode. Follow-up route coverage proves typed simple
 expression declarators and same-statement typed references, for example
