@@ -6727,6 +6727,12 @@ fn emit_stmt(
                         target,
                     });
                 }
+                if let Some(len) = current_meta.fixed_string_alias_lengths.get(target).copied() {
+                    instructions.push(Instruction::CoerceFixedString {
+                        slot: target_slot,
+                        len,
+                    });
+                }
             }
         }
         BoundStmt::AssignRuntimeArrayElement {

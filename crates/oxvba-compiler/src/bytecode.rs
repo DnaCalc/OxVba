@@ -227,6 +227,12 @@ pub enum Instruction {
         slot: usize,
         target: NumericCoerceTarget,
     },
+    /// Coerces a runtime string assignment into a fixed-length VBA string slot, padding with
+    /// spaces or truncating to the declared character length.
+    CoerceFixedString {
+        slot: usize,
+        len: usize,
+    },
     /// Materialises a pure-VBA project-class instance as a reference-counted `Object`
     /// Variant. `handle` is a slot holding the instance identity (`i32`); the VM resolves the
     /// route's `ObjectRef` and boxes a retained clone into `dst`. Lowered from

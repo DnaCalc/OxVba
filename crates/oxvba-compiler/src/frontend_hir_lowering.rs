@@ -8366,6 +8366,45 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_coerces_fixed_string_udt_nonliteral_assignment() {
+        let source = "Type Record\nName As String * 4\nNames(1 To 2) As String * 4\nEnd Type\nSub Main()\nDim r As Record\nDim seed As String\nseed = \"xy\"\nr.Name = seed & \"z\"\nr.Names(1) = seed & \"abc\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let scalar_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_name")
+            .expect("fixed-string field alias slot")
+            .slot;
+        let array_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_0")
+            .expect("fixed-string array field alias slot")
+            .slot;
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CoerceFixedString { slot, len }
+                    if *slot == scalar_slot && *len == 4
+            )),
+            "expected scalar fixed-string runtime coercion: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::CoerceFixedString { slot, len }
+                    if *slot == array_slot && *len == 4
+            )),
+            "expected array fixed-string runtime coercion: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_udt_field_read_write_aliases() {
         let source = "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\nDim y As Long\np.X = 1\ny = p.X + 2\nEnd Sub\n";
         let (bytecode, metadata) =

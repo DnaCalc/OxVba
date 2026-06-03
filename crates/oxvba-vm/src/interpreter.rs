@@ -60,6 +60,15 @@ fn parse_embedded_runtime_error_code(message: &str) -> Option<i32> {
         .and_then(|s| s.parse::<i32>().ok())
 }
 
+fn fixed_string_runtime_value(value: &str, len: usize) -> String {
+    let mut out = value.chars().take(len).collect::<String>();
+    let current_len = out.chars().count();
+    if current_len < len {
+        out.push_str(&" ".repeat(len - current_len));
+    }
+    out
+}
+
 #[derive(Debug, Default, Clone)]
 struct WithEventsOwnerIterator {
     owners: Vec<ObjectRef>,
@@ -4991,6 +5000,15 @@ impl Vm {
                             pc = self.route_runtime_error(pc, 6, Some("Overflow"))?;
                         }
                     }
+                }
+                Instruction::CoerceFixedString { slot, len } => {
+                    let value = self.read_variant_slot(*slot)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "fixed String")?;
+                    self.write_variant_slot(
+                        *slot,
+                        Variant::from_string(BStr::from(fixed_string_runtime_value(&text, *len))),
+                    )?;
+                    pc += 1;
                 }
                 Instruction::LoadProjectObjectRef { dst, handle } => {
                     // Allocate a FRESH per-instance project object: a distinct IUnknown box
