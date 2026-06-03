@@ -8256,6 +8256,45 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_normalizes_fixed_string_udt_literal_assignment() {
+        let source = "Type Record\nShortName As String * 5\nLongName As String * 5\nEnd Type\nSub Main()\nDim r As Record\nr.ShortName = \"ab\"\nr.LongName = \"abcdef\"\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let short_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_shortname")
+            .expect("short fixed-string field alias slot")
+            .slot;
+        let long_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_longname")
+            .expect("long fixed-string field alias slot")
+            .slot;
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::LoadConstString { slot, value }
+                    if *slot == short_slot && value == "ab   "
+            )),
+            "expected padded fixed-string assignment: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::LoadConstString { slot, value }
+                    if *slot == long_slot && value == "abcde"
+            )),
+            "expected truncated fixed-string assignment: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_udt_field_read_write_aliases() {
         let source = "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\nDim y As Long\np.X = 1\ny = p.X + 2\nEnd Sub\n";
         let (bytecode, metadata) =

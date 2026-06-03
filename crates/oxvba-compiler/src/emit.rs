@@ -37,6 +37,7 @@ struct EmitProcMeta {
     return_slot: Option<usize>,
     return_type: BoundType,
     declaration_types: HashMap<String, BoundType>,
+    fixed_string_alias_lengths: HashMap<String, usize>,
 }
 
 fn normalize_runtime_name_key(name: &str) -> String {
@@ -1664,6 +1665,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                     .copied(),
                 return_type: proc.return_type,
                 declaration_types: proc.declaration_types.clone(),
+                fixed_string_alias_lengths: fixed_string_alias_lengths(proc),
             },
         );
     }
@@ -6464,6 +6466,11 @@ fn emit_declared_string_initializers(
 }
 
 fn fixed_string_initializer_len(proc: &BoundProcedure, name: &str) -> Option<usize> {
+    fixed_string_alias_lengths(proc).get(name).copied()
+}
+
+fn fixed_string_alias_lengths(proc: &BoundProcedure) -> HashMap<String, usize> {
+    let mut lengths = HashMap::new();
     for descriptor in &proc.udt_descriptors {
         for variable_name in &descriptor.variable_names {
             for field in &descriptor.fields {
@@ -6473,13 +6480,35 @@ fn fixed_string_initializer_len(proc: &BoundProcedure, name: &str) -> Option<usi
                 let Some(len) = field.fixed_string_len else {
                     continue;
                 };
-                if name.eq_ignore_ascii_case(&format!("{variable_name}_{}", field.name)) {
-                    return Some(len);
-                }
+                let alias = format!("{variable_name}_{}", field.name);
+                insert_casefold_key(&mut lengths, &alias, len);
             }
         }
     }
-    None
+    lengths
+}
+
+fn normalize_fixed_string_const_assignment(
+    expr: BoundExpr,
+    target: &str,
+    fixed_string_alias_lengths: &HashMap<String, usize>,
+) -> BoundExpr {
+    let Some(len) = fixed_string_alias_lengths.get(target).copied() else {
+        return expr;
+    };
+    let BoundExpr::StringConst(value) = expr else {
+        return expr;
+    };
+    BoundExpr::StringConst(fixed_string_value(&value, len))
+}
+
+fn fixed_string_value(value: &str, len: usize) -> String {
+    let mut out = value.chars().take(len).collect::<String>();
+    let current_len = out.chars().count();
+    if current_len < len {
+        out.push_str(&" ".repeat(len - current_len));
+    }
+    out
 }
 
 fn build_external_call_descriptors(
@@ -6624,8 +6653,13 @@ fn emit_stmt(
                 let source_ty = expr_bound_type(expr, current_meta, proc_meta, external_decls);
                 // Wrap fixed-integer arithmetic in overflow coercions (error 6 on overflow);
                 // Variant-typed operations are left to widen.
-                let coerced_expr = insert_arithmetic_overflow_coercions(
+                let coerced_expr = normalize_fixed_string_const_assignment(
                     expr.clone(),
+                    target,
+                    &current_meta.fixed_string_alias_lengths,
+                );
+                let coerced_expr = insert_arithmetic_overflow_coercions(
+                    coerced_expr,
                     &current_meta.declaration_types,
                 );
                 if let Some((intent, target_kind)) =
