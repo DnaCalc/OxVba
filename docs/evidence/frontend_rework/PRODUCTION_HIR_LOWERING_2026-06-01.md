@@ -1286,6 +1286,10 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   the same Date serial carrier, with resolver, metadata, and VM omitted-argument proofs.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
   literals and module constants into the existing explicit string optional-default carrier.
+- Follow-up scalar-concat default work reuses the same exact scalar-to-string operand formatting
+  for optional `String` defaults. `Optional ... As String = Prefix & CNumber & CFlag` now binds to
+  `ExplicitString("v7True")` through resolver parsing, HIR/default metadata, route audit, and VM
+  omitted-argument execution.
 - Follow-up Boolean constant-expression work evaluates Boolean literals, module constants, `Not`,
   `And`, and `Or` into the existing explicit Boolean optional-default carrier.
 - Follow-up Boolean comparison-default work evaluates bounded numeric comparison expressions and
@@ -1364,6 +1368,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler resolve_optional_boolean_like_default --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_like_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_like_const_expression_executes --quiet`
+- `cargo test -p oxvba-compiler resolve_optional_string_scalar_concat_default --quiet`
+- `cargo test -p oxvba-compiler optional_string_scalar_concat_defaults_route_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_scalar_concat_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_scalar_concat_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
