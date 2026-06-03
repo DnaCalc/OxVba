@@ -5574,6 +5574,35 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_erase_resets_object_udt_array_aliases_to_nothing() {
+        let source = "Type Record\nChildren(1 To 2) As Object\nEnd Type\nSub Main()\nDim r As Record\nErase r\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let child_slots = ["r_children_0", "r_children_1"]
+            .into_iter()
+            .map(|name| {
+                main.slots
+                    .iter()
+                    .find(|slot| slot.name == name)
+                    .unwrap_or_else(|| panic!("object array field alias slot {name}"))
+                    .slot
+            })
+            .collect::<Vec<_>>();
+
+        for child_slot in child_slots {
+            assert!(
+                bytecode.instructions.iter().any(|instruction| matches!(
+                    instruction,
+                    Instruction::LoadConstI32 { slot, value: 0 } if *slot == child_slot
+                )),
+                "expected Erase reset to Nothing for object UDT array field slot {child_slot}: {:?}",
+                bytecode.instructions
+            );
+        }
+    }
+
+    #[test]
     fn hir_production_lowering_emits_runtime_redim_for_dynamic_array() {
         let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim Preserve buf(length - 1)\nEnd Sub\n";
         let (bytecode, metadata) =

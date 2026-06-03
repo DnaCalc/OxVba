@@ -870,6 +870,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.10",
     ));
 
+    let object_array_udt_erase = "Type Record\nChildren(1 To 2) As Object\nEnd Type\nSub Main()\nDim r As Record\nErase r\nEnd Sub\n";
+    findings.push(route_finding(
+        "object array UDT Erase reset fixture",
+        object_array_udt_erase,
+        "bd-aprs.9.10",
+    ));
+
     let cross_type_udt_assignment = "Type PairA\nX As Long\nY As Long\nEnd Type\nType PairB\nX As Long\nY As Long\nEnd Type\nSub Main()\nDim a As PairA\nDim b As PairB\nb = a\nEnd Sub\n";
     findings.push(route_diagnostic_finding(
         "cross-type UDT assignment diagnostic fixture",
