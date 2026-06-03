@@ -608,7 +608,7 @@ untyped Date literal work adds `Const CStamp = #2026-02-28#` to the generic lite
 materializes as `DateConst`/`LoadConstDate` instead of an unsupported Const or runtime expression.
 A subsequent `Single` carrier slice adds `BoundExpr::SingleConst(u32)` and serialized
 `LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As Single =
-1.5!`. Later scalar-to-string concat work lets covered typed `String` constants fold
+1.5!`. Later scalar-to-string concat work lets covered typed and untyped `String` constants fold
 source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
 `LoadConstString "v7True"`. Typed constant coercion outside those string-concat operands, broader
 constant-name/expression parity, Date/Currency expression coercion beyond the covered numeric
@@ -1105,10 +1105,10 @@ constant expressions:
   `Const CText As String = Prefix & "ady"` now substitutes as `LoadConstString "ready"` through
   direct HIR, default-route, route-audit, and VM execution paths, with no runtime concat bytecode
   needed for the constant itself.
-- A bounded scalar-to-string concat pass extends that typed `String` constant route to already
-  folded scalar constants used as `&` operands. `Const CText As String = Prefix & CNumber & CFlag`
-  now substitutes as `LoadConstString "v7True"` through direct HIR, default-route, route-audit, and
-  VM execution paths.
+- A bounded scalar-to-string concat pass extends the typed and untyped `String` constant routes to
+  already folded scalar constants used as `&` operands. `Const CText As String = Prefix & CNumber &
+  CFlag` and the untyped equivalent now substitute as `LoadConstString "v7True"` through direct HIR,
+  default-route, route-audit, and VM execution paths.
 - A follow-up untyped `String` expression pass applies that fold before generic binary-expression
   lowering, so `Const Prefix = "re"` followed by `Const CText = Prefix & "ady"` also substitutes as
   `LoadConstString "ready"` through direct HIR, default-route, route-audit, and VM execution paths.
@@ -1320,6 +1320,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_typed_integer_const_expressions_execute --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_untyped_string_const_expression --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_untyped_string_const_expression_through_hir --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_folds_untyped_string_const_scalar_concat_expression --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_untyped_string_const_scalar_concat_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_string_const_expression --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_string_const_through_hir --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_coerces_scalar_string_const_concat_operands --quiet`
@@ -1330,6 +1332,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_default_routes_option_compare_text_boolean_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_option_compare_text_boolean_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_scalar_concat_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_long_const --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_rejects_overflowing_typed_integer_const --quiet`
