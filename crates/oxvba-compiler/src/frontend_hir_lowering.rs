@@ -6049,6 +6049,36 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_preserves_empty_param_array_pack() {
+        let source = "Sub Main()\nDim x\nCall Capture(x)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::IntrinsicArrayLiteral { values, .. } if values.is_empty()
+            )),
+            "expected empty ParamArray call to emit empty array literal: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("Main metadata");
+        assert!(
+            main.call_sites.iter().any(|call_site| {
+                call_site.arguments.iter().any(|arg| {
+                    arg.param_array.as_ref().is_some_and(|pack| {
+                        pack.element_count == 0
+                            && pack.element_slots.is_empty()
+                            && pack.lower_bound == 0
+                            && pack.empty_upper_bound == -1
+                    })
+                })
+            }),
+            "expected empty ParamArray pack call-site metadata: {main:#?}"
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_ubound_on_param_array() {
         let source = "Sub Main()\nDim x\nCall Capture(x, 5, 7)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub\n";
         let (bytecode, _metadata) =

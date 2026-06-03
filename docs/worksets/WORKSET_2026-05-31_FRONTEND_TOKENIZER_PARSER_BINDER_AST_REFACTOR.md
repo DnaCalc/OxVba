@@ -1573,8 +1573,9 @@ Candidate bead units:
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
-  `Property Set` writes through HIR, simple non-indexed property declarations through the default
-  HIR route, simple positional ParamArray packing through the default HIR route, `LBound`/`UBound`
+	  `Property Set` writes through HIR, simple non-indexed property declarations through the default
+	  HIR route, simple positional ParamArray packing including empty packs through the default HIR
+	  route, `LBound`/`UBound`
   array-bound intrinsics in HIR, one-argument `IsArray`,
   `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
   introspection/predicate intrinsics in HIR, deterministic string/search intrinsics `Len`, `Left`,
