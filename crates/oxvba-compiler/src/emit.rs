@@ -7336,8 +7336,16 @@ fn emit_stmt(
             previous_bounds,
             preserve,
         } => {
+            let current_meta = proc_meta
+                .get(current_proc_name)
+                .expect("current procedure metadata should exist");
             if !preserve {
-                reset_array_slots(name, slot_map, instructions);
+                reset_array_slots(
+                    name,
+                    slot_map,
+                    &current_meta.fixed_string_alias_lengths,
+                    instructions,
+                );
             } else if let Some(prev) = previous_bounds {
                 if let (Some(old_count), Some(new_count)) =
                     (array_element_count(prev), array_element_count(bounds))
@@ -7349,7 +7357,12 @@ fn emit_stmt(
                     }
                 }
             } else {
-                reset_array_slots(name, slot_map, instructions);
+                reset_array_slots(
+                    name,
+                    slot_map,
+                    &current_meta.fixed_string_alias_lengths,
+                    instructions,
+                );
             }
         }
         BoundStmt::ReDimRuntime {
@@ -7398,7 +7411,15 @@ fn emit_stmt(
             }
         }
         BoundStmt::Erase { name } => {
-            reset_array_slots(name, slot_map, instructions);
+            let current_meta = proc_meta
+                .get(current_proc_name)
+                .expect("current procedure metadata should exist");
+            reset_array_slots(
+                name,
+                slot_map,
+                &current_meta.fixed_string_alias_lengths,
+                instructions,
+            );
         }
         BoundStmt::DoWhile {
             cond,
@@ -11538,6 +11559,7 @@ struct EmitCallArgMapping<'a> {
 fn reset_array_slots(
     array_name: &str,
     slot_map: &HashMap<String, usize>,
+    fixed_string_alias_lengths: &HashMap<String, usize>,
     instructions: &mut Vec<Instruction>,
 ) {
     let prefix = format!("{array_name}_");
@@ -11545,15 +11567,22 @@ fn reset_array_slots(
         .iter()
         .filter_map(|(name, slot)| {
             if name.starts_with(&prefix) {
-                Some(*slot)
+                Some((name.as_str(), *slot))
             } else {
                 None
             }
         })
         .collect::<Vec<_>>();
-    slots.sort_unstable();
-    for slot in slots {
-        instructions.push(Instruction::LoadEmpty { slot });
+    slots.sort_unstable_by_key(|(_, slot)| *slot);
+    for (name, slot) in slots {
+        if let Some(len) = fixed_string_alias_lengths.get(name).copied() {
+            instructions.push(Instruction::LoadConstString {
+                slot,
+                value: " ".repeat(len),
+            });
+        } else {
+            instructions.push(Instruction::LoadEmpty { slot });
+        }
     }
 }
 

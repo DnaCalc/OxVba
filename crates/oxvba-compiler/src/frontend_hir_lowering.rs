@@ -5309,6 +5309,45 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_erase_resets_fixed_string_udt_aliases() {
+        let source = "Type Record\nName As String * 4\nNames(1 To 2) As String * 4\nEnd Type\nSub Main()\nDim r As Record\nr.Name = \"xy\"\nr.Names(1) = \"abcde\"\nErase r\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let scalar_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_name")
+            .expect("fixed-string scalar field alias slot")
+            .slot;
+        let array_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_names_0")
+            .expect("fixed-string array field alias slot")
+            .slot;
+
+        for slot in [scalar_slot, array_slot] {
+            let space_writes = bytecode
+                .instructions
+                .iter()
+                .filter(|instruction| {
+                    matches!(
+                        instruction,
+                        Instruction::LoadConstString { slot: actual, value }
+                            if *actual == slot && value == "    "
+                    )
+                })
+                .count();
+            assert!(
+                space_writes >= 2,
+                "expected initializer and Erase reset space writes for slot {slot}: {:?}",
+                bytecode.instructions
+            );
+        }
+    }
+
+    #[test]
     fn hir_production_lowering_emits_runtime_redim_for_dynamic_array() {
         let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim Preserve buf(length - 1)\nEnd Sub\n";
         let (bytecode, metadata) =
