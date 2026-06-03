@@ -60,8 +60,11 @@ Executable proof:
 - follow-up FE-7.3.a property coverage now projects compiler HIR property arena facts into
   `SemanticSnapshot` as user-facing property symbols and callable aliases. Signature help for a
   same-module indexed `Property Get` call such as `Value(1)` now resolves through the shared HIR
-  property/callable facts. This closes the IDE-query gap for that same-module property-get shape,
-  not broader project/class/COM/default-member writeback or rewrite retirement.
+  property/callable facts. A later fresh-eyes fix coalesces `Property Get`/`Property Let`/
+  `Property Set` accessors for the same group into one IDE property symbol identity, so
+  go-to-definition/find-references no longer expose duplicate `Value` property symbols for one
+  property group. This closes the IDE-query gap for that same-module property-group shape, not
+  broader project/class/COM/default-member writeback or rewrite retirement.
 
 ## Checks
 

@@ -131,8 +131,12 @@ The 2026-06-01 continuation added:
   user-facing property name, and `SemanticSnapshot::callables` also exposes a user-facing property
   callable alias backed by the canonical `property_get_*` HIR procedure. Signature help for
   `Value(1)` now resolves through those compiler-owned property facts rather than requiring a
-  duplicate language-service semantic model. This covers the same-module `Property Get` query
-  surface; broader project/class/COM/default-member writeback and rewrite quarantine remain open.
+  duplicate language-service semantic model. Follow-up coalescing now presents `Property Get`/
+  `Property Let`/`Property Set` accessors for the same group as one user-facing property symbol
+  identity, so go-to-definition and find-references for the getter use and setter declaration share
+  the compiler HIR property-group fact instead of exposing duplicate IDE property symbols. This
+  covers the same-module property-group query surface; broader project/class/COM/default-member
+  writeback and rewrite quarantine remain open.
 
 ## Checks
 
