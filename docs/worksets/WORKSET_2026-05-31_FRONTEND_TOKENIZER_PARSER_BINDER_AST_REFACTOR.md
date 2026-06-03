@@ -1437,8 +1437,11 @@ Candidate bead units:
   FE-7.3.a language-service coverage projects compiler HIR property arena facts into
   user-facing `SemanticSnapshot` property symbols and callable aliases, so same-module indexed
   `Property Get` signature help (`Value(1)`) uses shared compiler front-end facts instead of a
-  duplicate IDE semantic model. Broader project/class/COM/default-member writeback and rewrite
-  quarantine remain open.
+  duplicate IDE semantic model. A later fresh-eyes fix coalesces `Property Get`/`Property Let`/
+  `Property Set` accessors for the same group into one user-facing property symbol identity for
+  go-to-definition/find-references, preventing accessor-specific HIR procedure symbols from
+  leaking as duplicate IDE properties. Broader project/class/COM/default-member writeback and
+  rewrite quarantine remain open.
 
   Fresh review, 2026-06-03: do not treat frontend route validation as production ownership. The
   active-project class/default-member property rows now prove that PMR compatibility helpers carry

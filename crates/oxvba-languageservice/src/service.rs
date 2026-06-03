@@ -2464,6 +2464,51 @@ mod tests {
     }
 
     #[test]
+    fn property_accessor_group_uses_single_frontend_symbol_identity_for_references() {
+        let src = "Property Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\nSub Test()\n    Dim text\n    text = Value(1)\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+        let get_decl = src.find("Value").expect("property get declaration") as u32;
+        let let_decl = src
+            .find("Property Let Value")
+            .map(|start| start + "Property Let ".len())
+            .expect("property let declaration") as u32;
+        let use_pos = src.find("Value(1)").expect("property get use") as u32;
+
+        let get_definition = svc
+            .go_to_definition(&id, get_decl)
+            .expect("property get definition");
+        let let_definition = svc
+            .go_to_definition(&id, let_decl)
+            .expect("property let should resolve to property group");
+        let use_definition = svc
+            .go_to_definition(&id, use_pos)
+            .expect("property use should resolve to property group");
+
+        assert_eq!(
+            let_definition.symbol_identity,
+            get_definition.symbol_identity
+        );
+        assert_eq!(
+            use_definition.symbol_identity,
+            get_definition.symbol_identity
+        );
+
+        let refs = svc.find_references(&id, get_decl);
+        assert!(
+            refs.iter().any(|location| location.span.start == get_decl),
+            "{refs:#?}"
+        );
+        assert!(
+            refs.iter().any(|location| location.span.start == let_decl),
+            "{refs:#?}"
+        );
+        assert!(
+            refs.iter().any(|location| location.span.start == use_pos),
+            "{refs:#?}"
+        );
+    }
+
+    #[test]
     fn signature_help_preserves_param_array_flag() {
         let src = "Sub Collect(ParamArray values() As Variant)\nEnd Sub\nSub Test()\n    Call Collect()\nEnd Sub\n";
         let (svc, id) = setup_single_module(src);

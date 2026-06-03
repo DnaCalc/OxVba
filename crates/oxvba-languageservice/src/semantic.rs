@@ -222,6 +222,7 @@ fn symbol_table_from_frontend_hir(
 ) -> SymbolTable {
     let mut symbols = Vec::new();
     let property_symbols = property_procedure_symbols(typed);
+    let mut seen_property_groups = BTreeSet::new();
     for symbol in typed.module.symbols.symbols() {
         let Some(name) = typed.module.symbols.name(symbol.name) else {
             continue;
@@ -250,6 +251,11 @@ fn symbol_table_from_frontend_hir(
         } else {
             name.first_spelling.clone()
         };
+        if kind == SymbolKind::Property
+            && !seen_property_groups.insert(display_name.to_ascii_lowercase())
+        {
+            continue;
+        }
         symbols.push(make_symbol(
             display_name,
             kind,
@@ -574,6 +580,25 @@ mod tests {
         assert_eq!(callable.params[0].name, "index");
         assert_eq!(callable.params[0].ty, BoundType::Long);
         assert_eq!(callable.return_type, BoundType::Long);
+    }
+
+    #[test]
+    fn snapshot_symbols_coalesce_property_accessor_group_from_frontend_hir() {
+        let src = "Property Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\nProperty Let Value(ByVal index As Long, ByVal newValue As Long)\nEnd Property\nProperty Set Value(ByVal index As Long, ByVal newValue As Object)\nEnd Property\n";
+        let snap = build_semantic_snapshot(src);
+
+        let properties = snap
+            .symbols
+            .symbols
+            .iter()
+            .filter(|symbol| symbol.name == "Value" && symbol.kind == SymbolKind::Property)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            properties.len(),
+            1,
+            "Property Get/Let/Set accessors should expose one user-facing property symbol"
+        );
+        assert_eq!(properties[0].bound_type, BoundType::Long);
     }
 
     #[test]
