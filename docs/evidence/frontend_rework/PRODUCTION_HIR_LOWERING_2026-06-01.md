@@ -530,6 +530,11 @@ the remaining carrier-source construction body or claim native HIR ownership for
 routes. A follow-up selector guard asserts that `compile_project(...)` selects
 `ModuleAwareBindPlan`; `RewriteBridge` is test-only parity evidence.
 
+2026-06-03 bead split: `bd-aprs.9.8` is now the local procedure array/indexing/`ReDim` parity
+bead. The remaining project/class field-array carrier retirement is explicit `bd-aprs.9.13`,
+because native ownership requires field get/mutate/writeback lowering and metadata instead of only
+the local array element path or token-backed generated source proof.
+
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
 disqualify otherwise completed HIR-default sources. HIR lowering now reuses the compiler option
