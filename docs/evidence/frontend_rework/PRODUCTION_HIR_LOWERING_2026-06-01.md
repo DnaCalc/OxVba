@@ -558,11 +558,16 @@ Follow-up project-route work feeds `ProjectManifest::conditional_constants` into
 preprocessor before project procedure discovery and HIR/project lowering, so active project modules
 can select `#If` branches from manifest-supplied constants while source `#Const` directives remain
 able to override the initial environment. A host-facade follow-up proves embedded build-workspace
-requests that carry a compiler `ProjectManifest` observe the same constants. Separate IDE/session
-option plumbing for conditional constants remains open. Later bounded evaluator work accepts
-checked integer `#Const` and `#If` arithmetic with unary signs, `+`, `-`, `*`, guarded `\`, and
-`Mod`, composed with existing comparison/logical conditional expressions. Broader compile-time
-expression/name parity remains open.
+requests that carry a compiler `ProjectManifest` observe the same constants. Later
+language-service workspace work threads the manifest constants into the same compiler-owned
+preprocessor before semantic snapshots are built for active-project modules, so IDE diagnostics and
+symbol facts hide inactive conditional branches consistently with production project compilation.
+This is not a lossless conditional CST yet: semantic snapshot spans are still based on the filtered
+analysis source when manifest constants are present, so editor-grade inactive-region/span
+preservation remains open. Later bounded evaluator work accepts checked integer `#Const` and `#If`
+arithmetic with unary signs, `+`, `-`, `*`, guarded `\`, and `Mod`, composed with existing
+comparison/logical conditional expressions. Broader compile-time expression/name parity remains
+open.
 Basic single-source module attributes such as `Attribute VB_Name = "Module1"` also route through
 the default HIR path as ignored metadata lines when the remaining source is otherwise completed.
 Project-owned module attributes and member attributes continue to be enforced by the project route
