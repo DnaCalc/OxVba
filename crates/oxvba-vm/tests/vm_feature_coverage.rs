@@ -114,6 +114,14 @@ fn scalar_string_const_expression_executes() {
 }
 
 #[test]
+fn scalar_string_const_scalar_concat_expression_executes() {
+    let snap = run(
+        "Const Prefix As String = \"v\"\nConst CNumber As Long = 7\nConst CFlag As Boolean = True\nConst CText As String = Prefix & CNumber & CFlag\nSub Main()\nDim text As String\ntext = CText\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_string(BStr::from("v7True"))]);
+}
+
+#[test]
 fn scalar_untyped_string_const_expression_executes() {
     let snap = run(
         "Const Prefix = \"re\"\nConst CText = Prefix & \"ady\"\nSub Main()\nDim text\ntext = CText\nEnd Sub",

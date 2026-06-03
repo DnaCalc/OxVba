@@ -1877,6 +1877,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_default_routes_string_const_scalar_concat_through_hir() {
+        let source = "Const Prefix As String = \"v\"\nConst CNumber As Long = 7\nConst CFlag As Boolean = True\nConst CText As String = Prefix & CNumber & CFlag\nSub Main()\nDim text As String\ntext = CText: text = text & \"!\"\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source).expect_err(
+            "legacy path should reject the active inline sequence after scalar-coerced String const",
+        );
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect(
+                    "direct HIR production lowering should support scalar-coerced String const",
+                );
+        let (bytecode, metadata) = super::compile_with_runtime_metadata(source).expect(
+            "default runtime metadata compile should route scalar-coerced String const through HIR",
+        );
+        assert_eq!(
+            hir.1, metadata,
+            "default route metadata should come from HIR production for scalar-coerced String const"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "v7True"
+            )),
+            "expected scalar-coerced String const bytecode: {bytecode:#?}"
+        );
+    }
+
+    #[test]
     fn compile_with_runtime_metadata_default_rejects_overflowing_typed_long_const() {
         let source = "Const CTotal As Long = 2 ^ 31\nSub Main()\nEnd Sub\n";
         let err = super::compile_with_runtime_metadata(source)

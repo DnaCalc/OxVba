@@ -4132,18 +4132,32 @@ fn parse_const_string_value(
         return Some(text[1..text.len() - 1].replace("\"\"", "\""));
     }
     if let Some(name) = normalize_hir_ident_exact(text)
-        && let Some(BoundExpr::StringConst(value)) = named_values.get(&name)
+        && let Some(value) = named_values.get(&name).and_then(const_expr_as_string)
     {
-        return Some(value.clone());
+        return Some(value);
     }
     if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['&']) {
         if op == '&' {
-            let mut value = parse_const_string_value(lhs.trim(), named_values)?;
-            value.push_str(&parse_const_string_value(rhs.trim(), named_values)?);
+            let mut value = parse_const_string_concat_operand(lhs.trim(), named_values)?;
+            value.push_str(&parse_const_string_concat_operand(
+                rhs.trim(),
+                named_values,
+            )?);
             return Some(value);
         }
     }
     None
+}
+
+fn parse_const_string_concat_operand(
+    text: &str,
+    named_values: &HashMap<String, BoundExpr>,
+) -> Option<String> {
+    parse_const_string_value(text, named_values).or_else(|| {
+        parse_const_literal(text)
+            .as_ref()
+            .and_then(const_expr_as_string)
+    })
 }
 
 fn split_const_compare_expr<'a>(text: &'a str) -> Option<(&'a str, CompareOp, &'a str)> {
@@ -4267,6 +4281,49 @@ fn const_expr_as_f64(expr: &BoundExpr) -> Option<f64> {
         BoundExpr::CurrencyConst(scaled) => Some(*scaled as f64 / 10_000.0),
         _ => None,
     }
+}
+
+fn const_expr_as_string(expr: &BoundExpr) -> Option<String> {
+    match expr {
+        BoundExpr::StringConst(value) => Some(value.clone()),
+        BoundExpr::BoolConst(value) => Some(if *value { "True" } else { "False" }.to_string()),
+        BoundExpr::IntConst(value) => Some(value.to_string()),
+        BoundExpr::LongLongConst(value) => Some(value.to_string()),
+        BoundExpr::SingleConst(bits) => Some(format_const_vba_f64(f32::from_bits(*bits) as f64)),
+        BoundExpr::FloatConst(bits) | BoundExpr::DateConst(bits) => {
+            Some(format_const_vba_f64(f64::from_bits(*bits)))
+        }
+        BoundExpr::CurrencyConst(scaled) => Some(format_const_currency_scaled(*scaled)),
+        _ => None,
+    }
+}
+
+fn format_const_currency_scaled(scaled: i64) -> String {
+    let whole = scaled / 10_000;
+    let frac = (scaled % 10_000).unsigned_abs();
+    if frac == 0 {
+        whole.to_string()
+    } else {
+        let frac = format!("{frac:04}").trim_end_matches('0').to_string();
+        format!("{whole}.{frac}")
+    }
+}
+
+fn format_const_vba_f64(value: f64) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
+    }
+    if value == value.trunc() && value.abs() < 1e15 {
+        return format!("{}", value as i64);
+    }
+    format!("{value}")
 }
 
 fn finite_f64(value: f64) -> Option<f64> {
@@ -8656,6 +8713,33 @@ mod tests {
             bytecode.instructions.iter().any(|instruction| matches!(
                 instruction,
                 Instruction::LoadConstString { value, .. } if value == "ready"
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            !bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ConcatSlots { .. })),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "text"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::String
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_coerces_scalar_string_const_concat_operands() {
+        let source = "Const Prefix As String = \"v\"\nConst CNumber As Long = 7\nConst CFlag As Boolean = True\nConst CText As String = Prefix & CNumber & CFlag\nSub Main()\nDim text As String\ntext = CText\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "v7True"
             )),
             "{bytecode:#?}"
         );
