@@ -2,6 +2,7 @@ use thiserror::Error;
 
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
+use crate::frontend_library::{LibraryConstantValue, vba_library_constant};
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::{
     FrontendSourceSpan, ScopeId, ScopeKind, SourceProvenance, SymbolId, SymbolModel,
@@ -1866,7 +1867,16 @@ impl HirBuilder {
                         node.text().trim()
                     )));
                 };
-                HirExprKind::Name(self.resolve_name(scope, &name)?)
+                // User symbols shadow the implicitly-referenced VBA library; a bare
+                // name with no local/module binding resolves to a library constant
+                // before falling through to intrinsic/unresolved handling.
+                if let Some(symbol) = self.resolve_user_name(scope, &name)? {
+                    HirExprKind::Name(symbol)
+                } else if let Some(constant) = vba_library_constant(&name) {
+                    HirExprKind::Literal(library_constant_literal(constant))
+                } else {
+                    HirExprKind::Name(self.resolve_name(scope, &name)?)
+                }
             }
             SyntaxKind::LiteralExpr => HirExprKind::Literal(lower_literal(node)?),
             SyntaxKind::NewExpr => HirExprKind::New {
@@ -2055,7 +2065,15 @@ impl HirBuilder {
             .collect())
     }
 
-    fn resolve_name(&mut self, scope: ScopeId, name: &str) -> Result<SymbolId, HirBuildError> {
+    /// Resolve a name against user-declared symbols only (locals, parameters,
+    /// procedures, and property accessors of this binding scope) — the layers
+    /// that shadow the implicitly-referenced VBA library. Returns `None` when no
+    /// user symbol matches, leaving library/intrinsic resolution to the caller.
+    fn resolve_user_name(
+        &self,
+        scope: ScopeId,
+        name: &str,
+    ) -> Result<Option<SymbolId>, HirBuildError> {
         for namespace in [
             SymbolNamespace::Local,
             SymbolNamespace::Parameter,
@@ -2065,16 +2083,23 @@ impl HirBuilder {
                 .symbols
                 .resolve_in_scope_chain(scope, namespace, name)?
             {
-                return Ok(symbol);
+                return Ok(Some(symbol));
             }
         }
         if let Some(symbol) = self.resolve_property_procedure_self_name(scope, name)? {
-            return Ok(symbol);
+            return Ok(Some(symbol));
         }
         if let Some(symbol) = self.resolve_property_get_name(scope, name)? {
-            return Ok(symbol);
+            return Ok(Some(symbol));
         }
         if let Some(symbol) = self.resolve_property_write_name(scope, name)? {
+            return Ok(Some(symbol));
+        }
+        Ok(None)
+    }
+
+    fn resolve_name(&mut self, scope: ScopeId, name: &str) -> Result<SymbolId, HirBuildError> {
+        if let Some(symbol) = self.resolve_user_name(scope, name)? {
             return Ok(symbol);
         }
         if is_builtin_intrinsic_name(name) || StructuralIntrinsic::from_legacy_name(name).is_some()
@@ -2533,6 +2558,13 @@ fn procedure_symbol_name(node: SyntaxNode<'_>, name: &str) -> String {
         HirPropertyKind::Set => "property_set",
     };
     format!("{prefix}_{name}")
+}
+
+fn library_constant_literal(value: LibraryConstantValue) -> HirLiteral {
+    match value {
+        LibraryConstantValue::Str(text) => HirLiteral::String(text.to_string()),
+        LibraryConstantValue::Int(value) => HirLiteral::Int(value as i64),
+    }
 }
 
 fn lower_literal(node: SyntaxNode<'_>) -> Result<HirLiteral, HirBuildError> {
@@ -3659,6 +3691,54 @@ mod tests {
             module.arenas.expr(*value).map(|expr| &expr.kind),
             Some(HirExprKind::Literal(HirLiteral::Int(0)))
         ));
+    }
+
+    fn main_body_let_value(module: &BoundHirModule) -> HirExprId {
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body.clone()),
+                _ => None,
+            })
+            .expect("main body");
+        main_body
+            .iter()
+            .find_map(|stmt| match module.arenas.stmt(*stmt).map(|stmt| &stmt.kind) {
+                Some(HirStmtKind::Let { value, .. }) => Some(*value),
+                _ => None,
+            })
+            .expect("assignment statement")
+    }
+
+    #[test]
+    fn hir_resolves_vba_library_constant_as_literal() {
+        let source = "Sub Main()\nDim s As String\ns = vbCrLf\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let value = main_body_let_value(&module);
+        let Some(HirExprKind::Literal(HirLiteral::String(text))) =
+            module.arenas.expr(value).map(|expr| &expr.kind)
+        else {
+            panic!("vbCrLf should resolve through the base library to a string literal");
+        };
+        assert_eq!(text, "\r\n");
+    }
+
+    #[test]
+    fn hir_user_symbol_shadows_vba_library_constant() {
+        let source = "Sub Main()\nDim vbCrLf As String\nDim s As String\ns = vbCrLf\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let value = main_body_let_value(&module);
+        let kind = module
+            .arenas
+            .expr(value)
+            .map(|expr| &expr.kind)
+            .expect("assignment value");
+        assert!(
+            matches!(kind, HirExprKind::Name(_)),
+            "a user-declared vbCrLf must shadow the library constant, got {kind:?}"
+        );
     }
 
     #[test]

@@ -5917,125 +5917,15 @@ fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
 /// here instead of falling through to "use of undeclared variable". `vbNullString`, `Empty`,
 /// and `Null` are modeled as dedicated intrinsics elsewhere and are intentionally omitted.
 fn intrinsic_vb_constant(name: &str) -> Option<BoundExpr> {
-    let s = |text: &str| Some(BoundExpr::StringConst(text.to_string()));
-    let i = |value: i32| Some(BoundExpr::IntConst(value));
-    match name.to_ascii_lowercase().as_str() {
-        // String control characters
-        "vbcr" => s("\r"),
-        "vblf" => s("\n"),
-        "vbcrlf" | "vbnewline" => s("\r\n"),
-        "vbtab" => s("\t"),
-        "vbnullchar" => s("\0"),
-        "vbback" => s("\u{0008}"),
-        "vbformfeed" => s("\u{000C}"),
-        "vbverticaltab" => s("\u{000B}"),
-        // Comparison (VbCompareMethod)
-        "vbbinarycompare" => i(0),
-        "vbtextcompare" => i(1),
-        "vbdatabasecompare" => i(2),
-        // String conversion (VbStrConv)
-        "vbuppercase" => i(1),
-        "vblowercase" => i(2),
-        "vbpropercase" => i(3),
-        "vbwide" => i(4),
-        "vbnarrow" => i(8),
-        "vbkatakana" => i(16),
-        "vbhiragana" => i(32),
-        "vbunicode" => i(64),
-        "vbfromunicode" => i(128),
-        // VarType (VbVarType)
-        "vbempty" => i(0),
-        "vbnull" => i(1),
-        "vbinteger" => i(2),
-        "vblong" => i(3),
-        "vbsingle" => i(4),
-        "vbdouble" => i(5),
-        "vbcurrency" => i(6),
-        "vbdate" => i(7),
-        "vbstring" => i(8),
-        "vbobject" => i(9),
-        "vberror" => i(10),
-        "vbboolean" => i(11),
-        "vbvariant" => i(12),
-        "vbdataobject" => i(13),
-        "vbdecimal" => i(14),
-        "vbbyte" => i(17),
-        "vblonglong" => i(20),
-        "vbuserdefinedtype" => i(36),
-        "vbarray" => i(8192),
-        // Tristate / boolean-ish
-        "vbtrue" => i(-1),
-        "vbfalse" => i(0),
-        "vbusedefault" => i(-2),
-        // MsgBox buttons / icons / defaults / modality (VbMsgBoxStyle)
-        "vbokonly" => i(0),
-        "vbokcancel" => i(1),
-        "vbabortretryignore" => i(2),
-        "vbyesnocancel" => i(3),
-        "vbyesno" => i(4),
-        "vbretrycancel" => i(5),
-        "vbcritical" => i(16),
-        "vbquestion" => i(32),
-        "vbexclamation" => i(48),
-        "vbinformation" => i(64),
-        "vbdefaultbutton1" => i(0),
-        "vbdefaultbutton2" => i(256),
-        "vbdefaultbutton3" => i(512),
-        "vbdefaultbutton4" => i(768),
-        "vbapplicationmodal" => i(0),
-        "vbsystemmodal" => i(4096),
-        "vbmsgboxhelpbutton" => i(16384),
-        "vbmsgboxsetforeground" => i(65536),
-        "vbmsgboxright" => i(524288),
-        "vbmsgboxrtlreading" => i(1048576),
-        // MsgBox results (VbMsgBoxResult)
-        "vbok" => i(1),
-        "vbcancel" => i(2),
-        "vbabort" => i(3),
-        "vbretry" => i(4),
-        "vbignore" => i(5),
-        "vbyes" => i(6),
-        "vbno" => i(7),
-        // Colors (VbColorConstants), RGB-packed
-        "vbblack" => i(0),
-        "vbred" => i(255),
-        "vbgreen" => i(65280),
-        "vbyellow" => i(65535),
-        "vbblue" => i(16711680),
-        "vbmagenta" => i(16711935),
-        "vbcyan" => i(16776960),
-        "vbwhite" => i(16777215),
-        // Date format (VbDateTimeFormat)
-        "vbgeneraldate" => i(0),
-        "vblongdate" => i(1),
-        "vbshortdate" => i(2),
-        "vblongtime" => i(3),
-        "vbshorttime" => i(4),
-        // Day of week / first week (VbDayOfWeek / VbFirstWeekOfYear)
-        "vbusesystemdayofweek" => i(0),
-        "vbsunday" => i(1),
-        "vbmonday" => i(2),
-        "vbtuesday" => i(3),
-        "vbwednesday" => i(4),
-        "vbthursday" => i(5),
-        "vbfriday" => i(6),
-        "vbsaturday" => i(7),
-        "vbusesystem" => i(0),
-        "vbfirstjan1" => i(1),
-        "vbfirstfourdays" => i(2),
-        "vbfirstfullweek" => i(3),
-        // File attributes (VbFileAttribute)
-        "vbnormal" => i(0),
-        "vbreadonly" => i(1),
-        "vbhidden" => i(2),
-        "vbsystem" => i(4),
-        "vbvolume" => i(8),
-        "vbdirectory" => i(16),
-        "vbarchive" => i(32),
-        // Automation/object error base
-        "vbobjecterror" => i(-2147221504),
-        _ => None,
-    }
+    // Single source of truth is the base-library descriptor; the legacy resolver
+    // adapts its neutral values to `BoundExpr`. See
+    // docs/spec/HIR_RESOLUTION_ENVIRONMENT_V1.md.
+    crate::frontend_library::vba_library_constant(name).map(|value| match value {
+        crate::frontend_library::LibraryConstantValue::Str(text) => {
+            BoundExpr::StringConst(text.to_string())
+        }
+        crate::frontend_library::LibraryConstantValue::Int(value) => BoundExpr::IntConst(value),
+    })
 }
 
 fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {

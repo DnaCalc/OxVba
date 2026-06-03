@@ -5108,6 +5108,16 @@ mod tests {
     use crate::{Instruction, ParameterPassingMode, SourceParameterMechanism};
 
     #[test]
+    fn hir_production_lowering_resolves_vba_library_constant() {
+        // vbYesNo is a VBA base-library constant. Before the resolution environment
+        // this forced a legacy fallback (the HIR route returned Unsupported because
+        // the name was unresolved). It must now lower on the HIR route directly.
+        let source = "Sub Main()\nDim flag As Long\nflag = vbYesNo\nEnd Sub\n";
+        compile_source_with_runtime_metadata_via_hir(source)
+            .expect("vbYesNo should resolve through the base library on the HIR route");
+    }
+
+    #[test]
     fn hir_production_lowering_emits_bytecode_and_metadata_for_scoped_assignment() {
         let source = "Sub Main()\nDim x As Long\nx = 1 + 2\nEnd Sub\n";
         let (bytecode, metadata) =

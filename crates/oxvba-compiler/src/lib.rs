@@ -14,6 +14,7 @@ pub mod frontend_grammar_matrix_route_audit;
 pub mod frontend_hir;
 pub mod frontend_hir_lowering;
 pub mod frontend_language_service;
+pub mod frontend_library;
 pub mod frontend_legacy_route_audit;
 pub mod frontend_lowering_contract;
 pub mod frontend_member_dispatch;
