@@ -324,3 +324,9 @@ The 2026-06-01 continuation added:
   helper text. The new assertions check the patched bytecode metadata for representative root and
   host-returned child get plus non-indexed/indexed let/set helpers, so current compatibility
   lowering preserves accessor intent until the route is migrated to HIR or explicitly quarantined.
+- Active-project PMR route hardening continued on 2026-06-03: representative bare default-member
+  `Property Let`, indexed default-member `Property Get`, and call-statement indexed `Property Get`
+  compatibility-helper rows now assert emitted `CallProc.project_member` metadata for normalized
+  `pmr_projecta_widget_value` with the expected `PropertyGet`/`PropertyLet` accessor kind. This is
+  route-proof hardening only; native HIR replacement or explicit compatibility quarantine remains
+  required before FE-7.3.a/FE-8.5.c can close.
