@@ -1297,7 +1297,12 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Follow-up exact string comparison-default work evaluates unambiguous string equality/inequality
   expressions where both static string operands are byte-identical, including string concatenation
   and module constants, into the same explicit Boolean optional-default carrier. Collation-sensitive
-  unequal strings, ordering comparisons, `Like`, and `Is` remain outside this bounded evaluator.
+  unequal strings, ordering comparisons, full `Like` pattern semantics, and `Is` remain outside this
+  bounded evaluator.
+- Follow-up Boolean `Like` default work narrows that residual for the current equality-based runtime
+  `Like` subset. `Optional ... As Boolean = Prefix & "llo" Like "hello"` now binds to
+  `ExplicitBool(true)` through HIR/default metadata, route audit, and VM omitted-argument
+  execution; full VBA pattern matching and locale/database collation remain outside this slice.
 - Follow-up i64 optional-default work adds an explicit `OptionalDefaultValue::ExplicitI64` carrier
   and binds covered `LongLong`/`LongPtr` source-prior integer constant defaults through resolver,
   HIR/default metadata, direct optional-entry bytecode, and VM omitted-argument execution for
@@ -1371,6 +1376,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler resolve_optional_string_scalar_concat_default --quiet`
 - `cargo test -p oxvba-compiler optional_string_scalar_concat_defaults_route_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_scalar_concat_defaults_are_bound_for_omitted_args --quiet`
+- `cargo test -p oxvba-compiler optional_boolean_like_defaults_route_through_hir --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage optional_boolean_like_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_scalar_concat_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`
