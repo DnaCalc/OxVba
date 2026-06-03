@@ -6456,11 +6456,30 @@ fn emit_declared_string_initializers(
         if !initialized.insert(slot) {
             continue;
         }
-        instructions.push(Instruction::LoadConstString {
-            slot,
-            value: String::new(),
-        });
+        let value = fixed_string_initializer_len(proc, name)
+            .map(|len| " ".repeat(len))
+            .unwrap_or_default();
+        instructions.push(Instruction::LoadConstString { slot, value });
     }
+}
+
+fn fixed_string_initializer_len(proc: &BoundProcedure, name: &str) -> Option<usize> {
+    for descriptor in &proc.udt_descriptors {
+        for variable_name in &descriptor.variable_names {
+            for field in &descriptor.fields {
+                if field.array_bounds.is_some() {
+                    continue;
+                }
+                let Some(len) = field.fixed_string_len else {
+                    continue;
+                };
+                if name.eq_ignore_ascii_case(&format!("{variable_name}_{}", field.name)) {
+                    return Some(len);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn build_external_call_descriptors(

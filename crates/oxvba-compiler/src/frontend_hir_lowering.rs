@@ -8231,6 +8231,31 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_initializes_fixed_string_udt_field_alias() {
+        let source =
+            "Type Record\nName As String * 5\nEnd Type\nSub Main()\nDim r As Record\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let main = metadata.get("main").expect("main metadata");
+        let name_slot = main
+            .slots
+            .iter()
+            .find(|slot| slot.name == "r_name")
+            .expect("fixed-string field alias slot")
+            .slot;
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                crate::bytecode::Instruction::LoadConstString { slot, value }
+                    if *slot == name_slot && value == "     "
+            )),
+            "expected fixed-string UDT field alias initializer: {:?}",
+            bytecode.instructions
+        );
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_udt_field_read_write_aliases() {
         let source = "Type Point\nX As Long\nEnd Type\nSub Main()\nDim p As Point\nDim y As Long\np.X = 1\ny = p.X + 2\nEnd Sub\n";
         let (bytecode, metadata) =
