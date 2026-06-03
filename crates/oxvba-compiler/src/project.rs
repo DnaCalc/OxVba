@@ -16,9 +16,8 @@ use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy_object_locals_class,
     frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
     frontend_hir_lowering::{
-        HirNewExpressionBinding, HirProductionLoweringError,
-        compile_source_with_runtime_metadata_via_hir,
-        compile_source_with_runtime_metadata_via_hir_with_new_bindings,
+        HirFieldArrayBinding, HirNewExpressionBinding, HirProductionLoweringError,
+        compile_source_with_runtime_metadata_via_hir_with_project_bindings,
     },
     frontend_member_dispatch::{
         MemberDispatchClass, classify_host_global, classify_imported_com_member,
@@ -881,7 +880,10 @@ type ForcedObjectLocalsByProc = BTreeMap<String, BTreeSet<String>>;
 struct LoweredProjectSource {
     full_source: String,
     active_project_source: String,
+    full_hir_source: String,
+    active_project_hir_source: String,
     dynamic_instance_bindings: Vec<ProjectDynamicInstanceBindingDraft>,
+    field_array_bindings: Vec<HirFieldArrayBinding>,
     forced_object_locals_by_proc: ForcedObjectLocalsByProc,
 }
 
@@ -1467,9 +1469,14 @@ fn project_compile_boundary(
 fn compile_project_source_via_strict_hir(
     source: &str,
     _forced_object_locals_by_proc: &ForcedObjectLocalsByProc,
+    field_array_bindings: &[HirFieldArrayBinding],
 ) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), HirProductionLoweringError> {
     let hir_source = crate::resolve::apply_conditional_compilation_to_source(source);
-    compile_source_with_runtime_metadata_via_hir(&hir_source)
+    compile_source_with_runtime_metadata_via_hir_with_project_bindings(
+        &hir_source,
+        &[],
+        field_array_bindings,
+    )
 }
 
 fn compile_project_with_strategy(
@@ -1553,6 +1560,14 @@ fn compile_project_with_strategy(
         &lowered_project_source.active_project_source,
         &predeclared_member_read_routes,
     );
+    lowered_project_source.full_hir_source = rewrite_predeclared_member_reads_for_backend(
+        &lowered_project_source.full_hir_source,
+        &predeclared_member_read_routes,
+    );
+    lowered_project_source.active_project_hir_source = rewrite_predeclared_member_reads_for_backend(
+        &lowered_project_source.active_project_hir_source,
+        &predeclared_member_read_routes,
+    );
 
     let has_class_modules = manifest
         .modules
@@ -1560,16 +1575,17 @@ fn compile_project_with_strategy(
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let project_compile_boundary = project_compile_boundary(manifest, &procedure_index);
     let hir_construction_candidate = hir_construction_source_from_project_rewrites(
-        &lowered_project_source.full_source,
+        &lowered_project_source.full_hir_source,
         &lowered_project_source.dynamic_instance_bindings,
     );
     let hir_construction_compile =
         hir_construction_candidate
             .as_ref()
             .and_then(|(source, new_bindings)| {
-                match compile_source_with_runtime_metadata_via_hir_with_new_bindings(
+                match compile_source_with_runtime_metadata_via_hir_with_project_bindings(
                     source,
                     new_bindings,
+                    &lowered_project_source.field_array_bindings,
                 ) {
                     Ok(compiled) => Some((source.clone(), Ok(compiled))),
                     Err(HirProductionLoweringError::Unsupported(_)) => None,
@@ -1588,11 +1604,12 @@ fn compile_project_with_strategy(
             )
         } else if project_compile_boundary == ProjectCompileBoundary::ActiveHir {
             match compile_project_source_via_strict_hir(
-                &lowered_project_source.active_project_source,
+                &lowered_project_source.active_project_hir_source,
                 &lowered_project_source.forced_object_locals_by_proc,
+                &lowered_project_source.field_array_bindings,
             ) {
                 Ok(compiled) => (
-                    lowered_project_source.active_project_source.clone(),
+                    lowered_project_source.active_project_hir_source.clone(),
                     Ok(compiled),
                     ProjectCompileRoute::HirProduction,
                     None,
@@ -1608,7 +1625,7 @@ fn compile_project_with_strategy(
                     Some(reason),
                 ),
                 Err(HirProductionLoweringError::Compile(err)) => (
-                    lowered_project_source.active_project_source.clone(),
+                    lowered_project_source.active_project_hir_source.clone(),
                     Err(err),
                     ProjectCompileRoute::HirProduction,
                     None,
@@ -1616,11 +1633,12 @@ fn compile_project_with_strategy(
             }
         } else if project_compile_boundary == ProjectCompileBoundary::FullHir {
             match compile_project_source_via_strict_hir(
-                &lowered_project_source.full_source,
+                &lowered_project_source.full_hir_source,
                 &lowered_project_source.forced_object_locals_by_proc,
+                &lowered_project_source.field_array_bindings,
             ) {
                 Ok(compiled) => (
-                    lowered_project_source.full_source.clone(),
+                    lowered_project_source.full_hir_source.clone(),
                     Ok(compiled),
                     ProjectCompileRoute::HirProduction,
                     None,
@@ -1636,7 +1654,7 @@ fn compile_project_with_strategy(
                     Some(reason),
                 ),
                 Err(HirProductionLoweringError::Compile(err)) => (
-                    lowered_project_source.full_source.clone(),
+                    lowered_project_source.full_hir_source.clone(),
                     Err(err),
                     ProjectCompileRoute::HirProduction,
                     None,
@@ -2254,9 +2272,12 @@ fn lower_project_source(
     event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<LoweredProjectSource, ProjectCompileError> {
     let mut active_project_lowered_modules = Vec::new();
+    let mut active_project_hir_lowered_modules = Vec::new();
     let mut lowered_modules = Vec::new();
+    let mut hir_lowered_modules = Vec::new();
     let mut next_internal_instance_id = 1i32;
     let mut dynamic_instance_bindings = Vec::new();
+    let mut field_array_bindings = Vec::new();
     let mut forced_object_locals_by_proc = BTreeMap::<String, BTreeSet<String>>::new();
     // Emit procedural modules before class modules so the bytecode entry
     // point (pc=0) lands in a procedural module rather than in a class
@@ -2273,21 +2294,25 @@ fn lower_project_source(
     };
     for &idx in &module_order {
         let module = &manifest.modules[idx];
-        let (lowered, object_locals) = lower_module_source(
-            strategy,
-            manifest,
-            active_project,
-            project_symbol_index,
-            module,
-            active_project,
-            procedures,
-            reference_order,
-            event_dispatch_plan,
-            &mut next_internal_instance_id,
-            &mut dynamic_instance_bindings,
-        )?;
+        let (lowered, hir_lowered, object_locals, module_field_array_bindings) =
+            lower_module_source(
+                strategy,
+                manifest,
+                active_project,
+                project_symbol_index,
+                module,
+                active_project,
+                procedures,
+                reference_order,
+                event_dispatch_plan,
+                &mut next_internal_instance_id,
+                &mut dynamic_instance_bindings,
+            )?;
+        field_array_bindings.extend(module_field_array_bindings);
         active_project_lowered_modules.push(lowered.clone());
+        active_project_hir_lowered_modules.push(hir_lowered.clone());
         lowered_modules.push(lowered);
+        hir_lowered_modules.push(hir_lowered);
         merge_forced_object_locals(&mut forced_object_locals_by_proc, object_locals);
     }
     for referenced in ordered_reference_projects(manifest) {
@@ -2296,27 +2321,33 @@ fn lower_project_source(
             if is_typelib_binding_diagnostic_module(module) {
                 continue;
             }
-            let (lowered, object_locals) = lower_module_source(
-                strategy,
-                manifest,
-                active_project,
-                project_symbol_index,
-                module,
-                &project_name,
-                procedures,
-                reference_order,
-                event_dispatch_plan,
-                &mut next_internal_instance_id,
-                &mut dynamic_instance_bindings,
-            )?;
+            let (lowered, hir_lowered, object_locals, module_field_array_bindings) =
+                lower_module_source(
+                    strategy,
+                    manifest,
+                    active_project,
+                    project_symbol_index,
+                    module,
+                    &project_name,
+                    procedures,
+                    reference_order,
+                    event_dispatch_plan,
+                    &mut next_internal_instance_id,
+                    &mut dynamic_instance_bindings,
+                )?;
+            field_array_bindings.extend(module_field_array_bindings);
             lowered_modules.push(lowered);
+            hir_lowered_modules.push(hir_lowered);
             merge_forced_object_locals(&mut forced_object_locals_by_proc, object_locals);
         }
     }
     Ok(LoweredProjectSource {
         full_source: lowered_modules.join("\n"),
         active_project_source: active_project_lowered_modules.join("\n"),
+        full_hir_source: hir_lowered_modules.join("\n"),
+        active_project_hir_source: active_project_hir_lowered_modules.join("\n"),
         dynamic_instance_bindings,
+        field_array_bindings,
         forced_object_locals_by_proc,
     })
 }
@@ -2334,7 +2365,15 @@ fn lower_module_source(
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
-) -> Result<(String, ForcedObjectLocalsByProc), ProjectCompileError> {
+) -> Result<
+    (
+        String,
+        String,
+        ForcedObjectLocalsByProc,
+        Vec<HirFieldArrayBinding>,
+    ),
+    ProjectCompileError,
+> {
     match strategy {
         ProjectLoweringStrategy::ModuleAwareBindPlan => lower_module_source_module_aware(
             manifest,
@@ -2349,17 +2388,20 @@ fn lower_module_source(
             dynamic_instance_bindings,
         ),
         #[cfg(test)]
-        ProjectLoweringStrategy::RewriteBridge => rewrite_module_source(
-            manifest,
-            active_project,
-            module,
-            current_project,
-            procedures,
-            reference_order,
-            event_dispatch_plan,
-            next_internal_instance_id,
-            dynamic_instance_bindings,
-        ),
+        ProjectLoweringStrategy::RewriteBridge => {
+            let (source, object_locals) = rewrite_module_source(
+                manifest,
+                active_project,
+                module,
+                current_project,
+                procedures,
+                reference_order,
+                event_dispatch_plan,
+                next_internal_instance_id,
+                dynamic_instance_bindings,
+            )?;
+            Ok((source.clone(), source, object_locals, Vec::new()))
+        }
     }
 }
 
@@ -3957,12 +3999,21 @@ fn lower_module_source_module_aware(
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
-) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
+) -> Result<
+    (
+        String,
+        String,
+        BTreeMap<String, BTreeSet<String>>,
+        Vec<HirFieldArrayBinding>,
+    ),
+    ProjectCompileError,
+> {
     let current_module = normalize_identifier(&module.module_name);
     let imported_collection_newenum_fields =
         collect_internal_class_imported_collection_newenum_fields(module);
     let module_scope_string_fields = collect_module_scope_string_fields(module);
     let mut out = Vec::new();
+    let mut hir_out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
     let mut active_procedure_name: Option<String> = None;
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
@@ -3977,6 +4028,8 @@ fn lower_module_source_module_aware(
         &current_module,
         Some(project_symbol_index),
     );
+    let hir_field_array_bindings =
+        hir_field_array_bindings_from_module_state(&module_state_bindings);
     let same_module_byref_param_masks =
         collect_same_module_byref_param_masks(module, current_project, &current_module, procedures);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
@@ -4065,6 +4118,7 @@ fn lower_module_source_module_aware(
                 &module_state_bindings,
                 &imported_collection_newenum_fields,
             );
+            let hir_field_array_source_line = expanded_line.clone();
             let rewrite_suffix = out.len();
             let expanded_line = rewrite_internal_class_dynamic_array_field_redim(
                 &expanded_line,
@@ -4086,6 +4140,11 @@ fn lower_module_source_module_aware(
                 &module_state_bindings,
                 &same_module_byref_param_masks,
             );
+            let hir_expanded_line = rewrite_same_module_byref_module_state_call_line(
+                &hir_field_array_source_line,
+                &module_state_bindings,
+                &same_module_byref_param_masks,
+            );
             let state_assigned =
                 rewrite_internal_class_state_assignment(&expanded_line, &module_state_bindings);
             let expanded_line = if state_assigned != expanded_line {
@@ -4101,10 +4160,37 @@ fn lower_module_source_module_aware(
                     &same_module_byref_param_masks,
                 )
             };
+            let hir_state_assigned =
+                rewrite_internal_class_state_assignment(&hir_expanded_line, &module_state_bindings);
+            let hir_expanded_line = if hir_state_assigned != hir_expanded_line {
+                hir_state_assigned
+            } else if module_state_line_contains_array_field_access(
+                &hir_state_assigned,
+                &module_state_bindings,
+            ) {
+                hir_state_assigned
+            } else {
+                rewrite_internal_class_state_reads(
+                    &hir_state_assigned,
+                    &module_state_bindings,
+                    &same_module_byref_param_masks,
+                )
+            };
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
                 manifest,
                 Some(project_symbol_index),
                 &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+                &shadowed_identifiers,
+            )?;
+            let hir_expanded_line = rewrite_internal_class_default_member_read_assignment(
+                manifest,
+                Some(project_symbol_index),
+                &hir_expanded_line,
                 active_project,
                 current_project,
                 &current_module,
@@ -4123,10 +4209,32 @@ fn lower_module_source_module_aware(
                 &internal_class_bindings,
                 &shadowed_identifiers,
             )?;
+            let hir_expanded_line = rewrite_internal_class_property_reads(
+                manifest,
+                Some(project_symbol_index),
+                &hir_expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+                &shadowed_identifiers,
+            )?;
             let expanded_line = rewrite_internal_class_member_dispatch(
                 manifest,
                 Some(project_symbol_index),
                 &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+                &shadowed_identifiers,
+            )?;
+            let hir_expanded_line = rewrite_internal_class_member_dispatch(
+                manifest,
+                Some(project_symbol_index),
+                &hir_expanded_line,
                 active_project,
                 current_project,
                 &current_module,
@@ -4153,15 +4261,36 @@ fn lower_module_source_module_aware(
                 &expanded_line,
                 active_function_result.as_ref(),
             )?;
+            let (hir_plan, _) = build_line_bind_plan(
+                manifest,
+                active_project,
+                project_symbol_index,
+                module,
+                current_project,
+                &current_module,
+                procedures,
+                reference_order,
+                event_dispatch_plan,
+                &hir_expanded_line,
+                active_function_result.as_ref(),
+            )?;
             active_function_result = next_function_result;
             let _ = &plan.bound_call_targets;
             if plan.drop_line {
                 continue;
             }
             out.push(plan.lowered_line.clone());
+            if !hir_plan.drop_line {
+                hir_out.push(hir_plan.lowered_line.clone());
+            }
             if let Some(proc_name) = next_active_procedure_name {
                 out.extend(emit_module_state_discard_decl_lines(&module_state_bindings));
                 out.extend(emit_module_state_string_initializer_lines(
+                    &module_state_bindings,
+                    &module_scope_string_fields,
+                ));
+                hir_out.extend(emit_module_state_discard_decl_lines(&module_state_bindings));
+                hir_out.extend(emit_module_state_string_initializer_lines(
                     &module_state_bindings,
                     &module_scope_string_fields,
                 ));
@@ -4178,7 +4307,19 @@ fn lower_module_source_module_aware(
         procedures,
         &withevents_bindings,
     ));
-    Ok((out.join("\n"), forced_object_locals_by_proc))
+    hir_out.extend(emit_event_guard_wrappers_for_module(
+        current_project,
+        &current_module,
+        event_dispatch_plan,
+        procedures,
+        &withevents_bindings,
+    ));
+    Ok((
+        out.join("\n"),
+        hir_out.join("\n"),
+        forced_object_locals_by_proc,
+        hir_field_array_bindings,
+    ))
 }
 
 fn lazy_as_new_line_needs_guard(line: &str, var_name: &str) -> bool {
@@ -8187,6 +8328,40 @@ fn collect_module_state_bindings(
     }
 }
 
+fn hir_field_array_bindings_from_module_state(
+    module_state_bindings: &ModuleStateBindings,
+) -> Vec<HirFieldArrayBinding> {
+    let mut bindings = Vec::new();
+    bindings.extend(module_state_bindings.dynamic_array_field_tokens.iter().map(
+        |(name, field_token)| HirFieldArrayBinding {
+            name: name.clone(),
+            owner_expr: module_state_bindings.owner_expr.clone(),
+            field_token: *field_token,
+            dynamic: true,
+        },
+    ));
+    bindings.extend(module_state_bindings.fixed_array_field_tokens.iter().map(
+        |(name, field_token)| HirFieldArrayBinding {
+            name: name.clone(),
+            owner_expr: module_state_bindings.owner_expr.clone(),
+            field_token: *field_token,
+            dynamic: false,
+        },
+    ));
+    bindings.sort_by(|lhs, rhs| {
+        lhs.owner_expr
+            .cmp(&rhs.owner_expr)
+            .then(lhs.field_token.cmp(&rhs.field_token))
+            .then(lhs.name.cmp(&rhs.name))
+    });
+    bindings.dedup_by(|lhs, rhs| {
+        lhs.owner_expr == rhs.owner_expr
+            && lhs.field_token == rhs.field_token
+            && lhs.name.eq_ignore_ascii_case(&rhs.name)
+    });
+    bindings
+}
+
 fn collect_internal_class_imported_collection_newenum_fields(
     module: &ModuleUnit,
 ) -> BTreeSet<String> {
@@ -8894,6 +9069,47 @@ fn rewrite_internal_class_array_field_reads(
     }
     let rewritten = rewrite_internal_class_dynamic_array_field_reads(text, module_state_bindings);
     rewrite_internal_class_fixed_array_field_reads(&rewritten, module_state_bindings)
+}
+
+fn module_state_line_contains_array_field_access(
+    line: &str,
+    module_state_bindings: &ModuleStateBindings,
+) -> bool {
+    if class_state_line_is_non_executable(line) {
+        return false;
+    }
+    let trimmed = line.trim_start();
+    let lower = trimmed.to_ascii_lowercase();
+    let redim_payload = if lower.starts_with("redim preserve ") {
+        Some(trimmed[15..].trim_start())
+    } else if lower.starts_with("redim ") {
+        Some(trimmed[6..].trim_start())
+    } else {
+        None
+    };
+    if let Some(payload) = redim_payload
+        && let Some((field_name, _)) = parse_simple_array_target(payload)
+        && module_state_bindings
+            .dynamic_array_field_tokens
+            .contains_key(&field_name)
+    {
+        return true;
+    }
+    if let Some(eq_idx) = find_top_level_assignment_eq(trimmed) {
+        let lhs = trimmed[..eq_idx].trim();
+        if let Some((field_name, _)) = parse_simple_array_target(lhs)
+            && (module_state_bindings
+                .dynamic_array_field_tokens
+                .contains_key(&field_name)
+                || module_state_bindings
+                    .fixed_array_field_tokens
+                    .contains_key(&field_name))
+        {
+            return true;
+        }
+    }
+    next_dynamic_array_field_read(line, 0, module_state_bindings).is_some()
+        || next_fixed_array_field_read(line, 0, module_state_bindings).is_some()
 }
 
 fn rewrite_internal_class_dynamic_array_field_reads(
@@ -21456,27 +21672,28 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        assert_eq!(
+            compiled.compile_route,
+            ProjectCompileRoute::HirProduction,
+            "route detail: {:?}",
+            compiled.compile_route_detail
+        );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
-        let field_token = super::class_state_binding_token("projecta", "widget", "buf");
         assert!(
-            lowered.contains("__oxvba_array_field_redim(__oxvba_this_instance,"),
-            "dynamic class array ReDim should use the direct field-array resize intrinsic: {lowered}"
+            !lowered.contains("__oxvba_array_field_redim("),
+            "dynamic class array ReDim should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
             !lowered.contains("__oxvba_dynamic_array_field_redim_"),
             "dynamic class array upper-only ReDim must not use the old synthetic temp carrier: {lowered}"
         );
         assert!(
-            lowered.contains("__oxvba_array_field_get(__oxvba_this_instance,"),
-            "dynamic class array element read should use the direct field-array getter: {lowered}"
+            !lowered.contains("__oxvba_array_field_get("),
+            "dynamic class array element read should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
-            lowered.contains(&format!(", {field_token},")),
-            "dynamic class array route should carry the frontend field token: {lowered}"
-        );
-        assert!(
-            lowered.contains("__oxvba_array_field_set(__oxvba_this_instance,"),
-            "dynamic class array element write should use the direct field-array setter: {lowered}"
+            !lowered.contains("__oxvba_array_field_set("),
+            "dynamic class array element write should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
             compiled
@@ -21538,23 +21755,24 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        assert_eq!(
+            compiled.compile_route,
+            ProjectCompileRoute::HirProduction,
+            "route detail: {:?}",
+            compiled.compile_route_detail
+        );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
-        let field_token = super::class_state_binding_token("projecta", "widget", "scores");
         assert!(
             !lowered.contains("private __oxvba_array_get"),
             "fixed array field declaration must not be rewritten as an executable array read"
         );
         assert!(
-            lowered.contains("__oxvba_array_field_get(__oxvba_this_instance,"),
-            "fixed class array element read should use the direct field-array getter: {lowered}"
+            !lowered.contains("__oxvba_array_field_get("),
+            "fixed class array element read should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
-            lowered.contains("__oxvba_array_field_set(__oxvba_this_instance,"),
-            "fixed class array element write should use the direct field-array setter: {lowered}"
-        );
-        assert!(
-            lowered.contains(&format!(", {field_token},")),
-            "fixed class array setter should carry the frontend field token: {lowered}"
+            !lowered.contains("__oxvba_array_field_set("),
+            "fixed class array element write should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
             !lowered.contains("__oxvba_array_field_fixed_assign"),
@@ -21617,6 +21835,12 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        assert_eq!(
+            compiled.compile_route,
+            ProjectCompileRoute::HirProduction,
+            "route detail: {:?}",
+            compiled.compile_route_detail
+        );
         assert!(
             !compiled
                 .rewritten_source
@@ -21626,12 +21850,12 @@ mod tests {
         );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
-            lowered.contains("__oxvba_array_field_set("),
-            "fixed procedural module array element write should use the direct field-array setter: {lowered}"
+            !lowered.contains("__oxvba_array_field_set("),
+            "fixed procedural module array element write should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
-            lowered.contains("__oxvba_array_field_get("),
-            "fixed procedural module array element read should use the direct field-array getter: {lowered}"
+            !lowered.contains("__oxvba_array_field_get("),
+            "fixed procedural module array element read should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
             !lowered.contains("__oxvba_array_field_fixed_assign"),
@@ -21694,34 +21918,32 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        assert_eq!(
+            compiled.compile_route,
+            ProjectCompileRoute::HirProduction,
+            "route detail: {:?}",
+            compiled.compile_route_detail
+        );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
-        let owner_token = super::procedural_module_state_owner_token("projecta", "mainmodule");
-        let field_token = super::class_state_binding_token("projecta", "mainmodule", "cache");
         assert!(
             !lowered.contains("private __oxvba_array_get"),
             "dynamic procedural module array declaration must not be rewritten as an executable array read"
         );
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_array_field_redim({owner_token}, {field_token},"
-            )),
-            "dynamic procedural array ReDim should use the direct field-array resize intrinsic: {lowered}"
+            !lowered.contains("__oxvba_array_field_redim("),
+            "dynamic procedural array ReDim should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
             !lowered.contains("__oxvba_dynamic_array_field_redim_"),
             "dynamic procedural upper-only ReDim must not use the old synthetic temp carrier: {lowered}"
         );
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_array_field_get({owner_token}, {field_token},"
-            )),
-            "dynamic procedural array element read should use the direct field-array getter: {lowered}"
+            !lowered.contains("__oxvba_array_field_get("),
+            "dynamic procedural array element read should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
-            lowered.contains(&format!(
-                "__oxvba_array_field_set({owner_token}, {field_token},"
-            )),
-            "dynamic procedural array element write should use the direct field-array setter: {lowered}"
+            !lowered.contains("__oxvba_array_field_set("),
+            "dynamic procedural array element write should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
             compiled
@@ -21790,14 +22012,20 @@ mod tests {
         };
 
         let compiled = compile_project(&manifest).expect("project should compile");
+        assert_eq!(
+            compiled.compile_route,
+            ProjectCompileRoute::HirProduction,
+            "route detail: {:?}",
+            compiled.compile_route_detail
+        );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
-            lowered.contains("__oxvba_array_field_redim_bounds(__oxvba_this_instance,"),
-            "explicit lower-bound class array ReDim should use paired-bound intrinsic: {lowered}"
+            !lowered.contains("__oxvba_array_field_redim_bounds("),
+            "explicit lower-bound class/procedural array ReDim should lower from HIR field-array bindings, not helper source: {lowered}"
         );
         assert!(
-            lowered.contains("__oxvba_array_field_redim_bounds("),
-            "explicit lower-bound procedural array ReDim should use paired-bound intrinsic: {lowered}"
+            !lowered.contains("__oxvba_array_field_redim("),
+            "explicit lower-bound class/procedural array ReDim should not use helper source: {lowered}"
         );
         assert!(
             !lowered.contains("__oxvba_dynamic_array_field_redim_"),

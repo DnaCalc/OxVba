@@ -40,24 +40,41 @@ pub struct HirNewExpressionBinding {
     pub object_handle: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HirFieldArrayBinding {
+    pub name: String,
+    pub owner_expr: String,
+    pub field_token: i32,
+    pub dynamic: bool,
+}
+
 #[derive(Debug, Default)]
 struct HirLoweringContext {
     new_expression_bindings: HashMap<String, VecDeque<i32>>,
+    field_array_bindings: HashMap<String, HirFieldArrayBinding>,
     dynamic_array_names: HashSet<String>,
     fixed_array_bounds: HashMap<String, Vec<(i32, i32)>>,
 }
 
 impl HirLoweringContext {
-    fn from_new_expression_bindings(bindings: &[HirNewExpressionBinding]) -> Self {
+    fn from_project_bindings(
+        new_bindings: &[HirNewExpressionBinding],
+        field_array_bindings: &[HirFieldArrayBinding],
+    ) -> Self {
         let mut new_expression_bindings = HashMap::<String, VecDeque<i32>>::new();
-        for binding in bindings {
+        for binding in new_bindings {
             new_expression_bindings
                 .entry(binding.type_name.to_ascii_lowercase())
                 .or_default()
                 .push_back(binding.object_handle);
         }
+        let field_array_bindings = field_array_bindings
+            .iter()
+            .map(|binding| (binding.name.to_ascii_lowercase(), binding.clone()))
+            .collect();
         Self {
             new_expression_bindings,
+            field_array_bindings,
             dynamic_array_names: HashSet::new(),
             fixed_array_bounds: HashMap::new(),
         }
@@ -85,6 +102,10 @@ impl HirLoweringContext {
     fn is_fixed_array(&self, name: &str) -> bool {
         self.fixed_array_bounds
             .contains_key(&name.to_ascii_lowercase())
+    }
+
+    fn field_array_binding(&self, name: &str) -> Option<&HirFieldArrayBinding> {
+        self.field_array_bindings.get(&name.to_ascii_lowercase())
     }
 
     fn fixed_array_alias(&self, name: &str, indices: &[BoundCallArg]) -> Option<String> {
@@ -133,6 +154,38 @@ pub fn compile_source_with_runtime_metadata_via_hir_with_new_bindings(
         source,
         &typed_hir,
         new_expression_bindings,
+    )?;
+    let checked = check_types(bound).map_err(CompileError::TypeError)?;
+    let optimized = if std::env::var("OXVBA_DISABLE_OPT").ok().as_deref() == Some("1") {
+        checked
+    } else {
+        optimize_module(checked)
+    };
+    Ok(emit_bytecode_with_runtime_metadata(&optimized))
+}
+
+pub fn compile_source_with_runtime_metadata_via_hir_with_project_bindings(
+    source: &str,
+    new_expression_bindings: &[HirNewExpressionBinding],
+    field_array_bindings: &[HirFieldArrayBinding],
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    HirProductionLoweringError,
+> {
+    reject_hir_parse_errors(source)?;
+    let typed_hir = collect_type_hooks_from_source("Main", source)
+        .map_err(|err| HirProductionLoweringError::Unsupported(err.to_string()))?;
+    validate_hir_const_diagnostics(source, &typed_hir)?;
+    reject_unsupported_const_syntax(source)?;
+    validate_hir_assignment_diagnostics(&typed_hir)?;
+    let bound = lower_typed_hir_to_bound_module_with_project_bindings(
+        source,
+        &typed_hir,
+        new_expression_bindings,
+        field_array_bindings,
     )?;
     let checked = check_types(bound).map_err(CompileError::TypeError)?;
     let optimized = if std::env::var("OXVBA_DISABLE_OPT").ok().as_deref() == Some("1") {
@@ -414,7 +467,22 @@ pub fn lower_typed_hir_to_bound_module_with_new_bindings(
     typed_hir: &TypedHirModule,
     new_expression_bindings: &[HirNewExpressionBinding],
 ) -> Result<BoundModule, HirProductionLoweringError> {
-    let mut context = HirLoweringContext::from_new_expression_bindings(new_expression_bindings);
+    lower_typed_hir_to_bound_module_with_project_bindings(
+        source,
+        typed_hir,
+        new_expression_bindings,
+        &[],
+    )
+}
+
+pub fn lower_typed_hir_to_bound_module_with_project_bindings(
+    source: &str,
+    typed_hir: &TypedHirModule,
+    new_expression_bindings: &[HirNewExpressionBinding],
+    field_array_bindings: &[HirFieldArrayBinding],
+) -> Result<BoundModule, HirProductionLoweringError> {
+    let mut context =
+        HirLoweringContext::from_project_bindings(new_expression_bindings, field_array_bindings);
     let const_values = collect_const_values(source, typed_hir);
     let enum_descriptors = collect_hir_enum_descriptors(source);
     let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
@@ -1155,6 +1223,28 @@ fn lower_stmt(
                                 return Ok(());
                             }
                         }
+                        BoundExpr::IntrinsicCall { name, args }
+                            if name == "__oxvba_array_field_get" =>
+                        {
+                            if args.len() >= 3 {
+                                let expr = lower_expr(
+                                    typed_hir,
+                                    const_values,
+                                    udt_field_aliases,
+                                    *value,
+                                    context,
+                                )?;
+                                let mut set_args = args;
+                                set_args.push(expr);
+                                out.push(BoundStmt::Expr {
+                                    expr: BoundExpr::IntrinsicCall {
+                                        name: "__oxvba_array_field_set".to_string(),
+                                        args: set_args,
+                                    },
+                                });
+                                return Ok(());
+                            }
+                        }
                         _ => {}
                     }
                     return Err(err);
@@ -1317,6 +1407,28 @@ fn lower_stmt(
                                     indices,
                                     expr,
                                     intent: AssignmentIntent::Set,
+                                });
+                                return Ok(());
+                            }
+                        }
+                        BoundExpr::IntrinsicCall { name, args }
+                            if name == "__oxvba_array_field_get" =>
+                        {
+                            if args.len() >= 3 {
+                                let expr = lower_expr(
+                                    typed_hir,
+                                    const_values,
+                                    udt_field_aliases,
+                                    *value,
+                                    context,
+                                )?;
+                                let mut set_args = args;
+                                set_args.push(expr);
+                                out.push(BoundStmt::Expr {
+                                    expr: BoundExpr::IntrinsicCall {
+                                        name: "__oxvba_array_field_set".to_string(),
+                                        args: set_args,
+                                    },
                                 });
                                 return Ok(());
                             }
@@ -1726,6 +1838,72 @@ fn lower_stmt(
             bounds,
             preserve,
         } => {
+            if let Some(binding) = context.field_array_binding(name).cloned() {
+                if !binding.dynamic {
+                    return Err(HirProductionLoweringError::Unsupported(format!(
+                        "ReDim production lowering requires a dynamic field array for {name}"
+                    )));
+                }
+                let has_explicit_lower = bounds.iter().any(|bound| bound.lower.is_some());
+                let mut args = vec![
+                    field_array_owner_expr(&binding.owner_expr),
+                    BoundExpr::IntConst(binding.field_token),
+                ];
+                if has_explicit_lower {
+                    for bound in bounds {
+                        let lower = if let Some(lower) = bound.lower {
+                            lower_static_redim_bound(
+                                typed_hir,
+                                const_values,
+                                udt_field_aliases,
+                                lower,
+                                context,
+                            )?
+                        } else {
+                            option_base
+                        };
+                        args.push(BoundExpr::IntConst(lower));
+                        args.push(lower_expr(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            bound.upper,
+                            context,
+                        )?);
+                    }
+                    out.push(BoundStmt::Expr {
+                        expr: BoundExpr::IntrinsicCall {
+                            name: if *preserve {
+                                "__oxvba_array_field_redim_preserve_bounds".to_string()
+                            } else {
+                                "__oxvba_array_field_redim_bounds".to_string()
+                            },
+                            args,
+                        },
+                    });
+                } else {
+                    for bound in bounds {
+                        args.push(lower_expr(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            bound.upper,
+                            context,
+                        )?);
+                    }
+                    out.push(BoundStmt::Expr {
+                        expr: BoundExpr::IntrinsicCall {
+                            name: if *preserve {
+                                "__oxvba_array_field_redim_preserve".to_string()
+                            } else {
+                                "__oxvba_array_field_redim".to_string()
+                            },
+                            args,
+                        },
+                    });
+                }
+                return Ok(());
+            }
             let folded_name = name.to_ascii_lowercase();
             if !dynamic_array_names.contains(&folded_name)
                 && let Some(previous_bounds) = fixed_array_bounds.get(&folded_name).cloned()
@@ -2116,6 +2294,14 @@ fn runtime_array_target_from_args(mut args: Vec<BoundExpr>) -> Option<(String, V
     Some((name, args))
 }
 
+fn field_array_owner_expr(owner_expr: &str) -> BoundExpr {
+    owner_expr
+        .trim()
+        .parse::<i32>()
+        .map(BoundExpr::IntConst)
+        .unwrap_or_else(|_| BoundExpr::Var(owner_expr.trim().to_string()))
+}
+
 fn lower_static_redim_bound(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
@@ -2489,6 +2675,18 @@ fn lower_call_expr(
                 intrinsic_args.extend(args.into_iter().map(|arg| arg.expr));
                 return Ok(BoundExpr::IntrinsicCall {
                     name: "__oxvba_array_get".to_string(),
+                    args: intrinsic_args,
+                });
+            }
+            if call_data.cst.syntax_kind == "IndexExpr"
+                && let Some(binding) = context.field_array_binding(&name)
+            {
+                let mut intrinsic_args = Vec::with_capacity(args.len() + 2);
+                intrinsic_args.push(field_array_owner_expr(&binding.owner_expr));
+                intrinsic_args.push(BoundExpr::IntConst(binding.field_token));
+                intrinsic_args.extend(args.into_iter().map(|arg| arg.expr));
+                return Ok(BoundExpr::IntrinsicCall {
+                    name: "__oxvba_array_field_get".to_string(),
                     args: intrinsic_args,
                 });
             }
@@ -5440,6 +5638,48 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
             "expected field-array ReDim intrinsic to emit runtime resize: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_project_bindings_lower_field_array_statements_without_helper_source() {
+        let source = "Sub Main()\nDim owner\nDim buf\nDim x\nowner = 1\nReDim buf(2)\nbuf(1) = 7\nx = buf(1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir_with_project_bindings(
+                source,
+                &[],
+                &[HirFieldArrayBinding {
+                    name: "buf".to_string(),
+                    owner_expr: "owner".to_string(),
+                    field_token: 111,
+                    dynamic: true,
+                }],
+            )
+            .expect("HIR production lowering with project field-array bindings");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicArrayResize { .. })),
+            "expected original ReDim field-array statement to emit resize bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArraySet { indices, .. } if indices.len() == 1
+            )),
+            "expected original field-array assignment to emit set bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayGet { indices, .. } if indices.len() == 1
+            )),
+            "expected original field-array read to emit get bytecode: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

@@ -1512,12 +1512,19 @@ Candidate bead units:
   lower-bound field-array `ReDim To`/`ReDim Preserve To` forms use paired-bound
   `__oxvba_array_field_redim*_bounds` intrinsics instead of generated temp-array source carriers.
   Procedural module array-field token discovery now uses frontend project-symbol field names rather
-  than the legacy declaration-line scan when the symbol index is available.
+  than the legacy declaration-line scan when the symbol index is available. Follow-up progress adds
+  project field-array HIR bindings and a helper-free HIR source stream for module-aware project
+  lowering: representative dynamic/fixed class and procedural-module field-array `ReDim`, element
+  write, element read, and explicit literal lower-bound `ReDim To` fixtures now compile through
+  `ProjectCompileRoute::HirProduction` from original field-array statements while bytecode still
+  emits the existing runtime field-array get/set/resize operations from HIR facts. The backend
+  rewritten source remains available as fallback/parity evidence.
   Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
-  old rewrite bridge is parity evidence, not native production ownership. Remaining work: replace
-  the `lower_module_source_module_aware` pre-HIR field-array intrinsic source rewrite bridge with a
-  project-aware HIR lowering boundary that binds original field-array statements from
-  project-symbol facts.
+  old rewrite bridge is parity evidence, not native production ownership. Remaining work: finish
+  any residual project/class field-array surfaces outside the covered statement/read/write/resize
+  fixtures, harden source maps/metadata for the helper-free HIR stream, and then delete or
+  quarantine the compatibility source rewrite bridge once broad route evidence shows it is no
+  longer needed for accepted production shapes.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
