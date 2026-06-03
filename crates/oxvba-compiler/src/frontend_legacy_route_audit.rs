@@ -703,7 +703,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     findings.push(route_finding(
         "simple property fixture",
         simple_property_statement,
-        "bd-aprs.9.10",
+        "bd-aprs.9.12",
     ));
 
     let indexed_property_get_statement = "Sub Main()\nDim x\nx = Value(1)\nEnd Sub\nProperty Get Value(ByVal index As Long) As Long\nValue = index\nEnd Property\n";
