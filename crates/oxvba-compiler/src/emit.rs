@@ -7344,6 +7344,7 @@ fn emit_stmt(
                 reset_array_slots(
                     name,
                     slot_map,
+                    &current_meta.declaration_types,
                     &current_meta.fixed_string_alias_lengths,
                     instructions,
                 );
@@ -7354,13 +7355,22 @@ fn emit_stmt(
                     let overlap = old_count.min(new_count);
                     let tail = old_count.max(new_count);
                     if overlap < tail {
-                        reset_array_slots_range(name, overlap, tail, slot_map, instructions);
+                        reset_array_slots_range(
+                            name,
+                            overlap,
+                            tail,
+                            slot_map,
+                            &current_meta.declaration_types,
+                            &current_meta.fixed_string_alias_lengths,
+                            instructions,
+                        );
                     }
                 }
             } else {
                 reset_array_slots(
                     name,
                     slot_map,
+                    &current_meta.declaration_types,
                     &current_meta.fixed_string_alias_lengths,
                     instructions,
                 );
@@ -7418,6 +7428,7 @@ fn emit_stmt(
             reset_array_slots(
                 name,
                 slot_map,
+                &current_meta.declaration_types,
                 &current_meta.fixed_string_alias_lengths,
                 instructions,
             );
@@ -11560,6 +11571,7 @@ struct EmitCallArgMapping<'a> {
 fn reset_array_slots(
     array_name: &str,
     slot_map: &HashMap<String, usize>,
+    declaration_types: &HashMap<String, BoundType>,
     fixed_string_alias_lengths: &HashMap<String, usize>,
     instructions: &mut Vec<Instruction>,
 ) {
@@ -11576,14 +11588,13 @@ fn reset_array_slots(
         .collect::<Vec<_>>();
     slots.sort_unstable_by_key(|(_, slot)| *slot);
     for (name, slot) in slots {
-        if let Some(len) = fixed_string_alias_lengths.get(name).copied() {
-            instructions.push(Instruction::LoadConstString {
-                slot,
-                value: " ".repeat(len),
-            });
-        } else {
-            instructions.push(Instruction::LoadEmpty { slot });
-        }
+        emit_reset_slot(
+            name,
+            slot,
+            declaration_types,
+            fixed_string_alias_lengths,
+            instructions,
+        );
     }
 }
 
@@ -11592,6 +11603,8 @@ fn reset_array_slots_range(
     start_index: usize,
     end_index_exclusive: usize,
     slot_map: &HashMap<String, usize>,
+    declaration_types: &HashMap<String, BoundType>,
+    fixed_string_alias_lengths: &HashMap<String, usize>,
     instructions: &mut Vec<Instruction>,
 ) {
     if start_index >= end_index_exclusive {
@@ -11607,14 +11620,39 @@ fn reset_array_slots_range(
             let suffix = &name[prefix.len()..];
             let index = suffix.parse::<usize>().ok()?;
             if (start_index..end_index_exclusive).contains(&index) {
-                Some(*slot)
+                Some((name.as_str(), *slot))
             } else {
                 None
             }
         })
         .collect::<Vec<_>>();
-    slots.sort_unstable();
-    for slot in slots {
+    slots.sort_unstable_by_key(|(_, slot)| *slot);
+    for (name, slot) in slots {
+        emit_reset_slot(
+            name,
+            slot,
+            declaration_types,
+            fixed_string_alias_lengths,
+            instructions,
+        );
+    }
+}
+
+fn emit_reset_slot(
+    name: &str,
+    slot: usize,
+    declaration_types: &HashMap<String, BoundType>,
+    fixed_string_alias_lengths: &HashMap<String, usize>,
+    instructions: &mut Vec<Instruction>,
+) {
+    if let Some(len) = fixed_string_alias_lengths.get(name).copied() {
+        instructions.push(Instruction::LoadConstString {
+            slot,
+            value: " ".repeat(len),
+        });
+    } else if matches!(declaration_types.get(name), Some(BoundType::Object)) {
+        instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
+    } else {
         instructions.push(Instruction::LoadEmpty { slot });
     }
 }
