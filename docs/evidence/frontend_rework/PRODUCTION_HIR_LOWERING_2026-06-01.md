@@ -1009,12 +1009,13 @@ constant expressions:
 
 - `Const` production eligibility now accepts simple expression trees composed from literal values,
   parentheses, unary minus, arithmetic operators, and string concatenation.
-- `collect_const_values(...)` records those values as bound expression trees, so uses such as
-  `x = CBase` for `Const CBase = 1 + 2` lower through HIR and produce expression bytecode without
-  allocating a runtime local slot for `CBase`.
+- `collect_const_values(...)` records those values without allocating runtime local slots for the
+  constants. Exact integer expressions such as `Const CBase = 1 + 2` now fold to
+  `IntConst`/`LoadConstI32`; non-exact expressions remain bound expression trees.
 - Later declarators in the same `Const` statement can reference earlier declarators, for example
-  `Const CBase = 1 + 2, CTotal = CBase + 1`; those references are substituted as expression trees,
-  not runtime variable reads.
+  `Const CBase = 1 + 2, CTotal = CBase + 1`; those references now fold to exact integer constants
+  for the covered `+`/`-`/`*`/`\`/`Mod`/`^` subset, while true division remains an expression tree
+  for broader coercion work.
 - Later `Const` statements can reference earlier constants through the same source-ordered
   environment for the covered evaluator subset, including typed `Long` diagnostics and typed
   `LongLong`/`LongPtr` i64 carriers.
@@ -1292,6 +1293,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_boolean_expression_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_date_currency_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_keeps_untyped_true_division_const_expression_unfolded --quiet`
+- `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_integer_const_expression_executes --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_collects_typed_same_statement_const_expression --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_byte_integer_const_expressions --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_keeps_true_division_const_expression_unfolded --quiet`
