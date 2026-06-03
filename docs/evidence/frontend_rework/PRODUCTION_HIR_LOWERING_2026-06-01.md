@@ -595,8 +595,9 @@ HIR lowering, the lightweight default route, and route-audit classification.
 `Option Compare Database` now routes through HIR/default production for otherwise completed sources;
 the current runtime intentionally maps Database compare to binary comparison rather than Access
 collation. `Option Private Module` now routes through single-source/default HIR for otherwise
-completed sources; project module-kind and reference-visibility enforcement remains in the project
-route.
+completed sources, is preserved on the production `BoundModule`, and feeds compile-derived bundle
+module facts from the bound front-end surface; project module-kind and reference-visibility
+enforcement remains in the project route.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
