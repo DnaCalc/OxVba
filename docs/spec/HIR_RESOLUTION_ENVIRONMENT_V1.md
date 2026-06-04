@@ -37,28 +37,36 @@ This is the same architecture `ARCHITECTURE.md` already mandates for the runtime
 
 ## 3. Typed bindings and member dispatch (the decisive layer)
 
-### 3.1 `Binding` — the result of resolving a name
-Generalizes today's stringly `ProcCall { name }` / `IntrinsicCall { name }` / `Member { … }` into a resolved, lowerable fact:
+### 3.1 `Binding` — the uniform result of resolving a name
+Every name resolves to the **same shape** regardless of source (active project, referenced project, base library, COM typelib, host). Sources differ only in the **dispatch route**, not the resolution structure — there is no per-source binding kind and no library-specific id:
 
 ```
 Binding =
-  | LocalVar(SymbolId)                         // params/locals
-  | ModuleItem(SymbolId)                        // proc/const/type/field in this project
-  | ProjectRefItem(ProjectId, SymbolId)         // referenced-project public symbol
-  | LibraryConst(typed value)                   // base-library constant (vbCrLf, …)
-  | LibraryCallable(LibImplId, signature)       // base-library function/sub → native impl
-  | LibraryObject(LibTypeId)                     // Debug / Err / Collection instance
-  | ComCoclass(TypeLibId, coclass)               // a local typed As Scripting.FileSystemObject
-  | HostGlobal(HostItemId)                        // host-injected global
-  | NativeDeclare(DeclareDescriptor)             // Declare Lib (already HIR-bound today)
-  | Type(TypeId)                                  // a type name used in a type position
+  | Value(ConstValue)            // a constant: a base-library vb* value or a Const decl
+  | Variable(SymbolRef)          // a local / parameter / field / module variable
+  | Callable(CallableBinding)    // a Sub / Function / Property / method
+  | Type(TypeRef)                // a type name in a type position (class, UDT, coclass, library object)
+
+CallableBinding = {
+  source:    SymbolSourceId,     // which layer resolved it: this project | ref-project N | VBA library | typelib M | host
+  signature: SignatureFacts,     // arity, param/return facts, host-sensitivity
+  dispatch:  DispatchRoute,      // HOW to invoke — the ONLY source-kind-specific part
+}
+
+DispatchRoute =
+  | VbaProc(ProcRef)                       // compiled VBA: active OR referenced project (identical kind, different source)
+  | Native(NativeImplId)                   // natively-implemented: VBA base library, Declare Lib, host primitives
+  | Com { dispatch_token, member_spec }    // early-bound COM/typelib member
+  | HostDynamic(HostMemberRef)             // host-provided global, dynamic dispatch
 ```
+
+`NativeImplId` is **not** "the library's id"; it is the dispatch route for *natively-implemented* members, shared by the base library, `Declare Lib`, and host primitives — at the same level as `VbaProc` and `Com`. The active project is not special: its procedures resolve to `Callable { source = this project, dispatch = VbaProc(..) }`, exactly like a referenced project's (only `source` differs). It does not get a native id.
 
 ### 3.2 Member dispatch — one mechanism for all receivers
 `x.Member(args)` resolves uniformly:
 1. Resolve `x` to a `Binding` carrying a **type** (`As Class1`, `As Scripting.FileSystemObject`, predeclared `Debug`, a referenced-project class, …).
 2. Look up `Member` in that type's member set, from the type's provider: project class descriptor (`ProjectSymbolIndex`), COM `TypeLibMetadataBlob` (`member_name → token`/vtable slot/spec), base-library object descriptor, or host catalog.
-3. Produce a **member binding** with a dispatch route: `ProjectProc` (call by symbol), `ComMember(token | vtable_slot, spec)`, `LibraryMember(LibImplId)`, `HostMember(dynamic dispatch)`.
+3. Produce the same `CallableBinding`; only `dispatch` reflects the receiver's source — `VbaProc` (project class method), `Com` (typelib member), `Native` (base-library object member such as `Debug.Print`), or `HostDynamic` (host global member). A member call and a free-function call have identical binding shape.
 4. Lower to the matching instruction.
 
 This single path replaces: `rewrite_early_bound_member_dispatch` (COM, `project.rs:5078`), the `Debug.Print`/`Err.*` special-cases, `MemberDispatchClass` routing, project-class member/default-member rewrites, and the field-array/PMR carriers. **Default members** are just a member lookup with the type's `is_default_member` entry.
@@ -68,13 +76,13 @@ This single path replaces: `rewrite_early_bound_member_dispatch` (COM, `project.
 The base library is a **built-in reference, injected by default into every compilation**, resolved through the *same* reference path as project and COM references. It is authored as a **descriptor**, not as `.bas` source, but it binds at the same level as any reference:
 
 - **Namespaces/modules**: `Constants`, `Math`, `Strings`, `Information`, `Interaction`, `FileSystem`, … (global namespace `VBA`).
-- **Constants**: name → typed literal (`vbCrLf`, `vbYesNo = 4`, …) → `Binding::LibraryConst`.
-- **Callables**: name, signature (param types/optionality, return type), host-sensitivity (`DeterministicCore`/`HostSensitive`), and a **`LibImplId`** — a stable typed id of the native implementation → `Binding::LibraryCallable`.
-- **Predeclared objects**: `Debug`, `Err`, `Collection` as declared types with members, each member carrying a `LibImplId` → `Binding::LibraryObject` + member dispatch (§3.2).
+- **Constants**: name → typed literal (`vbCrLf`, `vbYesNo = 4`, …) → `Binding::Value`.
+- **Callables**: name, signature (param types/optionality, return type), host-sensitivity (`DeterministicCore`/`HostSensitive`) → `Callable { dispatch: Native(NativeImplId) }`. The base library is simply a *source* whose members dispatch `Native`.
+- **Predeclared objects**: `Debug`, `Err`, `Collection` as declared `Type`s with members; each member resolves through §3.2 to `Callable { dispatch: Native(NativeImplId) }`.
 
-**The `LibImplId` is the (iii) seam.** It maps a declared library member to its existing Rust implementation — a VM inline op (`Instruction::Intrinsic*` over `oxvba-runtime`) or a HAL call (`oxvba-hal::HostServices`). We do **not** reimplement the impls. The emit dispatch becomes `(LibImplId, args) → Instruction::…` (typed) instead of `(name: &str, args) → …`. Resolution of *what is callable* comes from the descriptor; the descriptor is built once and cached (`OnceLock`).
+**`NativeImplId` is the (iii) seam — and it is not library-specific.** It maps a *natively-implemented* member (base-library function, `Declare Lib` import, or host primitive) to its existing Rust implementation — a VM inline op (`Instruction::Intrinsic*` over `oxvba-runtime`) or a HAL call (`oxvba-hal::HostServices`). We do **not** reimplement the impls. The emit dispatch becomes `(NativeImplId, args) → Instruction::…` (typed) instead of `(name: &str, args) → …`. The base library is one source that produces `Native` dispatches, exactly as COM sources produce `Com` dispatches and project sources produce `VbaProc` dispatches — all through the one `CallableBinding`. The base-library descriptor is built once and cached (`OnceLock`).
 
-**Statement-syntax built-ins** (`Open … For … As #`, `Print #`, `Input #`, `Line Input #`, `Close`, `Get`/`Put`): VBA's grammar genuinely requires dedicated statement syntax (they are not plain calls), so the parser keeps recognizing them. But their *semantics* resolve to base-library callables via `LibImplId` — the builder no longer hardcodes `is_*_stmt` text matching → fixed opcode. A statement node carries the resolved `LibImplId` instead.
+**Statement-syntax built-ins** (`Open … For … As #`, `Print #`, `Input #`, `Line Input #`, `Close`, `Get`/`Put`): VBA's grammar genuinely requires dedicated statement syntax (they are not plain calls), so the parser keeps recognizing them. But their *semantics* resolve to base-library callables (`dispatch: Native`) — the builder no longer hardcodes `is_*_stmt` text matching → fixed opcode. A statement node carries the resolved `Callable` instead.
 
 **Host library** (`Application`, etc.) is a *separate* host-injected layer (layer 5) with the same shape; it needs a host-supplied member catalog (new data — the one genuinely-missing metadata source). The base library never contains host globals.
 
@@ -91,7 +99,7 @@ Once Phases 1–4 land, these are removed (not quarantined):
 ## 6. Build sequence (each step is a real piece of the end state — no throwaway scaffolding)
 
 - **Phase 1 — Resolution environment skeleton + base library (proving ground).**
-  Introduce `ResolutionEnvironment` + the `SymbolSource` layer interface; refactor `resolve_name`/member resolution to consult it. Implement the base-library layer (iii): descriptor + `LibImplId` binding to existing VM/HAL impls; route constants/functions/predeclared-objects through it. Delete the 3 name tables, the `Debug`/`Err`/`Collection` rewrites, and the `is_*_stmt` hardcoding. Self-contained (no project loading); proves the environment + member dispatch on `Debug`/`Err`/`Collection`; net-deletes the most hardcoding.
+  Introduce `ResolutionEnvironment` + the `SymbolSource` layer interface and the uniform `CallableBinding`/`DispatchRoute`; refactor `resolve_name`/member resolution to consult it. Implement the base-library layer (iii): descriptor whose callables/objects resolve to `Native(NativeImplId)` over existing VM/HAL impls; route constants/functions/predeclared-objects through it. Delete the 3 name tables, the `Debug`/`Err`/`Collection` rewrites, and the `is_*_stmt` hardcoding. Self-contained (no project loading); proves the environment + member dispatch on `Debug`/`Err`/`Collection`; net-deletes the most hardcoding.
 - **Phase 2 — Multi-module project binding.** Add the sibling-module source (layer 2). Bind each module against the environment; retire source-flattening for project compiles. `resolve_name` binds cross-module procs/types/classes to real symbols.
 - **Phase 3 — Project references + project-class member dispatch.** Referenced-project layer (layer 3, qualified). Declared-type member dispatch for project classes (§3.2) → retires the project.rs class/member/default-member/field-array rewrites (closes `bd-aprs.9.13`, `8.3/8.4/8.7`, `9.12` by deletion, not quarantine).
 - **Phase 4 — COM typelib + host globals.** COM layer consuming `TypeLibMetadataBlob` (member dispatch by token) → retires `rewrite_early_bound_member_dispatch` (`8.6/8.8`). Host-global layer + host member catalog.
@@ -102,13 +110,13 @@ Each phase is independently shippable, net-deletes code, and is validated by the
 ## 7. Design decisions (alternatives + trade-offs)
 
 1. **Base-library representation — CHOSEN: (iii) declarations + native-impl binding.**
-   - (i) VBA-source library: maximal dogfood, but needs a "body is native" marker and can't express operator/statement surface; (ii) pure descriptor blob: precise but a second representation; **(iii)** declarations resolved like any reference + `LibImplId`→native impl: matches real VBA (`VBA` typelib + native impl), reuses the reference/dispatch path, satisfies "partially VBA-level binding to Rust." We are **not** writing `.bas` for built-ins; we bind to them at the reference level.
+   - (i) VBA-source library: maximal dogfood, but needs a "body is native" marker and can't express operator/statement surface; (ii) pure descriptor blob: precise but a second representation; **(iii)** declarations resolved like any reference, dispatching `Native(NativeImplId)`→native impl: matches real VBA (`VBA` typelib + native impl), reuses the reference/dispatch path, satisfies "partially VBA-level binding to Rust." We are **not** writing `.bas` for built-ins; we bind to them at the reference level.
 
-2. **`LibImplId` seam — recommend a typed enum, not a name string.** A typed id mapping declared members → VM op / HAL call gives compile-time exhaustiveness (the lesson from the `syntax_kind` typing). Trade-off: the existing emit dispatch is string-keyed; we re-key it to the enum (mechanical, and removes the silent `_ => {}` fall-through).
+2. **Uniform `CallableBinding`/`DispatchRoute`; `NativeImplId` a typed enum, not a name string, and shared across sources.** Every source resolves to one `CallableBinding`; only `dispatch` differs (`VbaProc`/`Native`/`Com`/`HostDynamic`). `NativeImplId` is the route for natively-backed members (base library, `Declare`, host primitives) — **not** a library-only id — typed as an enum for compile-time exhaustiveness over the ~80 impls (the lesson from the `syntax_kind` typing). Active and referenced projects use `VbaProc` and get no native id. Trade-off: the existing emit dispatch is string-keyed; we re-key it to the enum (mechanical, removes the silent `_ => {}` fall-through). **Rejected:** a per-source binding soup (`LibraryCallable`/`ComCoclass`/`ProjectRefItem`) — it rebakes the special-casing this design removes.
 
 3. **Symbol-source acquisition — recommend a lazy `SymbolSource` trait stack, not an eager merged `SymbolModel`.** Lazy querying scales to large reference sets and supports COM-on-demand resolution; eager merge is simpler but rebuilds everything per compile and bloats the hot path. Base-library descriptor cached via `OnceLock`.
 
-4. **Statement-syntax built-ins — keep dedicated grammar, drop hardcoded lowering.** VBA requires the statement syntax; but the node resolves to a `LibImplId` rather than a builder text-match → fixed opcode. Alternative (generic "library statement call") rejected: loses the syntactic fidelity the CST needs.
+4. **Statement-syntax built-ins — keep dedicated grammar, drop hardcoded lowering.** VBA requires the statement syntax; but the node resolves to a `Callable` (`dispatch: Native`) rather than a builder text-match → fixed opcode. Alternative (generic "library statement call") rejected: loses the syntactic fidelity the CST needs.
 
 5. **Typed-symbol model — recommend resolved bindings as attached facts, keep HIR node kinds.** Extend the existing side-table pattern (`HirTypeHooks`) so each name/member expr carries its resolved `Binding`; lowering reads the binding. Avoids a disruptive rewrite of `HirExprKind` while giving lowering everything it needs.
 
