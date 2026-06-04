@@ -1,0 +1,355 @@
+//! The Core IR — a desugared, **fully resolved** tree (the contract's §5 form).
+//!
+//! This is the structured, in-memory shape of a program; [`crate::linearize`]
+//! flattens it to the [`crate::Bundle`] machine ([`crate::isa::Op`]). The two
+//! share a vocabulary but differ in shape: this tree has nested values and
+//! structured control flow; the bundle is a flat slot machine.
+//!
+//! Invariant: the Core IR carries **no symbol references**. Names are already
+//! resolved — callees are a `NativeImplId` / a [`ProcId`] / a COM dispid / a
+//! `Declare` descriptor id; coercion targets use the bundle's enums and
+//! `oxvba_runtime::VarType`; variables are logical [`LocalId`]/[`GlobalId`]s
+//! that `linearize` assigns to slots. That is what keeps `oxvba-bundle`
+//! dependency-light (it never needs the symbol model or the front-end).
+
+use oxvba_runtime::variant::VarType;
+
+use crate::native::NativeImplId;
+use crate::{
+    ArrayElementType, AssignmentIntent, AssignmentTargetKind, ComClassExport, EventRoute,
+    ExternalCallDescriptor, NumericCoerceTarget, ProcedureKind, ProjectMemberKind, StringCompareMode,
+};
+
+// ── Resolved logical ids ──────────────────────────────────────────────────────
+
+/// Index into [`CoreProgram::globals`] — a module-level variable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlobalId(pub usize);
+/// Index into a procedure's locals (params first, then locals, then the
+/// synthetic function-return local).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LocalId(pub usize);
+/// Index into [`CoreProgram::procs`] — a resolved call target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProcId(pub usize);
+/// Index into [`CoreProgram::classes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClassId(pub usize);
+/// A procedure-local label (for `GoTo`/`GoSub`/`On Error GoTo`/`Resume`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LabelId(pub usize);
+
+// ── Program / procedure / class ───────────────────────────────────────────────
+
+/// A complete compilation unit, ready to linearize.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoreProgram {
+    /// Module-level variables; index == [`GlobalId`].
+    pub globals: Vec<CoreGlobal>,
+    /// Procedures; index == [`ProcId`].
+    pub procs: Vec<CoreProc>,
+    /// Project classes; index == [`ClassId`].
+    pub classes: Vec<CoreClass>,
+    /// WithEvents event routes (already resolved; copied verbatim to the bundle).
+    pub event_routes: Vec<EventRoute>,
+    /// `Declare Lib` external-call descriptors (copied verbatim).
+    pub external_calls: Vec<ExternalCallDescriptor>,
+    /// COM-server export descriptors (copied verbatim).
+    pub com_class_exports: Vec<ComClassExport>,
+    /// Entry procedure; `None` ⇒ `Main` (case-insensitive) or the first proc.
+    pub entry: Option<ProcId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreGlobal {
+    pub name: String,
+    /// `Some` for a module-level array (informational; element type for `ReDim`).
+    pub array_element: Option<ArrayElementType>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoreProc {
+    pub name: String,
+    pub kind: ProcedureKind,
+    /// Parameters; occupy the first frame slots in order.
+    pub params: Vec<CoreParam>,
+    /// Locals (block scoping flattened) + the synthetic return local if any.
+    pub locals: Vec<CoreLocal>,
+    /// The local holding the function/property-get result (`None` for a `Sub`).
+    pub return_local: Option<LocalId>,
+    pub body: Vec<CoreStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreParam {
+    pub name: String,
+    /// Callee-side declaration (diagnostics only; the caller decides aliasing).
+    pub by_ref: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreLocal {
+    pub name: String,
+    pub array_element: Option<ArrayElementType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreClass {
+    pub name: String,
+    pub initialize: Option<ProcId>,
+    pub terminate: Option<ProcId>,
+    pub methods: Vec<CoreClassMethod>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreClassMethod {
+    pub name: String,
+    pub kind: ProjectMemberKind,
+    pub proc: ProcId,
+}
+
+// ── Places (l-values) ─────────────────────────────────────────────────────────
+
+/// An assignable / addressable location. `ByRef`-ness of a parameter is NOT a
+/// place kind — it is a [`CoreArg`] property, because in the frame model a
+/// `ByRef` parameter is just a local slot the caller aliased.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CorePlace {
+    Local(LocalId),
+    Global(GlobalId),
+    /// Instance field access (`obj.field`); `field` is the resolved field token.
+    Field { object: Box<CoreValue>, field: i32 },
+    /// Array element (`array(i, j, …)`).
+    Index { array: Box<CorePlace>, indices: Vec<CoreValue> },
+    /// A `WithEvents` sink field: read → `WithEventsGet`, assign → `WithEventsSet`.
+    WithEvents { owner: Box<CoreValue>, binding: i32 },
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/// A typed literal. Floats/date/currency are stored as bit patterns to mirror
+/// the corresponding `Op::Load*` and keep the IR `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CoreConst {
+    Empty,
+    Null,
+    Nothing,
+    Bool(bool),
+    I32(i32),
+    I64(i64),
+    /// IEEE-754 `f64` bit pattern.
+    F64(u64),
+    /// IEEE-754 `f32` bit pattern.
+    F32(u32),
+    /// Currency scaled by 10_000.
+    Currency(i64),
+    /// `Date` serial as `f64` bit pattern.
+    Date(u64),
+    Str(String),
+}
+
+// ── Operators ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreUnOp {
+    Negate,
+    Not,
+}
+
+/// Binary operators. `Is` lowers to object identity; `Like` lowers to the
+/// library; the rest lower to primitive ops (the §6.2 pragmatic exception).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreBinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Mod,
+    Pow,
+    Concat,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+    Is,
+    Like,
+}
+
+/// Where an explicit `Coerce` lands. `ImplicitVariant` is a runtime-implicit
+/// widening that needs no instruction (the VM promotes Variants internally).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoerceTarget {
+    Numeric(NumericCoerceTarget),
+    FixedString(usize),
+    ImplicitVariant(VarType),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PtrKind {
+    Str,
+    Var,
+    VarString,
+    VarVariant,
+    Obj,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrField {
+    Number,
+    Description,
+    Source,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundWhich {
+    Lower,
+    Upper,
+}
+
+// ── Values ────────────────────────────────────────────────────────────────────
+
+/// A value-producing expression. Member access, default-member application, and
+/// property reads are already desugared into `Call`/`Load`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CoreValue {
+    Const(CoreConst),
+    Load(CorePlace),
+    Unary { op: CoreUnOp, expr: Box<CoreValue> },
+    Binary { op: CoreBinOp, lhs: Box<CoreValue>, rhs: Box<CoreValue>, mode: StringCompareMode },
+    /// The one call node — project proc, library, COM, or `Declare`.
+    Call { callee: CoreCallee, args: Vec<CoreArg> },
+    /// `New <Class>` — allocate a project instance and run `Class_Initialize`.
+    New(ClassId),
+    Coerce { value: Box<CoreValue>, to: CoerceTarget },
+    TypeOfIs { object: Box<CoreValue>, type_name: String },
+    Ptr { kind: PtrKind, place: CorePlace },
+    ErrField(ErrField),
+    ArrayLiteral(Vec<CoreValue>),
+    Bound { which: BoundWhich, array: Box<CorePlace> },
+}
+
+/// The resolved target of a [`CoreValue::Call`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum CoreCallee {
+    /// A compiled VBA procedure (active or referenced project).
+    VbaProc { proc: ProcId, member: Option<CoreMemberCall> },
+    /// A base-library / `Declare` / host primitive native body.
+    Native(NativeImplId),
+    /// Early-bound COM dispatch (typed receiver). The receiver is `args[0]`.
+    EarlyCom { dispid: i32, kind: Option<ProjectMemberKind> },
+    /// Late-bound COM dispatch (`Object`/`Variant` receiver, by name).
+    LateDispatch { name: String, kind: Option<ProjectMemberKind> },
+    /// A `Declare Lib` external call (descriptor in `CoreProgram::external_calls`).
+    Declare { descriptor_id: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreMemberCall {
+    pub lowered_name: String,
+    pub kind: ProjectMemberKind,
+}
+
+/// A call argument. `ByRef` passes a place (true alias for slot places;
+/// copy-in/out for field/array-element places).
+#[derive(Debug, Clone, PartialEq)]
+pub enum CoreArg {
+    ByVal(CoreValue),
+    ByRef(CorePlace),
+    Omitted,
+    /// A `name := value` argument (late-bound / COM dispatch).
+    Named { name: String, value: CoreValue },
+}
+
+// ── Statements ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoreBound {
+    pub upper: CoreValue,
+    pub lower: i32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaseClause {
+    Value(CoreValue),
+    Range { lo: CoreValue, hi: CoreValue },
+    /// `Case Is <op> value`; `op` is a comparison [`CoreBinOp`].
+    Is { op: CoreBinOp, value: CoreValue },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitKind {
+    Do,
+    For,
+    Proc,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ErrorOp {
+    OnErrorResumeNext,
+    OnErrorGoto0,
+    OnErrorGotoLabel(LabelId),
+    ResumeNext,
+    Resume,
+    ResumeLabel(LabelId),
+    ClearErr,
+    Raise { code: i32 },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoreIfArm {
+    pub condition: CoreValue,
+    pub body: Vec<CoreStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoreCaseBlock {
+    pub clauses: Vec<CaseClause>,
+    pub body: Vec<CoreStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CoreStmt {
+    /// `Let`/`Set`/implicit assignment. Carries the `ValidateAssignment` metadata.
+    Assign {
+        place: CorePlace,
+        value: CoreValue,
+        intent: AssignmentIntent,
+        target_kind: AssignmentTargetKind,
+        target_name: String,
+        target_type_name: String,
+    },
+    /// A statement-form call (the value is evaluated, the result discarded). All
+    /// file/console/`Debug` I/O statements desugar to `Eval(Call(Native(..)))`.
+    Eval(CoreValue),
+    /// `If` / `ElseIf` chain (`arms[0]` is the `If`); `else_body` may be empty.
+    If { arms: Vec<CoreIfArm>, else_body: Vec<CoreStmt> },
+    /// `Do While/Until … Loop` (pre-check) or `Do … Loop While/Until` (post-check).
+    DoLoop { condition: CoreValue, until: bool, post_check: bool, body: Vec<CoreStmt> },
+    /// `For var = start To end [Step step]`.
+    ForRange {
+        var: CorePlace,
+        start: CoreValue,
+        end: CoreValue,
+        step: Option<CoreValue>,
+        body: Vec<CoreStmt>,
+    },
+    /// `For Each item In source`.
+    ForEach { item: CorePlace, source: CoreValue, body: Vec<CoreStmt> },
+    Exit(ExitKind),
+    Label(LabelId),
+    Goto(LabelId),
+    GoSub(LabelId),
+    /// `Return` from the most recent `GoSub`.
+    GoSubReturn,
+    Error(ErrorOp),
+    /// `ReDim`/`ReDim Preserve`.
+    ReDim { array: CorePlace, bounds: Vec<CoreBound>, element_type: ArrayElementType, preserve: bool },
+    Erase { array: CorePlace, element_type: ArrayElementType },
+    RaiseEvent { source: CoreValue, event: i32, args: Vec<CoreArg> },
+    Select { selector: CoreValue, cases: Vec<CoreCaseBlock>, case_else: Vec<CoreStmt> },
+}

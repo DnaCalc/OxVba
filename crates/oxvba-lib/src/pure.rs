@@ -22,8 +22,8 @@ fn chars(s: &str) -> Vec<char> {
 }
 
 /// Optional trailing compare-mode argument: 0 = binary (default), 1 = text. The
-/// legacy VM threaded `Option Compare` at compile time; `oxvba-temp-b2b` passes
-/// that mode as a trailing argument here.
+/// lowering (`oxvba-bundle::linearize`) supplies that mode as a trailing
+/// argument here, resolved from the source's `Option Compare`.
 fn text_compare(args: &[Variant], index: usize) -> LibResult<bool> {
     match opt(args, index) {
         Some(v) => Ok(as_i32(v)? == 1),
@@ -89,9 +89,9 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
 /// For `InStr`, an optional leading numeric-typed `start` (1-based) is detected
 /// by argument type — the legacy 2-operand form passes a string-typed
 /// `string1`, so this is unambiguous. The trailing compare mode (0 = binary,
-/// 1 = text → ASCII case-insensitive) is supplied by `oxvba-temp-b2b` from the
-/// compile-time `Option Compare`. (`InStrRev`'s own `start` argument awaits the
-/// b2b canonical arg layout.)
+/// 1 = text → ASCII case-insensitive) is supplied by the lowering from the
+/// source's `Option Compare`. (`InStrRev`'s own `start` argument awaits the
+/// canonical arg layout.)
 pub fn instr(args: &[Variant], rev: bool) -> LibResult<Variant> {
     let base = if !rev && args.first().is_some_and(is_numeric_typed) { 1 } else { 0 };
     let start = if base == 1 { as_i32(need(args, 0)?)? } else { 1 };

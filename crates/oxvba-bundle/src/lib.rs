@@ -7,14 +7,23 @@
 //! JIT-targetable. It is built on the `oxvba-runtime` value substrate and has no
 //! dependency on the legacy compiler crate.
 //!
-//! Phase 1 runs this in-memory (front-end → legacy bundle → `oxvba-temp-b2b` →
-//! this bundle → `oxvba-vm2`); serialization (`.oxb`) is a later concern.
+//! A program reaches this bundle through `coreir` + `linearize` (the binder that
+//! builds `coreir` from source is the remaining upstream piece), then runs on
+//! `oxvba-vm2`; serialization (`.oxb`) is a later concern.
 
+pub mod coreir;
 pub mod isa;
+pub mod linearize;
 pub mod native;
 
 pub use isa::{CallArg, NativeCallee, Op, ProcArg};
+pub use linearize::{LinearizeError, linearize};
 pub use native::{LibraryModule, NativeImplId};
+
+pub use coreir::{
+    CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreConst, CoreParam, CorePlace, CoreProc,
+    CoreProgram, CoreStmt, CoreUnOp, CoreValue, GlobalId, LabelId, LocalId, ProcId,
+};
 
 use oxvba_runtime::DynLinkSymbol;
 

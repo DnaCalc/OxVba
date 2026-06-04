@@ -1126,7 +1126,12 @@ impl<'h> Vm<'h> {
             }
             Op::ArrayResize { dst, upper_bounds, lower_bounds, .. } => {
                 let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
-                let array = SafeArray::from_shape(bounds).map_err(Fault::from_string)?;
+                let count: usize = bounds.iter().map(|b| b.count as usize).product();
+                // `from_shape` alone leaves a null payload (no element storage); a
+                // freshly `ReDim`-ed array must hold `count` Empty elements so a
+                // following `ArraySet`/`ArrayGet` lands in range.
+                let array = SafeArray::from_shape_and_variants(bounds, vec![Variant::empty(); count])
+                    .map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(array))?;
             }
             Op::ArrayResizePreserve { dst, upper_bounds, lower_bounds, .. } => {
@@ -1136,16 +1141,16 @@ impl<'h> Vm<'h> {
                     .and_then(|a| a.variant_elements())
                     .unwrap_or_default();
                 let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
-                let array = SafeArray::from_shape(bounds).map_err(Fault::from_string)?;
-                let mut elems = array.variant_elements().unwrap_or_default();
+                let count: usize = bounds.iter().map(|b| b.count as usize).product();
+                let mut elems = vec![Variant::empty(); count];
                 for (i, value) in old.into_iter().enumerate() {
                     if i < elems.len() {
                         elems[i] = value;
                     }
                 }
-                let resized =
-                    array.replace_variant_elements(elems).map_err(Fault::from_string)?;
-                self.set(*dst, Variant::from_safearray(resized))?;
+                let array = SafeArray::from_shape_and_variants(bounds, elems)
+                    .map_err(Fault::from_string)?;
+                self.set(*dst, Variant::from_safearray(array))?;
             }
             Op::ArrayGet { dst, array, indices } => {
                 let arr = self.array_of(*array)?;
