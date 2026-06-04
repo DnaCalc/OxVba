@@ -1,0 +1,11 @@
+[package]
+name = "oxvba-bundle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Clean, slim execution target: primitive instruction set + native-call + metadata package."
+
+[dependencies]
+oxvba-runtime.workspace = true
