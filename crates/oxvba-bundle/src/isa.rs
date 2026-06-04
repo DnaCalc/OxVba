@@ -44,6 +44,18 @@ pub enum CallArg {
     Named { name: String, slot: usize },
 }
 
+/// A single argument to a `CallProc` (a compiled VBA procedure). VBA passes
+/// `ByRef` by default: the callee operates on the caller's storage. The clean
+/// convention is copy-in / copy-out — `ByRef(slot)` copies the caller slot into
+/// the parameter on entry and copies the parameter back to that slot on return;
+/// `ByVal(slot)` copies in only; `Omitted` leaves an optional parameter unset.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcArg {
+    ByVal(usize),
+    ByRef(usize),
+    Omitted,
+}
+
 /// One instruction of the clean bundle.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
@@ -106,7 +118,16 @@ pub enum Op {
     // ── Control flow ─────────────────────────────────────────
     Jump { target_pc: usize },
     JumpIfZero { cond_slot: usize, target_pc: usize },
-    CallProc { target_pc: usize, member: Option<ProjectMemberCall> },
+    /// Call a compiled VBA procedure. `proc` indexes `Bundle::procedures` (which
+    /// carries the callee's frame layout and return slot); `dst` receives the
+    /// return value (`None` for a `Sub`); `args` are bound to the parameter slots
+    /// per the copy-in/copy-out convention (see [`ProcArg`]).
+    CallProc {
+        proc: usize,
+        dst: Option<usize>,
+        args: Vec<ProcArg>,
+        member: Option<ProjectMemberCall>,
+    },
     CallNative { dst: Option<usize>, callee: NativeCallee, args: Vec<CallArg> },
     Return,
     Halt,

@@ -13,7 +13,7 @@
 pub mod isa;
 pub mod native;
 
-pub use isa::{CallArg, NativeCallee, Op};
+pub use isa::{CallArg, NativeCallee, Op, ProcArg};
 pub use native::{LibraryModule, NativeImplId};
 
 use oxvba_runtime::DynLinkSymbol;
@@ -159,13 +159,25 @@ pub enum ProcedureKind {
     PropertySet,
 }
 
-/// A compiled procedure: its name, byte-offset entry, kind, and arity.
+/// A compiled procedure: its name, entry pc, kind, arity, and frame layout.
+///
+/// Slots are a flat file (`Bundle::slot_count`); each procedure owns the range
+/// `[frame_base, frame_base + frame_slots)`, with parameters in the first
+/// `param_count` slots of that range. The VM snapshots and restores a
+/// procedure's range across a call so recursion is safe; module-level globals
+/// live in slots outside every procedure's range and therefore persist.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcedureDescriptor {
     pub name: String,
     pub entry_pc: usize,
     pub kind: ProcedureKind,
     pub param_count: usize,
+    /// Absolute start of this procedure's slot range in the flat slot file.
+    pub frame_base: usize,
+    /// Number of slots this procedure owns (params + locals + temporaries).
+    pub frame_slots: usize,
+    /// Absolute slot holding the function's return value (`None` for a `Sub`).
+    pub return_slot: Option<usize>,
 }
 
 /// pc → source line, for diagnostics / error reporting / debugging.
