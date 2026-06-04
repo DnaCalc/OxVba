@@ -40,10 +40,18 @@ use oxvba_com::{
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::{LibContext, LibError};
-use oxvba_runtime::object_ref::ObjectRef;
+use oxvba_runtime::object_ref::{
+    ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
+    RuntimeInterfaceDescriptor,
+};
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, pointer_helpers};
+
+/// Project-instance ids start above any class route key (a class's `route_key`
+/// is its index, so this keeps `compat_identity != route_key`, i.e. every
+/// allocation reads as a true project instance, not a template/compat object).
+const INSTANCE_ID_BASE: i32 = 0x1000_0000;
 
 use arith::CmpOp;
 
@@ -146,6 +154,17 @@ pub struct Vm<'h> {
     for_each: HashMap<usize, ForEachState>,
     withevents: HashMap<i64, Variant>,
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
+    /// Leaked `&'static` class descriptors, one per `bundle.classes` entry, for
+    /// `ObjectRef::from_project_instance`.
+    class_descriptors: Vec<&'static RuntimeClassDescriptor>,
+    /// Monotonic per-instance identity counter (the IUnknown is the true
+    /// identity; this is the lookup key).
+    next_instance_id: i32,
+    /// O(1) statement-boundary test (drains pending terminations at boundaries).
+    statement_start_set: std::collections::HashSet<usize>,
+    /// Re-entrancy guard so a `Class_Terminate` drain doesn't recursively drain;
+    /// cascades are handled by the drain loop instead.
+    draining: bool,
 }
 
 /// Run a bundle from its entry point, returning the VM (for slot inspection).
@@ -166,6 +185,19 @@ impl<'h> Vm<'h> {
             saved_error_mode: ErrorMode::None,
             saved_resume: ResumePoint::default(),
         };
+        // Leak one `&'static RuntimeClassDescriptor` per class (descriptors live
+        // for the VM's lifetime; `from_project_instance` requires `'static`).
+        let class_descriptors = bundle
+            .classes
+            .iter()
+            .map(|class| {
+                let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
+                let interfaces: &'static [RuntimeInterfaceDescriptor] =
+                    Box::leak(Box::new([RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR]));
+                &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
+            })
+            .collect();
+        let statement_start_set = bundle.statement_starts.iter().copied().collect();
         Self {
             bundle,
             host,
@@ -182,6 +214,10 @@ impl<'h> Vm<'h> {
             for_each: HashMap::new(),
             withevents: HashMap::new(),
             withevents_iters: Vec::new(),
+            class_descriptors,
+            next_instance_id: INSTANCE_ID_BASE,
+            statement_start_set,
+            draining: false,
         }
     }
 
@@ -194,7 +230,15 @@ impl<'h> Vm<'h> {
     /// Drive the instruction stream until `Halt`, a `Return` from the entry
     /// frame, the end of the ops, or an uncaught error.
     pub fn run(&mut self) -> Result<(), VmError> {
+        // Start from a clean termination queue (the queue is thread-local; the VM
+        // is single-threaded, so this isolates one run from the next).
+        oxvba_runtime::reset_pending_terminations();
         while !self.halted && self.pc < self.bundle.ops.len() {
+            // At a statement boundary, run any `Class_Terminate`s parked by the
+            // statement that just completed (VBA statement-granular timing).
+            if self.statement_start_set.contains(&self.pc) {
+                self.maybe_drain();
+            }
             let op = self.bundle.ops[self.pc].clone();
             self.next_pc = self.pc + 1;
             match self.exec(&op) {
@@ -287,10 +331,25 @@ impl<'h> Vm<'h> {
         ResumePoint { start, next }
     }
 
-    /// Route a raised fault: into `Resume Next`/handler-goto if a handler is
-    /// active, otherwise unwind the call stack; an uncaught fault becomes a
-    /// [`VmError`] out of [`run`].
+    /// Route a raised fault for the top-level loop: handle it (Resume/handler) or
+    /// unwind to an ancestor handler; an uncaught fault becomes a [`VmError`].
+    /// Object locals dropped during the unwind are released and their
+    /// `Class_Terminate`s drained (fixing the legacy error-path gap).
     fn dispatch_fault(&mut self, fault: Fault) -> Result<(), VmError> {
+        let (code, message) = (fault.code, fault.message.clone());
+        let handled = self.route_fault(fault, 1);
+        self.maybe_drain();
+        if handled {
+            Ok(())
+        } else {
+            Err(VmError { code, message })
+        }
+    }
+
+    /// Walk handlers / unwind frames until the fault is handled or it would
+    /// escape `floor` frames (1 = the entry frame for the top level; `base` for a
+    /// nested `Class_Initialize`/`Terminate` run). Returns whether it was handled.
+    fn route_fault(&mut self, fault: Fault, floor: usize) -> bool {
         self.set_err(fault.code, &fault.message);
         let mut errored_pc = self.pc;
         loop {
@@ -298,18 +357,19 @@ impl<'h> Vm<'h> {
                 ErrorMode::ResumeNext => {
                     self.resume = self.statement_bounds(errored_pc);
                     self.pc = self.resume.next;
-                    return Ok(());
+                    return true;
                 }
                 ErrorMode::Goto(handler) => {
                     self.resume = self.statement_bounds(errored_pc);
                     self.pc = handler;
-                    return Ok(());
+                    return true;
                 }
                 ErrorMode::None => {
-                    // Unwind to the caller; the error now "occurs" at the call site.
-                    if self.frames.len() <= 1 {
-                        return Err(VmError { code: fault.code, message: fault.message });
+                    if self.frames.len() <= floor {
+                        return false;
                     }
+                    // Unwind one frame; dropping its locals releases object locals
+                    // on every exit path. The error now "occurs" at the call site.
                     let frame = self.frames.pop().unwrap();
                     errored_pc = frame.return_pc.saturating_sub(1);
                     self.error_mode = frame.saved_error_mode;
@@ -385,7 +445,109 @@ impl<'h> Vm<'h> {
         if let (Some(place), Some(value)) = (frame.dst, return_value) {
             self.write_place(place, value)?;
         }
+        // Object locals dropped with the frame above may have hit refcount 0;
+        // run their `Class_Terminate`s at this procedure epilogue.
+        drop(frame);
+        self.maybe_drain();
         Ok(())
+    }
+
+    /// Run all parked `Class_Terminate`s to completion. Re-entrancy-guarded: a
+    /// Terminate that releases children parks them, and the loop picks them up on
+    /// the next iteration, so we never recurse into a nested drain.
+    fn maybe_drain(&mut self) {
+        if self.draining {
+            return;
+        }
+        self.draining = true;
+        while oxvba_runtime::has_pending_terminations() {
+            for (instance_id, route_key) in oxvba_runtime::take_pending_terminations() {
+                let terminate =
+                    self.bundle.classes.get(route_key as usize).and_then(|class| class.terminate);
+                if let (Some(proc), Some(object)) =
+                    (terminate, oxvba_runtime::retained_parked_termination_object(instance_id))
+                {
+                    // Terminate runs under a fresh error scope; an unhandled error
+                    // in it is swallowed (observed VBA teardown behavior).
+                    let _ = self.run_method_to_completion(
+                        proc,
+                        Variant::from_object_ref(object),
+                        true,
+                    );
+                }
+                oxvba_runtime::finish_pending_termination(instance_id);
+                // Drop any WithEvents bindings owned by the terminated instance.
+                self.withevents
+                    .retain(|key, _| Self::withevents_owner(*key).raw() != instance_id);
+            }
+        }
+        self.draining = false;
+    }
+
+    /// Run a project procedure (`Class_Initialize`/`Terminate`) to completion with
+    /// `me` bound as the hidden first local, isolated from the main cursor. With
+    /// `suppress`, an unhandled fault inside is swallowed; otherwise it is
+    /// returned (so `Class_Initialize` errors propagate to the `New`).
+    fn run_method_to_completion(
+        &mut self,
+        proc: usize,
+        me: Variant,
+        suppress: bool,
+    ) -> Result<(), Fault> {
+        let desc = self
+            .bundle
+            .procedures
+            .get(proc)
+            .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
+        let (frame_slots, entry) = (desc.frame_slots.max(1), desc.entry_pc);
+        let base = self.frames.len();
+        let saved = (self.pc, self.next_pc, self.halted, self.error_mode, self.resume);
+
+        let mut locals = vec![Variant::empty(); frame_slots];
+        locals[0] = me; // Me is the hidden first parameter
+        self.frames.push(Frame {
+            locals,
+            aliases: HashMap::new(),
+            dst: None,
+            return_slot: None,
+            return_pc: 0,
+            saved_error_mode: self.error_mode,
+            saved_resume: self.resume,
+        });
+        self.error_mode = ErrorMode::None;
+        self.pc = entry;
+        self.halted = false;
+
+        let mut result = Ok(());
+        while self.frames.len() > base && !self.halted && self.pc < self.bundle.ops.len() {
+            if self.statement_start_set.contains(&self.pc) {
+                self.maybe_drain();
+            }
+            let op = self.bundle.ops[self.pc].clone();
+            self.next_pc = self.pc + 1;
+            match self.exec(&op) {
+                Ok(()) => self.pc = self.next_pc,
+                Err(fault) => {
+                    if !self.route_fault(fault.clone(), base) {
+                        if !suppress {
+                            result = Err(fault);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        // Discard any frames left above the baseline (suppressed/forced exit),
+        // releasing their object locals.
+        while self.frames.len() > base {
+            self.frames.pop();
+        }
+        self.pc = saved.0;
+        self.next_pc = saved.1;
+        self.halted = saved.2;
+        self.error_mode = saved.3;
+        self.resume = saved.4;
+        result
     }
 
     // ── Native dispatch ──────────────────────────────────────────────────────
@@ -860,6 +1022,48 @@ impl<'h> Vm<'h> {
             Op::TypeOfIs { dst, object_slot, type_name } => {
                 let matches = self.type_of_is(*object_slot, type_name)?;
                 self.set(*dst, Variant::from_bool(matches))?;
+            }
+
+            // ── Project objects (New / fields) ──
+            Op::NewObject { dst, class } => {
+                let class_idx = *class;
+                let descriptor = *self
+                    .class_descriptors
+                    .get(class_idx)
+                    .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
+                let meta = self
+                    .bundle
+                    .classes
+                    .get(class_idx)
+                    .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
+                let has_terminate = meta.terminate.is_some();
+                let initialize = meta.initialize;
+                let instance_id = self.next_instance_id;
+                self.next_instance_id += 1;
+                let object = ObjectRef::from_project_instance(
+                    instance_id,
+                    class_idx as i32,
+                    has_terminate,
+                    descriptor,
+                );
+                if let Some(init) = initialize {
+                    self.run_method_to_completion(
+                        init,
+                        Variant::from_object_ref(object.clone()),
+                        false,
+                    )?;
+                }
+                self.set(*dst, Variant::from_object_ref(object))?;
+            }
+            Op::FieldGet { dst, object, field } => {
+                let instance = variant_to_object(self.get(*object)?)?;
+                let value = instance.project_field_get(*field).unwrap_or_else(Variant::empty);
+                self.set(*dst, value)?;
+            }
+            Op::FieldSet { object, field, src } => {
+                let value = self.cloned(*src)?;
+                let instance = variant_to_object(self.get(*object)?)?;
+                instance.project_field_set(*field, value);
             }
 
             // ── Pointer helpers ──

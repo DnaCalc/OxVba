@@ -7,8 +7,8 @@
 //! procedure's slot `n` and the caller's slot `n` are distinct storage.
 
 use oxvba_bundle::{
-    Bundle, NativeCallee, NativeImplId, Op, ProcArg, ProcedureDescriptor, ProcedureKind,
-    StringCompareMode, isa::CallArg,
+    Bundle, ClassDescriptor, NativeCallee, NativeImplId, Op, ProcArg, ProcedureDescriptor,
+    ProcedureKind, StringCompareMode, isa::CallArg,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -25,6 +25,7 @@ fn bundle_full(
     entry_frame_slots: usize,
     statement_starts: Vec<usize>,
     procedures: Vec<ProcedureDescriptor>,
+    classes: Vec<ClassDescriptor>,
 ) -> Bundle {
     Bundle {
         ops,
@@ -36,22 +37,37 @@ fn bundle_full(
         external_calls: Vec::new(),
         source_map: Vec::new(),
         com_class_exports: Vec::new(),
+        classes,
     }
 }
 
 fn bundle(ops: Vec<Op>, entry_frame_slots: usize, procedures: Vec<ProcedureDescriptor>) -> Bundle {
-    bundle_full(ops, 0, entry_frame_slots, Vec::new(), procedures)
+    bundle_full(ops, 0, entry_frame_slots, Vec::new(), procedures, Vec::new())
 }
 
 fn func(name: &str, entry_pc: usize, frame_slots: usize, return_slot: Option<usize>) -> ProcedureDescriptor {
+    proc(name, entry_pc, 1, frame_slots, return_slot)
+}
+
+fn proc(
+    name: &str,
+    entry_pc: usize,
+    param_count: usize,
+    frame_slots: usize,
+    return_slot: Option<usize>,
+) -> ProcedureDescriptor {
     ProcedureDescriptor {
         name: name.to_string(),
         entry_pc,
         kind: if return_slot.is_some() { ProcedureKind::Function } else { ProcedureKind::Sub },
-        param_count: 1,
+        param_count,
         frame_slots,
         return_slot,
     }
+}
+
+fn class(name: &str, initialize: Option<usize>, terminate: Option<usize>) -> ClassDescriptor {
+    ClassDescriptor { name: name.to_string(), initialize, terminate }
 }
 
 #[test]
@@ -182,6 +198,7 @@ fn global_persists_across_calls() {
             frame_slots: 0,
             return_slot: None,
         }],
+        Vec::new(),
     );
     let h = host();
     let vm = run(&b, &h).unwrap();
@@ -245,6 +262,7 @@ fn resume_next_is_statement_granular() {
         2,
         vec![0, 1, 4, 5],
         Vec::new(),
+        Vec::new(),
     );
     let h = host();
     let vm = run(&b, &h).unwrap();
@@ -276,4 +294,179 @@ fn uncaught_error_surfaces() {
     let b = bundle(vec![Op::RaiseError { code: 6 }, Op::Halt], 1, Vec::new());
     let h = host();
     assert!(matches!(run(&b, &h), Err(e) if e.code == 6));
+}
+
+// ── Object lifecycle (New / Initialize / fields / refcount / Terminate) ───────
+
+#[test]
+fn new_runs_initialize_and_fields() {
+    // obj = New D ; x = obj.f10 ; where Class_Initialize sets f10 = 42.
+    let b = bundle(
+        vec![
+            Op::NewObject { dst: 0, class: 0 },                  // 0 obj = New D
+            Op::FieldGet { dst: 1, object: 0, field: 10 },       // 1 x = obj.f10
+            Op::Halt,                                            // 2
+            Op::LoadI32 { slot: 1, value: 42 },                  // 3 Initialize: temp = 42 (Me = local 0)
+            Op::FieldSet { object: 0, field: 10, src: 1 },       // 4 Me.f10 = 42
+            Op::Return,                                          // 5
+        ],
+        2,
+        vec![proc("Init", 3, 1, 2, None)],
+    );
+    let b = with_classes(b, vec![class("D", Some(0), None)]);
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(1).unwrap().as_i32(), Some(42));
+}
+
+#[test]
+fn terminate_runs_on_scope_exit() {
+    // Sub Make: Dim o As New C (local) ; on End Sub the local releases → Terminate
+    // sets global 0 = 7.
+    let b = object_program(
+        vec![
+            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::Halt,                                                        // 1
+            Op::NewObject { dst: 1, class: 0 },                              // 2 Make: local 0 (slot 1) = New C
+            Op::Return,                                                      // 3
+            Op::LoadI32 { slot: 0, value: 7 },                               // 4 Terminate: global 0 = 7
+            Op::Return,                                                      // 5
+        ],
+        vec![proc("Make", 2, 0, 1, None), proc("Term", 4, 1, 1, None)],
+        Some(1),
+    );
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(0).unwrap().as_i32(), Some(7));
+}
+
+#[test]
+fn two_holders_terminate_exactly_once() {
+    // a = New C ; b = a (two references) ; on scope exit Terminate fires ONCE.
+    let b = object_program(
+        vec![
+            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::Halt,                                                        // 1
+            Op::NewObject { dst: 1, class: 0 },                              // 2 a = New C
+            Op::Copy { dst: 2, src: 1 },                                     // 3 b = a (refcount 2)
+            Op::Return,                                                      // 4
+            Op::IncSlot { slot: 0 },                                         // 5 Terminate: global 0 += 1
+            Op::Return,                                                      // 6
+        ],
+        vec![proc("MakeTwo", 2, 0, 3, None), proc("Term", 5, 1, 1, None)],
+        Some(1),
+    );
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    // `Empty + 1` promotes to Double in VBA, so the counter reads as f64.
+    assert_eq!(vm.slot(0).unwrap().as_f64(), Some(1.0), "exactly one Class_Terminate");
+}
+
+#[test]
+fn terminate_runs_during_error_unwind() {
+    // Bad creates a local, then errors; the error unwinds Bad (releasing the
+    // local) and is caught at the top by Resume Next — Terminate must still run.
+    let b = object_program(
+        vec![
+            Op::SetOnErrorResumeNext,                                        // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 1
+            Op::Halt,                                                        // 2
+            Op::NewObject { dst: 1, class: 0 },                              // 3 Bad: a = New C
+            Op::RaiseError { code: 5 },                                      // 4 uncaught in Bad → unwind
+            Op::Return,                                                      // 5
+            Op::LoadI32 { slot: 0, value: 7 },                               // 6 Terminate: global 0 = 7
+            Op::Return,                                                      // 7
+        ],
+        vec![proc("Bad", 3, 0, 1, None), proc("Term", 6, 1, 1, None)],
+        Some(1),
+    );
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(0).unwrap().as_i32(), Some(7), "Terminate runs on error unwind");
+}
+
+#[test]
+fn error_in_terminate_is_suppressed() {
+    // Class_Terminate sets global 0 = 7 then raises — the error must be swallowed
+    // (run succeeds, the side effect is visible).
+    let b = object_program(
+        vec![
+            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::Halt,                                                        // 1
+            Op::NewObject { dst: 1, class: 0 },                              // 2 Make
+            Op::Return,                                                      // 3
+            Op::LoadI32 { slot: 0, value: 7 },                               // 4 Terminate: global 0 = 7
+            Op::RaiseError { code: 5 },                                      // 5 uncaught in Terminate → suppressed
+            Op::Return,                                                      // 6
+        ],
+        vec![proc("Make", 2, 0, 1, None), proc("Term", 4, 1, 1, None)],
+        Some(1),
+    );
+    let h = host();
+    let vm = run(&b, &h).expect("error in Terminate must not propagate");
+    assert_eq!(vm.slot(0).unwrap().as_i32(), Some(7));
+}
+
+#[test]
+fn reference_cycle_leaks_without_terminate() {
+    // a.f = b ; b.f = a ; on scope exit each is still referenced by the other →
+    // neither reaches refcount 0 → Class_Terminate never runs (VBA-consistent).
+    let b = object_program(
+        vec![
+            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::Halt,                                                        // 1
+            Op::NewObject { dst: 1, class: 0 },                              // 2 a
+            Op::NewObject { dst: 2, class: 0 },                              // 3 b
+            Op::FieldSet { object: 1, field: 10, src: 2 },                   // 4 a.f = b
+            Op::FieldSet { object: 2, field: 10, src: 1 },                   // 5 b.f = a
+            Op::Return,                                                      // 6
+            Op::IncSlot { slot: 0 },                                         // 7 Terminate: global 0 += 1
+            Op::Return,                                                      // 8
+        ],
+        vec![proc("MakeCycle", 2, 0, 3, None), proc("Term", 7, 1, 1, None)],
+        Some(1),
+    );
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    // Terminate never ran, so the counter is untouched (Empty ⇒ 0).
+    assert_eq!(vm.slot(0).unwrap().as_f64().unwrap_or(0.0), 0.0, "cycle leaks; no Terminate");
+}
+
+#[test]
+fn array_element_release_runs_terminate() {
+    // arr = Array(a) AddRefs a ; clearing both the local and the array drops the
+    // last reference → Terminate fires (proves array elements are refcounted).
+    let b = object_program(
+        vec![
+            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::Halt,                                                        // 1
+            Op::NewObject { dst: 1, class: 0 },                              // 2 a = New C (refcount 1)
+            Op::ArrayLiteral { dst: 2, values: vec![1] },                    // 3 arr = Array(a) (refcount 2)
+            Op::LoadEmpty { slot: 1 },                                       // 4 a = Nothing (refcount 1)
+            Op::LoadEmpty { slot: 2 },                                       // 5 arr = Nothing → element released (0)
+            Op::Return,                                                      // 6
+            Op::IncSlot { slot: 0 },                                         // 7 Terminate: global 0 += 1
+            Op::Return,                                                      // 8
+        ],
+        vec![proc("MakeArr", 2, 0, 3, None), proc("Term", 7, 1, 1, None)],
+        Some(1),
+    );
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(0).unwrap().as_f64(), Some(1.0), "array element release runs Terminate");
+}
+
+/// Helper: a program with one class `C` whose `Class_Terminate` is the proc at
+/// `terminate` (and no `Class_Initialize`), `global_count = 1`, no entry locals.
+fn object_program(
+    ops: Vec<Op>,
+    procedures: Vec<ProcedureDescriptor>,
+    terminate: Option<usize>,
+) -> Bundle {
+    bundle_full(ops, 1, 0, Vec::new(), procedures, vec![class("C", None, terminate)])
+}
+
+fn with_classes(mut b: Bundle, classes: Vec<ClassDescriptor>) -> Bundle {
+    b.classes = classes;
+    b
 }

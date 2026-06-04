@@ -195,6 +195,21 @@ pub struct ComClassExport {
     pub creatable: bool,
 }
 
+/// A project class: its name and the entry procedures for its lifecycle hooks.
+/// Instances are allocated by [`Op::NewObject`] and refcounted via the runtime
+/// IUnknown object model; `Class_Initialize` runs on construction and
+/// `Class_Terminate` when the last reference is released. Methods/properties are
+/// ordinary procedures called with the instance as a hidden `Me` argument; field
+/// state is reached via [`Op::FieldGet`]/[`Op::FieldSet`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassDescriptor {
+    pub name: String,
+    /// `Class_Initialize` procedure index (run on `New`), if any.
+    pub initialize: Option<usize>,
+    /// `Class_Terminate` procedure index (run on final release), if any.
+    pub terminate: Option<usize>,
+}
+
 // ── The bundle ───────────────────────────────────────────────────────────────
 
 /// A complete, runnable program: the instruction stream plus the metadata the VM
@@ -223,6 +238,8 @@ pub struct Bundle {
     pub source_map: Vec<SourceLineMapping>,
     /// COM-server export descriptors (hosting; empty for ordinary programs).
     pub com_class_exports: Vec<ComClassExport>,
+    /// Project class table (instances allocated by `Op::NewObject`).
+    pub classes: Vec<ClassDescriptor>,
 }
 
 impl Bundle {
@@ -238,6 +255,7 @@ impl Bundle {
             external_calls: Vec::new(),
             source_map: Vec::new(),
             com_class_exports: Vec::new(),
+            classes: Vec::new(),
         }
     }
 

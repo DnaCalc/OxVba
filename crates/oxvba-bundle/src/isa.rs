@@ -163,6 +163,16 @@ pub enum Op {
     WithEventsNextOwner { dst: usize },
     TypeOfIs { dst: usize, object_slot: usize, type_name: String },
 
+    // ── Project objects (instances + fields) ─────────────────
+    /// Allocate a fresh instance of `class` (index into `Bundle::classes`), run
+    /// its `Class_Initialize`, and store the object reference in `dst`. The
+    /// instance is a refcounted IUnknown; release drives `Class_Terminate`.
+    NewObject { dst: usize, class: usize },
+    /// Read instance field `field` (a field token) of the object in `object`.
+    FieldGet { dst: usize, object: usize, field: i32 },
+    /// Write `src` into instance field `field` of the object in `object`.
+    FieldSet { object: usize, field: i32, src: usize },
+
     // ── Pointer helpers ──────────────────────────────────────
     PtrStr { dst: usize, src: usize },
     PtrVar { dst: usize, src: usize },
