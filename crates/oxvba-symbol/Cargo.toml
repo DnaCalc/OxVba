@@ -1,0 +1,18 @@
+[package]
+name = "oxvba-symbol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Uniform VBA symbol model: scope chain, providers (VBA library/intrinsics, COM typelib, cross-module projects, Declare, host), and source-agnostic resolution feeding the binder."
+
+[dependencies]
+oxvba-runtime.workspace = true
+oxvba-syntax.workspace = true
+oxvba-com.workspace = true
+oxvba-bundle.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+oxvba-com = { workspace = true, features = ["fixture-typelibs"] }

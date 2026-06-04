@@ -1,0 +1,670 @@
+//! `ModuleScanner` — walk a module's lossless CST and declare its symbols
+//! (procedures with signatures, properties, events, `Declare`s, types/enums,
+//! fields/consts) into the symbol table. One code path, used for the active
+//! module and every sibling / referenced-project module. Ported from the legacy
+//! `frontend_symbols` CST collection, signature-aware (no text-parsing fallback).
+
+use oxvba_bundle::DeclareParamType;
+use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
+
+use crate::manifest::ModuleUnit;
+use crate::model::{
+    fold_identifier, PropertyGroup, ScopeId, SourceProvenance, SourceSpan, SymbolId, SymbolImpl,
+    SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable,
+};
+use crate::signature::SignatureId;
+use crate::providers::declare::{CallConv, DeclareSymbol};
+use crate::signature::{
+    BuiltinType, CallShape, DefaultValue, Param, PassingMode, Signature, SignatureTable, VarTypeRef,
+};
+
+/// One module's declared surface, for the project index.
+#[derive(Debug, Clone)]
+pub struct ModuleScan {
+    pub module_name: String,
+    pub module_scope: ScopeId,
+    pub members: Vec<ScannedMember>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScannedMember {
+    /// The logical member name, folded.
+    pub name_folded: String,
+    pub symbol: SymbolId,
+    pub kind: SymbolKind,
+    pub namespace: SymbolNamespace,
+    /// `Attribute VB_UserMemId = 0` — this is the type's default member.
+    pub is_default: bool,
+}
+
+/// Scan `module` into a fresh module scope under `project_scope`.
+pub fn scan_module(
+    symbols: &mut SymbolTable,
+    signatures: &mut SignatureTable,
+    next_descriptor_id: &mut u32,
+    module: &ModuleUnit,
+    project_scope: ScopeId,
+) -> Result<ModuleScan, SymbolModelError> {
+    let module_name = if module.attributes.vb_name.is_empty() {
+        module.module_name.clone()
+    } else {
+        module.attributes.vb_name.clone()
+    };
+    symbols.declare_symbol(
+        project_scope,
+        SymbolNamespace::Module,
+        SymbolKind::Module,
+        &module_name,
+        SourceProvenance { module_name: Some(module_name.clone()), span: None },
+        SymbolImpl::None,
+    )?;
+    let module_scope = symbols.add_scope(crate::model::ScopeKind::Module, project_scope, Some(&module_name))?;
+
+    let parsed = oxvba_syntax::parse(&module.source);
+    if !parsed.errors().is_empty() {
+        return Err(SymbolModelError::Syntax(format!("{:?}", parsed.errors())));
+    }
+
+    let mut scan = ModuleScan { module_name: module_name.clone(), module_scope, members: Vec::new() };
+    let mut ctx = ScanCtx { symbols, signatures, next_descriptor_id, scan: &mut scan, module_name: &module_name };
+    ctx.walk(module_scope, parsed.syntax(), true)?;
+    Ok(scan)
+}
+
+struct ScanCtx<'a> {
+    symbols: &'a mut SymbolTable,
+    signatures: &'a mut SignatureTable,
+    next_descriptor_id: &'a mut u32,
+    scan: &'a mut ModuleScan,
+    module_name: &'a str,
+}
+
+impl ScanCtx<'_> {
+    fn walk(&mut self, scope: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
+        match node.kind() {
+            SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl => {
+                self.scan_procedure(scope, node, module_level)?;
+                return Ok(());
+            }
+            SyntaxKind::DeclareStmt => {
+                self.scan_declare(scope, node, module_level)?;
+            }
+            SyntaxKind::EventDecl => {
+                if let Some(token) = first_identifier_token(node) {
+                    let name = normalize_identifier_token(token.text);
+                    let sig = self.signatures.alloc(self.build_signature(node, CallShape::EventRaise));
+                    self.declare(scope, SymbolNamespace::Member, SymbolKind::Event, name, token, SymbolImpl::Signature(sig), module_level)?;
+                }
+            }
+            SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
+                if let Some(token) = first_identifier_token(node) {
+                    let name = normalize_identifier_token(token.text);
+                    let kind = if node.kind() == SyntaxKind::EnumBlock { SymbolKind::Enum } else { SymbolKind::Type };
+                    self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level)?;
+                }
+            }
+            SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
+                let with_events = node
+                    .child_tokens()
+                    .iter()
+                    .any(|token| token.kind == SyntaxKind::KwWithEvents);
+                let is_const = node.kind() == SyntaxKind::ConstStmt;
+                let declared_type = type_ref_in(node);
+                for token in declaration_name_tokens(node) {
+                    let name = normalize_identifier_token(token.text);
+                    let (ns, kind) = if !module_level {
+                        (SymbolNamespace::Local, SymbolKind::Local)
+                    } else if is_const {
+                        (SymbolNamespace::Local, SymbolKind::Const)
+                    } else if with_events {
+                        (SymbolNamespace::Member, SymbolKind::WithEventsField)
+                    } else {
+                        (SymbolNamespace::Member, SymbolKind::Field)
+                    };
+                    let imp = SymbolImpl::DeclaredType(declared_type.clone());
+                    self.declare(scope, ns, kind, name, token, imp, module_level)?;
+                }
+            }
+            _ => {}
+        }
+        for child in node.child_nodes() {
+            self.walk(scope, child, module_level)?;
+        }
+        Ok(())
+    }
+
+    fn scan_procedure(&mut self, parent: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
+        let Some(name_token) = first_identifier_token(node) else {
+            return Ok(());
+        };
+        let logical = normalize_identifier_token(name_token.text).to_string();
+        let is_default = is_default_member_node(node);
+        let sig = self.signatures.alloc(self.build_signature(node, CallShape::Ordinary));
+
+        if node.kind() == SyntaxKind::PropertyDecl {
+            // One logical member; merge this accessor into its property group.
+            let accessor = property_accessor(node);
+            let existing = self
+                .symbols
+                .find_in_scope(parent, SymbolNamespace::Procedure, &logical)?
+                .filter(|id| matches!(self.symbols.symbol(*id).map(|s| s.kind), Some(SymbolKind::Property)));
+            match existing {
+                Some(id) => {
+                    let mut group = match &self.symbols.symbol(id).expect("symbol").imp {
+                        SymbolImpl::Property(group) => group.clone(),
+                        _ => PropertyGroup::default(),
+                    };
+                    set_accessor(&mut group, accessor, sig);
+                    self.symbols.update_impl(id, SymbolImpl::Property(group));
+                }
+                None => {
+                    let mut group = PropertyGroup::default();
+                    set_accessor(&mut group, accessor, sig);
+                    let symbol = self.symbols.declare_symbol(
+                        parent,
+                        SymbolNamespace::Procedure,
+                        SymbolKind::Property,
+                        &logical,
+                        provenance(self.module_name, name_token),
+                        SymbolImpl::Property(group),
+                    )?;
+                    if module_level {
+                        self.scan.members.push(ScannedMember {
+                            name_folded: fold_identifier(&logical),
+                            symbol,
+                            kind: SymbolKind::Property,
+                            namespace: SymbolNamespace::Procedure,
+                            is_default,
+                        });
+                    }
+                }
+            }
+            self.scan_proc_body(node, parent, &format!("{logical} {accessor:?}"))?;
+            return Ok(());
+        }
+
+        let kind = if node.kind() == SyntaxKind::FunctionDecl {
+            SymbolKind::Function
+        } else {
+            SymbolKind::Procedure
+        };
+        let symbol = self.symbols.declare_symbol(
+            parent,
+            SymbolNamespace::Procedure,
+            kind,
+            &logical,
+            provenance(self.module_name, name_token),
+            SymbolImpl::Signature(sig),
+        )?;
+        if module_level {
+            self.scan.members.push(ScannedMember {
+                name_folded: fold_identifier(&logical),
+                symbol,
+                kind,
+                namespace: SymbolNamespace::Procedure,
+                is_default,
+            });
+        }
+        self.scan_proc_body(node, parent, &logical)?;
+        Ok(())
+    }
+
+    /// Open a procedure scope, declare the parameters, and walk the body for locals.
+    fn scan_proc_body(&mut self, node: SyntaxNode<'_>, parent: ScopeId, scope_name: &str) -> Result<(), SymbolModelError> {
+        let proc_scope = self.symbols.add_scope(crate::model::ScopeKind::Procedure, parent, Some(scope_name))?;
+        if let Some(param_list) = node.param_list() {
+            for param in param_list.params() {
+                if let Some(param_token) = parameter_name_token(param) {
+                    let name = normalize_identifier_token(param_token.text);
+                    self.symbols.declare_symbol(
+                        proc_scope,
+                        SymbolNamespace::Parameter,
+                        SymbolKind::Parameter,
+                        name,
+                        provenance(self.module_name, param_token),
+                        SymbolImpl::DeclaredType(param_type(param)),
+                    )?;
+                }
+            }
+        }
+        if let Some(body) = node.body_block() {
+            self.walk(proc_scope, body, false)?;
+        }
+        Ok(())
+    }
+
+    fn scan_declare(&mut self, scope: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
+        let tokens = node.child_tokens();
+        let is_function = tokens.iter().any(|t| t.kind == SyntaxKind::KwFunction);
+        let Some(name_token) = declare_name_token(node) else {
+            return Ok(());
+        };
+        let declared_name = normalize_identifier_token(name_token.text).to_string();
+        let library = string_after_keyword(node, SyntaxKind::KwLib).unwrap_or_default();
+        let alias_raw = string_after_keyword(node, SyntaxKind::KwAlias);
+        let (alias, ordinal_alias) = match alias_raw {
+            Some(value) => {
+                let ordinal = value.starts_with('#');
+                (value, ordinal)
+            }
+            None => (declared_name.clone(), false),
+        };
+
+        let mut param_names = Vec::new();
+        let mut param_types = Vec::new();
+        let mut param_by_ref = Vec::new();
+        let mut param_optional = Vec::new();
+        let mut param_param_array = false;
+        if let Some(param_list) = node.param_list() {
+            for param in param_list.params() {
+                let name = parameter_name_token(param)
+                    .map(|t| normalize_identifier_token(t.text).to_string())
+                    .unwrap_or_default();
+                param_names.push(name);
+                param_types.push(declare_param_type(&param_type(param)));
+                param_by_ref.push(parameter_passing_mode(param) == PassingMode::ByRef);
+                param_optional.push(parameter_has_modifier(param, SyntaxKind::KwOptional));
+                if parameter_has_modifier(param, SyntaxKind::KwParamArray) {
+                    param_param_array = true;
+                }
+            }
+        }
+        let return_type = node.return_type().map(|t| declare_param_type(&type_ref_node(t)));
+
+        let descriptor_id = *self.next_descriptor_id;
+        *self.next_descriptor_id += 1;
+        let declare = DeclareSymbol {
+            descriptor_id,
+            declared_name: declared_name.clone(),
+            library,
+            alias,
+            ordinal_alias,
+            calling_convention: CallConv::Stdcall,
+            is_function,
+            param_names,
+            param_types,
+            param_by_ref,
+            param_optional,
+            param_param_array,
+            return_type,
+        };
+        self.declare(
+            scope,
+            SymbolNamespace::Procedure,
+            if is_function { SymbolKind::Function } else { SymbolKind::Procedure },
+            &declared_name,
+            name_token,
+            SymbolImpl::Declare(declare),
+            module_level,
+        )?;
+        Ok(())
+    }
+
+    fn build_signature(&self, node: SyntaxNode<'_>, call_shape: CallShape) -> Signature {
+        let mut params = Vec::new();
+        if let Some(param_list) = node.param_list() {
+            for param in param_list.params() {
+                let name = parameter_name_token(param)
+                    .map(|t| normalize_identifier_token(t.text).to_string())
+                    .unwrap_or_default();
+                let optional = parameter_has_modifier(param, SyntaxKind::KwOptional);
+                let default = default_from_param(param)
+                    .or_else(|| optional.then_some(DefaultValue::VariantMissing));
+                params.push(Param {
+                    name,
+                    ty: param_type(param),
+                    mode: parameter_passing_mode(param),
+                    optional,
+                    param_array: parameter_has_modifier(param, SyntaxKind::KwParamArray),
+                    default,
+                });
+            }
+        }
+        Signature {
+            params,
+            return_type: node.return_type().map(type_ref_node),
+            call_shape,
+        }
+    }
+
+    fn declare(
+        &mut self,
+        scope: ScopeId,
+        namespace: SymbolNamespace,
+        kind: SymbolKind,
+        name: &str,
+        token: SyntaxToken<'_>,
+        imp: SymbolImpl,
+        module_level: bool,
+    ) -> Result<(), SymbolModelError> {
+        let symbol = self.symbols.declare_symbol(scope, namespace, kind, name, provenance(self.module_name, token), imp)?;
+        if module_level {
+            self.scan.members.push(ScannedMember {
+                name_folded: fold_identifier(name),
+                symbol,
+                kind,
+                namespace,
+                is_default: false,
+            });
+        }
+        Ok(())
+    }
+}
+
+// ── CST helpers (ported) ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PropertyAccessor {
+    Get,
+    Let,
+    Set,
+}
+
+fn property_accessor(node: SyntaxNode<'_>) -> PropertyAccessor {
+    let tokens = node.child_tokens();
+    if tokens.iter().any(|t| t.kind == SyntaxKind::KwLet) {
+        PropertyAccessor::Let
+    } else if tokens.iter().any(|t| t.kind == SyntaxKind::KwSet) {
+        PropertyAccessor::Set
+    } else {
+        PropertyAccessor::Get
+    }
+}
+
+fn set_accessor(group: &mut PropertyGroup, accessor: PropertyAccessor, sig: SignatureId) {
+    match accessor {
+        PropertyAccessor::Get => group.get = Some(sig),
+        PropertyAccessor::Let => group.let_ = Some(sig),
+        PropertyAccessor::Set => group.set = Some(sig),
+    }
+}
+
+/// `Attribute VB_UserMemId = 0` inside the procedure → the type's default member.
+fn is_default_member_node(node: SyntaxNode<'_>) -> bool {
+    node.text().lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("vb_usermemid")
+            && lower.replace(' ', "").contains("=0")
+    })
+}
+
+/// Parse a parameter's literal default (`Optional x As Long = 5`). With the
+/// `oxvba-syntax` parser fix, the `= default` is folded into the `Param` node, so
+/// this reads the text after the (first) `=`.
+fn default_from_param(node: SyntaxNode<'_>) -> Option<DefaultValue> {
+    let text = node.text();
+    let rhs = text.split_once('=')?.1.trim();
+    parse_default_literal(rhs)
+}
+
+fn parse_default_literal(rhs: &str) -> Option<DefaultValue> {
+    if rhs.eq_ignore_ascii_case("true") {
+        return Some(DefaultValue::Bool(true));
+    }
+    if rhs.eq_ignore_ascii_case("false") {
+        return Some(DefaultValue::Bool(false));
+    }
+    if let Some(inner) = rhs.strip_prefix('"') {
+        let end = inner.find('"').unwrap_or(inner.len());
+        return Some(DefaultValue::Str(inner[..end].to_string()));
+    }
+    // Numeric, with an optional sign.
+    let (negate, body) = match rhs.strip_prefix('-') {
+        Some(rest) => (true, rest.trim()),
+        None => (false, rhs.strip_prefix('+').map(str::trim).unwrap_or(rhs)),
+    };
+    let token = body.split_whitespace().next().unwrap_or(body);
+    if token.contains('.') || token.contains(['e', 'E']) && !token.starts_with('&') {
+        let value: f64 = token.trim_end_matches(['!', '#', '@']).parse().ok()?;
+        return Some(DefaultValue::F64(if negate { -value } else { value }.to_bits()));
+    }
+    let raw = parse_int_literal(token)?;
+    let value = if negate { -raw } else { raw };
+    Some(i32::try_from(value).map(DefaultValue::I32).unwrap_or(DefaultValue::I64(value)))
+}
+
+fn parse_int_literal(text: &str) -> Option<i64> {
+    let trimmed = text.trim_end_matches(['&', '!', '#', '@', '%']);
+    if let Some(hex) = trimmed.strip_prefix("&H").or_else(|| trimmed.strip_prefix("&h")) {
+        return i64::from_str_radix(hex, 16).ok();
+    }
+    if let Some(oct) = trimmed.strip_prefix("&O").or_else(|| trimmed.strip_prefix("&o")) {
+        return i64::from_str_radix(oct, 8).ok();
+    }
+    trimmed.parse().ok()
+}
+
+fn is_identifier_like(kind: SyntaxKind) -> bool {
+    kind == SyntaxKind::Ident || kind == SyntaxKind::BracketedIdent
+}
+
+fn normalize_identifier_token(text: &str) -> &str {
+    text.strip_prefix('[').and_then(|v| v.strip_suffix(']')).unwrap_or(text)
+}
+
+fn first_identifier_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    node.child_tokens()
+        .into_iter()
+        .find(|token| is_identifier_like(token.kind))
+        .or_else(|| first_identifier_token_deep(node))
+}
+
+fn first_identifier_token_deep(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if is_identifier_like(token.kind)
+                    || (node.kind() == SyntaxKind::IdentExpr && token.kind.is_keyword()) =>
+            {
+                return Some(token);
+            }
+            SyntaxElement::Node(child) => {
+                if let Some(token) = first_identifier_token_deep(child) {
+                    return Some(token);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn declare_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    let mut after_proc_kind = false;
+    for token in node.child_tokens() {
+        if matches!(token.kind, SyntaxKind::KwFunction | SyntaxKind::KwSub) {
+            after_proc_kind = true;
+            continue;
+        }
+        if after_proc_kind && is_identifier_like(token.kind) {
+            return Some(token);
+        }
+    }
+    first_identifier_token(node)
+}
+
+fn string_after_keyword(node: SyntaxNode<'_>, keyword: SyntaxKind) -> Option<String> {
+    let tokens = node.child_tokens();
+    let mut seen = false;
+    for token in tokens {
+        if token.kind == keyword {
+            seen = true;
+            continue;
+        }
+        if seen && token.kind == SyntaxKind::StringLiteral {
+            return Some(token.text.trim_matches('"').to_string());
+        }
+        if seen && !token.kind.is_trivia() {
+            // Some grammars carry the literal as a non-trivia token directly.
+            return Some(token.text.trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
+fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
+    let mut names = Vec::new();
+    let mut expect_name = false;
+    let mut in_type_ref = false;
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if matches!(
+                    token.kind,
+                    SyntaxKind::KwDim
+                        | SyntaxKind::KwConst
+                        | SyntaxKind::KwPublic
+                        | SyntaxKind::KwPrivate
+                        | SyntaxKind::KwFriend
+                        | SyntaxKind::KwStatic
+                        | SyntaxKind::Comma
+                        | SyntaxKind::KwWithEvents
+                ) =>
+            {
+                expect_name = true;
+                in_type_ref = false;
+            }
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::KwAs => {
+                expect_name = false;
+                in_type_ref = true;
+            }
+            SyntaxElement::Token(token)
+                if expect_name && !in_type_ref && (is_identifier_like(token.kind) || token.kind.is_keyword()) =>
+            {
+                names.push(token);
+                expect_name = false;
+            }
+            SyntaxElement::Node(child) if expect_name && child.kind() == SyntaxKind::IdentExpr => {
+                if let Some(token) = first_identifier_token_deep(child) {
+                    names.push(token);
+                    expect_name = false;
+                }
+            }
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
+                if token.kind != SyntaxKind::TypeSuffix {
+                    expect_name = false;
+                }
+            }
+            SyntaxElement::Node(child) if child.kind() == SyntaxKind::TypeRef => {
+                in_type_ref = false;
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    let mut after_modifier = true;
+    let mut in_type_ref = false;
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if matches!(
+                    token.kind,
+                    SyntaxKind::KwOptional | SyntaxKind::KwByVal | SyntaxKind::KwByRef | SyntaxKind::KwParamArray
+                ) =>
+            {
+                after_modifier = true;
+            }
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::KwAs => {
+                in_type_ref = true;
+                after_modifier = false;
+            }
+            SyntaxElement::Token(token) if !in_type_ref && after_modifier && is_identifier_like(token.kind) => {
+                return Some(token);
+            }
+            SyntaxElement::Node(child) if !in_type_ref && after_modifier && child.kind() == SyntaxKind::IdentExpr => {
+                return first_identifier_token_deep(child);
+            }
+            SyntaxElement::Node(child) if child.kind() == SyntaxKind::TypeRef => {
+                in_type_ref = true;
+            }
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
+                if token.kind != SyntaxKind::TypeSuffix {
+                    after_modifier = false;
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parameter_has_modifier(node: SyntaxNode<'_>, keyword: SyntaxKind) -> bool {
+    node.child_tokens().iter().any(|token| token.kind == keyword)
+}
+
+fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
+    if parameter_has_modifier(node, SyntaxKind::KwByVal) {
+        PassingMode::ByVal
+    } else {
+        PassingMode::ByRef
+    }
+}
+
+fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
+    node.child_nodes()
+        .into_iter()
+        .find(|child| child.kind() == SyntaxKind::TypeRef)
+        .map(type_ref_node)
+        .unwrap_or(VarTypeRef::Variant)
+}
+
+fn type_ref_in(node: SyntaxNode<'_>) -> VarTypeRef {
+    node.child_nodes()
+        .into_iter()
+        .find(|child| child.kind() == SyntaxKind::TypeRef)
+        .map(type_ref_node)
+        .unwrap_or(VarTypeRef::Variant)
+}
+
+/// Map a `TypeRef` node to a resolved type reference.
+fn type_ref_node(node: SyntaxNode<'_>) -> VarTypeRef {
+    let text = node.text();
+    let name = text.split_whitespace().next().unwrap_or("").trim();
+    let name = normalize_identifier_token(name);
+    match name.to_ascii_lowercase().as_str() {
+        "boolean" => VarTypeRef::Builtin(BuiltinType::Boolean),
+        "byte" => VarTypeRef::Builtin(BuiltinType::Byte),
+        "integer" => VarTypeRef::Builtin(BuiltinType::Integer),
+        "long" => VarTypeRef::Builtin(BuiltinType::Long),
+        "longlong" => VarTypeRef::Builtin(BuiltinType::LongLong),
+        "longptr" => VarTypeRef::Builtin(BuiltinType::LongPtr),
+        "single" => VarTypeRef::Builtin(BuiltinType::Single),
+        "double" => VarTypeRef::Builtin(BuiltinType::Double),
+        "currency" => VarTypeRef::Builtin(BuiltinType::Currency),
+        "date" => VarTypeRef::Builtin(BuiltinType::Date),
+        "string" => VarTypeRef::Builtin(BuiltinType::String),
+        "variant" | "object" | "" => VarTypeRef::Variant,
+        other => VarTypeRef::Object(other.to_string()),
+    }
+}
+
+fn declare_param_type(ty: &VarTypeRef) -> DeclareParamType {
+    match ty {
+        VarTypeRef::Builtin(BuiltinType::Boolean) => DeclareParamType::Boolean,
+        VarTypeRef::Builtin(BuiltinType::Byte) => DeclareParamType::Byte,
+        VarTypeRef::Builtin(BuiltinType::Integer) => DeclareParamType::Integer,
+        VarTypeRef::Builtin(BuiltinType::Long) => DeclareParamType::Long,
+        VarTypeRef::Builtin(BuiltinType::LongLong) => DeclareParamType::LongLong,
+        VarTypeRef::Builtin(BuiltinType::LongPtr) => DeclareParamType::LongPtr,
+        VarTypeRef::Builtin(BuiltinType::Single) => DeclareParamType::Single,
+        VarTypeRef::Builtin(BuiltinType::Double) => DeclareParamType::Double,
+        VarTypeRef::Builtin(BuiltinType::Currency) => DeclareParamType::Currency,
+        VarTypeRef::Builtin(BuiltinType::Date) => DeclareParamType::Date,
+        VarTypeRef::Builtin(BuiltinType::String) => DeclareParamType::String,
+        VarTypeRef::Variant => DeclareParamType::Variant,
+        VarTypeRef::Object(_) | VarTypeRef::Array(_) => DeclareParamType::Any,
+    }
+}
+
+fn provenance(module_name: &str, token: SyntaxToken<'_>) -> SourceProvenance {
+    SourceProvenance {
+        module_name: Some(module_name.to_string()),
+        span: Some(SourceSpan {
+            start: token.offset,
+            end: token.offset + token.text.len() as u32,
+        }),
+    }
+}
