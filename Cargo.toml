@@ -18,6 +18,7 @@ members = [
     "crates/oxvba-web-host",
     "crates/oxvba-web-shell",
     "crates/oxvba-bundle",
+    "crates/oxvba-lib",
 ]
 resolver = "2"
 
@@ -44,6 +45,7 @@ oxvba-languageservice = { path = "crates/oxvba-languageservice" }
 oxvba-web-host = { path = "crates/oxvba-web-host" }
 oxvba-web-shell = { path = "crates/oxvba-web-shell" }
 oxvba-bundle = { path = "crates/oxvba-bundle" }
+oxvba-lib = { path = "crates/oxvba-lib" }
 rkyv = "0.8"
 quick-xml = "0.37"
 thiserror = "2"

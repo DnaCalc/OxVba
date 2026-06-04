@@ -1,0 +1,13 @@
+[package]
+name = "oxvba-lib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Native bodies of the VBA base library (built-ins) for the clean bundle."
+
+[dependencies]
+oxvba-bundle.workspace = true
+oxvba-runtime.workspace = true
+oxvba-hal.workspace = true
