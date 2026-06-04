@@ -1,0 +1,17 @@
+[package]
+name = "oxvba-temp-b2b"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Temporary bridge: lower the legacy compiler bytecode/bundle to the clean oxvba-bundle for oxvba-vm2."
+
+[dependencies]
+oxvba-compiler.workspace = true
+oxvba-bundle.workspace = true
+oxvba-runtime.workspace = true
+
+[dev-dependencies]
+oxvba-vm2.workspace = true
+oxvba-hal.workspace = true

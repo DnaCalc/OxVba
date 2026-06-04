@@ -752,6 +752,7 @@ impl<'h> Vm<'h> {
                 CallArg::Slot(s) => self.cloned(*s),
                 CallArg::Named { slot, .. } => self.cloned(*slot),
                 CallArg::Omitted => Ok(Variant::empty()),
+                CallArg::Const(value) => Ok(Variant::from_i32(*value)),
             })
             .collect()
     }
@@ -786,6 +787,7 @@ impl<'h> Vm<'h> {
                 CallArg::Slot(s) => (Some(self.cloned(*s)?), None),
                 CallArg::Named { name, slot } => (Some(self.cloned(*slot)?), Some(name.clone())),
                 CallArg::Omitted => (None, None),
+                CallArg::Const(value) => (Some(Variant::from_i32(*value)), None),
             };
             call_args.push(DynamicCallArg { value: value.map(DynamicValue::from_variant), name });
         }
@@ -840,7 +842,9 @@ impl<'h> Vm<'h> {
             .map(|a| match a {
                 CallArg::Slot(s) => ProcArg::ByVal(*s),
                 CallArg::Named { slot, .. } => ProcArg::ByVal(*slot),
-                CallArg::Omitted => ProcArg::Omitted,
+                // A `Const` arg only arises for library built-ins (e.g. compare
+                // mode), never project methods, so it has no place here.
+                CallArg::Omitted | CallArg::Const(_) => ProcArg::Omitted,
             })
             .collect();
         self.run_proc_with_me(proc, Variant::from_object_ref(object), &proc_args, false, true)

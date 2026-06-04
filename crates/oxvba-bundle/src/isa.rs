@@ -42,6 +42,9 @@ pub enum CallArg {
     Slot(usize),
     Omitted,
     Named { name: String, slot: usize },
+    /// A compile-time integer literal argument (e.g. an `Option Compare` mode
+    /// threaded as a trailing argument to `InStr`/`StrComp`/`Like`).
+    Const(i32),
 }
 
 /// A single argument to a `CallProc` (a compiled VBA procedure). VBA passes
