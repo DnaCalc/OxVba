@@ -13,8 +13,145 @@ use oxvba_bundle::{
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
+use oxvba_hal::error::HalResult;
+use oxvba_hal::model::{HalDescriptor, HalProfileId};
+use oxvba_hal::traits::{
+    ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
+    ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest,
+    TypeLibResolvedIdentity, UiInteractionHal,
+};
+use oxvba_com::{
+    ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken,
+};
+use oxvba_runtime::Variant;
+use oxvba_runtime::object_ref::ObjectRef;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::run;
+
+/// A host that delivers a single COM event callback (for `subscription` 7,
+/// arg = `arg`) once a subscription exists, delegating everything else to a
+/// `NullHostServices`.
+struct MockEventHost {
+    inner: NullHostServices,
+    subscribed: AtomicBool,
+    delivered: AtomicBool,
+    arg: i32,
+}
+
+impl MockEventHost {
+    fn new(arg: i32) -> Self {
+        Self {
+            inner: NullHostServices::new(HostPolicy::deterministic_runtime()),
+            subscribed: AtomicBool::new(false),
+            delivered: AtomicBool::new(false),
+            arg,
+        }
+    }
+}
+
+impl HostServices for MockEventHost {
+    fn profile(&self) -> HalProfileId {
+        self.inner.profile()
+    }
+    fn descriptor(&self) -> HalDescriptor {
+        self.inner.descriptor()
+    }
+    fn policy(&self) -> &HostPolicy {
+        self.inner.policy()
+    }
+    fn console(&self) -> &dyn ConsoleHal {
+        self.inner.console()
+    }
+    fn ui(&self) -> &dyn UiInteractionHal {
+        self.inner.ui()
+    }
+    fn events(&self) -> &dyn EventPumpHal {
+        self.inner.events()
+    }
+    fn fs(&self) -> &dyn FileSystemHal {
+        self.inner.fs()
+    }
+    fn process(&self) -> &dyn ProcessEnvHal {
+        self.inner.process()
+    }
+    fn com(&self) -> &dyn ComHal {
+        self
+    }
+    fn time_locale(&self) -> &dyn TimeLocaleHal {
+        self.inner.time_locale()
+    }
+    fn dynlink(&self) -> &dyn DynamicLinkHal {
+        self.inner.dynlink()
+    }
+    fn diag(&self) -> &dyn DiagnosticsHal {
+        self.inner.diag()
+    }
+}
+
+impl ComHal for MockEventHost {
+    fn subscribe_event(
+        &self,
+        _object: ObjectRef,
+        event: ComMemberToken,
+    ) -> HalResult<ComSubscriptionToken> {
+        self.subscribed.store(true, Ordering::SeqCst);
+        Ok(ComSubscriptionToken::new(event.raw()))
+    }
+    fn unsubscribe_event_variant(&self, _s: ComSubscriptionToken) -> HalResult<Variant> {
+        Ok(Variant::empty())
+    }
+    fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
+        if self.subscribed.load(Ordering::SeqCst) && !self.delivered.swap(true, Ordering::SeqCst) {
+            Ok(Some(ComCallbackPayload {
+                callback: ComCallbackToken::new(7),
+                subscription: ComSubscriptionToken::new(7),
+                object: ObjectRef::from_compat_identity(99),
+                event: ComMemberToken::new(7),
+                args: Vec::new(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    fn event_callback_arity(&self, _c: ComCallbackToken) -> HalResult<usize> {
+        Ok(1)
+    }
+    fn event_callback_variant(&self, _c: ComCallbackToken, _i: usize) -> HalResult<Variant> {
+        Ok(Variant::from_i32(self.arg))
+    }
+    fn release_event_callback_variant(&self, _c: ComCallbackToken) -> HalResult<Variant> {
+        Ok(Variant::empty())
+    }
+    fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
+        self.inner.describe_object(object)
+    }
+    fn event_callback_subscription(
+        &self,
+        callback: ComCallbackToken,
+    ) -> HalResult<ComSubscriptionToken> {
+        self.inner.event_callback_subscription(callback)
+    }
+    fn resolve_typelib_reference(
+        &self,
+        request: &TypeLibResolveRequest,
+    ) -> HalResult<TypeLibResolvedIdentity> {
+        self.inner.resolve_typelib_reference(request)
+    }
+    fn load_typelib_metadata(
+        &self,
+        identity: &TypeLibResolvedIdentity,
+    ) -> HalResult<TypeLibMetadataBlob> {
+        self.inner.load_typelib_metadata(identity)
+    }
+    fn invalidate_typelib_cache(
+        &self,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
+    ) -> HalResult<Variant> {
+        self.inner.invalidate_typelib_cache(scope, reference_name)
+    }
+}
 
 fn host() -> NullHostServices {
     NullHostServices::new(HostPolicy::deterministic_runtime())
@@ -537,4 +674,31 @@ fn late_bound_method_dispatch() {
     let h = host();
     let vm = run(&b, &h).unwrap();
     assert_eq!(vm.slot(1).unwrap().as_i32(), Some(42));
+}
+
+#[test]
+fn inbound_com_event_dispatches_to_handler() {
+    // src is a (non-project) COM-like object; snk subscribes to it via the host.
+    // The mock host delivers one callback for that subscription with arg 42; the
+    // pump (run at statement boundaries) routes it to snk's handler → global 0 = 42.
+    let mut b = bundle_full(
+        vec![
+            Op::LoadProjectObjectRef { dst: 1, handle: 99 }, // 0 src (a COM-like object, not a project instance)
+            Op::LoadI32 { slot: 2, value: 7 },               // 1 binding token = 7
+            Op::NewObject { dst: 3, class: 0 },              // 2 snk = New Snk
+            Op::WithEventsSet { dst: 4, owner: 3, binding: 2, value: 1 }, // 3 subscribe snk.x = src
+            Op::Halt,                                        // 4 (pump fires at this boundary)
+            Op::Copy { dst: 0, src: 2 },                     // 5 Handler: global 0 = arg (local 1)
+            Op::Return,                                      // 6
+        ],
+        1,                   // global_count
+        4,                   // entry locals: src, btok, snk, tmp
+        vec![0, 1, 2, 3, 4], // statement boundaries (drive the pump)
+        vec![proc("x_Fired", 5, 2, 2, None)],
+        vec![class("Snk", None, None)],
+    );
+    b.event_routes = vec![EventRoute { binding: 7, event: 7, handler: 0 }];
+    let host = MockEventHost::new(42);
+    let vm = run(&b, &host).unwrap();
+    assert_eq!(vm.slot(0).unwrap().as_i32(), Some(42), "inbound COM event reached the handler");
 }

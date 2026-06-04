@@ -35,7 +35,8 @@ use oxvba_bundle::{
     NativeCallee, Op, ProcArg, ProjectMemberKind,
 };
 use oxvba_com::{
-    DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue,
+    ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
+    DynamicMemberSelector, DynamicValue,
 };
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
@@ -143,6 +144,13 @@ struct EventBinding {
     source: Variant,
 }
 
+/// A live host (COM) event subscription: which sink handler to invoke when the
+/// host delivers a callback for this subscription.
+struct ComEventSink {
+    owner: Variant,
+    handler: usize,
+}
+
 /// `For Each` enumerator state, keyed by the iterator slot.
 struct ForEachState {
     elements: Vec<Variant>,
@@ -168,6 +176,12 @@ pub struct Vm<'h> {
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
     /// `(binding token, event id)` → handler procedure, from `bundle.event_routes`.
     event_routes: HashMap<(i32, i32), usize>,
+    /// Live host event subscriptions: subscription-token raw → sink handler.
+    com_subscriptions: HashMap<i32, ComEventSink>,
+    /// WithEvents key → host subscription tokens (for teardown on clear/terminate).
+    com_subscriptions_by_key: HashMap<i64, Vec<i32>>,
+    /// Re-entrancy guard for the inbound COM-event pump.
+    pumping: bool,
     /// The most recent captured return value (see [`Frame::capture`]).
     captured_return: Option<Variant>,
     /// Leaked `&'static` class descriptors, one per `bundle.classes` entry, for
@@ -237,6 +251,9 @@ impl<'h> Vm<'h> {
             withevents: HashMap::new(),
             withevents_iters: Vec::new(),
             event_routes,
+            com_subscriptions: HashMap::new(),
+            com_subscriptions_by_key: HashMap::new(),
+            pumping: false,
             captured_return: None,
             class_descriptors,
             next_instance_id: INSTANCE_ID_BASE,
@@ -259,9 +276,11 @@ impl<'h> Vm<'h> {
         oxvba_runtime::reset_pending_terminations();
         while !self.halted && self.pc < self.bundle.ops.len() {
             // At a statement boundary, run any `Class_Terminate`s parked by the
-            // statement that just completed (VBA statement-granular timing).
+            // statement that just completed (VBA statement-granular timing) and
+            // dispatch any inbound host (COM) events.
             if self.statement_start_set.contains(&self.pc) {
                 self.maybe_drain();
+                self.pump_com_events();
             }
             let op = self.bundle.ops[self.pc].clone();
             self.next_pc = self.pc + 1;
@@ -506,7 +525,9 @@ impl<'h> Vm<'h> {
                     );
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
-                // Drop any WithEvents bindings owned by the terminated instance.
+                // Drop any WithEvents bindings + host subscriptions owned by the
+                // terminated instance.
+                self.unsubscribe_com_owner(instance_id);
                 self.withevents
                     .retain(|key, _| Self::withevents_owner(*key).raw() != instance_id);
             }
@@ -528,23 +549,6 @@ impl<'h> Vm<'h> {
         suppress: bool,
         capture: bool,
     ) -> Result<Variant, Fault> {
-        let desc = self
-            .bundle
-            .procedures
-            .get(proc)
-            .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
-        let frame_slots = desc.frame_slots.max(1 + args.len());
-        let (entry, return_slot) = (desc.entry_pc, desc.return_slot);
-        let base = self.frames.len();
-        let saved = (
-            self.pc,
-            self.next_pc,
-            self.halted,
-            self.error_mode,
-            self.resume,
-            self.captured_return.take(),
-        );
-
         // Resolve arguments in the caller (current top frame) before pushing.
         let mut byval: Vec<(usize, Variant)> = Vec::new();
         let mut aliases = HashMap::new();
@@ -559,6 +563,52 @@ impl<'h> Vm<'h> {
                 ProcArg::Omitted => byval.push((local, Variant::from_error_code(MISSING_ARG))),
             }
         }
+        self.run_proc_core(proc, me, byval, aliases, suppress, capture)
+    }
+
+    /// Invoke a procedure with `me` and pre-resolved by-value arguments. Used for
+    /// inbound COM event handlers, whose args arrive from the host rather than
+    /// from caller slots.
+    fn run_proc_with_values(
+        &mut self,
+        proc: usize,
+        me: Variant,
+        values: Vec<Variant>,
+        suppress: bool,
+        capture: bool,
+    ) -> Result<Variant, Fault> {
+        let byval = values.into_iter().enumerate().map(|(i, v)| (1 + i, v)).collect();
+        self.run_proc_core(proc, me, byval, HashMap::new(), suppress, capture)
+    }
+
+    fn run_proc_core(
+        &mut self,
+        proc: usize,
+        me: Variant,
+        byval: Vec<(usize, Variant)>,
+        aliases: HashMap<usize, Place>,
+        suppress: bool,
+        capture: bool,
+    ) -> Result<Variant, Fault> {
+        let desc = self
+            .bundle
+            .procedures
+            .get(proc)
+            .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
+        let max_local =
+            byval.iter().map(|(l, _)| *l).chain(aliases.keys().copied()).max().unwrap_or(0);
+        let frame_slots = desc.frame_slots.max(max_local + 1);
+        let (entry, return_slot) = (desc.entry_pc, desc.return_slot);
+        let base = self.frames.len();
+        let saved = (
+            self.pc,
+            self.next_pc,
+            self.halted,
+            self.error_mode,
+            self.resume,
+            self.captured_return.take(),
+        );
+
         let mut locals = vec![Variant::empty(); frame_slots];
         locals[0] = me;
         for (local, value) in byval {
@@ -585,6 +635,7 @@ impl<'h> Vm<'h> {
         while self.frames.len() > base && !self.halted && self.pc < self.bundle.ops.len() {
             if self.statement_start_set.contains(&self.pc) {
                 self.maybe_drain();
+                self.pump_com_events();
             }
             let op = self.bundle.ops[self.pc].clone();
             self.next_pc = self.pc + 1;
@@ -613,6 +664,85 @@ impl<'h> Vm<'h> {
         self.resume = saved.4;
         self.captured_return = saved.5;
         result.map(|_| captured)
+    }
+
+    /// Drain inbound host (COM) events: poll the host for delivered callbacks and
+    /// dispatch each to the subscribed sink handler. Re-entrancy-guarded; handler
+    /// faults are suppressed (events arrive out-of-band from the raiser).
+    fn pump_com_events(&mut self) {
+        if self.pumping {
+            return;
+        }
+        self.pumping = true;
+        loop {
+            let payload = match self.host.com().poll_event_callback() {
+                Ok(Some(payload)) => payload,
+                // `Ok(None)` = nothing pending; `Err` = the host has no event
+                // delivery (e.g. the null host) — either way, stop pumping.
+                _ => break,
+            };
+            let sink = self
+                .com_subscriptions
+                .get(&payload.subscription.raw())
+                .map(|sink| (sink.owner.clone(), sink.handler));
+            if let Some((owner, handler)) = sink {
+                let arity = self.host.com().event_callback_arity(payload.callback).unwrap_or(0);
+                let mut values = Vec::with_capacity(arity);
+                for index in 0..arity {
+                    let value = self
+                        .host
+                        .com()
+                        .event_callback_variant(payload.callback, index)
+                        .unwrap_or_else(|_| Variant::empty());
+                    values.push(value);
+                }
+                let _ = self.run_proc_with_values(handler, owner, values, true, false);
+            }
+            let _ = self.host.com().release_event_callback_variant(payload.callback);
+        }
+        self.pumping = false;
+    }
+
+    /// Subscribe a WithEvents sink (`owner`) to a COM `source`'s events for the
+    /// given binding token, recording each subscription for dispatch + teardown.
+    fn subscribe_com_events(&mut self, key: i64, binding_token: i32, owner: &Variant, source: &ObjectRef) {
+        let routes: Vec<(i32, usize)> = self
+            .bundle
+            .event_routes
+            .iter()
+            .filter(|route| route.binding == binding_token)
+            .map(|route| (route.event, route.handler))
+            .collect();
+        for (event, handler) in routes {
+            if let Ok(subscription) =
+                self.host.com().subscribe_event(source.clone(), ComMemberToken::new(event))
+            {
+                self.com_subscriptions
+                    .insert(subscription.raw(), ComEventSink { owner: owner.clone(), handler });
+                self.com_subscriptions_by_key.entry(key).or_default().push(subscription.raw());
+            }
+        }
+    }
+
+    fn unsubscribe_com_key(&mut self, key: i64) {
+        if let Some(tokens) = self.com_subscriptions_by_key.remove(&key) {
+            for raw in tokens {
+                let _ = self.host.com().unsubscribe_event_variant(ComSubscriptionToken::new(raw));
+                self.com_subscriptions.remove(&raw);
+            }
+        }
+    }
+
+    fn unsubscribe_com_owner(&mut self, owner_raw: i32) {
+        let keys: Vec<i64> = self
+            .com_subscriptions_by_key
+            .keys()
+            .copied()
+            .filter(|key| Self::withevents_owner(*key).raw() == owner_raw)
+            .collect();
+        for key in keys {
+            self.unsubscribe_com_key(key);
+        }
     }
 
     // ── Native dispatch ──────────────────────────────────────────────────────
@@ -1089,9 +1219,19 @@ impl<'h> Vm<'h> {
                 let binding_tok = arith::int(self.get(*binding)?).map_err(Fault::from_string)?;
                 let key = Self::withevents_key(&owner_ref, binding_tok);
                 let v = self.cloned(*value)?;
+                // Replacing a binding tears down its old host subscriptions first.
+                self.unsubscribe_com_key(key);
                 if is_nothing(&v) {
                     self.withevents.remove(&key);
                 } else {
+                    // A COM/foreign source is wired through the host's connection
+                    // points; a project source is dispatched internally by
+                    // RaiseEvent (no host subscription).
+                    if let Some(source) = v.as_object_ref() {
+                        if !source.is_project_instance() {
+                            self.subscribe_com_events(key, binding_tok as i32, &owner_value, &source);
+                        }
+                    }
                     self.withevents
                         .insert(key, EventBinding { owner: owner_value, source: v.clone() });
                 }
@@ -1099,6 +1239,7 @@ impl<'h> Vm<'h> {
             }
             Op::WithEventsClearOwner { dst, owner } => {
                 let owner_ref = variant_to_object(self.get(*owner)?)?;
+                self.unsubscribe_com_owner(owner_ref.raw());
                 self.withevents
                     .retain(|key, _| Self::withevents_owner(*key).raw() != owner_ref.raw());
                 self.set(*dst, Variant::from_i32(0))?;
