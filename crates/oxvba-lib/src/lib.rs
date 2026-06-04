@@ -8,10 +8,12 @@
 //! handled by the VM via the host directly, not here).
 //!
 //! Completeness is structural: [`invoke`] is an exhaustive `match` over
-//! `NativeImplId`, so a missing built-in is a compile error. A handful of the
-//! richest bodies (Format, IRR/Rate solvers, full date arithmetic, Collection)
-//! are first-cut and marked `// FIDELITY:` for refinement against the reference.
+//! `NativeImplId`, so a missing built-in is a compile error. The remaining
+//! `// FIDELITY:` markers are features absent from the legacy VM as well: keyed
+//! `Collection` access (awaits the vm2 object model) and `StrConv`'s
+//! CJK/encoding modes.
 
+mod format;
 mod host;
 mod pure;
 
@@ -72,9 +74,9 @@ pub struct LibContext {
 
 impl Default for LibContext {
     fn default() -> Self {
-        // VBA's default Rnd seed produces a fixed sequence; this LCG seed mirrors
-        // "deterministic unless Randomize" behavior.
-        Self { rng_state: 0x2545_F491_4F6C_DD1D }
+        // VBA's `Rnd` is deterministic until `Randomize`; the 24-bit LCG starts
+        // from this fixed default seed.
+        Self { rng_state: 0x0005_0000 }
     }
 }
 
@@ -89,16 +91,41 @@ pub(crate) fn opt(args: &[Variant], index: usize) -> Option<&Variant> {
     args.get(index)
 }
 
+/// Read any numeric Variant as `f64`. Reads `LongLong`/`Single`/`Currency`
+/// directly (the `coerce_to` table has no path for them) and routes the rest
+/// (`Integer`/`Long`/`Byte`/`Boolean`/`Date`/`Empty`) through `Double`.
 pub(crate) fn as_f64(value: &Variant) -> LibResult<f64> {
+    if let Some(v) = value.as_f64() {
+        return Ok(v); // Double
+    }
+    if let Some(v) = value.as_f32() {
+        return Ok(v as f64); // Single
+    }
+    if let Some(v) = value.as_i64() {
+        return Ok(v as f64); // LongLong
+    }
+    if let Some(v) = value.as_currency_scaled_i64() {
+        return Ok(v as f64 / 10_000.0); // Currency (fixed 4-dp scale)
+    }
     coerce_to(value, VarType::Double)?
         .as_f64()
         .ok_or_else(|| LibError::type_mismatch("expected a numeric value"))
 }
 
+/// Read any numeric Variant as `i64`, using VBA's banker's rounding for
+/// fractional values. (`coerce_to` has no `LongLong`/`Double→Long` path.)
 pub(crate) fn as_i64(value: &Variant) -> LibResult<i64> {
-    coerce_to(value, VarType::LongLong)?
-        .as_i64()
-        .ok_or_else(|| LibError::type_mismatch("expected an integer value"))
+    if let Some(v) = value.as_i64() {
+        return Ok(v); // LongLong
+    }
+    if let Some(v) = value.as_i32() {
+        return Ok(i64::from(v)); // Long
+    }
+    let d = as_f64(value)?;
+    if !d.is_finite() || d.abs() >= 9.223_372_036_854_775e18 {
+        return Err(LibError::overflow("integer overflow"));
+    }
+    Ok(d.round_ties_even() as i64)
 }
 
 pub(crate) fn as_i32(value: &Variant) -> LibResult<i32> {
@@ -128,9 +155,9 @@ pub(crate) fn vbool(value: bool) -> Variant {
     Variant::from_bool(value)
 }
 /// The empty/void return for statement-form library calls whose result is
-/// discarded. FIDELITY: should be a true `Empty` Variant once exposed.
+/// discarded — a true `Empty` Variant.
 pub(crate) fn vunit() -> Variant {
-    Variant::from_i32(0)
+    Variant::empty()
 }
 
 /// Dispatch a base-library built-in to its native body. Exhaustive over
@@ -234,7 +261,7 @@ pub fn invoke(
         IsNull => pure::is_vtype(args, |t| matches!(t, Vt::Null)),
         IsEmpty => pure::is_vtype(args, |t| matches!(t, Vt::Empty)),
 
-        // ── Collection (FIDELITY: SafeArray-backed first-cut; no keyed access) ──
+        // ── Collection (SafeArray-backed; keyed access awaits the vm2 object model) ──
         CollectionAdd => pure::collection_add(args),
         CollectionItem => pure::collection_item(args),
         CollectionRemove => pure::collection_remove(args),

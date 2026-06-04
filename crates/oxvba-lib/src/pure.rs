@@ -1,11 +1,9 @@
 //! Pure (host-free) base-library bodies: strings, math, date/time arithmetic,
 //! conversion, random, financial, information, and a first-cut Collection.
 //!
-//! Where VBA's exact semantics are intricate (Option Compare modes on string
-//! search, `Format` masks, iterative `IRR`/`Rate`, the 1900 leap-year quirk,
-//! keyed Collections) the body is a functional first-cut marked `FIDELITY:` —
-//! it computes a correct result for the common case and is refined against the
-//! reference later.
+//! The `Format` engine lives in [`crate::format`]. The remaining `FIDELITY:`
+//! markers are features absent from the legacy VM too: keyed `Collection`
+//! access (awaits the vm2 object model) and `StrConv`'s CJK/encoding modes.
 
 use crate::{
     LibContext, LibError, LibResult, as_f64, as_i32, as_i64, as_str, as_usize, need, opt, vbool,
@@ -85,18 +83,64 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(c.into_iter().collect::<String>()))
 }
 
-/// `InStr([start], s1, s2, [compare])` — 2 operands + optional trailing compare
-/// mode (0 = binary, 1 = text → ASCII case-insensitive). FIDELITY: leading
-/// `start` not yet threaded (the legacy lowering did not carry it either).
+/// `InStr([start], string1, string2, [compare])` and
+/// `InStrRev(string1, string2, [compare])`.
+///
+/// For `InStr`, an optional leading numeric-typed `start` (1-based) is detected
+/// by argument type — the legacy 2-operand form passes a string-typed
+/// `string1`, so this is unambiguous. The trailing compare mode (0 = binary,
+/// 1 = text → ASCII case-insensitive) is supplied by `oxvba-temp-b2b` from the
+/// compile-time `Option Compare`. (`InStrRev`'s own `start` argument awaits the
+/// b2b canonical arg layout.)
 pub fn instr(args: &[Variant], rev: bool) -> LibResult<Variant> {
-    let text = text_compare(args, 2)?;
-    let hay = norm_compare(as_str(need(args, 0)?)?, text);
-    let needle = norm_compare(as_str(need(args, 1)?)?, text);
-    let pos = if rev { hay.rfind(&needle) } else { hay.find(&needle) };
+    let base = if !rev && args.first().is_some_and(is_numeric_typed) { 1 } else { 0 };
+    let start = if base == 1 { as_i32(need(args, 0)?)? } else { 1 };
+    if start < 1 {
+        return Err(LibError::invalid_call("InStr start must be >= 1"));
+    }
+    let text = text_compare(args, base + 2)?;
+    let hay = norm_compare(as_str(need(args, base)?)?, text);
+    let needle = norm_compare(as_str(need(args, base + 1)?)?, text);
+
+    let byte_start = utf16_index_to_byte(&hay, start as usize - 1);
+    if byte_start > hay.len() {
+        return Ok(vi32(0));
+    }
+    let pos = if rev {
+        hay.rfind(&needle)
+    } else {
+        hay[byte_start..].find(&needle).map(|b| byte_start + b)
+    };
     Ok(vi32(match pos {
         Some(byte) => hay[..byte].encode_utf16().count() as i32 + 1,
         None => 0,
     }))
+}
+
+fn is_numeric_typed(v: &Variant) -> bool {
+    matches!(
+        v.vtype(),
+        VarType::Integer
+            | VarType::Long
+            | VarType::LongLong
+            | VarType::Single
+            | VarType::Double
+            | VarType::Currency
+            | VarType::Decimal
+            | VarType::Byte
+    )
+}
+
+/// Byte offset of the char at a given UTF-16 code-unit index (VBA string index).
+fn utf16_index_to_byte(s: &str, utf16_index: usize) -> usize {
+    let mut units = 0;
+    for (byte, ch) in s.char_indices() {
+        if units >= utf16_index {
+            return byte;
+        }
+        units += ch.len_utf16();
+    }
+    s.len()
 }
 
 pub fn lcase(args: &[Variant]) -> LibResult<Variant> {
@@ -186,8 +230,61 @@ fn like_match(s: &[char], p: &[char]) -> bool {
         '*' => (0..=s.len()).any(|i| like_match(&s[i..], &p[1..])),
         '?' => !s.is_empty() && like_match(&s[1..], &p[1..]),
         '#' => !s.is_empty() && s[0].is_ascii_digit() && like_match(&s[1..], &p[1..]),
+        '[' => match charlist_end(&p[1..]) {
+            // p[1..1+end] is the charlist body; p[1+end] is the closing ']'.
+            Some(end) => {
+                !s.is_empty()
+                    && char_in_charlist(s[0], &p[1..1 + end])
+                    && like_match(&s[1..], &p[end + 2..])
+            }
+            None => !s.is_empty() && s[0] == '[' && like_match(&s[1..], &p[1..]),
+        },
         c => !s.is_empty() && s[0] == c && like_match(&s[1..], &p[1..]),
     }
+}
+
+/// Index (within `body`, the chars after the opening `[`) of the closing `]`. A
+/// `]` that is the first member (optionally after a leading `!`) is literal.
+fn charlist_end(body: &[char]) -> Option<usize> {
+    let mut i = 0;
+    if body.first() == Some(&'!') {
+        i += 1;
+    }
+    if body.get(i) == Some(&']') {
+        i += 1;
+    }
+    while i < body.len() {
+        if body[i] == ']' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `[charlist]` membership: a leading `!` negates; `a-z` denotes a range.
+fn char_in_charlist(c: char, body: &[char]) -> bool {
+    let (negate, body) = match body.split_first() {
+        Some((&'!', rest)) => (true, rest),
+        _ => (false, body),
+    };
+    let mut i = 0;
+    let mut found = false;
+    while i < body.len() {
+        if i + 2 < body.len() && body[i + 1] == '-' {
+            let (lo, hi) = (body[i], body[i + 2]);
+            if (lo <= c && c <= hi) || (hi <= c && c <= lo) {
+                found = true;
+            }
+            i += 3;
+        } else {
+            if body[i] == c {
+                found = true;
+            }
+            i += 1;
+        }
+    }
+    found != negate
 }
 
 pub fn chr(args: &[Variant]) -> LibResult<Variant> {
@@ -247,50 +344,19 @@ fn proper_case(s: &str) -> String {
         .join(" ")
 }
 
-/// `Format(expr, [mask])` — ported from the legacy VM's `format_number` mask set
-/// (`"0"`, `"0.0…"`, `"0%"`, `"#,##0"`, else general). No mask → string
-/// passthrough (CStr). FIDELITY: named formats and date masks not yet supported.
+/// `Format(expr, [mask])` — delegates to the [`crate::format`] engine (named
+/// formats, custom numeric masks, custom date/time masks). No mask (or an empty
+/// mask) → string passthrough (`CStr`).
 pub fn format(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
     let mask = match opt(args, 1) {
-        Some(v) => as_str(v)?,
-        None => return cstr(args),
+        Some(v) if !matches!(v.vtype(), VarType::Empty) => as_str(v)?,
+        _ => return cstr(args),
     };
-    match as_f64(value) {
-        Ok(n) => Ok(vstr(format_number(n, &mask))),
-        Err(_) => cstr(args),
+    if mask.is_empty() {
+        return cstr(args);
     }
-}
-
-fn format_number(n: f64, fmt: &str) -> String {
-    match fmt {
-        "0" => format!("{}", n.round() as i64),
-        pat if pat.starts_with("0.") && pat[2..].chars().all(|c| c == '0') => {
-            format!("{:.prec$}", n, prec = pat.len() - 2)
-        }
-        "0%" => format!("{}%", (n * 100.0).round() as i64),
-        "#,##0" => {
-            let value = n.round() as i64;
-            let negative = value < 0;
-            let abs_str = value.unsigned_abs().to_string();
-            let mut grouped = String::new();
-            for (idx, ch) in abs_str.chars().rev().enumerate() {
-                if idx > 0 && idx % 3 == 0 {
-                    grouped.push(',');
-                }
-                grouped.push(ch);
-            }
-            let grouped: String = grouped.chars().rev().collect();
-            if negative { format!("-{grouped}") } else { grouped }
-        }
-        _ => {
-            if n == (n as i64) as f64 && n.abs() < i64::MAX as f64 {
-                format!("{}", n as i64)
-            } else {
-                format!("{n}")
-            }
-        }
-    }
+    Ok(vstr(crate::format::apply(value, &mask)))
 }
 
 // ── Math ──────────────────────────────────────────────────────────────────────
@@ -313,7 +379,8 @@ pub fn round(args: &[Variant]) -> LibResult<Variant> {
 }
 
 // ── Date / time (serial: days since 1899-12-30) ────────────────────────────────
-// FIDELITY: proleptic Gregorian; does not reproduce the Excel 1900 leap-year bug.
+// Proleptic Gregorian, matching VBA's OLE-Automation `Date`. (The Excel
+// worksheet 1900 leap-year quirk is not part of VBA `Date` semantics.)
 
 const VBA_EPOCH_DAYS_FROM_UNIX: i64 = -25569; // days from 1970-01-01 back to 1899-12-30
 
@@ -343,12 +410,12 @@ fn ymd_to_serial(y: i64, m: i64, d: i64) -> f64 {
     (days_from_civil(y, m, d) - VBA_EPOCH_DAYS_FROM_UNIX) as f64
 }
 
-fn serial_to_ymd(serial: f64) -> (i64, i64, i64) {
+pub(crate) fn serial_to_ymd(serial: f64) -> (i64, i64, i64) {
     civil_from_days(serial.floor() as i64 + VBA_EPOCH_DAYS_FROM_UNIX)
 }
 
 /// Sakamoto's algorithm (ported from the legacy VM): 0 = Sunday … 6 = Saturday.
-fn day_of_week(year: i32, month: u32, day: u32) -> i32 {
+pub(crate) fn day_of_week(year: i32, month: u32, day: u32) -> i32 {
     let table = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
     let m = month as i32;
     let y = if m < 3 { year - 1 } else { year };
@@ -528,33 +595,55 @@ pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
 }
 
 // ── Random ───────────────────────────────────────────────────────────────────
+//
+// VBA's `Rnd` is the VB6/VBA 24-bit linear-congruential generator:
+//   x = (x * 0x43FD43FD + 0xC39EC3) mod 2^24,  result = x / 2^24  (as Single).
+// `Rnd(0)` repeats the last number; `Rnd(n<0)` reseeds deterministically from
+// the Single bit-pattern of `n`; `Randomize [n]` reseeds the high word. State
+// is the 24-bit value in `LibContext::rng_state`.
 
-fn next_rng(ctx: &mut LibContext) -> f64 {
-    // SplitMix64 step → [0,1). FIDELITY: not VBA's exact LCG sequence.
-    ctx.rng_state = ctx.rng_state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = ctx.rng_state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^= z >> 31;
-    (z >> 11) as f64 / (1u64 << 53) as f64
+const RND_MULT: u64 = 0x43FD_43FD;
+const RND_INC: u64 = 0x00C3_9EC3;
+const RND_MASK: u64 = 0x00FF_FFFF; // 2^24 - 1
+const RND_SCALE: f64 = 16_777_216.0; // 2^24
+
+fn rng_step(ctx: &mut LibContext) -> f64 {
+    ctx.rng_state = ctx.rng_state.wrapping_mul(RND_MULT).wrapping_add(RND_INC) & RND_MASK;
+    ctx.rng_state as f64 / RND_SCALE
+}
+
+/// An optional numeric argument, treating an `Empty` placeholder as omitted.
+fn numeric_arg<'a>(args: &'a [Variant], index: usize) -> Option<&'a Variant> {
+    opt(args, index).filter(|v| !matches!(v.vtype(), VarType::Empty))
 }
 
 pub fn rnd(args: &[Variant], ctx: &mut LibContext) -> LibResult<Variant> {
-    if let Some(v) = opt(args, 0) {
-        let n = as_f64(v)?;
-        if n < 0.0 {
-            ctx.rng_state = (n.to_bits()) | 1;
-        }
-    }
-    Ok(Variant::from_f32(next_rng(ctx) as f32))
+    let value = match numeric_arg(args, 0) {
+        Some(v) => as_f64(v)?,
+        None => 1.0, // omitted ⇒ next in sequence
+    };
+    let result = if value == 0.0 {
+        // Rnd(0): return the most recently generated number, unchanged.
+        ctx.rng_state as f64 / RND_SCALE
+    } else if value < 0.0 {
+        // Rnd(n<0): deterministic reseed from the Single bit pattern of n.
+        ctx.rng_state = (value as f32).to_bits() as u64 & RND_MASK;
+        rng_step(ctx)
+    } else {
+        rng_step(ctx)
+    };
+    Ok(Variant::from_f32(result as f32))
 }
 
 pub fn randomize(args: &[Variant], ctx: &mut LibContext) -> LibResult<Variant> {
-    let seed = match opt(args, 0) {
-        Some(v) => as_f64(v)?.to_bits(),
-        None => ctx.rng_state.rotate_left(17),
+    let seed = match numeric_arg(args, 0) {
+        Some(v) => (as_f64(v)? as f32).to_bits() as u64,
+        // No argument: VBA seeds from the system timer. Without host access here,
+        // fold the current state forward deterministically.
+        None => ctx.rng_state.wrapping_mul(RND_MULT).wrapping_add(RND_INC),
     };
-    ctx.rng_state = seed | 1;
+    // VBA replaces the high 16 bits of the 24-bit state, preserving the low byte.
+    ctx.rng_state = ((ctx.rng_state & 0xFF) | ((seed & 0xFFFF) << 8)) & RND_MASK;
     Ok(vunit())
 }
 
@@ -838,4 +927,57 @@ pub fn collection_remove(args: &[Variant]) -> LibResult<Variant> {
 
 pub fn collection_count(args: &[Variant]) -> LibResult<Variant> {
     Ok(vi32(collection_elems(need(args, 0)?).len() as i32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vs(s: &str) -> Variant {
+        Variant::from_string(s.to_string())
+    }
+    fn like_(s: &str, p: &str) -> bool {
+        like(&[vs(s), vs(p)]).unwrap().as_bool().unwrap()
+    }
+    fn instr_(args: &[Variant], rev: bool) -> i32 {
+        instr(args, rev).unwrap().as_i32().unwrap()
+    }
+
+    #[test]
+    fn like_charlist() {
+        assert!(like_("abc", "[a-c]bc"));
+        assert!(like_("Abc", "[A-Z]*"));
+        assert!(like_("x", "[!a-c]"));
+        assert!(!like_("b", "[!a-c]"));
+        assert!(like_("a]b", "a[]]b")); // literal ']' as first list member
+        assert!(like_("3", "#"));
+        assert!(!like_("z", "[0-9]"));
+    }
+
+    #[test]
+    fn instr_start_and_compare() {
+        assert_eq!(instr_(&[vs("hello world"), vs("o")], false), 5);
+        // Leading numeric `start` = 6 → first 'o' at or after position 6.
+        assert_eq!(instr_(&[Variant::from_i32(6), vs("hello world"), vs("o")], false), 8);
+        // InStrRev finds the last 'o'.
+        assert_eq!(instr_(&[vs("hello world"), vs("o")], true), 8);
+        // Text compare (mode 1): case-insensitive.
+        assert_eq!(instr_(&[vs("ABC"), vs("b"), Variant::from_i32(1)], false), 2);
+        // Binary compare (default): no match for differing case.
+        assert_eq!(instr_(&[vs("ABC"), vs("b")], false), 0);
+    }
+
+    #[test]
+    fn rnd_deterministic_bounded_and_repeatable() {
+        let mut a = LibContext::default();
+        let mut b = LibContext::default();
+        // `Rnd` returns a Single; use the coercing helper to read it.
+        let x = as_f64(&rnd(&[], &mut a).unwrap()).unwrap();
+        let y = as_f64(&rnd(&[], &mut b).unwrap()).unwrap();
+        assert_eq!(x, y, "default seed is deterministic");
+        assert!((0.0..1.0).contains(&x), "result in [0,1): {x}");
+        // Rnd(0) repeats the most recent value without advancing.
+        let again = as_f64(&rnd(&[Variant::from_i32(0)], &mut a).unwrap()).unwrap();
+        assert_eq!(x, again);
+    }
 }

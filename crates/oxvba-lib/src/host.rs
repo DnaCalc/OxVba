@@ -1,10 +1,10 @@
 //! Host-sensitive base-library bodies: file/console I/O, interaction, process,
-//! time, COM activation, diagnostics. Each delegates to an `oxvba_hal`
-//! `HostServices` facet; `HalError` maps to `LibError` via `?`.
+//! time, COM activation and events, diagnostics. Each delegates to an
+//! `oxvba_hal` `HostServices` facet; `HalError` maps to `LibError` via `?`.
 //!
-//! FIDELITY: the COM event-callback subsystem (subscribe/unsubscribe/callback)
-//! is typed in terms of `oxvba-com` tokens and is a first-cut gap here — it
-//! returns a clear error until those token types are wired through.
+//! The COM event-callback subsystem (subscribe/unsubscribe/callback) converts
+//! Variants to the `oxvba-com` token types and calls the `com()` facet, ported
+//! from the legacy VM's `semantics::variant_to_com_*` helpers.
 
 use crate::{LibError, LibResult, as_f64, need, opt, vunit};
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
