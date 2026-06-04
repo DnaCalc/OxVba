@@ -1209,14 +1209,15 @@ impl<'a> Parser<'a> {
             if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
                 self.bump();
             }
-            self.eat_whitespace();
 
             // Type suffix
+            self.eat_whitespace();
             if self.at(SyntaxKind::TypeSuffix) {
                 self.bump();
             }
 
             // As Type
+            self.eat_whitespace();
             if self.at(SyntaxKind::KwAs) {
                 self.bump();
                 self.eat_whitespace();
@@ -1224,6 +1225,7 @@ impl<'a> Parser<'a> {
             }
 
             // Default value: = expr
+            self.eat_whitespace();
             if self.at(SyntaxKind::Eq) {
                 self.bump();
                 self.eat_whitespace();
