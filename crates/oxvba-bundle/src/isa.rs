@@ -45,10 +45,11 @@ pub enum CallArg {
 }
 
 /// A single argument to a `CallProc` (a compiled VBA procedure). VBA passes
-/// `ByRef` by default: the callee operates on the caller's storage. The clean
-/// convention is copy-in / copy-out — `ByRef(slot)` copies the caller slot into
-/// the parameter on entry and copies the parameter back to that slot on return;
-/// `ByVal(slot)` copies in only; `Omitted` leaves an optional parameter unset.
+/// `ByRef` by default: the callee operates on the caller's storage.
+/// `ByRef(slot)` binds the parameter as a true alias of the caller's place —
+/// writes through the parameter are immediately visible to the caller (and the
+/// reverse), for the duration of the call. `ByVal(slot)` copies the value in;
+/// `Omitted` leaves an optional parameter unset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcArg {
     ByVal(usize),

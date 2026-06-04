@@ -161,22 +161,21 @@ pub enum ProcedureKind {
 
 /// A compiled procedure: its name, entry pc, kind, arity, and frame layout.
 ///
-/// Slots are a flat file (`Bundle::slot_count`); each procedure owns the range
-/// `[frame_base, frame_base + frame_slots)`, with parameters in the first
-/// `param_count` slots of that range. The VM snapshots and restores a
-/// procedure's range across a call so recursion is safe; module-level globals
-/// live in slots outside every procedure's range and therefore persist.
+/// Each call allocates a fresh frame of `frame_slots` locals (recursion-safe);
+/// parameters occupy the first `param_count` locals. Slot operands address
+/// either a module global (`slot < Bundle::global_count`) or a current-frame
+/// local (`slot - global_count`); see [`Bundle::global_count`]. `ByRef`
+/// parameters alias the caller's place rather than copying (true aliasing).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcedureDescriptor {
     pub name: String,
     pub entry_pc: usize,
     pub kind: ProcedureKind,
     pub param_count: usize,
-    /// Absolute start of this procedure's slot range in the flat slot file.
-    pub frame_base: usize,
-    /// Number of slots this procedure owns (params + locals + temporaries).
+    /// Number of local slots in this procedure's frame (params first, then
+    /// locals/temporaries).
     pub frame_slots: usize,
-    /// Absolute slot holding the function's return value (`None` for a `Sub`).
+    /// Frame-local slot holding the function's result (`None` for a `Sub`).
     pub return_slot: Option<usize>,
 }
 
@@ -208,10 +207,16 @@ pub struct Bundle {
     pub procedures: Vec<ProcedureDescriptor>,
     /// Entry point pc for top-level / `Sub Main` execution.
     pub entry_pc: usize,
-    /// Total VM slot count (user-visible + temporaries).
-    pub slot_count: usize,
-    /// User-declared slot count (locals/params), for snapshot/diagnostic projection.
-    pub user_slot_count: usize,
+    /// Module-level global slot count. A slot operand `s` addresses a global
+    /// when `s < global_count`; otherwise it addresses the current frame's
+    /// local at `s - global_count`. Globals persist across calls; locals are
+    /// per-frame (recursion-safe).
+    pub global_count: usize,
+    /// Local-slot count of the top-level (entry) frame.
+    pub entry_frame_slots: usize,
+    /// Sorted pcs at which source statements begin, for statement-granular
+    /// `Resume` / `Resume Next`. Empty ⇒ op-granularity (each op is a statement).
+    pub statement_starts: Vec<usize>,
     /// `Declare Lib` external-call descriptors, indexed by `descriptor_id`.
     pub external_calls: Vec<ExternalCallDescriptor>,
     /// pc → source-line map.
@@ -227,8 +232,9 @@ impl Bundle {
             ops: Vec::new(),
             procedures: Vec::new(),
             entry_pc: 0,
-            slot_count: 0,
-            user_slot_count: 0,
+            global_count: 0,
+            entry_frame_slots: 0,
+            statement_starts: Vec::new(),
             external_calls: Vec::new(),
             source_map: Vec::new(),
             com_class_exports: Vec::new(),

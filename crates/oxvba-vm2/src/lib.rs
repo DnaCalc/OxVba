@@ -7,21 +7,23 @@
 //! [`oxvba_hal::HostServices`] facets.
 //!
 //! ## Execution model
-//! Slots are a single flat file ([`Bundle::slot_count`]); each procedure owns
-//! the range `[frame_base, frame_base + frame_slots)` and the VM snapshots/
-//! restores that range across a call so recursion is safe. Module-level globals
-//! live in slots outside every procedure's range and therefore persist.
-//! Arguments use the copy-in / copy-out convention ([`ProcArg`]): `ByRef`
-//! copies the caller slot into the parameter on entry and copies it back on
-//! return. `On Error` state is per-procedure (saved/restored across calls).
+//! - **Globals vs locals.** A slot operand `s` addresses a module global when
+//!   `s < bundle.global_count`, otherwise the current frame's local at
+//!   `s - global_count`. Globals persist for the whole run.
+//! - **Frames.** Each [`Op::CallProc`] pushes a fresh [`Frame`] of `frame_slots`
+//!   locals — recursion is automatic (separate storage per activation). The
+//!   top-level runs in the entry frame, which is never popped.
+//! - **True `ByRef` aliasing.** A `ByRef` argument binds the parameter to the
+//!   caller's *place* (a global, or a local of an ancestor frame). Reads and
+//!   writes through the parameter operate directly on the caller's storage —
+//!   no copy-in/copy-out. Aliases are resolved to their ultimate backing place
+//!   at call time, so they never chain or dangle.
+//! - **Error state** is per-procedure (`On Error` is saved/restored across
+//!   calls). `Resume`/`Resume Next` are statement-granular via
+//!   `bundle.statement_starts`.
 //!
-//! FIDELITY (documented, Phase-1): `Resume`/`Resume Next` target op granularity
-//! rather than VBA statement granularity (the front-end does not yet emit
-//! statement markers); `ByRef` is copy-in/copy-out rather than true aliasing;
-//! the project-object lifecycle (`New`/refcount/`Class_Terminate`) and the
-//! WithEvents→COM subscription bridge (which needs the project event-route
-//! table) are staged — WithEvents binding state + owner enumeration are
-//! implemented here, the host subscription sync is not yet wired.
+//! Arithmetic/comparison/coercion are primitive (see [`arith`]); they stay
+//! opcodes rather than library calls because `Variant` boxing dominates.
 
 mod arith;
 
@@ -32,7 +34,9 @@ use oxvba_bundle::{
     Bundle, CallArg, ComMemberSelector, ExternalCallWriteback, ExternalCallWritebackKind,
     NativeCallee, Op, ProcArg, ProjectMemberKind,
 };
-use oxvba_com::{DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue};
+use oxvba_com::{
+    DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue,
+};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::{LibContext, LibError};
@@ -42,6 +46,9 @@ use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, pointer_helpers};
 
 use arith::CmpOp;
+
+/// VBA `Missing` (an omitted optional argument): vbError `&H80020004`.
+const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
 
 /// A VBA run-time error surfaced to the embedder (uncaught by any handler).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +87,14 @@ enum ErrorMode {
     Goto(usize),
 }
 
+/// The statement to re-enter on `Resume` (`start`) or continue past on
+/// `Resume Next` (`next`).
+#[derive(Debug, Clone, Copy, Default)]
+struct ResumePoint {
+    start: usize,
+    next: usize,
+}
+
 /// The `Err` object (number/description/source).
 #[derive(Debug, Clone, Default)]
 struct ErrObject {
@@ -88,19 +103,24 @@ struct ErrObject {
     source: String,
 }
 
-/// One activation record for a `CallProc`.
-struct CallRecord {
-    return_pc: usize,
-    dst: Option<usize>,
-    base: usize,
-    len: usize,
+/// A storage location: a module global, or a local of a specific frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Global(usize),
+    Local(usize, usize), // (frame index, relative local index)
+}
+
+/// One activation record: its locals plus the call linkage. `ByRef` parameters
+/// are recorded in `aliases` (relative local index → backing place) and have no
+/// storage of their own.
+struct Frame {
+    locals: Vec<Variant>,
+    aliases: HashMap<usize, Place>,
+    dst: Option<Place>,
     return_slot: Option<usize>,
-    /// `(caller_slot, parameter_slot)` pairs for `ByRef` copy-out.
-    byrefs: Vec<(usize, usize)>,
-    /// The callee frame range as it was before the call (restored on return).
-    snapshot: Vec<Variant>,
+    return_pc: usize,
     saved_error_mode: ErrorMode,
-    saved_resume_pc: usize,
+    saved_resume: ResumePoint,
 }
 
 /// `For Each` enumerator state, keyed by the iterator slot.
@@ -113,14 +133,14 @@ struct ForEachState {
 pub struct Vm<'h> {
     bundle: &'h Bundle,
     host: &'h dyn HostServices,
-    slots: Vec<Variant>,
+    global_count: usize,
+    globals: Vec<Variant>,
+    frames: Vec<Frame>,
     pc: usize,
     next_pc: usize,
     halted: bool,
-    call_stack: Vec<CallRecord>,
     error_mode: ErrorMode,
-    /// pc of the statement being protected when the active handler fired.
-    resume_pc: usize,
+    resume: ResumePoint,
     err: ErrObject,
     lib: LibContext,
     for_each: HashMap<usize, ForEachState>,
@@ -137,16 +157,26 @@ pub fn run<'h>(bundle: &'h Bundle, host: &'h dyn HostServices) -> Result<Vm<'h>,
 
 impl<'h> Vm<'h> {
     pub fn new(bundle: &'h Bundle, host: &'h dyn HostServices) -> Self {
+        let entry = Frame {
+            locals: vec![Variant::empty(); bundle.entry_frame_slots],
+            aliases: HashMap::new(),
+            dst: None,
+            return_slot: None,
+            return_pc: 0,
+            saved_error_mode: ErrorMode::None,
+            saved_resume: ResumePoint::default(),
+        };
         Self {
             bundle,
             host,
-            slots: vec![Variant::empty(); bundle.slot_count],
+            global_count: bundle.global_count,
+            globals: vec![Variant::empty(); bundle.global_count],
+            frames: vec![entry],
             pc: bundle.entry_pc,
             next_pc: bundle.entry_pc,
             halted: false,
-            call_stack: Vec::new(),
             error_mode: ErrorMode::None,
-            resume_pc: bundle.entry_pc,
+            resume: ResumePoint::default(),
             err: ErrObject::default(),
             lib: LibContext::default(),
             for_each: HashMap::new(),
@@ -155,12 +185,13 @@ impl<'h> Vm<'h> {
         }
     }
 
-    /// Read a slot's value (immutable view of the current state).
-    pub fn slot(&self, index: usize) -> Option<&Variant> {
-        self.slots.get(index)
+    /// Read a slot's value (resolved against the current top frame).
+    pub fn slot(&self, slot: usize) -> Option<&Variant> {
+        let place = self.target(slot).ok()?;
+        self.read_place(place).ok()
     }
 
-    /// Drive the instruction stream until `Halt`, a `Return` from the top
+    /// Drive the instruction stream until `Halt`, a `Return` from the entry
     /// frame, the end of the ops, or an uncaught error.
     pub fn run(&mut self) -> Result<(), VmError> {
         while !self.halted && self.pc < self.bundle.ops.len() {
@@ -174,23 +205,60 @@ impl<'h> Vm<'h> {
         Ok(())
     }
 
-    // ── Slot access ──────────────────────────────────────────────────────────
-    fn get(&self, index: usize) -> Result<&Variant, Fault> {
-        self.slots
-            .get(index)
-            .ok_or_else(|| Fault::new(9, format!("slot {index} out of range")))
+    // ── Slot / place resolution ────────────────────────────────────────────────
+    fn target(&self, slot: usize) -> Result<Place, Fault> {
+        if slot < self.global_count {
+            return Ok(Place::Global(slot));
+        }
+        let rel = slot - self.global_count;
+        let frame_index = self
+            .frames
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| Fault::new(5, "no active frame"))?;
+        match self.frames[frame_index].aliases.get(&rel) {
+            Some(place) => Ok(*place),
+            None => Ok(Place::Local(frame_index, rel)),
+        }
     }
-    fn cloned(&self, index: usize) -> Result<Variant, Fault> {
-        self.get(index).cloned()
+
+    fn read_place(&self, place: Place) -> Result<&Variant, Fault> {
+        match place {
+            Place::Global(i) => {
+                self.globals.get(i).ok_or_else(|| Fault::new(9, "global slot out of range"))
+            }
+            Place::Local(fi, ri) => self
+                .frames
+                .get(fi)
+                .and_then(|f| f.locals.get(ri))
+                .ok_or_else(|| Fault::new(9, "local slot out of range")),
+        }
     }
-    fn set(&mut self, index: usize, value: Variant) -> Result<(), Fault> {
-        match self.slots.get_mut(index) {
-            Some(target) => {
-                *target = value;
+
+    fn write_place(&mut self, place: Place, value: Variant) -> Result<(), Fault> {
+        let target = match place {
+            Place::Global(i) => self.globals.get_mut(i),
+            Place::Local(fi, ri) => self.frames.get_mut(fi).and_then(|f| f.locals.get_mut(ri)),
+        };
+        match target {
+            Some(cell) => {
+                *cell = value;
                 Ok(())
             }
-            None => Err(Fault::new(9, format!("slot {index} out of range"))),
+            None => Err(Fault::new(9, "slot out of range")),
         }
+    }
+
+    fn get(&self, slot: usize) -> Result<&Variant, Fault> {
+        let place = self.target(slot)?;
+        self.read_place(place)
+    }
+    fn cloned(&self, slot: usize) -> Result<Variant, Fault> {
+        self.get(slot).cloned()
+    }
+    fn set(&mut self, slot: usize, value: Variant) -> Result<(), Fault> {
+        let place = self.target(slot)?;
+        self.write_place(place, value)
     }
 
     // ── Error handling ─────────────────────────────────────────────────────────
@@ -202,44 +270,53 @@ impl<'h> Vm<'h> {
         };
     }
 
+    /// Statement bounds for a pc: `(start, next)` from `bundle.statement_starts`
+    /// (op-granularity if the table is empty).
+    fn statement_bounds(&self, pc: usize) -> ResumePoint {
+        let starts = &self.bundle.statement_starts;
+        if starts.is_empty() {
+            return ResumePoint { start: pc, next: pc + 1 };
+        }
+        let idx = match starts.binary_search(&pc) {
+            Ok(i) => i,
+            Err(0) => return ResumePoint { start: pc, next: pc + 1 },
+            Err(i) => i - 1,
+        };
+        let start = starts[idx];
+        let next = starts.get(idx + 1).copied().unwrap_or(self.bundle.ops.len());
+        ResumePoint { start, next }
+    }
+
     /// Route a raised fault: into `Resume Next`/handler-goto if a handler is
-    /// active, otherwise unwind the call stack looking for one; an uncaught
-    /// fault becomes a [`VmError`] out of [`run`].
+    /// active, otherwise unwind the call stack; an uncaught fault becomes a
+    /// [`VmError`] out of [`run`].
     fn dispatch_fault(&mut self, fault: Fault) -> Result<(), VmError> {
         self.set_err(fault.code, &fault.message);
         let mut errored_pc = self.pc;
         loop {
             match self.error_mode {
                 ErrorMode::ResumeNext => {
-                    self.resume_pc = errored_pc;
-                    self.pc = errored_pc + 1;
+                    self.resume = self.statement_bounds(errored_pc);
+                    self.pc = self.resume.next;
                     return Ok(());
                 }
                 ErrorMode::Goto(handler) => {
-                    self.resume_pc = errored_pc;
+                    self.resume = self.statement_bounds(errored_pc);
                     self.pc = handler;
                     return Ok(());
                 }
-                ErrorMode::None => match self.call_stack.pop() {
-                    Some(rec) => {
-                        // Unwind one frame; the error now "occurs" at the call site.
-                        errored_pc = rec.return_pc.saturating_sub(1);
-                        self.unwind_frame(rec);
-                    }
-                    None => {
+                ErrorMode::None => {
+                    // Unwind to the caller; the error now "occurs" at the call site.
+                    if self.frames.len() <= 1 {
                         return Err(VmError { code: fault.code, message: fault.message });
                     }
-                },
+                    let frame = self.frames.pop().unwrap();
+                    errored_pc = frame.return_pc.saturating_sub(1);
+                    self.error_mode = frame.saved_error_mode;
+                    self.resume = frame.saved_resume;
+                }
             }
         }
-    }
-
-    /// Restore the caller's frame range and error scope after an error unwind
-    /// (no return value, no `ByRef` copy-out).
-    fn unwind_frame(&mut self, rec: CallRecord) {
-        self.slots[rec.base..rec.base + rec.len].clone_from_slice(&rec.snapshot);
-        self.error_mode = rec.saved_error_mode;
-        self.resume_pc = rec.saved_resume_pc;
     }
 
     // ── Procedure calls ──────────────────────────────────────────────────────
@@ -249,42 +326,43 @@ impl<'h> Vm<'h> {
             .procedures
             .get(proc)
             .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
-        let (base, len, return_slot, entry) =
-            (desc.frame_base, desc.frame_slots, desc.return_slot, desc.entry_pc);
+        let (frame_slots, return_slot, entry) = (desc.frame_slots, desc.return_slot, desc.entry_pc);
 
-        // Evaluate argument values first (so ByRef sources are read before any
-        // parameter slot is overwritten — important when caller == callee).
-        let mut values = Vec::with_capacity(args.len());
-        let mut byrefs = Vec::new();
+        // Resolve everything in the *caller* context before pushing the callee.
+        let dst_place = match dst {
+            Some(slot) => Some(self.target(slot)?),
+            None => None,
+        };
+        let mut locals = vec![Variant::empty(); frame_slots];
+        let mut aliases = HashMap::new();
         for (i, arg) in args.iter().enumerate() {
             match arg {
-                ProcArg::ByVal(s) => values.push(self.cloned(*s)?),
-                ProcArg::ByRef(s) => {
-                    values.push(self.cloned(*s)?);
-                    byrefs.push((*s, base + i));
+                ProcArg::ByVal(s) => {
+                    let value = self.cloned(*s)?;
+                    if i < locals.len() {
+                        locals[i] = value;
+                    }
                 }
-                ProcArg::Omitted => values.push(Variant::from_error_code(0x000A_9C04u32 as i32)),
+                ProcArg::ByRef(s) => {
+                    let place = self.target(*s)?;
+                    aliases.insert(i, place);
+                }
+                ProcArg::Omitted => {
+                    if i < locals.len() {
+                        locals[i] = Variant::from_error_code(MISSING_ARG);
+                    }
+                }
             }
         }
 
-        if base + len > self.slots.len() {
-            return Err(Fault::new(9, "procedure frame exceeds slot file"));
-        }
-        let snapshot = self.slots[base..base + len].to_vec();
-        for (i, value) in values.into_iter().enumerate() {
-            self.slots[base + i] = value;
-        }
-
-        self.call_stack.push(CallRecord {
-            return_pc: self.pc + 1,
-            dst,
-            base,
-            len,
+        self.frames.push(Frame {
+            locals,
+            aliases,
+            dst: dst_place,
             return_slot,
-            byrefs,
-            snapshot,
+            return_pc: self.pc + 1,
             saved_error_mode: self.error_mode,
-            saved_resume_pc: self.resume_pc,
+            saved_resume: self.resume,
         });
         self.error_mode = ErrorMode::None; // each procedure starts with no handler
         self.next_pc = entry;
@@ -292,28 +370,21 @@ impl<'h> Vm<'h> {
     }
 
     fn ret(&mut self) -> Result<(), Fault> {
-        let Some(rec) = self.call_stack.pop() else {
-            // Return from the top-level frame ends execution.
+        if self.frames.len() <= 1 {
+            // Return from the entry frame ends execution.
             self.halted = true;
             return Ok(());
-        };
-        let return_value = rec.return_slot.map(|rs| self.slots[rs].clone());
-        let writebacks: Vec<(usize, Variant)> = rec
-            .byrefs
-            .iter()
-            .map(|(caller, param)| (*caller, self.slots[*param].clone()))
-            .collect();
-
-        self.slots[rec.base..rec.base + rec.len].clone_from_slice(&rec.snapshot);
-        for (caller, value) in writebacks {
-            self.set(caller, value)?;
         }
-        if let (Some(dst), Some(value)) = (rec.dst, return_value) {
-            self.set(dst, value)?;
+        let frame = self.frames.pop().unwrap();
+        let return_value = frame.return_slot.and_then(|rs| frame.locals.get(rs).cloned());
+        self.error_mode = frame.saved_error_mode;
+        self.resume = frame.saved_resume;
+        self.next_pc = frame.return_pc;
+        // Writes during the call already hit the backing places (true aliasing),
+        // so the only copy-out is the function's return value into the caller.
+        if let (Some(place), Some(value)) = (frame.dst, return_value) {
+            self.write_place(place, value)?;
         }
-        self.error_mode = rec.saved_error_mode;
-        self.resume_pc = rec.saved_resume_pc;
-        self.next_pc = rec.return_pc;
         Ok(())
     }
 
@@ -354,10 +425,7 @@ impl<'h> Vm<'h> {
                 CallArg::Named { name, slot } => (Some(self.cloned(*slot)?), Some(name.clone())),
                 CallArg::Omitted => (None, None),
             };
-            call_args.push(DynamicCallArg {
-                value: value.map(DynamicValue::from_variant),
-                name,
-            });
+            call_args.push(DynamicCallArg { value: value.map(DynamicValue::from_variant), name });
         }
         let request = DynamicCallRequest {
             object,
@@ -478,9 +546,7 @@ impl<'h> Vm<'h> {
     }
 
     fn array_of(&self, slot: usize) -> Result<SafeArray, Fault> {
-        self.get(slot)?
-            .as_safearray()
-            .ok_or_else(|| Fault::new(13, "expected an array"))
+        self.get(slot)?.as_safearray().ok_or_else(|| Fault::new(13, "expected an array"))
     }
 
     // ── WithEvents ───────────────────────────────────────────────────────────
@@ -625,8 +691,8 @@ impl<'h> Vm<'h> {
             Op::SetOnErrorResumeNext => self.error_mode = ErrorMode::ResumeNext,
             Op::SetOnErrorGoto0 => self.error_mode = ErrorMode::None,
             Op::SetOnErrorGotoLabel { target_pc } => self.error_mode = ErrorMode::Goto(*target_pc),
-            Op::ResumeNext => self.next_pc = self.resume_pc + 1,
-            Op::Resume => self.next_pc = self.resume_pc,
+            Op::ResumeNext => self.next_pc = self.resume.next,
+            Op::Resume => self.next_pc = self.resume.start,
             Op::ResumeLabel { target_pc } => self.next_pc = *target_pc,
             Op::RaiseError { code } => {
                 return Err(Fault::new(*code, default_error_message(*code)));
@@ -635,10 +701,8 @@ impl<'h> Vm<'h> {
 
             // ── Arrays / aggregates ──
             Op::ArrayLiteral { dst, values } => {
-                let elems = values
-                    .iter()
-                    .map(|s| self.cloned(*s))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let elems =
+                    values.iter().map(|s| self.cloned(*s)).collect::<Result<Vec<_>, _>>()?;
                 self.set(*dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
             }
             Op::ArrayAppend { dst, array, item } => {
@@ -668,7 +732,8 @@ impl<'h> Vm<'h> {
                         elems[i] = value;
                     }
                 }
-                let resized = array.replace_variant_elements(elems).map_err(Fault::from_string)?;
+                let resized =
+                    array.replace_variant_elements(elems).map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(resized))?;
             }
             Op::ArrayGet { dst, array, indices } => {
@@ -691,7 +756,8 @@ impl<'h> Vm<'h> {
                     return Err(Fault::new(9, "subscript out of range"));
                 }
                 elems[flat] = self.cloned(*src)?;
-                let updated = arr.replace_variant_elements(elems).map_err(Fault::from_string)?;
+                let updated =
+                    arr.replace_variant_elements(elems).map_err(Fault::from_string)?;
                 self.set(*array, Variant::from_safearray(updated))?;
             }
             Op::LBound { dst, src } => {
@@ -703,10 +769,7 @@ impl<'h> Vm<'h> {
             Op::UBound { dst, src } => {
                 let arr = self.array_of(*src)?;
                 let bounds = arr.bounds().ok_or_else(|| Fault::new(9, "array has no bounds"))?;
-                let upper = bounds
-                    .first()
-                    .map(|b| b.lower + b.count as i32 - 1)
-                    .unwrap_or(-1);
+                let upper = bounds.first().map(|b| b.lower + b.count as i32 - 1).unwrap_or(-1);
                 self.set(*dst, Variant::from_i32(upper))?;
             }
             Op::ForEachInit { iter, src } => {
@@ -736,11 +799,8 @@ impl<'h> Vm<'h> {
             // ── Objects / WithEvents / type identity ──
             Op::WithEventsGet { dst, owner, binding } => {
                 let key = self.withevents_lookup_key(*owner, *binding)?;
-                let value = self
-                    .withevents
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or_else(|| Variant::from_i32(0));
+                let value =
+                    self.withevents.get(&key).cloned().unwrap_or_else(|| Variant::from_i32(0));
                 self.set(*dst, value)?;
             }
             Op::WithEventsSet { dst, owner, binding, value } => {
@@ -872,7 +932,6 @@ impl<'h> Vm<'h> {
                 Err(Fault::new(424, format!("Object required: {target_name}")))
             }
             Intent::Let if target_kind == Kind::Object && value.vtype() == VarType::Object => {
-                // Assigning an object with Let to an object target requires Set.
                 Err(Fault::new(91, format!("Object variable requires Set: {target_name}")))
             }
             _ => Ok(()),
@@ -906,7 +965,7 @@ fn member_kind_to_dynamic(kind: ProjectMemberKind) -> DynamicCallKind {
 }
 
 /// A Variant carrying a COM/project object handle: an object ref, or an `i32`/
-/// `i64` handle (`semantics::variant_to_com_object` analog).
+/// `i64` handle.
 fn variant_to_object(value: &Variant) -> Result<ObjectRef, Fault> {
     if let Some(object) = value.as_object_ref() {
         return Ok(object);
@@ -922,8 +981,7 @@ fn variant_to_object(value: &Variant) -> Result<ObjectRef, Fault> {
     Err(Fault::new(424, "Object required"))
 }
 
-/// Object-identity key for `Is` comparison: the object raw, or 0 for Nothing/
-/// non-object values.
+/// Object-identity key for `Is`: the object raw, or 0 for Nothing/non-object.
 fn object_identity(value: &Variant) -> i32 {
     value.as_object_ref().map(|o| o.raw()).unwrap_or(0)
 }
