@@ -71,20 +71,44 @@ DispatchRoute =
 
 This single path replaces: `rewrite_early_bound_member_dispatch` (COM, `project.rs:5078`), the `Debug.Print`/`Err.*` special-cases, `MemberDispatchClass` routing, project-class member/default-member rewrites, and the field-array/PMR carriers. **Default members** are just a member lookup with the type's `is_default_member` entry.
 
-## 4. The VBA base library — representation (iii): declarations + native-impl binding
+## 4. The VBA base library — a VBA-shaped interface with native bodies (iii)
 
-The base library is a **built-in reference, injected by default into every compilation**, resolved through the *same* reference path as project and COM references. It is authored as a **descriptor**, not as `.bas` source, but it binds at the same level as any reference:
+The base library is a **built-in reference injected by default into every compilation**, resolved through the *same* path as project and COM references. Guiding principle:
 
-- **Namespaces/modules**: `Constants`, `Math`, `Strings`, `Information`, `Interaction`, `FileSystem`, … (global namespace `VBA`).
-- **Constants**: name → typed literal (`vbCrLf`, `vbYesNo = 4`, …) → `Binding::Value`.
-- **Callables**: name, signature (param types/optionality, return type), host-sensitivity (`DeterministicCore`/`HostSensitive`) → `Callable { dispatch: Native(NativeImplId) }`. The base library is simply a *source* whose members dispatch `Native`.
-- **Predeclared objects**: `Debug`, `Err`, `Collection` as declared `Type`s with members; each member resolves through §3.2 to `Callable { dispatch: Native(NativeImplId) }`.
+> At the **interface** level the base library should look like a rich VBA library one could have written and referenced — native imports/exports, module functions, classes shaped like COM types (some with events). Only the **bodies** are native. The core language stays primitive and *references* this library; it does not bake the library's surface into the parser/compiler.
 
-**`NativeImplId` is the (iii) seam — and it is not library-specific.** It maps a *natively-implemented* member (base-library function, `Declare Lib` import, or host primitive) to its existing Rust implementation — a VM inline op (`Instruction::Intrinsic*` over `oxvba-runtime`) or a HAL call (`oxvba-hal::HostServices`). We do **not** reimplement the impls. The emit dispatch becomes `(NativeImplId, args) → Instruction::…` (typed) instead of `(name: &str, args) → …`. The base library is one source that produces `Native` dispatches, exactly as COM sources produce `Com` dispatches and project sources produce `VbaProc` dispatches — all through the one `CallableBinding`. The base-library descriptor is built once and cached (`OnceLock`).
+### 4.1 Interface shape (VBA-implementable in principle)
+The descriptor mirrors what a referenced VBA/COM library's metadata would expose, so the base library and a real referenced library are the *same kind* of `SymbolSource`:
+- **Modules** (`Constants`, `Math`, `Strings`, `Conversion`, `Information`, `Interaction`, `FileSystem`, …) under the global `VBA` namespace, each holding constants and module functions.
+- **Constants**: name → typed value → `Binding::Value` (slice 1, done).
+- **Module functions**: name + full signature (params/optionality/return) + host-sensitivity → `Callable`.
+- **Classes shaped like COM types**: `Collection`, `Err` (and conceptually `Debug`) as declared `Type`s with methods/properties — and, where VBA has them, **events** — resolved through the one member-dispatch path (§3.2).
+- **Native imports/exports**: the library's "DLL side" — see §4.2.
 
-**Statement-syntax built-ins** (`Open … For … As #`, `Print #`, `Input #`, `Line Input #`, `Close`, `Get`/`Put`): VBA's grammar genuinely requires dedicated statement syntax (they are not plain calls), so the parser keeps recognizing them. But their *semantics* resolve to base-library callables (`dispatch: Native`) — the builder no longer hardcodes `is_*_stmt` text matching → fixed opcode. A statement node carries the resolved `Callable` instead.
+### 4.2 Native implementation binding (the body)
+Every library member declares how it is implemented. In the uniform model that is `dispatch: Native(NativeImplId)` — the member's *body* is a hook into existing Rust (`Instruction::Intrinsic*` over `oxvba-runtime`, or an `oxvba-hal::HostServices` call). This is the analog of a typelib's interface + a DLL's implementation, and the same mechanism `Declare Lib` and host primitives use. We do **not** reimplement anything; the descriptor *declares the interface and points each body at its native hook*. A member could in principle instead carry a VBA body (`dispatch: VbaProc`) — the model allows it — but the base library's bodies are native. The emit dispatch becomes `(NativeImplId, args) → Instruction::…` (typed) instead of `(name: &str, args) → …`; the base-library descriptor is built once and cached (`OnceLock`).
 
-**Host library** (`Application`, etc.) is a *separate* host-injected layer (layer 5) with the same shape; it needs a host-supplied member catalog (new data — the one genuinely-missing metadata source). The base library never contains host globals.
+### 4.3 Primitive core, library-supplied semantics (the target)
+The end goal is a **primitive core language** — syntax, control flow, binding/resolution, and value/slot machinery — with as much *semantics* as possible supplied by the library and referenced uniformly:
+- Conversions (`CStr`, `CLng`, `Val`, …) are library functions, not core built-ins.
+- **Operators** (`+`, `&`, `Mod`, comparisons, …) are, at the limit, library operations (`op_Addition`-style members) the core resolves a syntactic operator to — not semantics baked into the typer/emitter.
+
+This is the direction, not the first step: operators are currently wired deep into parser/typecheck/emit, so moving `op_Addition` to the library is a later, dedicated phase. Near-term the library owns constants, functions, and the predeclared objects; operators stay core until then. Stating the target keeps each step honest about whether it moves *toward* a primitive core or entrenches built-ins.
+
+### 4.4 Library interface vs compiler-internal intrinsics (the partition)
+A name is either a **library interface member** — it would appear in the library's public surface (`Len`, `CStr`, `MsgBox`, `Collection.Add`) and carries a native body — **or** a **compiler-internal structural intrinsic** (`__oxvba_array_field_*`, `__oxvba_withevents_*`, `dispatchinvoke`, `VarPtr`/`StrPtr`/`ObjPtr`, `__oxvba_project_instance`): plumbing that is *not* part of any library interface and stays internal (much of it disappears as the HIR matures). The three drifted legacy lists (`is_builtin_intrinsic_name`, `intrinsic_spec`, `is_intrinsic_call_name`) are reconciled along **this** line — not merged blindly; their meaningful membership differences (e.g. `cstr`/`val` recognized for HIR lowering but with no legacy `intrinsic_spec` arity) are resolved deliberately, with the full suite + conformance corpus as the parity gate.
+
+### 4.5 Acknowledged syntactic integration points (the quirks)
+A small, **explicit** set of library surfaces hook into syntax in ways a pure external reference could not — enumerated exceptions, not the norm:
+- **`Err`** — members hook the VM error-state (`Err.Number`, `Err.Raise`, `Err.Clear`).
+- **File I/O statements** — `Open … For … As #`, `Print #`, `Input #`, `Line Input #`, `Write #`, `Close`, `Get`/`Put`: bespoke statement grammar; the parser keeps the syntax, the semantics resolve to library callables (not a hardcoded opcode).
+- **`Debug`** — `Debug.Print` / `Debug.Assert` statement-style member use.
+- **`Mid` / `LSet` / `RSet` statement forms** — e.g. `Mid(s, i, n) = …` as an assignment target.
+
+Everything else resolves as an ordinary library reference.
+
+### 4.6 Host library
+`Application`, `ThisWorkbook`, etc. are a *separate* host-injected layer (layer 5) with the same interface shape; it needs a host-supplied member catalog (new data — the one genuinely-missing metadata source). The base library never contains host globals.
 
 ## 5. What this deletes (the payoff)
 
