@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use oxvba_compiler::{
     Bytecode, CompiledProject, DeclareParamType, ExportKind, HostProcedureExport,
     ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotMetadata,
-    ProcedureSignatureDescriptor, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, VbaTypeId,
+    ProcedureSignatureDescriptor, ProjectCompileRoute, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute, VbaTypeId,
 };
 use oxvba_project::validate::{validate_com_class_exports, validate_native_exports};
 use oxvba_project::{
@@ -30,6 +30,8 @@ fn make_compiled_project(
         procedure_runtime_metadata: metadata,
         source_maps: oxvba_compiler::CompilerSourceMap::default(),
         rewritten_source: String::new(),
+        compile_route: ProjectCompileRoute::LegacyFallback,
+        compile_route_detail: None,
         host_exports,
         reference_visible_exports: Vec::new(),
         event_dispatch_bindings: Vec::new(),
