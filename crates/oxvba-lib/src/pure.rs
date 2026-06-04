@@ -23,6 +23,22 @@ fn chars(s: &str) -> Vec<char> {
     s.chars().collect()
 }
 
+/// Optional trailing compare-mode argument: 0 = binary (default), 1 = text. The
+/// legacy VM threaded `Option Compare` at compile time; `oxvba-temp-b2b` passes
+/// that mode as a trailing argument here.
+fn text_compare(args: &[Variant], index: usize) -> LibResult<bool> {
+    match opt(args, index) {
+        Some(v) => Ok(as_i32(v)? == 1),
+        None => Ok(false),
+    }
+}
+
+/// Text-mode normalization, ported from the legacy `normalize_for_compare`:
+/// ASCII case-folding. FIDELITY: not Unicode/locale-aware.
+fn norm_compare(s: String, text: bool) -> String {
+    if text { s.to_ascii_lowercase() } else { s }
+}
+
 pub fn left(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let n = as_usize(need(args, 1)?)?;
@@ -69,10 +85,13 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(c.into_iter().collect::<String>()))
 }
 
-/// `InStr`/`InStrRev`. FIDELITY: binary compare only (no `Option Compare Text`).
+/// `InStr([start], s1, s2, [compare])` — 2 operands + optional trailing compare
+/// mode (0 = binary, 1 = text → ASCII case-insensitive). FIDELITY: leading
+/// `start` not yet threaded (the legacy lowering did not carry it either).
 pub fn instr(args: &[Variant], rev: bool) -> LibResult<Variant> {
-    let hay = as_str(need(args, 0)?)?;
-    let needle = as_str(need(args, 1)?)?;
+    let text = text_compare(args, 2)?;
+    let hay = norm_compare(as_str(need(args, 0)?)?, text);
+    let needle = norm_compare(as_str(need(args, 1)?)?, text);
     let pos = if rev { hay.rfind(&needle) } else { hay.find(&needle) };
     Ok(vi32(match pos {
         Some(byte) => hay[..byte].encode_utf16().count() as i32 + 1,
@@ -137,10 +156,11 @@ pub fn trim(args: &[Variant], left: bool, right: bool) -> LibResult<Variant> {
     Ok(vstr(t.to_string()))
 }
 
-/// FIDELITY: binary compare only.
+/// `StrComp(s1, s2, [compare])` — optional trailing compare mode (0=binary, 1=text).
 pub fn str_comp(args: &[Variant]) -> LibResult<Variant> {
-    let a = as_str(need(args, 0)?)?;
-    let b = as_str(need(args, 1)?)?;
+    let text = text_compare(args, 2)?;
+    let a = norm_compare(as_str(need(args, 0)?)?, text);
+    let b = norm_compare(as_str(need(args, 1)?)?, text);
     Ok(vi32(match a.cmp(&b) {
         std::cmp::Ordering::Less => -1,
         std::cmp::Ordering::Equal => 0,
@@ -148,10 +168,13 @@ pub fn str_comp(args: &[Variant]) -> LibResult<Variant> {
     }))
 }
 
-/// FIDELITY: supports `?`, `*`, `#`; does not yet support `[charlist]` ranges.
+/// `Like` — supports `?`, `*`, `#` and an optional trailing compare mode
+/// (0=binary, 1=text). Already richer than the legacy VM (which implemented Like
+/// as plain equality). FIDELITY: `[charlist]` ranges not yet supported.
 pub fn like(args: &[Variant]) -> LibResult<Variant> {
-    let s: Vec<char> = as_str(need(args, 0)?)?.chars().collect();
-    let p: Vec<char> = as_str(need(args, 1)?)?.chars().collect();
+    let text = text_compare(args, 2)?;
+    let s: Vec<char> = norm_compare(as_str(need(args, 0)?)?, text).chars().collect();
+    let p: Vec<char> = norm_compare(as_str(need(args, 1)?)?, text).chars().collect();
     Ok(vbool(like_match(&s, &p)))
 }
 
@@ -224,21 +247,50 @@ fn proper_case(s: &str) -> String {
         .join(" ")
 }
 
-/// FIDELITY: heavy first-cut — no-format → CStr; numeric/general masks approximate.
+/// `Format(expr, [mask])` — ported from the legacy VM's `format_number` mask set
+/// (`"0"`, `"0.0…"`, `"0%"`, `"#,##0"`, else general). No mask → string
+/// passthrough (CStr). FIDELITY: named formats and date masks not yet supported.
 pub fn format(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
     let mask = match opt(args, 1) {
         Some(v) => as_str(v)?,
         None => return cstr(args),
     };
-    // Minimal: numeric fixed-decimal masks like "0.00"; else CStr.
-    if let Some(dot) = mask.find('.') {
-        let decimals = mask[dot + 1..].chars().filter(|c| *c == '0' || *c == '#').count();
-        if let Ok(n) = as_f64(value) {
-            return Ok(vstr(format!("{n:.*}", decimals)));
+    match as_f64(value) {
+        Ok(n) => Ok(vstr(format_number(n, &mask))),
+        Err(_) => cstr(args),
+    }
+}
+
+fn format_number(n: f64, fmt: &str) -> String {
+    match fmt {
+        "0" => format!("{}", n.round() as i64),
+        pat if pat.starts_with("0.") && pat[2..].chars().all(|c| c == '0') => {
+            format!("{:.prec$}", n, prec = pat.len() - 2)
+        }
+        "0%" => format!("{}%", (n * 100.0).round() as i64),
+        "#,##0" => {
+            let value = n.round() as i64;
+            let negative = value < 0;
+            let abs_str = value.unsigned_abs().to_string();
+            let mut grouped = String::new();
+            for (idx, ch) in abs_str.chars().rev().enumerate() {
+                if idx > 0 && idx % 3 == 0 {
+                    grouped.push(',');
+                }
+                grouped.push(ch);
+            }
+            let grouped: String = grouped.chars().rev().collect();
+            if negative { format!("-{grouped}") } else { grouped }
+        }
+        _ => {
+            if n == (n as i64) as f64 && n.abs() < i64::MAX as f64 {
+                format!("{}", n as i64)
+            } else {
+                format!("{n}")
+            }
         }
     }
-    cstr(args)
 }
 
 // ── Math ──────────────────────────────────────────────────────────────────────
@@ -293,6 +345,14 @@ fn ymd_to_serial(y: i64, m: i64, d: i64) -> f64 {
 
 fn serial_to_ymd(serial: f64) -> (i64, i64, i64) {
     civil_from_days(serial.floor() as i64 + VBA_EPOCH_DAYS_FROM_UNIX)
+}
+
+/// Sakamoto's algorithm (ported from the legacy VM): 0 = Sunday … 6 = Saturday.
+fn day_of_week(year: i32, month: u32, day: u32) -> i32 {
+    let table = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let m = month as i32;
+    let y = if m < 3 { year - 1 } else { year };
+    (y + y / 4 - y / 100 + y / 400 + table[(m - 1) as usize] + day as i32).rem_euclid(7)
 }
 
 pub fn date_serial(args: &[Variant]) -> LibResult<Variant> {
@@ -412,8 +472,8 @@ pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
         DatePart::Year => y as i32,
         DatePart::Month => m as i32,
         DatePart::Day => d as i32,
-        // VBA Weekday: 1 = Sunday. Day 1 (1899-12-31) was a Sunday.
-        DatePart::Weekday => (((serial.floor() as i64 % 7) + 7) % 7 + 1) as i32,
+        // VBA Weekday: 1 = Sunday. Sakamoto returns 0 = Sunday, so add 1.
+        DatePart::Weekday => day_of_week(y as i32, m as u32, d as u32) + 1,
     }))
 }
 
@@ -642,30 +702,61 @@ pub fn mirr(args: &[Variant]) -> LibResult<Variant> {
     Ok(vf64((-pos / neg).powf(1.0 / (n as f64 - 1.0)) - 1.0))
 }
 
-/// FIDELITY: Newton first-cut on the annuity equation.
-pub fn rate(args: &[Variant]) -> LibResult<Variant> {
-    let (n, pmt, pv) = (as_f64(need(args, 0)?)?, as_f64(need(args, 1)?)?, as_f64(need(args, 2)?)?);
-    let fv = opt_f64(args, 3, 0.0)?;
-    let t = opt_f64(args, 4, 0.0)?;
-    let mut r = opt_f64(args, 5, 0.1)?;
-    for _ in 0..100 {
-        let g = (1.0 + r).powf(n);
-        let f = pv * g + pmt * (1.0 + r * t) * (g - 1.0) / r + fv;
-        let dr = 1e-6;
-        let g2 = (1.0 + r + dr).powf(n);
-        let f2 = pv * g2 + pmt * (1.0 + (r + dr) * t) * (g2 - 1.0) / (r + dr) + fv;
-        let df = (f2 - f) / dr;
-        if df.abs() < 1e-12 {
-            break;
+fn rate_func(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64) -> f64 {
+    if r.abs() < 1e-9 {
+        pv + pmt * nper + fv
+    } else {
+        let growth = (1.0 + r).powf(nper);
+        pv * growth + pmt * (1.0 + r * due) * ((growth - 1.0) / r) + fv
+    }
+}
+
+fn rate_func_derivative(r: f64, nper: f64, pmt: f64, pv: f64, due: f64) -> f64 {
+    if r.abs() < 1e-8 {
+        let step = 1e-7;
+        (rate_func(r + step, nper, pmt, pv, 0.0, due) - rate_func(r - step, nper, pmt, pv, 0.0, due))
+            / (2.0 * step)
+    } else {
+        let base = 1.0 + r;
+        if base <= 0.0 {
+            return f64::NAN;
         }
-        let next = r - f / df;
-        if (next - r).abs() < 1e-9 {
-            r = next;
-            break;
+        let growth = base.powf(nper);
+        let growth_p = nper * base.powf(nper - 1.0);
+        let c = (growth - 1.0) / r;
+        let c_p = (growth_p * r - (growth - 1.0)) / (r * r);
+        pv * growth_p + pmt * (due * c + (1.0 + r * due) * c_p)
+    }
+}
+
+/// Ported from the legacy VM's `rate_i32`: Newton iteration with the analytic
+/// annuity derivative. Switched to f64 (the legacy variant scaled by percent).
+pub fn rate(args: &[Variant]) -> LibResult<Variant> {
+    let nper = as_f64(need(args, 0)?)?;
+    let pmt = as_f64(need(args, 1)?)?;
+    let pv = as_f64(need(args, 2)?)?;
+    let fv = opt_f64(args, 3, 0.0)?;
+    let due = if opt_f64(args, 4, 0.0)? != 0.0 { 1.0 } else { 0.0 };
+    if nper == 0.0 {
+        return Err(LibError::invalid_call("Rate requires nper <> 0"));
+    }
+    let mut r = opt_f64(args, 5, 0.1)?.clamp(-0.99, 10.0);
+    for _ in 0..60 {
+        let f = rate_func(r, nper, pmt, pv, fv, due);
+        let fp = rate_func_derivative(r, nper, pmt, pv, due);
+        if fp.abs() < 1e-12 {
+            return Err(LibError::invalid_call("Rate failed to converge"));
+        }
+        let next = (r - f / fp).clamp(-0.99, 10.0);
+        if !next.is_finite() {
+            return Err(LibError::invalid_call("Rate diverged"));
+        }
+        if (next - r).abs() < 1e-10 {
+            return Ok(vf64(next));
         }
         r = next;
     }
-    Ok(vf64(r))
+    Err(LibError::invalid_call("Rate failed to converge"))
 }
 
 // ── Information ──────────────────────────────────────────────────────────────────

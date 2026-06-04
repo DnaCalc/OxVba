@@ -7,8 +7,11 @@
 //! returns a clear error until those token types are wired through.
 
 use crate::{LibError, LibResult, as_f64, need, opt, vunit};
+use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 use oxvba_hal::HostServices;
 use oxvba_runtime::Variant;
+use oxvba_runtime::object_ref::ObjectRef;
+use oxvba_runtime::variant::VarType;
 
 fn req(args: &[Variant], index: usize) -> LibResult<Variant> {
     Ok(need(args, index)?.clone())
@@ -115,32 +118,65 @@ pub fn create_object(args: &[Variant], host: &dyn HostServices) -> LibResult<Var
     Ok(host.com().create_object_variant(req(args, 0)?)?)
 }
 
-fn com_event_gap(op: &str) -> LibError {
-    LibError::new(
-        5,
-        format!("{op} is a first-cut gap in oxvba-lib (FIDELITY: needs oxvba-com event tokens)"),
-    )
+// Variant → typed-handle conversions, ported from the legacy VM
+// (`semantics::variant_to_com_*`): COM handles/tokens are `i32` newtypes that a
+// Variant may carry as an object ref, an `i32`, or a range-checked `i64`.
+fn to_object(value: &Variant, field: &str) -> LibResult<ObjectRef> {
+    if let Some(object) = value.as_object_ref() {
+        return Ok(object);
+    }
+    let raw = to_i32_handle(value, field)?;
+    Ok(ObjectRef::from_compat_identity(raw))
 }
-pub fn com_subscribe_event(_args: &[Variant], _host: &dyn HostServices) -> LibResult<Variant> {
-    Err(com_event_gap("ComSubscribeEvent"))
+
+fn to_i32_handle(value: &Variant, field: &str) -> LibResult<i32> {
+    if let Some(raw) = value.as_i32() {
+        return Ok(raw);
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map_err(|_| LibError::type_mismatch(format!("{field} exceeds i32 handle range")));
+    }
+    Err(LibError::type_mismatch(format!("{field} requires an integer handle")))
 }
-pub fn com_unsubscribe_event(_args: &[Variant], _host: &dyn HostServices) -> LibResult<Variant> {
-    Err(com_event_gap("ComUnsubscribeEvent"))
+
+fn to_index(value: &Variant) -> LibResult<usize> {
+    if matches!(value.vtype(), VarType::Empty) {
+        return Ok(0);
+    }
+    let raw = to_i32_handle(value, "callback index")?;
+    usize::try_from(raw).map_err(|_| LibError::invalid_call("negative callback index"))
+}
+
+pub fn com_subscribe_event(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    let object = to_object(need(args, 0)?, "event source")?;
+    let event = ComMemberToken::new(to_i32_handle(need(args, 1)?, "event token")?);
+    let token = host.com().subscribe_event(object, event)?;
+    Ok(Variant::from_i32(token.raw()))
+}
+pub fn com_unsubscribe_event(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    let subscription = ComSubscriptionToken::new(to_i32_handle(need(args, 0)?, "subscription")?);
+    Ok(host.com().unsubscribe_event_variant(subscription)?)
 }
 pub fn com_event_callback_subscription(
-    _args: &[Variant],
-    _host: &dyn HostServices,
+    args: &[Variant],
+    host: &dyn HostServices,
 ) -> LibResult<Variant> {
-    Err(com_event_gap("ComEventCallbackSubscription"))
+    let callback = ComCallbackToken::new(to_i32_handle(need(args, 0)?, "callback")?);
+    let token = host.com().event_callback_subscription(callback)?;
+    Ok(Variant::from_i32(token.raw()))
 }
-pub fn com_event_callback_arg(_args: &[Variant], _host: &dyn HostServices) -> LibResult<Variant> {
-    Err(com_event_gap("ComEventCallbackArg"))
+pub fn com_event_callback_arg(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    let callback = ComCallbackToken::new(to_i32_handle(need(args, 0)?, "callback")?);
+    let index = to_index(need(args, 1)?)?;
+    Ok(host.com().event_callback_variant(callback, index)?)
 }
 pub fn com_release_event_callback(
-    _args: &[Variant],
-    _host: &dyn HostServices,
+    args: &[Variant],
+    host: &dyn HostServices,
 ) -> LibResult<Variant> {
-    Err(com_event_gap("ComReleaseEventCallback"))
+    let callback = ComCallbackToken::new(to_i32_handle(need(args, 0)?, "callback")?);
+    Ok(host.com().release_event_callback_variant(callback)?)
 }
 
 // ── Diagnostics ──
