@@ -172,6 +172,11 @@ pub enum Op {
     FieldGet { dst: usize, object: usize, field: i32 },
     /// Write `src` into instance field `field` of the object in `object`.
     FieldSet { object: usize, field: i32, src: usize },
+    /// Raise project event `event` from the source instance in `source`,
+    /// dispatching to every subscribed `WithEvents` sink's handler procedure
+    /// (resolved via the bundle's event routes). Arguments follow the event's
+    /// `ByVal`/`ByRef` signature (see [`ProcArg`]).
+    RaiseEvent { source: usize, event: i32, args: Vec<ProcArg> },
 
     // ── Pointer helpers ──────────────────────────────────────
     PtrStr { dst: usize, src: usize },

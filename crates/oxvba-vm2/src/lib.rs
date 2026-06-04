@@ -127,8 +127,20 @@ struct Frame {
     dst: Option<Place>,
     return_slot: Option<usize>,
     return_pc: usize,
+    /// When set, this frame's `Return` value is captured into `Vm::captured_return`
+    /// rather than written to a caller place (used by nested method invocations).
+    capture: bool,
     saved_error_mode: ErrorMode,
     saved_resume: ResumePoint,
+}
+
+/// A live `WithEvents` subscription: the sink instance that owns the field
+/// (`owner`, the `Me` for handler dispatch) and the bound source object
+/// (`source`). Both are strong references, matching VBA's connection-point
+/// keep-alive (and so event cycles leak, VBA-consistent).
+struct EventBinding {
+    owner: Variant,
+    source: Variant,
 }
 
 /// `For Each` enumerator state, keyed by the iterator slot.
@@ -152,8 +164,12 @@ pub struct Vm<'h> {
     err: ErrObject,
     lib: LibContext,
     for_each: HashMap<usize, ForEachState>,
-    withevents: HashMap<i64, Variant>,
+    withevents: HashMap<i64, EventBinding>,
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
+    /// `(binding token, event id)` → handler procedure, from `bundle.event_routes`.
+    event_routes: HashMap<(i32, i32), usize>,
+    /// The most recent captured return value (see [`Frame::capture`]).
+    captured_return: Option<Variant>,
     /// Leaked `&'static` class descriptors, one per `bundle.classes` entry, for
     /// `ObjectRef::from_project_instance`.
     class_descriptors: Vec<&'static RuntimeClassDescriptor>,
@@ -182,9 +198,15 @@ impl<'h> Vm<'h> {
             dst: None,
             return_slot: None,
             return_pc: 0,
+            capture: false,
             saved_error_mode: ErrorMode::None,
             saved_resume: ResumePoint::default(),
         };
+        let event_routes = bundle
+            .event_routes
+            .iter()
+            .map(|route| ((route.binding, route.event), route.handler))
+            .collect();
         // Leak one `&'static RuntimeClassDescriptor` per class (descriptors live
         // for the VM's lifetime; `from_project_instance` requires `'static`).
         let class_descriptors = bundle
@@ -214,6 +236,8 @@ impl<'h> Vm<'h> {
             for_each: HashMap::new(),
             withevents: HashMap::new(),
             withevents_iters: Vec::new(),
+            event_routes,
+            captured_return: None,
             class_descriptors,
             next_instance_id: INSTANCE_ID_BASE,
             statement_start_set,
@@ -421,6 +445,7 @@ impl<'h> Vm<'h> {
             dst: dst_place,
             return_slot,
             return_pc: self.pc + 1,
+            capture: false,
             saved_error_mode: self.error_mode,
             saved_resume: self.resume,
         });
@@ -441,8 +466,11 @@ impl<'h> Vm<'h> {
         self.resume = frame.saved_resume;
         self.next_pc = frame.return_pc;
         // Writes during the call already hit the backing places (true aliasing),
-        // so the only copy-out is the function's return value into the caller.
-        if let (Some(place), Some(value)) = (frame.dst, return_value) {
+        // so the only copy-out is the function's return value: captured for a
+        // nested invocation, otherwise written into the caller place.
+        if frame.capture {
+            self.captured_return = return_value;
+        } else if let (Some(place), Some(value)) = (frame.dst, return_value) {
             self.write_place(place, value)?;
         }
         // Object locals dropped with the frame above may have hit refcount 0;
@@ -469,10 +497,12 @@ impl<'h> Vm<'h> {
                 {
                     // Terminate runs under a fresh error scope; an unhandled error
                     // in it is swallowed (observed VBA teardown behavior).
-                    let _ = self.run_method_to_completion(
+                    let _ = self.run_proc_with_me(
                         proc,
                         Variant::from_object_ref(object),
+                        &[],
                         true,
+                        false,
                     );
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
@@ -484,41 +514,74 @@ impl<'h> Vm<'h> {
         self.draining = false;
     }
 
-    /// Run a project procedure (`Class_Initialize`/`Terminate`) to completion with
-    /// `me` bound as the hidden first local, isolated from the main cursor. With
-    /// `suppress`, an unhandled fault inside is swallowed; otherwise it is
-    /// returned (so `Class_Initialize` errors propagate to the `New`).
-    fn run_method_to_completion(
+    /// Run a project procedure to completion with `me` bound as the hidden first
+    /// local and `args` bound at locals `1..`, isolated from the main cursor.
+    /// `Class_Initialize`/`Terminate` pass no args; event handlers pass the event
+    /// args; late-bound methods pass the call args and set `capture` to recover
+    /// the function result. With `suppress`, an unhandled fault is swallowed
+    /// (Terminate teardown); otherwise it propagates out.
+    fn run_proc_with_me(
         &mut self,
         proc: usize,
         me: Variant,
+        args: &[ProcArg],
         suppress: bool,
-    ) -> Result<(), Fault> {
+        capture: bool,
+    ) -> Result<Variant, Fault> {
         let desc = self
             .bundle
             .procedures
             .get(proc)
             .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
-        let (frame_slots, entry) = (desc.frame_slots.max(1), desc.entry_pc);
+        let frame_slots = desc.frame_slots.max(1 + args.len());
+        let (entry, return_slot) = (desc.entry_pc, desc.return_slot);
         let base = self.frames.len();
-        let saved = (self.pc, self.next_pc, self.halted, self.error_mode, self.resume);
+        let saved = (
+            self.pc,
+            self.next_pc,
+            self.halted,
+            self.error_mode,
+            self.resume,
+            self.captured_return.take(),
+        );
 
+        // Resolve arguments in the caller (current top frame) before pushing.
+        let mut byval: Vec<(usize, Variant)> = Vec::new();
+        let mut aliases = HashMap::new();
+        for (i, arg) in args.iter().enumerate() {
+            let local = 1 + i; // local 0 is `Me`
+            match arg {
+                ProcArg::ByVal(s) => byval.push((local, self.cloned(*s)?)),
+                ProcArg::ByRef(s) => {
+                    let place = self.target(*s)?;
+                    aliases.insert(local, place);
+                }
+                ProcArg::Omitted => byval.push((local, Variant::from_error_code(MISSING_ARG))),
+            }
+        }
         let mut locals = vec![Variant::empty(); frame_slots];
-        locals[0] = me; // Me is the hidden first parameter
+        locals[0] = me;
+        for (local, value) in byval {
+            if local < locals.len() {
+                locals[local] = value;
+            }
+        }
         self.frames.push(Frame {
             locals,
-            aliases: HashMap::new(),
+            aliases,
             dst: None,
-            return_slot: None,
+            return_slot,
             return_pc: 0,
+            capture,
             saved_error_mode: self.error_mode,
             saved_resume: self.resume,
         });
         self.error_mode = ErrorMode::None;
+        self.captured_return = None;
         self.pc = entry;
         self.halted = false;
 
-        let mut result = Ok(());
+        let mut result: Result<Variant, Fault> = Ok(Variant::empty());
         while self.frames.len() > base && !self.halted && self.pc < self.bundle.ops.len() {
             if self.statement_start_set.contains(&self.pc) {
                 self.maybe_drain();
@@ -542,12 +605,14 @@ impl<'h> Vm<'h> {
         while self.frames.len() > base {
             self.frames.pop();
         }
+        let captured = self.captured_return.take().unwrap_or_else(Variant::empty);
         self.pc = saved.0;
         self.next_pc = saved.1;
         self.halted = saved.2;
         self.error_mode = saved.3;
         self.resume = saved.4;
-        result
+        self.captured_return = saved.5;
+        result.map(|_| captured)
     }
 
     // ── Native dispatch ──────────────────────────────────────────────────────
@@ -576,6 +641,11 @@ impl<'h> Vm<'h> {
         args: &[CallArg],
     ) -> Result<Variant, Fault> {
         let object = self.arg_object(args.first())?;
+        // A project-instance receiver dispatches internally (resolve the class's
+        // member → procedure, call with `Me`); a COM receiver goes to the host.
+        if object.is_project_instance() {
+            return self.dispatch_project_method(object, selector, kind_hint, args);
+        }
         let member = match selector {
             ComMemberSelector::DispatchId(id) => DynamicMemberSelector::Token(*id),
             ComMemberSelector::Name(name) => DynamicMemberSelector::Name(name.clone()),
@@ -599,6 +669,51 @@ impl<'h> Vm<'h> {
             .com()
             .dispatch_invoke_dynamic_variant(&request)
             .map_err(Fault::from_hal)
+    }
+
+    /// Late-bound dispatch on a project instance: resolve the class member by
+    /// name (and accessor kind) → procedure, call it with `Me` + the positional
+    /// arguments, and return the function result.
+    fn dispatch_project_method(
+        &mut self,
+        object: ObjectRef,
+        selector: &ComMemberSelector,
+        kind_hint: Option<ProjectMemberKind>,
+        args: &[CallArg],
+    ) -> Result<Variant, Fault> {
+        let class_idx = object.route_key() as usize;
+        let name = match selector {
+            ComMemberSelector::Name(name) => name.clone(),
+            ComMemberSelector::DispatchId(_) => {
+                return Err(Fault::new(438, "late-bound dispatch by dispid on a project object"));
+            }
+        };
+        let proc = self
+            .bundle
+            .classes
+            .get(class_idx)
+            .and_then(|class| {
+                class
+                    .methods
+                    .iter()
+                    .find(|m| {
+                        m.name.eq_ignore_ascii_case(&name)
+                            && kind_hint.is_none_or(|k| k == m.kind)
+                    })
+                    .map(|m| m.proc)
+            })
+            .ok_or_else(|| Fault::new(438, format!("Object doesn't support '{name}'")))?;
+        // Receiver is args[0]; the remaining args are the call arguments (ByVal).
+        let proc_args: Vec<ProcArg> = args
+            .iter()
+            .skip(1)
+            .map(|a| match a {
+                CallArg::Slot(s) => ProcArg::ByVal(*s),
+                CallArg::Named { slot, .. } => ProcArg::ByVal(*slot),
+                CallArg::Omitted => ProcArg::Omitted,
+            })
+            .collect();
+        self.run_proc_with_me(proc, Variant::from_object_ref(object), &proc_args, false, true)
     }
 
     fn declare_call(&mut self, descriptor_id: u32, args: &[CallArg]) -> Result<Variant, Fault> {
@@ -961,17 +1076,24 @@ impl<'h> Vm<'h> {
             // ── Objects / WithEvents / type identity ──
             Op::WithEventsGet { dst, owner, binding } => {
                 let key = self.withevents_lookup_key(*owner, *binding)?;
-                let value =
-                    self.withevents.get(&key).cloned().unwrap_or_else(|| Variant::from_i32(0));
+                let value = self
+                    .withevents
+                    .get(&key)
+                    .map(|binding| binding.source.clone())
+                    .unwrap_or_else(|| Variant::from_i32(0));
                 self.set(*dst, value)?;
             }
             Op::WithEventsSet { dst, owner, binding, value } => {
-                let key = self.withevents_lookup_key(*owner, *binding)?;
+                let owner_value = self.cloned(*owner)?;
+                let owner_ref = variant_to_object(&owner_value)?;
+                let binding_tok = arith::int(self.get(*binding)?).map_err(Fault::from_string)?;
+                let key = Self::withevents_key(&owner_ref, binding_tok);
                 let v = self.cloned(*value)?;
                 if is_nothing(&v) {
                     self.withevents.remove(&key);
                 } else {
-                    self.withevents.insert(key, v.clone());
+                    self.withevents
+                        .insert(key, EventBinding { owner: owner_value, source: v.clone() });
                 }
                 self.set(*dst, v)?;
             }
@@ -986,11 +1108,13 @@ impl<'h> Vm<'h> {
                 let binding = arith::int(self.get(*binding)?).map_err(Fault::from_string)?;
                 let mut owners: Vec<ObjectRef> = Vec::new();
                 if !is_nothing(&source) {
-                    for (key, value) in &self.withevents {
+                    for (key, binding_data) in &self.withevents {
                         if Self::withevents_binding(*key) == (binding & 0xFFFF_FFFF)
-                            && object_identity(value) == object_identity(&source)
+                            && object_identity(&binding_data.source) == object_identity(&source)
                         {
-                            owners.push(Self::withevents_owner(*key));
+                            if let Some(owner) = binding_data.owner.as_object_ref() {
+                                owners.push(owner);
+                            }
                         }
                     }
                 }
@@ -1047,9 +1171,11 @@ impl<'h> Vm<'h> {
                     descriptor,
                 );
                 if let Some(init) = initialize {
-                    self.run_method_to_completion(
+                    self.run_proc_with_me(
                         init,
                         Variant::from_object_ref(object.clone()),
+                        &[],
+                        false,
                         false,
                     )?;
                 }
@@ -1064,6 +1190,29 @@ impl<'h> Vm<'h> {
                 let value = self.cloned(*src)?;
                 let instance = variant_to_object(self.get(*object)?)?;
                 instance.project_field_set(*field, value);
+            }
+            Op::RaiseEvent { source, event, args } => {
+                let source_id = object_identity(&self.cloned(*source)?);
+                let event_id = *event;
+                // Collect subscribers (sink Me + handler) whose binding holds this
+                // source and routes this event; sort for deterministic order.
+                let mut targets: Vec<(i32, Variant, usize)> = Vec::new();
+                for (key, binding) in &self.withevents {
+                    if object_identity(&binding.source) != source_id {
+                        continue;
+                    }
+                    let token = Self::withevents_binding(*key) as i32;
+                    if let Some(&handler) = self.event_routes.get(&(token, event_id)) {
+                        let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
+                        targets.push((sink_id, binding.owner.clone(), handler));
+                    }
+                }
+                targets.sort_by_key(|(sink_id, _, _)| *sink_id);
+                for (_, sink, handler) in targets {
+                    // Handlers run in sequence; an unhandled error propagates to the
+                    // raiser. `args` follow the event's ByVal/ByRef signature.
+                    self.run_proc_with_me(handler, sink, args, false, false)?;
+                }
             }
 
             // ── Pointer helpers ──

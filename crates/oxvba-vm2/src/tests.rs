@@ -7,8 +7,9 @@
 //! procedure's slot `n` and the caller's slot `n` are distinct storage.
 
 use oxvba_bundle::{
-    Bundle, ClassDescriptor, NativeCallee, NativeImplId, Op, ProcArg, ProcedureDescriptor,
-    ProcedureKind, StringCompareMode, isa::CallArg,
+    Bundle, ClassDescriptor, ClassMethod, ComMemberSelector, EventRoute, NativeCallee,
+    NativeImplId, Op, ProcArg, ProcedureDescriptor, ProcedureKind, ProjectMemberKind,
+    StringCompareMode, isa::CallArg,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -38,6 +39,7 @@ fn bundle_full(
         source_map: Vec::new(),
         com_class_exports: Vec::new(),
         classes,
+        event_routes: Vec::new(),
     }
 }
 
@@ -67,7 +69,7 @@ fn proc(
 }
 
 fn class(name: &str, initialize: Option<usize>, terminate: Option<usize>) -> ClassDescriptor {
-    ClassDescriptor { name: name.to_string(), initialize, terminate }
+    ClassDescriptor { name: name.to_string(), initialize, terminate, methods: Vec::new() }
 }
 
 #[test]
@@ -469,4 +471,70 @@ fn object_program(
 fn with_classes(mut b: Bundle, classes: Vec<ClassDescriptor>) -> Bundle {
     b.classes = classes;
     b
+}
+
+// ── Events and late-bound dispatch ────────────────────────────────────────────
+
+#[test]
+fn raise_event_dispatches_to_withevents_handler() {
+    // snk has `WithEvents x As Src` (binding token 100) and a handler routed for
+    // event 7. Subscribe snk.x = src, then RaiseEvent 7 on src with arg 42 — the
+    // handler runs with the sink's `Me` and sets global 0 = 42.
+    let mut b = bundle_full(
+        vec![
+            Op::NewObject { dst: 1, class: 0 }, // 0 snk = New Snk (local 0)
+            Op::NewObject { dst: 2, class: 1 }, // 1 src = New Src (local 1)
+            Op::LoadI32 { slot: 3, value: 100 }, // 2 binding token (local 2)
+            Op::WithEventsSet { dst: 4, owner: 1, binding: 3, value: 2 }, // 3 snk.x = src
+            Op::LoadI32 { slot: 5, value: 42 }, // 4 event arg (local 4)
+            Op::RaiseEvent { source: 2, event: 7, args: vec![ProcArg::ByVal(5)] }, // 5
+            Op::Halt,                           // 6
+            Op::Copy { dst: 0, src: 2 },        // 7 Handler: global 0 = arg (local 1 = slot 2)
+            Op::Return,                         // 8
+        ],
+        1, // global_count (global 0 = flag)
+        6, // entry locals: snk, src, btok, tmp, arg
+        Vec::new(),
+        vec![proc("x_Fired", 7, 2, 2, None)], // handler(Me, arg)
+        vec![class("Snk", None, None), class("Src", None, None)],
+    );
+    b.event_routes = vec![EventRoute { binding: 100, event: 7, handler: 0 }];
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(0).unwrap().as_i32(), Some(42), "handler ran with the event arg");
+}
+
+#[test]
+fn late_bound_method_dispatch() {
+    // r = obj.Inc(41) where the receiver is dispatched late by name → 42.
+    let mut b = bundle(
+        vec![
+            Op::NewObject { dst: 0, class: 0 }, // 0 obj = New C
+            Op::LoadI32 { slot: 2, value: 41 }, // 1 arg = 41
+            Op::CallNative {
+                dst: Some(1),
+                callee: NativeCallee::ComDispatch {
+                    selector: ComMemberSelector::Name("Inc".to_string()),
+                    early_bound: false,
+                    kind_hint: Some(ProjectMemberKind::Method),
+                },
+                args: vec![CallArg::Slot(0), CallArg::Slot(2)], // receiver, n
+            }, // 2 r = obj.Inc(41)
+            Op::Halt,                            // 3
+            Op::Copy { dst: 2, src: 1 },         // 4 Inc: result(local2) = n(local1)
+            Op::AddConstI32 { slot: 2, value: 1 }, // 5 result += 1
+            Op::Return,                          // 6
+        ],
+        3, // entry locals: obj, r, arg
+        vec![proc("Inc", 4, 2, 3, Some(2))], // Inc(Me, n) -> result
+    );
+    b.classes = vec![ClassDescriptor {
+        name: "C".to_string(),
+        initialize: None,
+        terminate: None,
+        methods: vec![ClassMethod { name: "Inc".to_string(), kind: ProjectMemberKind::Method, proc: 0 }],
+    }];
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(1).unwrap().as_i32(), Some(42));
 }

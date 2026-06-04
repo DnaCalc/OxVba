@@ -195,7 +195,17 @@ pub struct ComClassExport {
     pub creatable: bool,
 }
 
-/// A project class: its name and the entry procedures for its lifecycle hooks.
+/// A late-bound-callable member of a project class: its name, accessor kind, and
+/// the procedure that implements it. Early-bound calls lower directly to
+/// `CallProc`; this table backs dispatch on an `Object`/`Variant` receiver.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassMethod {
+    pub name: String,
+    pub kind: ProjectMemberKind,
+    pub proc: usize,
+}
+
+/// A project class: its name, lifecycle hooks, and late-bound member table.
 /// Instances are allocated by [`Op::NewObject`] and refcounted via the runtime
 /// IUnknown object model; `Class_Initialize` runs on construction and
 /// `Class_Terminate` when the last reference is released. Methods/properties are
@@ -208,6 +218,19 @@ pub struct ClassDescriptor {
     pub initialize: Option<usize>,
     /// `Class_Terminate` procedure index (run on final release), if any.
     pub terminate: Option<usize>,
+    /// Members reachable by name on a late-bound receiver.
+    pub methods: Vec<ClassMethod>,
+}
+
+/// One `WithEvents` event route: when the event `event` fires on a source whose
+/// sink binding is `binding`, run the sink's handler procedure `handler` (with
+/// the sink instance as `Me`). `binding` matches the token a `WithEventsSet`
+/// stores; `event` is the source class's stable id for that event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventRoute {
+    pub binding: i32,
+    pub event: i32,
+    pub handler: usize,
 }
 
 // ── The bundle ───────────────────────────────────────────────────────────────
@@ -240,6 +263,8 @@ pub struct Bundle {
     pub com_class_exports: Vec<ComClassExport>,
     /// Project class table (instances allocated by `Op::NewObject`).
     pub classes: Vec<ClassDescriptor>,
+    /// `WithEvents` event routes (sink binding + event id → handler procedure).
+    pub event_routes: Vec<EventRoute>,
 }
 
 impl Bundle {
@@ -256,6 +281,7 @@ impl Bundle {
             source_map: Vec::new(),
             com_class_exports: Vec::new(),
             classes: Vec::new(),
+            event_routes: Vec::new(),
         }
     }
 
