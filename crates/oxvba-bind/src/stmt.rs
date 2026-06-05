@@ -131,15 +131,18 @@ impl<'a> ProcLower<'a> {
                     return Ok(None);
                 };
                 let recv = self.member_receiver_bound(target)?;
-                let Some(binding) = self.resolve_member(&recv.ty, member, Some(kind)) else {
-                    return Ok(None);
+                let setter = |this: &Self, recv_value| {
+                    let call = this.late_member_call(member, kind, recv_value, vec![CoreArg::ByVal(val.value.clone())]);
+                    Ok(Some(vec![CoreStmt::Eval(call)]))
                 };
-                if !is_property_route(&binding.route) {
-                    return Ok(None);
+                match self.resolve_member(&recv.ty, member, Some(kind)) {
+                    Some(binding) if is_property_route(&binding.route) => setter(self, recv.value),
+                    // A field/method member → an l-value place store (handled upstream).
+                    Some(_) => Ok(None),
+                    // An untyped/foreign receiver → a late-bound property put.
+                    None if self.is_late_bound_receiver(&recv.ty) => setter(self, recv.value),
+                    None => Ok(None),
                 }
-                let call =
-                    self.late_member_call(member, kind, recv.value, vec![CoreArg::ByVal(val.value.clone())]);
-                Ok(Some(vec![CoreStmt::Eval(call)]))
             }
             _ => Ok(None),
         }

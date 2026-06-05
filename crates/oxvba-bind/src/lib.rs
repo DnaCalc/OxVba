@@ -22,7 +22,8 @@ use std::collections::HashMap;
 use oxvba_bundle::coreir::{
     CoreProc, CoreProgram, CorePlace, CoreValue, LabelId, LocalId,
 };
-use oxvba_bundle::EventRoute;
+use oxvba_bundle::{EventRoute, ExternalCallDescriptor};
+use oxvba_runtime::DynLinkSymbol;
 use oxvba_symbol::binding::Binding;
 use oxvba_symbol::manifest::SymbolProjectManifest;
 use oxvba_symbol::model::{
@@ -74,7 +75,7 @@ pub fn bind_program(
         procs,
         classes: ids.classes.clone(),
         event_routes: build_event_routes(&env, &ids),
-        external_calls: Vec::new(),  // Declare descriptors: COM/Declare phase
+        external_calls: build_external_calls(&env),
         com_class_exports: Vec::new(),
         entry: ids.entry(),
     })
@@ -137,6 +138,41 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
         }
     }
     routes
+}
+
+/// Build the `Declare Lib` external-call descriptors from the scanned `Declare`
+/// symbols. The source-declared fields come straight from the symbol model; the
+/// runtime-resolution fields (`symbol`/`marshal_lane`/`selection_policy`) get the
+/// loader's canonical defaults, and `writebacks` are bound at the call site by the
+/// runtime — emit-correct now, runtime marshalling deferred.
+fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescriptor> {
+    let mut out: Vec<ExternalCallDescriptor> = Vec::new();
+    for sym in env.symbols.symbols() {
+        let SymbolImpl::Declare(d) = &sym.imp else { continue };
+        out.push(ExternalCallDescriptor {
+            descriptor_id: d.descriptor_id,
+            declared_name: d.declared_name.clone(),
+            library: d.library.clone(),
+            alias: d.alias.clone(),
+            ordinal_alias: d.ordinal_alias,
+            symbol: DynLinkSymbol::new(d.descriptor_id as i32),
+            marshal_lane: "m0-deterministic".to_string(),
+            calling_convention: "platform-default".to_string(),
+            selection_policy: if d.ordinal_alias {
+                "ordinal-literal-canonical".to_string()
+            } else {
+                "case-insensitive-canonical".to_string()
+            },
+            param_count: d.param_types.len(),
+            param_types: d.param_types.clone(),
+            param_by_ref: d.param_by_ref.clone(),
+            return_type: d.return_type,
+            writebacks: Vec::new(),
+        });
+    }
+    out.sort_by_key(|d| d.descriptor_id);
+    out.dedup_by_key(|d| d.descriptor_id);
+    out
 }
 
 /// Project-wide immutable lowering context (resolution + id maps).

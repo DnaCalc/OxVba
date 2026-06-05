@@ -241,21 +241,30 @@ impl<'a> ProcLower<'a> {
 
     /// Lower `recv.member` (already-bound receiver, no args) to a value.
     fn bind_member_value(&mut self, recv: Bound, member: &str) -> Result<Bound, BindError> {
-        let binding = self
-            .resolve_member(&recv.ty, member, None)
-            .ok_or_else(|| self.unresolved(member, "member"))?;
-        match &binding.route {
-            DispatchRoute::Value => {
-                let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member field"))?;
-                let (place, ty) = self.member_place(recv.value, sym)?;
-                Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) })
-            }
-            DispatchRoute::ProjectMember { kind } => {
-                let kind = *kind;
-                let ty = self.member_return_type(binding.symbol, kind);
-                Ok(value_bound(self.late_member_call(member, kind, recv.value, Vec::new()), ty))
-            }
-            other => Err(BindError::Unsupported(format!(".{member} ({other:?} pending)"))),
+        match self.resolve_member(&recv.ty, member, None) {
+            Some(binding) => match &binding.route {
+                DispatchRoute::Value => {
+                    let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member field"))?;
+                    let (place, ty) = self.member_place(recv.value, sym)?;
+                    Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) })
+                }
+                DispatchRoute::ProjectMember { kind } => {
+                    let kind = *kind;
+                    let ty = self.member_return_type(binding.symbol, kind);
+                    Ok(value_bound(self.late_member_call(member, kind, recv.value, Vec::new()), ty))
+                }
+                DispatchRoute::ComMember { dispid, member_kind, .. } => Ok(value_bound(
+                    self.early_com_call(*dispid, *member_kind, recv.value, Vec::new()),
+                    VarTypeRef::Variant,
+                )),
+                other => Err(BindError::Unsupported(format!(".{member} ({other:?} pending)"))),
+            },
+            // No declared member on an untyped/foreign receiver → late binding.
+            None if self.is_late_bound_receiver(&recv.ty) => Ok(value_bound(
+                self.late_member_call(member, ProjectMemberKind::Method, recv.value, Vec::new()),
+                VarTypeRef::Variant,
+            )),
+            None => Err(self.unresolved(member, "member")),
         }
     }
 
@@ -271,28 +280,42 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("member call without name".into()))?
             .text;
         let recv = self.member_receiver_bound(member_node)?;
-        let binding = self
-            .resolve_member(&recv.ty, member, None)
-            .ok_or_else(|| self.unresolved(member, "member call"))?;
-        match &binding.route {
-            DispatchRoute::ProjectMember { kind } => {
-                let kind = *kind;
+        match self.resolve_member(&recv.ty, member, None) {
+            Some(binding) => match &binding.route {
+                DispatchRoute::ProjectMember { kind } => {
+                    let kind = *kind;
+                    let method_args = self.bind_args(arglist, None)?;
+                    let ty = self.member_return_type(binding.symbol, kind);
+                    Ok(value_bound(self.late_member_call(member, kind, recv.value, method_args), ty))
+                }
+                DispatchRoute::Value => {
+                    // `recv.field(i)` — index into a member array.
+                    let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member array"))?;
+                    let (field_place, _ty) = self.member_place(recv.value, sym)?;
+                    let indices = match arglist {
+                        Some(a) => self.bind_positional_values(a)?,
+                        None => Vec::new(),
+                    };
+                    let place = CorePlace::Index { array: Box::new(field_place), indices };
+                    Ok(Bound { value: CoreValue::Load(place.clone()), ty: VarTypeRef::Variant, place: Some(place) })
+                }
+                DispatchRoute::ComMember { dispid, member_kind, .. } => {
+                    let method_args = self.bind_args(arglist, None)?;
+                    Ok(value_bound(
+                        self.early_com_call(*dispid, *member_kind, recv.value, method_args),
+                        VarTypeRef::Variant,
+                    ))
+                }
+                other => Err(BindError::Unsupported(format!(".{member}(...) ({other:?} pending)"))),
+            },
+            None if self.is_late_bound_receiver(&recv.ty) => {
                 let method_args = self.bind_args(arglist, None)?;
-                let ty = self.member_return_type(binding.symbol, kind);
-                Ok(value_bound(self.late_member_call(member, kind, recv.value, method_args), ty))
+                Ok(value_bound(
+                    self.late_member_call(member, ProjectMemberKind::Method, recv.value, method_args),
+                    VarTypeRef::Variant,
+                ))
             }
-            DispatchRoute::Value => {
-                // `recv.field(i)` — index into a member array.
-                let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member array"))?;
-                let (field_place, _ty) = self.member_place(recv.value, sym)?;
-                let indices = match arglist {
-                    Some(a) => self.bind_positional_values(a)?,
-                    None => Vec::new(),
-                };
-                let place = CorePlace::Index { array: Box::new(field_place), indices };
-                Ok(Bound { value: CoreValue::Load(place.clone()), ty: VarTypeRef::Variant, place: Some(place) })
-            }
-            other => Err(BindError::Unsupported(format!(".{member}(...) ({other:?} pending)"))),
+            None => Err(self.unresolved(member, "member call")),
         }
     }
 
@@ -324,6 +347,31 @@ impl<'a> ProcLower<'a> {
         CoreValue::Call {
             callee: CoreCallee::LateDispatch { name: name.to_string(), kind: Some(kind) },
             args,
+        }
+    }
+
+    /// Build an early-bound COM dispatch (`recv.member` by dispid), receiver arg0.
+    fn early_com_call(
+        &self,
+        dispid: i32,
+        kind: ProjectMemberKind,
+        recv: CoreValue,
+        mut method_args: Vec<CoreArg>,
+    ) -> CoreValue {
+        let mut args = vec![CoreArg::ByVal(recv)];
+        args.append(&mut method_args);
+        CoreValue::Call { callee: CoreCallee::EarlyCom { dispid, kind: Some(kind) }, args }
+    }
+
+    /// True if a receiver should fall back to late binding when a member doesn't
+    /// resolve: an untyped `Variant`, or an `Object` that isn't a project class
+    /// (a foreign/COM object). A missing member on a *known* project class stays
+    /// an error.
+    pub(crate) fn is_late_bound_receiver(&self, ty: &VarTypeRef) -> bool {
+        match ty {
+            VarTypeRef::Variant => true,
+            VarTypeRef::Object(name) => !self.g.ids.class_of.contains_key(&fold_identifier(name)),
+            _ => false,
         }
     }
 

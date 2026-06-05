@@ -316,6 +316,86 @@ fn withevents_raise_event_routes_to_handler() {
     );
 }
 
+// ── COM late dispatch + Declare (structural — emit-correct, not run) ─────────
+
+/// The callee of a value, unwrapping a `Coerce` wrapper (an assignment to a typed
+/// target coerces the call result).
+fn callee_of(value: &CoreValue) -> Option<&CoreCallee> {
+    match value {
+        CoreValue::Call { callee, .. } => Some(callee),
+        CoreValue::Coerce { value, .. } => callee_of(value),
+        _ => None,
+    }
+}
+
+/// The callees of top-level `Assign`/`Eval` calls in every procedure.
+fn top_level_callees(program: &CoreProgram) -> Vec<&CoreCallee> {
+    let mut out = Vec::new();
+    for proc in &program.procs {
+        for stmt in &proc.body {
+            let value = match stmt {
+                CoreStmt::Assign { value, .. } => Some(value),
+                CoreStmt::Eval(value) => Some(value),
+                _ => None,
+            };
+            if let Some(callee) = value.and_then(callee_of) {
+                out.push(callee);
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn late_bound_member_call_on_object() {
+    // A member call on an untyped `Object` (no typelib) becomes a by-name late
+    // dispatch — the VBA late-binding default.
+    let src = "Sub Main()\n    Dim o As Object\n    Dim r\n    r = o.Compute(1)\nEnd Sub\n";
+    let program = bind(src);
+    assert!(
+        top_level_callees(&program).iter().any(|c| matches!(
+            c,
+            CoreCallee::LateDispatch { name, .. } if name.eq_ignore_ascii_case("Compute")
+        )),
+        "expected a LateDispatch to Compute"
+    );
+}
+
+#[test]
+fn late_bound_property_put_on_object() {
+    // `o.Value = 5` on an untyped Object becomes a late-bound Property Let put.
+    let src = "Sub Main()\n    Dim o As Object\n    o.Value = 5\nEnd Sub\n";
+    let program = bind(src);
+    assert!(
+        top_level_callees(&program).iter().any(|c| matches!(
+            c,
+            CoreCallee::LateDispatch { name, kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet) }
+                if name.eq_ignore_ascii_case("Value")
+        )),
+        "expected a late PropertyLet put to Value"
+    );
+}
+
+#[test]
+fn declare_lib_emits_external_call_descriptor() {
+    // `Declare` lowers calls to CoreCallee::Declare and records a descriptor with
+    // the source-declared library/name/params (runtime fields are defaults).
+    let src = "Declare Function GetTickCount Lib \"kernel32\" () As Long\n\n\
+               Sub Main()\n    Dim r As Long\n    r = GetTickCount()\nEnd Sub\n";
+    let program = bind(src);
+    assert!(
+        top_level_callees(&program).iter().any(|c| matches!(c, CoreCallee::Declare { .. })),
+        "expected a Declare callee"
+    );
+    let desc = program
+        .external_calls
+        .iter()
+        .find(|d| d.declared_name.eq_ignore_ascii_case("GetTickCount"))
+        .expect("expected a GetTickCount external-call descriptor");
+    assert_eq!(desc.library, "kernel32");
+    assert!(desc.return_type.is_some());
+}
+
 // ── File I/O (structural — bind emits native ops; not run) ────────────────────
 
 #[test]
