@@ -99,30 +99,59 @@ impl ScanCtx<'_> {
             SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
-                    let kind = if node.kind() == SyntaxKind::EnumBlock { SymbolKind::Enum } else { SymbolKind::Type };
+                    let kind = if node.kind() == SyntaxKind::EnumBlock {
+                        SymbolKind::Enum
+                    } else {
+                        SymbolKind::Type
+                    };
                     self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level)?;
+                }
+                if node.kind() == SyntaxKind::EnumBlock {
+                    for member in node.enum_members() {
+                        if let Some(token) = member.declarator_name() {
+                            let name = normalize_identifier_token(token.text);
+                            self.declare(
+                                scope,
+                                SymbolNamespace::Local,
+                                SymbolKind::EnumMember,
+                                name,
+                                token,
+                                SymbolImpl::None,
+                                module_level,
+                            )?;
+                        }
+                    }
                 }
             }
             SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
-                let with_events = node
-                    .child_tokens()
-                    .iter()
-                    .any(|token| token.kind == SyntaxKind::KwWithEvents);
                 let is_const = node.kind() == SyntaxKind::ConstStmt;
-                let declared_type = type_ref_in(node);
-                for token in declaration_name_tokens(node) {
+                for declarator in node.declarators() {
+                    let Some(token) = declarator.declarator_name() else {
+                        continue;
+                    };
                     let name = normalize_identifier_token(token.text);
+                    let declared_type = declarator
+                        .declared_type()
+                        .map(type_ref_node)
+                        .unwrap_or(VarTypeRef::Variant);
                     let (ns, kind) = if !module_level {
                         (SymbolNamespace::Local, SymbolKind::Local)
                     } else if is_const {
                         (SymbolNamespace::Local, SymbolKind::Const)
-                    } else if with_events {
+                    } else if declarator.is_with_events() {
                         (SymbolNamespace::Member, SymbolKind::WithEventsField)
                     } else {
                         (SymbolNamespace::Member, SymbolKind::Field)
                     };
-                    let imp = SymbolImpl::DeclaredType(declared_type.clone());
-                    self.declare(scope, ns, kind, name, token, imp, module_level)?;
+                    self.declare(
+                        scope,
+                        ns,
+                        kind,
+                        name,
+                        token,
+                        SymbolImpl::DeclaredType(declared_type),
+                        module_level,
+                    )?;
                 }
             }
             _ => {}
@@ -240,8 +269,8 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let declared_name = normalize_identifier_token(name_token.text).to_string();
-        let library = string_after_keyword(node, SyntaxKind::KwLib).unwrap_or_default();
-        let alias_raw = string_after_keyword(node, SyntaxKind::KwAlias);
+        let library = node.lib_string().unwrap_or_default();
+        let alias_raw = node.alias_string();
         let (alias, ordinal_alias) = match alias_raw {
             Some(value) => {
                 let ordinal = value.starts_with('#');
@@ -483,77 +512,6 @@ fn declare_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     first_identifier_token(node)
 }
 
-fn string_after_keyword(node: SyntaxNode<'_>, keyword: SyntaxKind) -> Option<String> {
-    let tokens = node.child_tokens();
-    let mut seen = false;
-    for token in tokens {
-        if token.kind == keyword {
-            seen = true;
-            continue;
-        }
-        if seen && token.kind == SyntaxKind::StringLiteral {
-            return Some(token.text.trim_matches('"').to_string());
-        }
-        if seen && !token.kind.is_trivia() {
-            // Some grammars carry the literal as a non-trivia token directly.
-            return Some(token.text.trim_matches('"').to_string());
-        }
-    }
-    None
-}
-
-fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
-    let mut names = Vec::new();
-    let mut expect_name = false;
-    let mut in_type_ref = false;
-    for element in node.children() {
-        match element {
-            SyntaxElement::Token(token)
-                if matches!(
-                    token.kind,
-                    SyntaxKind::KwDim
-                        | SyntaxKind::KwConst
-                        | SyntaxKind::KwPublic
-                        | SyntaxKind::KwPrivate
-                        | SyntaxKind::KwFriend
-                        | SyntaxKind::KwStatic
-                        | SyntaxKind::Comma
-                        | SyntaxKind::KwWithEvents
-                ) =>
-            {
-                expect_name = true;
-                in_type_ref = false;
-            }
-            SyntaxElement::Token(token) if token.kind == SyntaxKind::KwAs => {
-                expect_name = false;
-                in_type_ref = true;
-            }
-            SyntaxElement::Token(token)
-                if expect_name && !in_type_ref && (is_identifier_like(token.kind) || token.kind.is_keyword()) =>
-            {
-                names.push(token);
-                expect_name = false;
-            }
-            SyntaxElement::Node(child) if expect_name && child.kind() == SyntaxKind::IdentExpr => {
-                if let Some(token) = first_identifier_token_deep(child) {
-                    names.push(token);
-                    expect_name = false;
-                }
-            }
-            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
-                if token.kind != SyntaxKind::TypeSuffix {
-                    expect_name = false;
-                }
-            }
-            SyntaxElement::Node(child) if child.kind() == SyntaxKind::TypeRef => {
-                in_type_ref = false;
-            }
-            _ => {}
-        }
-    }
-    names
-}
-
 fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     let mut after_modifier = true;
     let mut in_type_ref = false;
@@ -604,14 +562,6 @@ fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
 }
 
 fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
-    node.child_nodes()
-        .into_iter()
-        .find(|child| child.kind() == SyntaxKind::TypeRef)
-        .map(type_ref_node)
-        .unwrap_or(VarTypeRef::Variant)
-}
-
-fn type_ref_in(node: SyntaxNode<'_>) -> VarTypeRef {
     node.child_nodes()
         .into_iter()
         .find(|child| child.kind() == SyntaxKind::TypeRef)

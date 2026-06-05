@@ -18,7 +18,7 @@ use crate::predeclared::predeclared_object;
 use crate::provider::{build_resolution_environment, Provider, ResolutionContext, TypeLibResolver};
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::vba_library::VbaLibraryProvider;
-use crate::signature::{DefaultValue, VarTypeRef};
+use crate::signature::{BuiltinType, DefaultValue, VarTypeRef};
 
 struct NullTypeLibs;
 impl TypeLibResolver for NullTypeLibs {
@@ -252,6 +252,7 @@ fn environment_extracts_declare_statements() {
     match &symbol.imp {
         SymbolImpl::Declare(declare) => {
             assert_eq!(declare.declared_name, "GetTickCount");
+            assert_eq!(declare.library, "kernel32"); // read from the structured LibClause
             assert!(declare.is_function);
         }
         other => panic!("expected Declare impl, got {other:?}"),
@@ -310,6 +311,37 @@ fn optional_parameter_default_is_parsed() {
     let param = &signature.params[0];
     assert!(param.optional);
     assert_eq!(param.default, Some(DefaultValue::I32(5)));
+}
+
+#[test]
+fn scanner_reads_per_declarator_types_from_structured_cst() {
+    // Each declarator carries its own type (the old flat-token walker couldn't).
+    let m = manifest("Proj", vec![module("Mod1", "Public a As Long, b As String\r\n")]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+
+    let type_of = |name: &str| {
+        let binding = env.resolve(&ctx, name).expect("resolves");
+        match &env.symbols.symbol(binding.symbol.expect("symbol")).expect("symbol").imp {
+            SymbolImpl::DeclaredType(ty) => ty.clone(),
+            other => panic!("expected declared type, got {other:?}"),
+        }
+    };
+    assert_eq!(type_of("a"), VarTypeRef::Builtin(BuiltinType::Long));
+    assert_eq!(type_of("b"), VarTypeRef::Builtin(BuiltinType::String));
+}
+
+#[test]
+fn scanner_declares_enum_members() {
+    let src = "Public Enum Color\r\n    Red\r\n    Green = 5\r\n    Blue\r\nEnd Enum\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+    for member in ["Red", "Green", "Blue"] {
+        assert!(env.resolve(&ctx, member).is_some(), "enum member {member}");
+    }
 }
 
 #[test]
