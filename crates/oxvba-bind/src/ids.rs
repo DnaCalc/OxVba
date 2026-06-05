@@ -1,15 +1,25 @@
 //! ID allocation: map symbol-model `SymbolId`s to symbol-free coreir ids
-//! (`GlobalId`/`ProcId`/`LocalId`) and build each `CoreProc` frame skeleton.
+//! (`GlobalId`/`ProcId`/`LocalId`/`ClassId` + field/binding/event tokens) and
+//! build each `CoreProc` frame skeleton.
 //!
 //! This replays the scanner's deterministic scope/symbol order. The key link:
 //! the scanner creates one `Procedure` scope per top-level proc decl, in source
 //! order, so the i-th top-level proc decl in a module's CST corresponds to the
 //! i-th `Procedure` scope under that module's scope. We zip them to attach a
 //! `ProcId` + frame to each decl, then the binder fills the body afterward.
+//!
+//! Module kind matters here. In a **standard** module a module-level variable is
+//! a `Global`; in a **class** module it is a per-instance *field* (a stable `i32`
+//! token), a `WithEvents` *binding* token, or an *event* index — and every proc
+//! is a class member, so its frame reserves `LocalId(0)` for the implicit `Me`
+//! (a synthetic first parameter, matching vm2's `run_proc_with_me`, which binds
+//! the receiver at frame slot 0 and the i-th call arg at slot `1+i`).
 
 use std::collections::HashMap;
 
-use oxvba_bundle::coreir::{CoreGlobal, CoreLocal, CoreParam, GlobalId, LocalId, ProcId};
+use oxvba_bundle::coreir::{
+    ClassId, CoreClass, CoreClassMethod, CoreGlobal, CoreLocal, CoreParam, GlobalId, LocalId, ProcId,
+};
 use oxvba_bundle::{ProcedureKind, ProjectMemberKind};
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
@@ -36,20 +46,31 @@ pub struct ProcInfo {
     pub return_type: VarTypeRef,
     /// Parameter/Local `SymbolId` → its frame slot.
     pub local_of: HashMap<SymbolId, LocalId>,
-    /// The class module this proc belongs to (for `Me`), if any. Consumed by the
-    /// objects/COM phase.
-    #[allow(dead_code)]
+    /// The class module this proc belongs to (its display name), if any.
     pub class_name: Option<String>,
+    /// `Some(LocalId(0))` for a class member — the implicit `Me` slot. Consumed by
+    /// the objects phase (binding `Me` and unqualified field/member access).
+    #[allow(dead_code)]
+    pub me_local: Option<LocalId>,
 }
 
-/// The whole project's id allocation: globals, procs, and the symbol→id maps the
-/// expression/call binders consult.
+/// The whole project's id allocation: globals, procs, classes, and the symbol→id
+/// maps the expression/call binders consult.
 pub struct IdAllocator {
     pub globals: Vec<CoreGlobal>,
     pub procs: Vec<ProcInfo>,
+    pub classes: Vec<CoreClass>,
     pub global_of: HashMap<SymbolId, GlobalId>,
     pub proc_of: HashMap<SymbolId, ProcId>,
     pub prop_accessor_of: HashMap<(SymbolId, ProjectMemberKind), ProcId>,
+    /// Folded class display name → `ClassId` (index into `classes`).
+    pub class_of: HashMap<String, ClassId>,
+    /// A class instance field symbol → its stable field token (`CorePlace::Field`).
+    pub field_token_of: HashMap<SymbolId, i32>,
+    /// A `WithEvents` field symbol → its binding token (`CorePlace::WithEvents`).
+    pub withevents_binding_of: HashMap<SymbolId, i32>,
+    /// A class `Event` symbol → its event index (within its declaring class).
+    pub event_index_of: HashMap<SymbolId, i32>,
 }
 
 impl IdAllocator {
@@ -61,23 +82,50 @@ impl IdAllocator {
         let mut alloc = IdAllocator {
             globals: Vec::new(),
             procs: Vec::new(),
+            classes: Vec::new(),
             global_of: HashMap::new(),
             proc_of: HashMap::new(),
             prop_accessor_of: HashMap::new(),
+            class_of: HashMap::new(),
+            field_token_of: HashMap::new(),
+            withevents_binding_of: HashMap::new(),
+            event_index_of: HashMap::new(),
         };
 
-        // 1) Globals — active-module `Field`/`WithEventsField`, in declaration order.
+        // 1) Module-level members. Standard modules contribute globals; class
+        //    modules contribute per-instance field / binding / event tokens.
         for module in env.modules() {
+            let is_class = class_name_for(manifest, module.module_name).is_some();
+            let mut member_token = 0i32; // field + WithEvents binding tokens (per class)
+            let mut event_index = 0i32;
             for sym_id in symbols.symbols_in_scope(module.module_scope)? {
                 let sym = symbols.symbol(sym_id).expect("symbol in scope");
-                if matches!(sym.kind, SymbolKind::Field | SymbolKind::WithEventsField) {
-                    let gid = GlobalId(alloc.globals.len());
-                    let array_element = match &sym.imp {
-                        SymbolImpl::DeclaredType(t) => types::array_element(t),
-                        _ => None,
-                    };
-                    alloc.globals.push(CoreGlobal { name: alloc_name(env, sym.name), array_element });
-                    alloc.global_of.insert(sym_id, gid);
+                match sym.kind {
+                    SymbolKind::Field if is_class => {
+                        alloc.field_token_of.insert(sym_id, member_token);
+                        member_token += 1;
+                    }
+                    SymbolKind::WithEventsField if is_class => {
+                        alloc.withevents_binding_of.insert(sym_id, member_token);
+                        member_token += 1;
+                    }
+                    SymbolKind::Event => {
+                        alloc.event_index_of.insert(sym_id, event_index);
+                        event_index += 1;
+                    }
+                    SymbolKind::Field | SymbolKind::WithEventsField => {
+                        // Standard-module module-level variable → a global.
+                        let gid = GlobalId(alloc.globals.len());
+                        let array_element = match &sym.imp {
+                            SymbolImpl::DeclaredType(t) => types::array_element(t),
+                            _ => None,
+                        };
+                        alloc
+                            .globals
+                            .push(CoreGlobal { name: alloc_name(env, sym.name), array_element });
+                        alloc.global_of.insert(sym_id, gid);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -108,6 +156,39 @@ impl IdAllocator {
                 alloc.alloc_proc(env, module.module_scope, *decl, proc_scope, class_name.clone())?;
             }
         }
+
+        // 3) Classes — one `CoreClass` per class module, with its method dispatch
+        //    table + Class_Initialize/Terminate. Built after procs so ProcIds exist.
+        let mut classes = Vec::new();
+        let mut class_of = HashMap::new();
+        for module in env.modules() {
+            let Some(display) = class_name_for(manifest, module.module_name) else {
+                continue;
+            };
+            let class_id = ClassId(classes.len());
+            class_of.insert(fold_identifier(&display), class_id);
+            let folded = fold_identifier(&display);
+            let mut initialize = None;
+            let mut terminate = None;
+            let mut methods = Vec::new();
+            for info in alloc.procs.iter() {
+                if info.class_name.as_deref().map(fold_identifier) != Some(folded.clone()) {
+                    continue;
+                }
+                match fold_identifier(&info.name).as_str() {
+                    "class_initialize" => initialize = Some(info.proc_id),
+                    "class_terminate" => terminate = Some(info.proc_id),
+                    _ => methods.push(CoreClassMethod {
+                        name: info.name.clone(),
+                        kind: member_kind_of(info.kind),
+                        proc: info.proc_id,
+                    }),
+                }
+            }
+            classes.push(CoreClass { name: display, initialize, terminate, methods });
+        }
+        alloc.classes = classes;
+        alloc.class_of = class_of;
 
         Ok(alloc)
     }
@@ -159,8 +240,9 @@ impl IdAllocator {
             .as_ref()
             .and_then(|s| s.return_type.clone())
             .unwrap_or(VarTypeRef::Variant);
-        let (params, locals, return_local, local_of) =
-            build_frame(env, signature.as_ref(), proc_scope, kind, &logical);
+        let is_class_member = class_name.is_some();
+        let (params, locals, return_local, local_of, me_local) =
+            build_frame(env, signature.as_ref(), proc_scope, kind, &logical, is_class_member);
 
         self.procs.push(ProcInfo {
             proc_id,
@@ -173,6 +255,7 @@ impl IdAllocator {
             return_type,
             local_of,
             class_name,
+            me_local,
         });
         Ok(())
     }
@@ -187,13 +270,25 @@ impl IdAllocator {
     }
 }
 
+/// Map a procedure kind to its class-member dispatch kind.
+fn member_kind_of(kind: ProcedureKind) -> ProjectMemberKind {
+    match kind {
+        ProcedureKind::Sub | ProcedureKind::Function => ProjectMemberKind::Method,
+        ProcedureKind::PropertyGet => ProjectMemberKind::PropertyGet,
+        ProcedureKind::PropertyLet => ProjectMemberKind::PropertyLet,
+        ProcedureKind::PropertySet => ProjectMemberKind::PropertySet,
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn build_frame(
     env: &ResolutionEnvironment,
     signature: Option<&Signature>,
     proc_scope: ScopeId,
     kind: ProcedureKind,
     logical: &str,
-) -> (Vec<CoreParam>, Vec<CoreLocal>, Option<LocalId>, HashMap<SymbolId, LocalId>) {
+    is_class_member: bool,
+) -> (Vec<CoreParam>, Vec<CoreLocal>, Option<LocalId>, HashMap<SymbolId, LocalId>, Option<LocalId>) {
     let symbols = &env.symbols;
     let scope_syms = symbols.symbols_in_scope(proc_scope).unwrap_or_default();
     let mut params = Vec::new();
@@ -201,7 +296,17 @@ fn build_frame(
     let mut local_of = HashMap::new();
     let mut next = 0usize;
 
-    // Parameters first (declaration order), pairing with the signature for `by_ref`.
+    // A class member receives `Me` as a synthetic first parameter, so it lands at
+    // frame slot 0 — exactly where vm2's `run_proc_with_me` binds the receiver.
+    let me_local = if is_class_member {
+        params.push(CoreParam { name: "Me".into(), by_ref: false });
+        next += 1;
+        Some(LocalId(0))
+    } else {
+        None
+    };
+
+    // Parameters (declaration order), pairing with the signature for `by_ref`.
     let mut param_index = 0usize;
     for &sym_id in &scope_syms {
         let sym = symbols.symbol(sym_id).expect("symbol in scope");
@@ -240,7 +345,7 @@ fn build_frame(
         None
     };
 
-    (params, locals, return_local, local_of)
+    (params, locals, return_local, local_of, me_local)
 }
 
 fn proc_signature(
@@ -320,7 +425,7 @@ mod tests {
         }
     }
 
-    fn manifest(source: &str) -> SymbolProjectManifest {
+    fn procedural(source: &str) -> SymbolProjectManifest {
         SymbolProjectManifest {
             project_name: "Proj".into(),
             project_kind: ProjectKind::Source,
@@ -336,13 +441,39 @@ mod tests {
         }
     }
 
+    /// A standard module + a class module (sorted after "Main" — see the
+    /// integration-fixture ordering rule).
+    fn with_class(main: &str, class_name: &str, class_src: &str) -> SymbolProjectManifest {
+        SymbolProjectManifest {
+            project_name: "Proj".into(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                ModuleUnit {
+                    module_name: "Main".into(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes::named("Main"),
+                    source: main.into(),
+                },
+                ModuleUnit {
+                    module_name: class_name.into(),
+                    module_kind: ModuleKind::Class,
+                    attributes: ModuleAttributes::named(class_name),
+                    source: class_src.into(),
+                },
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn allocates_globals_procs_and_frames() {
         let src = "Public total As Long\n\n\
                    Sub Main()\n    Dim x As Long\n    x = Add(2, 3)\nEnd Sub\n\n\
                    Function Add(a As Long, b As Long) As Long\n    Add = a + b\nEnd Function\n";
-        let env = build_resolution_environment(&manifest(src), &NullTypeLibs).unwrap();
-        let alloc = IdAllocator::build(&env, &manifest(src)).unwrap();
+        let env = build_resolution_environment(&procedural(src), &NullTypeLibs).unwrap();
+        let alloc = IdAllocator::build(&env, &procedural(src)).unwrap();
 
         assert_eq!(alloc.globals.len(), 1);
         assert_eq!(alloc.globals[0].name, "total");
@@ -353,6 +484,7 @@ mod tests {
         assert_eq!(main.name, "Main");
         assert_eq!(main.kind, ProcedureKind::Sub);
         assert!(main.params.is_empty());
+        assert!(main.me_local.is_none());
         assert_eq!(main.locals.len(), 1); // x
         assert_eq!(main.locals[0].name, "x");
         assert!(main.return_local.is_none());
@@ -369,5 +501,41 @@ mod tests {
 
         assert_eq!(alloc.entry(), Some(ProcId(0)));
         assert_eq!(alloc.proc_of.len(), 2);
+        assert!(alloc.classes.is_empty());
+    }
+
+    #[test]
+    fn class_member_frame_reserves_me_and_fields_are_not_globals() {
+        // Class `Widget` with a field, a Function method, and Class_Initialize.
+        let class_src = "Private mValue As Long\n\n\
+                         Public Function GetValue(extra As Long) As Long\n\
+                         GetValue = mValue + extra\nEnd Function\n\n\
+                         Private Sub Class_Initialize()\nmValue = 7\nEnd Sub\n";
+        let manifest = with_class("Sub Main()\nEnd Sub\n", "Widget", class_src);
+        let env = build_resolution_environment(&manifest, &NullTypeLibs).unwrap();
+        let alloc = IdAllocator::build(&env, &manifest).unwrap();
+
+        // The class field is NOT a global; it gets a field token instead.
+        assert!(alloc.globals.is_empty(), "class fields must not become globals");
+        assert_eq!(alloc.field_token_of.len(), 1);
+        assert_eq!(*alloc.field_token_of.values().next().unwrap(), 0);
+
+        // One class, with the method in its table and Class_Initialize wired.
+        assert_eq!(alloc.classes.len(), 1);
+        let class = &alloc.classes[0];
+        assert_eq!(class.name, "Widget");
+        assert!(class.initialize.is_some());
+        assert!(class.terminate.is_none());
+        assert_eq!(class.methods.len(), 1);
+        assert_eq!(class.methods[0].name, "GetValue");
+        assert_eq!(class.methods[0].kind, ProjectMemberKind::Method);
+
+        // GetValue's frame: Me at slot 0, the real param `extra` at 1, return at 2.
+        let get_value = alloc.procs.iter().find(|p| p.name == "GetValue").unwrap();
+        assert_eq!(get_value.me_local, Some(LocalId(0)));
+        assert_eq!(get_value.params.len(), 2); // Me + extra
+        assert_eq!(get_value.params[0].name, "Me");
+        assert_eq!(get_value.params[1].name, "extra");
+        assert_eq!(get_value.return_local, Some(LocalId(2)));
     }
 }
