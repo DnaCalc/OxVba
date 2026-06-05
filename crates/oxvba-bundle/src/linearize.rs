@@ -280,6 +280,16 @@ impl<'p> Linearizer<'p> {
         }
     }
 
+    /// Materialize a `WithEvents` binding token into a fresh slot. vm2 reads the
+    /// token from a slot (`self.get(binding)` in `WithEventsGet`/`Set`), so the
+    /// coreir literal token must be loaded into a slot — it cannot be passed as
+    /// the slot index directly.
+    fn binding_token_slot(&mut self, token: i32) -> usize {
+        let slot = self.new_temp();
+        self.emit(Op::LoadI32 { slot, value: token });
+        slot
+    }
+
     fn lower_place_load(&mut self, place: &CorePlace) -> Res<usize> {
         match place {
             CorePlace::Local(id) => Ok(self.local_slot[id.0]),
@@ -299,8 +309,9 @@ impl<'p> Linearizer<'p> {
             }
             CorePlace::WithEvents { owner, binding } => {
                 let owner = self.lower_value(owner)?;
+                let binding = self.binding_token_slot(*binding);
                 let dst = self.new_temp();
-                self.emit(Op::WithEventsGet { dst, owner, binding: *binding as usize });
+                self.emit(Op::WithEventsGet { dst, owner, binding });
                 Ok(dst)
             }
         }
@@ -328,9 +339,10 @@ impl<'p> Linearizer<'p> {
                 }
             }
             CorePlace::WithEvents { owner, binding } => {
-                let dst = self.new_temp();
                 let owner = self.lower_value(owner)?;
-                self.emit(Op::WithEventsSet { dst, owner, binding: *binding as usize, value: src });
+                let binding = self.binding_token_slot(*binding);
+                let dst = self.new_temp();
+                self.emit(Op::WithEventsSet { dst, owner, binding, value: src });
             }
         }
         Ok(())
