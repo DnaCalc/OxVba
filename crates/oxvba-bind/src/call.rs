@@ -3,7 +3,7 @@
 //! named / omitted, ByVal coercion, ByRef aliasing), and lowers member access
 //! (the `Err` object for now; objects/COM arrive in a later phase).
 
-use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreValue, ErrField};
+use oxvba_bundle::coreir::{CoreArg, CoreCallee, CorePlace, CoreValue, ErrField};
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl};
@@ -201,11 +201,33 @@ impl<'a> ProcLower<'a> {
 
     // ── Member access ───────────────────────────────────────
 
+    /// The receiver of a `MemberExpr` as a bound value: an explicit `obj` (or
+    /// `Me`), or the active `With` block's object for a leading-dot member.
+    pub(crate) fn member_receiver_bound(
+        &mut self,
+        node: SyntaxNode<'_>,
+    ) -> Result<Bound, BindError> {
+        if node.member_has_leading_dot() {
+            return self
+                .with_stack
+                .last()
+                .cloned()
+                .ok_or_else(|| BindError::Malformed("leading '.' outside a With block".into()));
+        }
+        let recv = node
+            .member_receiver()
+            .ok_or_else(|| BindError::Malformed("member without receiver".into()))?;
+        self.bind_expr(recv)
+    }
+
+    /// A member read `recv.member` (no argument list): an instance field load, or
+    /// a property-get / parameterless-method call (receiver passed as `args[0]`).
     pub(crate) fn bind_member(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {
         let member = node
             .member_name_token()
             .ok_or_else(|| BindError::Malformed("member without name".into()))?
             .text;
+        // `Err.Number` / `Err.Description` / `Err.Source` are error-state reads.
         if let Some(recv) = node.member_receiver() {
             if self.is_err_receiver(recv) {
                 if let Some((field, ty)) = err_field(member) {
@@ -213,7 +235,104 @@ impl<'a> ProcLower<'a> {
                 }
             }
         }
-        Err(BindError::Unsupported(format!(".{member} (object support pending)")))
+        let recv = self.member_receiver_bound(node)?;
+        self.bind_member_value(recv, member)
+    }
+
+    /// Lower `recv.member` (already-bound receiver, no args) to a value.
+    fn bind_member_value(&mut self, recv: Bound, member: &str) -> Result<Bound, BindError> {
+        let binding = self
+            .resolve_member(&recv.ty, member, None)
+            .ok_or_else(|| self.unresolved(member, "member"))?;
+        match &binding.route {
+            DispatchRoute::Value => {
+                let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member field"))?;
+                let (place, ty) = self.member_place(recv.value, sym)?;
+                Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) })
+            }
+            DispatchRoute::ProjectMember { kind } => {
+                let kind = *kind;
+                let ty = self.member_return_type(binding.symbol, kind);
+                Ok(value_bound(self.late_member_call(member, kind, recv.value, Vec::new()), ty))
+            }
+            other => Err(BindError::Unsupported(format!(".{member} ({other:?} pending)"))),
+        }
+    }
+
+    /// A member call `recv.member(args)` — a method/property call, or an index
+    /// into a member array (`recv.arr(i)`), decided by resolving the member.
+    pub(crate) fn bind_member_call(
+        &mut self,
+        member_node: SyntaxNode<'_>,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
+        let member = member_node
+            .member_name_token()
+            .ok_or_else(|| BindError::Malformed("member call without name".into()))?
+            .text;
+        let recv = self.member_receiver_bound(member_node)?;
+        let binding = self
+            .resolve_member(&recv.ty, member, None)
+            .ok_or_else(|| self.unresolved(member, "member call"))?;
+        match &binding.route {
+            DispatchRoute::ProjectMember { kind } => {
+                let kind = *kind;
+                let method_args = self.bind_args(arglist, None)?;
+                let ty = self.member_return_type(binding.symbol, kind);
+                Ok(value_bound(self.late_member_call(member, kind, recv.value, method_args), ty))
+            }
+            DispatchRoute::Value => {
+                // `recv.field(i)` — index into a member array.
+                let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member array"))?;
+                let (field_place, _ty) = self.member_place(recv.value, sym)?;
+                let indices = match arglist {
+                    Some(a) => self.bind_positional_values(a)?,
+                    None => Vec::new(),
+                };
+                let place = CorePlace::Index { array: Box::new(field_place), indices };
+                Ok(Bound { value: CoreValue::Load(place.clone()), ty: VarTypeRef::Variant, place: Some(place) })
+            }
+            other => Err(BindError::Unsupported(format!(".{member}(...) ({other:?} pending)"))),
+        }
+    }
+
+    /// The `CorePlace` for an instance field / WithEvents field member symbol.
+    pub(crate) fn member_place(
+        &self,
+        recv: CoreValue,
+        sym: SymbolId,
+    ) -> Result<(CorePlace, VarTypeRef), BindError> {
+        if let Some(&field) = self.g.ids.field_token_of.get(&sym) {
+            return Ok((CorePlace::Field { object: Box::new(recv), field }, self.symbol_type(sym)));
+        }
+        if let Some(&binding) = self.g.ids.withevents_binding_of.get(&sym) {
+            return Ok((CorePlace::WithEvents { owner: Box::new(recv), binding }, self.symbol_type(sym)));
+        }
+        Err(BindError::Unsupported("member field without an instance token".into()))
+    }
+
+    /// Build a by-name member dispatch (`recv.name(args)`), receiver as `args[0]`.
+    pub(crate) fn late_member_call(
+        &self,
+        name: &str,
+        kind: ProjectMemberKind,
+        recv: CoreValue,
+        mut method_args: Vec<CoreArg>,
+    ) -> CoreValue {
+        let mut args = vec![CoreArg::ByVal(recv)];
+        args.append(&mut method_args);
+        CoreValue::Call {
+            callee: CoreCallee::LateDispatch { name: name.to_string(), kind: Some(kind) },
+            args,
+        }
+    }
+
+    /// The declared return type of a project member (for inference); `Variant`
+    /// when unknown.
+    fn member_return_type(&self, sym: Option<SymbolId>, kind: ProjectMemberKind) -> VarTypeRef {
+        sym.and_then(|s| self.proc_signature_for(s, kind))
+            .and_then(|s| s.return_type)
+            .unwrap_or(VarTypeRef::Variant)
     }
 
     /// True if `recv` denotes the predeclared `Err` object.
@@ -247,9 +366,8 @@ impl<'a> ProcLower<'a> {
             }
             // `Call Foo(a, b)` — the whole `Foo(a, b)` is the callee (an IndexExpr).
             SyntaxKind::IndexExpr => self.bind_index_or_call(callee),
-            SyntaxKind::MemberExpr => Err(BindError::Unsupported(
-                "member call statement (object support pending)".into(),
-            )),
+            // `obj.Method` / `.Method` in statement position (no parenthesised args).
+            SyntaxKind::MemberExpr => self.bind_member_call(callee, arglist),
             other => Err(BindError::Unsupported(format!("call statement {other:?}"))),
         }
     }

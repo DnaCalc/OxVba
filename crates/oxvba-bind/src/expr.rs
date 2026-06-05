@@ -68,7 +68,20 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("identifier without name".into()))?;
         let name = tok.text;
         if node.ident_is_me() {
-            return Err(BindError::Unsupported("Me (object support pending)".into()));
+            let me = self
+                .me_value()
+                .ok_or_else(|| BindError::Malformed("`Me` outside a class module".into()))?;
+            let ty = self
+                .info
+                .class_name
+                .as_deref()
+                .map(|n| VarTypeRef::Object(n.to_string()))
+                .unwrap_or(VarTypeRef::Variant);
+            let place = match &me {
+                CoreValue::Load(p) => Some(p.clone()),
+                _ => None,
+            };
+            return Ok(Bound { value: me, ty, place });
         }
         // Reading the function's own name yields the result pseudo-variable.
         if let Some(rl) = self.return_target(name) {
@@ -192,15 +205,26 @@ impl<'a> ProcLower<'a> {
                 }
             }
         }
+        // `obj.Member(args)` — a method/property call, or an index into a member
+        // array. The member binder decides by resolving the member.
+        if base.kind() == SyntaxKind::MemberExpr {
+            return self.bind_member_call(base, node.index_arg_list());
+        }
         // An array element read.
         let (place, ty) = self.bind_place(node)?;
         Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) })
     }
 
     fn bind_new(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {
-        let _name = node.new_type_name();
-        // Project-class instantiation is wired in the object/class phase.
-        Err(BindError::Unsupported("New (object support pending)".into()))
+        let name = node
+            .new_type_name()
+            .ok_or_else(|| BindError::Malformed("New without a type".into()))?;
+        let folded = oxvba_symbol::model::fold_identifier(&name);
+        if let Some(&class_id) = self.g.ids.class_of.get(&folded) {
+            return Ok(value_bound(CoreValue::New(class_id), VarTypeRef::Object(name)));
+        }
+        // COM coclass creation (CreateObject-style) is a separate path.
+        Err(BindError::Unsupported(format!("New {name} (only project classes are creatable)")))
     }
 }
 

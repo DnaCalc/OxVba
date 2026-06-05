@@ -192,6 +192,78 @@ fn hex_literal() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")), Some(31.0));
 }
 
+// ── Objects: classes, New, Me, fields, methods, properties, Set ──────────────
+
+/// A two-module project: a procedural `Main` + one class module. The class
+/// module is named so it sorts after `Main`.
+fn class_manifest(main_src: &str, class_name: &str, class_src: &str) -> SymbolProjectManifest {
+    SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            ModuleUnit {
+                module_name: "Main".into(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes::named("Main"),
+                source: main_src.into(),
+            },
+            ModuleUnit {
+                module_name: class_name.into(),
+                module_kind: ModuleKind::Class,
+                attributes: ModuleAttributes::named(class_name),
+                source: class_src.into(),
+            },
+        ],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
+/// Bind + linearize + run a class project; read `Main`'s first local as a number.
+fn run_class_main_local0(main_src: &str, class_name: &str, class_src: &str) -> Option<f64> {
+    let program = bind_program(&class_manifest(main_src, class_name, class_src), &NullTypeLibs)
+        .expect("bind_program");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
+    let value = vm.slot(bundle.global_count)?;
+    value
+        .as_f64()
+        .or_else(|| value.as_i32().map(f64::from))
+        .or_else(|| value.as_i64().map(|v| v as f64))
+}
+
+#[test]
+fn new_initialize_field_and_method() {
+    // New runs Class_Initialize (sets the instance field); a method reads it.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    r = w.GetValue()\nEnd Sub\n";
+    let widget = "Private mValue As Long\n\n\
+                  Private Sub Class_Initialize()\n    mValue = 42\nEnd Sub\n\n\
+                  Public Function GetValue() As Long\n    GetValue = mValue\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(42.0));
+}
+
+#[test]
+fn property_get_let_roundtrip() {
+    // `w.Value = 10` routes to Property Let; `r = w.Value` to Property Get.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    w.Value = 10\n    r = w.Value\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value() As Long\n    Value = mV\nEnd Property\n\n\
+                  Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(10.0));
+}
+
+#[test]
+fn method_mutates_instance_field_across_calls() {
+    // Two `c.Inc` statement-calls mutate the same instance's field; Total() reads it.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim c As Counter\n    Set c = New Counter\n    c.Inc\n    c.Inc\n    r = c.Total()\nEnd Sub\n";
+    let counter = "Private n As Long\n\n\
+                   Public Sub Inc()\n    n = n + 1\nEnd Sub\n\n\
+                   Public Function Total() As Long\n    Total = n\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "Counter", counter), Some(2.0));
+}
+
 // ── File I/O (structural — bind emits native ops; not run) ────────────────────
 
 #[test]

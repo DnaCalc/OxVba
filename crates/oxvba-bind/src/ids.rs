@@ -48,9 +48,7 @@ pub struct ProcInfo {
     pub local_of: HashMap<SymbolId, LocalId>,
     /// The class module this proc belongs to (its display name), if any.
     pub class_name: Option<String>,
-    /// `Some(LocalId(0))` for a class member — the implicit `Me` slot. Consumed by
-    /// the objects phase (binding `Me` and unqualified field/member access).
-    #[allow(dead_code)]
+    /// `Some(LocalId(0))` for a class member — the implicit `Me` slot.
     pub me_local: Option<LocalId>,
 }
 

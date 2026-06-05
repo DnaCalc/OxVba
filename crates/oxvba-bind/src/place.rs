@@ -49,9 +49,29 @@ impl<'a> ProcLower<'a> {
                     .ok_or_else(|| BindError::Malformed("empty () place".into()))?;
                 self.bind_place(inner)
             }
-            SyntaxKind::MemberExpr => Err(BindError::Unsupported(
-                "member assignment target (object support pending)".into(),
-            )),
+            SyntaxKind::MemberExpr => {
+                let member = node
+                    .member_name_token()
+                    .ok_or_else(|| BindError::Malformed("member target without name".into()))?
+                    .text;
+                let recv = self.member_receiver_bound(node)?;
+                let binding = self
+                    .resolve_member(&recv.ty, member, None)
+                    .ok_or_else(|| self.unresolved(member, "member assignment target"))?;
+                match &binding.route {
+                    // A field / WithEvents field is an assignable place. (A property
+                    // target is handled as a setter call upstream in `bind_assign`.)
+                    DispatchRoute::Value => {
+                        let sym = binding
+                            .symbol
+                            .ok_or_else(|| self.unresolved(member, "member field"))?;
+                        self.member_place(recv.value, sym)
+                    }
+                    other => Err(BindError::InvalidAssignment(format!(
+                        "`.{member}` is not an assignable field ({other:?})"
+                    ))),
+                }
+            }
             other => Err(BindError::InvalidAssignment(format!("{other:?} is not an l-value"))),
         }
     }
@@ -86,21 +106,4 @@ impl<'a> ProcLower<'a> {
         Ok(values)
     }
 
-    /// Resolve a simple receiver expression to its static type (for member access).
-    /// Currently handles named variables; richer receivers arrive with objects.
-    #[allow(dead_code)]
-    pub(crate) fn receiver_type(&mut self, node: SyntaxNode<'_>) -> Result<VarTypeRef, BindError> {
-        if node.kind() == SyntaxKind::IdentExpr {
-            if let Some(tok) = node.ident_name_token() {
-                if let Some(binding) = self.resolve(tok.text) {
-                    if let DispatchRoute::Value = binding.route {
-                        if let Some(sym) = binding.symbol {
-                            return Ok(self.symbol_type(sym));
-                        }
-                    }
-                }
-            }
-        }
-        Ok(VarTypeRef::Variant)
-    }
 }

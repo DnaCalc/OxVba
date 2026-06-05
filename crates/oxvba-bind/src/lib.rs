@@ -69,9 +69,9 @@ pub fn bind_program(
     Ok(CoreProgram {
         globals: ids.globals.clone(),
         procs,
-        classes: Vec::new(),         // object/class wiring: later phase
-        event_routes: Vec::new(),    // WithEvents wiring: later phase
-        external_calls: Vec::new(),  // Declare descriptors: later phase
+        classes: ids.classes.clone(),
+        event_routes: Vec::new(),    // WithEvents wiring: events phase
+        external_calls: Vec::new(),  // Declare descriptors: COM/Declare phase
         com_class_exports: Vec::new(),
         entry: ids.entry(),
     })
@@ -133,8 +133,7 @@ impl<'a> ProcLower<'a> {
             .resolve(&ResolutionContext::at(self.info.proc_scope), name)
     }
 
-    /// Member resolution — consumed by the objects/COM phase.
-    #[allow(dead_code)]
+    /// Member resolution against a typed receiver (`recv.name`).
     fn resolve_member(
         &self,
         recv: &VarTypeRef,
@@ -142,6 +141,12 @@ impl<'a> ProcLower<'a> {
         want: Option<oxvba_bundle::ProjectMemberKind>,
     ) -> Option<Binding> {
         self.g.env.resolve_member(recv, name, want)
+    }
+
+    /// The value of `Me` inside a class member — a `Load` of the implicit `Me`
+    /// slot (synthetic parameter 0). `None` outside a class member.
+    pub(crate) fn me_value(&self) -> Option<CoreValue> {
+        self.info.me_local.map(|l| CoreValue::Load(CorePlace::Local(l)))
     }
 
     /// The declared type of a resolved symbol (Variant if it has no declared type).
@@ -152,13 +157,23 @@ impl<'a> ProcLower<'a> {
         }
     }
 
-    /// The place + type for a resolved variable symbol (local/param or global).
+    /// The place + type for a resolved variable symbol: a local/param slot, a
+    /// global slot, or — inside a class member — a per-instance field / WithEvents
+    /// binding reached through `Me`.
     fn place_for_symbol(&self, sym: SymbolId) -> Option<(CorePlace, VarTypeRef)> {
         if let Some(&lid) = self.info.local_of.get(&sym) {
             return Some((CorePlace::Local(lid), self.symbol_type(sym)));
         }
         if let Some(&gid) = self.g.ids.global_of.get(&sym) {
             return Some((CorePlace::Global(gid), self.symbol_type(sym)));
+        }
+        if let Some(&field) = self.g.ids.field_token_of.get(&sym) {
+            let me = self.me_value()?;
+            return Some((CorePlace::Field { object: Box::new(me), field }, self.symbol_type(sym)));
+        }
+        if let Some(&binding) = self.g.ids.withevents_binding_of.get(&sym) {
+            let me = self.me_value()?;
+            return Some((CorePlace::WithEvents { owner: Box::new(me), binding }, self.symbol_type(sym)));
         }
         None
     }

@@ -7,7 +7,8 @@ use oxvba_bundle::coreir::{
     CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind,
 };
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::AssignmentIntent;
+use oxvba_bundle::{AssignmentIntent, ProjectMemberKind};
+use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::fold_identifier;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
@@ -30,7 +31,7 @@ impl<'a> ProcLower<'a> {
         use SyntaxKind::*;
         match node.kind() {
             AssignStmt | LetStmt => self.bind_assign(node, AssignmentIntent::Let),
-            SetStmt => Err(BindError::Unsupported("Set (object support pending)".into())),
+            SetStmt => self.bind_assign(node, AssignmentIntent::Set),
             CallStmt => self.bind_call_stmt(node),
             IfStmt => self.bind_if(node),
             ForStmt => self.bind_for(node),
@@ -77,6 +78,11 @@ impl<'a> ProcLower<'a> {
             .assign_value()
             .ok_or_else(|| BindError::Malformed("assignment value".into()))?;
         let val = self.bind_expr(value_node)?;
+        // A property target (`obj.Prop = x` / bare `Prop = x`) is a setter call,
+        // not a place store: Let → Property Let, Set → Property Set.
+        if let Some(stmts) = self.try_property_assignment(target_node, intent, &val)? {
+            return Ok(stmts);
+        }
         let (place, target_ty) = self.bind_place(target_node)?;
         let value = types::coerce(val.value, &val.ty, &target_ty);
         Ok(vec![CoreStmt::Assign {
@@ -87,6 +93,55 @@ impl<'a> ProcLower<'a> {
             target_name: target_node.text().trim().to_string(),
             target_type_name: types::type_name(&target_ty),
         }])
+    }
+
+    /// If `target` denotes a project property, lower the assignment to a Property
+    /// Let/Set accessor call (`Eval(Call(LateDispatch, [receiver, value]))`) and
+    /// return it; otherwise `None` (the caller does a place store).
+    fn try_property_assignment(
+        &mut self,
+        target: SyntaxNode<'_>,
+        intent: AssignmentIntent,
+        val: &crate::Bound,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        let kind = match intent {
+            AssignmentIntent::Set => ProjectMemberKind::PropertySet,
+            _ => ProjectMemberKind::PropertyLet,
+        };
+        match target.kind() {
+            SyntaxKind::IdentExpr => {
+                let Some(name) = target.ident_name_token().map(|t| t.text) else {
+                    return Ok(None);
+                };
+                if self.return_target(name).is_some() {
+                    return Ok(None);
+                }
+                let Some(binding) = self.resolve(name) else { return Ok(None) };
+                if !is_property_route(&binding.route) {
+                    return Ok(None);
+                }
+                // A bare property name is an implicit `Me.Prop` (class member).
+                let Some(recv) = self.me_value() else { return Ok(None) };
+                let call = self.late_member_call(name, kind, recv, vec![CoreArg::ByVal(val.value.clone())]);
+                Ok(Some(vec![CoreStmt::Eval(call)]))
+            }
+            SyntaxKind::MemberExpr => {
+                let Some(member) = target.member_name_token().map(|t| t.text) else {
+                    return Ok(None);
+                };
+                let recv = self.member_receiver_bound(target)?;
+                let Some(binding) = self.resolve_member(&recv.ty, member, Some(kind)) else {
+                    return Ok(None);
+                };
+                if !is_property_route(&binding.route) {
+                    return Ok(None);
+                }
+                let call =
+                    self.late_member_call(member, kind, recv.value, vec![CoreArg::ByVal(val.value.clone())]);
+                Ok(Some(vec![CoreStmt::Eval(call)]))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn bind_call_stmt(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -490,4 +545,16 @@ impl<'a> ProcLower<'a> {
         self.fold_const_i32(&value)
             .ok_or_else(|| BindError::Unsupported("Err.Raise requires a constant error number".into()))
     }
+}
+
+/// True if a resolved route is a project property accessor (Get/Let/Set).
+fn is_property_route(route: &DispatchRoute) -> bool {
+    matches!(
+        route,
+        DispatchRoute::ProjectMember {
+            kind: ProjectMemberKind::PropertyGet
+                | ProjectMemberKind::PropertyLet
+                | ProjectMemberKind::PropertySet
+        }
+    )
 }
