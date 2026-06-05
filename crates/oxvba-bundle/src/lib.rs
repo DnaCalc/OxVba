@@ -36,13 +36,17 @@ pub enum StringCompareMode {
     Text,
 }
 
-/// Target width of a fixed-integer narrowing coercion (`CoerceNumeric`).
+/// Target type of a fixed-scalar narrowing coercion (`CoerceNumeric`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NumericCoerceTarget {
     Byte,
     Integer,
     Long,
     LongLong,
+    Single,
+    Double,
+    Currency,
+    Date,
 }
 
 /// Element type of a runtime array (for `ReDim`/typed element storage).

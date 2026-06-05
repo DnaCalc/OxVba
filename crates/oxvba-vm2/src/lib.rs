@@ -1068,6 +1068,9 @@ impl<'h> Vm<'h> {
             }
             Op::And { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::and)?,
             Op::Or { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::or)?,
+            Op::Xor { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::xor)?,
+            Op::Eqv { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::eqv)?,
+            Op::Imp { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::imp)?,
 
             // ── Control flow ──
             Op::Jump { target_pc } => self.next_pc = *target_pc,

@@ -118,6 +118,9 @@ pub enum Op {
     Not { dst: usize, src: usize },
     And { dst: usize, lhs: usize, rhs: usize },
     Or { dst: usize, lhs: usize, rhs: usize },
+    Xor { dst: usize, lhs: usize, rhs: usize },
+    Eqv { dst: usize, lhs: usize, rhs: usize },
+    Imp { dst: usize, lhs: usize, rhs: usize },
 
     // ── Control flow ─────────────────────────────────────────
     Jump { target_pc: usize },

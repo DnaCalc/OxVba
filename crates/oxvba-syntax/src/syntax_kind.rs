@@ -249,6 +249,24 @@ impl SyntaxKind {
         (self as u16) >= (SyntaxKind::KwSub as u16) && (self as u16) <= (SyntaxKind::KwName as u16)
     }
 
+    /// True if this kind is an expression node (the value-producing subtrees the
+    /// binder lowers). `MemberExpr`/`IndexExpr` are postfix forms; `ParenExpr`
+    /// wraps a parenthesised inner expression.
+    pub fn is_expr(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::BinaryExpr
+                | SyntaxKind::UnaryExpr
+                | SyntaxKind::CallExpr
+                | SyntaxKind::MemberExpr
+                | SyntaxKind::IndexExpr
+                | SyntaxKind::NewExpr
+                | SyntaxKind::IdentExpr
+                | SyntaxKind::LiteralExpr
+                | SyntaxKind::ParenExpr
+        )
+    }
+
     /// True if this kind represents a composite (interior) node.
     pub fn is_node(self) -> bool {
         (self as u16) >= (SyntaxKind::SourceFile as u16)

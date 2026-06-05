@@ -258,6 +258,17 @@ pub fn and(l: &Variant, r: &Variant) -> R {
 pub fn or(l: &Variant, r: &Variant) -> R {
     bitlogic(l, r, |a, b| a | b, |a, b| a || b)
 }
+pub fn xor(l: &Variant, r: &Variant) -> R {
+    bitlogic(l, r, |a, b| a ^ b, |a, b| a != b)
+}
+pub fn eqv(l: &Variant, r: &Variant) -> R {
+    // `a Eqv b` = `Not (a Xor b)` (bitwise) / `a == b` (Boolean).
+    bitlogic(l, r, |a, b| !(a ^ b), |a, b| a == b)
+}
+pub fn imp(l: &Variant, r: &Variant) -> R {
+    // `a Imp b` = `(Not a) Or b` (bitwise) / `!a || b` (Boolean).
+    bitlogic(l, r, |a, b| !a | b, |a, b| !a || b)
+}
 
 // ── Coercion ──────────────────────────────────────────────────────────────────
 
@@ -265,10 +276,10 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
     if is_null(v) {
         return Ok(Variant::null());
     }
-    let n = int(v)?;
     let overflow = || "Overflow".to_string();
     match target {
         NumericCoerceTarget::Byte => {
+            let n = int(v)?;
             if (0..=255).contains(&n) {
                 Ok(Variant::from_u8(n as u8))
             } else {
@@ -276,6 +287,7 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
             }
         }
         NumericCoerceTarget::Integer => {
+            let n = int(v)?;
             if n >= i64::from(i16::MIN) && n <= i64::from(i16::MAX) {
                 Ok(Variant::from_i16(n as i16))
             } else {
@@ -283,13 +295,32 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
             }
         }
         NumericCoerceTarget::Long => {
+            let n = int(v)?;
             if n >= i64::from(i32::MIN) && n <= i64::from(i32::MAX) {
                 Ok(Variant::from_i32(n as i32))
             } else {
                 Err(overflow())
             }
         }
-        NumericCoerceTarget::LongLong => Ok(Variant::from_i64(n)),
+        NumericCoerceTarget::LongLong => Ok(Variant::from_i64(int(v)?)),
+        NumericCoerceTarget::Single => {
+            let x = num(v)?;
+            if x.is_finite() && x.abs() <= f64::from(f32::MAX) {
+                Ok(Variant::from_f32(x as f32))
+            } else {
+                Err(overflow())
+            }
+        }
+        NumericCoerceTarget::Double => Ok(Variant::from_f64(num(v)?)),
+        NumericCoerceTarget::Currency => {
+            let scaled = (num(v)? * 10_000.0).round_ties_even();
+            if scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64 {
+                Ok(Variant::from_currency_scaled_i64(scaled as i64))
+            } else {
+                Err(overflow())
+            }
+        }
+        NumericCoerceTarget::Date => Ok(Variant::from_date_f64(num(v)?)),
     }
 }
 

@@ -457,6 +457,9 @@ impl<'p> Linearizer<'p> {
             CoreBinOp::Ge => Op::CmpGe { dst, lhs, rhs, mode },
             CoreBinOp::And => Op::And { dst, lhs, rhs },
             CoreBinOp::Or => Op::Or { dst, lhs, rhs },
+            CoreBinOp::Xor => Op::Xor { dst, lhs, rhs },
+            CoreBinOp::Eqv => Op::Eqv { dst, lhs, rhs },
+            CoreBinOp::Imp => Op::Imp { dst, lhs, rhs },
             CoreBinOp::Is => Op::CmpObjectIs { dst, lhs, rhs },
             CoreBinOp::Like => Op::CallNative {
                 dst: Some(dst),

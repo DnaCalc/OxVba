@@ -176,6 +176,9 @@ pub enum CoreBinOp {
     Ge,
     And,
     Or,
+    Xor,
+    Eqv,
+    Imp,
     Is,
     Like,
 }

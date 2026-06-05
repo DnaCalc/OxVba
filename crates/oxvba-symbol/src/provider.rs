@@ -4,6 +4,7 @@
 //! branches on source kind.
 
 use oxvba_bundle::ProjectMemberKind;
+use oxvba_syntax::{Parse, SyntaxNode};
 
 use crate::binding::{Binding, DispatchRoute};
 use crate::manifest::{ProjectReference, SymbolProjectManifest};
@@ -86,10 +87,28 @@ const NAMESPACE_PRIORITY: &[SymbolNamespace] = &[
     SymbolNamespace::Library,
 ];
 
+/// One active-project module's parsed CST, retained on the environment so the
+/// binder lowers the **same** tree the scanner resolved against — parsed once.
+pub struct ModuleCst {
+    pub module_name: String,
+    pub module_scope: ScopeId,
+    pub parse: Parse,
+}
+
+/// A borrowed view of a retained module CST (the `parse.syntax()` red root).
+pub struct ModuleCstRef<'a> {
+    pub module_name: &'a str,
+    pub module_scope: ScopeId,
+    pub syntax: SyntaxNode<'a>,
+}
+
 pub struct ResolutionEnvironment {
     pub symbols: SymbolTable,
     pub signatures: SignatureTable,
     providers: Vec<Box<dyn Provider>>,
+    /// Active-project module CSTs (parsed once during build). Referenced-project
+    /// CSTs are not retained — referenced projects contribute symbols only.
+    module_csts: Vec<ModuleCst>,
 }
 
 impl ResolutionEnvironment {
@@ -129,6 +148,16 @@ impl ResolutionEnvironment {
 
     pub fn push_provider(&mut self, provider: Box<dyn Provider>) {
         self.providers.push(provider);
+    }
+
+    /// The active-project module CSTs, parsed once during build. The binder walks
+    /// these (no re-parse) to lower each module against the resolution it shares.
+    pub fn modules(&self) -> impl Iterator<Item = ModuleCstRef<'_>> {
+        self.module_csts.iter().map(|m| ModuleCstRef {
+            module_name: &m.module_name,
+            module_scope: m.module_scope,
+            syntax: m.parse.syntax(),
+        })
     }
 
     /// Find a module scope by (case-insensitive) name — convenience for callers
@@ -207,14 +236,28 @@ pub fn build_resolution_environment(
 
     let mut next_descriptor_id: u32 = 0;
     let mut active_scans: Vec<ModuleScan> = Vec::new();
+    // Active-project modules: parse once, scan against the parsed CST, and retain
+    // the `Parse` so the binder lowers the same tree (no second parse).
+    let mut module_csts: Vec<ModuleCst> = Vec::new();
     for module in &manifest.modules {
-        active_scans.push(scanner::scan_module(
+        let parse = oxvba_syntax::parse(&module.source);
+        if !parse.errors().is_empty() {
+            return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
+        }
+        let scan = scanner::scan_module(
             &mut symbols,
             &mut signatures,
             &mut next_descriptor_id,
             module,
+            parse.syntax(),
             project_scope,
-        )?);
+        )?;
+        module_csts.push(ModuleCst {
+            module_name: scan.module_name.clone(),
+            module_scope: scan.module_scope,
+            parse,
+        });
+        active_scans.push(scan);
     }
 
     let mut referenced_scans: Vec<ModuleScan> = Vec::new();
@@ -225,11 +268,17 @@ pub fn build_resolution_environment(
             Some(&referenced.project_name),
         )?;
         for module in &referenced.modules {
+            // Referenced projects contribute symbols only — parse, scan, drop the CST.
+            let parse = oxvba_syntax::parse(&module.source);
+            if !parse.errors().is_empty() {
+                return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
+            }
             referenced_scans.push(scanner::scan_module(
                 &mut symbols,
                 &mut signatures,
                 &mut next_descriptor_id,
                 module,
+                parse.syntax(),
                 scope,
             )?);
         }
@@ -272,5 +321,5 @@ pub fn build_resolution_environment(
         providers.push(Box::new(com));
     }
 
-    Ok(ResolutionEnvironment { symbols, signatures, providers })
+    Ok(ResolutionEnvironment { symbols, signatures, providers, module_csts })
 }

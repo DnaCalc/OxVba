@@ -47,6 +47,29 @@ fn manifest(name: &str, modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
     }
 }
 
+#[test]
+fn environment_retains_active_module_csts_parsed_once() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module("Mod1", "Sub Main()\nEnd Sub\n"),
+            module("Mod2", "Function F() As Long\nF = 1\nEnd Function\n"),
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let mods: Vec<_> = env.modules().collect();
+    assert_eq!(
+        mods.iter().map(|m| m.module_name).collect::<Vec<_>>(),
+        vec!["Mod1", "Mod2"]
+    );
+    for cst in &mods {
+        // The retained tree is real (has child nodes) and its scope matches what
+        // `module_scope` reports — proving a single shared parse, not a re-parse.
+        assert!(!cst.syntax.child_nodes().is_empty());
+        assert_eq!(env.module_scope(cst.module_name), Some(cst.module_scope));
+    }
+}
+
 // ── Symbol table (source scope chain) ────────────────────────────────────────
 
 #[test]

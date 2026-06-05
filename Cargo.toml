@@ -21,6 +21,7 @@ members = [
     "crates/oxvba-lib",
     "crates/oxvba-vm2",
     "crates/oxvba-symbol",
+    "crates/oxvba-bind",
 ]
 resolver = "2"
 
@@ -50,6 +51,7 @@ oxvba-bundle = { path = "crates/oxvba-bundle" }
 oxvba-lib = { path = "crates/oxvba-lib" }
 oxvba-vm2 = { path = "crates/oxvba-vm2" }
 oxvba-symbol = { path = "crates/oxvba-symbol" }
+oxvba-bind = { path = "crates/oxvba-bind" }
 rkyv = "0.8"
 quick-xml = "0.37"
 thiserror = "2"

@@ -37,12 +37,16 @@ pub struct ScannedMember {
     pub is_default: bool,
 }
 
-/// Scan `module` into a fresh module scope under `project_scope`.
+/// Scan `module`'s pre-parsed CST into a fresh module scope under `project_scope`.
+///
+/// The caller parses (once) and checks `Parse::errors()` before calling — the CST
+/// is parsed a single time and shared with the binder, never re-parsed here.
 pub fn scan_module(
     symbols: &mut SymbolTable,
     signatures: &mut SignatureTable,
     next_descriptor_id: &mut u32,
     module: &ModuleUnit,
+    module_syntax: SyntaxNode<'_>,
     project_scope: ScopeId,
 ) -> Result<ModuleScan, SymbolModelError> {
     let module_name = if module.attributes.vb_name.is_empty() {
@@ -60,14 +64,9 @@ pub fn scan_module(
     )?;
     let module_scope = symbols.add_scope(crate::model::ScopeKind::Module, project_scope, Some(&module_name))?;
 
-    let parsed = oxvba_syntax::parse(&module.source);
-    if !parsed.errors().is_empty() {
-        return Err(SymbolModelError::Syntax(format!("{:?}", parsed.errors())));
-    }
-
     let mut scan = ModuleScan { module_name: module_name.clone(), module_scope, members: Vec::new() };
     let mut ctx = ScanCtx { symbols, signatures, next_descriptor_id, scan: &mut scan, module_name: &module_name };
-    ctx.walk(module_scope, parsed.syntax(), true)?;
+    ctx.walk(module_scope, module_syntax, true)?;
     Ok(scan)
 }
 
@@ -163,7 +162,9 @@ impl ScanCtx<'_> {
     }
 
     fn scan_procedure(&mut self, parent: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
-        let Some(name_token) = first_identifier_token(node) else {
+        // Use the canonical proc-name extractor (shared with the binder) so the set
+        // of procs the scanner gives a scope to is exactly the set the binder lowers.
+        let Some(name_token) = node.proc_name_token() else {
             return Ok(());
         };
         let logical = normalize_identifier_token(name_token.text).to_string();
