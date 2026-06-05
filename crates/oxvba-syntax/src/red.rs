@@ -626,6 +626,19 @@ impl<'a> SyntaxNode<'a> {
     pub fn call_arg_list(&self) -> Option<SyntaxNode<'a>> {
         self.child_node(SyntaxKind::ArgList)
     }
+
+    /// `RaiseEventStmt` event name token (the identifier after `RaiseEvent`).
+    pub fn raise_event_name_token(&self) -> Option<SyntaxToken<'a>> {
+        let mut toks = self.child_tokens().into_iter().filter(|t| !t.kind.is_trivia());
+        toks.by_ref().find(|t| t.kind == SyntaxKind::KwRaiseEvent)?;
+        toks.next().filter(|t| {
+            matches!(t.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent) || t.kind.is_keyword()
+        })
+    }
+    /// `RaiseEventStmt` argument list, if present (`RaiseEvent E(args)`).
+    pub fn raise_event_arg_list(&self) -> Option<SyntaxNode<'a>> {
+        self.child_node(SyntaxKind::ArgList)
+    }
 }
 
 fn is_comparison_op(kind: SyntaxKind) -> bool {
@@ -800,6 +813,22 @@ mod tests {
             "expected at least 2 statements, got {}",
             stmts.len()
         );
+    }
+
+    fn find_kind(node: SyntaxNode<'_>, kind: SyntaxKind) -> Option<SyntaxNode<'_>> {
+        if node.kind() == kind {
+            return Some(node);
+        }
+        node.child_nodes().into_iter().find_map(|c| find_kind(c, kind))
+    }
+
+    #[test]
+    fn typed_accessor_raise_event() {
+        let src = "Sub T()\n    RaiseEvent Tick(1)\nEnd Sub\n";
+        let p = crate::parser::parse(src);
+        let re = find_kind(p.syntax(), SyntaxKind::RaiseEventStmt).expect("RaiseEventStmt");
+        assert_eq!(re.raise_event_name_token().expect("event name").text, "Tick");
+        assert!(re.raise_event_arg_list().is_some(), "expected an ArgList for Tick(1)");
     }
 
     #[test]

@@ -57,6 +57,7 @@ impl<'a> ProcLower<'a> {
             OpenStmt | CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt => {
                 self.bind_file_io(node)
             }
+            RaiseEventStmt => self.bind_raise_event(node),
             // Declarations contribute no executable statement (frame already built).
             DimStmt | ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt
             | AttributeStmt | ImplementsStmt | EventDecl => Ok(Vec::new()),
@@ -163,6 +164,25 @@ impl<'a> ProcLower<'a> {
         }
         let bound = self.bind_call_from_callee(callee, arglist)?;
         Ok(vec![CoreStmt::Eval(bound.value)])
+    }
+
+    /// `RaiseEvent E(args)` inside a class — the source is the current instance
+    /// (`Me`); `event` is the event's index within its declaring class.
+    fn bind_raise_event(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let name = node
+            .raise_event_name_token()
+            .ok_or_else(|| BindError::Malformed("RaiseEvent without an event name".into()))?
+            .text;
+        let source = self
+            .me_value()
+            .ok_or_else(|| BindError::Malformed("RaiseEvent outside a class module".into()))?;
+        let binding = self.resolve(name).ok_or_else(|| self.unresolved(name, "event"))?;
+        let event = binding
+            .symbol
+            .and_then(|s| self.g.ids.event_index_of.get(&s).copied())
+            .ok_or_else(|| self.unresolved(name, "event index"))?;
+        let args = self.bind_args(node.raise_event_arg_list(), None)?;
+        Ok(vec![CoreStmt::RaiseEvent { source, event, args }])
     }
 
     fn bind_err_statement(

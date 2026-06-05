@@ -264,6 +264,58 @@ fn method_mutates_instance_field_across_calls() {
     assert_eq!(run_class_main_local0(main, "Counter", counter), Some(2.0));
 }
 
+// ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────
+
+fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {
+    SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: modules
+            .iter()
+            .map(|(name, kind, src)| ModuleUnit {
+                module_name: (*name).into(),
+                module_kind: *kind,
+                attributes: ModuleAttributes::named(*name),
+                source: (*src).into(),
+            })
+            .collect(),
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
+fn run_multi_main_local0(modules: &[(&str, ModuleKind, &str)]) -> Option<f64> {
+    let program = bind_program(&multi_manifest(modules), &NullTypeLibs).expect("bind_program");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
+    let value = vm.slot(bundle.global_count)?;
+    value
+        .as_f64()
+        .or_else(|| value.as_i32().map(f64::from))
+        .or_else(|| value.as_i64().map(|v| v as f64))
+}
+
+#[test]
+fn withevents_raise_event_routes_to_handler() {
+    // `Set k.Watched = s` subscribes the sink; `s.Fire` raises the event, which
+    // routes to `Watched_Fired` (run with the sink's Me) and sets `k.Got`.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim k As Sink\n    Dim s As Source\n    Set s = New Source\n    Set k = New Sink\n    Set k.Watched = s\n    s.Fire\n    r = k.Got\nEnd Sub\n";
+    let sink = "Public WithEvents Watched As Source\nPublic Got As Long\n\n\
+                Private Sub Watched_Fired(ByVal v As Long)\n    Got = v\nEnd Sub\n";
+    let source = "Public Event Fired(ByVal v As Long)\n\n\
+                  Public Sub Fire()\n    RaiseEvent Fired(99)\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Sink", ModuleKind::Class, sink),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        Some(99.0)
+    );
+}
+
 // ── File I/O (structural — bind emits native ops; not run) ────────────────────
 
 #[test]

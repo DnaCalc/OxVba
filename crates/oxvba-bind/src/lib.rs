@@ -22,9 +22,12 @@ use std::collections::HashMap;
 use oxvba_bundle::coreir::{
     CoreProc, CoreProgram, CorePlace, CoreValue, LabelId, LocalId,
 };
+use oxvba_bundle::EventRoute;
 use oxvba_symbol::binding::Binding;
 use oxvba_symbol::manifest::SymbolProjectManifest;
-use oxvba_symbol::model::{fold_identifier, SymbolId, SymbolImpl};
+use oxvba_symbol::model::{
+    fold_identifier, ScopeId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace,
+};
 use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_symbol::{build_resolution_environment, TypeLibResolver};
@@ -70,7 +73,7 @@ pub fn bind_program(
         globals: ids.globals.clone(),
         procs,
         classes: ids.classes.clone(),
-        event_routes: Vec::new(),    // WithEvents wiring: events phase
+        event_routes: build_event_routes(&env, &ids),
         external_calls: Vec::new(),  // Declare descriptors: COM/Declare phase
         com_class_exports: Vec::new(),
         entry: ids.entry(),
@@ -93,6 +96,47 @@ fn collect_proc_decls<'a>(env: &'a ResolutionEnvironment) -> Vec<SyntaxNode<'a>>
         }
     }
     decls
+}
+
+/// Resolve `WithEvents` sinks to event routes: for each `WithEvents` field
+/// (binding token `T`, source class `C`) in a sink class, and each event `E` of
+/// `C`, a handler proc named `<field>_<event>` in the sink class produces an
+/// `EventRoute{ binding: T, event: index(E), handler }`. This is the table vm2
+/// consults when a `RaiseEvent` fires (`event_routes[(binding, event)]`).
+fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<EventRoute> {
+    let symbols = &env.symbols;
+    let module_scope_by_name: HashMap<String, ScopeId> = env
+        .modules()
+        .map(|m| (fold_identifier(m.module_name), m.module_scope))
+        .collect();
+    let mut routes = Vec::new();
+    for (&field_sym, &binding) in &ids.withevents_binding_of {
+        let Some(field) = symbols.symbol(field_sym) else { continue };
+        let sink_scope = field.scope;
+        let Some(field_name) = symbols.name(field.name).map(|n| n.folded.clone()) else { continue };
+        // The source class is the WithEvents field's declared object type.
+        let SymbolImpl::DeclaredType(VarTypeRef::Object(source_name)) = &field.imp else { continue };
+        let Some(&source_scope) = module_scope_by_name.get(&fold_identifier(source_name)) else {
+            continue;
+        };
+        for ev_sym in symbols.symbols_in_scope(source_scope).unwrap_or_default() {
+            let Some(ev) = symbols.symbol(ev_sym) else { continue };
+            if ev.kind != SymbolKind::Event {
+                continue;
+            }
+            let Some(&event) = ids.event_index_of.get(&ev_sym) else { continue };
+            let Some(ev_name) = symbols.name(ev.name).map(|n| n.folded.clone()) else { continue };
+            let handler_name = format!("{field_name}_{ev_name}");
+            if let Ok(Some(handler_sym)) =
+                symbols.find_in_scope(sink_scope, SymbolNamespace::Procedure, &handler_name)
+            {
+                if let Some(&proc) = ids.proc_of.get(&handler_sym) {
+                    routes.push(EventRoute { binding, event, handler: proc.0 });
+                }
+            }
+        }
+    }
+    routes
 }
 
 /// Project-wide immutable lowering context (resolution + id maps).
