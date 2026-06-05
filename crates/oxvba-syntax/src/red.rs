@@ -158,6 +158,100 @@ impl<'a> SyntaxNode<'a> {
             .into_iter()
             .find(|n| n.kind() == SyntaxKind::Block)
     }
+
+    // ── Structured-statement accessors ──────────────────────
+
+    /// First child node of the given kind.
+    pub fn child_node(&self, kind: SyntaxKind) -> Option<SyntaxNode<'a>> {
+        self.child_nodes().into_iter().find(|n| n.kind() == kind)
+    }
+
+    /// All child nodes of the given kind.
+    pub fn children_of(&self, kind: SyntaxKind) -> Vec<SyntaxNode<'a>> {
+        self.child_nodes()
+            .into_iter()
+            .filter(|n| n.kind() == kind)
+            .collect()
+    }
+
+    /// `VarDeclarator` children of a `DimStmt`/`ConstStmt`.
+    pub fn declarators(&self) -> Vec<SyntaxNode<'a>> {
+        self.children_of(SyntaxKind::VarDeclarator)
+    }
+
+    /// `TypeField` children of a `TypeBlock`.
+    pub fn type_fields(&self) -> Vec<SyntaxNode<'a>> {
+        self.children_of(SyntaxKind::TypeField)
+    }
+
+    /// `EnumMember` children of an `EnumBlock`.
+    pub fn enum_members(&self) -> Vec<SyntaxNode<'a>> {
+        self.children_of(SyntaxKind::EnumMember)
+    }
+
+    /// The declared name token of a `VarDeclarator`/`TypeField`/`EnumMember`
+    /// (Ident, BracketedIdent, or a keyword used as a name) — skipping a leading
+    /// `WithEvents` and any type suffix.
+    pub fn declarator_name(&self) -> Option<SyntaxToken<'a>> {
+        self.child_tokens().into_iter().find(|t| {
+            !matches!(t.kind, SyntaxKind::KwWithEvents | SyntaxKind::TypeSuffix)
+                && (t.kind == SyntaxKind::Ident
+                    || t.kind == SyntaxKind::BracketedIdent
+                    || t.kind.is_keyword())
+        })
+    }
+
+    /// The `TypeRef` of a `VarDeclarator`/`TypeField` (its declared type).
+    pub fn declared_type(&self) -> Option<SyntaxNode<'a>> {
+        self.child_node(SyntaxKind::TypeRef)
+    }
+
+    /// The `ArrayBounds` of a `VarDeclarator`/`TypeField`/`ReDimStmt`.
+    pub fn array_bounds(&self) -> Option<SyntaxNode<'a>> {
+        self.child_node(SyntaxKind::ArrayBounds)
+    }
+
+    /// True if this declarator is `Dim WithEvents …`.
+    pub fn is_with_events(&self) -> bool {
+        self.child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwWithEvents)
+    }
+
+    /// The `ParamDefault` of a `Param`, if any.
+    pub fn param_default(&self) -> Option<SyntaxNode<'a>> {
+        self.child_node(SyntaxKind::ParamDefault)
+    }
+
+    /// The `LabelRef` child (GoTo/GoSub/On Error GoTo/Resume target).
+    pub fn label_ref(&self) -> Option<SyntaxNode<'a>> {
+        self.child_node(SyntaxKind::LabelRef)
+    }
+
+    /// The first `FileNumber` child of a file-I/O statement.
+    pub fn file_number(&self) -> Option<SyntaxNode<'a>> {
+        self.child_node(SyntaxKind::FileNumber)
+    }
+
+    /// The string literal of a `Lib`/`Alias` clause on a `DeclareStmt` (quotes trimmed).
+    pub fn clause_string(&self, clause: SyntaxKind) -> Option<String> {
+        self.child_node(clause).and_then(|n| {
+            n.child_tokens()
+                .into_iter()
+                .find(|t| t.kind == SyntaxKind::StringLiteral)
+                .map(|t| t.text.trim_matches('"').to_string())
+        })
+    }
+
+    /// `Lib "…"` string of a `DeclareStmt`.
+    pub fn lib_string(&self) -> Option<String> {
+        self.clause_string(SyntaxKind::LibClause)
+    }
+
+    /// `Alias "…"` string of a `DeclareStmt`.
+    pub fn alias_string(&self) -> Option<String> {
+        self.clause_string(SyntaxKind::AliasClause)
+    }
 }
 
 fn collect_text(node: &GreenNode, buf: &mut String) {

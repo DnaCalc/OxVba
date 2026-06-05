@@ -46,6 +46,16 @@ pub fn parse(source: &str) -> Parse {
     Parse { green, errors }
 }
 
+/// File-I/O statements whose leading word lexes as an identifier (not a keyword).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileIoIdent {
+    Put,
+    Seek,
+    Width,
+    Unlock,
+    Reset,
+}
+
 // ─── Parser internals ───────────────────────────────────────────────────────
 
 struct Parser<'a> {
@@ -637,41 +647,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_redim_arg_list(&mut self) {
-        self.start_node(SyntaxKind::ArgList);
-        if self.at(SyntaxKind::LParen) {
-            self.bump_lparen();
-        }
-
-        self.eat_expr_whitespace();
-        if !self.at(SyntaxKind::RParen) && !self.at_eof() {
-            if !self.at(SyntaxKind::Comma) {
-                self.parse_bare_arg_with_optional_to(true);
-            }
-
-            while self.at(SyntaxKind::Comma) || {
-                self.eat_expr_whitespace();
-                self.at(SyntaxKind::Comma)
-            } {
-                self.bump(); // ,
-                self.eat_expr_whitespace();
-                if !self.at(SyntaxKind::Comma) && !self.at(SyntaxKind::RParen) && !self.at_eof() {
-                    self.parse_bare_arg_with_optional_to(true);
-                }
-                self.eat_expr_whitespace();
-            }
-        }
-
-        self.eat_expr_whitespace();
-        if self.at(SyntaxKind::RParen) {
-            self.bump_rparen();
-        } else {
-            self.error("expected `)`".into());
-        }
-
-        self.finish_node(); // ArgList
-    }
-
     /// Check if the next non-trivia token after current is ColonEq.
     fn peek_is_colon_eq(&self) -> bool {
         let mut j = self.pos + 1;
@@ -827,8 +802,28 @@ impl<'a> Parser<'a> {
         self.eat_trivia();
         self.bump(); // Option
         self.eat_whitespace();
-        // Consume the rest of the line (Explicit, Base 1, Compare Text, etc.)
-        self.eat_to_eol();
+        if self.at(SyntaxKind::KwExplicit) {
+            self.bump();
+        } else if self.at(SyntaxKind::KwBase) {
+            self.bump();
+            self.eat_whitespace();
+            if self.at(SyntaxKind::IntLiteral) {
+                self.bump();
+            }
+        } else if self.at(SyntaxKind::KwCompare) {
+            self.bump();
+            self.eat_whitespace();
+            // Binary (keyword) | Text (lexes as Ident) | Database (Ident)
+            if self.at(SyntaxKind::KwBinary) || self.at(SyntaxKind::Ident) {
+                self.bump();
+            }
+        } else if self.at(SyntaxKind::KwPrivate) {
+            self.bump(); // Option Private Module
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Ident) {
+                self.bump();
+            }
+        }
         self.finish_node();
     }
 
@@ -838,7 +833,22 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::AttributeStmt);
         self.eat_trivia();
         self.bump(); // Attribute
-        self.eat_to_eol();
+        self.eat_whitespace();
+        self.parse_name_path(); // VB_Name | Foo.VB_VarUserMemId
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Eq) {
+            self.bump(); // =
+            self.eat_whitespace();
+            self.parse_required_expr("expected attribute value");
+            loop {
+                self.eat_whitespace();
+                if !self.eat(SyntaxKind::Comma) {
+                    break;
+                }
+                self.eat_whitespace();
+                self.parse_expr_bp(0);
+            }
+        }
         self.finish_node();
     }
 
@@ -849,7 +859,7 @@ impl<'a> Parser<'a> {
         self.eat_trivia();
         self.bump(); // Implements
         self.eat_whitespace();
-        self.eat_to_eol();
+        self.parse_type_ref();
         self.finish_node();
     }
 
@@ -1045,9 +1055,59 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::KwDeclare);
-        // Consume rest of line (Lib "..." Alias "..." param list etc.)
-        self.eat_to_eol();
+        self.eat_whitespace();
+        // Optional `PtrSafe` (lexes as an identifier; the only ident here).
+        if self.at(SyntaxKind::Ident) {
+            self.bump();
+            self.eat_whitespace();
+        }
+        // Sub | Function
+        if self.at_any(&[SyntaxKind::KwSub, SyntaxKind::KwFunction]) {
+            self.bump();
+            self.eat_whitespace();
+        }
+        // Name
+        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+            self.bump();
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwLib) {
+            self.parse_lib_clause();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::KwAlias) {
+            self.parse_alias_clause();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::LParen) {
+            self.parse_param_list();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::KwAs) {
+            self.bump();
+            self.eat_whitespace();
+            self.parse_type_ref();
+        }
+        self.finish_node();
+    }
 
+    fn parse_lib_clause(&mut self) {
+        self.start_node(SyntaxKind::LibClause);
+        self.bump(); // Lib
+        self.eat_whitespace();
+        if self.at(SyntaxKind::StringLiteral) {
+            self.bump();
+        }
+        self.finish_node();
+    }
+
+    fn parse_alias_clause(&mut self) {
+        self.start_node(SyntaxKind::AliasClause);
+        self.bump(); // Alias
+        self.eat_whitespace();
+        if self.at(SyntaxKind::StringLiteral) {
+            self.bump();
+        }
         self.finish_node();
     }
 
@@ -1056,8 +1116,6 @@ impl<'a> Parser<'a> {
     fn parse_dim_stmt(&mut self) {
         self.start_node(SyntaxKind::DimStmt);
         self.eat_trivia();
-
-        // Modifiers
         while self.at_any(&[
             SyntaxKind::KwPublic,
             SyntaxKind::KwPrivate,
@@ -1067,10 +1125,7 @@ impl<'a> Parser<'a> {
             self.bump();
             self.eat_whitespace();
         }
-
-        // Variable declarations until end of line
-        self.eat_to_eol();
-
+        self.parse_declarator_list();
         self.finish_node();
     }
 
@@ -1079,8 +1134,6 @@ impl<'a> Parser<'a> {
     fn parse_const_stmt(&mut self) {
         self.start_node(SyntaxKind::ConstStmt);
         self.eat_trivia();
-
-        // Modifiers
         while self.at_any(&[
             SyntaxKind::KwPublic,
             SyntaxKind::KwPrivate,
@@ -1089,8 +1142,65 @@ impl<'a> Parser<'a> {
             self.bump();
             self.eat_whitespace();
         }
+        self.parse_declarator_list();
+        self.finish_node();
+    }
 
-        self.eat_to_eol();
+    /// Comma-separated `VarDeclarator`s for Dim/Const.
+    fn parse_declarator_list(&mut self) {
+        loop {
+            let before = self.pos;
+            self.parse_var_declarator();
+            self.eat_whitespace();
+            if !self.eat(SyntaxKind::Comma) {
+                break;
+            }
+            self.eat_whitespace();
+            if self.pos == before {
+                break; // safety
+            }
+        }
+    }
+
+    /// One declarator: `[WithEvents] name [(bounds)] [As [New] Type [* N]] [= expr]`.
+    fn parse_var_declarator(&mut self) {
+        self.start_node(SyntaxKind::VarDeclarator);
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwWithEvents) {
+            self.bump();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::Ident)
+            || self.at(SyntaxKind::BracketedIdent)
+            || self.current().is_keyword()
+        {
+            self.bump(); // name
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::LParen) {
+            self.parse_array_bounds();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::KwAs) {
+            self.bump();
+            self.eat_whitespace();
+            self.parse_type_ref(); // handles `New` + qualified name
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Star) {
+                self.bump(); // fixed-length string: As String * N
+                self.eat_whitespace();
+                self.parse_expr_bp(0);
+            }
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Eq) {
+            self.bump(); // Const initializer
+            self.eat_whitespace();
+            self.parse_required_expr("expected constant value");
+        }
         self.finish_node();
     }
 
@@ -1107,15 +1217,21 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::KwType);
-        self.eat_to_eol();
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+            self.bump(); // type name
+        }
 
-        // UDT members are declaration lines, not executable statements.
-        // Consume them losslessly so field shapes such as `String * 5`
-        // and `Items(1 To 2)` do not get misparsed as expressions.
-        while !self.at_eof() && self.current_non_trivia() != SyntaxKind::KwEnd {
-            self.eat_to_eol();
-            if self.at(SyntaxKind::Newline) {
-                self.bump();
+        // UDT fields until `End Type`.
+        loop {
+            self.eat_trivia();
+            if self.at_eof() || self.current_non_trivia() == SyntaxKind::KwEnd {
+                break;
+            }
+            let before = self.pos;
+            self.parse_type_field();
+            if self.pos == before {
+                self.bump(); // safety
             }
         }
 
@@ -1127,8 +1243,39 @@ impl<'a> Parser<'a> {
                 self.bump();
             }
         }
-        self.eat_to_eol();
 
+        self.finish_node();
+    }
+
+    /// One UDT field: `Name [(bounds)] As Type [* N]`.
+    fn parse_type_field(&mut self) {
+        self.start_node(SyntaxKind::TypeField);
+        self.eat_trivia();
+        if self.at(SyntaxKind::Ident)
+            || self.at(SyntaxKind::BracketedIdent)
+            || self.current().is_keyword()
+        {
+            self.bump();
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::LParen) {
+            self.parse_array_bounds();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::KwAs) {
+            self.bump();
+            self.eat_whitespace();
+            self.parse_type_ref();
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Star) {
+                self.bump(); // fixed-length string
+                self.eat_whitespace();
+                self.parse_expr_bp(0);
+            }
+        }
         self.finish_node();
     }
 
@@ -1145,10 +1292,23 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::KwEnum);
-        self.eat_to_eol();
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+            self.bump(); // enum name
+        }
 
-        // Members until End Enum
-        self.parse_block(&[SyntaxKind::KwEnd]);
+        // Members until `End Enum`.
+        loop {
+            self.eat_trivia();
+            if self.at_eof() || self.current_non_trivia() == SyntaxKind::KwEnd {
+                break;
+            }
+            let before = self.pos;
+            self.parse_enum_member();
+            if self.pos == before {
+                self.bump(); // safety
+            }
+        }
 
         self.eat_trivia();
         if self.at(SyntaxKind::KwEnd) {
@@ -1158,8 +1318,26 @@ impl<'a> Parser<'a> {
                 self.bump();
             }
         }
-        self.eat_to_eol();
 
+        self.finish_node();
+    }
+
+    /// One enum member: `Name [= expr]`.
+    fn parse_enum_member(&mut self) {
+        self.start_node(SyntaxKind::EnumMember);
+        self.eat_trivia();
+        if self.at(SyntaxKind::Ident)
+            || self.at(SyntaxKind::BracketedIdent)
+            || self.current().is_keyword()
+        {
+            self.bump();
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Eq) {
+            self.bump();
+            self.eat_whitespace();
+            self.parse_expr_bp(0);
+        }
         self.finish_node();
     }
 
@@ -1176,8 +1354,14 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::KwEvent);
-        self.eat_to_eol();
-
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+            self.bump(); // event name
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::LParen) {
+            self.parse_param_list();
+        }
         self.finish_node();
     }
 
@@ -1227,16 +1411,11 @@ impl<'a> Parser<'a> {
             // Default value: = expr
             self.eat_whitespace();
             if self.at(SyntaxKind::Eq) {
-                self.bump();
+                self.start_node(SyntaxKind::ParamDefault);
+                self.bump(); // =
                 self.eat_whitespace();
-                // Consume until comma or RParen
-                while !self.at_eof()
-                    && !self.at(SyntaxKind::Comma)
-                    && !self.at(SyntaxKind::RParen)
-                    && !self.at(SyntaxKind::Newline)
-                {
-                    self.bump();
-                }
+                self.parse_expr_bp(0);
+                self.finish_node();
             }
 
             self.finish_node(); // Param
@@ -1270,6 +1449,67 @@ impl<'a> Parser<'a> {
                     self.bump();
                 }
             }
+        }
+        self.finish_node();
+    }
+
+    // ── Shared structured sub-nodes ─────────────────────────
+
+    /// A label *reference* (`GoTo X` / `On Error GoTo 0` / `Resume Label`).
+    fn parse_label_ref(&mut self) {
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Ident)
+            || self.at(SyntaxKind::BracketedIdent)
+            || self.at(SyntaxKind::IntLiteral)
+        {
+            self.start_node(SyntaxKind::LabelRef);
+            self.bump();
+            self.finish_node();
+        }
+    }
+
+    /// `( bound, bound, … )` — array dimensions for Dim/Const/Type/ReDim.
+    fn parse_array_bounds(&mut self) {
+        self.start_node(SyntaxKind::ArrayBounds);
+        if self.at(SyntaxKind::LParen) {
+            self.bump_lparen();
+        }
+        self.eat_expr_whitespace();
+        if !self.at(SyntaxKind::RParen) && !self.at_eof() {
+            if !self.at(SyntaxKind::Comma) {
+                self.parse_bound();
+            }
+            loop {
+                self.eat_expr_whitespace();
+                if !self.at(SyntaxKind::Comma) {
+                    break;
+                }
+                self.bump(); // ,
+                self.eat_expr_whitespace();
+                if !self.at(SyntaxKind::Comma) && !self.at(SyntaxKind::RParen) && !self.at_eof() {
+                    self.parse_bound();
+                }
+            }
+        }
+        self.eat_expr_whitespace();
+        if self.at(SyntaxKind::RParen) {
+            self.bump_rparen();
+        } else {
+            self.error("expected `)`".into());
+        }
+        self.finish_node();
+    }
+
+    /// One dimension: `[lower To] upper`.
+    fn parse_bound(&mut self) {
+        self.start_node(SyntaxKind::Bound);
+        self.eat_expr_whitespace();
+        self.parse_expr_bp(0);
+        self.eat_expr_whitespace();
+        if self.at(SyntaxKind::KwTo) {
+            self.bump(); // To
+            self.eat_expr_whitespace();
+            self.parse_expr_bp(0);
         }
         self.finish_node();
     }
@@ -1315,6 +1555,15 @@ impl<'a> Parser<'a> {
             return;
         }
 
+        // File-I/O statements whose leading word lexes as an identifier
+        // (Put/Seek/Width/Unlock/Reset), routed by statement-position + shape.
+        if self.current() == SyntaxKind::Ident && !self.peek_is_label_colon() {
+            if let Some(which) = self.ident_file_stmt_kind() {
+                self.parse_ident_file_stmt(which);
+                return;
+            }
+        }
+
         let kind = self.current();
         match kind {
             SyntaxKind::KwIf => self.parse_if_stmt(),
@@ -1339,6 +1588,31 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwRaiseEvent => self.parse_raise_event_stmt(),
             SyntaxKind::KwDebug => self.parse_call_stmt_generic(),
             SyntaxKind::KwStop => self.parse_call_stmt_generic(),
+            // ── File-I/O statements led by a keyword ──
+            SyntaxKind::KwOpen if !self.peek_keyword_used_as_name() => self.parse_open_stmt(),
+            SyntaxKind::KwClose if !self.peek_keyword_used_as_name() => self.parse_close_stmt(),
+            SyntaxKind::KwWrite if !self.peek_keyword_used_as_name() => {
+                self.parse_print_like_stmt(SyntaxKind::WriteStmt)
+            }
+            SyntaxKind::KwLock if !self.peek_keyword_used_as_name() => self.parse_lock_stmt(),
+            SyntaxKind::KwGet if !self.peek_keyword_used_as_name() => {
+                self.parse_get_put_stmt(SyntaxKind::GetStmt)
+            }
+            SyntaxKind::KwName
+                if !self.peek_keyword_used_as_name()
+                    && self.peek_top_level_before_stmt_end(SyntaxKind::KwAs) =>
+            {
+                self.parse_name_stmt()
+            }
+            SyntaxKind::KwLine if self.peek_next_non_trivia_is(SyntaxKind::KwInput) => {
+                self.parse_line_input_stmt()
+            }
+            SyntaxKind::KwPrint if self.peek_next_non_trivia_is(SyntaxKind::Hash) => {
+                self.parse_print_like_stmt(SyntaxKind::PrintStmt)
+            }
+            SyntaxKind::KwInput if self.peek_next_non_trivia_is(SyntaxKind::Hash) => {
+                self.parse_input_stmt()
+            }
             SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::IntLiteral
                 if self.peek_is_label_colon() =>
             {
@@ -1803,7 +2077,17 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::OnErrorStmt);
         self.eat_trivia();
         self.bump(); // On
-        self.eat_to_statement_end();
+        self.eat_whitespace();
+        self.eat(SyntaxKind::KwError);
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwResume) {
+            self.bump();
+            self.eat_whitespace();
+            self.eat(SyntaxKind::KwNext);
+        } else if self.at(SyntaxKind::KwGoTo) {
+            self.bump();
+            self.parse_label_ref(); // a label, or `0`
+        }
         self.finish_node();
     }
 
@@ -1811,7 +2095,12 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ResumeStmt);
         self.eat_trivia();
         self.bump(); // Resume
-        self.eat_to_statement_end();
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwNext) {
+            self.bump();
+        } else {
+            self.parse_label_ref();
+        }
         self.finish_node();
     }
 
@@ -1824,6 +2113,24 @@ impl<'a> Parser<'a> {
             self.bump();
             self.eat_whitespace();
         }
+        loop {
+            // Target name path (`a` / `obj.arr`); the bounds follow, so we stop at `(`.
+            self.parse_name_path();
+            self.eat_whitespace();
+            if self.at(SyntaxKind::LParen) {
+                self.parse_array_bounds();
+            }
+            self.eat_whitespace();
+            if !self.eat(SyntaxKind::Comma) {
+                break;
+            }
+            self.eat_whitespace();
+        }
+        self.finish_node();
+    }
+
+    /// A dotted/banged name path with no trailing index — used by ReDim targets.
+    fn parse_name_path(&mut self) {
         if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
             self.bump();
             if self.at(SyntaxKind::TypeSuffix) {
@@ -1842,19 +2149,24 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        self.eat_whitespace();
-        if self.at(SyntaxKind::LParen) {
-            self.parse_redim_arg_list();
-        }
-        self.eat_to_statement_end();
-        self.finish_node();
     }
 
     fn parse_erase_stmt(&mut self) {
         self.start_node(SyntaxKind::EraseStmt);
         self.eat_trivia();
         self.bump(); // Erase
-        self.eat_to_statement_end();
+        self.eat_whitespace();
+        loop {
+            if !self.is_expr_start() {
+                break;
+            }
+            self.parse_lvalue_expr();
+            self.eat_whitespace();
+            if !self.eat(SyntaxKind::Comma) {
+                break;
+            }
+            self.eat_whitespace();
+        }
         self.finish_node();
     }
 
@@ -1862,7 +2174,16 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ExitStmt);
         self.eat_trivia();
         self.bump(); // Exit
-        self.eat_to_statement_end();
+        self.eat_whitespace();
+        if self.at_any(&[
+            SyntaxKind::KwSub,
+            SyntaxKind::KwFunction,
+            SyntaxKind::KwProperty,
+            SyntaxKind::KwFor,
+            SyntaxKind::KwDo,
+        ]) {
+            self.bump();
+        }
         self.finish_node();
     }
 
@@ -1870,7 +2191,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::GoToStmt);
         self.eat_trivia();
         self.bump(); // GoTo
-        self.eat_to_statement_end();
+        self.parse_label_ref();
         self.finish_node();
     }
 
@@ -1887,7 +2208,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::GoSubStmt);
         self.eat_trivia();
         self.bump(); // GoSub
-        self.eat_to_statement_end();
+        self.parse_label_ref();
         self.finish_node();
     }
 
@@ -1918,6 +2239,341 @@ impl<'a> Parser<'a> {
         }
         self.eat_to_statement_end();
         self.finish_node();
+    }
+
+    // ── File I/O statements ─────────────────────────────────
+
+    /// `[#] channel` — the file number shared by every file statement.
+    fn parse_file_number(&mut self) {
+        self.start_node(SyntaxKind::FileNumber);
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Hash) {
+            self.bump();
+        }
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_expr_bp(0);
+        }
+        self.finish_node();
+    }
+
+    fn parse_open_stmt(&mut self) {
+        self.start_node(SyntaxKind::OpenStmt);
+        self.eat_trivia();
+        self.bump(); // Open
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_expr_bp(0); // path (stops at `For`)
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwFor) {
+            self.bump();
+            self.eat_whitespace();
+            if self.at_any(&[
+                SyntaxKind::KwInput,
+                SyntaxKind::KwOutput,
+                SyntaxKind::KwAppend,
+                SyntaxKind::KwBinary,
+                SyntaxKind::KwRandom,
+            ]) {
+                self.bump();
+            }
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::KwAccess) {
+            self.bump();
+            self.eat_whitespace();
+            while self.at_any(&[SyntaxKind::KwRead, SyntaxKind::KwWrite]) {
+                self.bump();
+                self.eat_whitespace();
+            }
+        }
+        if self.at(SyntaxKind::KwShared) {
+            self.bump();
+            self.eat_whitespace();
+        } else if self.at(SyntaxKind::KwLock) {
+            self.bump();
+            self.eat_whitespace();
+            while self.at_any(&[SyntaxKind::KwRead, SyntaxKind::KwWrite]) {
+                self.bump();
+                self.eat_whitespace();
+            }
+        }
+        if self.at(SyntaxKind::KwAs) {
+            self.bump();
+            self.eat_whitespace();
+            self.parse_file_number();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::Ident) {
+            self.bump(); // Len
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Eq) {
+                self.bump();
+                self.eat_whitespace();
+                self.parse_expr_bp(0); // record length
+            }
+        }
+        self.finish_node();
+    }
+
+    /// `Close [#n, …]` — also handles `Reset` (close all).
+    fn parse_close_stmt(&mut self) {
+        self.start_node(SyntaxKind::CloseStmt);
+        self.eat_trivia();
+        self.bump(); // Close | Reset
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Hash) || self.is_expr_start() {
+            loop {
+                self.parse_file_number();
+                self.eat_whitespace();
+                if !self.eat(SyntaxKind::Comma) {
+                    break;
+                }
+                self.eat_whitespace();
+            }
+        }
+        self.finish_node();
+    }
+
+    fn parse_print_like_stmt(&mut self, node: SyntaxKind) {
+        self.start_node(node);
+        self.eat_trivia();
+        self.bump(); // Print | Write
+        self.eat_whitespace();
+        self.parse_file_number();
+        self.eat_whitespace();
+        self.eat(SyntaxKind::Comma);
+        self.parse_print_item_list();
+        self.finish_node();
+    }
+
+    fn parse_print_item_list(&mut self) {
+        self.start_node(SyntaxKind::PrintItemList);
+        loop {
+            self.eat_whitespace();
+            let kind = self.current();
+            if self.is_expr_stop(kind) {
+                break;
+            }
+            if kind == SyntaxKind::Comma || kind == SyntaxKind::Semicolon {
+                self.bump();
+            } else if self.is_expr_start() {
+                self.start_node(SyntaxKind::PrintItem);
+                self.parse_expr_bp(0); // expr, or Spc(n)/Tab(n) as a call
+                self.finish_node();
+            } else {
+                break;
+            }
+        }
+        self.finish_node();
+    }
+
+    fn parse_input_stmt(&mut self) {
+        self.start_node(SyntaxKind::InputStmt);
+        self.eat_trivia();
+        self.bump(); // Input
+        self.eat_whitespace();
+        self.parse_file_number();
+        self.eat_whitespace();
+        self.eat(SyntaxKind::Comma);
+        loop {
+            self.eat_whitespace();
+            if !self.is_expr_start() {
+                break;
+            }
+            self.parse_lvalue_expr();
+            self.eat_whitespace();
+            if !self.eat(SyntaxKind::Comma) {
+                break;
+            }
+        }
+        self.finish_node();
+    }
+
+    fn parse_line_input_stmt(&mut self) {
+        self.start_node(SyntaxKind::LineInputStmt);
+        self.eat_trivia();
+        self.bump(); // Line
+        self.eat_whitespace();
+        self.eat(SyntaxKind::KwInput);
+        self.eat_whitespace();
+        self.parse_file_number();
+        self.eat_whitespace();
+        self.eat(SyntaxKind::Comma);
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_lvalue_expr();
+        }
+        self.finish_node();
+    }
+
+    /// `Get/Put [#]n, [rec], var`.
+    fn parse_get_put_stmt(&mut self, node: SyntaxKind) {
+        self.start_node(node);
+        self.eat_trivia();
+        self.bump(); // Get | Put
+        self.eat_whitespace();
+        self.parse_file_number();
+        self.eat_whitespace();
+        self.eat(SyntaxKind::Comma);
+        self.eat_whitespace();
+        if !self.at(SyntaxKind::Comma) && self.is_expr_start() {
+            self.parse_expr_bp(0); // record number
+            self.eat_whitespace();
+        }
+        self.eat(SyntaxKind::Comma);
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_lvalue_expr(); // variable
+        }
+        self.finish_node();
+    }
+
+    /// `Seek/Width [#]n, value`.
+    fn parse_seek_width_stmt(&mut self, node: SyntaxKind) {
+        self.start_node(node);
+        self.eat_trivia();
+        self.bump(); // Seek | Width
+        self.eat_whitespace();
+        self.parse_file_number();
+        self.eat_whitespace();
+        self.eat(SyntaxKind::Comma);
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_expr_bp(0);
+        }
+        self.finish_node();
+    }
+
+    fn parse_name_stmt(&mut self) {
+        self.start_node(SyntaxKind::NameStmt);
+        self.eat_trivia();
+        self.bump(); // Name
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_expr_bp(0); // old (stops at `As`)
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwAs) {
+            self.bump();
+            self.eat_whitespace();
+            if self.is_expr_start() {
+                self.parse_expr_bp(0); // new
+            }
+        }
+        self.finish_node();
+    }
+
+    /// `Lock/Unlock #n [, range [To range]]`.
+    fn parse_lock_stmt(&mut self) {
+        self.start_node(SyntaxKind::LockStmt);
+        self.eat_trivia();
+        self.bump(); // Lock | Unlock
+        self.eat_whitespace();
+        self.parse_file_number();
+        self.eat_whitespace();
+        if self.eat(SyntaxKind::Comma) {
+            self.eat_whitespace();
+            self.parse_expr_bp(0);
+            self.eat_whitespace();
+            if self.at(SyntaxKind::KwTo) {
+                self.bump();
+                self.eat_whitespace();
+                self.parse_expr_bp(0);
+            }
+        }
+        self.finish_node();
+    }
+
+    fn parse_ident_file_stmt(&mut self, which: FileIoIdent) {
+        match which {
+            FileIoIdent::Put => self.parse_get_put_stmt(SyntaxKind::PutStmt),
+            FileIoIdent::Seek => self.parse_seek_width_stmt(SyntaxKind::SeekStmt),
+            FileIoIdent::Width => self.parse_seek_width_stmt(SyntaxKind::WidthStmt),
+            FileIoIdent::Unlock => self.parse_lock_stmt(),
+            FileIoIdent::Reset => self.parse_close_stmt(),
+        }
+    }
+
+    // ── File-I/O dispatch peek helpers ──────────────────────
+
+    /// True if the current statement-leading contextual keyword is being used as
+    /// an identifier (assignment / member / call), not a statement keyword.
+    fn peek_keyword_used_as_name(&self) -> bool {
+        matches!(
+            self.peek_next_non_trivia(),
+            SyntaxKind::Eq
+                | SyntaxKind::Dot
+                | SyntaxKind::Bang
+                | SyntaxKind::LParen
+                | SyntaxKind::Colon
+                | SyntaxKind::TypeSuffix
+        )
+    }
+
+    /// The next non-trivia token kind after the current one.
+    fn peek_next_non_trivia(&self) -> SyntaxKind {
+        let mut j = self.pos + 1;
+        while j < self.tokens.len() && self.tokens[j].0.is_trivia() {
+            j += 1;
+        }
+        self.tokens.get(j).map(|(k, _)| *k).unwrap_or(SyntaxKind::Eof)
+    }
+
+    fn peek_next_non_trivia_is(&self, target: SyntaxKind) -> bool {
+        self.peek_next_non_trivia() == target
+    }
+
+    /// Scan the rest of the statement (top level), returning true if `target`
+    /// appears at paren depth 0 before the statement ends.
+    fn peek_top_level_before_stmt_end(&self, target: SyntaxKind) -> bool {
+        let mut j = self.pos + 1;
+        let mut depth: i32 = 0;
+        while j < self.tokens.len() {
+            let k = self.tokens[j].0;
+            match k {
+                SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Colon | SyntaxKind::Eof => {
+                    return false;
+                }
+                SyntaxKind::LParen => depth += 1,
+                SyntaxKind::RParen => depth -= 1,
+                _ if k == target && depth == 0 => return true,
+                _ => {}
+            }
+            j += 1;
+        }
+        false
+    }
+
+    /// Classify a leading identifier (`Put`/`Seek`/`Width`/`Unlock`/`Reset`) as a
+    /// file statement when the shape matches (statement-position + shape guard).
+    fn ident_file_stmt_kind(&self) -> Option<FileIoIdent> {
+        let text = self.tokens.get(self.pos).map(|(_, t)| *t)?;
+        let which = match text.to_ascii_lowercase().as_str() {
+            "put" => FileIoIdent::Put,
+            "seek" => FileIoIdent::Seek,
+            "width" => FileIoIdent::Width,
+            "unlock" => FileIoIdent::Unlock,
+            "reset" => FileIoIdent::Reset,
+            _ => return None,
+        };
+        if self.peek_keyword_used_as_name() {
+            return None;
+        }
+        match which {
+            // `Reset` takes no operands.
+            FileIoIdent::Reset => Some(which),
+            _ => {
+                if self.peek_top_level_before_stmt_end(SyntaxKind::Hash)
+                    || self.peek_top_level_before_stmt_end(SyntaxKind::Comma)
+                {
+                    Some(which)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     // ── Assignment or implicit call ─────────────────────────
@@ -2063,6 +2719,163 @@ mod tests {
         let src = "Option Explicit\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+    }
+
+    // ── Fully-structured CST: declarations & statements ─────
+
+    /// Parse, assert lossless round-trip + no errors, return the tree's root text.
+    fn parse_ok(src: &str) -> Parse {
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src, "round-trip");
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        p
+    }
+
+    fn in_sub(body: &str) -> String {
+        format!("Sub T()\n{body}\nEnd Sub\n")
+    }
+
+    #[test]
+    fn structures_dim_declarators() {
+        let p = parse_ok(&in_sub("Dim a As Long, b(1 To 10) As String, c As New Widget"));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(), 3);
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArrayBounds));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::Bound));
+    }
+
+    #[test]
+    fn structures_withevents_and_fixed_string_dim() {
+        let p = parse_ok(&in_sub("Dim WithEvents src As Widget\nDim buf As String * 20"));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(), 2);
+    }
+
+    #[test]
+    fn structures_const_declarators() {
+        let p = parse_ok("Public Const PI As Double = 3.14, N = 5\n");
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ConstStmt));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(), 2);
+    }
+
+    #[test]
+    fn structures_declare() {
+        let src = "Private Declare PtrSafe Function MB Lib \"user32\" Alias \"MessageBoxA\" (ByVal h As LongPtr) As Long\n";
+        let p = parse_ok(src);
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::DeclareStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::LibClause));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::AliasClause));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ParamList));
+    }
+
+    #[test]
+    fn structures_type_block_fields() {
+        let src = "Type Rec\n    Id As Long\n    Name As String * 32\n    Tags(1 To 3) As Integer\nEnd Type\n";
+        let p = parse_ok(src);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::TypeField).len(), 3);
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArrayBounds));
+    }
+
+    #[test]
+    fn structures_enum_members() {
+        let src = "Public Enum Color\n    Red\n    Green = 5\n    Blue\nEnd Enum\n";
+        let p = parse_ok(src);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::EnumMember).len(), 3);
+    }
+
+    #[test]
+    fn structures_event_decl() {
+        let p = parse_ok("Public Event Changed(ByVal n As Long)\n");
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::EventDecl));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ParamList));
+    }
+
+    #[test]
+    fn structures_option_and_attribute_and_implements() {
+        assert!(has_node_kind(&parse_ok("Option Base 1\n").syntax(), SyntaxKind::OptionStmt));
+        assert!(has_node_kind(&parse_ok("Option Compare Text\n").syntax(), SyntaxKind::OptionStmt));
+        let attr = parse_ok("Attribute VB_Name = \"Mod1\"\n");
+        assert!(has_node_kind(&attr.syntax(), SyntaxKind::AttributeStmt));
+        assert!(has_node_kind(&attr.syntax(), SyntaxKind::LiteralExpr));
+        let impl_ = parse_ok("Implements IShape\n");
+        assert!(has_node_kind(&impl_.syntax(), SyntaxKind::ImplementsStmt));
+        assert!(has_node_kind(&impl_.syntax(), SyntaxKind::TypeRef));
+    }
+
+    #[test]
+    fn structures_error_control_and_jumps() {
+        let p = parse_ok(&in_sub(
+            "On Error GoTo Handler\nResume Next\nExit Sub\nHandler:\nResume\nGoTo Done\nDone:",
+        ));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::OnErrorStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ResumeStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ExitStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::GoToStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::LabelRef));
+        // On Error GoTo 0 keeps the `0` as a LabelRef too.
+        let z = parse_ok(&in_sub("On Error GoTo 0"));
+        assert!(has_node_kind(&z.syntax(), SyntaxKind::LabelRef));
+    }
+
+    #[test]
+    fn structures_erase_and_param_default() {
+        let e = parse_ok(&in_sub("Erase a, b"));
+        assert!(has_node_kind(&e.syntax(), SyntaxKind::EraseStmt));
+        let d = parse_ok("Sub S(Optional x As Long = 5)\nEnd Sub\n");
+        assert!(has_node_kind(&d.syntax(), SyntaxKind::ParamDefault));
+        assert!(has_node_kind(&d.syntax(), SyntaxKind::LiteralExpr));
+    }
+
+    #[test]
+    fn structures_file_open_close() {
+        let p = parse_ok(&in_sub("Open \"data.txt\" For Input As #1\nClose #1\nReset"));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::OpenStmt));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::CloseStmt).len(), 2); // Close + Reset
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::FileNumber));
+    }
+
+    #[test]
+    fn structures_print_and_write() {
+        let p = parse_ok(&in_sub("Print #1, x; y\nWrite #2, a, b"));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::PrintStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::WriteStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::PrintItemList));
+        assert!(collect_nodes(&p.syntax(), SyntaxKind::PrintItem).len() >= 4);
+        // `Print x` (no #) stays a console call statement.
+        let console = parse_ok(&in_sub("Print x"));
+        assert!(!has_node_kind(&console.syntax(), SyntaxKind::PrintStmt));
+        assert!(has_node_kind(&console.syntax(), SyntaxKind::CallStmt));
+    }
+
+    #[test]
+    fn structures_input_get_put_seek_width_name_lock() {
+        let p = parse_ok(&in_sub(
+            "Input #1, x, y\nLine Input #1, s\nGet #1, , rec\nPut #1, 5, rec\nSeek #1, 10\nWidth #1, 80\nName \"a\" As \"b\"\nLock #1, 1 To 5\nUnlock #1",
+        ));
+        for kind in [
+            SyntaxKind::InputStmt,
+            SyntaxKind::LineInputStmt,
+            SyntaxKind::GetStmt,
+            SyntaxKind::PutStmt,
+            SyntaxKind::SeekStmt,
+            SyntaxKind::WidthStmt,
+            SyntaxKind::NameStmt,
+        ] {
+            assert!(has_node_kind(&p.syntax(), kind), "expected {kind:?}");
+        }
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LockStmt).len(), 2); // Lock + Unlock
+    }
+
+    #[test]
+    fn file_io_contextual_keywords_disambiguate() {
+        // Statement form → file statement.
+        assert!(has_node_kind(&parse_ok(&in_sub("Put #1, , d")).syntax(), SyntaxKind::PutStmt));
+        assert!(has_node_kind(&parse_ok(&in_sub("Width #1, 80")).syntax(), SyntaxKind::WidthStmt));
+        // Identifier form → assignment / expression, NOT a file statement.
+        let assign = parse_ok(&in_sub("Width = 80"));
+        assert!(!has_node_kind(&assign.syntax(), SyntaxKind::WidthStmt));
+        assert!(has_node_kind(&assign.syntax(), SyntaxKind::AssignStmt));
+        let call = parse_ok(&in_sub("x = Seek(f)"));
+        assert!(!has_node_kind(&call.syntax(), SyntaxKind::SeekStmt));
+        assert!(has_node_kind(&call.syntax(), SyntaxKind::AssignStmt));
     }
 
     #[test]
@@ -2308,7 +3121,8 @@ mod tests {
         assert_eq!(p.syntax().text(), src);
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ReDimStmt));
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArrayBounds));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::Bound));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::BinaryExpr));
     }
 
@@ -2319,7 +3133,8 @@ mod tests {
         assert_eq!(p.syntax().text(), src);
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ReDimStmt));
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArrayBounds));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::Bound).len(), 2);
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr).len(), 2);
     }
 
@@ -2331,7 +3146,7 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         let redim = collect_nodes(&p.syntax(), SyntaxKind::ReDimStmt);
         assert_eq!(redim.len(), 1);
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArrayBounds));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::LiteralExpr));
     }
 

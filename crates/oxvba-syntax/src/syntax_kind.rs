@@ -201,6 +201,32 @@ pub enum SyntaxKind {
     LiteralExpr,
     ParenExpr,
 
+    // ── Composite nodes (fully-structured statement/declaration detail) ──
+    LabelRef,      // a label reference: GoTo/GoSub/On Error GoTo/Resume target
+    ArrayBounds,   // ( bound, bound, … )
+    Bound,         // [lower To] upper
+    VarDeclarator, // one Dim/Const entry: name [bounds] [As [New] Type [* N]] [= expr]
+    TypeField,     // one UDT field
+    EnumMember,    // one Enum member
+    ParamDefault,  // = expr on an Optional parameter
+    LibClause,     // Lib "…"
+    AliasClause,   // Alias "…"
+    FileNumber,    // [#] channel
+    PrintItemList, // Print/Write output list (items + , ; separators)
+    PrintItem,     // one printable: expr or Spc(n)/Tab(n)
+    OpenStmt,
+    CloseStmt,
+    PrintStmt,
+    WriteStmt,
+    InputStmt,
+    LineInputStmt,
+    GetStmt,
+    PutStmt,
+    SeekStmt,
+    WidthStmt,
+    NameStmt,
+    LockStmt,
+
     // ── Sentinels ────────────────────────────────────────────
     ErrorNode,
     Eof,
@@ -226,7 +252,7 @@ impl SyntaxKind {
     /// True if this kind represents a composite (interior) node.
     pub fn is_node(self) -> bool {
         (self as u16) >= (SyntaxKind::SourceFile as u16)
-            && (self as u16) <= (SyntaxKind::ParenExpr as u16)
+            && (self as u16) <= (SyntaxKind::LockStmt as u16)
     }
 
     /// True if this kind represents a token (leaf) — not a composite node.
