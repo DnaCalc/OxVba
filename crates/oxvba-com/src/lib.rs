@@ -1,5 +1,6 @@
 //! oxvba-com: Windows-first COM bridge, metadata facade, and wire translation boundary.
 
+pub mod ansi;
 pub mod compat;
 pub mod cycle_gc;
 pub mod dispatch;

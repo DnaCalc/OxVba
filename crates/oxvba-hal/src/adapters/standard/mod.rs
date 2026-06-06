@@ -1970,6 +1970,51 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_random_len_fixed_record_positioning() {
+        use crate::traits::FileSystemHal;
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy { allow_filesystem_mutation: true, ..HostPolicy::default() },
+        );
+        // Open Random (mode 4) with Len = 8; each Long (4 bytes) occupies an 8-byte
+        // slot, so record 2 starts at byte offset 8.
+        let handle = FileSystemHal::open_with_record_len(
+            &host,
+            Variant::from_i32(910),
+            Variant::from_i32(4),
+            Variant::from_i32(8),
+        )
+        .expect("open with len");
+        FileSystemHal::put_record_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(1),
+            Variant::from_i32(0x1111_1111),
+        )
+        .expect("put rec 1");
+        FileSystemHal::put_record_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(2),
+            Variant::from_i32(0x2222_2222),
+        )
+        .expect("put rec 2");
+        let long_code = Variant::from_i32(oxvba_runtime::VarType::Long as i32);
+        let r2 = FileSystemHal::get_record_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(2),
+            long_code.clone(),
+        )
+        .expect("get rec 2");
+        assert_eq!(r2.as_i32(), Some(0x2222_2222));
+        let r1 =
+            FileSystemHal::get_record_variant(&host, handle, Variant::from_i32(1), long_code)
+                .expect("get rec 1");
+        assert_eq!(r1.as_i32(), Some(0x1111_1111));
+    }
+
+    #[test]
     fn filesystem_lock_overlap_is_rejected() {
         use crate::traits::FileSystemHal;
         let host = StandardHostServices::new(

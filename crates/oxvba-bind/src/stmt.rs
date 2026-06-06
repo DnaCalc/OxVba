@@ -54,8 +54,9 @@ impl<'a> ProcLower<'a> {
             ResumeStmt => self.bind_resume(node),
             ReDimStmt => self.bind_redim(node),
             EraseStmt => self.bind_erase(node),
-            OpenStmt | CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | PutStmt
-            | SeekStmt | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
+            OpenStmt => self.bind_open(node),
+            CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | PutStmt | SeekStmt
+            | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
             // `Get #n, [rec], var` reads into the target, so it lowers as an
             // assignment of the read value, not a discarded call.
             GetStmt => self.bind_get(node),
@@ -544,6 +545,62 @@ impl<'a> ProcLower<'a> {
             }
         }
         Ok(vec![CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Native(id), args })])
+    }
+
+    /// `Open path For <mode> As #n [Len = reclen]` lowers to
+    /// `FileOpen(path, (filenum << 16) | mode_code, reclen)`: the file number is
+    /// packed into the mode word (the open contract), and the record length rides
+    /// the third arg for Random-mode positioning. Omitting `For <mode>` defaults to
+    /// Random, matching VBA.
+    fn bind_open(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let exprs = node.expr_children(); // [path, len?]
+        let path_node = exprs
+            .first()
+            .copied()
+            .ok_or_else(|| BindError::Malformed("Open without a path".into()))?;
+        let path = self.bind_expr(path_node)?.value;
+        let mode_code = node
+            .child_tokens()
+            .iter()
+            .find_map(|t| match t.kind {
+                SyntaxKind::KwInput => Some(0),
+                SyntaxKind::KwOutput => Some(1),
+                SyntaxKind::KwAppend => Some(2),
+                SyntaxKind::KwBinary => Some(3),
+                SyntaxKind::KwRandom => Some(4),
+                _ => None,
+            })
+            .unwrap_or(4);
+        let fnum_node = node
+            .file_number()
+            .and_then(|f| f.first_expr_child())
+            .ok_or_else(|| BindError::Malformed("Open without a file number".into()))?;
+        let filenum = self.bind_expr(fnum_node)?.value;
+        // packed = (filenum * 65536) + mode_code  (== (filenum << 16) | mode_code)
+        let packed = CoreValue::Binary {
+            op: CoreBinOp::Add,
+            lhs: Box::new(CoreValue::Binary {
+                op: CoreBinOp::Mul,
+                lhs: Box::new(filenum),
+                rhs: Box::new(CoreValue::Const(CoreConst::I32(65536))),
+                mode: self.info.compare_mode,
+            }),
+            rhs: Box::new(CoreValue::Const(CoreConst::I32(mode_code))),
+            mode: self.info.compare_mode,
+        };
+        let record_len = match exprs.get(1) {
+            Some(e) => self.bind_expr(*e)?.value,
+            None => CoreValue::Const(CoreConst::I32(0)),
+        };
+        let args = vec![
+            CoreArg::ByVal(path),
+            CoreArg::ByVal(packed),
+            CoreArg::ByVal(record_len),
+        ];
+        Ok(vec![CoreStmt::Eval(CoreValue::Call {
+            callee: CoreCallee::Native(NativeImplId::FileOpen),
+            args,
+        })])
     }
 
     /// `Get #n, [rec], var` reads a record into `var`, so it lowers as

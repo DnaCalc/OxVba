@@ -232,6 +232,30 @@ fn random_access_file_statements_bind_and_lower() {
 }
 
 #[test]
+fn random_file_put_get_round_trips_through_vm() {
+    // End-to-end: Open Random with Len=8, Put a Long at record 2, Get it back —
+    // exercising the mode + Len plumbing through the standard host's in-memory file.
+    let src = "Sub Main()\n\
+        Dim r As Long\n    Dim v As Long\n    v = 222\n\
+        Open \"rec.dat\" For Random As #1 Len = 8\n\
+        Put #1, 2, v\n\
+        Get #1, 2, r\n\
+        Close #1\n\
+    End Sub\n";
+    let program = bind(src);
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = oxvba_hal::adapters::builder::HostBuilder::new()
+        .profile(oxvba_hal::HalProfileId::Windows)
+        .policy(oxvba_hal::HostPolicy {
+            allow_filesystem_mutation: true,
+            ..oxvba_hal::HostPolicy::default()
+        })
+        .build();
+    let vm = oxvba_vm2::run(&bundle, host.as_ref()).expect("run");
+    assert_eq!(vm.slot(bundle.global_count).and_then(|v| v.as_i32()), Some(222));
+}
+
+#[test]
 fn addressof_binds_to_proc_ref() {
     let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";
     let program = bind(src);

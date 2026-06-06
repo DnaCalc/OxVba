@@ -36,9 +36,14 @@ fn arr<const N: usize>(b: &[u8]) -> [u8; N] {
     out
 }
 
-/// Serialize a value to its VBA on-disk byte representation (little-endian).
-/// `String` uses a 2-byte length prefix + bytes (FIDELITY: UTF-8, not ANSI/BSTR).
-fn serialize_record(value: &Variant) -> Vec<u8> {
+/// VBA `Open` mode codes.
+const MODE_BINARY: i32 = 3;
+const MODE_RANDOM: i32 = 4;
+
+/// Serialize a value to its VBA on-disk byte representation (little-endian for
+/// numerics). A `String` is encoded as ANSI (system code page); in Random mode it
+/// carries a 2-byte length prefix, in Binary mode it is raw (no prefix).
+fn serialize_record(value: &Variant, mode: i32) -> Vec<u8> {
     match value.vtype() {
         VarType::Byte => vec![value.as_u8().unwrap_or(0)],
         VarType::Integer => value.as_i16().unwrap_or(0).to_le_bytes().to_vec(),
@@ -53,17 +58,24 @@ fn serialize_record(value: &Variant) -> Vec<u8> {
         VarType::LongLong => value.as_i64().unwrap_or(0).to_le_bytes().to_vec(),
         VarType::String => {
             let s = value.as_bstr().map(|b| b.as_str().to_string()).unwrap_or_default();
-            let bytes = s.into_bytes();
-            let len = bytes.len().min(u16::MAX as usize);
-            let mut out = (len as u16).to_le_bytes().to_vec();
-            out.extend_from_slice(&bytes[..len]);
-            out
+            let ansi = oxvba_com::ansi::ansi_encode(&s);
+            match mode {
+                MODE_RANDOM => {
+                    let len = ansi.len().min(u16::MAX as usize);
+                    let mut out = (len as u16).to_le_bytes().to_vec();
+                    out.extend_from_slice(&ansi[..len]);
+                    out
+                }
+                // Binary mode (and any other) writes raw ANSI with no length prefix.
+                MODE_BINARY | _ => ansi,
+            }
         }
         _ => Vec::new(),
     }
 }
 
-/// Decode a fixed-size record of `vtype` from `bytes`.
+/// Decode a fixed-size record of `vtype` from `bytes` (the caller has already
+/// sliced to the record's bytes; for strings `bytes` is the ANSI payload).
 fn deserialize_record(vtype: VarType, bytes: &[u8]) -> Variant {
     match vtype {
         VarType::Byte => Variant::from_u8(bytes.first().copied().unwrap_or(0)),
@@ -75,6 +87,7 @@ fn deserialize_record(vtype: VarType, bytes: &[u8]) -> Variant {
         VarType::Currency => Variant::from_currency_scaled_i64(i64::from_le_bytes(arr(bytes))),
         VarType::Date => Variant::from_date_f64(f64::from_le_bytes(arr(bytes))),
         VarType::LongLong => Variant::from_i64(i64::from_le_bytes(arr(bytes))),
+        VarType::String => Variant::from_string(oxvba_com::ansi::ansi_decode(bytes)),
         _ => Variant::empty(),
     }
 }
@@ -102,6 +115,9 @@ pub(super) struct FileHandleState {
     /// Locked 1-based byte/record ranges (inclusive) for `Lock`/`Unlock`. A `Lock`
     /// overlapping an already-locked range raises VBA error 70.
     pub(super) locks: Vec<(i32, i32)>,
+    /// Fixed record length from `Open … For Random … Len = N` (0 = unset; Random
+    /// records then use the written value's natural size as the stride).
+    pub(super) record_len: i32,
 }
 
 pub(super) fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -414,6 +430,7 @@ impl FileSystemHal for StandardHostServices {
                     data: initial_data,
                     width: 0,
                     locks: Vec::new(),
+                    record_len: 0,
                 },
             );
             self.assert_fs_invariants(&state, "open-post");
@@ -539,6 +556,7 @@ impl FileSystemHal for StandardHostServices {
                 data: initial_data,
                 width: 0,
                 locks: Vec::new(),
+                record_len: 0,
             },
         );
         self.assert_fs_invariants(&state, "open-post");
@@ -548,6 +566,27 @@ impl FileSystemHal for StandardHostServices {
             handle
         );
         Ok(Variant::from_i32(handle))
+    }
+
+    fn open_with_record_len(
+        &self,
+        path: Variant,
+        mode: Variant,
+        record_len: Variant,
+    ) -> HalResult<Variant> {
+        let handle = self.open_variant(path, mode)?;
+        // Record a positive `Len = N` for Random-mode fixed-record positioning.
+        if let Ok(len) = self.variant_to_i32(&record_len, CapabilityId::FileSystemIo, "open", "len")
+            && len > 0
+            && let Ok(handle_id) =
+                self.variant_to_i32(&handle, CapabilityId::FileSystemIo, "open", "handle")
+        {
+            let mut state = self.fs_lock(CapabilityId::FileSystemIo, "open")?;
+            if let Ok(entry) = self.fs_entry_mut(&mut state, handle_id, "open") {
+                entry.record_len = len;
+            }
+        }
+        Ok(handle)
     }
 
     fn close_variant(&self, handle: Variant) -> HalResult<Variant> {
@@ -984,23 +1023,43 @@ impl FileSystemHal for StandardHostServices {
         } else {
             Some(self.variant_to_i32(&position, capability, "put", "position")?)
         };
-        // Serialize the value to its on-disk byte form and write it into the file
-        // buffer. With an explicit record number this is fixed-record positioning
-        // (`(rec-1) * size`); otherwise it appends at the current position.
-        let bytes = serialize_record(&value);
         let mut state = self.fs_lock(capability, "put")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "put")?;
-        let offset = match explicit {
-            Some(rec) if rec >= 1 => ((rec - 1) as usize).saturating_mul(bytes.len()),
-            _ => entry.position.max(0) as usize,
+        let mode = entry.mode;
+        let bytes = serialize_record(&value, mode);
+        // Random mode positions by fixed-width record slot (`(rec-1)*stride`),
+        // padding the slot; Binary mode positions by byte offset.
+        let (offset, slot) = if mode == MODE_RANDOM {
+            let stride =
+                if entry.record_len > 0 { entry.record_len as usize } else { bytes.len() };
+            if entry.record_len > 0 && bytes.len() > stride {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "put",
+                    "Bad record length: value exceeds the file's Len",
+                ));
+            }
+            let off = match explicit {
+                Some(rec) if rec >= 1 => ((rec - 1) as usize).saturating_mul(stride),
+                _ => entry.position.max(0) as usize,
+            };
+            (off, stride)
+        } else {
+            let off = match explicit {
+                Some(rec) if rec >= 1 => (rec - 1) as usize,
+                _ => entry.position.max(0) as usize,
+            };
+            (off, bytes.len())
         };
-        let end = offset + bytes.len();
-        if end > entry.data.len() {
-            entry.data.resize(end, 0);
+        let write_end = offset + bytes.len();
+        let slot_end = offset + slot;
+        if slot_end > entry.data.len() {
+            entry.data.resize(slot_end, 0);
         }
-        entry.data[offset..end].copy_from_slice(&bytes);
-        entry.position = end as i32;
-        entry.len = entry.len.max(end as i32);
+        entry.data[offset..write_end].copy_from_slice(&bytes);
+        entry.position = slot_end as i32;
+        entry.len = entry.len.max(slot_end as i32);
         Ok(Variant::empty())
     }
 
@@ -1025,29 +1084,48 @@ impl FileSystemHal for StandardHostServices {
         let fixed = record_size(vt);
         let mut state = self.fs_lock(capability, "get")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "get")?;
-        let offset = match (explicit, fixed) {
-            (Some(rec), Some(size)) if rec >= 1 => ((rec - 1) as usize).saturating_mul(size),
-            _ => entry.position.max(0) as usize,
+        let mode = entry.mode;
+        // Random mode strides by the fixed record length (or the type's natural
+        // size); Binary mode reads at a byte offset.
+        let stride = if entry.record_len > 0 {
+            entry.record_len as usize
+        } else {
+            fixed.unwrap_or(0)
         };
-        let value = match fixed {
-            Some(size) => {
+        let offset = if mode == MODE_RANDOM {
+            match explicit {
+                Some(rec) if rec >= 1 => ((rec - 1) as usize).saturating_mul(stride),
+                _ => entry.position.max(0) as usize,
+            }
+        } else {
+            match explicit {
+                Some(rec) if rec >= 1 => (rec - 1) as usize,
+                _ => entry.position.max(0) as usize,
+            }
+        };
+        let value = match (fixed, vt) {
+            (Some(size), _) => {
                 let avail = entry.data.len().saturating_sub(offset);
                 let take = size.min(avail);
                 let v = deserialize_record(vt, &entry.data[offset..offset + take]);
-                entry.position = (offset + size) as i32;
+                let advance = if mode == MODE_RANDOM && stride > 0 { stride } else { size };
+                entry.position = (offset + advance) as i32;
                 v
             }
-            // Length-prefixed String (2-byte LE length + bytes), read at `offset`.
-            None if vt == VarType::String && offset + 2 <= entry.data.len() => {
+            // Random String: 2-byte ANSI length prefix + ANSI bytes.
+            (None, VarType::String) if mode == MODE_RANDOM && offset + 2 <= entry.data.len() => {
                 let len = u16::from_le_bytes([entry.data[offset], entry.data[offset + 1]]) as usize;
                 let endb = (offset + 2 + len).min(entry.data.len());
-                let v = Variant::from_string(
-                    String::from_utf8_lossy(&entry.data[offset + 2..endb]).into_owned(),
-                );
-                entry.position = endb as i32;
+                let v = deserialize_record(VarType::String, &entry.data[offset + 2..endb]);
+                let advance = if stride > 0 { stride } else { endb - offset };
+                entry.position = (offset + advance) as i32;
                 v
             }
-            None => Variant::empty(),
+            // FIDELITY: a variable-length String in Binary mode reads `Len(var)`
+            // bytes in VBA; the target's current length is not conveyed here, so we
+            // cannot read it byte-exactly (fixed-length `String * N` and Binary
+            // variable strings need length plumbing — the differential lane).
+            (None, _) => Variant::empty(),
         };
         Ok(value)
     }
@@ -1280,12 +1358,12 @@ fn wildcard_casefold(text: &str) -> String {
 
 #[cfg(test)]
 mod record_io_tests {
-    use super::{deserialize_record, record_size, serialize_record};
+    use super::{MODE_BINARY, MODE_RANDOM, deserialize_record, record_size, serialize_record};
     use oxvba_runtime::{VarType, Variant};
 
     #[test]
     fn long_serializes_little_endian_and_round_trips() {
-        let bytes = serialize_record(&Variant::from_i32(0x1234_5678));
+        let bytes = serialize_record(&Variant::from_i32(0x1234_5678), MODE_RANDOM);
         assert_eq!(bytes, vec![0x78, 0x56, 0x34, 0x12]);
         assert_eq!(deserialize_record(VarType::Long, &bytes).as_i32(), Some(0x1234_5678));
     }
@@ -1301,11 +1379,22 @@ mod record_io_tests {
 
     #[test]
     fn double_and_boolean_round_trip() {
-        let d = serialize_record(&Variant::from_f64(3.5));
+        let d = serialize_record(&Variant::from_f64(3.5), MODE_RANDOM);
         assert_eq!(d.len(), 8);
         assert_eq!(deserialize_record(VarType::Double, &d).as_f64(), Some(3.5));
-        let b = serialize_record(&Variant::from_bool(true));
+        let b = serialize_record(&Variant::from_bool(true), MODE_RANDOM);
         assert_eq!(b, vec![0xFF, 0xFF]);
         assert_eq!(deserialize_record(VarType::Boolean, &b).as_bool(), Some(true));
+    }
+
+    #[test]
+    fn string_is_ansi_with_random_length_prefix_and_raw_in_binary() {
+        // Random: 2-byte ANSI length prefix + ANSI bytes. "Hi" is ASCII = 2 bytes.
+        let r = serialize_record(&Variant::from_string("Hi"), MODE_RANDOM);
+        assert_eq!(r, vec![0x02, 0x00, b'H', b'i']);
+        assert_eq!(deserialize_record(VarType::String, &r[2..]).as_bstr().unwrap().as_str(), "Hi");
+        // Binary: raw ANSI, no length prefix.
+        let b = serialize_record(&Variant::from_string("Hi"), MODE_BINARY);
+        assert_eq!(b, vec![b'H', b'i']);
     }
 }

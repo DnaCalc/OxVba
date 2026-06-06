@@ -160,6 +160,17 @@ pub trait FileSystemHal: Send + Sync {
     fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "open_variant")
     }
+    /// `Open … Len = N` — like [`Self::open_variant`] but also records the fixed
+    /// record length for Random-mode positioning. The default ignores the length
+    /// (sequential/Binary modes do not use it).
+    fn open_with_record_len(
+        &self,
+        path: Variant,
+        mode: Variant,
+        _record_len: Variant,
+    ) -> HalResult<Variant> {
+        self.open_variant(path, mode)
+    }
     fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "close_variant")
     }

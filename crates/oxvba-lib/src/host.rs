@@ -42,7 +42,8 @@ pub fn free_file(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant
     Ok(host.fs().free_file_variant(arg_or_empty(args, 0))?)
 }
 pub fn file_open(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().open_variant(req(args, 0)?, req(args, 1)?)?)
+    // args: path, packed mode ((file_number << 16) | mode_code), record length.
+    Ok(host.fs().open_with_record_len(req(args, 0)?, req(args, 1)?, arg_or_empty(args, 2))?)
 }
 pub fn file_close(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().close_variant(req(args, 0)?)?)
