@@ -454,6 +454,11 @@ impl<'p> Linearizer<'p> {
                 });
                 Ok(dst)
             }
+            CoreValue::AddressOf(proc) => {
+                let dst = self.new_temp();
+                self.emit(Op::LoadProcRef { dst, proc: proc.0 });
+                Ok(dst)
+            }
         }
     }
 

@@ -996,6 +996,10 @@ impl<'h> Vm<'h> {
                 *dst,
                 Variant::from_object_ref(ObjectRef::from_compat_identity(*handle as i32)),
             )?,
+            // A procedure reference carries the procedure index. Invoking it (in-VM
+            // call-through or a real OS callback thunk) is the native-runtime epic;
+            // for now it is a plain integer that marshals to a `Declare`.
+            Op::LoadProcRef { dst, proc } => self.set(*dst, Variant::from_i32(*proc as i32))?,
             Op::LoadErrNumber { slot } => self.set(*slot, Variant::from_i32(self.err.number))?,
             Op::LoadErrDescription { slot } => {
                 self.set(*slot, Variant::from_string(self.err.description.clone()))?

@@ -80,6 +80,10 @@ pub enum Op {
     LoadNull { slot: usize },
     LoadEmpty { slot: usize },
     LoadProjectObjectRef { dst: usize, handle: usize },
+    /// `AddressOf proc` — materialize a procedure reference (the procedure index)
+    /// into `dst`. In-VM call-through and real OS-callback thunking are deferred to
+    /// the native-runtime epic; the value marshals to a `Declare` as an integer.
+    LoadProcRef { dst: usize, proc: usize },
     LoadErrNumber { slot: usize },
     LoadErrDescription { slot: usize },
     LoadErrSource { slot: usize },

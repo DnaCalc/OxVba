@@ -37,6 +37,7 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::IndexExpr => self.bind_index_or_call(node),
             SyntaxKind::MemberExpr => self.bind_member(node),
             SyntaxKind::NewExpr => self.bind_new(node),
+            SyntaxKind::AddressOfExpr => self.bind_address_of(node),
             SyntaxKind::ErrorNode => Err(BindError::Malformed("error expression node".into())),
             other => Err(BindError::Unsupported(format!("expression {other:?}"))),
         }
@@ -235,6 +236,34 @@ impl<'a> ProcLower<'a> {
         }
         // COM coclass creation (CreateObject-style) is a separate path.
         Err(BindError::Unsupported(format!("New {name} (only project classes are creatable)")))
+    }
+
+    /// `AddressOf proc` — resolve the operand to a standard-module procedure and
+    /// emit a procedure reference. VBA forbids `AddressOf` of a class member (it
+    /// has no standalone address), so reject that.
+    fn bind_address_of(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {
+        let operand = node
+            .first_expr_child()
+            .ok_or_else(|| BindError::Malformed("AddressOf without an operand".into()))?;
+        let name = match operand.kind() {
+            SyntaxKind::IdentExpr => operand.ident_name_token().map(|t| t.text),
+            SyntaxKind::MemberExpr => operand.member_name_token().map(|t| t.text),
+            _ => None,
+        }
+        .ok_or_else(|| BindError::Unsupported("AddressOf requires a procedure name".into()))?;
+        let binding = self.resolve(name).ok_or_else(|| self.unresolved(name, "AddressOf operand"))?;
+        let proc = binding
+            .symbol
+            .and_then(|s| self.g.ids.proc_of.get(&s).copied())
+            .ok_or_else(|| {
+                BindError::Unsupported(format!("AddressOf of `{name}` (not a project procedure)"))
+            })?;
+        if self.g.ids.procs[proc.0].class_name.is_some() {
+            return Err(BindError::Unsupported(format!(
+                "AddressOf of class member `{name}` is not allowed"
+            )));
+        }
+        Ok(value_bound(CoreValue::AddressOf(proc), builtin(BuiltinType::Long)))
     }
 }
 

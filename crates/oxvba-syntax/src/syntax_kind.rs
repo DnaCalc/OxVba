@@ -99,6 +99,7 @@ pub enum SyntaxKind {
     KwLike,
     KwIs,
     KwTypeOf,
+    KwAddressOf,
     KwImp,
     KwEqv,
     KwDebug,
@@ -197,6 +198,7 @@ pub enum SyntaxKind {
     MemberExpr,
     IndexExpr,
     NewExpr,
+    AddressOfExpr,
     IdentExpr,
     LiteralExpr,
     ParenExpr,
@@ -261,6 +263,7 @@ impl SyntaxKind {
                 | SyntaxKind::MemberExpr
                 | SyntaxKind::IndexExpr
                 | SyntaxKind::NewExpr
+                | SyntaxKind::AddressOfExpr
                 | SyntaxKind::IdentExpr
                 | SyntaxKind::LiteralExpr
                 | SyntaxKind::ParenExpr
@@ -358,6 +361,7 @@ pub fn keyword_kind(word: &str) -> Option<SyntaxKind> {
         "like" => Some(SyntaxKind::KwLike),
         "is" => Some(SyntaxKind::KwIs),
         "typeof" => Some(SyntaxKind::KwTypeOf),
+        "addressof" => Some(SyntaxKind::KwAddressOf),
         "imp" => Some(SyntaxKind::KwImp),
         "eqv" => Some(SyntaxKind::KwEqv),
         "debug" => Some(SyntaxKind::KwDebug),

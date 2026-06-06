@@ -325,6 +325,7 @@ impl<'a> Parser<'a> {
             | SyntaxKind::KwMe
             | SyntaxKind::KwNew
             | SyntaxKind::KwTypeOf
+            | SyntaxKind::KwAddressOf
             | SyntaxKind::LParen
             | SyntaxKind::Dot
             | SyntaxKind::Hash => true,
@@ -499,6 +500,16 @@ impl<'a> Parser<'a> {
                 } else {
                     self.error("expected `Is` after `TypeOf` expression".into());
                 }
+                self.finish_node();
+            }
+            // AddressOf proc  (a procedure reference)
+            SyntaxKind::KwAddressOf => {
+                self.start_node(SyntaxKind::AddressOfExpr);
+                self.bump(); // AddressOf
+                self.eat_expr_whitespace();
+                // The operand is a procedure name (possibly `Module.Proc`); parse it
+                // at a high binding power so no trailing operator is consumed.
+                self.parse_expr_bp(15);
                 self.finish_node();
             }
             // Identifier

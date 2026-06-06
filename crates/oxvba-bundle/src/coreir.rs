@@ -241,6 +241,10 @@ pub enum CoreValue {
     ErrField(ErrField),
     ArrayLiteral(Vec<CoreValue>),
     Bound { which: BoundWhich, array: Box<CorePlace> },
+    /// `AddressOf proc` — a reference to a project procedure. Materializes the
+    /// procedure index; calling through it (in-VM or via a real OS callback) is the
+    /// native-runtime epic's concern.
+    AddressOf(ProcId),
 }
 
 /// The resolved target of a [`CoreValue::Call`].

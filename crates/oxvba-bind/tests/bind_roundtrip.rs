@@ -211,6 +211,27 @@ fn paramarray_mixed_fixed_and_variadic() {
 }
 
 #[test]
+fn addressof_binds_to_proc_ref() {
+    let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";
+    let program = bind(src);
+    let main = program.procs.iter().find(|p| p.name.eq_ignore_ascii_case("Main")).unwrap();
+    assert!(main.body.iter().any(|s| matches!(s, CoreStmt::Assign { value: CoreValue::AddressOf(_), .. })));
+}
+
+#[test]
+fn addressof_runs_as_integer() {
+    // The proc reference materializes as an integer (round-trips through a slot).
+    let src = "Sub Main()\n    Dim r As Long\n    r = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";
+    assert!(run_main_local0(src).is_some());
+}
+
+#[test]
+fn addressof_unknown_is_error() {
+    let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Nope\nEnd Sub\n";
+    assert!(bind_program(&manifest(src), &NullTypeLibs).is_err());
+}
+
+#[test]
 fn ubound_lbound_of_local_array() {
     let body = "    Dim r As Long\n    Dim v\n    ReDim v(2 To 9)\n    r = UBound(v) - LBound(v)\n";
     assert_eq!(run_main_local0(&main_sub(body)), Some(7.0));
