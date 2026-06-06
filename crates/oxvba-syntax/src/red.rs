@@ -237,6 +237,20 @@ impl<'a> SyntaxNode<'a> {
         self.child_node(SyntaxKind::TypeRef)
     }
 
+    /// The fixed-length-string length expression of a declarator/field: the
+    /// expression following the `*` in `As String * N`.
+    pub fn fixed_string_length(&self) -> Option<SyntaxNode<'a>> {
+        let mut seen_star = false;
+        for el in self.children() {
+            match el {
+                SyntaxElement::Token(t) if t.kind == SyntaxKind::Star => seen_star = true,
+                SyntaxElement::Node(n) if seen_star && n.kind().is_expr() => return Some(n),
+                _ => {}
+            }
+        }
+        None
+    }
+
     /// The `ArrayBounds` of a `VarDeclarator`/`TypeField`/`ReDimStmt`.
     pub fn array_bounds(&self) -> Option<SyntaxNode<'a>> {
         self.child_node(SyntaxKind::ArrayBounds)

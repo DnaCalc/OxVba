@@ -73,6 +73,31 @@ fn arithmetic_precedence() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 1 + 2 * 3\n")), Some(7.0));
 }
 
+fn run_main_local0_string(source: &str) -> Option<String> {
+    let program = bind(source);
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
+    vm.slot(bundle.global_count)?.as_bstr().map(|b| b.as_str())
+}
+
+#[test]
+fn fixed_length_string_pads_on_assignment() {
+    // `Dim s As String * 5` pads a shorter assignment with spaces.
+    assert_eq!(
+        run_main_local0_string("Sub Main()\n    Dim s As String * 5\n    s = \"ab\"\nEnd Sub\n"),
+        Some("ab   ".to_string())
+    );
+}
+
+#[test]
+fn fixed_length_string_truncates_on_assignment() {
+    assert_eq!(
+        run_main_local0_string("Sub Main()\n    Dim s As String * 2\n    s = \"abcd\"\nEnd Sub\n"),
+        Some("ab".to_string())
+    );
+}
+
 #[test]
 fn date_literal_assigns_serial() {
     // 2020-01-01 is OLE automation serial 43831.

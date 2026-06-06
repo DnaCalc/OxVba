@@ -29,6 +29,10 @@ pub enum VarTypeRef {
     /// Untyped `Variant`/`Object` — forces late binding for member access.
     Variant,
     Array(Box<VarTypeRef>),
+    /// A fixed-length string `String * N` (length in characters). Behaves like
+    /// `String` in the type lattice, but assignment pads/truncates to `N` and file
+    /// records use exactly `N` ANSI bytes with no length prefix.
+    FixedString(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

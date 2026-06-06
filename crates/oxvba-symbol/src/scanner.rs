@@ -129,10 +129,7 @@ impl ScanCtx<'_> {
                         continue;
                     };
                     let name = normalize_identifier_token(token.text);
-                    let declared_type = declarator
-                        .declared_type()
-                        .map(type_ref_node)
-                        .unwrap_or(VarTypeRef::Variant);
+                    let declared_type = declared_var_type(declarator);
                     let (ns, kind) = if !module_level {
                         (SymbolNamespace::Local, SymbolKind::Local)
                     } else if is_const {
@@ -563,11 +560,34 @@ fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
 }
 
 fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
-    node.child_nodes()
+    let base = node
+        .child_nodes()
         .into_iter()
         .find(|child| child.kind() == SyntaxKind::TypeRef)
         .map(type_ref_node)
-        .unwrap_or(VarTypeRef::Variant)
+        .unwrap_or(VarTypeRef::Variant);
+    fixed_string_refine(base, node)
+}
+
+/// A declarator/field/param's declared type, refining `As String * N` to a
+/// fixed-length string when a literal length is present.
+fn declared_var_type(declarator: SyntaxNode<'_>) -> VarTypeRef {
+    let base = declarator.declared_type().map(type_ref_node).unwrap_or(VarTypeRef::Variant);
+    fixed_string_refine(base, declarator)
+}
+
+fn fixed_string_refine(base: VarTypeRef, node: SyntaxNode<'_>) -> VarTypeRef {
+    if base == VarTypeRef::Builtin(BuiltinType::String)
+        && let Some(len) = node.fixed_string_length().and_then(parse_fixed_string_len)
+    {
+        return VarTypeRef::FixedString(len);
+    }
+    base
+}
+
+fn parse_fixed_string_len(node: SyntaxNode<'_>) -> Option<u32> {
+    let tok = node.first_significant_token()?;
+    (tok.kind == SyntaxKind::IntLiteral).then(|| tok.text.trim().parse::<u32>().ok())?
 }
 
 /// Map a `TypeRef` node to a resolved type reference.
@@ -604,7 +624,9 @@ fn declare_param_type(ty: &VarTypeRef) -> DeclareParamType {
         VarTypeRef::Builtin(BuiltinType::Double) => DeclareParamType::Double,
         VarTypeRef::Builtin(BuiltinType::Currency) => DeclareParamType::Currency,
         VarTypeRef::Builtin(BuiltinType::Date) => DeclareParamType::Date,
-        VarTypeRef::Builtin(BuiltinType::String) => DeclareParamType::String,
+        VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_) => {
+            DeclareParamType::String
+        }
         VarTypeRef::Variant => DeclareParamType::Variant,
         VarTypeRef::Object(_) | VarTypeRef::Array(_) => DeclareParamType::Any,
     }

@@ -19,6 +19,7 @@ use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 pub fn array_element_of(elem: &VarTypeRef) -> ArrayElementType {
     match elem {
         VarTypeRef::Builtin(b) => builtin_element(*b),
+        VarTypeRef::FixedString(_) => ArrayElementType::String,
         VarTypeRef::Object(_) | VarTypeRef::Variant | VarTypeRef::Array(_) => ArrayElementType::Variant,
     }
 }
@@ -52,7 +53,9 @@ pub fn assignment_target_kind(ty: &VarTypeRef) -> AssignmentTargetKind {
     match ty {
         VarTypeRef::Object(_) => AssignmentTargetKind::Object,
         VarTypeRef::Variant => AssignmentTargetKind::Variant,
-        VarTypeRef::Builtin(_) | VarTypeRef::Array(_) => AssignmentTargetKind::Scalar,
+        VarTypeRef::Builtin(_) | VarTypeRef::Array(_) | VarTypeRef::FixedString(_) => {
+            AssignmentTargetKind::Scalar
+        }
     }
 }
 
@@ -63,6 +66,7 @@ pub fn type_name(ty: &VarTypeRef) -> String {
         VarTypeRef::Object(name) => name.clone(),
         VarTypeRef::Variant => "Variant".into(),
         VarTypeRef::Array(inner) => format!("{}()", type_name(inner)),
+        VarTypeRef::FixedString(_) => "String".into(),
     }
 }
 
@@ -73,6 +77,8 @@ pub fn type_name(ty: &VarTypeRef) -> String {
 pub fn coerce_target(to: &VarTypeRef) -> Option<CoerceTarget> {
     match to {
         VarTypeRef::Builtin(b) => numeric_target(*b).map(CoerceTarget::Numeric),
+        // Assigning to a fixed-length string pads/truncates to its length.
+        VarTypeRef::FixedString(len) => Some(CoerceTarget::FixedString(*len as usize)),
         _ => None,
     }
 }
