@@ -344,6 +344,15 @@ fn byref_object_reassign_through_proc() {
     assert_eq!(run_class_main_local0(main, "Thing", thing), Some(7.0));
 }
 
+#[test]
+fn redim_member_array_then_use() {
+    // ReDim a class instance's array field through a dotted target, then write and
+    // read an element of it (the resized array must be stored back into the field).
+    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Set b = New Box\n    ReDim b.arr(5)\n    b.arr(2) = 7\n    r = b.arr(2)\nEnd Sub\n";
+    let box_cls = "Public arr() As Long\n";
+    assert_eq!(run_class_main_local0(main, "Box", box_cls), Some(7.0));
+}
+
 // ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────
 
 fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {

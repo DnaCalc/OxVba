@@ -4,7 +4,7 @@
 
 use oxvba_bundle::coreir::{
     CaseClause, CoreArg, CoreBinOp, CoreBound, CoreCaseBlock, CoreCallee, CoreConst, CoreIfArm,
-    CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind,
+    CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, ProjectMemberKind};
@@ -354,47 +354,116 @@ impl<'a> ProcLower<'a> {
     // ── ReDim / Erase ───────────────────────────────────────
 
     fn bind_redim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        // A member-array target (`ReDim obj.arr(…)`) is parsed as a dotted name
-        // path; we only model simple-name arrays, so reject rather than silently
-        // re-dimming the receiver.
-        if node.child_tokens().iter().any(|t| matches!(t.kind, SyntaxKind::Dot | SyntaxKind::Bang)) {
-            return Err(BindError::Unsupported(
-                "ReDim of a member array (object support pending)".into(),
-            ));
-        }
+        // The target is parsed as a flat token path under `ReDimStmt`
+        // (`Ident`/`Me` separated by `.`/`!`) followed by the `ArrayBounds` node —
+        // so we accumulate the path segments for the current target and rebuild a
+        // simple-name or member-array place from them.
         let preserve = node.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwPreserve);
         let mut out = Vec::new();
-        let mut pending: Option<&str> = None;
+        let mut segments: Vec<&str> = Vec::new();
         for el in node.children() {
             match el {
                 SyntaxElement::Token(t)
-                    if matches!(t.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent) =>
+                    if matches!(t.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::KwMe) =>
                 {
-                    if pending.is_none() {
-                        pending = Some(t.text);
-                    }
+                    segments.push(t.text);
                 }
+                // `.`/`!` are path separators — keep accumulating segments.
+                SyntaxElement::Token(t) if matches!(t.kind, SyntaxKind::Dot | SyntaxKind::Bang) => {}
                 SyntaxElement::Node(n) if n.kind() == SyntaxKind::ArrayBounds => {
-                    let name = pending
-                        .take()
-                        .ok_or_else(|| BindError::Malformed("ReDim target".into()))?;
-                    out.push(self.redim_one(name, n, preserve)?);
+                    out.push(self.redim_one(&segments, n, preserve)?);
+                    segments.clear();
                 }
-                SyntaxElement::Token(t) if t.kind == SyntaxKind::Comma => pending = None,
+                SyntaxElement::Token(t) if t.kind == SyntaxKind::Comma => segments.clear(),
                 _ => {}
             }
         }
         Ok(out)
     }
 
+    /// The array place + element type for one ReDim target: a simple name (a
+    /// local/global/Me-field) or a dotted member path (`obj.arr`).
+    fn redim_target(
+        &mut self,
+        segments: &[&str],
+    ) -> Result<(CorePlace, oxvba_bundle::ArrayElementType), BindError> {
+        match segments {
+            [] => Err(BindError::Malformed("ReDim target".into())),
+            [name] => Ok((self.place_by_name(name)?, self.array_element_for_name(name))),
+            _ => {
+                let (place, ty) = self.redim_dotted_place(segments)?;
+                // Only Local/Global/Field places are valid array storage — a
+                // WithEvents member is not re-dimmable.
+                if matches!(place, CorePlace::WithEvents { .. }) {
+                    return Err(BindError::Unsupported("ReDim of a WithEvents member".into()));
+                }
+                let element_type = match &ty {
+                    oxvba_symbol::signature::VarTypeRef::Array(inner) => types::array_element_of(inner),
+                    _ => oxvba_bundle::ArrayElementType::Variant,
+                };
+                Ok((place, element_type))
+            }
+        }
+    }
+
+    /// Rebuild a `CorePlace::Field` for a dotted ReDim target (`a.b.arr`): the
+    /// leading segment resolves to a variable (or `Me`) and supplies the initial
+    /// receiver value+type; each further segment is a member access, the final
+    /// one being the array field.
+    fn redim_dotted_place(
+        &mut self,
+        segments: &[&str],
+    ) -> Result<(CorePlace, oxvba_symbol::signature::VarTypeRef), BindError> {
+        use oxvba_symbol::signature::VarTypeRef;
+        let (first, rest) = segments.split_first().expect("dotted path has >= 2 segments");
+        // Leading receiver: `Me`, or a resolved local/global/field variable.
+        let (mut recv, mut ty): (CoreValue, VarTypeRef) = if fold_identifier(first) == "me" {
+            let me = self
+                .me_value()
+                .ok_or_else(|| BindError::Malformed("`Me` outside a class module".into()))?;
+            let class_ty = self
+                .info
+                .class_name
+                .as_deref()
+                .map(|n| VarTypeRef::Object(n.to_string()))
+                .unwrap_or(VarTypeRef::Variant);
+            (me, class_ty)
+        } else {
+            let binding = self.resolve(first).ok_or_else(|| self.unresolved(first, "ReDim receiver"))?;
+            let (place, ty) = binding
+                .symbol
+                .and_then(|s| self.place_for_symbol(s))
+                .ok_or_else(|| BindError::InvalidAssignment(format!("`{first}` is not a variable")))?;
+            (CoreValue::Load(place), ty)
+        };
+        let mut place = CorePlace::Local(LocalId(0)); // overwritten on the first segment below
+        for seg in rest {
+            let mb = self
+                .resolve_member(&ty, seg, None)
+                .ok_or_else(|| self.unresolved(seg, "ReDim member"))?;
+            match &mb.route {
+                DispatchRoute::Value => {
+                    let sym = mb.symbol.ok_or_else(|| self.unresolved(seg, "ReDim member field"))?;
+                    let (p, t) = self.member_place(recv.clone(), sym)?;
+                    place = p;
+                    ty = t;
+                    recv = CoreValue::Load(place.clone());
+                }
+                other => {
+                    return Err(BindError::Unsupported(format!("ReDim of `.{seg}` ({other:?})")));
+                }
+            }
+        }
+        Ok((place, ty))
+    }
+
     fn redim_one(
         &mut self,
-        name: &str,
+        segments: &[&str],
         bounds_node: SyntaxNode<'_>,
         preserve: bool,
     ) -> Result<CoreStmt, BindError> {
-        let array = self.place_by_name(name)?;
-        let element_type = self.array_element_for_name(name);
+        let (array, element_type) = self.redim_target(segments)?;
         let mut bounds = Vec::new();
         for b in bounds_node.children_of(SyntaxKind::Bound) {
             let exprs = b.expr_children();
