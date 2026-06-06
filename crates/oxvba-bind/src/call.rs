@@ -135,10 +135,11 @@ impl<'a> ProcLower<'a> {
     /// `Signature`). ByRef l-value (not parenthesised) → `ByRef`; else `ByVal`
     /// (no coercion — the value is marshaled by the callee).
     fn bind_arg_byref(&mut self, expr: SyntaxNode<'_>, by_ref: bool) -> Result<CoreArg, BindError> {
-        if by_ref && expr.kind() != SyntaxKind::ParenExpr {
-            if let Ok((place, _)) = self.bind_place(expr) {
-                return Ok(CoreArg::ByRef(place));
-            }
+        if by_ref
+            && expr.kind() != SyntaxKind::ParenExpr
+            && let Ok((place, _)) = self.bind_place(expr)
+        {
+            return Ok(CoreArg::ByRef(place));
         }
         Ok(CoreArg::ByVal(self.bind_expr(expr)?.value))
     }

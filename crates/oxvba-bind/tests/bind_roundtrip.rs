@@ -94,6 +94,26 @@ fn switch_returns_first_true() {
 }
 
 #[test]
+fn const_references_const() {
+    let body = "    Dim r As Long\n    Const A As Long = 1\n    Const B As Long = A + 1\n    Const C As Long = B * 2\n    r = C\n";
+    assert_eq!(run_main_local0(&main_sub(body)), Some(4.0));
+}
+
+#[test]
+fn const_forward_reference_resolves() {
+    // C depends on B depends on A, all declared after the use site.
+    let body = "    Dim r As Long\n    Const C As Long = B * 2\n    Const B As Long = A + 1\n    Const A As Long = 1\n    r = C\n";
+    assert_eq!(run_main_local0(&main_sub(body)), Some(4.0));
+}
+
+#[test]
+fn const_cycle_is_error() {
+    let body = "    Const A As Long = B\n    Const B As Long = A\n    Dim r As Long\n    r = A\n";
+    let src = main_sub(body);
+    assert!(bind_program(&manifest(&src), &NullTypeLibs).is_err());
+}
+
+#[test]
 fn integer_division() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")), Some(3.0));
 }

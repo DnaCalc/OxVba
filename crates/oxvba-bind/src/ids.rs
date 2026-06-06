@@ -15,7 +15,7 @@
 //! (a synthetic first parameter, matching vm2's `run_proc_with_me`, which binds
 //! the receiver at frame slot 0 and the i-th call arg at slot `1+i`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::{
     ClassId, CoreClass, CoreClassMethod, CoreConst, CoreGlobal, CoreLocal, CoreParam, GlobalId,
@@ -31,6 +31,7 @@ use oxvba_symbol::signature::{PassingMode, Signature, VarTypeRef};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
+use crate::expr::{eval_const_expr, ConstEval};
 use crate::types;
 
 /// One procedure's frame skeleton + the `SymbolId`→`LocalId` map for its scope.
@@ -135,14 +136,24 @@ impl IdAllocator {
         }
 
         // 2) Procs — per active module, zip top-level proc decls with the module's
-        //    `Procedure` scopes (both in source order).
+        //    `Procedure` scopes (both in source order). `Const`s are *collected*
+        //    here and folded in a fixed-point pass afterward, so a const may refer
+        //    to another const declared later or in another module.
+        let mut pending_consts: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)> = Vec::new();
+        let mut const_syms: HashSet<SymbolId> = HashSet::new();
         for module in env.modules() {
             let class_name = class_name_for(manifest, module.module_name);
             let compare_mode = module_compare_mode(module.syntax);
             // Module-level `Const`s (top-level declarations).
             for node in module.syntax.child_nodes() {
                 if node.kind() == SyntaxKind::ConstStmt {
-                    fold_const_declarators(env, module.module_scope, node, &mut alloc.const_of);
+                    collect_const_declarators(
+                        env,
+                        module.module_scope,
+                        node,
+                        &mut pending_consts,
+                        &mut const_syms,
+                    );
                 }
             }
             let proc_scopes: Vec<ScopeId> = symbols
@@ -165,7 +176,7 @@ impl IdAllocator {
             }
             for (decl, &proc_scope) in decls.iter().zip(proc_scopes.iter()) {
                 // Proc-level `Const`s (possibly nested in blocks; one proc scope).
-                collect_proc_consts(env, proc_scope, *decl, &mut alloc.const_of);
+                collect_proc_consts(env, proc_scope, *decl, &mut pending_consts, &mut const_syms);
                 alloc.alloc_proc(
                     env,
                     module.module_scope,
@@ -176,6 +187,9 @@ impl IdAllocator {
                 )?;
             }
         }
+        // Fold every collected `Const` to a value, resolving cross-const
+        // references by fixed point (cycles / non-constant refs are hard errors).
+        resolve_const_worklist(env, pending_consts, &const_syms, &mut alloc.const_of)?;
 
         // 3) Classes — one `CoreClass` per class module, with its method dispatch
         //    table + Class_Initialize/Terminate. Built after procs so ProcIds exist.
@@ -421,39 +435,83 @@ fn property_accessor_kind(decl: SyntaxNode<'_>) -> ProjectMemberKind {
     ProjectMemberKind::PropertyGet
 }
 
-/// Fold each `Const` declarator in a `ConstStmt` to a literal value, keyed by the
-/// declared symbol (namespace `Local` for both module- and proc-level consts).
-fn fold_const_declarators(
+/// Collect each `Const` declarator in a `ConstStmt` into the fold worklist,
+/// keyed by the declared symbol (namespace `Local` for both module- and
+/// proc-level consts). The initializer is folded later by
+/// [`resolve_const_worklist`] so cross-const references resolve regardless of
+/// declaration order.
+fn collect_const_declarators<'a>(
     env: &ResolutionEnvironment,
     scope: ScopeId,
-    const_stmt: SyntaxNode<'_>,
-    const_of: &mut HashMap<SymbolId, CoreConst>,
+    const_stmt: SyntaxNode<'a>,
+    pending: &mut Vec<(ScopeId, SymbolId, SyntaxNode<'a>)>,
+    const_syms: &mut HashSet<SymbolId>,
 ) {
     for declarator in const_stmt.declarators() {
         let Some(name) = declarator.declarator_name() else { continue };
         let Some(init) = declarator.first_expr_child() else { continue };
-        let Some(value) = crate::expr::fold_const_literal(init) else { continue };
         if let Ok(Some(sym)) =
             env.symbols.find_in_scope(scope, SymbolNamespace::Local, name.text)
         {
-            const_of.insert(sym, value);
+            const_syms.insert(sym);
+            pending.push((scope, sym, init));
         }
     }
 }
 
 /// Collect proc-level `Const`s anywhere in a procedure body (block scoping is
 /// flattened to the one procedure scope).
-fn collect_proc_consts(
+fn collect_proc_consts<'a>(
     env: &ResolutionEnvironment,
     proc_scope: ScopeId,
-    node: SyntaxNode<'_>,
-    const_of: &mut HashMap<SymbolId, CoreConst>,
+    node: SyntaxNode<'a>,
+    pending: &mut Vec<(ScopeId, SymbolId, SyntaxNode<'a>)>,
+    const_syms: &mut HashSet<SymbolId>,
 ) {
     if node.kind() == SyntaxKind::ConstStmt {
-        fold_const_declarators(env, proc_scope, node, const_of);
+        collect_const_declarators(env, proc_scope, node, pending, const_syms);
     }
     for child in node.child_nodes() {
-        collect_proc_consts(env, proc_scope, child, const_of);
+        collect_proc_consts(env, proc_scope, child, pending, const_syms);
+    }
+}
+
+/// Fold every collected `Const` initializer to a value by fixed point: each pass
+/// resolves the consts whose dependencies are already known; iterate until none
+/// remain (success) or a pass makes no progress (a cycle or unresolvable
+/// reference — a hard error). A folding `Error` aborts immediately.
+fn resolve_const_worklist(
+    env: &ResolutionEnvironment,
+    pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)>,
+    const_syms: &HashSet<SymbolId>,
+    const_of: &mut HashMap<SymbolId, CoreConst>,
+) -> Result<(), BindError> {
+    let mut remaining = pending;
+    loop {
+        let mut progress = false;
+        let mut still = Vec::new();
+        for (scope, sym, init) in remaining {
+            if const_of.contains_key(&sym) {
+                continue; // a duplicate declarator already resolved
+            }
+            match eval_const_expr(env, scope, init, const_of, const_syms) {
+                ConstEval::Value(value) => {
+                    const_of.insert(sym, value);
+                    progress = true;
+                }
+                ConstEval::Pending => still.push((scope, sym, init)),
+                ConstEval::Error(e) => return Err(e),
+            }
+        }
+        if still.is_empty() {
+            return Ok(());
+        }
+        if !progress {
+            return Err(BindError::Unsupported(
+                "cyclic or unresolvable Const initializer".into(),
+            ));
+        }
+        remaining = still;
     }
 }
 
