@@ -47,7 +47,7 @@ fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
     CoreValue::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs), mode: StringCompareMode::Binary }
 }
 fn param(name: &str) -> CoreParam {
-    CoreParam { name: name.into(), by_ref: false }
+    CoreParam { name: name.into(), by_ref: false, variadic: false }
 }
 fn local(name: &str) -> CoreLocal {
     CoreLocal { name: name.into(), array_element: None }

@@ -183,6 +183,40 @@ fn native_len() {
 // ── Arrays / error-state ─────────────────────────────────────────────────────
 
 #[test]
+fn paramarray_sums_trailing_args() {
+    let src = "Sub Main()\n    Dim r As Long\n    r = SumAll(10, 20, 30)\nEnd Sub\n\n\
+               Function SumAll(ParamArray xs() As Variant) As Long\n\
+               Dim i As Long\n    Dim t As Long\n    t = 0\n\
+               For i = LBound(xs) To UBound(xs)\n        t = t + xs(i)\n    Next\n\
+               SumAll = t\nEnd Function\n";
+    assert_eq!(run_main_local0(src), Some(60.0));
+}
+
+#[test]
+fn paramarray_empty_is_zero_length() {
+    let src = "Sub Main()\n    Dim r As Long\n    r = CountAll()\nEnd Sub\n\n\
+               Function CountAll(ParamArray xs() As Variant) As Long\n\
+               CountAll = UBound(xs) - LBound(xs) + 1\nEnd Function\n";
+    assert_eq!(run_main_local0(src), Some(0.0));
+}
+
+#[test]
+fn paramarray_mixed_fixed_and_variadic() {
+    let src = "Sub Main()\n    Dim r As Long\n    r = AddBase(100, 1, 2, 3)\nEnd Sub\n\n\
+               Function AddBase(seed As Long, ParamArray xs() As Variant) As Long\n\
+               Dim i As Long\n    Dim t As Long\n    t = seed\n\
+               For i = LBound(xs) To UBound(xs)\n        t = t + xs(i)\n    Next\n\
+               AddBase = t\nEnd Function\n";
+    assert_eq!(run_main_local0(src), Some(106.0));
+}
+
+#[test]
+fn ubound_lbound_of_local_array() {
+    let body = "    Dim r As Long\n    Dim v\n    ReDim v(2 To 9)\n    r = UBound(v) - LBound(v)\n";
+    assert_eq!(run_main_local0(&main_sub(body)), Some(7.0));
+}
+
+#[test]
 fn redim_array_set_get() {
     let body = "    Dim r As Long\n    Dim v1\n    ReDim v1(0 To 2)\n    v1(1) = 77\n    r = v1(1)\n";
     assert_eq!(run_main_local0(&main_sub(body)), Some(77.0));

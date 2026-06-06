@@ -335,23 +335,25 @@ fn build_frame(
     // A class member receives `Me` as a synthetic first parameter, so it lands at
     // frame slot 0 — exactly where vm2's `run_proc_with_me` binds the receiver.
     let me_local = if is_class_member {
-        params.push(CoreParam { name: "Me".into(), by_ref: false });
+        params.push(CoreParam { name: "Me".into(), by_ref: false, variadic: false });
         next += 1;
         Some(LocalId(0))
     } else {
         None
     };
 
-    // Parameters (declaration order), pairing with the signature for `by_ref`.
+    // Parameters (declaration order), pairing with the signature for `by_ref` and
+    // the `ParamArray` (variadic) marker.
     let mut param_index = 0usize;
     for &sym_id in &scope_syms {
         let sym = symbols.symbol(sym_id).expect("symbol in scope");
         if sym.namespace == SymbolNamespace::Parameter {
-            let by_ref = signature
-                .and_then(|s| s.params.get(param_index))
-                .map(|p| p.mode == PassingMode::ByRef)
-                .unwrap_or(true);
-            params.push(CoreParam { name: alloc_name(env, sym.name), by_ref });
+            let sig_param = signature.and_then(|s| s.params.get(param_index));
+            let variadic = sig_param.map(|p| p.param_array).unwrap_or(false);
+            // A ParamArray is a fresh local array, never an alias — force ByVal.
+            let by_ref = !variadic
+                && sig_param.map(|p| p.mode == PassingMode::ByRef).unwrap_or(true);
+            params.push(CoreParam { name: alloc_name(env, sym.name), by_ref, variadic });
             local_of.insert(sym_id, LocalId(next));
             next += 1;
             param_index += 1;

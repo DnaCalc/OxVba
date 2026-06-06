@@ -85,6 +85,9 @@ pub struct CoreParam {
     pub name: String,
     /// Callee-side declaration (diagnostics only; the caller decides aliasing).
     pub by_ref: bool,
+    /// A trailing `ParamArray` parameter: the caller boxes all remaining
+    /// positional arguments into a fresh 0-based array bound to this slot.
+    pub variadic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

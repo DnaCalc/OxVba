@@ -70,6 +70,8 @@ fn special_form(name: &str) -> Option<SpecialForm> {
         "callbyname" => SpecialForm::CallByName,
         "typeof" => SpecialForm::TypeOf,
         "addressof" => SpecialForm::AddressOf,
+        "ubound" => SpecialForm::UBound,
+        "lbound" => SpecialForm::LBound,
         _ => return None,
     })
 }

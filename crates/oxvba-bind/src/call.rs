@@ -3,7 +3,7 @@
 //! named / omitted, ByVal coercion, ByRef aliasing), and lowers member access
 //! (the `Err` object for now; objects/COM arrive in a later phase).
 
-use oxvba_bundle::coreir::{CoreArg, CoreCallee, CorePlace, CoreValue, ErrField};
+use oxvba_bundle::coreir::{BoundWhich, CoreArg, CoreCallee, CorePlace, CoreValue, ErrField};
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
@@ -68,6 +68,27 @@ impl<'a> ProcLower<'a> {
                 Ok(value_bound(
                     CoreValue::Call { callee: CoreCallee::Native(id), args },
                     VarTypeRef::Variant,
+                ))
+            }
+            // `UBound`/`LBound` take an array l-value (single dimension; any 2nd
+            // dimension argument is ignored — multi-dim arrays are not modeled).
+            DispatchRoute::SpecialForm(sf @ (SpecialForm::UBound | SpecialForm::LBound)) => {
+                let which = if matches!(sf, SpecialForm::UBound) {
+                    BoundWhich::Upper
+                } else {
+                    BoundWhich::Lower
+                };
+                let first = arglist
+                    .and_then(|a| a.arg_items().into_iter().next())
+                    .ok_or_else(|| BindError::Malformed(format!("`{name}` requires an array argument")))?;
+                let expr = match first {
+                    ArgItem::Positional(e) => e,
+                    _ => return Err(BindError::Malformed(format!("`{name}` array argument"))),
+                };
+                let (place, _) = self.bind_place(expr)?;
+                Ok(value_bound(
+                    CoreValue::Bound { which, array: Box::new(place) },
+                    builtin(BuiltinType::Long),
                 ))
             }
             DispatchRoute::ErrMember(_) => {
@@ -210,38 +231,68 @@ impl<'a> ProcLower<'a> {
             None => Vec::new(),
         };
         let n = signature.params.len();
-        let mut slots: Vec<Option<CoreArg>> = (0..n).map(|_| None).collect();
-        let mut extra: Vec<CoreArg> = Vec::new(); // trailing positionals (ParamArray)
+        // The fixed parameters precede a trailing `ParamArray` (if any). Positional
+        // args at/after that index form the variadic tail, which linearize boxes
+        // into one array for the ParamArray slot; the ParamArray's own fixed slot is
+        // not emitted (so `args` is `fixed… ++ tail`).
+        let variadic_index = signature.params.iter().position(|p| p.param_array);
+        let fixed_count = variadic_index.unwrap_or(n);
+        let mut slots: Vec<Option<CoreArg>> = (0..fixed_count).map(|_| None).collect();
+        let mut tail: Vec<CoreArg> = Vec::new();
         let mut pos = 0usize;
         for item in items {
             match item {
                 ArgItem::Positional(expr) => {
-                    let arg = self.bind_one_arg(expr, signature.params.get(pos))?;
-                    match slots.get_mut(pos) {
-                        Some(slot) => *slot = Some(arg),
-                        None => extra.push(arg),
+                    if pos < fixed_count {
+                        slots[pos] = Some(self.bind_one_arg(expr, signature.params.get(pos))?);
+                    } else {
+                        // Variadic-tail (ParamArray) element, or an extra positional
+                        // when there is no ParamArray — bound ByVal, no signature param.
+                        tail.push(self.bind_one_arg(expr, None)?);
                     }
                     pos += 1;
                 }
                 ArgItem::Omitted => {
-                    if let Some(slot) = slots.get_mut(pos) {
-                        *slot = Some(CoreArg::Omitted);
+                    if pos < fixed_count {
+                        slots[pos] = Some(CoreArg::Omitted);
                     } else {
-                        extra.push(CoreArg::Omitted);
+                        tail.push(CoreArg::Omitted);
                     }
                     pos += 1;
                 }
                 ArgItem::Named { name, value } => {
                     let folded = fold_identifier(name.text);
                     match signature.params.iter().position(|p| fold_identifier(&p.name) == folded) {
-                        Some(i) => slots[i] = Some(self.bind_one_arg(value, signature.params.get(i))?),
+                        Some(i) if variadic_index == Some(i) => {
+                            return Err(BindError::Unsupported(
+                                "named argument to a ParamArray parameter".into(),
+                            ));
+                        }
+                        Some(i) if i < fixed_count => {
+                            slots[i] = Some(self.bind_one_arg(value, signature.params.get(i))?);
+                        }
+                        Some(_) => {
+                            return Err(BindError::Unsupported(
+                                "named argument past the parameter list".into(),
+                            ));
+                        }
                         None => return Err(self.unresolved(name.text, "named argument")),
                     }
                 }
             }
         }
         let mut args: Vec<CoreArg> = slots.into_iter().map(|s| s.unwrap_or(CoreArg::Omitted)).collect();
-        args.extend(extra);
+        match variadic_index {
+            // Box the variadic tail into one fresh 0-based array for the ParamArray
+            // slot (empty tail → an empty array, UBound -1). Doing this in the binder
+            // — which has the signature — keeps the call vector one-arg-per-param, so
+            // free procs and methods need no downstream variadic handling.
+            Some(_) => {
+                let elems: Vec<CoreValue> = tail.into_iter().map(paramarray_element).collect();
+                args.push(CoreArg::ByVal(CoreValue::ArrayLiteral(elems)));
+            }
+            None => args.extend(tail),
+        }
         Ok(args)
     }
 
@@ -491,6 +542,18 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::MemberExpr => self.bind_member_call(callee, arglist),
             other => Err(BindError::Unsupported(format!("call statement {other:?}"))),
         }
+    }
+}
+
+/// Convert one variadic-tail argument to its array-element value for a ParamArray
+/// box. Tail args are always ByVal values or omitted slots (a Missing element →
+/// `Empty`); the other variants cannot occur but are mapped sensibly.
+fn paramarray_element(arg: CoreArg) -> CoreValue {
+    match arg {
+        CoreArg::ByVal(v) => v,
+        CoreArg::Named { value, .. } => value,
+        CoreArg::Omitted => CoreValue::Const(oxvba_bundle::coreir::CoreConst::Empty),
+        CoreArg::ByRef(place) => CoreValue::Load(place),
     }
 }
 

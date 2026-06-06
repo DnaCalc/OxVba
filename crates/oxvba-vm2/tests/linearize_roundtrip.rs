@@ -240,7 +240,7 @@ fn call_proc_by_ref_mutates_caller() {
     let inc = CoreProc {
         name: "Inc".into(),
         kind: ProcedureKind::Sub,
-        params: vec![CoreParam { name: "n".into(), by_ref: true }],
+        params: vec![CoreParam { name: "n".into(), by_ref: true, variadic: false }],
         locals: vec![local("n")],
         return_local: None,
         body: vec![set(0, bin(CoreBinOp::Add, load(0), ci(100)))],
