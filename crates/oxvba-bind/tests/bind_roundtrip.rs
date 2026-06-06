@@ -72,6 +72,12 @@ fn arithmetic_precedence() {
 }
 
 #[test]
+fn date_literal_assigns_serial() {
+    // 2020-01-01 is OLE automation serial 43831.
+    assert_eq!(run_main_local0(&main_sub("    Dim d As Date\n    d = #1/1/2020#\n")), Some(43831.0));
+}
+
+#[test]
 fn integer_division() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")), Some(3.0));
 }

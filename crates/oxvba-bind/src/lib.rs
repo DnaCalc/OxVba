@@ -7,6 +7,7 @@
 //! together: source → CST → symbol resolution → coreir → linearize → vm2/JIT.
 
 mod call;
+mod date;
 mod error;
 mod expr;
 mod ids;

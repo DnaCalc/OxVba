@@ -56,6 +56,13 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::KwEmpty => (CoreConst::Empty, VarTypeRef::Variant),
             SyntaxKind::KwNull => (CoreConst::Null, VarTypeRef::Variant),
             SyntaxKind::KwNothing => (CoreConst::Nothing, VarTypeRef::Variant),
+            SyntaxKind::DateLiteral => (
+                CoreConst::Date(
+                    crate::date::parse_date_literal_serial_bits(tok.text)
+                        .ok_or_else(|| BindError::Malformed(format!("date literal `{}`", tok.text)))?,
+                ),
+                builtin(BuiltinType::Date),
+            ),
             other => return Err(BindError::Unsupported(format!("literal {other:?}"))),
         };
         Ok(value_bound(CoreValue::Const(value), ty))
@@ -284,6 +291,7 @@ pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
                 SyntaxKind::StringLiteral => Some(CoreConst::Str(unquote(tok.text))),
                 SyntaxKind::KwTrue => Some(CoreConst::Bool(true)),
                 SyntaxKind::KwFalse => Some(CoreConst::Bool(false)),
+                SyntaxKind::DateLiteral => crate::date::parse_date_literal_serial_bits(tok.text).map(CoreConst::Date),
                 _ => None,
             }
         }
@@ -316,6 +324,7 @@ pub(crate) fn const_type(c: &CoreConst) -> VarTypeRef {
         CoreConst::F64(_) => builtin(BuiltinType::Double),
         CoreConst::Str(_) => builtin(BuiltinType::String),
         CoreConst::Bool(_) => builtin(BuiltinType::Boolean),
+        CoreConst::Date(_) => builtin(BuiltinType::Date),
         _ => VarTypeRef::Variant,
     }
 }
