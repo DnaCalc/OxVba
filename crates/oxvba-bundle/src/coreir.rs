@@ -252,6 +252,11 @@ pub enum CoreCallee {
     LateDispatch { name: String, kind: Option<ProjectMemberKind> },
     /// A `Declare Lib` external call (descriptor in `CoreProgram::external_calls`).
     Declare { descriptor_id: u32 },
+    /// `CallByName(obj, name, calltype, args…)` — dispatch by a *runtime* member
+    /// name through the same machinery as `LateDispatch`. The operands are carried
+    /// in `args`: `[0]` = object, `[1]` = name string, `[2]` = calltype
+    /// (`vbMethod`/`vbGet`/`vbLet`/`vbSet`), `[3..]` = the forwarded call arguments.
+    DynamicByName,
 }
 
 /// A call argument. `ByRef` passes a place (true alias for slot places;

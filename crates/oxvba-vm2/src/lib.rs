@@ -770,18 +770,32 @@ impl<'h> Vm<'h> {
         kind_hint: Option<ProjectMemberKind>,
         args: &[CallArg],
     ) -> Result<Variant, Fault> {
+        // The receiver is `args[0]`; the rest are the method arguments.
         let object = self.arg_object(args.first())?;
-        // A project-instance receiver dispatches internally (resolve the class's
-        // member → procedure, call with `Me`); a COM receiver goes to the host.
+        let method_args = args.split_first().map(|(_, rest)| rest).unwrap_or(&[]);
+        self.dispatch_by_object(object, selector, kind_hint, method_args)
+    }
+
+    /// Dispatch a member call on an already-resolved object (used by both static
+    /// `ComDispatch` lowering and runtime `CallByName`). `method_args` excludes the
+    /// receiver. A project-instance receiver dispatches internally (resolve the
+    /// class member → procedure, call with `Me`); a COM receiver goes to the host.
+    fn dispatch_by_object(
+        &mut self,
+        object: ObjectRef,
+        selector: &ComMemberSelector,
+        kind_hint: Option<ProjectMemberKind>,
+        method_args: &[CallArg],
+    ) -> Result<Variant, Fault> {
         if object.is_project_instance() {
-            return self.dispatch_project_method(object, selector, kind_hint, args);
+            return self.dispatch_project_method(object, selector, kind_hint, method_args);
         }
         let member = match selector {
             ComMemberSelector::DispatchId(id) => DynamicMemberSelector::Token(*id),
             ComMemberSelector::Name(name) => DynamicMemberSelector::Name(name.clone()),
         };
         let mut call_args = Vec::new();
-        for arg in args.iter().skip(1) {
+        for arg in method_args {
             let (value, name) = match arg {
                 CallArg::Slot(s) | CallArg::ByRef(s) => (Some(self.cloned(*s)?), None),
                 CallArg::Named { name, slot } => (Some(self.cloned(*slot)?), Some(name.clone())),
@@ -801,13 +815,12 @@ impl<'h> Vm<'h> {
             .com()
             .dispatch_invoke_dynamic_variant_with_writebacks(&request)
             .map_err(Fault::from_hal)?;
-        // Apply COM `[out]`/`[in,out]` write-backs to the ByRef call-site slots.
-        // `args[0]` is the receiver, so method arg `j` corresponds to `args[j + 1]`;
-        // only a `CallArg::ByRef` arg (the binder marks these from the typelib's
-        // param directions) is written back.
+        // Apply COM `[out]`/`[in,out]` write-backs to the ByRef call-site slots;
+        // only a `CallArg::ByRef` arg (marked from the typelib's param directions)
+        // is written back.
         for (j, wb) in writebacks.into_iter().enumerate() {
             if let Some(value) = wb {
-                if let Some(CallArg::ByRef(slot)) = args.get(j + 1) {
+                if let Some(CallArg::ByRef(slot)) = method_args.get(j) {
                     self.set(*slot, value)?;
                 }
             }
@@ -817,13 +830,13 @@ impl<'h> Vm<'h> {
 
     /// Late-bound dispatch on a project instance: resolve the class member by
     /// name (and accessor kind) → procedure, call it with `Me` + the positional
-    /// arguments, and return the function result.
+    /// arguments, and return the function result. `method_args` excludes `Me`.
     fn dispatch_project_method(
         &mut self,
         object: ObjectRef,
         selector: &ComMemberSelector,
         kind_hint: Option<ProjectMemberKind>,
-        args: &[CallArg],
+        method_args: &[CallArg],
     ) -> Result<Variant, Fault> {
         let class_idx = object.route_key() as usize;
         let name = match selector {
@@ -847,10 +860,8 @@ impl<'h> Vm<'h> {
                     .map(|m| m.proc)
             })
             .ok_or_else(|| Fault::new(438, format!("Object doesn't support '{name}'")))?;
-        // Receiver is args[0]; the remaining args are the call arguments (ByVal).
-        let proc_args: Vec<ProcArg> = args
+        let proc_args: Vec<ProcArg> = method_args
             .iter()
-            .skip(1)
             .map(|a| match a {
                 // ByRef args alias the caller's slot through `run_proc_with_me`;
                 // ByVal/Named copy in. (Parenthesised `(x)` and non-l-values were
@@ -1086,6 +1097,23 @@ impl<'h> Vm<'h> {
                         self.declare_call(*descriptor_id, args)?
                     }
                 };
+                if let Some(dst) = dst {
+                    self.set(*dst, value)?;
+                }
+            }
+            Op::CallByName { dst, object, name, calltype, args } => {
+                let obj = variant_to_object(self.get(*object)?)?;
+                let member_name = arith::as_string(self.get(*name)?);
+                let ct = arith::int(self.get(*calltype)?).map_err(Fault::from_string)?;
+                let kind = match ct {
+                    1 => Some(ProjectMemberKind::Method),
+                    2 => Some(ProjectMemberKind::PropertyGet),
+                    4 => Some(ProjectMemberKind::PropertyLet),
+                    8 => Some(ProjectMemberKind::PropertySet),
+                    _ => return Err(Fault::new(5, "CallByName: invalid CallType")),
+                };
+                let selector = ComMemberSelector::Name(member_name);
+                let value = self.dispatch_by_object(obj, &selector, kind, args)?;
                 if let Some(dst) = dst {
                     self.set(*dst, value)?;
                 }

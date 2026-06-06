@@ -91,6 +91,7 @@ impl<'a> ProcLower<'a> {
                     builtin(BuiltinType::Long),
                 ))
             }
+            DispatchRoute::SpecialForm(SpecialForm::CallByName) => self.bind_callbyname(arglist),
             DispatchRoute::ErrMember(_) => {
                 Err(BindError::Unsupported(format!("`{name}` Err member in value context")))
             }
@@ -294,6 +295,43 @@ impl<'a> ProcLower<'a> {
             None => args.extend(tail),
         }
         Ok(args)
+    }
+
+    /// `CallByName(Object, ProcName$, CallType, [Args…])` — dispatch by a runtime
+    /// member name. Object/ProcName/CallType are forwarded as the first three
+    /// operands; the remaining arguments are passed by value (no static callee
+    /// signature is known at the call site).
+    fn bind_callbyname(&mut self, arglist: Option<SyntaxNode<'_>>) -> Result<Bound, BindError> {
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        if items.len() < 3 {
+            return Err(BindError::Malformed(
+                "CallByName requires Object, ProcName, and CallType".into(),
+            ));
+        }
+        let mut args: Vec<CoreArg> = Vec::with_capacity(items.len());
+        for (i, item) in items.into_iter().enumerate() {
+            let arg = match item {
+                ArgItem::Positional(expr) => CoreArg::ByVal(self.bind_expr(expr)?.value),
+                ArgItem::Named { name, value } if i >= 3 => CoreArg::Named {
+                    name: name.text.to_string(),
+                    value: self.bind_expr(value)?.value,
+                },
+                ArgItem::Omitted if i >= 3 => CoreArg::Omitted,
+                _ => {
+                    return Err(BindError::Malformed(
+                        "CallByName Object/ProcName/CallType must be positional".into(),
+                    ));
+                }
+            };
+            args.push(arg);
+        }
+        Ok(value_bound(
+            CoreValue::Call { callee: CoreCallee::DynamicByName, args },
+            VarTypeRef::Variant,
+        ))
     }
 
     fn proc_signature_for(&self, sym: SymbolId, kind: ProjectMemberKind) -> Option<Signature> {

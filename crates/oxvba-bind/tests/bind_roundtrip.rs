@@ -387,6 +387,32 @@ fn redim_member_array_then_use() {
     assert_eq!(run_class_main_local0(main, "Box", box_cls), Some(7.0));
 }
 
+#[test]
+fn callbyname_invokes_method() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim o As Calc\n    Set o = New Calc\n    r = CallByName(o, \"Add\", vbMethod, 2, 3)\nEnd Sub\n";
+    let calc = "Public Function Add(a As Long, b As Long) As Long\n    Add = a + b\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "Calc", calc), Some(5.0));
+}
+
+#[test]
+fn callbyname_property_let_then_get() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim ignore\n    Dim o As Box\n    Set o = New Box\n    ignore = CallByName(o, \"Value\", vbLet, 42)\n    r = CallByName(o, \"Value\", vbGet)\nEnd Sub\n";
+    let box_cls = "Private mV As Long\n\n\
+                   Public Property Get Value() As Long\n    Value = mV\nEnd Property\n\n\
+                   Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\n";
+    assert_eq!(run_class_main_local0(main, "Box", box_cls), Some(42.0));
+}
+
+#[test]
+fn callbyname_unknown_member_errors() {
+    let main = "Sub Main()\n    Dim r\n    Dim o As Calc\n    Set o = New Calc\n    r = CallByName(o, \"Nope\", vbMethod)\nEnd Sub\n";
+    let calc = "Public Function Add(a As Long, b As Long) As Long\n    Add = a + b\nEnd Function\n";
+    let program = bind_program(&class_manifest(main, "Calc", calc), &NullTypeLibs).expect("bind");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    assert!(oxvba_vm2::run(&bundle, &host).is_err());
+}
+
 // ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────
 
 fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {

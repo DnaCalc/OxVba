@@ -91,6 +91,11 @@ pub fn library_constant(name: &str) -> Option<LibraryConstValue> {
         "vblf" => Str("\n".into()),
         "vbcrlf" | "vbnewline" => Str("\r\n".into()),
         "vbtab" => Str("\t".into()),
+        // VbCallType (for CallByName's third argument).
+        "vbmethod" => Int(1),
+        "vbget" => Int(2),
+        "vblet" => Int(4),
+        "vbset" => Int(8),
         "vbnullchar" => Str("\0".into()),
         "vbback" => Str("\u{0008}".into()),
         "vbformfeed" => Str("\u{000C}".into()),

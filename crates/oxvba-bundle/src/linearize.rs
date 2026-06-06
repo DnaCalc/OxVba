@@ -606,8 +606,32 @@ impl<'p> Linearizer<'p> {
                 });
                 self.emit_arg_writebacks(writebacks)?;
             }
+            CoreCallee::DynamicByName => {
+                // args = [object, name, calltype, forwarded method args…].
+                let [obj_arg, name_arg, ct_arg, rest @ ..] = args else {
+                    return Err(LinearizeError::Malformed(
+                        "CallByName requires object, name, and calltype operands".into(),
+                    ));
+                };
+                let object = self.lower_arg_value(obj_arg)?;
+                let name = self.lower_arg_value(name_arg)?;
+                let calltype = self.lower_arg_value(ct_arg)?;
+                let (call_args, writebacks) = self.build_call_args(rest)?;
+                self.emit(Op::CallByName { dst, object, name, calltype, args: call_args });
+                self.emit_arg_writebacks(writebacks)?;
+            }
         }
         Ok(())
+    }
+
+    /// Lower a call operand expected to be a plain value (CallByName's
+    /// object/name/calltype), to its slot.
+    fn lower_arg_value(&mut self, arg: &CoreArg) -> Res<usize> {
+        match arg {
+            CoreArg::ByVal(v) => self.lower_value(v),
+            CoreArg::ByRef(place) => self.lower_place_load(place),
+            other => Err(LinearizeError::Malformed(format!("expected a value operand, got {other:?}"))),
+        }
     }
 
     // ── Statements ─────────────────────────────────────────────────────────────

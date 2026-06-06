@@ -140,6 +140,18 @@ pub enum Op {
         args: Vec<ProcArg>,
     },
     CallNative { dst: Option<usize>, callee: NativeCallee, args: Vec<CallArg> },
+    /// `CallByName` — dispatch a member call by a runtime name on a runtime object,
+    /// routing through the same late-dispatch path as `CallNative`/`ComDispatch`.
+    /// `object`/`name`/`calltype` are operand slots; `calltype` is the VbCallType
+    /// (`vbMethod`=1/`vbGet`=2/`vbLet`=4/`vbSet`=8); `args` are the forwarded method
+    /// arguments (the receiver is *not* in `args`).
+    CallByName {
+        dst: Option<usize>,
+        object: usize,
+        name: usize,
+        calltype: usize,
+        args: Vec<CallArg>,
+    },
     Return,
     Halt,
 
