@@ -192,6 +192,23 @@ fn hex_literal() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")), Some(31.0));
 }
 
+// ── Long tail ────────────────────────────────────────────────────────────────
+
+#[test]
+fn module_and_proc_consts_fold() {
+    // A module-level Const and a proc-level Const both substitute their values.
+    let src = "Const FACTOR As Long = 10\n\n\
+               Sub Main()\n    Dim r As Long\n    Const ADD = 5\n    r = FACTOR * 2 + ADD\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(25.0));
+}
+
+#[test]
+fn option_compare_text_is_case_insensitive() {
+    // Under `Option Compare Text`, `"A" = "a"` is True (-1); Binary would give 0.
+    let src = "Option Compare Text\n\nSub Main()\n    Dim r As Boolean\n    r = (\"A\" = \"a\")\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(-1.0));
+}
+
 // ── Objects: classes, New, Me, fields, methods, properties, Set ──────────────
 
 /// A two-module project: a procedural `Main` + one class module. The class

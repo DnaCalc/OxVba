@@ -3,7 +3,6 @@
 //! expression denotes an l-value).
 
 use oxvba_bundle::coreir::{CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
-use oxvba_bundle::StringCompareMode;
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 use oxvba_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
@@ -95,6 +94,12 @@ impl<'a> ProcLower<'a> {
         let binding = self
             .resolve(name)
             .ok_or_else(|| self.unresolved(name, "expression"))?;
+        // A folded `Const` substitutes its literal value.
+        if let Some(sym) = binding.symbol {
+            if let Some(c) = self.g.ids.const_of.get(&sym) {
+                return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
+            }
+        }
         // A plain variable read.
         if let DispatchRoute::Value = binding.route {
             if let Some(sym) = binding.symbol {
@@ -183,7 +188,7 @@ impl<'a> ProcLower<'a> {
             (lhs.value, rhs.value, types::result_type(op, &lhs.ty, &rhs.ty))
         };
         Ok(value_bound(
-            CoreValue::Binary { op, lhs: Box::new(lv), rhs: Box::new(rv), mode: StringCompareMode::Binary },
+            CoreValue::Binary { op, lhs: Box::new(lv), rhs: Box::new(rv), mode: self.info.compare_mode },
             ty,
         ))
     }
@@ -268,6 +273,57 @@ fn unquote(text: &str) -> String {
     let inner = text.strip_prefix('"').unwrap_or(text);
     let inner = inner.strip_suffix('"').unwrap_or(inner);
     inner.replace("\"\"", "\"")
+}
+
+/// Fold a `Const` initializer expression to a literal value (literals, a sign, or
+/// a parenthesised literal). Non-literal initializers (`Const B = A + 1`) return
+/// `None` and fall back to the ordinary name path.
+pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
+    match node.kind() {
+        SyntaxKind::LiteralExpr => {
+            let tok = node.first_significant_token()?;
+            match tok.kind {
+                SyntaxKind::IntLiteral => parse_int(tok.text).ok(),
+                SyntaxKind::HexLiteral => parse_radix(tok.text, 16).ok(),
+                SyntaxKind::OctLiteral => parse_radix(tok.text, 8).ok(),
+                SyntaxKind::FloatLiteral => Some(CoreConst::F64(parse_float(tok.text).ok()?.to_bits())),
+                SyntaxKind::StringLiteral => Some(CoreConst::Str(unquote(tok.text))),
+                SyntaxKind::KwTrue => Some(CoreConst::Bool(true)),
+                SyntaxKind::KwFalse => Some(CoreConst::Bool(false)),
+                _ => None,
+            }
+        }
+        SyntaxKind::ParenExpr => fold_const_literal(node.paren_inner()?),
+        SyntaxKind::UnaryExpr => {
+            let inner = fold_const_literal(node.unary_operand()?)?;
+            match node.unary_op_token()?.kind {
+                SyntaxKind::Plus => Some(inner),
+                SyntaxKind::Minus => negate_const(inner),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn negate_const(c: CoreConst) -> Option<CoreConst> {
+    Some(match c {
+        CoreConst::I32(n) => CoreConst::I32(n.checked_neg()?),
+        CoreConst::I64(n) => CoreConst::I64(n.checked_neg()?),
+        CoreConst::F64(bits) => CoreConst::F64((-f64::from_bits(bits)).to_bits()),
+        _ => return None,
+    })
+}
+
+/// The inferred type of a folded constant value.
+pub(crate) fn const_type(c: &CoreConst) -> VarTypeRef {
+    match c {
+        CoreConst::I32(_) | CoreConst::I64(_) => builtin(BuiltinType::Long),
+        CoreConst::F64(_) => builtin(BuiltinType::Double),
+        CoreConst::Str(_) => builtin(BuiltinType::String),
+        CoreConst::Bool(_) => builtin(BuiltinType::Boolean),
+        _ => VarTypeRef::Variant,
+    }
 }
 
 fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {

@@ -22,10 +22,10 @@ use std::collections::HashMap;
 use oxvba_bundle::coreir::{
     CoreProc, CoreProgram, CorePlace, CoreValue, LabelId, LocalId,
 };
-use oxvba_bundle::{EventRoute, ExternalCallDescriptor};
+use oxvba_bundle::{ComClassExport, EventRoute, ExternalCallDescriptor};
 use oxvba_runtime::DynLinkSymbol;
 use oxvba_symbol::binding::Binding;
-use oxvba_symbol::manifest::SymbolProjectManifest;
+use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
     fold_identifier, ScopeId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace,
 };
@@ -76,7 +76,7 @@ pub fn bind_program(
         classes: ids.classes.clone(),
         event_routes: build_event_routes(&env, &ids),
         external_calls: build_external_calls(&env),
-        com_class_exports: Vec::new(),
+        com_class_exports: build_com_class_exports(manifest),
         entry: ids.entry(),
     })
 }
@@ -173,6 +173,28 @@ fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescript
     out.sort_by_key(|d| d.descriptor_id);
     out.dedup_by_key(|d| d.descriptor_id);
     out
+}
+
+/// COM-server export metadata for each class module (hosting only; not used by
+/// VM execution). `creatable`/`prog_id` come from the module's VB attributes.
+fn build_com_class_exports(manifest: &SymbolProjectManifest) -> Vec<ComClassExport> {
+    manifest
+        .modules
+        .iter()
+        .filter(|m| m.module_kind == ModuleKind::Class)
+        .map(|m| {
+            let class_name = if m.attributes.vb_name.is_empty() {
+                m.module_name.clone()
+            } else {
+                m.attributes.vb_name.clone()
+            };
+            ComClassExport {
+                class_name,
+                prog_id: m.attributes.prog_id.clone(),
+                creatable: m.attributes.vb_creatable,
+            }
+        })
+        .collect()
 }
 
 /// Project-wide immutable lowering context (resolution + id maps).

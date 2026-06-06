@@ -18,9 +18,10 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
-    ClassId, CoreClass, CoreClassMethod, CoreGlobal, CoreLocal, CoreParam, GlobalId, LocalId, ProcId,
+    ClassId, CoreClass, CoreClassMethod, CoreConst, CoreGlobal, CoreLocal, CoreParam, GlobalId,
+    LocalId, ProcId,
 };
-use oxvba_bundle::{ProcedureKind, ProjectMemberKind};
+use oxvba_bundle::{ProcedureKind, ProjectMemberKind, StringCompareMode};
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
     fold_identifier, ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace,
@@ -50,6 +51,8 @@ pub struct ProcInfo {
     pub class_name: Option<String>,
     /// `Some(LocalId(0))` for a class member — the implicit `Me` slot.
     pub me_local: Option<LocalId>,
+    /// The enclosing module's `Option Compare` mode (for string comparisons).
+    pub compare_mode: StringCompareMode,
 }
 
 /// The whole project's id allocation: globals, procs, classes, and the symbol→id
@@ -69,6 +72,8 @@ pub struct IdAllocator {
     pub withevents_binding_of: HashMap<SymbolId, i32>,
     /// A class `Event` symbol → its event index (within its declaring class).
     pub event_index_of: HashMap<SymbolId, i32>,
+    /// A `Const` symbol → its folded literal value (substituted at use sites).
+    pub const_of: HashMap<SymbolId, CoreConst>,
 }
 
 impl IdAllocator {
@@ -88,6 +93,7 @@ impl IdAllocator {
             field_token_of: HashMap::new(),
             withevents_binding_of: HashMap::new(),
             event_index_of: HashMap::new(),
+            const_of: HashMap::new(),
         };
 
         // 1) Module-level members. Standard modules contribute globals; class
@@ -132,6 +138,13 @@ impl IdAllocator {
         //    `Procedure` scopes (both in source order).
         for module in env.modules() {
             let class_name = class_name_for(manifest, module.module_name);
+            let compare_mode = module_compare_mode(module.syntax);
+            // Module-level `Const`s (top-level declarations).
+            for node in module.syntax.child_nodes() {
+                if node.kind() == SyntaxKind::ConstStmt {
+                    fold_const_declarators(env, module.module_scope, node, &mut alloc.const_of);
+                }
+            }
             let proc_scopes: Vec<ScopeId> = symbols
                 .scopes()
                 .iter()
@@ -151,7 +164,16 @@ impl IdAllocator {
                 )));
             }
             for (decl, &proc_scope) in decls.iter().zip(proc_scopes.iter()) {
-                alloc.alloc_proc(env, module.module_scope, *decl, proc_scope, class_name.clone())?;
+                // Proc-level `Const`s (possibly nested in blocks; one proc scope).
+                collect_proc_consts(env, proc_scope, *decl, &mut alloc.const_of);
+                alloc.alloc_proc(
+                    env,
+                    module.module_scope,
+                    *decl,
+                    proc_scope,
+                    class_name.clone(),
+                    compare_mode,
+                )?;
             }
         }
 
@@ -198,6 +220,7 @@ impl IdAllocator {
         decl: SyntaxNode<'_>,
         proc_scope: ScopeId,
         class_name: Option<String>,
+        compare_mode: StringCompareMode,
     ) -> Result<(), BindError> {
         let symbols = &env.symbols;
         let proc_id = ProcId(self.procs.len());
@@ -254,6 +277,7 @@ impl IdAllocator {
             local_of,
             class_name,
             me_local,
+            compare_mode,
         });
         Ok(())
     }
@@ -395,6 +419,60 @@ fn property_accessor_kind(decl: SyntaxNode<'_>) -> ProjectMemberKind {
         }
     }
     ProjectMemberKind::PropertyGet
+}
+
+/// Fold each `Const` declarator in a `ConstStmt` to a literal value, keyed by the
+/// declared symbol (namespace `Local` for both module- and proc-level consts).
+fn fold_const_declarators(
+    env: &ResolutionEnvironment,
+    scope: ScopeId,
+    const_stmt: SyntaxNode<'_>,
+    const_of: &mut HashMap<SymbolId, CoreConst>,
+) {
+    for declarator in const_stmt.declarators() {
+        let Some(name) = declarator.declarator_name() else { continue };
+        let Some(init) = declarator.first_expr_child() else { continue };
+        let Some(value) = crate::expr::fold_const_literal(init) else { continue };
+        if let Ok(Some(sym)) =
+            env.symbols.find_in_scope(scope, SymbolNamespace::Local, name.text)
+        {
+            const_of.insert(sym, value);
+        }
+    }
+}
+
+/// Collect proc-level `Const`s anywhere in a procedure body (block scoping is
+/// flattened to the one procedure scope).
+fn collect_proc_consts(
+    env: &ResolutionEnvironment,
+    proc_scope: ScopeId,
+    node: SyntaxNode<'_>,
+    const_of: &mut HashMap<SymbolId, CoreConst>,
+) {
+    if node.kind() == SyntaxKind::ConstStmt {
+        fold_const_declarators(env, proc_scope, node, const_of);
+    }
+    for child in node.child_nodes() {
+        collect_proc_consts(env, proc_scope, child, const_of);
+    }
+}
+
+/// The module's `Option Compare` mode (`Text` makes string comparisons
+/// case-insensitive); `Binary` is the default. `Text` lexes as an `Ident` after
+/// the `Compare` keyword.
+fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
+    for node in module.child_nodes() {
+        if node.kind() != SyntaxKind::OptionStmt {
+            continue;
+        }
+        let toks = node.child_tokens();
+        let is_compare = toks.iter().any(|t| t.kind == SyntaxKind::KwCompare);
+        let is_text = toks.iter().any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Text"));
+        if is_compare && is_text {
+            return StringCompareMode::Text;
+        }
+    }
+    StringCompareMode::Binary
 }
 
 fn class_name_for(manifest: &SymbolProjectManifest, module_name: &str) -> Option<String> {
