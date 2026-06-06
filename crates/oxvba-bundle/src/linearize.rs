@@ -33,6 +33,11 @@ impl std::fmt::Display for LinearizeError {
 
 type Res<T> = Result<T, LinearizeError>;
 
+/// Lowered arguments (`A` = `ProcArg`/`CallArg`) plus the `(place, temp-slot)`
+/// write-backs to replay after the call — for ByRef Field/Index/WithEvents args
+/// that have no slot to alias directly (copy-in temp, copy back on return).
+type LoweredArgs<A> = (Vec<A>, Vec<(CorePlace, usize)>);
+
 /// Flatten a resolved [`CoreProgram`] into a runnable [`Bundle`].
 pub fn linearize(program: &CoreProgram) -> Res<Bundle> {
     Linearizer::new(program).run()
@@ -490,7 +495,7 @@ impl<'p> Linearizer<'p> {
     }
 
     // ── Calls ────────────────────────────────────────────────────────────────
-    fn build_proc_args(&mut self, args: &[CoreArg]) -> Res<(Vec<ProcArg>, Vec<(CorePlace, usize)>)> {
+    fn build_proc_args(&mut self, args: &[CoreArg]) -> Res<LoweredArgs<ProcArg>> {
         let mut out = Vec::with_capacity(args.len());
         let mut writebacks = Vec::new();
         for arg in args {
@@ -521,7 +526,7 @@ impl<'p> Linearizer<'p> {
     /// alias for project-instance dispatch, a marshaled copy-out for COM/Declare);
     /// a `ByRef` of a Field/Index/WithEvents place copies in to a temp and records
     /// a write-back applied after the call.
-    fn build_call_args(&mut self, args: &[CoreArg]) -> Res<(Vec<CallArg>, Vec<(CorePlace, usize)>)> {
+    fn build_call_args(&mut self, args: &[CoreArg]) -> Res<LoweredArgs<CallArg>> {
         let mut out = Vec::with_capacity(args.len());
         let mut writebacks = Vec::new();
         for arg in args {
