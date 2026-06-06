@@ -154,17 +154,15 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("call statement callee".into()))?;
         let arglist = node.call_arg_list();
         // `Err.Raise` / `Err.Clear` are error-state statements, not value calls.
-        if callee.kind() == SyntaxKind::MemberExpr {
-            if let Some(recv) = callee.member_receiver() {
-                if self.is_err_receiver(recv) {
+        if callee.kind() == SyntaxKind::MemberExpr
+            && let Some(recv) = callee.member_receiver()
+                && self.is_err_receiver(recv) {
                     let member = callee
                         .member_name_token()
                         .ok_or_else(|| BindError::Malformed("Err member".into()))?
                         .text;
                     return self.bind_err_statement(member, arglist);
                 }
-            }
-        }
         let bound = self.bind_call_from_callee(callee, arglist)?;
         Ok(vec![CoreStmt::Eval(bound.value)])
     }
@@ -441,11 +439,10 @@ impl<'a> ProcLower<'a> {
             other => return Err(BindError::Unsupported(format!("file I/O {other:?}"))),
         };
         let mut args = Vec::new();
-        if let Some(fnum) = node.file_number() {
-            if let Some(ch) = fnum.first_expr_child() {
+        if let Some(fnum) = node.file_number()
+            && let Some(ch) = fnum.first_expr_child() {
                 args.push(CoreArg::ByVal(self.bind_expr(ch)?.value));
             }
-        }
         // Print/Write data is nested in a PrintItemList of PrintItems, not direct
         // expr children; descend so the values aren't dropped. Other file
         // statements (Input/Line Input) carry their lvalue targets directly.
@@ -519,11 +516,10 @@ impl<'a> ProcLower<'a> {
     }
 
     fn array_element_for_name(&self, name: &str) -> oxvba_bundle::ArrayElementType {
-        if let Some(sym) = self.resolve(name).and_then(|b| b.symbol) {
-            if let oxvba_symbol::signature::VarTypeRef::Array(inner) = self.symbol_type(sym) {
+        if let Some(sym) = self.resolve(name).and_then(|b| b.symbol)
+            && let oxvba_symbol::signature::VarTypeRef::Array(inner) = self.symbol_type(sym) {
                 return types::array_element_of(&inner);
             }
-        }
         oxvba_bundle::ArrayElementType::Variant
     }
 

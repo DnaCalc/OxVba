@@ -99,11 +99,10 @@ impl<'a> ProcLower<'a> {
     ) -> Result<CoreArg, BindError> {
         let by_ref = param.map(|p| p.mode == PassingMode::ByRef).unwrap_or(false);
         let forced_by_val = expr.kind() == SyntaxKind::ParenExpr;
-        if by_ref && !forced_by_val {
-            if let Ok((place, _)) = self.bind_place(expr) {
+        if by_ref && !forced_by_val
+            && let Ok((place, _)) = self.bind_place(expr) {
                 return Ok(CoreArg::ByRef(place));
             }
-        }
         let bound = self.bind_expr(expr)?;
         let value = match param {
             Some(p) if p.mode == PassingMode::ByVal => types::coerce(bound.value, &bound.ty, &p.ty),
@@ -228,13 +227,11 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("member without name".into()))?
             .text;
         // `Err.Number` / `Err.Description` / `Err.Source` are error-state reads.
-        if let Some(recv) = node.member_receiver() {
-            if self.is_err_receiver(recv) {
-                if let Some((field, ty)) = err_field(member) {
+        if let Some(recv) = node.member_receiver()
+            && self.is_err_receiver(recv)
+                && let Some((field, ty)) = err_field(member) {
                     return Ok(value_bound(CoreValue::ErrField(field), ty));
                 }
-            }
-        }
         let recv = self.member_receiver_bound(node)?;
         self.bind_member_value(recv, member)
     }

@@ -95,19 +95,16 @@ impl<'a> ProcLower<'a> {
             .resolve(name)
             .ok_or_else(|| self.unresolved(name, "expression"))?;
         // A folded `Const` substitutes its literal value.
-        if let Some(sym) = binding.symbol {
-            if let Some(c) = self.g.ids.const_of.get(&sym) {
+        if let Some(sym) = binding.symbol
+            && let Some(c) = self.g.ids.const_of.get(&sym) {
                 return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
             }
-        }
         // A plain variable read.
-        if let DispatchRoute::Value = binding.route {
-            if let Some(sym) = binding.symbol {
-                if let Some((place, ty)) = self.place_for_symbol(sym) {
+        if let DispatchRoute::Value = binding.route
+            && let Some(sym) = binding.symbol
+                && let Some((place, ty)) = self.place_for_symbol(sym) {
                     return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
                 }
-            }
-        }
         // Otherwise a constant or a 0-argument call.
         self.bind_call_route(name, &binding, None)
     }
@@ -201,15 +198,12 @@ impl<'a> ProcLower<'a> {
         // resolves to a callable is a call even when it equals the enclosing
         // function's name (a recursive call `f(args)` — VBA does not allow
         // indexing the result pseudo-variable, so `f(i)` is always a call).
-        if base.kind() == SyntaxKind::IdentExpr {
-            if let Some(tok) = base.ident_name_token() {
-                if let Some(binding) = self.resolve(tok.text) {
-                    if !matches!(binding.route, DispatchRoute::Value) {
+        if base.kind() == SyntaxKind::IdentExpr
+            && let Some(tok) = base.ident_name_token()
+                && let Some(binding) = self.resolve(tok.text)
+                    && !matches!(binding.route, DispatchRoute::Value) {
                         return self.bind_call_route(tok.text, &binding, node.index_arg_list());
                     }
-                }
-            }
-        }
         // `obj.Member(args)` — a method/property call, or an index into a member
         // array. The member binder decides by resolving the member.
         if base.kind() == SyntaxKind::MemberExpr {

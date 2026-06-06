@@ -130,11 +130,9 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
             let handler_name = format!("{field_name}_{ev_name}");
             if let Ok(Some(handler_sym)) =
                 symbols.find_in_scope(sink_scope, SymbolNamespace::Procedure, &handler_name)
-            {
-                if let Some(&proc) = ids.proc_of.get(&handler_sym) {
+                && let Some(&proc) = ids.proc_of.get(&handler_sym) {
                     routes.push(EventRoute { binding, event, handler: proc.0 });
                 }
-            }
         }
     }
     routes
