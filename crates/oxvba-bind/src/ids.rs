@@ -75,6 +75,10 @@ pub struct IdAllocator {
     pub event_index_of: HashMap<SymbolId, i32>,
     /// A `Const` symbol → its folded literal value (substituted at use sites).
     pub const_of: HashMap<SymbolId, CoreConst>,
+    /// Folded names of class modules that appear in some `Implements` clause —
+    /// i.e. project interfaces. A member dispatch on an interface-typed receiver
+    /// is mangled to `Interface_Member`.
+    pub interfaces: HashSet<String>,
 }
 
 impl IdAllocator {
@@ -95,6 +99,7 @@ impl IdAllocator {
             withevents_binding_of: HashMap::new(),
             event_index_of: HashMap::new(),
             const_of: HashMap::new(),
+            interfaces: HashSet::new(),
         };
 
         // 1) Module-level members. Standard modules contribute globals; class
@@ -195,6 +200,11 @@ impl IdAllocator {
         //    table + Class_Initialize/Terminate. Built after procs so ProcIds exist.
         let mut classes = Vec::new();
         let mut class_of = HashMap::new();
+        // Folded module name → module scope, for resolving `Implements` targets.
+        let module_scope_by_name: HashMap<String, ScopeId> = env
+            .modules()
+            .map(|m| (fold_identifier(m.module_name), m.module_scope))
+            .collect();
         for module in env.modules() {
             let Some(display) = class_name_for(manifest, module.module_name) else {
                 continue;
@@ -219,7 +229,21 @@ impl IdAllocator {
                     }),
                 }
             }
-            classes.push(CoreClass { name: display, initialize, terminate, methods });
+            // `Implements I` clauses: record the interface names, mark them as
+            // project interfaces, and verify every interface member has a matching
+            // `Interface_Member` implementation in this class.
+            let implements = collect_module_implements(module.syntax);
+            for iface in &implements {
+                alloc.interfaces.insert(fold_identifier(iface));
+                validate_interface_members(
+                    env,
+                    &module_scope_by_name,
+                    module.module_scope,
+                    &display,
+                    iface,
+                )?;
+            }
+            classes.push(CoreClass { name: display, initialize, terminate, methods, implements });
         }
         alloc.classes = classes;
         alloc.class_of = class_of;
@@ -533,6 +557,59 @@ fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
         }
     }
     StringCompareMode::Binary
+}
+
+/// Interface display names from a class module's `Implements` clauses (each is a
+/// `TypeRef` child of an `ImplementsStmt`).
+fn collect_module_implements(module: SyntaxNode<'_>) -> Vec<String> {
+    let mut out = Vec::new();
+    for node in module.child_nodes() {
+        if node.kind() == SyntaxKind::ImplementsStmt
+            && let Some(type_ref) = node.child_node(SyntaxKind::TypeRef)
+        {
+            let name = type_ref.text().trim().to_string();
+            if !name.is_empty() {
+                out.push(name);
+            }
+        }
+    }
+    out
+}
+
+/// Verify each member of `iface` has a matching `Interface_Member` implementation
+/// in the implementing class. A typelib / non-project interface (no module scope)
+/// is skipped — its coverage is the host's concern.
+fn validate_interface_members(
+    env: &ResolutionEnvironment,
+    module_scope_by_name: &HashMap<String, ScopeId>,
+    class_scope: ScopeId,
+    class_name: &str,
+    iface: &str,
+) -> Result<(), BindError> {
+    let symbols = &env.symbols;
+    let Some(&iface_scope) = module_scope_by_name.get(&fold_identifier(iface)) else {
+        return Ok(());
+    };
+    for sym_id in symbols.symbols_in_scope(iface_scope).unwrap_or_default() {
+        let Some(sym) = symbols.symbol(sym_id) else { continue };
+        if sym.namespace != SymbolNamespace::Procedure {
+            continue;
+        }
+        let Some(member) = symbols.name(sym.name).map(|n| n.folded.clone()) else { continue };
+        if member == "class_initialize" || member == "class_terminate" {
+            continue;
+        }
+        let mangled = format!("{iface}_{member}");
+        if !matches!(
+            symbols.find_in_scope(class_scope, SymbolNamespace::Procedure, &mangled),
+            Ok(Some(_))
+        ) {
+            return Err(BindError::Unsupported(format!(
+                "class `{class_name}` implements `{iface}` but does not implement `{mangled}`"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn class_name_for(manifest: &SymbolProjectManifest, module_name: &str) -> Option<String> {

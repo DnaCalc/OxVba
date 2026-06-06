@@ -1047,8 +1047,8 @@ impl<'h> Vm<'h> {
                 let v = arith::coerce_fixed_string(self.get(*slot)?, *len);
                 self.set(*slot, v)?;
             }
-            Op::ValidateAssignment { src, intent, target_kind, target_name, .. } => {
-                self.validate_assignment(*src, *intent, *target_kind, target_name)?;
+            Op::ValidateAssignment { src, intent, target_kind, target_name, target_type_name } => {
+                self.validate_assignment(*src, *intent, *target_kind, target_name, target_type_name)?;
             }
 
             // ── Comparison ──
@@ -1449,6 +1449,7 @@ impl<'h> Vm<'h> {
         intent: oxvba_bundle::AssignmentIntent,
         target_kind: oxvba_bundle::AssignmentTargetKind,
         target_name: &str,
+        target_type_name: &str,
     ) -> Result<(), Fault> {
         use oxvba_bundle::{AssignmentIntent as Intent, AssignmentTargetKind as Kind};
         let value = self.get(src)?;
@@ -1459,6 +1460,39 @@ impl<'h> Vm<'h> {
             }
             Intent::Let if target_kind == Kind::Object && value.vtype() == VarType::Object => {
                 Err(Fault::new(91, format!("Object variable requires Set: {target_name}")))
+            }
+            // Strict `Set` type check (error 13): when the target's declared type is
+            // a known project class/interface, a project-instance source must be
+            // that class or implement that interface. Unconstrained targets
+            // (`Object`/`Variant`, or any non-project type) are not checked, and
+            // `Nothing` is always allowed.
+            Intent::Set if value.vtype() == VarType::Object && !target_type_name.is_empty() => {
+                let target_is_project = self.bundle.classes.iter().any(|c| {
+                    c.name.eq_ignore_ascii_case(target_type_name)
+                        || c.implements.iter().any(|i| i.eq_ignore_ascii_case(target_type_name))
+                });
+                if target_is_project {
+                    let obj = variant_to_object(value)?;
+                    if obj.is_project_instance()
+                        && let Some(class) = self.bundle.classes.get(obj.route_key() as usize)
+                    {
+                        let compatible = class.name.eq_ignore_ascii_case(target_type_name)
+                            || class
+                                .implements
+                                .iter()
+                                .any(|i| i.eq_ignore_ascii_case(target_type_name));
+                        if !compatible {
+                            return Err(Fault::new(
+                                13,
+                                format!(
+                                    "Type mismatch: `{}` cannot be assigned to `{target_type_name}`",
+                                    class.name
+                                ),
+                            ));
+                        }
+                    }
+                }
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -1472,6 +1506,18 @@ impl<'h> Vm<'h> {
 
     fn type_of_is(&self, object_slot: usize, type_name: &str) -> Result<bool, Fault> {
         let object = variant_to_object(self.get(object_slot)?)?;
+        // A project instance is its own class and every interface it `Implements`;
+        // a foreign/COM object is described by the host's typelib (`prog_id_name`).
+        if object.is_project_instance() {
+            return Ok(self
+                .bundle
+                .classes
+                .get(object.route_key() as usize)
+                .is_some_and(|class| {
+                    class.name.eq_ignore_ascii_case(type_name)
+                        || class.implements.iter().any(|i| i.eq_ignore_ascii_case(type_name))
+                }));
+        }
         match self.host.com().describe_object(object) {
             Ok(Some(descriptor)) => Ok(descriptor.prog_id_name.eq_ignore_ascii_case(type_name)),
             _ => Ok(false),

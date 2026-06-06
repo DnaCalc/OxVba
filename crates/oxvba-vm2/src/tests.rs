@@ -305,7 +305,7 @@ fn proc(
 }
 
 fn class(name: &str, initialize: Option<usize>, terminate: Option<usize>) -> ClassDescriptor {
-    ClassDescriptor { name: name.to_string(), initialize, terminate, methods: Vec::new() }
+    ClassDescriptor { name: name.to_string(), initialize, terminate, methods: Vec::new(), implements: Vec::new() }
 }
 
 #[test]
@@ -769,6 +769,7 @@ fn late_bound_method_dispatch() {
         initialize: None,
         terminate: None,
         methods: vec![ClassMethod { name: "Inc".to_string(), kind: ProjectMemberKind::Method, proc: 0 }],
+        implements: Vec::new(),
     }];
     let h = host();
     let vm = run(&b, &h).unwrap();

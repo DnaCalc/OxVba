@@ -86,6 +86,7 @@ fn class(name: &str, initialize: Option<usize>, terminate: Option<usize>, method
             .into_iter()
             .map(|(n, kind, p)| CoreClassMethod { name: n.into(), kind, proc: ProcId(p) })
             .collect(),
+        implements: Vec::new(),
     }
 }
 

@@ -140,6 +140,7 @@ impl<'p> Linearizer<'p> {
                     .iter()
                     .map(|m| ClassMethod { name: m.name.clone(), kind: m.kind, proc: m.proc.0 })
                     .collect(),
+                implements: class.implements.clone(),
             })
             .collect();
 

@@ -213,6 +213,8 @@ pub struct ClassDescriptor {
     pub terminate: Option<usize>,
     /// Members reachable by name on a late-bound receiver.
     pub methods: Vec<ClassMethod>,
+    /// Display names of interfaces this class implements (for `TypeOf`/`Set`).
+    pub implements: Vec<String>,
 }
 
 /// One `WithEvents` event route: when the event `event` fires on a source whose

@@ -102,6 +102,10 @@ pub struct CoreClass {
     pub initialize: Option<ProcId>,
     pub terminate: Option<ProcId>,
     pub methods: Vec<CoreClassMethod>,
+    /// Display names of the interfaces this class `Implements` (for `TypeOf` and
+    /// `Set` type checking). Members dispatch through the mangled `Interface_Member`
+    /// names already present in `methods`.
+    pub implements: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

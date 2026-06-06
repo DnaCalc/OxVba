@@ -413,6 +413,106 @@ fn callbyname_unknown_member_errors() {
     assert!(oxvba_vm2::run(&bundle, &host).is_err());
 }
 
+// ── Implements: interface dispatch + TypeOf + strict Set ─────────────────────
+
+const IANIMAL: &str = "Public Function Speak() As Long\nEnd Function\n";
+const CDOG: &str = "Implements IAnimal\n\nPrivate Function IAnimal_Speak() As Long\n    IAnimal_Speak = 42\nEnd Function\n";
+
+#[test]
+fn implements_dispatch_through_interface_var() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim a As IAnimal\n    Set a = New CDog\n    r = a.Speak()\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("IAnimal", ModuleKind::Class, IANIMAL),
+            ("CDog", ModuleKind::Class, CDOG),
+        ]),
+        Some(42.0)
+    );
+}
+
+#[test]
+fn implements_typeof_true_for_implementer() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim a As IAnimal\n    Set a = New CDog\n    If TypeOf a Is IAnimal Then\n        r = 1\n    Else\n        r = 0\n    End If\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("IAnimal", ModuleKind::Class, IANIMAL),
+            ("CDog", ModuleKind::Class, CDOG),
+        ]),
+        Some(1.0)
+    );
+}
+
+#[test]
+fn implements_typeof_false_for_non_implementer() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim o As Object\n    Set o = New CRock\n    If TypeOf o Is IAnimal Then\n        r = 1\n    Else\n        r = 0\n    End If\nEnd Sub\n";
+    let crock = "Public Function Foo() As Long\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("IAnimal", ModuleKind::Class, IANIMAL),
+            ("CRock", ModuleKind::Class, crock),
+        ]),
+        Some(0.0)
+    );
+}
+
+#[test]
+fn implements_set_type_mismatch_errors() {
+    // Set into an IAnimal-typed var with a class that does not implement it → error 13.
+    let main = "Sub Main()\n    Dim a As IAnimal\n    Set a = New CRock\nEnd Sub\n";
+    let crock = "Public Function Foo() As Long\nEnd Function\n";
+    let program = bind_program(
+        &multi_manifest(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("IAnimal", ModuleKind::Class, IANIMAL),
+            ("CRock", ModuleKind::Class, crock),
+        ]),
+        &NullTypeLibs,
+    )
+    .expect("bind");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    assert!(oxvba_vm2::run(&bundle, &host).is_err());
+}
+
+#[test]
+fn implements_missing_member_is_bind_error() {
+    // CDog declares Implements IAnimal but omits IAnimal_Speak → bind error.
+    let main = "Sub Main()\nEnd Sub\n";
+    let cdog = "Implements IAnimal\n";
+    assert!(
+        bind_program(
+            &multi_manifest(&[
+                ("Main", ModuleKind::Procedural, main),
+                ("IAnimal", ModuleKind::Class, IANIMAL),
+                ("CDog", ModuleKind::Class, cdog),
+            ]),
+            &NullTypeLibs,
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn implements_property_through_interface_var() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim s As IShape\n    Set s = New CBox\n    s.Size = 10\n    r = s.Size\nEnd Sub\n";
+    let ishape = "Public Property Get Size() As Long\nEnd Property\n\n\
+                  Public Property Let Size(ByVal v As Long)\nEnd Property\n";
+    let cbox = "Implements IShape\n\nPrivate mS As Long\n\n\
+                Private Property Get IShape_Size() As Long\n    IShape_Size = mS\nEnd Property\n\n\
+                Private Property Let IShape_Size(ByVal v As Long)\n    mS = v\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("IShape", ModuleKind::Class, ishape),
+            ("CBox", ModuleKind::Class, cbox),
+        ]),
+        Some(10.0)
+    );
+}
+
 // ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────
 
 fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {

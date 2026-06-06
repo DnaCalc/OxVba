@@ -404,7 +404,8 @@ impl<'a> ProcLower<'a> {
                 DispatchRoute::ProjectMember { kind } => {
                     let kind = *kind;
                     let ty = self.member_return_type(binding.symbol, kind);
-                    Ok(value_bound(self.late_member_call(member, kind, recv.value, Vec::new()), ty))
+                    let dispatch = self.interface_dispatch_name(&recv.ty, member);
+                    Ok(value_bound(self.late_member_call(&dispatch, kind, recv.value, Vec::new()), ty))
                 }
                 DispatchRoute::ComMember { dispid, member_kind, .. } => Ok(value_bound(
                     self.early_com_call(*dispid, *member_kind, recv.value, Vec::new()),
@@ -445,7 +446,8 @@ impl<'a> ProcLower<'a> {
                         None => self.bind_args(arglist, None)?,
                     };
                     let ty = signature.and_then(|s| s.return_type).unwrap_or(VarTypeRef::Variant);
-                    Ok(value_bound(self.late_member_call(member, kind, recv.value, method_args), ty))
+                    let dispatch = self.interface_dispatch_name(&recv.ty, member);
+                    Ok(value_bound(self.late_member_call(&dispatch, kind, recv.value, method_args), ty))
                 }
                 DispatchRoute::Value => {
                     // `recv.field(i)` — index into a member array.
@@ -494,6 +496,19 @@ impl<'a> ProcLower<'a> {
             return Ok((CorePlace::WithEvents { owner: Box::new(recv), binding }, self.symbol_type(sym)));
         }
         Err(BindError::Unsupported("member field without an instance token".into()))
+    }
+
+    /// The member name to dispatch through. When the static receiver type is a
+    /// project interface (some class `Implements` it), the call resolves to the
+    /// mangled `Interface_Member` implementation — identical across every
+    /// implementing class, so runtime name dispatch stays polymorphic.
+    pub(crate) fn interface_dispatch_name(&self, recv_ty: &VarTypeRef, member: &str) -> String {
+        if let VarTypeRef::Object(name) = recv_ty
+            && self.g.ids.interfaces.contains(&fold_identifier(name))
+        {
+            return format!("{name}_{member}");
+        }
+        member.to_string()
     }
 
     /// Build a by-name member dispatch (`recv.name(args)`), receiver as `args[0]`.

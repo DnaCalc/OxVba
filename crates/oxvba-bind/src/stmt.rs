@@ -131,8 +131,11 @@ impl<'a> ProcLower<'a> {
                     return Ok(None);
                 };
                 let recv = self.member_receiver_bound(target)?;
+                // Through an interface-typed target, the setter is the mangled
+                // `Interface_Property` accessor on the implementing class.
+                let dispatch = self.interface_dispatch_name(&recv.ty, member);
                 let setter = |this: &Self, recv_value| {
-                    let call = this.late_member_call(member, kind, recv_value, vec![CoreArg::ByVal(val.value.clone())]);
+                    let call = this.late_member_call(&dispatch, kind, recv_value, vec![CoreArg::ByVal(val.value.clone())]);
                     Ok(Some(vec![CoreStmt::Eval(call)]))
                 };
                 match self.resolve_member(&recv.ty, member, Some(kind)) {
