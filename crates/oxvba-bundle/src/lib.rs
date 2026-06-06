@@ -118,23 +118,11 @@ pub enum DeclareParamType {
     Any,
 }
 
-/// How a `Declare` `ByRef`/pointer argument is written back after the call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExternalCallWritebackKind {
-    ByRefValue,
-    PointerByteArrayPayload,
-    PointerStringPayload,
-}
-
-/// One `ByRef`/pointer writeback for a `Declare` call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExternalCallWriteback {
-    pub arg_index: usize,
-    pub source_slot: usize,
-    pub kind: ExternalCallWritebackKind,
-}
-
 /// A `Declare Lib` external-call descriptor, referenced by `NativeCallee::Declare`.
+///
+/// `param_by_ref`/`param_types` drive native marshaling; the per-call-site
+/// write-back *target* is the `CallArg::ByRef` slot at the call site (vm2's
+/// `declare_call`), so the descriptor carries no write-back slot of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternalCallDescriptor {
     pub descriptor_id: u32,
@@ -150,7 +138,6 @@ pub struct ExternalCallDescriptor {
     pub param_types: Vec<DeclareParamType>,
     pub param_by_ref: Vec<bool>,
     pub return_type: Option<DeclareParamType>,
-    pub writebacks: Vec<ExternalCallWriteback>,
 }
 
 // ── Procedure / source / hosting metadata ────────────────────────────────────

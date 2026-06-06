@@ -7,23 +7,23 @@
 //! procedure's slot `n` and the caller's slot `n` are distinct storage.
 
 use oxvba_bundle::{
-    Bundle, ClassDescriptor, ClassMethod, ComMemberSelector, EventRoute, NativeCallee,
-    NativeImplId, Op, ProcArg, ProcedureDescriptor, ProcedureKind, ProjectMemberKind,
-    StringCompareMode, isa::CallArg,
+    Bundle, ClassDescriptor, ClassMethod, ComMemberSelector, DeclareParamType, EventRoute,
+    ExternalCallDescriptor, NativeCallee, NativeImplId, Op, ProcArg, ProcedureDescriptor,
+    ProcedureKind, ProjectMemberKind, StringCompareMode, isa::CallArg,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_hal::error::HalResult;
 use oxvba_hal::model::{HalDescriptor, HalProfileId};
 use oxvba_hal::traits::{
-    ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-    ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest,
-    TypeLibResolvedIdentity, UiInteractionHal,
+    ComHal, ConsoleHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
+    FileSystemHal, HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope,
+    TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
 };
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken,
 };
-use oxvba_runtime::Variant;
+use oxvba_runtime::{DynLinkSymbol, Variant};
 use oxvba_runtime::object_ref::ObjectRef;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -151,6 +151,105 @@ impl ComHal for MockEventHost {
     ) -> HalResult<Variant> {
         self.inner.invalidate_typelib_cache(scope, reference_name)
     }
+}
+
+/// A host whose dynlink echoes each argument incremented by 100 (a fake native
+/// "Bump"), to exercise per-call-site `Declare` ByRef write-back.
+struct MockDynlinkHost {
+    inner: NullHostServices,
+}
+impl MockDynlinkHost {
+    fn new() -> Self {
+        Self { inner: NullHostServices::new(HostPolicy::deterministic_runtime()) }
+    }
+}
+impl HostServices for MockDynlinkHost {
+    fn profile(&self) -> HalProfileId {
+        self.inner.profile()
+    }
+    fn descriptor(&self) -> HalDescriptor {
+        self.inner.descriptor()
+    }
+    fn policy(&self) -> &HostPolicy {
+        self.inner.policy()
+    }
+    fn console(&self) -> &dyn ConsoleHal {
+        self.inner.console()
+    }
+    fn ui(&self) -> &dyn UiInteractionHal {
+        self.inner.ui()
+    }
+    fn events(&self) -> &dyn EventPumpHal {
+        self.inner.events()
+    }
+    fn fs(&self) -> &dyn FileSystemHal {
+        self.inner.fs()
+    }
+    fn process(&self) -> &dyn ProcessEnvHal {
+        self.inner.process()
+    }
+    fn com(&self) -> &dyn ComHal {
+        self.inner.com()
+    }
+    fn time_locale(&self) -> &dyn TimeLocaleHal {
+        self.inner.time_locale()
+    }
+    fn dynlink(&self) -> &dyn DynamicLinkHal {
+        self
+    }
+    fn diag(&self) -> &dyn DiagnosticsHal {
+        self.inner.diag()
+    }
+}
+impl DynamicLinkHal for MockDynlinkHost {
+    fn invoke_descriptor_variants(
+        &self,
+        _descriptor: &DynLinkDescriptorView<'_>,
+        args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        let wb = args
+            .iter()
+            .map(|a| a.as_i32().map(|n| Variant::from_i32(n + 100)).unwrap_or_else(|| a.clone()))
+            .collect();
+        Ok((Variant::empty(), wb))
+    }
+}
+
+#[test]
+fn declare_byref_writes_back_to_call_site_slot() {
+    // `Declare Sub Bump Lib "t" (ByRef n As Long)` adds 100; r=5; `Bump r` → r=105.
+    // Proves the write-back targets the *call-site* CallArg::ByRef slot.
+    let mut b = bundle(
+        vec![
+            Op::LoadI32 { slot: 0, value: 5 },
+            Op::CallNative {
+                dst: None,
+                callee: NativeCallee::Declare { descriptor_id: 0 },
+                args: vec![CallArg::ByRef(0)],
+            },
+            Op::Halt,
+        ],
+        1, // entry locals: r (slot 0)
+        vec![proc("Main", 0, 0, 1, None)],
+    );
+    b.external_calls = vec![ExternalCallDescriptor {
+        descriptor_id: 0,
+        declared_name: "Bump".into(),
+        library: "t".into(),
+        alias: "Bump".into(),
+        ordinal_alias: false,
+        symbol: DynLinkSymbol::new(0),
+        marshal_lane: "m0-deterministic".into(),
+        calling_convention: "platform-default".into(),
+        selection_policy: "case-insensitive-canonical".into(),
+        param_count: 1,
+        param_types: vec![DeclareParamType::Long],
+        param_by_ref: vec![true],
+        return_type: None,
+    }];
+    let host = MockDynlinkHost::new();
+    let vm = run(&b, &host).unwrap();
+    assert_eq!(vm.slot(0).unwrap().as_i32(), Some(105), "Declare ByRef wrote back to the caller slot");
 }
 
 fn host() -> NullHostServices {

@@ -31,8 +31,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use oxvba_bundle::{
-    Bundle, CallArg, ComMemberSelector, ExternalCallWriteback, ExternalCallWritebackKind,
-    NativeCallee, Op, ProcArg, ProjectMemberKind,
+    Bundle, CallArg, ComMemberSelector, NativeCallee, Op, ProcArg, ProjectMemberKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -884,42 +883,18 @@ impl<'h> Vm<'h> {
             .dynlink()
             .invoke_descriptor_variants(&view, &arg_variants)
             .map_err(Fault::from_hal)?;
-        self.apply_writebacks(&descriptor.writebacks, &arg_variants, &wb_values)?;
-        Ok(ret)
-    }
-
-    fn apply_writebacks(
-        &mut self,
-        writebacks: &[ExternalCallWriteback],
-        arg_values: &[Variant],
-        wb_values: &[Variant],
-    ) -> Result<(), Fault> {
-        for wb in writebacks {
-            let value = match wb.kind {
-                ExternalCallWritebackKind::ByRefValue => match wb_values.get(wb.arg_index) {
-                    Some(v) => v.clone(),
-                    None => continue,
-                },
-                ExternalCallWritebackKind::PointerByteArrayPayload => {
-                    let ptr = arg_values
-                        .get(wb.arg_index)
-                        .and_then(Variant::as_i64)
-                        .ok_or_else(|| Fault::new(5, "pointer writeback arg is not a LongPtr"))?;
-                    pointer_helpers::read_back_byte_array_payload_variant(ptr)
-                        .map_err(Fault::from_string)?
+        // Copy each ByRef argument's marshaled-back value to its caller slot. The
+        // dynlink host returns `wb_values` aligned to `args`; only `CallArg::ByRef`
+        // args write back (a force-ByVal `(x)`/non-l-value lowered to `Slot`, so it
+        // is correctly left unchanged).
+        for (i, arg) in args.iter().enumerate() {
+            if let CallArg::ByRef(slot) = arg {
+                if let Some(value) = wb_values.get(i) {
+                    self.set(*slot, value.clone())?;
                 }
-                ExternalCallWritebackKind::PointerStringPayload => {
-                    let ptr = arg_values
-                        .get(wb.arg_index)
-                        .and_then(Variant::as_i64)
-                        .ok_or_else(|| Fault::new(5, "pointer writeback arg is not a LongPtr"))?;
-                    pointer_helpers::read_back_string_payload_variant(ptr)
-                        .map_err(Fault::from_string)?
-                }
-            };
-            self.set(wb.source_slot, value)?;
+            }
         }
-        Ok(())
+        Ok(ret)
     }
 
     // ── Arrays ───────────────────────────────────────────────────────────────

@@ -141,8 +141,8 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
 /// Build the `Declare Lib` external-call descriptors from the scanned `Declare`
 /// symbols. The source-declared fields come straight from the symbol model; the
 /// runtime-resolution fields (`symbol`/`marshal_lane`/`selection_policy`) get the
-/// loader's canonical defaults, and `writebacks` are bound at the call site by the
-/// runtime — emit-correct now, runtime marshalling deferred.
+/// loader's canonical defaults. ByRef write-back targets are the call-site
+/// `CallArg::ByRef` slots, so the descriptor carries no write-back list.
 fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescriptor> {
     let mut out: Vec<ExternalCallDescriptor> = Vec::new();
     for sym in env.symbols.symbols() {
@@ -165,7 +165,6 @@ fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescript
             param_types: d.param_types.clone(),
             param_by_ref: d.param_by_ref.clone(),
             return_type: d.return_type,
-            writebacks: Vec::new(),
         });
     }
     out.sort_by_key(|d| d.descriptor_id);
