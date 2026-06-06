@@ -55,11 +55,13 @@ impl<'a> ProcLower<'a> {
             ReDimStmt => self.bind_redim(node),
             EraseStmt => self.bind_erase(node),
             OpenStmt => self.bind_open(node),
-            CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | PutStmt | SeekStmt
-            | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
+            CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | SeekStmt | WidthStmt
+            | NameStmt | LockStmt => self.bind_file_io(node),
             // `Get #n, [rec], var` reads into the target, so it lowers as an
             // assignment of the read value, not a discarded call.
             GetStmt => self.bind_get(node),
+            // `Put #n, [rec], value` flags a fixed-length-string source (no prefix).
+            PutStmt => self.bind_put(node),
             RaiseEventStmt => self.bind_raise_event(node),
             // Declarations contribute no executable statement (frame already built).
             DimStmt | ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt
@@ -623,10 +625,30 @@ impl<'a> ProcLower<'a> {
         let (place, target_ty) = self.bind_place(*target_node)?;
         // The read native needs the target's VBA type code to fix the record size.
         let type_code = CoreValue::Const(CoreConst::I32(record_type_code(&target_ty)));
+        // String-length spec: a fixed-length string passes its length N (read N
+        // bytes, no prefix); a variable string passes -(Len(target)) so a Binary
+        // read knows the byte count (Random uses the on-disk 2-byte prefix).
+        let str_len = match &target_ty {
+            oxvba_symbol::signature::VarTypeRef::FixedString(n) => {
+                CoreValue::Const(CoreConst::I32(*n as i32))
+            }
+            oxvba_symbol::signature::VarTypeRef::Builtin(
+                oxvba_symbol::signature::BuiltinType::String,
+            ) => {
+                let target_value = self.bind_expr(*target_node)?.value;
+                let len = CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::Len),
+                    args: vec![CoreArg::ByVal(target_value)],
+                };
+                CoreValue::Unary { op: oxvba_bundle::coreir::CoreUnOp::Negate, expr: Box::new(len) }
+            }
+            _ => CoreValue::Const(CoreConst::I32(0)),
+        };
         let args = vec![
             CoreArg::ByVal(handle),
             CoreArg::ByVal(rec),
             CoreArg::ByVal(type_code),
+            CoreArg::ByVal(str_len),
         ];
         let read = CoreValue::Call { callee: CoreCallee::Native(NativeImplId::FileGetInto), args };
         let value = types::coerce(read, &oxvba_symbol::signature::VarTypeRef::Variant, &target_ty);
@@ -638,6 +660,36 @@ impl<'a> ProcLower<'a> {
             target_name: target_node.text().trim().to_string(),
             target_type_name: types::type_name(&target_ty),
         }])
+    }
+
+    /// `Put #n, [rec], value` writes a record. A fixed-length-string source is
+    /// flagged so the record is written raw (no length prefix).
+    fn bind_put(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
+            Some(ch) => self.bind_expr(ch)?.value,
+            None => return Err(BindError::Malformed("Put without a file number".into())),
+        };
+        // Expression children are `[record-number?, value]`; the last is the value.
+        let exprs = node.expr_children();
+        let (value_node, rec_nodes) = exprs
+            .split_last()
+            .ok_or_else(|| BindError::Malformed("Put without a value".into()))?;
+        let rec = match rec_nodes.first() {
+            Some(e) => self.bind_expr(*e)?.value,
+            None => CoreValue::Const(CoreConst::Empty),
+        };
+        let value = self.bind_expr(*value_node)?;
+        let fixed = i32::from(matches!(value.ty, oxvba_symbol::signature::VarTypeRef::FixedString(_)));
+        let args = vec![
+            CoreArg::ByVal(handle),
+            CoreArg::ByVal(rec),
+            CoreArg::ByVal(value.value),
+            CoreArg::ByVal(CoreValue::Const(CoreConst::I32(fixed))),
+        ];
+        Ok(vec![CoreStmt::Eval(CoreValue::Call {
+            callee: CoreCallee::Native(NativeImplId::FilePut),
+            args,
+        })])
     }
 
     // ── Small helpers ───────────────────────────────────────
@@ -658,7 +710,7 @@ fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
         VarTypeRef::Builtin(B::Double) => Vt::Double,
         VarTypeRef::Builtin(B::Currency) => Vt::Currency,
         VarTypeRef::Builtin(B::Date) => Vt::Date,
-        VarTypeRef::Builtin(B::String) => Vt::String,
+        VarTypeRef::Builtin(B::String) | VarTypeRef::FixedString(_) => Vt::String,
         _ => Vt::Empty,
     };
     vt as i32

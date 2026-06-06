@@ -280,6 +280,45 @@ fn random_file_put_get_round_trips_through_vm() {
     assert_eq!(vm.slot(bundle.global_count).and_then(|v| v.as_i32()), Some(222));
 }
 
+/// Run a single-module source on the standard (in-memory) host; read `Main`'s
+/// first local as a string.
+fn run_main_local0_string_std(src: &str) -> Option<String> {
+    let program = bind(src);
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = oxvba_hal::adapters::builder::HostBuilder::new()
+        .profile(oxvba_hal::HalProfileId::Windows)
+        .policy(oxvba_hal::HostPolicy {
+            allow_filesystem_mutation: true,
+            ..oxvba_hal::HostPolicy::default()
+        })
+        .build();
+    let vm = oxvba_vm2::run(&bundle, host.as_ref()).expect("run");
+    vm.slot(bundle.global_count)?.as_bstr().map(|b| b.as_str())
+}
+
+#[test]
+fn fixed_length_string_random_record_round_trips() {
+    // String * 4 is written raw (no prefix, padded to 4) and read back as 4 chars.
+    let src = "Sub Main()\n\
+        Dim r As String * 4\n    Dim v As String * 4\n    v = \"ab\"\n\
+        Open \"f.dat\" For Random As #1 Len = 4\n\
+        Put #1, 1, v\n    Get #1, 1, r\n    Close #1\n\
+    End Sub\n";
+    assert_eq!(run_main_local0_string_std(src), Some("ab  ".to_string()));
+}
+
+#[test]
+fn binary_variable_string_reads_current_length() {
+    // Binary `Get` reads `Len(r)` bytes; r is pre-sized to 5 spaces, so it reads
+    // the 5 bytes previously written.
+    let src = "Sub Main()\n\
+        Dim r As String\n\
+        Open \"f.dat\" For Binary As #1\n\
+        Put #1, 1, \"hello\"\n    r = \"     \"\n    Get #1, 1, r\n    Close #1\n\
+    End Sub\n";
+    assert_eq!(run_main_local0_string_std(src), Some("hello".to_string()));
+}
+
 #[test]
 fn addressof_binds_to_proc_ref() {
     let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";

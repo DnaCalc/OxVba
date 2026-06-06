@@ -1956,6 +1956,7 @@ mod tests {
             handle.clone(),
             Variant::from_i32(1),
             Variant::from_i32(0x1234_5678),
+            Variant::from_i32(0),
         )
         .expect("put");
         let long_code = Variant::from_i32(oxvba_runtime::VarType::Long as i32);
@@ -1964,6 +1965,7 @@ mod tests {
             handle.clone(),
             Variant::from_i32(1),
             long_code,
+            Variant::from_i32(0),
         )
         .expect("get");
         assert_eq!(got.as_i32(), Some(0x1234_5678));
@@ -1990,6 +1992,7 @@ mod tests {
             handle.clone(),
             Variant::from_i32(1),
             Variant::from_i32(0x1111_1111),
+            Variant::from_i32(0),
         )
         .expect("put rec 1");
         FileSystemHal::put_record_variant(
@@ -1997,6 +2000,7 @@ mod tests {
             handle.clone(),
             Variant::from_i32(2),
             Variant::from_i32(0x2222_2222),
+            Variant::from_i32(0),
         )
         .expect("put rec 2");
         let long_code = Variant::from_i32(oxvba_runtime::VarType::Long as i32);
@@ -2005,12 +2009,19 @@ mod tests {
             handle.clone(),
             Variant::from_i32(2),
             long_code.clone(),
+            Variant::from_i32(0),
         )
         .expect("get rec 2");
         assert_eq!(r2.as_i32(), Some(0x2222_2222));
         let r1 =
-            FileSystemHal::get_record_variant(&host, handle, Variant::from_i32(1), long_code)
-                .expect("get rec 1");
+            FileSystemHal::get_record_variant(
+                &host,
+                handle,
+                Variant::from_i32(1),
+                long_code,
+                Variant::from_i32(0),
+            )
+            .expect("get rec 1");
         assert_eq!(r1.as_i32(), Some(0x1111_1111));
     }
 

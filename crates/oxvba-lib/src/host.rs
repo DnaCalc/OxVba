@@ -88,17 +88,22 @@ pub fn file_loc(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant>
     Ok(host.fs().loc_variant(req(args, 0)?)?)
 }
 pub fn file_put(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    // args: handle, [record-number], value. With a record number it is args[1];
-    // otherwise the value is args[1] and the record number is empty (append).
-    if args.len() >= 3 {
-        Ok(host.fs().put_record_variant(req(args, 0)?, req(args, 1)?, req(args, 2)?)?)
-    } else {
-        Ok(host.fs().put_record_variant(req(args, 0)?, vunit(), req(args, 1)?)?)
-    }
+    // args: handle, record-number (or empty), value, fixed-length-string flag.
+    Ok(host.fs().put_record_variant(
+        req(args, 0)?,
+        arg_or_empty(args, 1),
+        req(args, 2)?,
+        arg_or_empty(args, 3),
+    )?)
 }
 pub fn file_get_into(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    // args: handle, record-number (or empty), target VBA type code.
-    Ok(host.fs().get_record_variant(req(args, 0)?, arg_or_empty(args, 1), req(args, 2)?)?)
+    // args: handle, record-number (or empty), target VBA type code, string-length spec.
+    Ok(host.fs().get_record_variant(
+        req(args, 0)?,
+        arg_or_empty(args, 1),
+        req(args, 2)?,
+        arg_or_empty(args, 3),
+    )?)
 }
 pub fn file_width(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().width_variant(req(args, 0)?, arg_or_empty(args, 1))?)

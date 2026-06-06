@@ -214,23 +214,29 @@ pub trait FileSystemHal: Send + Sync {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "loc_variant")
     }
     /// Random/binary write of one record (VBA `Put #n, [rec], value`). An empty
-    /// `position` writes at the current position.
+    /// `position` writes at the current position; `fixed` (nonzero) marks a
+    /// fixed-length-string source (written raw, with no length prefix).
     fn put_record_variant(
         &self,
         _handle: Variant,
         _position: Variant,
         _value: Variant,
+        _fixed: Variant,
     ) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "put_record_variant")
     }
     /// Random/binary read of one record (VBA `Get #n, [rec], var`). An empty
     /// `position` reads at the current position; `vtype` is the target's VBA type
-    /// code (a `VarType` discriminant), which fixes the record size to read.
+    /// code (a `VarType` discriminant) fixing the record size; `str_len` carries
+    /// the string-length intent (> 0 = a fixed-length string of that many bytes;
+    /// <= 0 = a variable string whose current length is `-str_len`, used for a
+    /// Binary-mode read).
     fn get_record_variant(
         &self,
         _handle: Variant,
         _position: Variant,
         _vtype: Variant,
+        _str_len: Variant,
     ) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "get_record_variant")
     }
