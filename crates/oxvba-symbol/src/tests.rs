@@ -204,6 +204,15 @@ fn com_member_resolves_for_typed_receiver_with_both_dispid_and_name() {
 }
 
 #[test]
+fn coclass_resolves_to_activation_prog_id() {
+    // `New <coclass>` consults this hook to obtain the ProgID for activation.
+    let provider = ComTypeLibProvider::new(widget_blob());
+    assert_eq!(provider.resolve_coclass("Widget").as_deref(), Some("Widget.Thing"));
+    assert_eq!(provider.resolve_coclass("Widget.Thing").as_deref(), Some("Widget.Thing"));
+    assert_eq!(provider.resolve_coclass("Nope"), None);
+}
+
+#[test]
 fn com_member_does_not_resolve_for_untyped_receiver() {
     // An `Object`/`Variant` receiver has no typelib to consult — the binder emits
     // a late dispatch by name; the provider correctly declines.

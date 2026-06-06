@@ -58,6 +58,12 @@ pub trait Provider {
         let _ = recv;
         None
     }
+    /// If `name` is a creatable COM coclass this provider owns, return its
+    /// activation ProgID (so `New <coclass>` can lower to `CreateObject`).
+    fn resolve_coclass(&self, name: &str) -> Option<String> {
+        let _ = name;
+        None
+    }
 }
 
 /// Resolves a typelib reference to its metadata blob. The default impl uses the
@@ -121,6 +127,11 @@ impl ResolutionEnvironment {
             }
         }
         self.providers.iter().find_map(|provider| provider.resolve(name))
+    }
+
+    /// The activation ProgID for a creatable COM coclass name (for `New <coclass>`).
+    pub fn resolve_coclass(&self, name: &str) -> Option<String> {
+        self.providers.iter().find_map(|provider| provider.resolve_coclass(name))
     }
 
     /// Resolve `recv.name` (member access) against the providers.

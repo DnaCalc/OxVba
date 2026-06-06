@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use oxvba_bundle::coreir::{CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
+use oxvba_bundle::coreir::{CoreArg, CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::{LibraryConstValue, ScopeId, SymbolId};
 use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
@@ -234,7 +234,21 @@ impl<'a> ProcLower<'a> {
         if let Some(&class_id) = self.g.ids.class_of.get(&folded) {
             return Ok(value_bound(CoreValue::New(class_id), VarTypeRef::Object(name)));
         }
-        // COM coclass creation (CreateObject-style) is a separate path.
+        // A creatable COM coclass (from a referenced typelib) instantiates via the
+        // same activation path as `CreateObject("<ProgID>")`; the result is typed
+        // as the coclass so member access resolves against its typelib.
+        if let Some(prog_id) = self.g.env.resolve_coclass(&name) {
+            let args = vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))];
+            return Ok(value_bound(
+                CoreValue::Call {
+                    callee: oxvba_bundle::coreir::CoreCallee::Native(
+                        oxvba_bundle::native::NativeImplId::CreateObject,
+                    ),
+                    args,
+                },
+                VarTypeRef::Object(name),
+            ));
+        }
         Err(BindError::Unsupported(format!("New {name} (only project classes are creatable)")))
     }
 

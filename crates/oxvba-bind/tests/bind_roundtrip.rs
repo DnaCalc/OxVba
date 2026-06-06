@@ -9,7 +9,9 @@ use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreProgram, CoreStmt, CoreValue
 use oxvba_bundle::native::NativeImplId;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_hal::HostPolicy;
-use oxvba_symbol::manifest::{ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest};
+use oxvba_symbol::manifest::{
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference, SymbolProjectManifest,
+};
 use oxvba_symbol::provider::TypeLibResolver;
 
 struct NullTypeLibs;
@@ -551,6 +553,61 @@ fn implements_property_through_interface_var() {
         ]),
         Some(10.0)
     );
+}
+
+// ── New of a COM coclass (lowers to CreateObject activation) ─────────────────
+
+struct WidgetTypeLibs;
+impl TypeLibResolver for WidgetTypeLibs {
+    fn resolve(
+        &self,
+        _request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        Some(oxvba_com::TypeLibMetadataBlob {
+            identity: oxvba_com::TypeLibResolvedIdentity {
+                reference_name: "Widget".into(),
+                requested_coclass: None,
+                importlib: "widget".into(),
+                libid: None,
+                major_version: 1,
+                minor_version: 0,
+                lcid: None,
+                cache_key: "widget".into(),
+            },
+            activation_prog_id: Some("Widget.Thing".into()),
+            member_name_to_token: Vec::new(),
+            members: Vec::new(),
+            events: Vec::new(),
+        })
+    }
+}
+
+#[test]
+fn new_com_coclass_lowers_to_create_object() {
+    let main = "Sub Main()\n    Dim x As Widget\n    Set x = New Widget\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Widget".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: None,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &WidgetTypeLibs).expect("bind_program");
+    // `New Widget` resolves the coclass to its ProgID and lowers to CreateObject.
+    assert!(format!("{program:?}").contains("CreateObject"));
 }
 
 // ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────

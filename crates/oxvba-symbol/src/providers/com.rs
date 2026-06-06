@@ -91,6 +91,14 @@ impl Provider for ComTypeLibProvider {
             .find(|member| member.is_default_member)
             .map(com_member_binding)
     }
+
+    fn resolve_coclass(&self, name: &str) -> Option<String> {
+        if self.owns(name) {
+            self.activation_prog_id().map(str::to_string)
+        } else {
+            None
+        }
+    }
 }
 
 fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata) -> Binding {
