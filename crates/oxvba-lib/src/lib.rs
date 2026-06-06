@@ -260,6 +260,9 @@ pub fn invoke(
         IsObject => pure::is_vtype(args, |t| matches!(t, Vt::Object)),
         IsNull => pure::is_vtype(args, |t| matches!(t, Vt::Null)),
         IsEmpty => pure::is_vtype(args, |t| matches!(t, Vt::Empty)),
+        IIf => pure::iif(args),
+        Choose => pure::choose(args),
+        Switch => pure::switch(args),
 
         // ── Collection (SafeArray-backed; keyed access awaits the vm2 object model) ──
         CollectionAdd => pure::collection_add(args),

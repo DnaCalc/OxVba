@@ -78,6 +78,22 @@ fn date_literal_assigns_serial() {
 }
 
 #[test]
+fn iif_selects_branch() {
+    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = IIf(2 > 1, 10, 20)\n")), Some(10.0));
+    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = IIf(1 > 2, 10, 20)\n")), Some(20.0));
+}
+
+#[test]
+fn choose_is_one_based() {
+    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = Choose(2, 100, 200, 300)\n")), Some(200.0));
+}
+
+#[test]
+fn switch_returns_first_true() {
+    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = Switch(False, 1, True, 42)\n")), Some(42.0));
+}
+
+#[test]
 fn integer_division() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")), Some(3.0));
 }

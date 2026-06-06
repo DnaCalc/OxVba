@@ -141,6 +141,12 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         IsObject => e(IsObject, &["IsObject"], sig(1, 1), Ordinary),
         IsNull => e(IsNull, &["IsNull"], sig(1, 1), Ordinary),
         IsEmpty => e(IsEmpty, &["IsEmpty"], sig(1, 1), Ordinary),
+        // IIf/Choose/Switch resolve by name through the `vba_library` special-form
+        // route, not the intrinsic-name map — so they carry no names here; the
+        // entry exists only to give the lowering target a shape.
+        IIf => e(IIf, &[], sig(3, 3), SpecialForm),
+        Choose => e(Choose, &[], variadic(1), SpecialForm),
+        Switch => e(Switch, &[], variadic(2), SpecialForm),
 
         // ── Collection (members of the predeclared Collection object) ──
         CollectionAdd => e(CollectionAdd, &[], sig(1, 4), Ordinary),
@@ -200,7 +206,8 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         DateValue, TimeValue, DateAdd, DateDiff, Year, Month, Day, Weekday, MonthName, DateNow,
         TimeNow, Now, Timer, Hex, Oct, CStr, Str, Val, CDate, CVErr, Rnd, Randomize, Fv, Pv, Pmt,
         Npv, Irr, Mirr, Rate, NPer, IsArray, VarType, TypeName, IsNumeric, IsError, IsDate,
-        IsObject, IsNull, IsEmpty, CollectionAdd, CollectionItem, CollectionRemove, CollectionCount,
+        IsObject, IsNull, IsEmpty, IIf, Choose, Switch, CollectionAdd, CollectionItem,
+        CollectionRemove, CollectionCount,
         FreeFile, FileOpen, FileClose, FileKill, FileRead, FileWrite, FilePrint, ConsolePrint,
         FileInput, ConsoleInput, FileLineInput, ConsoleLineInput, FileEof, FileLof, FileSeek,
         FileLoc, MsgBox, InputBox, Beep, DoEvents, Shell, Environ, Dir, CreateObject,
@@ -226,7 +233,7 @@ mod tests {
     #[test]
     fn catalog_covers_every_native_impl_id() {
         // 111 variants in oxvba-bundle's NativeImplId today.
-        assert_eq!(ALL_INTRINSICS.len(), 111);
+        assert_eq!(ALL_INTRINSICS.len(), 114);
     }
 
     #[test]

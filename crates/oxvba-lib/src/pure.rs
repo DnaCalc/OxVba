@@ -893,6 +893,47 @@ pub fn is_date(args: &[Variant]) -> LibResult<Variant> {
     ))
 }
 
+/// VBA truthiness for the special forms: `Null`/`Empty` are false, otherwise a
+/// nonzero numeric coercion is true (`True` is -1, any nonzero is true).
+fn truthy(v: &Variant) -> LibResult<bool> {
+    match v.vtype() {
+        VarType::Null | VarType::Empty => Ok(false),
+        _ => Ok(as_f64(v)? != 0.0),
+    }
+}
+
+/// `IIf(cond, truepart, falsepart)` — EAGER: both parts are already evaluated
+/// by the caller; this just selects one.
+pub fn iif(args: &[Variant]) -> LibResult<Variant> {
+    if truthy(need(args, 0)?)? {
+        Ok(need(args, 1)?.clone())
+    } else {
+        Ok(need(args, 2)?.clone())
+    }
+}
+
+/// `Choose(index, v1, v2, …)` — 1-based selection; `Null` when out of range.
+pub fn choose(args: &[Variant]) -> LibResult<Variant> {
+    let idx = as_i32(need(args, 0)?)?;
+    if idx < 1 {
+        return Ok(Variant::null());
+    }
+    Ok(args.get(idx as usize).cloned().unwrap_or_else(Variant::null))
+}
+
+/// `Switch(c1, v1, c2, v2, …)` — returns the first `vi` whose `ci` is truthy,
+/// else `Null`.
+pub fn switch(args: &[Variant]) -> LibResult<Variant> {
+    let mut i = 0;
+    while i + 1 < args.len() {
+        if truthy(&args[i])? {
+            return Ok(args[i + 1].clone());
+        }
+        i += 2;
+    }
+    Ok(Variant::null())
+}
+
 // ── Collection (FIDELITY: SafeArray-backed, index-only; no keys) ─────────────────
 
 fn collection_elems(v: &Variant) -> Vec<Variant> {

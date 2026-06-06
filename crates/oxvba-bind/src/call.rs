@@ -4,6 +4,7 @@
 //! (the `Err` object for now; objects/COM arrive in a later phase).
 
 use oxvba_bundle::coreir::{CoreArg, CoreCallee, CorePlace, CoreValue, ErrField};
+use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl};
@@ -52,6 +53,22 @@ impl<'a> ProcLower<'a> {
                     None => Vec::new(),
                 };
                 Ok(value_bound(CoreValue::ArrayLiteral(items), VarTypeRef::Variant))
+            }
+            // `IIf`/`Choose`/`Switch` are eager VBA library functions (every
+            // argument is evaluated before the call) — lower them as native
+            // calls, not as lazy/short-circuit forms.
+            DispatchRoute::SpecialForm(sf @ (SpecialForm::IIf | SpecialForm::Choose | SpecialForm::Switch)) => {
+                let id = match sf {
+                    SpecialForm::IIf => NativeImplId::IIf,
+                    SpecialForm::Choose => NativeImplId::Choose,
+                    SpecialForm::Switch => NativeImplId::Switch,
+                    _ => unreachable!(),
+                };
+                let args = self.bind_args(arglist, None)?;
+                Ok(value_bound(
+                    CoreValue::Call { callee: CoreCallee::Native(id), args },
+                    VarTypeRef::Variant,
+                ))
             }
             DispatchRoute::ErrMember(_) => {
                 Err(BindError::Unsupported(format!("`{name}` Err member in value context")))

@@ -104,6 +104,9 @@ pub enum NativeImplId {
     IsObject,
     IsNull,
     IsEmpty,
+    IIf,    // `IIf(cond, t, f)` — eager (both arms evaluated)
+    Choose, // `Choose(idx, v1, …)` — 1-based, eager
+    Switch, // `Switch(c1, v1, c2, v2, …)` — eager
 
     // ── Collection ───────────────────────────────────────────
     CollectionAdd,
@@ -182,7 +185,7 @@ impl NativeImplId {
             Rnd | Randomize => M::Random,
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
-            | IsEmpty => M::Information,
+            | IsEmpty | IIf | Choose | Switch => M::Information,
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
             FreeFile | FileOpen | FileClose | FileKill | FileRead | FileWrite | FilePrint
             | ConsolePrint | FileInput | ConsoleInput | FileLineInput | ConsoleLineInput
