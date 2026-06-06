@@ -68,6 +68,30 @@ pub enum TypeLibParamType {
     ByRefLongPtr,
 }
 
+impl TypeLibParamType {
+    /// True for the `ByRef*` variants — the parameter is passed by reference
+    /// (`[out]`/`[in,out]` in IDL), so the caller's argument is written back.
+    pub fn is_by_ref(&self) -> bool {
+        matches!(
+            self,
+            TypeLibParamType::ByRefVariant
+                | TypeLibParamType::ByRefLong
+                | TypeLibParamType::ByRefInteger
+                | TypeLibParamType::ByRefString
+                | TypeLibParamType::ByRefDouble
+                | TypeLibParamType::ByRefSingle
+                | TypeLibParamType::ByRefCurrency
+                | TypeLibParamType::ByRefDate
+                | TypeLibParamType::ByRefDecimal
+                | TypeLibParamType::ByRefObject
+                | TypeLibParamType::ByRefByte
+                | TypeLibParamType::ByRefBoolean
+                | TypeLibParamType::ByRefLongLong
+                | TypeLibParamType::ByRefLongPtr
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibMemberMetadata {
     pub name: String,

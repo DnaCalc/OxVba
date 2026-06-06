@@ -104,6 +104,7 @@ fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata) -> Binding {
             invoke_kind: member.invoke_kind,
             member_kind: member_kind_from_invoke(member.invoke_kind),
             is_default_member: member.is_default_member,
+            param_by_ref: member.parameter_types.iter().map(|t| t.is_by_ref()).collect(),
         },
     }
 }

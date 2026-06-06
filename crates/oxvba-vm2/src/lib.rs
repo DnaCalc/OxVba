@@ -796,10 +796,23 @@ impl<'h> Vm<'h> {
             args: call_args,
             call_kind_hint: kind_hint.map(member_kind_to_dynamic),
         };
-        self.host
+        let (ret, writebacks) = self
+            .host
             .com()
-            .dispatch_invoke_dynamic_variant(&request)
-            .map_err(Fault::from_hal)
+            .dispatch_invoke_dynamic_variant_with_writebacks(&request)
+            .map_err(Fault::from_hal)?;
+        // Apply COM `[out]`/`[in,out]` write-backs to the ByRef call-site slots.
+        // `args[0]` is the receiver, so method arg `j` corresponds to `args[j + 1]`;
+        // only a `CallArg::ByRef` arg (the binder marks these from the typelib's
+        // param directions) is written back.
+        for (j, wb) in writebacks.into_iter().enumerate() {
+            if let Some(value) = wb {
+                if let Some(CallArg::ByRef(slot)) = args.get(j + 1) {
+                    self.set(*slot, value)?;
+                }
+            }
+        }
+        Ok(ret)
     }
 
     /// Late-bound dispatch on a project instance: resolve the class member by

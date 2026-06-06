@@ -51,6 +51,9 @@ pub enum DispatchRoute {
         invoke_kind: TypeLibMemberInvokeKind,
         member_kind: ProjectMemberKind,
         is_default_member: bool,
+        /// Per-parameter by-ref (`[out]`/`[in,out]`) directions from the typelib;
+        /// the binder emits `CoreArg::ByRef` for these so writes propagate back.
+        param_by_ref: Vec<bool>,
     },
     /// A COM source-interface event (for `WithEvents` / `RaiseEvent` wiring).
     ComEvent {

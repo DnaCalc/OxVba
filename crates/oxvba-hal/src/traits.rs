@@ -260,6 +260,17 @@ pub trait ComHal: Send + Sync {
             "dispatch_invoke_dynamic_variant",
         )
     }
+    /// Dynamic dispatch that also returns per-argument write-back values for
+    /// `[out]`/`[in,out]` COM parameters — `Some(value)` for an argument the
+    /// callee modified, aligned to `request.args`. The default returns no
+    /// write-backs (value-only); a host with COM out-param support overrides this.
+    /// The caller (vm2) applies a write-back only to a `ByRef` call-site slot.
+    fn dispatch_invoke_dynamic_variant_with_writebacks(
+        &self,
+        request: &DynamicCallRequest,
+    ) -> HalResult<(Variant, Vec<Option<Variant>>)> {
+        Ok((self.dispatch_invoke_dynamic_variant(request)?, Vec::new()))
+    }
     fn subscribe_event(
         &self,
         object: ObjectRef,
