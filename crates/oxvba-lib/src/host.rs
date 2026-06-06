@@ -96,7 +96,8 @@ pub fn file_put(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant>
     }
 }
 pub fn file_get_into(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().get_record_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+    // args: handle, record-number (or empty), target VBA type code.
+    Ok(host.fs().get_record_variant(req(args, 0)?, arg_or_empty(args, 1), req(args, 2)?)?)
 }
 pub fn file_width(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().width_variant(req(args, 0)?, arg_or_empty(args, 1))?)

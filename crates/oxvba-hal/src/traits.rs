@@ -213,8 +213,14 @@ pub trait FileSystemHal: Send + Sync {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "put_record_variant")
     }
     /// Random/binary read of one record (VBA `Get #n, [rec], var`). An empty
-    /// `position` reads at the current position.
-    fn get_record_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
+    /// `position` reads at the current position; `vtype` is the target's VBA type
+    /// code (a `VarType` discriminant), which fixes the record size to read.
+    fn get_record_variant(
+        &self,
+        _handle: Variant,
+        _position: Variant,
+        _vtype: Variant,
+    ) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "get_record_variant")
     }
     /// Set the output line width for a handle (VBA `Width #n, width`).

@@ -1940,6 +1940,76 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_put_get_record_round_trips() {
+        use crate::traits::FileSystemHal;
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy { allow_filesystem_mutation: true, ..HostPolicy::default() },
+        );
+        // Open a Random-mode file (mode 4) on an in-memory handle.
+        let handle =
+            FileSystemHal::open_variant(&host, Variant::from_i32(901), Variant::from_i32(4))
+                .expect("open");
+        // Put a Long at record 1, then Get it back with the Long type code.
+        FileSystemHal::put_record_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(1),
+            Variant::from_i32(0x1234_5678),
+        )
+        .expect("put");
+        let long_code = Variant::from_i32(oxvba_runtime::VarType::Long as i32);
+        let got = FileSystemHal::get_record_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(1),
+            long_code,
+        )
+        .expect("get");
+        assert_eq!(got.as_i32(), Some(0x1234_5678));
+    }
+
+    #[test]
+    fn filesystem_lock_overlap_is_rejected() {
+        use crate::traits::FileSystemHal;
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy { allow_filesystem_mutation: true, ..HostPolicy::default() },
+        );
+        let handle =
+            FileSystemHal::open_variant(&host, Variant::from_i32(902), Variant::from_i32(4))
+                .expect("open");
+        // Lock records 1..5, then Unlock; an overlapping re-lock between is rejected.
+        FileSystemHal::lock_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(1),
+            Variant::from_i32(5),
+        )
+        .expect("lock 1..5");
+        assert!(
+            FileSystemHal::lock_variant(
+                &host,
+                handle.clone(),
+                Variant::from_i32(3),
+                Variant::from_i32(7),
+            )
+            .is_err(),
+            "overlapping lock should be rejected"
+        );
+        FileSystemHal::unlock_variant(
+            &host,
+            handle.clone(),
+            Variant::from_i32(1),
+            Variant::from_i32(5),
+        )
+        .expect("unlock");
+        // After unlock the range is free again.
+        FileSystemHal::lock_variant(&host, handle, Variant::from_i32(3), Variant::from_i32(7))
+            .expect("re-lock after unlock");
+    }
+
+    #[test]
     fn filesystem_text_payload_variant_companions_are_direct() {
         let host = StandardHostServices::new(
             HalProfileId::Windows,

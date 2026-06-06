@@ -549,22 +549,28 @@ impl<'a> ProcLower<'a> {
     /// `Get #n, [rec], var` reads a record into `var`, so it lowers as
     /// `var = FileGetInto(handle, [rec])` (the read value coerced to the target).
     fn bind_get(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        let mut args = Vec::new();
-        if let Some(fnum) = node.file_number()
-            && let Some(ch) = fnum.first_expr_child()
-        {
-            args.push(CoreArg::ByVal(self.bind_expr(ch)?.value));
-        }
+        let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
+            Some(ch) => self.bind_expr(ch)?.value,
+            None => return Err(BindError::Malformed("Get without a file number".into())),
+        };
         // The expression children are `[record-number?, target]`; the last is the
         // target l-value and any preceding one is the record number.
         let exprs = node.expr_children();
         let (target_node, rec_nodes) = exprs
             .split_last()
             .ok_or_else(|| BindError::Malformed("Get without a target".into()))?;
-        for e in rec_nodes {
-            args.push(CoreArg::ByVal(self.bind_expr(*e)?.value));
-        }
+        let rec = match rec_nodes.first() {
+            Some(e) => self.bind_expr(*e)?.value,
+            None => CoreValue::Const(CoreConst::Empty),
+        };
         let (place, target_ty) = self.bind_place(*target_node)?;
+        // The read native needs the target's VBA type code to fix the record size.
+        let type_code = CoreValue::Const(CoreConst::I32(record_type_code(&target_ty)));
+        let args = vec![
+            CoreArg::ByVal(handle),
+            CoreArg::ByVal(rec),
+            CoreArg::ByVal(type_code),
+        ];
         let read = CoreValue::Call { callee: CoreCallee::Native(NativeImplId::FileGetInto), args };
         let value = types::coerce(read, &oxvba_symbol::signature::VarTypeRef::Variant, &target_ty);
         Ok(vec![CoreStmt::Assign {
@@ -578,6 +584,30 @@ impl<'a> ProcLower<'a> {
     }
 
     // ── Small helpers ───────────────────────────────────────
+}
+
+/// The VBA `VarType` discriminant for a target type, so `Get` knows the fixed
+/// record size to read. Unknown/untyped targets fall back to `Variant`.
+fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
+    use oxvba_runtime::VarType as Vt;
+    use oxvba_symbol::signature::{BuiltinType as B, VarTypeRef};
+    let vt = match ty {
+        VarTypeRef::Builtin(B::Byte) => Vt::Byte,
+        VarTypeRef::Builtin(B::Integer) => Vt::Integer,
+        VarTypeRef::Builtin(B::Boolean) => Vt::Boolean,
+        VarTypeRef::Builtin(B::Long) => Vt::Long,
+        VarTypeRef::Builtin(B::LongLong) | VarTypeRef::Builtin(B::LongPtr) => Vt::LongLong,
+        VarTypeRef::Builtin(B::Single) => Vt::Single,
+        VarTypeRef::Builtin(B::Double) => Vt::Double,
+        VarTypeRef::Builtin(B::Currency) => Vt::Currency,
+        VarTypeRef::Builtin(B::Date) => Vt::Date,
+        VarTypeRef::Builtin(B::String) => Vt::String,
+        _ => Vt::Empty,
+    };
+    vt as i32
+}
+
+impl<'a> ProcLower<'a> {
 
     fn bind_required(
         &mut self,

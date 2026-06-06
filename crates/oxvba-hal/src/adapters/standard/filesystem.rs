@@ -17,6 +17,68 @@ pub(super) struct FileSystemState {
     pub(super) handles: BTreeMap<i32, FileHandleState>,
 }
 
+/// Fixed on-disk byte size for a Random/Binary record of `vtype` (None = variable
+/// length, i.e. `String`, or unsupported).
+fn record_size(vtype: VarType) -> Option<usize> {
+    Some(match vtype {
+        VarType::Byte => 1,
+        VarType::Integer | VarType::Boolean => 2,
+        VarType::Long | VarType::Single => 4,
+        VarType::Double | VarType::Currency | VarType::Date | VarType::LongLong => 8,
+        _ => return None,
+    })
+}
+
+fn arr<const N: usize>(b: &[u8]) -> [u8; N] {
+    let mut out = [0u8; N];
+    let n = b.len().min(N);
+    out[..n].copy_from_slice(&b[..n]);
+    out
+}
+
+/// Serialize a value to its VBA on-disk byte representation (little-endian).
+/// `String` uses a 2-byte length prefix + bytes (FIDELITY: UTF-8, not ANSI/BSTR).
+fn serialize_record(value: &Variant) -> Vec<u8> {
+    match value.vtype() {
+        VarType::Byte => vec![value.as_u8().unwrap_or(0)],
+        VarType::Integer => value.as_i16().unwrap_or(0).to_le_bytes().to_vec(),
+        VarType::Boolean => {
+            (if value.as_bool().unwrap_or(false) { -1i16 } else { 0 }).to_le_bytes().to_vec()
+        }
+        VarType::Long => value.as_i32().unwrap_or(0).to_le_bytes().to_vec(),
+        VarType::Single => value.as_f32().unwrap_or(0.0).to_le_bytes().to_vec(),
+        VarType::Double => value.as_f64().unwrap_or(0.0).to_le_bytes().to_vec(),
+        VarType::Currency => value.as_currency_scaled_i64().unwrap_or(0).to_le_bytes().to_vec(),
+        VarType::Date => value.as_date_f64().unwrap_or(0.0).to_le_bytes().to_vec(),
+        VarType::LongLong => value.as_i64().unwrap_or(0).to_le_bytes().to_vec(),
+        VarType::String => {
+            let s = value.as_bstr().map(|b| b.as_str().to_string()).unwrap_or_default();
+            let bytes = s.into_bytes();
+            let len = bytes.len().min(u16::MAX as usize);
+            let mut out = (len as u16).to_le_bytes().to_vec();
+            out.extend_from_slice(&bytes[..len]);
+            out
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Decode a fixed-size record of `vtype` from `bytes`.
+fn deserialize_record(vtype: VarType, bytes: &[u8]) -> Variant {
+    match vtype {
+        VarType::Byte => Variant::from_u8(bytes.first().copied().unwrap_or(0)),
+        VarType::Integer => Variant::from_i16(i16::from_le_bytes(arr(bytes))),
+        VarType::Boolean => Variant::from_bool(i16::from_le_bytes(arr(bytes)) != 0),
+        VarType::Long => Variant::from_i32(i32::from_le_bytes(arr(bytes))),
+        VarType::Single => Variant::from_f32(f32::from_le_bytes(arr(bytes))),
+        VarType::Double => Variant::from_f64(f64::from_le_bytes(arr(bytes))),
+        VarType::Currency => Variant::from_currency_scaled_i64(i64::from_le_bytes(arr(bytes))),
+        VarType::Date => Variant::from_date_f64(f64::from_le_bytes(arr(bytes))),
+        VarType::LongLong => Variant::from_i64(i64::from_le_bytes(arr(bytes))),
+        _ => Variant::empty(),
+    }
+}
+
 impl FileSystemState {
     pub(super) fn first_free_in(&self, start: i32, end: i32) -> Option<i32> {
         let in_use: BTreeSet<i32> = self.handles.keys().copied().collect();
@@ -35,14 +97,11 @@ pub(super) struct FileHandleState {
     pub(super) len: i32,
     pub(super) host_path: Option<PathBuf>,
     pub(super) data: Vec<u8>,
-    /// Random-mode record store, keyed by record number, holding each record's
-    /// 16-byte VARIANT wire form. FIDELITY: exact for inline-value records
-    /// (numeric/Date/Bool); string/object records keep only the wire header (the
-    /// heap payload is not persisted) and byte-accurate disk layout is the
-    /// differential-harness lane's concern.
-    pub(super) records: BTreeMap<i32, [u8; 16]>,
     /// Output line width set by `Width #n` (informational; affects `Print`).
     pub(super) width: i32,
+    /// Locked 1-based byte/record ranges (inclusive) for `Lock`/`Unlock`. A `Lock`
+    /// overlapping an already-locked range raises VBA error 70.
+    pub(super) locks: Vec<(i32, i32)>,
 }
 
 pub(super) fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -178,6 +237,34 @@ fn remove_file_with_retry(host_path: &PathBuf) -> std::io::Result<()> {
         }
     }
     Err(last_err.unwrap_or_else(|| std::io::Error::other("remove_file retry loop exhausted")))
+}
+
+impl StandardHostServices {
+    /// The 1-based inclusive lock range for `Lock`/`Unlock`: no args = whole file,
+    /// one arg = a single record, `start To end` = the explicit range.
+    fn lock_range(
+        &self,
+        start: &Variant,
+        end: &Variant,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<(i32, i32)> {
+        let start = if matches!(start.vtype(), VarType::Empty | VarType::Null) {
+            None
+        } else {
+            Some(self.variant_to_i32(start, capability, op, "start")?)
+        };
+        let end = if matches!(end.vtype(), VarType::Empty | VarType::Null) {
+            None
+        } else {
+            Some(self.variant_to_i32(end, capability, op, "end")?)
+        };
+        Ok(match (start, end) {
+            (None, _) => (1, i32::MAX),
+            (Some(s), None) => (s, s),
+            (Some(s), Some(e)) => (s, e),
+        })
+    }
 }
 
 impl FileSystemHal for StandardHostServices {
@@ -325,8 +412,8 @@ impl FileSystemHal for StandardHostServices {
                     len: initial_len,
                     host_path,
                     data: initial_data,
-                    records: BTreeMap::new(),
                     width: 0,
+                    locks: Vec::new(),
                 },
             );
             self.assert_fs_invariants(&state, "open-post");
@@ -450,8 +537,8 @@ impl FileSystemHal for StandardHostServices {
                 len: initial_len,
                 host_path,
                 data: initial_data,
-                records: BTreeMap::new(),
                 width: 0,
+                locks: Vec::new(),
             },
         );
         self.assert_fs_invariants(&state, "open-post");
@@ -897,19 +984,32 @@ impl FileSystemHal for StandardHostServices {
         } else {
             Some(self.variant_to_i32(&position, capability, "put", "position")?)
         };
+        // Serialize the value to its on-disk byte form and write it into the file
+        // buffer. With an explicit record number this is fixed-record positioning
+        // (`(rec-1) * size`); otherwise it appends at the current position.
+        let bytes = serialize_record(&value);
         let mut state = self.fs_lock(capability, "put")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "put")?;
-        let rec = explicit.unwrap_or_else(|| {
-            let current = entry.position.max(1);
-            entry.position = current + 1;
-            current
-        });
-        entry.records.insert(rec, value.to_wire_bytes());
-        entry.len = entry.len.max(rec);
+        let offset = match explicit {
+            Some(rec) if rec >= 1 => ((rec - 1) as usize).saturating_mul(bytes.len()),
+            _ => entry.position.max(0) as usize,
+        };
+        let end = offset + bytes.len();
+        if end > entry.data.len() {
+            entry.data.resize(end, 0);
+        }
+        entry.data[offset..end].copy_from_slice(&bytes);
+        entry.position = end as i32;
+        entry.len = entry.len.max(end as i32);
         Ok(Variant::empty())
     }
 
-    fn get_record_variant(&self, handle: Variant, position: Variant) -> HalResult<Variant> {
+    fn get_record_variant(
+        &self,
+        handle: Variant,
+        position: Variant,
+        vtype: Variant,
+    ) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "get"));
@@ -920,14 +1020,35 @@ impl FileSystemHal for StandardHostServices {
         } else {
             Some(self.variant_to_i32(&position, capability, "get", "position")?)
         };
+        let code = self.variant_to_i32(&vtype, capability, "get", "type")? as u16;
+        let vt = VarType::from_u16(code).unwrap_or(VarType::Empty);
+        let fixed = record_size(vt);
         let mut state = self.fs_lock(capability, "get")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "get")?;
-        let rec = explicit.unwrap_or_else(|| entry.position.max(1));
-        let value = match entry.records.get(&rec) {
-            Some(bytes) => Variant::from_wire_bytes(*bytes).unwrap_or_else(|_| Variant::empty()),
+        let offset = match (explicit, fixed) {
+            (Some(rec), Some(size)) if rec >= 1 => ((rec - 1) as usize).saturating_mul(size),
+            _ => entry.position.max(0) as usize,
+        };
+        let value = match fixed {
+            Some(size) => {
+                let avail = entry.data.len().saturating_sub(offset);
+                let take = size.min(avail);
+                let v = deserialize_record(vt, &entry.data[offset..offset + take]);
+                entry.position = (offset + size) as i32;
+                v
+            }
+            // Length-prefixed String (2-byte LE length + bytes), read at `offset`.
+            None if vt == VarType::String && offset + 2 <= entry.data.len() => {
+                let len = u16::from_le_bytes([entry.data[offset], entry.data[offset + 1]]) as usize;
+                let endb = (offset + 2 + len).min(entry.data.len());
+                let v = Variant::from_string(
+                    String::from_utf8_lossy(&entry.data[offset + 2..endb]).into_owned(),
+                );
+                entry.position = endb as i32;
+                v
+            }
             None => Variant::empty(),
         };
-        entry.position = rec + 1;
         Ok(value)
     }
 
@@ -944,37 +1065,66 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::empty())
     }
 
-    fn name_variant(&self, _old_path: Variant, _new_path: Variant) -> HalResult<Variant> {
-        // FIDELITY: deterministic lane is in-memory and does not mutate the host
-        // filesystem; a real rename belongs to the differential/real-host lane.
+    fn name_variant(&self, old_path: Variant, new_path: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "name"));
         }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "name"));
+        }
+        // Real rename when host filesystem access is enabled; otherwise the
+        // deterministic lane has no host file to move (a documented no-op).
+        if self.native_fs_enabled() {
+            let old = self.variant_to_path(&old_path, capability, "name", "old")?;
+            let new = self.variant_to_path(&new_path, capability, "name", "new")?;
+            if let Some(parent) = new.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            fs::rename(&old, &new).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "name",
+                    format!("failed to rename {} -> {}: {err}", old.display(), new.display()),
+                )
+            })?;
+        }
         Ok(Variant::empty())
     }
 
-    fn lock_variant(&self, handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
-        // FIDELITY: advisory byte-range locking is not modeled; validate the handle
-        // and accept the request as a no-op.
+    fn lock_variant(&self, handle: Variant, start: Variant, end: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "lock"));
         }
         let handle_id = self.variant_to_i32(&handle, capability, "lock", "handle")?;
+        let range = self.lock_range(&start, &end, capability, "lock")?;
         let mut state = self.fs_lock(capability, "lock")?;
-        self.fs_entry_mut(&mut state, handle_id, "lock")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "lock")?;
+        // Re-locking an already-locked range is VBA error 70 (permission denied).
+        if entry.locks.iter().any(|&(s, e)| range.0 <= e && s <= range.1) {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "lock",
+                "Permission denied: range already locked",
+            ));
+        }
+        entry.locks.push(range);
         Ok(Variant::empty())
     }
 
-    fn unlock_variant(&self, handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
+    fn unlock_variant(&self, handle: Variant, start: Variant, end: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "unlock"));
         }
         let handle_id = self.variant_to_i32(&handle, capability, "unlock", "handle")?;
+        let range = self.lock_range(&start, &end, capability, "unlock")?;
         let mut state = self.fs_lock(capability, "unlock")?;
-        self.fs_entry_mut(&mut state, handle_id, "unlock")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "unlock")?;
+        entry.locks.retain(|&r| r != range);
         Ok(Variant::empty())
     }
 }
@@ -1125,5 +1275,37 @@ fn wildcard_casefold(text: &str) -> String {
     #[cfg(not(target_os = "windows"))]
     {
         text.to_string()
+    }
+}
+
+#[cfg(test)]
+mod record_io_tests {
+    use super::{deserialize_record, record_size, serialize_record};
+    use oxvba_runtime::{VarType, Variant};
+
+    #[test]
+    fn long_serializes_little_endian_and_round_trips() {
+        let bytes = serialize_record(&Variant::from_i32(0x1234_5678));
+        assert_eq!(bytes, vec![0x78, 0x56, 0x34, 0x12]);
+        assert_eq!(deserialize_record(VarType::Long, &bytes).as_i32(), Some(0x1234_5678));
+    }
+
+    #[test]
+    fn fixed_record_sizes_match_vba() {
+        assert_eq!(record_size(VarType::Byte), Some(1));
+        assert_eq!(record_size(VarType::Integer), Some(2));
+        assert_eq!(record_size(VarType::Long), Some(4));
+        assert_eq!(record_size(VarType::Double), Some(8));
+        assert_eq!(record_size(VarType::String), None);
+    }
+
+    #[test]
+    fn double_and_boolean_round_trip() {
+        let d = serialize_record(&Variant::from_f64(3.5));
+        assert_eq!(d.len(), 8);
+        assert_eq!(deserialize_record(VarType::Double, &d).as_f64(), Some(3.5));
+        let b = serialize_record(&Variant::from_bool(true));
+        assert_eq!(b, vec![0xFF, 0xFF]);
+        assert_eq!(deserialize_record(VarType::Boolean, &b).as_bool(), Some(true));
     }
 }
