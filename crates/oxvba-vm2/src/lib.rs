@@ -1087,6 +1087,16 @@ impl<'h> Vm<'h> {
                 }
             }
             Op::CallProc { proc, dst, args } => self.call_proc(*proc, *dst, args)?,
+            Op::CallProcRef { dst, target, args } => {
+                // Resolve the procedure reference (the AddressOf value) to an index
+                // at runtime, then dispatch through the standard call machinery.
+                let proc = arith::int(self.get(*target)?).map_err(Fault::from_string)?;
+                let proc = usize::try_from(proc)
+                    .ok()
+                    .filter(|&p| p < self.bundle.procedures.len())
+                    .ok_or_else(|| Fault::new(490, "invalid procedure reference"))?;
+                self.call_proc(proc, *dst, args)?
+            }
             Op::CallNative { dst, callee, args } => {
                 let value = match callee {
                     NativeCallee::Builtin(id) => {

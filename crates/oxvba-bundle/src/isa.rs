@@ -144,6 +144,11 @@ pub enum Op {
         args: Vec<ProcArg>,
     },
     CallNative { dst: Option<usize>, callee: NativeCallee, args: Vec<CallArg> },
+    /// Call through a procedure reference (an `AddressOf` value) held in `target`,
+    /// resolved to a procedure index at runtime. This is the VM-resident
+    /// call-through that a real OS-callback trampoline re-enters; `args` bind to
+    /// the callee frame exactly as [`Op::CallProc`].
+    CallProcRef { dst: Option<usize>, target: usize, args: Vec<ProcArg> },
     /// `CallByName` — dispatch a member call by a runtime name on a runtime object,
     /// routing through the same late-dispatch path as `CallNative`/`ComDispatch`.
     /// `object`/`name`/`calltype` are operand slots; `calltype` is the VbCallType

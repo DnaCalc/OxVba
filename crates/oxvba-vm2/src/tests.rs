@@ -368,6 +368,27 @@ fn proc_byref_aliasing() {
 }
 
 #[test]
+fn call_proc_ref_dispatches_through_address_of() {
+    // A procedure reference (AddressOf, materialized by LoadProcRef) is called
+    // through CallProcRef: Double(21) = 42 via a runtime-resolved proc index.
+    let b = bundle(
+        vec![
+            Op::LoadI32 { slot: 0, value: 21 },                                                // 0
+            Op::LoadProcRef { dst: 1, proc: 0 },                                               // 1
+            Op::CallProcRef { dst: Some(2), target: 1, args: vec![ProcArg::ByVal(0)] }, // 2
+            Op::Halt,                                                                          // 3
+            Op::Add { dst: 1, lhs: 0, rhs: 0 },                                                // 4 (Double entry; local 1 = return)
+            Op::Return,                                                                        // 5
+        ],
+        3,
+        vec![func("Double", 4, 2, Some(1))],
+    );
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(vm.slot(2).unwrap().as_i32(), Some(42));
+}
+
+#[test]
 fn proc_function_return() {
     // Function Double(ByVal n) = n + n.  Double(21) → 42 into caller local 1.
     let b = bundle(
