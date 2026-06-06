@@ -155,10 +155,10 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 vtable_slot: Some(7),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                parameter_optional: Vec::new(),
+                parameter_names: vec!["n".into()],
+                parameter_optional: vec![false],
                 is_default_member: false,
-                parameter_types: Vec::new(),
+                parameter_types: vec![TypeLibParamType::ByRefLong],
                 return_type: None,
             },
             TypeLibMemberMetadata {
@@ -191,11 +191,13 @@ fn com_member_resolves_for_typed_receiver_with_both_dispid_and_name() {
     let typed = VarTypeRef::Object("Widget".into());
     let binding = provider.resolve_member(&typed, "DoThing", None).expect("typed member");
     match binding.route {
-        DispatchRoute::ComMember { member_name, dispid, vtable_slot, member_kind, .. } => {
+        DispatchRoute::ComMember { member_name, dispid, vtable_slot, member_kind, param_by_ref, .. } => {
             assert_eq!(member_name, "DoThing"); // late path uses the name
             assert_eq!(dispid, 5); // early path uses the dispid
             assert_eq!(vtable_slot, Some(7));
             assert_eq!(member_kind, ProjectMemberKind::Method);
+            // The typelib's `ByRefLong` param surfaces as a by-ref direction.
+            assert_eq!(param_by_ref, vec![true]);
         }
         other => panic!("expected ComMember, got {other:?}"),
     }

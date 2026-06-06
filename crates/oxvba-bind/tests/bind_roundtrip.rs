@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use oxvba_bind::bind_program;
-use oxvba_bundle::coreir::{CoreCallee, CoreProgram, CoreStmt, CoreValue};
+use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreProgram, CoreStmt, CoreValue};
 use oxvba_bundle::native::NativeImplId;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_hal::HostPolicy;
@@ -281,6 +281,27 @@ fn method_mutates_instance_field_across_calls() {
     assert_eq!(run_class_main_local0(main, "Counter", counter), Some(2.0));
 }
 
+#[test]
+fn project_method_byref_mutates_caller() {
+    // o.Inc r passes r ByRef to a method; the method's write propagates back.
+    // (The headline fix: method dispatch used to force ByVal.)
+    let main = "Sub Main()\n    Dim r As Long\n    Dim o As C\n    r = 5\n    Set o = New C\n    o.Inc r\nEnd Sub\n";
+    let class_c = "Public Sub Inc(ByRef x As Long)\n    x = x + 100\nEnd Sub\n";
+    assert_eq!(run_class_main_local0(main, "C", class_c), Some(105.0));
+}
+
+#[test]
+fn byref_object_reassign_through_proc() {
+    // `Set p = New Thing` through a ByRef object param rewrites the caller's
+    // variable (release-old/retain-new), so `o` is a live Thing afterwards.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim o As Thing\n    MakeThing o\n    r = o.GetVal()\nEnd Sub\n\n\
+                Sub MakeThing(ByRef p As Thing)\n    Set p = New Thing\nEnd Sub\n";
+    let thing = "Private mVal As Long\n\n\
+                 Private Sub Class_Initialize()\n    mVal = 7\nEnd Sub\n\n\
+                 Public Function GetVal() As Long\n    GetVal = mVal\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "Thing", thing), Some(7.0));
+}
+
 // ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────
 
 fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {
@@ -411,6 +432,29 @@ fn declare_lib_emits_external_call_descriptor() {
         .expect("expected a GetTickCount external-call descriptor");
     assert_eq!(desc.library, "kernel32");
     assert!(desc.return_type.is_some());
+}
+
+#[test]
+fn declare_byref_arg_emits_byref() {
+    // A ByRef `Declare` param called with an l-value lowers to CoreArg::ByRef (the
+    // write-back target). Exercises bind_args_byref — the same path COM uses.
+    let src = "Declare Sub Bump Lib \"k\" (ByRef n As Long)\n\n\
+               Sub Main()\n    Dim r As Long\n    r = 5\n    Bump r\nEnd Sub\n";
+    let program = bind(src);
+    let args = program
+        .procs
+        .iter()
+        .flat_map(|p| &p.body)
+        .find_map(|s| match s {
+            CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Declare { .. }, args }) => Some(args),
+            _ => None,
+        })
+        .expect("a Declare call");
+    assert!(
+        matches!(args.first(), Some(CoreArg::ByRef(_))),
+        "ByRef Declare arg should be CoreArg::ByRef, got {:?}",
+        args.first()
+    );
 }
 
 // ── File I/O (structural — bind emits native ops; not run) ────────────────────

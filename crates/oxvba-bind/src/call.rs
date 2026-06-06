@@ -38,7 +38,9 @@ impl<'a> ProcLower<'a> {
                 ))
             }
             DispatchRoute::Declare { descriptor_id } => {
-                let args = self.bind_args(arglist, None)?;
+                // ByRef `Declare` params write back to the caller slot (copy-out).
+                let by_ref = self.declare_param_by_ref(binding.symbol);
+                let args = self.bind_args_byref(arglist, &by_ref)?;
                 Ok(value_bound(
                     CoreValue::Call { callee: CoreCallee::Declare { descriptor_id: *descriptor_id }, args },
                     VarTypeRef::Variant,
@@ -109,6 +111,45 @@ impl<'a> ProcLower<'a> {
             _ => bound.value,
         };
         Ok(CoreArg::ByVal(value))
+    }
+
+    /// Bind one argument given an explicit by-ref flag (COM/`Declare`, where the
+    /// direction comes from a typelib/`Declare` param list, not a project
+    /// `Signature`). ByRef l-value (not parenthesised) → `ByRef`; else `ByVal`
+    /// (no coercion — the value is marshaled by the callee).
+    fn bind_arg_byref(&mut self, expr: SyntaxNode<'_>, by_ref: bool) -> Result<CoreArg, BindError> {
+        if by_ref && expr.kind() != SyntaxKind::ParenExpr {
+            if let Ok((place, _)) = self.bind_place(expr) {
+                return Ok(CoreArg::ByRef(place));
+            }
+        }
+        Ok(CoreArg::ByVal(self.bind_expr(expr)?.value))
+    }
+
+    /// Arguments for a COM / `Declare` callee whose per-parameter by-ref directions
+    /// are known as a `Vec<bool>` (positional). Named args stay `ByVal`.
+    pub(crate) fn bind_args_byref(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        param_by_ref: &[bool],
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let mut args = Vec::with_capacity(items.len());
+        for (i, item) in items.into_iter().enumerate() {
+            match item {
+                ArgItem::Omitted => args.push(CoreArg::Omitted),
+                ArgItem::Named { name, value } => {
+                    args.push(CoreArg::Named { name: name.text.to_string(), value: self.bind_expr(value)?.value });
+                }
+                ArgItem::Positional(expr) => {
+                    args.push(self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?);
+                }
+            }
+        }
+        Ok(args)
     }
 
     /// Arguments for native / late-bound / `Declare` callees: positional in order,
@@ -198,6 +239,14 @@ impl<'a> ProcLower<'a> {
         self.g.env.signatures.get(sig_id).cloned()
     }
 
+    /// The per-parameter by-ref flags of a `Declare` symbol (empty if unknown).
+    fn declare_param_by_ref(&self, sym: Option<SymbolId>) -> Vec<bool> {
+        match sym.and_then(|s| self.g.env.symbols.symbol(s)).map(|s| &s.imp) {
+            Some(SymbolImpl::Declare(d)) => d.param_by_ref.clone(),
+            _ => Vec::new(),
+        }
+    }
+
     // ── Member access ───────────────────────────────────────
 
     /// The receiver of a `MemberExpr` as a bound value: an explicit `obj` (or
@@ -281,8 +330,14 @@ impl<'a> ProcLower<'a> {
             Some(binding) => match &binding.route {
                 DispatchRoute::ProjectMember { kind } => {
                     let kind = *kind;
-                    let method_args = self.bind_args(arglist, None)?;
-                    let ty = self.member_return_type(binding.symbol, kind);
+                    // Use the method's signature so ByRef params alias the caller
+                    // (and named args reorder into positional slots for dispatch).
+                    let signature = binding.symbol.and_then(|s| self.proc_signature_for(s, kind));
+                    let method_args = match &signature {
+                        Some(sig) => self.bind_proc_args(arglist, sig)?,
+                        None => self.bind_args(arglist, None)?,
+                    };
+                    let ty = signature.and_then(|s| s.return_type).unwrap_or(VarTypeRef::Variant);
                     Ok(value_bound(self.late_member_call(member, kind, recv.value, method_args), ty))
                 }
                 DispatchRoute::Value => {
@@ -296,10 +351,13 @@ impl<'a> ProcLower<'a> {
                     let place = CorePlace::Index { array: Box::new(field_place), indices };
                     Ok(Bound { value: CoreValue::Load(place.clone()), ty: VarTypeRef::Variant, place: Some(place) })
                 }
-                DispatchRoute::ComMember { dispid, member_kind, .. } => {
-                    let method_args = self.bind_args(arglist, None)?;
+                DispatchRoute::ComMember { dispid, member_kind, param_by_ref, .. } => {
+                    let (dispid, member_kind) = (*dispid, *member_kind);
+                    // Emit ByRef for the typelib's [out]/[in,out] params.
+                    let by_ref = param_by_ref.clone();
+                    let method_args = self.bind_args_byref(arglist, &by_ref)?;
                     Ok(value_bound(
-                        self.early_com_call(*dispid, *member_kind, recv.value, method_args),
+                        self.early_com_call(dispid, member_kind, recv.value, method_args),
                         VarTypeRef::Variant,
                     ))
                 }
