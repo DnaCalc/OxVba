@@ -202,6 +202,37 @@ pub trait FileSystemHal: Send + Sync {
     fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "loc_variant")
     }
+    /// Random/binary write of one record (VBA `Put #n, [rec], value`). An empty
+    /// `position` writes at the current position.
+    fn put_record_variant(
+        &self,
+        _handle: Variant,
+        _position: Variant,
+        _value: Variant,
+    ) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "put_record_variant")
+    }
+    /// Random/binary read of one record (VBA `Get #n, [rec], var`). An empty
+    /// `position` reads at the current position.
+    fn get_record_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "get_record_variant")
+    }
+    /// Set the output line width for a handle (VBA `Width #n, width`).
+    fn width_variant(&self, _handle: Variant, _width: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "width_variant")
+    }
+    /// Rename/move a file (VBA `Name old As new`).
+    fn name_variant(&self, _old_path: Variant, _new_path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "name_variant")
+    }
+    /// Lock a byte range of an open file (VBA `Lock #n [, range]`).
+    fn lock_variant(&self, _handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "lock_variant")
+    }
+    /// Unlock a byte range of an open file (VBA `Unlock #n [, range]`).
+    fn unlock_variant(&self, _handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "unlock_variant")
+    }
 }
 
 pub trait ProcessEnvHal: Send + Sync {

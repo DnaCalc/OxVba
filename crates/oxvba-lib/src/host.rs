@@ -86,6 +86,30 @@ pub fn file_seek(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant
 pub fn file_loc(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().loc_variant(req(args, 0)?)?)
 }
+pub fn file_put(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    // args: handle, [record-number], value. With a record number it is args[1];
+    // otherwise the value is args[1] and the record number is empty (append).
+    if args.len() >= 3 {
+        Ok(host.fs().put_record_variant(req(args, 0)?, req(args, 1)?, req(args, 2)?)?)
+    } else {
+        Ok(host.fs().put_record_variant(req(args, 0)?, vunit(), req(args, 1)?)?)
+    }
+}
+pub fn file_get_into(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().get_record_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+}
+pub fn file_width(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().width_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+}
+pub fn file_rename(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().name_variant(req(args, 0)?, req(args, 1)?)?)
+}
+pub fn file_lock(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().lock_variant(req(args, 0)?, arg_or_empty(args, 1), arg_or_empty(args, 2))?)
+}
+pub fn file_unlock(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().unlock_variant(req(args, 0)?, arg_or_empty(args, 1), arg_or_empty(args, 2))?)
+}
 
 // ── Interaction / process ──
 pub fn msg_box(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {

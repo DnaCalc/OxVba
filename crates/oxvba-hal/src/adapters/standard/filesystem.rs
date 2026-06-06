@@ -35,6 +35,14 @@ pub(super) struct FileHandleState {
     pub(super) len: i32,
     pub(super) host_path: Option<PathBuf>,
     pub(super) data: Vec<u8>,
+    /// Random-mode record store, keyed by record number, holding each record's
+    /// 16-byte VARIANT wire form. FIDELITY: exact for inline-value records
+    /// (numeric/Date/Bool); string/object records keep only the wire header (the
+    /// heap payload is not persisted) and byte-accurate disk layout is the
+    /// differential-harness lane's concern.
+    pub(super) records: BTreeMap<i32, [u8; 16]>,
+    /// Output line width set by `Width #n` (informational; affects `Print`).
+    pub(super) width: i32,
 }
 
 pub(super) fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -317,6 +325,8 @@ impl FileSystemHal for StandardHostServices {
                     len: initial_len,
                     host_path,
                     data: initial_data,
+                    records: BTreeMap::new(),
+                    width: 0,
                 },
             );
             self.assert_fs_invariants(&state, "open-post");
@@ -440,6 +450,8 @@ impl FileSystemHal for StandardHostServices {
                 len: initial_len,
                 host_path,
                 data: initial_data,
+                records: BTreeMap::new(),
+                width: 0,
             },
         );
         self.assert_fs_invariants(&state, "open-post");
@@ -867,6 +879,103 @@ impl FileSystemHal for StandardHostServices {
         let mut state = self.fs_lock(capability, "loc")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
         Ok(Variant::from_i32(entry.position))
+    }
+
+    fn put_record_variant(
+        &self,
+        handle: Variant,
+        position: Variant,
+        value: Variant,
+    ) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "put"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "put", "handle")?;
+        let explicit = if matches!(position.vtype(), VarType::Empty | VarType::Null) {
+            None
+        } else {
+            Some(self.variant_to_i32(&position, capability, "put", "position")?)
+        };
+        let mut state = self.fs_lock(capability, "put")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "put")?;
+        let rec = explicit.unwrap_or_else(|| {
+            let current = entry.position.max(1);
+            entry.position = current + 1;
+            current
+        });
+        entry.records.insert(rec, value.to_wire_bytes());
+        entry.len = entry.len.max(rec);
+        Ok(Variant::empty())
+    }
+
+    fn get_record_variant(&self, handle: Variant, position: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "get"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "get", "handle")?;
+        let explicit = if matches!(position.vtype(), VarType::Empty | VarType::Null) {
+            None
+        } else {
+            Some(self.variant_to_i32(&position, capability, "get", "position")?)
+        };
+        let mut state = self.fs_lock(capability, "get")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "get")?;
+        let rec = explicit.unwrap_or_else(|| entry.position.max(1));
+        let value = match entry.records.get(&rec) {
+            Some(bytes) => Variant::from_wire_bytes(*bytes).unwrap_or_else(|_| Variant::empty()),
+            None => Variant::empty(),
+        };
+        entry.position = rec + 1;
+        Ok(value)
+    }
+
+    fn width_variant(&self, handle: Variant, width: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "width"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "width", "handle")?;
+        let width = self.variant_to_i32(&width, capability, "width", "width")?;
+        let mut state = self.fs_lock(capability, "width")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "width")?;
+        entry.width = width.max(0);
+        Ok(Variant::empty())
+    }
+
+    fn name_variant(&self, _old_path: Variant, _new_path: Variant) -> HalResult<Variant> {
+        // FIDELITY: deterministic lane is in-memory and does not mutate the host
+        // filesystem; a real rename belongs to the differential/real-host lane.
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "name"));
+        }
+        Ok(Variant::empty())
+    }
+
+    fn lock_variant(&self, handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
+        // FIDELITY: advisory byte-range locking is not modeled; validate the handle
+        // and accept the request as a no-op.
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "lock"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "lock", "handle")?;
+        let mut state = self.fs_lock(capability, "lock")?;
+        self.fs_entry_mut(&mut state, handle_id, "lock")?;
+        Ok(Variant::empty())
+    }
+
+    fn unlock_variant(&self, handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "unlock"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "unlock", "handle")?;
+        let mut state = self.fs_lock(capability, "unlock")?;
+        self.fs_entry_mut(&mut state, handle_id, "unlock")?;
+        Ok(Variant::empty())
     }
 }
 

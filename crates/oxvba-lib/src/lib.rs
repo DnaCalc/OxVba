@@ -287,6 +287,12 @@ pub fn invoke(
         FileLof => host::file_lof(args, host),
         FileSeek => host::file_seek(args, host),
         FileLoc => host::file_loc(args, host),
+        FilePut => host::file_put(args, host),
+        FileGetInto => host::file_get_into(args, host),
+        FileWidth => host::file_width(args, host),
+        FileRename => host::file_rename(args, host),
+        FileLock => host::file_lock(args, host),
+        FileUnlock => host::file_unlock(args, host),
 
         // ── Interaction / host ──
         MsgBox => host::msg_box(args, host),

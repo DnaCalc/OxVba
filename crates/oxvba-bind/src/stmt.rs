@@ -54,9 +54,11 @@ impl<'a> ProcLower<'a> {
             ResumeStmt => self.bind_resume(node),
             ReDimStmt => self.bind_redim(node),
             EraseStmt => self.bind_erase(node),
-            OpenStmt | CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt => {
-                self.bind_file_io(node)
-            }
+            OpenStmt | CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | PutStmt
+            | SeekStmt | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
+            // `Get #n, [rec], var` reads into the target, so it lowers as an
+            // assignment of the read value, not a discarded call.
+            GetStmt => self.bind_get(node),
             RaiseEventStmt => self.bind_raise_event(node),
             // Declarations contribute no executable statement (frame already built).
             DimStmt | ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt
@@ -508,6 +510,18 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::WriteStmt => NativeImplId::FileWrite,
             SyntaxKind::InputStmt => NativeImplId::FileInput,
             SyntaxKind::LineInputStmt => NativeImplId::FileLineInput,
+            SyntaxKind::PutStmt => NativeImplId::FilePut,
+            SyntaxKind::SeekStmt => NativeImplId::FileSeek,
+            SyntaxKind::WidthStmt => NativeImplId::FileWidth,
+            SyntaxKind::NameStmt => NativeImplId::FileRename,
+            // `Lock` and `Unlock` share `LockStmt`; the `Lock` keyword distinguishes.
+            SyntaxKind::LockStmt => {
+                if node.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwLock) {
+                    NativeImplId::FileLock
+                } else {
+                    NativeImplId::FileUnlock
+                }
+            }
             other => return Err(BindError::Unsupported(format!("file I/O {other:?}"))),
         };
         let mut args = Vec::new();
@@ -530,6 +544,37 @@ impl<'a> ProcLower<'a> {
             }
         }
         Ok(vec![CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Native(id), args })])
+    }
+
+    /// `Get #n, [rec], var` reads a record into `var`, so it lowers as
+    /// `var = FileGetInto(handle, [rec])` (the read value coerced to the target).
+    fn bind_get(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let mut args = Vec::new();
+        if let Some(fnum) = node.file_number()
+            && let Some(ch) = fnum.first_expr_child()
+        {
+            args.push(CoreArg::ByVal(self.bind_expr(ch)?.value));
+        }
+        // The expression children are `[record-number?, target]`; the last is the
+        // target l-value and any preceding one is the record number.
+        let exprs = node.expr_children();
+        let (target_node, rec_nodes) = exprs
+            .split_last()
+            .ok_or_else(|| BindError::Malformed("Get without a target".into()))?;
+        for e in rec_nodes {
+            args.push(CoreArg::ByVal(self.bind_expr(*e)?.value));
+        }
+        let (place, target_ty) = self.bind_place(*target_node)?;
+        let read = CoreValue::Call { callee: CoreCallee::Native(NativeImplId::FileGetInto), args };
+        let value = types::coerce(read, &oxvba_symbol::signature::VarTypeRef::Variant, &target_ty);
+        Ok(vec![CoreStmt::Assign {
+            place,
+            value,
+            intent: AssignmentIntent::Let,
+            target_kind: types::assignment_target_kind(&target_ty),
+            target_name: target_node.text().trim().to_string(),
+            target_type_name: types::type_name(&target_ty),
+        }])
     }
 
     // ── Small helpers ───────────────────────────────────────

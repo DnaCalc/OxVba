@@ -170,6 +170,13 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         FileEof => e(FileEof, &["EOF"], sig(1, 1), Ordinary),
         FileLof => e(FileLof, &["LOF"], sig(1, 1), Ordinary),
         FileSeek => e(FileSeek, &["Seek"], sig(1, 1), Ordinary),
+        // Random-access / misc file statements (routed from the parser, not by name).
+        FilePut => e(FilePut, &[], variadic(0), FileStatement),
+        FileGetInto => e(FileGetInto, &[], variadic(0), FileStatement),
+        FileWidth => e(FileWidth, &[], variadic(0), FileStatement),
+        FileRename => e(FileRename, &[], variadic(0), FileStatement),
+        FileLock => e(FileLock, &[], variadic(0), FileStatement),
+        FileUnlock => e(FileUnlock, &[], variadic(0), FileStatement),
         FileLoc => e(FileLoc, &["Loc"], sig(1, 1), Ordinary),
 
         // ── Interaction / host ──
@@ -210,7 +217,8 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         CollectionRemove, CollectionCount,
         FreeFile, FileOpen, FileClose, FileKill, FileRead, FileWrite, FilePrint, ConsolePrint,
         FileInput, ConsoleInput, FileLineInput, ConsoleLineInput, FileEof, FileLof, FileSeek,
-        FileLoc, MsgBox, InputBox, Beep, DoEvents, Shell, Environ, Dir, CreateObject,
+        FileLoc, FilePut, FileGetInto, FileWidth, FileRename, FileLock, FileUnlock,
+        MsgBox, InputBox, Beep, DoEvents, Shell, Environ, Dir, CreateObject,
         ComSubscribeEvent, ComUnsubscribeEvent, ComEventCallbackSubscription, ComEventCallbackArg,
         ComReleaseEventCallback, DebugPrint,
     ]
@@ -233,7 +241,7 @@ mod tests {
     #[test]
     fn catalog_covers_every_native_impl_id() {
         // 111 variants in oxvba-bundle's NativeImplId today.
-        assert_eq!(ALL_INTRINSICS.len(), 114);
+        assert_eq!(ALL_INTRINSICS.len(), 120);
     }
 
     #[test]

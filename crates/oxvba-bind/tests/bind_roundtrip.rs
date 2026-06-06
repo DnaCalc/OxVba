@@ -211,6 +211,25 @@ fn paramarray_mixed_fixed_and_variadic() {
 }
 
 #[test]
+fn random_access_file_statements_bind_and_lower() {
+    // Get/Put/Seek/Width/Lock/Unlock/Name previously errored in the binder; they
+    // now route to native impls (Get lowers as an assignment of the read value).
+    let src = "Sub Main()\n\
+        Dim num As Integer\n    num = 1\n\
+        Dim v As Long\n    v = 7\n\
+        Put #num, 1, v\n\
+        Get #num, 1, v\n\
+        Seek #num, 1\n\
+        Width #num, 80\n\
+        Lock #num\n\
+        Unlock #num\n\
+        Name \"a\" As \"b\"\n\
+    End Sub\n";
+    let program = bind(src);
+    assert!(oxvba_bundle::linearize(&program).is_ok());
+}
+
+#[test]
 fn addressof_binds_to_proc_ref() {
     let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";
     let program = bind(src);

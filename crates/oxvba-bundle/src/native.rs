@@ -131,6 +131,12 @@ pub enum NativeImplId {
     FileLof,
     FileSeek,
     FileLoc,
+    FilePut,     // `Put #n, [rec], value` — write a record
+    FileGetInto, // `Get #n, [rec], var` — read a record (lowered as an assignment)
+    FileWidth,   // `Width #n, width`
+    FileRename,  // `Name old As new`
+    FileLock,    // `Lock #n [, range]`
+    FileUnlock,  // `Unlock #n [, range]`
 
     // ── Interaction / host ───────────────────────────────────
     MsgBox,
@@ -189,7 +195,8 @@ impl NativeImplId {
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
             FreeFile | FileOpen | FileClose | FileKill | FileRead | FileWrite | FilePrint
             | ConsolePrint | FileInput | ConsoleInput | FileLineInput | ConsoleLineInput
-            | FileEof | FileLof | FileSeek | FileLoc => M::FileIo,
+            | FileEof | FileLof | FileSeek | FileLoc | FilePut | FileGetInto | FileWidth
+            | FileRename | FileLock | FileUnlock => M::FileIo,
             MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir | CreateObject
             | ComSubscribeEvent | ComUnsubscribeEvent | ComEventCallbackSubscription
             | ComEventCallbackArg | ComReleaseEventCallback => M::Interaction,
