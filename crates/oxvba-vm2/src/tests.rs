@@ -255,7 +255,7 @@ fn proc_byref_aliasing() {
     let b = bundle(
         vec![
             Op::LoadI32 { slot: 0, value: 41 },                                            // 0
-            Op::CallProc { proc: 0, dst: None, args: vec![ProcArg::ByRef(0)], member: None }, // 1
+            Op::CallProc { proc: 0, dst: None, args: vec![ProcArg::ByRef(0)] }, // 1
             Op::Halt,                                                                      // 2
             Op::IncSlot { slot: 0 },                                                       // 3 (Inc entry; local 0 = aliased param)
             Op::Return,                                                                    // 4
@@ -274,7 +274,7 @@ fn proc_function_return() {
     let b = bundle(
         vec![
             Op::LoadI32 { slot: 0, value: 21 },                                                  // 0
-            Op::CallProc { proc: 0, dst: Some(1), args: vec![ProcArg::ByVal(0)], member: None }, // 1
+            Op::CallProc { proc: 0, dst: Some(1), args: vec![ProcArg::ByVal(0)] }, // 1
             Op::Halt,                                                                            // 2
             Op::Add { dst: 1, lhs: 0, rhs: 0 },                                                  // 3 (Double entry; local 1 = return)
             Op::Return,                                                                          // 4
@@ -293,7 +293,7 @@ fn recursion_factorial() {
     let b = bundle(
         vec![
             Op::LoadI32 { slot: 0, value: 5 },                                                   // 0
-            Op::CallProc { proc: 0, dst: Some(1), args: vec![ProcArg::ByVal(0)], member: None }, // 1
+            Op::CallProc { proc: 0, dst: Some(1), args: vec![ProcArg::ByVal(0)] }, // 1
             Op::Halt,                                                                            // 2
             // Fact entry (pc 3): locals 0=n, 1=const1, 2=cond, 3=n-1, 4=Fact(n-1), 5=result
             Op::LoadI32 { slot: 1, value: 1 },                                                   // 3
@@ -303,7 +303,7 @@ fn recursion_factorial() {
             Op::Return,                                                                          // 7
             Op::Copy { dst: 3, src: 0 },                                                         // 8 n-1 = n
             Op::SubConstI32 { slot: 3, value: 1 },                                               // 9 n-1
-            Op::CallProc { proc: 0, dst: Some(4), args: vec![ProcArg::ByVal(3)], member: None }, // 10 Fact(n-1)
+            Op::CallProc { proc: 0, dst: Some(4), args: vec![ProcArg::ByVal(3)] }, // 10 Fact(n-1)
             Op::Mul { dst: 5, lhs: 0, rhs: 4 },                                                  // 11 result = n * Fact(n-1)
             Op::Return,                                                                          // 12
         ],
@@ -320,8 +320,8 @@ fn global_persists_across_calls() {
     // global 0 (slot 0, since global_count = 1); Sub Bump increments it; call twice → 2.
     let b = bundle_full(
         vec![
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 1
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 1
             Op::Halt,                                                        // 2
             Op::IncSlot { slot: 0 },                                         // 3 (Bump entry; slot 0 = global)
             Op::Return,                                                      // 4
@@ -464,7 +464,7 @@ fn terminate_runs_on_scope_exit() {
     // sets global 0 = 7.
     let b = object_program(
         vec![
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 0
             Op::Halt,                                                        // 1
             Op::NewObject { dst: 1, class: 0 },                              // 2 Make: local 0 (slot 1) = New C
             Op::Return,                                                      // 3
@@ -484,7 +484,7 @@ fn two_holders_terminate_exactly_once() {
     // a = New C ; b = a (two references) ; on scope exit Terminate fires ONCE.
     let b = object_program(
         vec![
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 0
             Op::Halt,                                                        // 1
             Op::NewObject { dst: 1, class: 0 },                              // 2 a = New C
             Op::Copy { dst: 2, src: 1 },                                     // 3 b = a (refcount 2)
@@ -508,7 +508,7 @@ fn terminate_runs_during_error_unwind() {
     let b = object_program(
         vec![
             Op::SetOnErrorResumeNext,                                        // 0
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 1
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 1
             Op::Halt,                                                        // 2
             Op::NewObject { dst: 1, class: 0 },                              // 3 Bad: a = New C
             Op::RaiseError { code: 5 },                                      // 4 uncaught in Bad → unwind
@@ -530,7 +530,7 @@ fn error_in_terminate_is_suppressed() {
     // (run succeeds, the side effect is visible).
     let b = object_program(
         vec![
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 0
             Op::Halt,                                                        // 1
             Op::NewObject { dst: 1, class: 0 },                              // 2 Make
             Op::Return,                                                      // 3
@@ -552,7 +552,7 @@ fn reference_cycle_leaks_without_terminate() {
     // neither reaches refcount 0 → Class_Terminate never runs (VBA-consistent).
     let b = object_program(
         vec![
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 0
             Op::Halt,                                                        // 1
             Op::NewObject { dst: 1, class: 0 },                              // 2 a
             Op::NewObject { dst: 2, class: 0 },                              // 3 b
@@ -577,7 +577,7 @@ fn array_element_release_runs_terminate() {
     // last reference → Terminate fires (proves array elements are refcounted).
     let b = object_program(
         vec![
-            Op::CallProc { proc: 0, dst: None, args: vec![], member: None }, // 0
+            Op::CallProc { proc: 0, dst: None, args: vec![] }, // 0
             Op::Halt,                                                        // 1
             Op::NewObject { dst: 1, class: 0 },                              // 2 a = New C (refcount 1)
             Op::ArrayLiteral { dst: 2, values: vec![1] },                    // 3 arr = Array(a) (refcount 2)

@@ -91,13 +91,6 @@ pub enum ProjectMemberKind {
     PropertySet,
 }
 
-/// A resolved project-procedure member call attached to `CallProc`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectMemberCall {
-    pub lowered_name: String,
-    pub kind: ProjectMemberKind,
-}
-
 /// Selector for a COM/late-bound member dispatch (`CallNative`'s `ComDispatch`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComMemberSelector {

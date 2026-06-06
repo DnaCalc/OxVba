@@ -240,7 +240,7 @@ pub enum CoreValue {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoreCallee {
     /// A compiled VBA procedure (active or referenced project).
-    VbaProc { proc: ProcId, member: Option<CoreMemberCall> },
+    VbaProc { proc: ProcId },
     /// A base-library / `Declare` / host primitive native body.
     Native(NativeImplId),
     /// Early-bound COM dispatch (typed receiver). The receiver is `args[0]`.
@@ -249,12 +249,6 @@ pub enum CoreCallee {
     LateDispatch { name: String, kind: Option<ProjectMemberKind> },
     /// A `Declare Lib` external call (descriptor in `CoreProgram::external_calls`).
     Declare { descriptor_id: u32 },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CoreMemberCall {
-    pub lowered_name: String,
-    pub kind: ProjectMemberKind,
 }
 
 /// A call argument. `ByRef` passes a place (true alias for slot places;

@@ -250,7 +250,7 @@ fn call_proc_by_ref_mutates_caller() {
         vec![
             set(0, ci(5)),
             CoreStmt::Eval(CoreValue::Call {
-                callee: CoreCallee::VbaProc { proc: ProcId(1), member: None },
+                callee: CoreCallee::VbaProc { proc: ProcId(1) },
                 args: vec![CoreArg::ByRef(CorePlace::Local(LocalId(0)))],
             }),
         ],

@@ -749,7 +749,7 @@ impl<'h> Vm<'h> {
     fn native_args(&self, args: &[CallArg]) -> Result<Vec<Variant>, Fault> {
         args.iter()
             .map(|a| match a {
-                CallArg::Slot(s) => self.cloned(*s),
+                CallArg::Slot(s) | CallArg::ByRef(s) => self.cloned(*s),
                 CallArg::Named { slot, .. } => self.cloned(*slot),
                 CallArg::Omitted => Ok(Variant::empty()),
                 CallArg::Const(value) => Ok(Variant::from_i32(*value)),
@@ -784,7 +784,7 @@ impl<'h> Vm<'h> {
         let mut call_args = Vec::new();
         for arg in args.iter().skip(1) {
             let (value, name) = match arg {
-                CallArg::Slot(s) => (Some(self.cloned(*s)?), None),
+                CallArg::Slot(s) | CallArg::ByRef(s) => (Some(self.cloned(*s)?), None),
                 CallArg::Named { name, slot } => (Some(self.cloned(*slot)?), Some(name.clone())),
                 CallArg::Omitted => (None, None),
                 CallArg::Const(value) => (Some(Variant::from_i32(*value)), None),
@@ -840,6 +840,10 @@ impl<'h> Vm<'h> {
             .iter()
             .skip(1)
             .map(|a| match a {
+                // ByRef args alias the caller's slot through `run_proc_with_me`;
+                // ByVal/Named copy in. (Parenthesised `(x)` and non-l-values were
+                // lowered to `Slot`, so they correctly do not write back.)
+                CallArg::ByRef(s) => ProcArg::ByRef(*s),
                 CallArg::Slot(s) => ProcArg::ByVal(*s),
                 CallArg::Named { slot, .. } => ProcArg::ByVal(*slot),
                 // A `Const` arg only arises for library built-ins (e.g. compare
@@ -1079,7 +1083,7 @@ impl<'h> Vm<'h> {
                     self.next_pc = *target_pc;
                 }
             }
-            Op::CallProc { proc, dst, args, .. } => self.call_proc(*proc, *dst, args)?,
+            Op::CallProc { proc, dst, args } => self.call_proc(*proc, *dst, args)?,
             Op::CallNative { dst, callee, args } => {
                 let value = match callee {
                     NativeCallee::Builtin(id) => {

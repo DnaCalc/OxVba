@@ -14,7 +14,7 @@
 use crate::native::NativeImplId;
 use crate::{
     AssignmentIntent, AssignmentTargetKind, ArrayElementType, ComMemberSelector, NumericCoerceTarget,
-    ProjectMemberCall, ProjectMemberKind, StringCompareMode,
+    ProjectMemberKind, StringCompareMode,
 };
 
 /// What a `CallNative` targets — the dispatch route for a non-VBA-procedure call.
@@ -40,6 +40,11 @@ pub enum NativeCallee {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallArg {
     Slot(usize),
+    /// A `ByRef` argument backed by the caller's slot `s`: the callee writes back
+    /// to `s` (a true alias for a project-instance dispatch; a marshaled copy-out
+    /// for `Declare`/COM). A non-l-value or parenthesised `(x)` argument lowers to
+    /// `Slot`, never `ByRef`, so it gets no write-back (VBA temp semantics).
+    ByRef(usize),
     Omitted,
     Named { name: String, slot: usize },
     /// A compile-time integer literal argument (e.g. an `Option Compare` mode
@@ -133,7 +138,6 @@ pub enum Op {
         proc: usize,
         dst: Option<usize>,
         args: Vec<ProcArg>,
-        member: Option<ProjectMemberCall>,
     },
     CallNative { dst: Option<usize>, callee: NativeCallee, args: Vec<CallArg> },
     Return,

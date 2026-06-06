@@ -83,7 +83,7 @@ impl<'a> ProcLower<'a> {
             .and_then(|s| s.return_type)
             .unwrap_or(VarTypeRef::Variant);
         Ok(value_bound(
-            CoreValue::Call { callee: CoreCallee::VbaProc { proc: proc_id, member: None }, args },
+            CoreValue::Call { callee: CoreCallee::VbaProc { proc: proc_id }, args },
             ty,
         ))
     }

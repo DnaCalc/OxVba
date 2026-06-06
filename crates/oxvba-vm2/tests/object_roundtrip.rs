@@ -186,6 +186,45 @@ fn late_method_dispatch_with_argument() {
 }
 
 #[test]
+fn project_method_byref_mutates_caller() {
+    // Class C { Sub Inc(ByRef n As Long): n = n + 100 }
+    // Main: r = 5; Set o = New C; o.Inc r  → r = 105 (ByRef through method dispatch:
+    // CallArg::ByRef → dispatch_project_method → ProcArg::ByRef → true alias).
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: vec![],
+        locals: vec![local("r"), local("o")],
+        return_local: None,
+        body: vec![
+            let_local(0, ci(5)),
+            set_local(1, CoreValue::New(ClassId(0))),
+            CoreStmt::Eval(late_call(
+                "Inc",
+                ProjectMemberKind::Method,
+                vec![CoreArg::ByRef(CorePlace::Local(LocalId(0)))],
+                local_load(1),
+            )),
+        ],
+    };
+    let inc = CoreProc {
+        name: "Inc".into(),
+        kind: ProcedureKind::Sub,
+        params: vec![param("Me"), param("n")], // Me=0, n=1 (ByRef)
+        locals: vec![],
+        return_local: None,
+        body: vec![assign(
+            CorePlace::Local(LocalId(1)),
+            bin(CoreBinOp::Add, local_load(1), ci(100)),
+            AssignmentIntent::Let,
+            AssignmentTargetKind::Variant,
+        )],
+    };
+    let p = program(0, vec![main, inc], vec![class("C", None, None, vec![("Inc", ProjectMemberKind::Method, 1)])], Vec::new());
+    assert_eq!(first_local_i32(&p), Some(105));
+}
+
+#[test]
 fn set_of_nonobject_into_object_target_faults() {
     // Set o = 5 — ValidateAssignment must reject a non-object Set (error 424).
     let main = CoreProc {

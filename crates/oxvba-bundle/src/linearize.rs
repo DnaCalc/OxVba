@@ -14,7 +14,7 @@ use crate::coreir::*;
 use crate::isa::{CallArg, NativeCallee, Op, ProcArg};
 use crate::{
     AssignmentIntent, AssignmentTargetKind, Bundle, ClassDescriptor, ClassMethod, ComMemberSelector,
-    ProcedureDescriptor, ProjectMemberCall, StringCompareMode,
+    ProcedureDescriptor, StringCompareMode,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -516,42 +516,58 @@ impl<'p> Linearizer<'p> {
         Ok((out, writebacks))
     }
 
-    fn build_call_args(&mut self, args: &[CoreArg]) -> Res<Vec<CallArg>> {
-        args.iter()
-            .map(|arg| match arg {
-                CoreArg::ByVal(v) => Ok(CallArg::Slot(self.lower_value(v)?)),
-                CoreArg::ByRef(place) => Ok(CallArg::Slot(self.lower_place_load(place)?)),
-                CoreArg::Omitted => Ok(CallArg::Omitted),
+    /// Like [`Self::build_proc_args`], but for `CallNative` callees: a `ByRef` of a
+    /// slot place lowers to `CallArg::ByRef(slot)` (the write-back target — a true
+    /// alias for project-instance dispatch, a marshaled copy-out for COM/Declare);
+    /// a `ByRef` of a Field/Index/WithEvents place copies in to a temp and records
+    /// a write-back applied after the call.
+    fn build_call_args(&mut self, args: &[CoreArg]) -> Res<(Vec<CallArg>, Vec<(CorePlace, usize)>)> {
+        let mut out = Vec::with_capacity(args.len());
+        let mut writebacks = Vec::new();
+        for arg in args {
+            match arg {
+                CoreArg::ByVal(v) => out.push(CallArg::Slot(self.lower_value(v)?)),
+                CoreArg::ByRef(place) => match place {
+                    CorePlace::Local(_) | CorePlace::Global(_) => {
+                        out.push(CallArg::ByRef(self.lower_place_load(place)?));
+                    }
+                    _ => {
+                        let tmp = self.lower_place_load(place)?;
+                        out.push(CallArg::ByRef(tmp));
+                        writebacks.push((place.clone(), tmp));
+                    }
+                },
+                CoreArg::Omitted => out.push(CallArg::Omitted),
                 CoreArg::Named { name, value } => {
-                    Ok(CallArg::Named { name: name.clone(), slot: self.lower_value(value)? })
+                    out.push(CallArg::Named { name: name.clone(), slot: self.lower_value(value)? });
                 }
-            })
-            .collect()
+            }
+        }
+        Ok((out, writebacks))
+    }
+
+    /// Copy `ByRef` Field/Index/WithEvents temps back to their places after a call.
+    fn emit_arg_writebacks(&mut self, writebacks: Vec<(CorePlace, usize)>) -> Res<()> {
+        for (place, tmp) in writebacks {
+            self.lower_place_store(&place, tmp)?;
+        }
+        Ok(())
     }
 
     fn lower_call(&mut self, callee: &CoreCallee, args: &[CoreArg], dst: Option<usize>) -> Res<()> {
         match callee {
-            CoreCallee::VbaProc { proc, member } => {
+            CoreCallee::VbaProc { proc } => {
                 let (proc_args, writebacks) = self.build_proc_args(args)?;
-                self.emit(Op::CallProc {
-                    proc: proc.0,
-                    dst,
-                    args: proc_args,
-                    member: member.as_ref().map(|m| ProjectMemberCall {
-                        lowered_name: m.lowered_name.clone(),
-                        kind: m.kind,
-                    }),
-                });
-                for (place, tmp) in writebacks {
-                    self.lower_place_store(&place, tmp)?;
-                }
+                self.emit(Op::CallProc { proc: proc.0, dst, args: proc_args });
+                self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::Native(id) => {
-                let args = self.build_call_args(args)?;
+                let (args, writebacks) = self.build_call_args(args)?;
                 self.emit(Op::CallNative { dst, callee: NativeCallee::Builtin(*id), args });
+                self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::EarlyCom { dispid, kind } => {
-                let args = self.build_call_args(args)?;
+                let (args, writebacks) = self.build_call_args(args)?;
                 self.emit(Op::CallNative {
                     dst,
                     callee: NativeCallee::ComDispatch {
@@ -561,9 +577,10 @@ impl<'p> Linearizer<'p> {
                     },
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::LateDispatch { name, kind } => {
-                let args = self.build_call_args(args)?;
+                let (args, writebacks) = self.build_call_args(args)?;
                 self.emit(Op::CallNative {
                     dst,
                     callee: NativeCallee::ComDispatch {
@@ -573,14 +590,16 @@ impl<'p> Linearizer<'p> {
                     },
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::Declare { descriptor_id } => {
-                let args = self.build_call_args(args)?;
+                let (args, writebacks) = self.build_call_args(args)?;
                 self.emit(Op::CallNative {
                     dst,
                     callee: NativeCallee::Declare { descriptor_id: *descriptor_id },
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
         }
         Ok(())
