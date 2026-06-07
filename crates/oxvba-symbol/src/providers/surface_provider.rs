@@ -23,7 +23,9 @@ use crate::binding::{Binding, DispatchRoute};
 use crate::model::fold_identifier;
 use crate::provider::Provider;
 use crate::signature::VarTypeRef;
-use crate::surface::{ProjectExportSurface, SurfaceConst, SurfaceMember, SurfaceType, SurfaceTypeKind};
+use crate::surface::{
+    MemberOrigin, ProjectExportSurface, SurfaceConst, SurfaceMember, SurfaceType, SurfaceTypeKind,
+};
 
 pub struct SurfaceProvider {
     surface: ProjectExportSurface,
@@ -45,19 +47,35 @@ impl SurfaceProvider {
         matches!(ty.kind, SurfaceTypeKind::Coclass { .. })
     }
 
-    /// A member of `ty` matching `name` and (optionally) `want` kind.
+    /// A member of `ty` matching `name` and (optionally) `want` kind, restricted to
+    /// members that are actually bindable across a bundle boundary.
     fn find_member<'a>(
         ty: &'a SurfaceType,
         name: &str,
         want: Option<ProjectMemberKind>,
     ) -> Option<&'a SurfaceMember> {
         let folded = fold_identifier(name);
+        let bindable = |m: &&SurfaceMember| Self::is_bindable_cross_project(m);
         // Prefer a member whose kind matches `want`; otherwise the first by name
         // (Get precedes Let/Set in synthesis order, so a read context picks Get).
         ty.members
             .iter()
+            .filter(bindable)
             .find(|m| fold_identifier(&m.name) == folded && want.is_none_or(|k| k == m.member_kind))
-            .or_else(|| ty.members.iter().find(|m| fold_identifier(&m.name) == folded))
+            .or_else(|| {
+                ty.members.iter().filter(bindable).find(|m| fold_identifier(&m.name) == folded)
+            })
+    }
+
+    /// A field-backed surface member (a `Public` module variable, or a class field
+    /// surfaced as a property pair) has no callable export — a module variable is a
+    /// global, a class field is an instance slot — so it cannot be reached across a
+    /// bundle boundary (an `ExternProc` import would find no export; a `LateDispatch`
+    /// by name would find no method). Exclude it so a cross-project reference fails
+    /// cleanly at bind time ("unresolved") rather than opaquely at link/run time.
+    /// (Cross-bundle field/variable access needs synthesized accessor procs — TODO.)
+    fn is_bindable_cross_project(m: &SurfaceMember) -> bool {
+        m.origin != MemberOrigin::Field
     }
 
     /// One uniform cross-bundle route. A coclass member dispatches on its receiver
@@ -72,6 +90,7 @@ impl SurfaceProvider {
                 member: m.name.clone(),
                 kind: m.member_kind,
                 param_types: m.parameter_types.clone(),
+                param_names: m.parameter_names.clone(),
                 has_receiver: Self::is_coclass(ty),
             },
         }
@@ -166,7 +185,7 @@ impl Provider for SurfaceProvider {
         let ty = self.type_by_name(type_name)?;
         ty.members
             .iter()
-            .find(|m| m.is_default)
+            .find(|m| m.is_default && Self::is_bindable_cross_project(m))
             .map(|m| self.member_binding(ty, m))
     }
 

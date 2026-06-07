@@ -672,7 +672,10 @@ mod tests {
                     module_name: "Clock".into(),
                     module_kind: ModuleKind::Class,
                     attributes: clock_attrs,
-                    source: "Public Event Tick(ByVal n As Long)\nPublic Event Done()\n".into(),
+                    // A `Private Event` between two Public ones: the binder's
+                    // `event_index_of` counts ALL events (Tick=0, Internal=1, Done=2),
+                    // so the surface must too (exposing only Public Tick=0, Done=2).
+                    source: "Public Event Tick(ByVal n As Long)\nPrivate Event Internal()\nPublic Event Done()\n".into(),
                 },
             ],
             references: Vec::new(),

@@ -38,7 +38,9 @@ impl<'a> ProcLower<'a> {
             // cross-bundle import and emit an `ExternProc` call. `has_receiver: true`
             // never reaches here (a coclass member needs a receiver — it arrives via
             // `bind_member_*`); reject it defensively.
-            DispatchRoute::ExternMember { unit, owner, member, kind, param_types, has_receiver } => {
+            DispatchRoute::ExternMember {
+                unit, owner, member, kind, param_types, param_names, has_receiver,
+            } => {
                 if *has_receiver {
                     return Err(BindError::Unsupported(format!(
                         "`{name}` is a referenced coclass member; call it on a receiver"
@@ -52,7 +54,7 @@ impl<'a> ProcLower<'a> {
                         kind: *kind,
                     },
                 });
-                let args = self.bind_extern_args(arglist, param_types)?;
+                let args = self.bind_extern_proc_args(arglist, param_types, param_names)?;
                 Ok(value_bound(
                     CoreValue::Call { callee: CoreCallee::ExternProc { import }, args },
                     VarTypeRef::Variant,
@@ -219,11 +221,34 @@ impl<'a> ProcLower<'a> {
         Ok(args)
     }
 
-    /// Arguments for a cross-bundle extern (referenced-project member). Mirrors a
-    /// same-bundle project call: a ByVal parameter coerces its argument to the
-    /// parameter's (published) type; a ByRef parameter aliases an l-value argument
-    /// (or passes the value when it is not an l-value / is parenthesised). Named and
-    /// omitted args are preserved.
+    /// Bind one positional cross-bundle extern argument against its published
+    /// parameter type: a ByRef parameter aliases an l-value argument (or passes the
+    /// value when it is not an l-value / is parenthesised); a ByVal parameter coerces
+    /// its argument to the parameter type — exactly as a same-bundle project call.
+    fn bind_extern_one(
+        &mut self,
+        expr: SyntaxNode<'_>,
+        param: Option<&TypeLibParamType>,
+    ) -> Result<CoreArg, BindError> {
+        if param.is_some_and(|p| p.is_by_ref()) {
+            if expr.kind() != SyntaxKind::ParenExpr
+                && let Ok((place, _)) = self.bind_place(expr)
+            {
+                return Ok(CoreArg::ByRef(place));
+            }
+            return Ok(CoreArg::ByVal(self.bind_expr(expr)?.value));
+        }
+        let bound = self.bind_expr(expr)?;
+        let value = match param {
+            Some(p) => types::coerce(bound.value, &bound.ty, &tlb_param_to_vartype(p)),
+            None => bound.value,
+        };
+        Ok(CoreArg::ByVal(value))
+    }
+
+    /// Arguments for a cross-bundle **coclass member** (`LateDispatch` on a receiver):
+    /// positional args bind against their published types; named args are kept
+    /// verbatim for runtime name-dispatch.
     pub(crate) fn bind_extern_args(
         &mut self,
         arglist: Option<SyntaxNode<'_>>,
@@ -240,31 +265,53 @@ impl<'a> ProcLower<'a> {
                 ArgItem::Named { name, value } => {
                     args.push(CoreArg::Named { name: name.text.to_string(), value: self.bind_expr(value)?.value });
                 }
+                ArgItem::Positional(expr) => args.push(self.bind_extern_one(expr, param_types.get(i))?),
+            }
+        }
+        Ok(args)
+    }
+
+    /// Arguments for a cross-bundle **free function** (`ExternProc`): the callee is
+    /// positional, so named args are reordered into their declared slots by name
+    /// (unfilled slots left `Omitted`) — exactly as a same-bundle `VbaProc` call.
+    /// Without this, an out-of-order named call (`Lib.F(b:=2, a:=1)`) would pass
+    /// arguments in source order.
+    fn bind_extern_proc_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        param_types: &[TypeLibParamType],
+        param_names: &[String],
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let n = param_names.len();
+        let mut slots: Vec<Option<CoreArg>> = (0..n).map(|_| None).collect();
+        let mut extra: Vec<CoreArg> = Vec::new();
+        let mut pos = 0usize;
+        for item in items {
+            match item {
                 ArgItem::Positional(expr) => {
-                    let param = param_types.get(i);
-                    let by_ref = param.is_some_and(|p| p.is_by_ref());
-                    if by_ref {
-                        // ByRef param: alias an l-value (unless parenthesised), else
-                        // pass the value uncoerced — exactly as a same-bundle ByRef.
-                        if expr.kind() != SyntaxKind::ParenExpr
-                            && let Ok((place, _)) = self.bind_place(expr)
-                        {
-                            args.push(CoreArg::ByRef(place));
-                            continue;
-                        }
-                        args.push(CoreArg::ByVal(self.bind_expr(expr)?.value));
-                    } else {
-                        // ByVal param: coerce the argument to the published type.
-                        let bound = self.bind_expr(expr)?;
-                        let value = match param {
-                            Some(p) => types::coerce(bound.value, &bound.ty, &tlb_param_to_vartype(p)),
-                            None => bound.value,
-                        };
-                        args.push(CoreArg::ByVal(value));
+                    let arg = self.bind_extern_one(expr, param_types.get(pos))?;
+                    if pos < n { slots[pos] = Some(arg) } else { extra.push(arg) }
+                    pos += 1;
+                }
+                ArgItem::Omitted => {
+                    if pos < n { slots[pos] = Some(CoreArg::Omitted) } else { extra.push(CoreArg::Omitted) }
+                    pos += 1;
+                }
+                ArgItem::Named { name, value } => {
+                    let folded = fold_identifier(name.text);
+                    match param_names.iter().position(|p| fold_identifier(p) == folded) {
+                        Some(i) => slots[i] = Some(self.bind_extern_one(value, param_types.get(i))?),
+                        None => return Err(self.unresolved(name.text, "named argument")),
                     }
                 }
             }
         }
+        let mut args: Vec<CoreArg> = slots.into_iter().map(|s| s.unwrap_or(CoreArg::Omitted)).collect();
+        args.extend(extra);
         Ok(args)
     }
 
@@ -497,17 +544,58 @@ impl<'a> ProcLower<'a> {
             return Ok(None);
         }
         match self.g.env.resolve_qualified(&[tok.text, member]) {
-            Some(binding) => Ok(Some(self.bind_call_route(member, &binding, arglist)?)),
+            // A qualified member can be a proc (call), a `Const`/`Enum` value, or a
+            // module variable (place) — lower it the same way a bare name resolves.
+            Some(binding) => Ok(Some(self.finish_value_or_call(member, &binding, arglist)?)),
             None => Ok(None),
         }
     }
 
-    /// True if `name` resolves to a standard module (a namespace qualifier).
+    /// Lower an already-resolved name `binding` to a value or call, mirroring the
+    /// tail of `bind_ident`: a referenced `ConstValue` or a folded `Const`/`Enum`
+    /// member → its literal; a plain variable (`Value` route with a place) → a load;
+    /// otherwise a call. Used by the qualified-member path so `Mod1.SomeConst` /
+    /// `Mod1.gVar` bind correctly (not only `Mod1.Proc()`).
+    fn finish_value_or_call(
+        &mut self,
+        name: &str,
+        binding: &Binding,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
+        if let DispatchRoute::ConstValue(c) = &binding.route {
+            return Ok(value_bound(CoreValue::Const(c.clone()), crate::expr::const_type(c)));
+        }
+        if let Some(sym) = binding.symbol
+            && let Some(c) = self.g.env.const_value(sym)
+        {
+            return Ok(value_bound(CoreValue::Const(c.clone()), crate::expr::const_type(c)));
+        }
+        if let DispatchRoute::Value = binding.route
+            && let Some(sym) = binding.symbol
+            && let Some((place, ty)) = self.place_for_symbol(sym)
+        {
+            return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
+        }
+        self.bind_call_route(name, binding, arglist)
+    }
+
+    /// True if `name` is a **standard** (`Procedural`) module — a free-call namespace
+    /// qualifier. Class / Document / Form modules are also `SymbolKind::Module` but
+    /// are NOT qualifiers (their members need an instance), so they are excluded.
     fn is_module_qualifier(&self, name: &str) -> bool {
-        self.resolve(name)
+        let is_module = self
+            .resolve(name)
             .and_then(|b| b.symbol)
             .and_then(|s| self.g.env.symbols.symbol(s))
-            .is_some_and(|s| s.kind == SymbolKind::Module)
+            .is_some_and(|s| s.kind == SymbolKind::Module);
+        if !is_module {
+            return false;
+        }
+        let folded = fold_identifier(name);
+        self.g.env.all_modules().any(|m| {
+            fold_identifier(m.module_name) == folded
+                && m.module_kind == oxvba_symbol::manifest::ModuleKind::Procedural
+        })
     }
 
     /// Lower `recv.member` (already-bound receiver, no args) to a value.

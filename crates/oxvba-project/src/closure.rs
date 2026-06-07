@@ -33,7 +33,12 @@ pub fn load_project_closure_with_entry(
     path: &Path,
     entry_override: Option<&str>,
 ) -> Result<Vec<sym::SymbolProjectManifest>, BasProjError> {
-    let root = canonical(path)?;
+    // The entry project itself — a missing file here is the project, not a missing
+    // *reference*, so report it as I/O rather than `ProjectReferenceNotFound`.
+    let root = path.canonicalize().map_err(|e| BasProjError::Io {
+        path: path.display().to_string(),
+        source: e,
+    })?;
     let mut order: Vec<PathBuf> = Vec::new();
     let mut nodes: HashMap<PathBuf, ProjectNode> = HashMap::new();
     let mut ancestors: HashSet<PathBuf> = HashSet::new();

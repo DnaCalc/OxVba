@@ -222,6 +222,45 @@ fn cross_bundle_call_arg_reads_callers_global() {
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
 }
 
+#[test]
+fn cross_bundle_free_function_reorders_named_args() {
+    // Out-of-order named args to a referenced hidden-module function must land in
+    // their declared positional slots (the cross-bundle callee is positional).
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function Diff(ByVal a As Long, ByVal b As Long) As Long\nDiff = a - b\nEnd Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = Diff(b:=3, a:=10)\nEnd Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    // a - b = 10 - 3 = 7 (NOT source order 3 - 10 = -7).
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(7));
+}
+
+#[test]
+fn referenced_module_variable_is_not_cross_project_bindable() {
+    // A referenced standard-module public VARIABLE has no callable export, so a
+    // cross-project reference must fail cleanly at bind time (unresolved) rather
+    // than opaquely at link time.
+    let lib_mod = || proc_module("LibMod", "Public gConfig As Long\n");
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module("Main", "Public r As Long\nSub Main()\nr = gConfig\nEnd Sub\n")],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    let result = bind_projects(&[lib, app], &NullTypeLibs);
+    assert!(result.is_err(), "a referenced module variable must not resolve cross-project");
+}
+
 // ── Multi-level chain + diamond ──────────────────────────────────────────────
 
 #[test]

@@ -61,6 +61,11 @@ pub enum DispatchRoute {
         /// Per-parameter typelib types — the binder coerces each argument to these
         /// and reads `is_by_ref()` for ByRef write-back, exactly as for `ComMember`.
         param_types: Vec<TypeLibParamType>,
+        /// Per-parameter names (declaration order). For a no-receiver `ExternProc`
+        /// call the binder reorders named arguments into positional slots by name
+        /// (the cross-bundle callee is positional); the coclass `LateDispatch` path
+        /// keeps names for runtime name-dispatch.
+        param_names: Vec<String>,
         /// `true` for a coclass member (dispatched on a receiver); `false` for a
         /// global-namespace / hidden-module function (no receiver).
         has_receiver: bool,

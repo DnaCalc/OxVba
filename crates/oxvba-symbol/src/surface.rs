@@ -196,6 +196,24 @@ pub fn synthesize_export_surface(
         let mut next_vtable = 7u16;
         let mut next_event_id = 0i32;
         for member in &scan.members {
+            // Events are assigned an id over the FULL event set in scan order — Public
+            // AND Private — because the runtime/binder index (`ids.event_index_of`)
+            // counts every `Event` regardless of visibility. The id must match for a
+            // cross-bundle `WithEvents` sink to route correctly; only Public events are
+            // then exposed in the surface.
+            if member.kind == SymbolKind::Event {
+                let event_id = next_event_id;
+                next_event_id += 1;
+                if member.visibility == Visibility::Public {
+                    events.push(SurfaceEvent {
+                        name: member_name(symbols, member),
+                        callback_arity: event_arity(symbols, signatures, member.symbol),
+                        symbol: member.symbol,
+                        event_id,
+                    });
+                }
+                continue;
+            }
             if member.visibility != Visibility::Public {
                 continue;
             }
@@ -214,16 +232,6 @@ pub fn synthesize_export_surface(
                 SymbolKind::Field => {
                     let dispid = take_dispid(member.is_default, &mut next_dispid);
                     field_members(member, dispid, is_class, &mut next_vtable, symbols, &mut members);
-                }
-                SymbolKind::Event => {
-                    let event_id = next_event_id;
-                    next_event_id += 1;
-                    events.push(SurfaceEvent {
-                        name: member_name(symbols, member),
-                        callback_arity: event_arity(symbols, signatures, member.symbol),
-                        symbol: member.symbol,
-                        event_id,
-                    });
                 }
                 _ => {}
             }

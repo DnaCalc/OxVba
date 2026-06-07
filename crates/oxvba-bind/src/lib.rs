@@ -91,11 +91,18 @@ pub fn bind_projects(
     closure_leaf_first: &[SymbolProjectManifest],
     typelibs: &dyn TypeLibResolver,
 ) -> Result<Vec<CoreProgram>, BindError> {
+    // The closure is already deduped by project FILE (path); two entries sharing a
+    // unit NAME are therefore two *different* projects colliding on a name — bind
+    // none silently (it would drop a project's bundle entirely, and `Vm::link`
+    // rejects duplicate unit names anyway). Error loudly instead.
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut programs = Vec::with_capacity(closure_leaf_first.len());
     for manifest in closure_leaf_first {
         if !seen.insert(fold_identifier(&manifest.project_name)) {
-            continue; // a shared/diamond dependency is bound once
+            return Err(BindError::Malformed(format!(
+                "duplicate project unit name `{}` in the reference closure",
+                manifest.project_name
+            )));
         }
         let env = build_resolution_environment(manifest, typelibs)?;
         programs.push(bind_one(&env, manifest)?);

@@ -152,6 +152,17 @@ fn module_qualified_call() {
 }
 
 #[test]
+fn module_qualified_const_and_variable() {
+    // `Mod1.K` (a qualified Public Const) and `Mod1.gShared` (a qualified module
+    // variable) resolve as a value / a place — not a call (regression for the
+    // qualified-member path that previously routed everything through a call).
+    let src = "Sub Main()\n    Dim r As Long\n    gShared = 5\n    r = Mod1.K + Mod1.gShared\nEnd Sub\n\
+               Public Const K As Long = 10\n\
+               Public gShared As Long\n";
+    assert_eq!(run_main_local0(src), Some(15.0));
+}
+
+#[test]
 fn integer_division() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")), Some(3.0));
 }

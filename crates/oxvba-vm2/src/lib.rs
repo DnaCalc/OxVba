@@ -1700,8 +1700,13 @@ impl<'h> Vm<'h> {
                         .as_object_ref()
                         .map(|o| o.bundle_id() as usize)
                         .unwrap_or(self.cur);
-                    if let Some(&handler) =
-                        self.bundles[sink_bundle].event_routes.get(&(token, event_id))
+                    // Bounds-checked like every other runtime-`bundle_id` lookup
+                    // (`dispatch_project_method`, `type_of_is`, …): a stale/foreign
+                    // owner bundle id degrades to "no route" rather than panicking.
+                    if let Some(&handler) = self
+                        .bundles
+                        .get(sink_bundle)
+                        .and_then(|lb| lb.event_routes.get(&(token, event_id)))
                     {
                         let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
                         targets.push((sink_id, binding.owner.clone(), handler, sink_bundle));

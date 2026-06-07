@@ -1159,6 +1159,20 @@ impl Engine {
         &self,
         closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        // The clean path runs on the `oxvba_vm2` interpreter; honor `--jit` the same
+        // way the legacy executor does instead of silently ignoring it.
+        if self.config.enable_jit {
+            #[cfg(feature = "jit")]
+            {
+                return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+            }
+            #[cfg(not(feature = "jit"))]
+            {
+                return Err(PhaseDiagnostic::runtime(
+                    "JIT execution requested but the `jit` feature is not enabled",
+                ));
+            }
+        }
         let typelibs = oxvba_symbol::CatalogTypeLibResolver;
         let programs = oxvba_bind::bind_projects(closure, &typelibs)
             .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;

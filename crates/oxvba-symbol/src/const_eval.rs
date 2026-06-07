@@ -124,7 +124,10 @@ fn fold_enums(
 fn as_i32(c: &CoreConst) -> Option<i32> {
     match c {
         CoreConst::I32(n) => Some(*n),
-        CoreConst::I64(n) => i32::try_from(*n).ok(),
+        // An `Enum` member is a `Long`: a value outside i32's *signed* range (e.g.
+        // `&HFFFFFFFF`, folded as I64 4294967295) is the Long bit pattern (-1), so
+        // wrap rather than drop it (which would silently resume the auto-counter).
+        CoreConst::I64(n) => Some(*n as i32),
         CoreConst::Bool(b) => Some(if *b { -1 } else { 0 }),
         _ => None,
     }
