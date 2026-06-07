@@ -132,6 +132,72 @@ fn library_resolves_predeclared_members() {
     ));
 }
 
+// ── Cross-project: referenced project resolved via its export surface ─────────
+
+#[test]
+fn referenced_project_resolves_through_its_export_surface() {
+    use crate::manifest::{ProjectReference, ReferencedProjectManifest};
+
+    let lib_mod = ModuleUnit {
+        module_name: "LibMod".into(),
+        module_kind: ModuleKind::Procedural,
+        attributes: ModuleAttributes::named("LibMod"),
+        source: "Public Function Add(a As Long, b As Long) As Long\nAdd = a + b\nEnd Function\n\
+                 Private Sub Secret()\nEnd Sub\n\
+                 Public Enum Color\n  Red = 1\nEnd Enum\n"
+            .into(),
+    };
+    let mut widget_attrs = ModuleAttributes::named("Widget");
+    widget_attrs.vb_exposed = true;
+    widget_attrs.vb_creatable = true;
+    let widget = ModuleUnit {
+        module_name: "Widget".into(),
+        module_kind: ModuleKind::Class,
+        attributes: widget_attrs,
+        source: "Public Function GetValue() As Long\nGetValue = 1\nEnd Function\n".into(),
+    };
+    let lib = ReferencedProjectManifest {
+        project_name: "Lib".into(),
+        project_kind: ProjectKind::Library,
+        modules: vec![lib_mod, widget],
+    };
+    let m = SymbolProjectManifest {
+        project_name: "App".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![module("Main", "Sub Main()\nEnd Sub\n")],
+        references: vec![ProjectReference::Project { referenced_project_name: "Lib".into() }],
+        reference_projects: vec![lib],
+        conditional_constants: BTreeMap::new(),
+    };
+
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let ctx = ResolutionContext::at(env.module_scope("Main").unwrap());
+
+    // A referenced standard-module Public function resolves UNQUALIFIED, as an
+    // in-image project call (devirtualized hidden-module member).
+    let add = env.resolve(&ctx, "Add").expect("referenced Add resolves unqualified");
+    assert!(matches!(add.route, DispatchRoute::ProjectMember { .. }));
+
+    // It also resolves qualified `Lib.LibMod.Add`.
+    assert!(env.resolve_qualified(&["Lib", "LibMod", "Add"]).is_some());
+
+    // A referenced Public Enum member is a global-namespace constant.
+    let red = env.resolve(&ctx, "Red").expect("referenced enum member resolves");
+    assert!(matches!(red.route, DispatchRoute::Value));
+
+    // A referenced Private member does NOT cross the boundary.
+    assert!(env.resolve(&ctx, "Secret").is_none());
+
+    // A referenced exposed class member resolves on a typed receiver as an
+    // early-bound COM member (the VM dispatches it in-image, WS-H).
+    let recv = VarTypeRef::Object("Widget".into());
+    let gv = env.resolve_member(&recv, "GetValue", None).expect("Widget.GetValue resolves");
+    assert!(matches!(gv.route, DispatchRoute::ComMember { .. }));
+
+    // The active project keeps its own surface available to the binder.
+    assert_eq!(env.export_surfaces().len(), 2, "active + one referenced surface");
+}
+
 // ── COM provider: early/late + events ────────────────────────────────────────
 
 fn widget_blob() -> TypeLibMetadataBlob {

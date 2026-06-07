@@ -5,4 +5,5 @@ pub mod com;
 pub mod declare;
 pub mod host;
 pub mod project;
+pub mod surface_provider;
 pub mod vba_library;

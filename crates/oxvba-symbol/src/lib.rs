@@ -19,6 +19,7 @@ pub mod providers;
 pub mod scanner;
 pub mod signature;
 pub mod structural;
+pub mod surface;
 
 #[cfg(test)]
 mod tests;

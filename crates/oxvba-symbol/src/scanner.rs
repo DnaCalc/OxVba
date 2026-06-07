@@ -10,7 +10,7 @@ use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::manifest::ModuleUnit;
 use crate::model::{
     fold_identifier, PropertyGroup, ScopeId, SourceProvenance, SourceSpan, SymbolId, SymbolImpl,
-    SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable,
+    SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable, Visibility,
 };
 use crate::signature::SignatureId;
 use crate::providers::declare::{CallConv, DeclareSymbol};
@@ -35,6 +35,8 @@ pub struct ScannedMember {
     pub namespace: SymbolNamespace,
     /// `Attribute VB_UserMemId = 0` — this is the type's default member.
     pub is_default: bool,
+    /// Declared visibility (drives cross-project / COM export-surface exposure).
+    pub visibility: Visibility,
 }
 
 /// Scan `module`'s pre-parsed CST into a fresh module scope under `project_scope`.
@@ -92,10 +94,13 @@ impl ScanCtx<'_> {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
                     let sig = self.signatures.alloc(self.build_signature(node, CallShape::EventRaise));
-                    self.declare(scope, SymbolNamespace::Member, SymbolKind::Event, name, token, SymbolImpl::Signature(sig), module_level)?;
+                    self.declare(scope, SymbolNamespace::Member, SymbolKind::Event, name, token, SymbolImpl::Signature(sig), module_level, decl_visibility(node, Visibility::Public))?;
                 }
             }
             SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
+                // `Type`/`Enum` default to Public; the members of an enum inherit the
+                // enum's visibility.
+                let vis = decl_visibility(node, Visibility::Public);
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
                     let kind = if node.kind() == SyntaxKind::EnumBlock {
@@ -103,7 +108,7 @@ impl ScanCtx<'_> {
                     } else {
                         SymbolKind::Type
                     };
-                    self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level)?;
+                    self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level, vis)?;
                 }
                 if node.kind() == SyntaxKind::EnumBlock {
                     for member in node.enum_members() {
@@ -117,6 +122,7 @@ impl ScanCtx<'_> {
                                 token,
                                 SymbolImpl::None,
                                 module_level,
+                                vis,
                             )?;
                         }
                     }
@@ -124,6 +130,10 @@ impl ScanCtx<'_> {
             }
             SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
                 let is_const = node.kind() == SyntaxKind::ConstStmt;
+                // Module-level `Dim`/module variables and `Const`s default to Private;
+                // an explicit `Public` exposes them. The modifier sits on the statement,
+                // so it applies to every declarator.
+                let vis = decl_visibility(node, Visibility::Private);
                 for declarator in node.declarators() {
                     let Some(token) = declarator.declarator_name() else {
                         continue;
@@ -147,6 +157,7 @@ impl ScanCtx<'_> {
                         token,
                         SymbolImpl::DeclaredType(declared_type),
                         module_level,
+                        vis,
                     )?;
                 }
             }
@@ -166,6 +177,8 @@ impl ScanCtx<'_> {
         };
         let logical = normalize_identifier_token(name_token.text).to_string();
         let is_default = is_default_member_node(node);
+        // Sub/Function/Property default to Public; `Private`/`Friend` override.
+        let visibility = decl_visibility(node, Visibility::Public);
         let sig = self.signatures.alloc(self.build_signature(node, CallShape::Ordinary));
 
         if node.kind() == SyntaxKind::PropertyDecl {
@@ -202,6 +215,7 @@ impl ScanCtx<'_> {
                             kind: SymbolKind::Property,
                             namespace: SymbolNamespace::Procedure,
                             is_default,
+                            visibility,
                         });
                     }
                 }
@@ -230,6 +244,7 @@ impl ScanCtx<'_> {
                 kind,
                 namespace: SymbolNamespace::Procedure,
                 is_default,
+                visibility,
             });
         }
         self.scan_proc_body(node, parent, &logical)?;
@@ -323,6 +338,7 @@ impl ScanCtx<'_> {
             name_token,
             SymbolImpl::Declare(declare),
             module_level,
+            decl_visibility(node, Visibility::Private),
         )?;
         Ok(())
     }
@@ -354,6 +370,7 @@ impl ScanCtx<'_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn declare(
         &mut self,
         scope: ScopeId,
@@ -363,6 +380,7 @@ impl ScanCtx<'_> {
         token: SyntaxToken<'_>,
         imp: SymbolImpl,
         module_level: bool,
+        visibility: Visibility,
     ) -> Result<(), SymbolModelError> {
         let symbol = self.symbols.declare_symbol(scope, namespace, kind, name, provenance(self.module_name, token), imp)?;
         if module_level {
@@ -372,6 +390,7 @@ impl ScanCtx<'_> {
                 kind,
                 namespace,
                 is_default: false,
+                visibility,
             });
         }
         Ok(())
@@ -404,6 +423,22 @@ fn set_accessor(group: &mut PropertyGroup, accessor: PropertyAccessor, sig: Sign
         PropertyAccessor::Let => group.let_ = Some(sig),
         PropertyAccessor::Set => group.set = Some(sig),
     }
+}
+
+/// The declared visibility of a top-level declaration: an explicit
+/// `Public`/`Private`/`Friend` modifier token wins; otherwise `default` (the VBA
+/// default for that declaration kind). The modifier is a direct child token of
+/// the decl node — read the same way [`property_accessor`] reads Get/Let/Set.
+fn decl_visibility(node: SyntaxNode<'_>, default: Visibility) -> Visibility {
+    for t in node.child_tokens() {
+        match t.kind {
+            SyntaxKind::KwPublic => return Visibility::Public,
+            SyntaxKind::KwPrivate => return Visibility::Private,
+            SyntaxKind::KwFriend => return Visibility::Friend,
+            _ => {}
+        }
+    }
+    default
 }
 
 /// `Attribute VB_UserMemId = 0` inside the procedure → the type's default member.
@@ -639,5 +674,76 @@ fn provenance(module_name: &str, token: SyntaxToken<'_>) -> SourceProvenance {
             start: token.offset,
             end: token.offset + token.text.len() as u32,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::{ModuleAttributes, ModuleKind};
+    use crate::model::ScopeKind;
+
+    /// Scan one procedural module's source and return its scanned members.
+    fn scan_members(source: &str) -> Vec<ScannedMember> {
+        let module = ModuleUnit {
+            module_name: "M".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("M"),
+            source: source.into(),
+        };
+        let parse = oxvba_syntax::parse(source);
+        assert!(parse.errors().is_empty(), "parse errors: {:?}", parse.errors());
+        let mut symbols = SymbolTable::new();
+        let mut signatures = SignatureTable::new();
+        let mut next = 0u32;
+        let project = symbols
+            .add_scope(ScopeKind::Project, symbols.global_scope(), Some("P"))
+            .unwrap();
+        scan_module(&mut symbols, &mut signatures, &mut next, &module, parse.syntax(), project)
+            .unwrap()
+            .members
+    }
+
+    fn vis_of(members: &[ScannedMember], name: &str) -> Visibility {
+        members
+            .iter()
+            .find(|m| m.name_folded == fold_identifier(name))
+            .unwrap_or_else(|| panic!("member `{name}` not scanned"))
+            .visibility
+    }
+
+    #[test]
+    fn captures_declared_visibility_with_vba_defaults() {
+        let members = scan_members(
+            "Public Sub PubSub()\nEnd Sub\n\
+             Private Sub PrivSub()\nEnd Sub\n\
+             Sub BareSub()\nEnd Sub\n\
+             Public x As Long\n\
+             Dim y As Long\n\
+             Private z As Long\n\
+             Const K As Long = 1\n\
+             Public Const PK As Long = 2\n\
+             Public Enum E\n  A = 1\nEnd Enum\n",
+        );
+        // Sub/Function default Public; explicit Private overrides.
+        assert_eq!(vis_of(&members, "PubSub"), Visibility::Public);
+        assert_eq!(vis_of(&members, "PrivSub"), Visibility::Private);
+        assert_eq!(vis_of(&members, "BareSub"), Visibility::Public);
+        // Module variables default Private; `Public` exposes them.
+        assert_eq!(vis_of(&members, "x"), Visibility::Public);
+        assert_eq!(vis_of(&members, "y"), Visibility::Private);
+        assert_eq!(vis_of(&members, "z"), Visibility::Private);
+        // `Const` defaults Private; `Public Const` exposes it.
+        assert_eq!(vis_of(&members, "K"), Visibility::Private);
+        assert_eq!(vis_of(&members, "PK"), Visibility::Public);
+        // `Enum` defaults Public; its members inherit the enum's visibility.
+        assert_eq!(vis_of(&members, "E"), Visibility::Public);
+        assert_eq!(vis_of(&members, "A"), Visibility::Public);
+    }
+
+    #[test]
+    fn friend_is_distinct_from_public_and_private() {
+        let members = scan_members("Friend Sub Helper()\nEnd Sub\n");
+        assert_eq!(vis_of(&members, "Helper"), Visibility::Friend);
     }
 }

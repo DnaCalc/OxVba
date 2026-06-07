@@ -7,14 +7,16 @@ use oxvba_bundle::ProjectMemberKind;
 use oxvba_syntax::{Parse, SyntaxNode};
 
 use crate::binding::{Binding, DispatchRoute};
-use crate::manifest::{ProjectReference, SymbolProjectManifest};
+use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
 use crate::model::{ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable};
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::host::HostProvider;
 use crate::providers::project::ProjectProvider;
+use crate::providers::surface_provider::SurfaceProvider;
 use crate::providers::vba_library::VbaLibraryProvider;
 use crate::scanner::{self, ModuleScan};
 use crate::signature::{SignatureTable, VarTypeRef};
+use crate::surface::{synthesize_export_surface, ProjectExportSurface};
 
 /// The context a resolution happens in: the innermost source scope and, for
 /// member access, the receiver's static type.
@@ -93,12 +95,18 @@ const NAMESPACE_PRIORITY: &[SymbolNamespace] = &[
     SymbolNamespace::Library,
 ];
 
-/// One active-project module's parsed CST, retained on the environment so the
-/// binder lowers the **same** tree the scanner resolved against — parsed once.
+/// One module's parsed CST, retained on the environment so the binder lowers the
+/// **same** tree the scanner resolved against — parsed once. Both active and
+/// referenced-project modules are retained: the binder lowers every project's
+/// bodies into the single bundle (cross-project references are devirtualized into
+/// one image), so it needs every CST, tagged with its origin.
 pub struct ModuleCst {
     pub module_name: String,
     pub module_scope: ScopeId,
     pub parse: Parse,
+    /// `true` for the active project; `false` for a referenced project.
+    pub is_active: bool,
+    pub module_kind: ModuleKind,
 }
 
 /// A borrowed view of a retained module CST (the `parse.syntax()` red root).
@@ -106,15 +114,22 @@ pub struct ModuleCstRef<'a> {
     pub module_name: &'a str,
     pub module_scope: ScopeId,
     pub syntax: SyntaxNode<'a>,
+    pub is_active: bool,
+    pub module_kind: ModuleKind,
 }
 
 pub struct ResolutionEnvironment {
     pub symbols: SymbolTable,
     pub signatures: SignatureTable,
     providers: Vec<Box<dyn Provider>>,
-    /// Active-project module CSTs (parsed once during build). Referenced-project
-    /// CSTs are not retained — referenced projects contribute symbols only.
+    /// Module CSTs (parsed once during build): active project first (manifest
+    /// order), then each referenced project (reference order). `modules()` yields
+    /// the active ones; `all_modules()` yields every module.
     module_csts: Vec<ModuleCst>,
+    /// Synthesized export surfaces — the active project's, then each referenced
+    /// project's (same order as `manifest.reference_projects`). The binder reads
+    /// these to build per-class dispid→method dispatch maps (WS-H).
+    surfaces: Vec<ProjectExportSurface>,
 }
 
 impl ResolutionEnvironment {
@@ -164,11 +179,25 @@ impl ResolutionEnvironment {
     /// The active-project module CSTs, parsed once during build. The binder walks
     /// these (no re-parse) to lower each module against the resolution it shares.
     pub fn modules(&self) -> impl Iterator<Item = ModuleCstRef<'_>> {
+        self.all_modules().filter(|m| m.is_active)
+    }
+
+    /// Every retained module CST — active project first, then each referenced
+    /// project (reference order). The binder lowers all of them into the single
+    /// bundle (referenced bodies are devirtualization targets).
+    pub fn all_modules(&self) -> impl Iterator<Item = ModuleCstRef<'_>> {
         self.module_csts.iter().map(|m| ModuleCstRef {
             module_name: &m.module_name,
             module_scope: m.module_scope,
             syntax: m.parse.syntax(),
+            is_active: m.is_active,
+            module_kind: m.module_kind,
         })
+    }
+
+    /// The synthesized export surfaces (active first, then referenced projects).
+    pub fn export_surfaces(&self) -> &[ProjectExportSurface] {
+        &self.surfaces
     }
 
     /// Find a module scope by (case-insensitive) name — convenience for callers
@@ -267,43 +296,80 @@ pub fn build_resolution_environment(
             module_name: scan.module_name.clone(),
             module_scope: scan.module_scope,
             parse,
+            is_active: true,
+            module_kind: module.module_kind,
         });
         active_scans.push(scan);
     }
 
-    let mut referenced_scans: Vec<ModuleScan> = Vec::new();
+    // Referenced projects: scan their modules into a ReferencedProject scope AND
+    // retain the CSTs — the binder lowers their bodies into the same bundle
+    // (cross-project references are devirtualized in-image). Each referenced
+    // project's public surface is synthesized so a referencing call binds through
+    // the same COM contract a compiled component would present.
+    let mut referenced_surfaces: Vec<ProjectExportSurface> = Vec::new();
     for referenced in &manifest.reference_projects {
         let scope = symbols.add_scope(
             ScopeKind::ReferencedProject,
             symbols.global_scope(),
             Some(&referenced.project_name),
         )?;
+        let mut scans: Vec<ModuleScan> = Vec::new();
         for module in &referenced.modules {
-            // Referenced projects contribute symbols only — parse, scan, drop the CST.
             let parse = oxvba_syntax::parse(&module.source);
             if !parse.errors().is_empty() {
                 return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
             }
-            referenced_scans.push(scanner::scan_module(
+            let scan = scanner::scan_module(
                 &mut symbols,
                 &mut signatures,
                 &mut next_descriptor_id,
                 module,
                 parse.syntax(),
                 scope,
-            )?);
+            )?;
+            module_csts.push(ModuleCst {
+                module_name: scan.module_name.clone(),
+                module_scope: scan.module_scope,
+                parse,
+                is_active: false,
+                module_kind: module.module_kind,
+            });
+            scans.push(scan);
         }
+        referenced_surfaces.push(synthesize_export_surface(
+            &referenced.project_name,
+            &referenced.modules,
+            &scans,
+            &symbols,
+            &signatures,
+        ));
     }
 
-    let project_provider = ProjectProvider::build(&symbols, &active_scans, &referenced_scans);
+    // The active project's own surface (consumed by the binder for per-class
+    // dispid→method dispatch maps, and by a future COM-server emit).
+    let active_surface = synthesize_export_surface(
+        &manifest.project_name,
+        &manifest.modules,
+        &active_scans,
+        &symbols,
+        &signatures,
+    );
+    let mut surfaces = vec![active_surface];
+    surfaces.extend(referenced_surfaces.iter().cloned());
+
+    // The cross-module index is the ACTIVE project only — a referenced project is
+    // reached through its export-surface provider, not by flattening its modules
+    // into the active name index.
+    let project_provider = ProjectProvider::build(&symbols, &active_scans, &[]);
 
     let mut com_providers: Vec<ComTypeLibProvider> = Vec::new();
     let mut host_blobs: Vec<oxvba_com::TypeLibMetadataBlob> = Vec::new();
     for reference in &manifest.references {
-        if let Some(request) = request_from(reference) {
-            if let Some(blob) = typelibs.resolve(&request) {
-                com_providers.push(ComTypeLibProvider::new(blob));
-            }
+        if let Some(request) = request_from(reference)
+            && let Some(blob) = typelibs.resolve(&request)
+        {
+            com_providers.push(ComTypeLibProvider::new(blob));
         }
         if let ProjectReference::HostInjected { referenced_project_name } = reference {
             // A host-injected reference that names a registered typelib contributes
@@ -323,14 +389,19 @@ pub fn build_resolution_environment(
         }
     }
 
-    // Chain order: project (sibling + referenced) → VBA library → host → COM typelibs.
+    // Chain order: active project → referenced-project surfaces → VBA library →
+    // host → COM typelibs. Active names shadow referenced ones (active-wins on a
+    // collision); a referenced project's surface is consulted before the library.
     let mut providers: Vec<Box<dyn Provider>> = Vec::new();
     providers.push(Box::new(project_provider));
+    for surface in &referenced_surfaces {
+        providers.push(Box::new(SurfaceProvider::new(surface.clone())));
+    }
     providers.push(Box::new(VbaLibraryProvider));
     providers.push(Box::new(HostProvider::new(host_blobs)));
     for com in com_providers {
         providers.push(Box::new(com));
     }
 
-    Ok(ResolutionEnvironment { symbols, signatures, providers, module_csts })
+    Ok(ResolutionEnvironment { symbols, signatures, providers, module_csts, surfaces })
 }
