@@ -298,11 +298,6 @@ fn run_project(args: Vec<String>) {
                 std::process::exit(1);
             });
     }
-    apply_cli_reference_overrides(&mut loaded, &parsed.references).unwrap_or_else(|err| {
-        eprintln!("oxvba run-project: {err}");
-        std::process::exit(2);
-    });
-
     let config = HostConfig {
         enable_jit: parsed.enable_jit,
     };
@@ -321,12 +316,12 @@ fn run_project(args: Vec<String>) {
     }
 
     // Clean path (`oxvba_bind::bind_projects` → `linearize` → `oxvba_vm2::Vm::link`):
-    // walk the `.basproj`/`.vbp` reference graph into a closure and run it. CLI
-    // reference injection (`--references`) and convention-only directories (no
-    // project file) still use the legacy executor until the old path is removed.
+    // walk the `.basproj`/`.vbp` reference graph into a closure and run it. A
+    // convention-only directory (no project file) still uses the legacy executor
+    // until the old path is removed (see POST_CLEANUP.md).
     let project_file = resolve_project_file(parsed.input_path.as_ref());
     let result = match project_file {
-        Some(file) if parsed.references.is_empty() => {
+        Some(file) => {
             match oxvba_project::load_project_closure_with_entry(
                 &file,
                 parsed.entry_point_override.as_deref(),
@@ -338,7 +333,7 @@ fn run_project(args: Vec<String>) {
                 }
             }
         }
-        _ => engine.execute_project_with_variant_snapshot_phased(&loaded.manifest),
+        None => engine.execute_project_with_variant_snapshot_phased(&loaded.manifest),
     };
 
     match result {
@@ -1117,7 +1112,6 @@ struct RunProjectArgs {
     dump_bootstrap: bool,
     bootstrap: RunnerBootstrapOptions,
     entry_point_override: Option<String>,
-    references: CliReferenceArgs,
 }
 
 #[derive(Debug, Clone)]
@@ -1142,7 +1136,6 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     let mut dump_bootstrap = false;
     let mut bootstrap = RunnerBootstrapOptions::default();
     let mut entry_point_override: Option<String> = None;
-    let mut references = CliReferenceArgs::default();
 
     let collected: Vec<String> = iter.collect();
     let mut i = 0;
@@ -1211,27 +1204,6 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
                 bootstrap.overrides.wasm_runtime_class =
                     Some(parse_wasm_runtime_class(collected.get(i)?)?);
             }
-            "--project-ref" => {
-                i += 1;
-                references
-                    .project_refs
-                    .push(PathBuf::from(collected.get(i)?.as_str()));
-            }
-            "--com-ref" => {
-                i += 1;
-                references
-                    .com_refs
-                    .push(parse_cli_com_reference(collected.get(i)?)?);
-            }
-            "--native-ref" => {
-                i += 1;
-                references
-                    .native_refs
-                    .push(oxvba_project::BasProjNativeReference {
-                        include: collected.get(i)?.clone(),
-                        path: Some(collected.get(i)?.clone()),
-                    });
-            }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
             }
@@ -1247,7 +1219,6 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         dump_bootstrap,
         bootstrap,
         entry_point_override,
-        references,
     })
 }
 
@@ -1459,14 +1430,6 @@ struct CliReferenceArgs {
     project_refs: Vec<PathBuf>,
     com_refs: Vec<CliComReference>,
     native_refs: Vec<oxvba_project::BasProjNativeReference>,
-}
-
-impl CliReferenceArgs {
-    /// No CLI-injected references — the clean path can run straight from the
-    /// project's own `.basproj` reference graph.
-    fn is_empty(&self) -> bool {
-        self.project_refs.is_empty() && self.com_refs.is_empty() && self.native_refs.is_empty()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3285,29 +3248,20 @@ mod tests {
         );
     }
 
+    // `run-project` no longer accepts `--project-ref`/`--com-ref`/`--native-ref`
+    // (CLI reference injection removed; the `.basproj` graph is the source of truth —
+    // see POST_CLEANUP.md). `apply_cli_reference_overrides` is still covered below for
+    // the legacy `build`/`immediate` commands until they are removed.
+
     #[test]
-    fn parse_run_project_args_supports_reference_flags() {
+    fn run_project_rejects_removed_reference_flags() {
         let args = vec![
             "run-project".to_string(),
             ".".to_string(),
             "--project-ref".to_string(),
             "..\\Shared\\Shared.basproj".to_string(),
-            "--com-ref".to_string(),
-            "Scripting=scrrun.dll".to_string(),
-            "--native-ref".to_string(),
-            ".\\native\\helper.dll".to_string(),
         ];
-        let parsed = parse_run_project_args_from(args).expect("args should parse");
-        assert_eq!(parsed.references.project_refs.len(), 1);
-        assert_eq!(parsed.references.com_refs.len(), 1);
-        assert_eq!(parsed.references.native_refs.len(), 1);
-        assert_eq!(
-            parsed.references.com_refs[0],
-            super::CliComReference {
-                library_name: "Scripting".to_string(),
-                importlib: Some("scrrun.dll".to_string())
-            }
-        );
+        assert!(parse_run_project_args_from(args).is_none(), "--project-ref is no longer accepted");
     }
 
     #[test]
