@@ -17,6 +17,7 @@
 //! CompiledProject → Execution
 //! ```
 
+pub mod closure;
 pub mod com_selection;
 pub mod error;
 pub mod generate;
@@ -44,6 +45,7 @@ pub use com_selection::{
     inspect_workspace_com_project_state, plan_add_com_candidate, plan_remove_com_reference,
     plan_reorder_com_references, plan_repair_project_selection, plan_replace_com_reference,
 };
+pub use closure::{load_project_closure, load_project_closure_with_entry};
 pub use error::BasProjError;
 pub use generate::{generate_basproj_xml, serialize_basproj_xml};
 pub use host_helpers::{
