@@ -17,6 +17,10 @@ oxvba-compiler.workspace = true
 oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 oxvba-hal.workspace = true
+oxvba-symbol.workspace = true
+oxvba-bind.workspace = true
+oxvba-bundle.workspace = true
+oxvba-vm2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

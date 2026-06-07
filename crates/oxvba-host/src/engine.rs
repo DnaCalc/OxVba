@@ -1149,6 +1149,61 @@ impl Engine {
             .values)
     }
 
+    /// Execute a **clean-path** project closure (the leaf-first, entry-last output
+    /// of `oxvba_project::load_project_closure`) on the new pipeline:
+    /// `oxvba_bind::bind_projects` (one bundle per project) → `linearize` each →
+    /// `oxvba_vm2::Vm::link` (multi-bundle ".NET-assembly" image, entry last) →
+    /// run. Reuses this engine's host services. The returned snapshot is the entry
+    /// project's globals (its module-level state).
+    pub fn execute_project_closure_with_variant_snapshot(
+        &self,
+        closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
+        let programs = oxvba_bind::bind_projects(closure, &typelibs)
+            .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        let bundles: Vec<oxvba_bundle::Bundle> = programs
+            .iter()
+            .map(oxvba_bundle::linearize)
+            .collect::<Result<_, _>>()
+            .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
+        let refs: Vec<&oxvba_bundle::Bundle> = bundles.iter().collect();
+        let mut vm = oxvba_vm2::Vm::link(&refs, &*self.host_services)
+            .map_err(|e| PhaseDiagnostic::runtime(e.message))?;
+        vm.run().map_err(|e| PhaseDiagnostic::runtime(e.message))?;
+        // The entry project's globals are the result snapshot (entry bundle is last;
+        // after `run` the cursor rests in it).
+        let entry_globals = bundles.last().map(|b| b.global_count).unwrap_or(0);
+        let values = (0..entry_globals)
+            .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
+            .collect();
+        Ok(values)
+    }
+
+    /// Execute a single VBA **source** module on the clean path (`oxvba run
+    /// <source>`): wrap it in a one-module project, `bind_program` → `linearize` →
+    /// run on `oxvba_vm2`, and snapshot the module's globals.
+    pub fn execute_source_with_variant_snapshot_clean(
+        &self,
+        source: &str,
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        use oxvba_symbol::manifest as sym;
+        let manifest = sym::SymbolProjectManifest {
+            project_name: "Main".to_string(),
+            project_kind: sym::ProjectKind::Source,
+            modules: vec![sym::ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: sym::ModuleKind::Procedural,
+                attributes: sym::ModuleAttributes::named("Main"),
+                source: source.to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        self.execute_project_closure_with_variant_snapshot(std::slice::from_ref(&manifest))
+    }
+
     pub fn execute_project_with_variant_snapshot_and_package_identity_phased(
         &self,
         manifest: &ProjectManifest,
