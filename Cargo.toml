@@ -8,21 +8,18 @@ members = [
     "crates/oxvba-jit",
     "crates/oxvba-com",
     "crates/oxvba-host",
-    "crates/oxvba-debug",
     "crates/oxvba-cli",
-    "crates/oxvba-launcher",
     "crates/oxvba-project",
     "crates/oxvba-build",
-    "crates/oxvba-languageservice",
-    "crates/oxvba-lsp",
-    "crates/oxvba-web-host",
-    "crates/oxvba-web-shell",
     "crates/oxvba-bundle",
     "crates/oxvba-lib",
     "crates/oxvba-vm2",
     "crates/oxvba-symbol",
     "crates/oxvba-bind",
 ]
+# Non-main-path code (frontend/tooling/native-export + the legacy execution guts)
+# lives here as reference for the clean-stack rebuild; it is not built.
+exclude = ["_legacy_harvest"]
 resolver = "2"
 
 [workspace.package]
@@ -41,12 +38,8 @@ oxvba-vm = { path = "crates/oxvba-vm" }
 oxvba-jit = { path = "crates/oxvba-jit" }
 oxvba-com = { path = "crates/oxvba-com" }
 oxvba-host = { path = "crates/oxvba-host" }
-oxvba-debug = { path = "crates/oxvba-debug" }
 oxvba-project = { path = "crates/oxvba-project" }
 oxvba-build = { path = "crates/oxvba-build" }
-oxvba-languageservice = { path = "crates/oxvba-languageservice" }
-oxvba-web-host = { path = "crates/oxvba-web-host" }
-oxvba-web-shell = { path = "crates/oxvba-web-shell" }
 oxvba-bundle = { path = "crates/oxvba-bundle" }
 oxvba-lib = { path = "crates/oxvba-lib" }
 oxvba-vm2 = { path = "crates/oxvba-vm2" }
