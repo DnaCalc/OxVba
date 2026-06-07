@@ -18,8 +18,8 @@
 use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::{
-    ClassId, CoreClass, CoreClassMethod, CoreConst, CoreGlobal, CoreLocal, CoreParam, GlobalId,
-    LocalId, ProcId,
+    ClassId, CoreClass, CoreClassMethod, CoreGlobal, CoreLocal, CoreParam, GlobalId, LocalId,
+    ProcId,
 };
 use oxvba_bundle::{ProcedureKind, ProjectMemberKind, StringCompareMode};
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
@@ -31,7 +31,6 @@ use oxvba_symbol::signature::{PassingMode, Signature, VarTypeRef};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
-use crate::expr::{eval_const_expr, ConstEval};
 use crate::types;
 
 /// One procedure's frame skeleton + the `SymbolId`→`LocalId` map for its scope.
@@ -73,8 +72,6 @@ pub struct IdAllocator {
     pub withevents_binding_of: HashMap<SymbolId, i32>,
     /// A class `Event` symbol → its event index (within its declaring class).
     pub event_index_of: HashMap<SymbolId, i32>,
-    /// A `Const` symbol → its folded literal value (substituted at use sites).
-    pub const_of: HashMap<SymbolId, CoreConst>,
     /// Folded names of class modules that appear in some `Implements` clause —
     /// i.e. project interfaces. A member dispatch on an interface-typed receiver
     /// is mangled to `Interface_Member`.
@@ -98,7 +95,6 @@ impl IdAllocator {
             field_token_of: HashMap::new(),
             withevents_binding_of: HashMap::new(),
             event_index_of: HashMap::new(),
-            const_of: HashMap::new(),
             interfaces: HashSet::new(),
         };
 
@@ -141,26 +137,12 @@ impl IdAllocator {
         }
 
         // 2) Procs — per active module, zip top-level proc decls with the module's
-        //    `Procedure` scopes (both in source order). `Const`s are *collected*
-        //    here and folded in a fixed-point pass afterward, so a const may refer
-        //    to another const declared later or in another module.
-        let mut pending_consts: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)> = Vec::new();
-        let mut const_syms: HashSet<SymbolId> = HashSet::new();
+        //    `Procedure` scopes (both in source order). `Const`/`Enum` values are
+        //    folded once in the symbol layer (`env.const_value`), the published
+        //    type system's single source of truth — the binder no longer folds.
         for module in env.modules() {
             let class_name = class_name_for(manifest, module.module_name);
             let compare_mode = module_compare_mode(module.syntax);
-            // Module-level `Const`s (top-level declarations).
-            for node in module.syntax.child_nodes() {
-                if node.kind() == SyntaxKind::ConstStmt {
-                    collect_const_declarators(
-                        env,
-                        module.module_scope,
-                        node,
-                        &mut pending_consts,
-                        &mut const_syms,
-                    );
-                }
-            }
             let proc_scopes: Vec<ScopeId> = symbols
                 .scopes()
                 .iter()
@@ -180,8 +162,6 @@ impl IdAllocator {
                 )));
             }
             for (decl, &proc_scope) in decls.iter().zip(proc_scopes.iter()) {
-                // Proc-level `Const`s (possibly nested in blocks; one proc scope).
-                collect_proc_consts(env, proc_scope, *decl, &mut pending_consts, &mut const_syms);
                 alloc.alloc_proc(
                     env,
                     module.module_scope,
@@ -192,9 +172,6 @@ impl IdAllocator {
                 )?;
             }
         }
-        // Fold every collected `Const` to a value, resolving cross-const
-        // references by fixed point (cycles / non-constant refs are hard errors).
-        resolve_const_worklist(env, pending_consts, &const_syms, &mut alloc.const_of)?;
 
         // 3) Classes — one `CoreClass` per class module, with its method dispatch
         //    table + Class_Initialize/Terminate. Built after procs so ProcIds exist.
@@ -384,10 +361,11 @@ fn build_frame(
         }
     }
 
-    // Then locals (declaration order, block scoping already flattened).
+    // Then locals (declaration order, block scoping already flattened). A proc-level
+    // `Const` is namespace `Local` but folded to a value — it gets no frame slot.
     for &sym_id in &scope_syms {
         let sym = symbols.symbol(sym_id).expect("symbol in scope");
-        if sym.namespace == SymbolNamespace::Local {
+        if sym.namespace == SymbolNamespace::Local && sym.kind != SymbolKind::Const {
             let array_element = match &sym.imp {
                 SymbolImpl::DeclaredType(t) => types::array_element(t),
                 _ => None,
@@ -459,86 +437,6 @@ fn property_accessor_kind(decl: SyntaxNode<'_>) -> ProjectMemberKind {
         }
     }
     ProjectMemberKind::PropertyGet
-}
-
-/// Collect each `Const` declarator in a `ConstStmt` into the fold worklist,
-/// keyed by the declared symbol (namespace `Local` for both module- and
-/// proc-level consts). The initializer is folded later by
-/// [`resolve_const_worklist`] so cross-const references resolve regardless of
-/// declaration order.
-fn collect_const_declarators<'a>(
-    env: &ResolutionEnvironment,
-    scope: ScopeId,
-    const_stmt: SyntaxNode<'a>,
-    pending: &mut Vec<(ScopeId, SymbolId, SyntaxNode<'a>)>,
-    const_syms: &mut HashSet<SymbolId>,
-) {
-    for declarator in const_stmt.declarators() {
-        let Some(name) = declarator.declarator_name() else { continue };
-        let Some(init) = declarator.first_expr_child() else { continue };
-        if let Ok(Some(sym)) =
-            env.symbols.find_in_scope(scope, SymbolNamespace::Local, name.text)
-        {
-            const_syms.insert(sym);
-            pending.push((scope, sym, init));
-        }
-    }
-}
-
-/// Collect proc-level `Const`s anywhere in a procedure body (block scoping is
-/// flattened to the one procedure scope).
-fn collect_proc_consts<'a>(
-    env: &ResolutionEnvironment,
-    proc_scope: ScopeId,
-    node: SyntaxNode<'a>,
-    pending: &mut Vec<(ScopeId, SymbolId, SyntaxNode<'a>)>,
-    const_syms: &mut HashSet<SymbolId>,
-) {
-    if node.kind() == SyntaxKind::ConstStmt {
-        collect_const_declarators(env, proc_scope, node, pending, const_syms);
-    }
-    for child in node.child_nodes() {
-        collect_proc_consts(env, proc_scope, child, pending, const_syms);
-    }
-}
-
-/// Fold every collected `Const` initializer to a value by fixed point: each pass
-/// resolves the consts whose dependencies are already known; iterate until none
-/// remain (success) or a pass makes no progress (a cycle or unresolvable
-/// reference — a hard error). A folding `Error` aborts immediately.
-fn resolve_const_worklist(
-    env: &ResolutionEnvironment,
-    pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)>,
-    const_syms: &HashSet<SymbolId>,
-    const_of: &mut HashMap<SymbolId, CoreConst>,
-) -> Result<(), BindError> {
-    let mut remaining = pending;
-    loop {
-        let mut progress = false;
-        let mut still = Vec::new();
-        for (scope, sym, init) in remaining {
-            if const_of.contains_key(&sym) {
-                continue; // a duplicate declarator already resolved
-            }
-            match eval_const_expr(env, scope, init, const_of, const_syms) {
-                ConstEval::Value(value) => {
-                    const_of.insert(sym, value);
-                    progress = true;
-                }
-                ConstEval::Pending => still.push((scope, sym, init)),
-                ConstEval::Error(e) => return Err(e),
-            }
-        }
-        if still.is_empty() {
-            return Ok(());
-        }
-        if !progress {
-            return Err(BindError::Unsupported(
-                "cyclic or unresolvable Const initializer".into(),
-            ));
-        }
-        remaining = still;
-    }
 }
 
 /// The module's `Option Compare` mode (`Text` makes string comparisons
@@ -750,5 +648,54 @@ mod tests {
         assert_eq!(get_value.params[0].name, "Me");
         assert_eq!(get_value.params[1].name, "extra");
         assert_eq!(get_value.return_local, Some(LocalId(2)));
+    }
+
+    /// The published `SurfaceEvent.event_id` MUST equal the binder's
+    /// `event_index_of` for the same event symbol — a cross-bundle `WithEvents` sink
+    /// builds routes from the surface id, and the source's `RaiseEvent` fires the
+    /// binder index, so any divergence silently misroutes events.
+    #[test]
+    fn surface_event_id_matches_binder_event_index() {
+        let mut clock_attrs = ModuleAttributes::named("Clock");
+        clock_attrs.vb_exposed = true;
+        let manifest = SymbolProjectManifest {
+            project_name: "Proj".into(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                ModuleUnit {
+                    module_name: "Main".into(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes::named("Main"),
+                    source: "Sub Main()\nEnd Sub\n".into(),
+                },
+                ModuleUnit {
+                    module_name: "Clock".into(),
+                    module_kind: ModuleKind::Class,
+                    attributes: clock_attrs,
+                    source: "Public Event Tick(ByVal n As Long)\nPublic Event Done()\n".into(),
+                },
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let env = build_resolution_environment(&manifest, &NullTypeLibs).unwrap();
+        let alloc = IdAllocator::build(&env, &manifest).unwrap();
+        let surface = &env.export_surfaces()[0];
+        let clock = surface
+            .types
+            .iter()
+            .find(|t| t.name.eq_ignore_ascii_case("Clock"))
+            .expect("Clock in surface");
+        assert_eq!(clock.events.len(), 2);
+        for ev in &clock.events {
+            assert_eq!(
+                alloc.event_index_of.get(&ev.symbol).copied(),
+                Some(ev.event_id),
+                "event `{}`: surface id {} must equal the binder's event index",
+                ev.name,
+                ev.event_id
+            );
+        }
     }
 }

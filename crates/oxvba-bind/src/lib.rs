@@ -7,7 +7,6 @@
 //! together: source → CST → symbol resolution → coreir → linearize → vm2/JIT.
 
 mod call;
-mod date;
 mod error;
 mod expr;
 mod ids;
@@ -18,12 +17,16 @@ mod types;
 
 pub use error::BindError;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
     CoreProc, CoreProgram, CorePlace, CoreValue, LabelId, LocalId,
 };
-use oxvba_bundle::{ComClassExport, EventRoute, ExternalCallDescriptor};
+use oxvba_bundle::{
+    BundleExport, BundleImport, ComClassExport, EventRoute, ExportTarget, ExportToken,
+    ExternalCallDescriptor,
+};
 use oxvba_runtime::DynLinkSymbol;
 use oxvba_symbol::binding::Binding;
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
@@ -32,10 +35,36 @@ use oxvba_symbol::model::{
 };
 use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
 use oxvba_symbol::signature::VarTypeRef;
+use oxvba_symbol::surface::{MemberOrigin, SurfaceType, SurfaceTypeKind};
 use oxvba_symbol::{build_resolution_environment, TypeLibResolver};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::ids::{IdAllocator, ProcInfo};
+
+/// Collects the cross-bundle imports a project's binding makes (deduped by
+/// `(unit, token)`, case-insensitively). Lives on [`Lower`] behind a `RefCell` so
+/// any proc body can `intern` an import during lowering; drained into
+/// `CoreProgram.imports` afterward, with each `ExternProc`/`NewExtern` carrying its
+/// returned index.
+#[derive(Default)]
+struct ImportCollector {
+    imports: Vec<BundleImport>,
+}
+
+impl ImportCollector {
+    /// Return the index of `import`, adding it if new (VBA-case-insensitive match).
+    fn intern(&mut self, import: BundleImport) -> usize {
+        if let Some(i) = self
+            .imports
+            .iter()
+            .position(|e| e.unit.eq_ignore_ascii_case(&import.unit) && e.token.matches(&import.token))
+        {
+            return i;
+        }
+        self.imports.push(import);
+        self.imports.len() - 1
+    }
+}
 
 /// Bind a whole project: parse (once) + resolve + lower every active module's
 /// CST to symbol-free Core IR.
@@ -44,13 +73,48 @@ pub fn bind_program(
     typelibs: &dyn TypeLibResolver,
 ) -> Result<CoreProgram, BindError> {
     let env = build_resolution_environment(manifest, typelibs)?;
-    let ids = IdAllocator::build(&env, manifest)?;
-    let lower = Lower { env: &env, ids: &ids };
+    bind_one(&env, manifest)
+}
+
+/// Bind every referenced project plus the active project — the **whole transitive
+/// closure**, leaf-first — into one `CoreProgram` per project (each a bundle). Each
+/// project is bound from its own full [`SymbolProjectManifest`] (carrying its
+/// flattened transitive reference source). The caller links them with
+/// `oxvba_vm2::Vm::link` (entry last); `Vm::link` resolves each import by unit name
+/// against any loaded bundle and rejects a duplicate unit, so a shared/diamond
+/// dependency (`A→B→D`, `A→C→D`) appears — and links — exactly once.
+///
+/// `closure_leaf_first` lists every project in the closure in leaf-first order,
+/// **deduped by unit name** (a project that several others reference is bound once).
+/// The active (entry) project is last.
+pub fn bind_projects(
+    closure_leaf_first: &[SymbolProjectManifest],
+    typelibs: &dyn TypeLibResolver,
+) -> Result<Vec<CoreProgram>, BindError> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut programs = Vec::with_capacity(closure_leaf_first.len());
+    for manifest in closure_leaf_first {
+        if !seen.insert(fold_identifier(&manifest.project_name)) {
+            continue; // a shared/diamond dependency is bound once
+        }
+        let env = build_resolution_environment(manifest, typelibs)?;
+        programs.push(bind_one(&env, manifest)?);
+    }
+    Ok(programs)
+}
+
+/// Bind one project (already-built environment) to its `CoreProgram` bundle.
+fn bind_one(
+    env: &ResolutionEnvironment,
+    manifest: &SymbolProjectManifest,
+) -> Result<CoreProgram, BindError> {
+    let ids = IdAllocator::build(env, manifest)?;
+    let lower = Lower { env, ids: &ids, imports: RefCell::new(ImportCollector::default()) };
 
     // Proc decl nodes in the same order `ids.procs` was built (ProcId order). The
     // two are produced by the identical filter; guard against any future drift so
     // a body can never be bound against the wrong frame.
-    let decls = collect_proc_decls(&env);
+    let decls = collect_proc_decls(env);
     if ids.procs.len() != decls.len() {
         return Err(BindError::Malformed(format!(
             "proc-decl/frame count mismatch: {} frames vs {} decls",
@@ -71,20 +135,73 @@ pub fn bind_program(
         });
     }
 
+    // The active project's published surface → this bundle's exports (the contract
+    // a referrer's imports resolve against). Imports were accumulated while lowering.
+    let exports = build_exports(env, &ids);
+    let imports = lower.imports.into_inner().imports;
+
     Ok(CoreProgram {
         globals: ids.globals.clone(),
         procs,
         classes: ids.classes.clone(),
-        event_routes: build_event_routes(&env, &ids),
-        external_calls: build_external_calls(&env),
+        event_routes: build_event_routes(env, &ids),
+        external_calls: build_external_calls(env),
         com_class_exports: build_com_class_exports(manifest),
         entry: ids.entry(),
-        // The bundle's unit name; its export/import manifest is populated when
-        // binding across projects (see `bind_projects`).
         unit_name: manifest.project_name.clone(),
-        exports: Vec::new(),
-        imports: Vec::new(),
+        exports,
+        imports,
     })
+}
+
+/// This bundle's export table: each public coclass → a `Class` token resolving to
+/// its `ClassId`; each public hidden-module member → a `ModuleFunc` token resolving
+/// to its proc/accessor `ProcId`. Built from the active export surface (the single
+/// source of truth for what is published) so source- and compiled-form contracts
+/// agree.
+fn build_exports(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<BundleExport> {
+    let Some(active) = env.export_surfaces().first() else {
+        return Vec::new();
+    };
+    let mut exports = Vec::new();
+    for ty in &active.types {
+        match &ty.kind {
+            SurfaceTypeKind::Coclass { .. } => {
+                if let Some(&class_id) = ids.class_of.get(&fold_identifier(&ty.name)) {
+                    exports.push(BundleExport {
+                        token: ExportToken::Class { name: ty.name.clone() },
+                        target: ExportTarget::Class(class_id.0),
+                    });
+                }
+            }
+            SurfaceTypeKind::Module => export_module_members(ids, ty, &mut exports),
+        }
+    }
+    exports
+}
+
+/// A hidden module's public members → `ModuleFunc` export tokens. A member's
+/// `ProcId` comes from `proc_of` (method) or `prop_accessor_of` (a property/field
+/// accessor), keyed by its originating symbol + kind.
+fn export_module_members(ids: &IdAllocator, ty: &SurfaceType, out: &mut Vec<BundleExport>) {
+    for m in &ty.members {
+        let proc = match m.origin {
+            MemberOrigin::Proc => ids.proc_of.get(&m.symbol).copied(),
+            MemberOrigin::PropertyAccessor | MemberOrigin::Field => {
+                ids.prop_accessor_of.get(&(m.symbol, m.member_kind)).copied()
+            }
+        };
+        if let Some(proc) = proc {
+            out.push(BundleExport {
+                token: ExportToken::ModuleFunc {
+                    module: ty.name.clone(),
+                    member: m.name.clone(),
+                    kind: m.member_kind,
+                },
+                target: ExportTarget::Proc(proc.0),
+            });
+        }
+    }
 }
 
 /// Proc decl nodes across all active modules, in `ProcId` order (mirrors the
@@ -121,19 +238,11 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
         let Some(field) = symbols.symbol(field_sym) else { continue };
         let sink_scope = field.scope;
         let Some(field_name) = symbols.name(field.name).map(|n| n.folded.clone()) else { continue };
-        // The source class is the WithEvents field's declared object type.
+        // The source class is the WithEvents field's declared object type — an
+        // active class OR a referenced one (resolved through its export surface).
         let SymbolImpl::DeclaredType(VarTypeRef::Object(source_name)) = &field.imp else { continue };
-        let Some(&source_scope) = module_scope_by_name.get(&fold_identifier(source_name)) else {
-            continue;
-        };
-        for ev_sym in symbols.symbols_in_scope(source_scope).unwrap_or_default() {
-            let Some(ev) = symbols.symbol(ev_sym) else { continue };
-            if ev.kind != SymbolKind::Event {
-                continue;
-            }
-            let Some(&event) = ids.event_index_of.get(&ev_sym) else { continue };
-            let Some(ev_name) = symbols.name(ev.name).map(|n| n.folded.clone()) else { continue };
-            let handler_name = format!("{field_name}_{ev_name}");
+        for (ev_name_folded, event) in source_events(env, ids, &module_scope_by_name, source_name) {
+            let handler_name = format!("{field_name}_{ev_name_folded}");
             if let Ok(Some(handler_sym)) =
                 symbols.find_in_scope(sink_scope, SymbolNamespace::Procedure, &handler_name)
                 && let Some(&proc) = ids.proc_of.get(&handler_sym) {
@@ -142,6 +251,50 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
         }
     }
     routes
+}
+
+/// The `(folded event name, event id)` list of a WithEvents source class. An
+/// **active** source reads its `Event` symbols + `ids.event_index_of`; a
+/// **referenced** source reads its export surface's `SurfaceEvent`s (whose
+/// `event_id` equals the source bundle's own `event_index_of`, so a sink built here
+/// routes the same id the source's `RaiseEvent` fires). `source_name` may be
+/// project-qualified (`Lib.Clock`).
+fn source_events(
+    env: &ResolutionEnvironment,
+    ids: &IdAllocator,
+    module_scope_by_name: &HashMap<String, ScopeId>,
+    source_name: &str,
+) -> Vec<(String, i32)> {
+    // Active project class.
+    if let Some(&source_scope) = module_scope_by_name.get(&fold_identifier(source_name)) {
+        let symbols = &env.symbols;
+        let mut out = Vec::new();
+        for ev_sym in symbols.symbols_in_scope(source_scope).unwrap_or_default() {
+            let Some(ev) = symbols.symbol(ev_sym) else { continue };
+            if ev.kind != SymbolKind::Event {
+                continue;
+            }
+            let Some(&event) = ids.event_index_of.get(&ev_sym) else { continue };
+            let Some(ev_name) = symbols.name(ev.name).map(|n| n.folded.clone()) else { continue };
+            out.push((ev_name, event));
+        }
+        return out;
+    }
+    // Referenced project class (possibly `Project.Class`). Search the referenced
+    // surfaces (index 0 is the active project's own surface, skipped).
+    let (proj, class) = match source_name.split_once('.') {
+        Some((p, c)) => (Some(fold_identifier(p)), fold_identifier(c)),
+        None => (None, fold_identifier(source_name)),
+    };
+    for surface in env.export_surfaces().iter().skip(1) {
+        if proj.as_deref().is_some_and(|p| fold_identifier(&surface.project_name) != p) {
+            continue;
+        }
+        if let Some(ty) = surface.types.iter().find(|t| fold_identifier(&t.name) == class) {
+            return ty.events.iter().map(|e| (fold_identifier(&e.name), e.event_id)).collect();
+        }
+    }
+    Vec::new()
 }
 
 /// Build the `Declare Lib` external-call descriptors from the scanned `Declare`
@@ -200,10 +353,19 @@ fn build_com_class_exports(manifest: &SymbolProjectManifest) -> Vec<ComClassExpo
         .collect()
 }
 
-/// Project-wide immutable lowering context (resolution + id maps).
+/// Project-wide immutable lowering context (resolution + id maps). The import
+/// collector is interior-mutable so proc bodies can register cross-bundle imports.
 struct Lower<'a> {
     env: &'a ResolutionEnvironment,
     ids: &'a IdAllocator,
+    imports: RefCell<ImportCollector>,
+}
+
+impl Lower<'_> {
+    /// Register a cross-bundle import and return its index in `CoreProgram.imports`.
+    fn intern_import(&self, import: BundleImport) -> usize {
+        self.imports.borrow_mut().intern(import)
+    }
 }
 
 /// Per-procedure mutable lowering state.

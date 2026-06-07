@@ -2,12 +2,9 @@
 //! `VarTypeRef` bottom-up, and emits a `CoreValue` (plus a `CorePlace` when the
 //! expression denotes an l-value).
 
-use std::collections::{HashMap, HashSet};
-
 use oxvba_bundle::coreir::{CoreArg, CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
 use oxvba_symbol::binding::DispatchRoute;
-use oxvba_symbol::model::{LibraryConstValue, ScopeId, SymbolId};
-use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
+use oxvba_symbol::model::SymbolKind;
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 use oxvba_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
@@ -63,7 +60,7 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::KwNothing => (CoreConst::Nothing, VarTypeRef::Variant),
             SyntaxKind::DateLiteral => (
                 CoreConst::Date(
-                    crate::date::parse_date_literal_serial_bits(tok.text)
+                    oxvba_symbol::const_eval::date::parse_date_literal_serial_bits(tok.text)
                         .ok_or_else(|| BindError::Malformed(format!("date literal `{}`", tok.text)))?,
                 ),
                 builtin(BuiltinType::Date),
@@ -106,10 +103,27 @@ impl<'a> ProcLower<'a> {
         let binding = self
             .resolve(name)
             .ok_or_else(|| self.unresolved(name, "expression"))?;
-        // A folded `Const` substitutes its literal value.
+        // A referenced project's published `Const`/`Enum` value carries its literal
+        // in the route (surface-driven, no shared-symbol dependence).
+        if let DispatchRoute::ConstValue(c) = &binding.route {
+            return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
+        }
+        // An active-project `Const`/`Enum` member: its value is folded once in the
+        // symbol layer (the published type system's single source of truth).
         if let Some(sym) = binding.symbol
-            && let Some(c) = self.g.ids.const_of.get(&sym) {
+            && let Some(c) = self.g.env.const_value(sym) {
                 return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
+            }
+        // A `Const`/`Enum` member that did not fold is unresolvable (e.g. a circular
+        // `Const` dependency) — a hard error, as in VBA. (Folding is non-fatal in the
+        // symbol layer so one bad const can't abort a whole closure's binding; the
+        // error surfaces here, at the use site.)
+        if let Some(sym) = binding.symbol
+            && matches!(
+                self.g.env.symbols.symbol(sym).map(|s| s.kind),
+                Some(SymbolKind::Const | SymbolKind::EnumMember)
+            ) {
+                return Err(BindError::Unsupported(format!("`{name}` is not a resolvable constant")));
             }
         // A plain variable read.
         if let DispatchRoute::Value = binding.route
@@ -234,6 +248,18 @@ impl<'a> ProcLower<'a> {
         if let Some(&class_id) = self.g.ids.class_of.get(&folded) {
             return Ok(value_bound(CoreValue::New(class_id), VarTypeRef::Object(name)));
         }
+        // A creatable coclass published by a *referenced project*: instantiate it in
+        // that project's bundle via a cross-bundle `NewExtern` (the new instance
+        // carries the target bundle's id, so later method dispatch routes there). The
+        // result is typed by the bare class name so member access binds against the
+        // referenced surface.
+        if let Some((unit, class)) = self.g.env.resolve_extern_coclass(&name) {
+            let import = self.g.intern_import(oxvba_bundle::BundleImport {
+                unit,
+                token: oxvba_bundle::ExportToken::Class { name: class.clone() },
+            });
+            return Ok(value_bound(CoreValue::NewExtern { import }, VarTypeRef::Object(class)));
+        }
         // A creatable COM coclass (from a referenced typelib) instantiates via the
         // same activation path as `CreateObject("<ProgID>")`; the result is typed
         // as the coclass so member access resolves against its typelib.
@@ -323,47 +349,6 @@ fn unquote(text: &str) -> String {
     inner.replace("\"\"", "\"")
 }
 
-/// Fold a `Const` initializer expression to a literal value (literals, a sign, or
-/// a parenthesised literal). Non-literal initializers (`Const B = A + 1`) return
-/// `None` and fall back to the ordinary name path.
-pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
-    match node.kind() {
-        SyntaxKind::LiteralExpr => {
-            let tok = node.first_significant_token()?;
-            match tok.kind {
-                SyntaxKind::IntLiteral => parse_int(tok.text).ok(),
-                SyntaxKind::HexLiteral => parse_radix(tok.text, 16).ok(),
-                SyntaxKind::OctLiteral => parse_radix(tok.text, 8).ok(),
-                SyntaxKind::FloatLiteral => Some(CoreConst::F64(parse_float(tok.text).ok()?.to_bits())),
-                SyntaxKind::StringLiteral => Some(CoreConst::Str(unquote(tok.text))),
-                SyntaxKind::KwTrue => Some(CoreConst::Bool(true)),
-                SyntaxKind::KwFalse => Some(CoreConst::Bool(false)),
-                SyntaxKind::DateLiteral => crate::date::parse_date_literal_serial_bits(tok.text).map(CoreConst::Date),
-                _ => None,
-            }
-        }
-        SyntaxKind::ParenExpr => fold_const_literal(node.paren_inner()?),
-        SyntaxKind::UnaryExpr => {
-            let inner = fold_const_literal(node.unary_operand()?)?;
-            match node.unary_op_token()?.kind {
-                SyntaxKind::Plus => Some(inner),
-                SyntaxKind::Minus => negate_const(inner),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-fn negate_const(c: CoreConst) -> Option<CoreConst> {
-    Some(match c {
-        CoreConst::I32(n) => CoreConst::I32(n.checked_neg()?),
-        CoreConst::I64(n) => CoreConst::I64(n.checked_neg()?),
-        CoreConst::F64(bits) => CoreConst::F64((-f64::from_bits(bits)).to_bits()),
-        _ => return None,
-    })
-}
-
 /// The inferred type of a folded constant value.
 pub(crate) fn const_type(c: &CoreConst) -> VarTypeRef {
     match c {
@@ -374,210 +359,6 @@ pub(crate) fn const_type(c: &CoreConst) -> VarTypeRef {
         CoreConst::Date(_) => builtin(BuiltinType::Date),
         _ => VarTypeRef::Variant,
     }
-}
-
-/// The result of folding a `Const` initializer expression at bind time.
-///
-/// `Pending` means the expression references another project `Const` not yet
-/// folded — the fixed-point resolver retries it on a later pass. `Error` is a
-/// hard failure (overflow, type mismatch, non-constant reference); keeping it
-/// distinct from `Pending` is what stops an overflow being misreported as a
-/// dependency cycle.
-pub(crate) enum ConstEval {
-    Value(CoreConst),
-    Pending,
-    Error(BindError),
-}
-
-/// Evaluate a `Const` initializer to a compile-time value, resolving references
-/// to other constants through `const_of`. `const_syms` is the full set of
-/// project `Const` symbols being resolved this pass — a reference to one not yet
-/// in `const_of` yields `Pending`; a reference to a non-`Const` symbol is an
-/// `Error`.
-pub(crate) fn eval_const_expr(
-    env: &ResolutionEnvironment,
-    scope: ScopeId,
-    node: SyntaxNode<'_>,
-    const_of: &HashMap<SymbolId, CoreConst>,
-    const_syms: &HashSet<SymbolId>,
-) -> ConstEval {
-    match node.kind() {
-        SyntaxKind::LiteralExpr => match fold_const_literal(node) {
-            Some(c) => ConstEval::Value(c),
-            None => ConstEval::Error(BindError::Unsupported("non-constant literal in Const".into())),
-        },
-        SyntaxKind::ParenExpr => match node.paren_inner() {
-            Some(inner) => eval_const_expr(env, scope, inner, const_of, const_syms),
-            None => ConstEval::Error(BindError::Malformed("empty ()".into())),
-        },
-        SyntaxKind::UnaryExpr => {
-            let Some(operand) = node.unary_operand() else {
-                return ConstEval::Error(BindError::Malformed("unary without operand".into()));
-            };
-            let inner = match eval_const_expr(env, scope, operand, const_of, const_syms) {
-                ConstEval::Value(c) => c,
-                other => return other,
-            };
-            let folded = match node.unary_op_token().map(|t| t.kind) {
-                Some(SyntaxKind::Plus) => Some(inner),
-                Some(SyntaxKind::Minus) => negate_const(inner),
-                Some(SyntaxKind::KwNot) => not_const(inner),
-                _ => None,
-            };
-            match folded {
-                Some(c) => ConstEval::Value(c),
-                None => ConstEval::Error(BindError::Unsupported("invalid unary in Const".into())),
-            }
-        }
-        SyntaxKind::IdentExpr => {
-            let Some(tok) = node.ident_name_token() else {
-                return ConstEval::Error(BindError::Malformed("identifier without name".into()));
-            };
-            match env.resolve(&ResolutionContext::at(scope), tok.text) {
-                Some(binding) => {
-                    if let DispatchRoute::LibraryConst(v) = &binding.route {
-                        return ConstEval::Value(library_const_value(v));
-                    }
-                    match binding.symbol {
-                        Some(sym) if const_of.contains_key(&sym) => {
-                            ConstEval::Value(const_of[&sym].clone())
-                        }
-                        Some(sym) if const_syms.contains(&sym) => ConstEval::Pending,
-                        _ => ConstEval::Error(BindError::Unsupported(format!(
-                            "`{}` is not a constant",
-                            tok.text
-                        ))),
-                    }
-                }
-                None => ConstEval::Error(BindError::Unsupported(format!(
-                    "unresolved name `{}` in Const",
-                    tok.text
-                ))),
-            }
-        }
-        SyntaxKind::BinaryExpr => {
-            let (Some(op_tok), Some(lhs_n), Some(rhs_n)) =
-                (node.binary_op_token(), node.binary_lhs(), node.binary_rhs())
-            else {
-                return ConstEval::Error(BindError::Malformed("malformed binary in Const".into()));
-            };
-            let Some(op) = core_binop(op_tok.kind) else {
-                return ConstEval::Error(BindError::Unsupported(format!("operator {:?}", op_tok.kind)));
-            };
-            let lhs = eval_const_expr(env, scope, lhs_n, const_of, const_syms);
-            let rhs = eval_const_expr(env, scope, rhs_n, const_of, const_syms);
-            match (lhs, rhs) {
-                (ConstEval::Error(e), _) | (_, ConstEval::Error(e)) => ConstEval::Error(e),
-                (ConstEval::Pending, _) | (_, ConstEval::Pending) => ConstEval::Pending,
-                (ConstEval::Value(l), ConstEval::Value(r)) => match fold_const_binary(op, &l, &r) {
-                    Some(c) => ConstEval::Value(c),
-                    None => ConstEval::Error(BindError::Unsupported(
-                        "unsupported or out-of-range constant expression".into(),
-                    )),
-                },
-            }
-        }
-        _ => ConstEval::Error(BindError::Unsupported("non-constant expression in Const".into())),
-    }
-}
-
-fn library_const_value(v: &LibraryConstValue) -> CoreConst {
-    match v {
-        LibraryConstValue::Str(s) => CoreConst::Str(s.clone()),
-        LibraryConstValue::Int(i) => CoreConst::I32(*i),
-    }
-}
-
-fn not_const(c: CoreConst) -> Option<CoreConst> {
-    Some(match c {
-        CoreConst::Bool(b) => CoreConst::Bool(!b),
-        CoreConst::I32(n) => CoreConst::I32(!n),
-        CoreConst::I64(n) => CoreConst::I64(!n),
-        _ => return None,
-    })
-}
-
-/// A constant operand reduced to a number for arithmetic/comparison folding.
-enum ConstNum {
-    Int(i64),
-    Float(f64),
-}
-
-fn const_num(c: &CoreConst) -> Option<ConstNum> {
-    Some(match c {
-        CoreConst::I32(n) => ConstNum::Int(i64::from(*n)),
-        CoreConst::I64(n) => ConstNum::Int(*n),
-        CoreConst::Bool(b) => ConstNum::Int(if *b { -1 } else { 0 }),
-        CoreConst::F64(bits) => ConstNum::Float(f64::from_bits(*bits)),
-        CoreConst::Date(bits) => ConstNum::Float(f64::from_bits(*bits)),
-        _ => return None,
-    })
-}
-
-/// Narrow an `i64` result to `I32` when it fits, else keep `I64`.
-fn int_const(n: i64) -> CoreConst {
-    match i32::try_from(n) {
-        Ok(v) => CoreConst::I32(v),
-        Err(_) => CoreConst::I64(n),
-    }
-}
-
-fn f64_const(v: f64) -> CoreConst {
-    CoreConst::F64(v.to_bits())
-}
-
-fn const_to_string(c: &CoreConst) -> Option<String> {
-    Some(match c {
-        CoreConst::Str(s) => s.clone(),
-        CoreConst::I32(n) => n.to_string(),
-        CoreConst::I64(n) => n.to_string(),
-        CoreConst::Bool(b) => if *b { "True".into() } else { "False".into() },
-        CoreConst::F64(bits) => f64::from_bits(*bits).to_string(),
-        _ => return None,
-    })
-}
-
-/// Fold a binary operation over two already-evaluated constant operands.
-/// Returns `None` for an unsupported combination or an out-of-range result
-/// (which the caller turns into a hard `Error`).
-fn fold_const_binary(op: CoreBinOp, lhs: &CoreConst, rhs: &CoreConst) -> Option<CoreConst> {
-    use CoreBinOp::*;
-    // String concatenation coerces both operands to strings.
-    if matches!(op, Concat) {
-        return Some(CoreConst::Str(const_to_string(lhs)? + &const_to_string(rhs)?));
-    }
-    let (l, r) = (const_num(lhs)?, const_num(rhs)?);
-    // Integer-domain operators (bit/logical, integer division, modulo).
-    let both_int = matches!((&l, &r), (ConstNum::Int(_), ConstNum::Int(_)));
-    let li = match &l { ConstNum::Int(v) => *v, ConstNum::Float(v) => v.round() as i64 };
-    let ri = match &r { ConstNum::Int(v) => *v, ConstNum::Float(v) => v.round() as i64 };
-    let lf = match &l { ConstNum::Int(v) => *v as f64, ConstNum::Float(v) => *v };
-    let rf = match &r { ConstNum::Int(v) => *v as f64, ConstNum::Float(v) => *v };
-    let bool_const = |b: bool| CoreConst::Bool(b);
-    Some(match op {
-        Add if both_int => int_const(li.checked_add(ri)?),
-        Sub if both_int => int_const(li.checked_sub(ri)?),
-        Mul if both_int => int_const(li.checked_mul(ri)?),
-        Add => f64_const(lf + rf),
-        Sub => f64_const(lf - rf),
-        Mul => f64_const(lf * rf),
-        Div => f64_const(lf / rf),
-        IntDiv => int_const(li.checked_div(ri)?),
-        Mod => int_const(li.checked_rem(ri)?),
-        Pow => f64_const(lf.powf(rf)),
-        And => int_const(li & ri),
-        Or => int_const(li | ri),
-        Xor => int_const(li ^ ri),
-        Eqv => int_const(!(li ^ ri)),
-        Imp => int_const(!li | ri),
-        Eq => bool_const(lf == rf),
-        Ne => bool_const(lf != rf),
-        Lt => bool_const(lf < rf),
-        Le => bool_const(lf <= rf),
-        Gt => bool_const(lf > rf),
-        Ge => bool_const(lf >= rf),
-        Concat | Is | Like => return None,
-    })
 }
 
 fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {

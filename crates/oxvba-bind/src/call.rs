@@ -5,7 +5,8 @@
 
 use oxvba_bundle::coreir::{BoundWhich, CoreArg, CoreCallee, CorePlace, CoreValue, ErrField};
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::ProjectMemberKind;
+use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
+use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl};
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
@@ -30,6 +31,30 @@ impl<'a> ProcLower<'a> {
             DispatchRoute::LibraryConst(value) => Ok(library_const(value)),
             DispatchRoute::ProjectMember { kind } => {
                 self.bind_project_call(name, binding, *kind, arglist)
+            }
+            // A referenced project's hidden-module function (no receiver): register a
+            // cross-bundle import and emit an `ExternProc` call. `has_receiver: true`
+            // never reaches here (a coclass member needs a receiver — it arrives via
+            // `bind_member_*`); reject it defensively.
+            DispatchRoute::ExternMember { unit, owner, member, kind, param_types, has_receiver } => {
+                if *has_receiver {
+                    return Err(BindError::Unsupported(format!(
+                        "`{name}` is a referenced coclass member; call it on a receiver"
+                    )));
+                }
+                let import = self.g.intern_import(BundleImport {
+                    unit: unit.clone(),
+                    token: ExportToken::ModuleFunc {
+                        module: owner.clone(),
+                        member: member.clone(),
+                        kind: *kind,
+                    },
+                });
+                let args = self.bind_extern_args(arglist, param_types)?;
+                Ok(value_bound(
+                    CoreValue::Call { callee: CoreCallee::ExternProc { import }, args },
+                    VarTypeRef::Variant,
+                ))
             }
             DispatchRoute::Native(id) => {
                 let args = self.bind_args(arglist, None)?;
@@ -186,6 +211,55 @@ impl<'a> ProcLower<'a> {
                 }
                 ArgItem::Positional(expr) => {
                     args.push(self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?);
+                }
+            }
+        }
+        Ok(args)
+    }
+
+    /// Arguments for a cross-bundle extern (referenced-project member). Mirrors a
+    /// same-bundle project call: a ByVal parameter coerces its argument to the
+    /// parameter's (published) type; a ByRef parameter aliases an l-value argument
+    /// (or passes the value when it is not an l-value / is parenthesised). Named and
+    /// omitted args are preserved.
+    pub(crate) fn bind_extern_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        param_types: &[TypeLibParamType],
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let mut args = Vec::with_capacity(items.len());
+        for (i, item) in items.into_iter().enumerate() {
+            match item {
+                ArgItem::Omitted => args.push(CoreArg::Omitted),
+                ArgItem::Named { name, value } => {
+                    args.push(CoreArg::Named { name: name.text.to_string(), value: self.bind_expr(value)?.value });
+                }
+                ArgItem::Positional(expr) => {
+                    let param = param_types.get(i);
+                    let by_ref = param.is_some_and(|p| p.is_by_ref());
+                    if by_ref {
+                        // ByRef param: alias an l-value (unless parenthesised), else
+                        // pass the value uncoerced — exactly as a same-bundle ByRef.
+                        if expr.kind() != SyntaxKind::ParenExpr
+                            && let Ok((place, _)) = self.bind_place(expr)
+                        {
+                            args.push(CoreArg::ByRef(place));
+                            continue;
+                        }
+                        args.push(CoreArg::ByVal(self.bind_expr(expr)?.value));
+                    } else {
+                        // ByVal param: coerce the argument to the published type.
+                        let bound = self.bind_expr(expr)?;
+                        let value = match param {
+                            Some(p) => types::coerce(bound.value, &bound.ty, &tlb_param_to_vartype(p)),
+                            None => bound.value,
+                        };
+                        args.push(CoreArg::ByVal(value));
+                    }
                 }
             }
         }
@@ -411,6 +485,12 @@ impl<'a> ProcLower<'a> {
                     self.early_com_call(*dispid, *member_kind, recv.value, Vec::new()),
                     VarTypeRef::Variant,
                 )),
+                // A referenced coclass member: dispatch by name on the receiver,
+                // whose `bundle_id` selects the class table in the object's bundle.
+                DispatchRoute::ExternMember { member: m, kind, .. } => Ok(value_bound(
+                    self.late_member_call(m, *kind, recv.value, Vec::new()),
+                    VarTypeRef::Variant,
+                )),
                 other => Err(BindError::Unsupported(format!(".{member} ({other:?} pending)"))),
             },
             // No declared member on an untyped/foreign receiver → late binding.
@@ -470,6 +550,15 @@ impl<'a> ProcLower<'a> {
                         VarTypeRef::Variant,
                     ))
                 }
+                // A referenced coclass member call: coerce args to the published
+                // param types, dispatch by name in the object's bundle.
+                DispatchRoute::ExternMember { member: m, kind, param_types, .. } => {
+                    let method_args = self.bind_extern_args(arglist, param_types)?;
+                    Ok(value_bound(
+                        self.late_member_call(m, *kind, recv.value, method_args),
+                        VarTypeRef::Variant,
+                    ))
+                }
                 other => Err(BindError::Unsupported(format!(".{member}(...) ({other:?} pending)"))),
             },
             None if self.is_late_bound_receiver(&recv.ty) => {
@@ -499,16 +588,35 @@ impl<'a> ProcLower<'a> {
     }
 
     /// The member name to dispatch through. When the static receiver type is a
-    /// project interface (some class `Implements` it), the call resolves to the
-    /// mangled `Interface_Member` implementation — identical across every
-    /// implementing class, so runtime name dispatch stays polymorphic.
+    /// project interface (some class `Implements` it — in **this** project or a
+    /// **referenced** one), the call resolves to the mangled `Interface_Member`
+    /// implementation — identical across every implementing class, so runtime name
+    /// dispatch stays polymorphic (and routes by name in the object's own bundle).
     pub(crate) fn interface_dispatch_name(&self, recv_ty: &VarTypeRef, member: &str) -> String {
         if let VarTypeRef::Object(name) = recv_ty
-            && self.g.ids.interfaces.contains(&fold_identifier(name))
+            && self.is_project_interface(name)
         {
-            return format!("{name}_{member}");
+            // Mangle with the bare interface name (a referenced type may be dotted).
+            let bare = name.rsplit('.').next().unwrap_or(name);
+            return format!("{bare}_{member}");
         }
         member.to_string()
+    }
+
+    /// True if `name` is an interface type of the active project or any referenced
+    /// project (a class some class `Implements`). A referenced type may be written
+    /// project-qualified (`Lib.IShape`); only the trailing type name is matched.
+    fn is_project_interface(&self, name: &str) -> bool {
+        let bare = name.rsplit('.').next().unwrap_or(name);
+        let folded = fold_identifier(bare);
+        if self.g.ids.interfaces.contains(&folded) {
+            return true;
+        }
+        self.g
+            .env
+            .export_surfaces()
+            .iter()
+            .any(|s| s.interfaces.iter().any(|i| fold_identifier(i) == folded))
     }
 
     /// Build a by-name member dispatch (`recv.name(args)`), receiver as `args[0]`.
@@ -618,6 +726,28 @@ fn library_const(value: &LibraryConstValue) -> Bound {
         LibraryConstValue::Int(i) => {
             value_bound(CoreValue::Const(oxvba_bundle::coreir::CoreConst::I32(*i)), builtin(BuiltinType::Long))
         }
+    }
+}
+
+/// Map a published typelib parameter type to the `VarTypeRef` used for ByVal
+/// argument coercion. Only the scalar value types matter (those drive a narrowing
+/// `Coerce`); `ByRef*` params never coerce, and object/variant/decimal map to
+/// `Variant` (no coercion node).
+fn tlb_param_to_vartype(p: &TypeLibParamType) -> VarTypeRef {
+    use TypeLibParamType as T;
+    match p {
+        T::Boolean => VarTypeRef::Builtin(BuiltinType::Boolean),
+        T::Byte => VarTypeRef::Builtin(BuiltinType::Byte),
+        T::Integer => VarTypeRef::Builtin(BuiltinType::Integer),
+        T::Long => VarTypeRef::Builtin(BuiltinType::Long),
+        T::LongLong => VarTypeRef::Builtin(BuiltinType::LongLong),
+        T::LongPtr => VarTypeRef::Builtin(BuiltinType::LongPtr),
+        T::Single => VarTypeRef::Builtin(BuiltinType::Single),
+        T::Double => VarTypeRef::Builtin(BuiltinType::Double),
+        T::Currency => VarTypeRef::Builtin(BuiltinType::Currency),
+        T::Date => VarTypeRef::Builtin(BuiltinType::Date),
+        T::String => VarTypeRef::Builtin(BuiltinType::String),
+        _ => VarTypeRef::Variant,
     }
 }
 
