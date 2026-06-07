@@ -287,7 +287,7 @@ fn run_project(args: Vec<String>) {
         std::process::exit(2);
     });
 
-    let mut loaded = load_run_project_target(parsed.input_path).unwrap_or_else(|err| {
+    let mut loaded = load_run_project_target(parsed.input_path.clone()).unwrap_or_else(|err| {
         eprintln!("oxvba run-project: {err}");
         std::process::exit(1);
     });
@@ -320,7 +320,26 @@ fn run_project(args: Vec<String>) {
         println!("BOOTSTRAP:{}", resolved.fingerprint());
     }
 
-    let result = engine.execute_project_with_variant_snapshot_phased(&loaded.manifest);
+    // Clean path (`oxvba_bind::bind_projects` → `linearize` → `oxvba_vm2::Vm::link`):
+    // walk the `.basproj`/`.vbp` reference graph into a closure and run it. CLI
+    // reference injection (`--references`) and convention-only directories (no
+    // project file) still use the legacy executor until the old path is removed.
+    let project_file = resolve_project_file(parsed.input_path.as_ref());
+    let result = match project_file {
+        Some(file) if parsed.references.is_empty() => {
+            match oxvba_project::load_project_closure_with_entry(
+                &file,
+                parsed.entry_point_override.as_deref(),
+            ) {
+                Ok(closure) => engine.execute_project_closure_with_variant_snapshot(&closure),
+                Err(err) => {
+                    eprintln!("oxvba run-project: {err}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => engine.execute_project_with_variant_snapshot_phased(&loaded.manifest),
+    };
 
     match result {
         Ok(values) => {
@@ -337,6 +356,28 @@ fn run_project(args: Vec<String>) {
             eprintln!("oxvba run-project: {err}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Resolve a run-project input to a concrete `.basproj`/`.vbp` file for the clean
+/// path. A directory is searched for a project file; a convention-only directory
+/// (no project file) returns `None` so the caller falls back to the legacy loader.
+fn resolve_project_file(input: Option<&PathBuf>) -> Option<PathBuf> {
+    let input = input.cloned().unwrap_or_else(|| PathBuf::from("."));
+    if input.is_dir() {
+        if let Ok(Some(p)) = discover_basproj_in_dir(&input) {
+            return Some(p);
+        }
+        if let Ok(Some(p)) = discover_vbp_in_dir(&input) {
+            return Some(p);
+        }
+        return None;
+    }
+    match input.extension().and_then(|e| e.to_str()) {
+        Some(ext) if ext.eq_ignore_ascii_case("basproj") || ext.eq_ignore_ascii_case("vbp") => {
+            Some(input)
+        }
+        _ => None,
     }
 }
 
@@ -1418,6 +1459,14 @@ struct CliReferenceArgs {
     project_refs: Vec<PathBuf>,
     com_refs: Vec<CliComReference>,
     native_refs: Vec<oxvba_project::BasProjNativeReference>,
+}
+
+impl CliReferenceArgs {
+    /// No CLI-injected references — the clean path can run straight from the
+    /// project's own `.basproj` reference graph.
+    fn is_empty(&self) -> bool {
+        self.project_refs.is_empty() && self.com_refs.is_empty() && self.native_refs.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2850,7 +2899,7 @@ fn run_execute(cli_args: Vec<String>) {
     let dump_values = args.as_ref().map(|a| a.dump_values).unwrap_or(false);
 
     let execution = engine
-        .execute_source_with_variant_snapshot(&source)
+        .execute_source_with_variant_snapshot_clean(&source)
         .map(|values| ExecutionResult { values });
 
     match execution {
