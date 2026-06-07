@@ -290,6 +290,10 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::KwShared
                 | SyntaxKind::KwLine
                 | SyntaxKind::KwName
+                // `Lib` is a keyword only inside `Declare … Lib "…"`; everywhere else
+                // (e.g. a project named `Lib` in `Lib.Member` / `TypeOf x Is Lib.IFoo`)
+                // it is an ordinary identifier.
+                | SyntaxKind::KwLib
         )
     }
 
@@ -3428,6 +3432,22 @@ mod tests {
         assert!(
             binaries.iter().any(|s| s.contains("TypeOf obj Is Class1")),
             "expected TypeOf ... Is binary expression, got {:?}",
+            binaries
+        );
+    }
+
+    #[test]
+    fn expr_typeof_is_project_qualified_type() {
+        // A project-qualified type after `Is` — `Lib` is a keyword only inside
+        // `Declare … Lib "…"`, so it must parse as an ordinary identifier here.
+        let src = "Sub T()\nIf TypeOf obj Is Lib.IShape Then\n    x = 1\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
+        assert!(
+            binaries.iter().any(|s| s.contains("TypeOf obj Is Lib.IShape")),
+            "expected a TypeOf … Is with a dotted type, got {:?}",
             binaries
         );
     }
