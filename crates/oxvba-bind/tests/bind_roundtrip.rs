@@ -141,6 +141,17 @@ fn const_cycle_is_error() {
 }
 
 #[test]
+fn module_qualified_call() {
+    // `Mod1.SetIt` — a standard-module-qualified call (the form the project startup
+    // shim emits as `Call Module.Proc()`). The module name is a namespace qualifier,
+    // not a value; resolve the member as a qualified project call.
+    let src = "Sub Main()\n    Dim r As Long\n    Call Mod1.SetIt\n    r = total\nEnd Sub\n\
+               Public total As Long\n\
+               Sub SetIt()\n    total = 7\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(7.0));
+}
+
+#[test]
 fn integer_division() {
     assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")), Some(3.0));
 }

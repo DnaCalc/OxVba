@@ -8,7 +8,9 @@ use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
-use oxvba_symbol::model::{fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl};
+use oxvba_symbol::model::{
+    fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind,
+};
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
 use oxvba_syntax::red::ArgItem;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
@@ -462,8 +464,50 @@ impl<'a> ProcLower<'a> {
                 && let Some((field, ty)) = err_field(member) {
                     return Ok(value_bound(CoreValue::ErrField(field), ty));
                 }
+        // `Module.Member` where `Module` is a standard module — a namespace qualifier,
+        // not a value.
+        if let Some(bound) = self.try_module_qualified(node, member, None)? {
+            return Ok(bound);
+        }
         let recv = self.member_receiver_bound(node)?;
         self.bind_member_value(recv, member)
+    }
+
+    /// `Module.Member(args)` where `Module` is a bare identifier naming a standard
+    /// module (a namespace qualifier). VBA module-qualified calls — emitted by the
+    /// project startup shim as `Call Module.Proc()` — must resolve the member as a
+    /// qualified project member; binding the module name as a value would fail (or,
+    /// when a same-named proc exists, recurse). Returns `None` when the receiver is
+    /// not a module qualifier (a leading-dot `With` member, an object receiver, …).
+    fn try_module_qualified(
+        &mut self,
+        node: SyntaxNode<'_>,
+        member: &str,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Option<Bound>, BindError> {
+        if node.member_has_leading_dot() {
+            return Ok(None);
+        }
+        let Some(recv) = node.member_receiver() else { return Ok(None) };
+        if recv.kind() != SyntaxKind::IdentExpr {
+            return Ok(None);
+        }
+        let Some(tok) = recv.ident_name_token() else { return Ok(None) };
+        if !self.is_module_qualifier(tok.text) {
+            return Ok(None);
+        }
+        match self.g.env.resolve_qualified(&[tok.text, member]) {
+            Some(binding) => Ok(Some(self.bind_call_route(member, &binding, arglist)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// True if `name` resolves to a standard module (a namespace qualifier).
+    fn is_module_qualifier(&self, name: &str) -> bool {
+        self.resolve(name)
+            .and_then(|b| b.symbol)
+            .and_then(|s| self.g.env.symbols.symbol(s))
+            .is_some_and(|s| s.kind == SymbolKind::Module)
     }
 
     /// Lower `recv.member` (already-bound receiver, no args) to a value.
@@ -513,6 +557,11 @@ impl<'a> ProcLower<'a> {
             .member_name_token()
             .ok_or_else(|| BindError::Malformed("member call without name".into()))?
             .text;
+        // `Module.Member(args)` — a qualified standard-module call (e.g. the startup
+        // shim's `Call Module.Proc()`), not member access on a value.
+        if let Some(bound) = self.try_module_qualified(member_node, member, arglist)? {
+            return Ok(bound);
+        }
         let recv = self.member_receiver_bound(member_node)?;
         match self.resolve_member(&recv.ty, member, None) {
             Some(binding) => match &binding.route {
