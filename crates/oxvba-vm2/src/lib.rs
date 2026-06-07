@@ -31,7 +31,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use oxvba_bundle::{
-    Bundle, CallArg, ComMemberSelector, NativeCallee, Op, ProcArg, ProjectMemberKind,
+    Bundle, CallArg, ComMemberSelector, ExportTarget, NativeCallee, Op, ProcArg, ProjectMemberKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -111,10 +111,16 @@ struct ErrObject {
     source: String,
 }
 
-/// A storage location: a module global, or a local of a specific frame.
+/// An index into the VM's loaded-bundle table (a ".NET assembly"). Bundle `0` is
+/// the entry bundle; single-project runs only ever use `0`.
+type BundleId = usize;
+
+/// A storage location: a module global of a specific bundle, or a local of a
+/// specific frame. Globals are bundle-qualified so a `ByRef` global aliased across
+/// a bundle boundary still resolves to the owning bundle's slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Place {
-    Global(usize),
+    Global(BundleId, usize),
     Local(usize, usize), // (frame index, relative local index)
 }
 
@@ -127,6 +133,10 @@ struct Frame {
     dst: Option<Place>,
     return_slot: Option<usize>,
     return_pc: usize,
+    /// The bundle to restore as current (`Vm::cur`) when this frame returns — the
+    /// caller's bundle. `Vm::cur` always tracks the top frame's bundle, so this is
+    /// the only per-frame bundle linkage needed (set on push, restored on pop).
+    return_bundle: BundleId,
     /// When set, this frame's `Return` value is captured into `Vm::captured_return`
     /// rather than written to a caller place (used by nested method invocations).
     capture: bool,
@@ -156,65 +166,34 @@ struct ForEachState {
     position: usize,
 }
 
-/// The interpreter.
-pub struct Vm<'h> {
+/// A cross-bundle import resolved to its target at link time:
+/// `bundle.imports[i]` resolves to `LoadedBundle::imports[i]`.
+#[derive(Debug, Clone, Copy)]
+struct ResolvedImport {
+    bundle: BundleId,
+    target: ExportTarget,
+}
+
+/// One loaded bundle (a ".NET assembly"): its code + metadata (`bundle`) plus the
+/// per-bundle runtime state the VM owns. The VM holds a `Vec<LoadedBundle>` and a
+/// `cur` cursor; the executing frame's `bundle` selects which one `pc` indexes.
+struct LoadedBundle<'h> {
     bundle: &'h Bundle,
-    host: &'h dyn HostServices,
-    global_count: usize,
+    /// Module-level globals for this bundle (its "static" storage).
     globals: Vec<Variant>,
-    frames: Vec<Frame>,
-    pc: usize,
-    next_pc: usize,
-    halted: bool,
-    error_mode: ErrorMode,
-    resume: ResumePoint,
-    err: ErrObject,
-    lib: LibContext,
-    for_each: HashMap<usize, ForEachState>,
-    withevents: HashMap<i64, EventBinding>,
-    withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
-    /// `(binding token, event id)` → handler procedure, from `bundle.event_routes`.
+    /// Cross-bundle imports resolved at link time (parallel to `bundle.imports`).
+    imports: Vec<ResolvedImport>,
+    /// `(binding token, event id)` → handler procedure, from this bundle's routes.
     event_routes: HashMap<(i32, i32), usize>,
-    /// Live host event subscriptions: subscription-token raw → sink handler.
-    com_subscriptions: HashMap<i32, ComEventSink>,
-    /// WithEvents key → host subscription tokens (for teardown on clear/terminate).
-    com_subscriptions_by_key: HashMap<i64, Vec<i32>>,
-    /// Re-entrancy guard for the inbound COM-event pump.
-    pumping: bool,
-    /// The most recent captured return value (see [`Frame::capture`]).
-    captured_return: Option<Variant>,
     /// Leaked `&'static` class descriptors, one per `bundle.classes` entry, for
     /// `ObjectRef::from_project_instance`.
     class_descriptors: Vec<&'static RuntimeClassDescriptor>,
-    /// Monotonic per-instance identity counter (the IUnknown is the true
-    /// identity; this is the lookup key).
-    next_instance_id: i32,
-    /// O(1) statement-boundary test (drains pending terminations at boundaries).
+    /// O(1) statement-boundary membership test.
     statement_start_set: std::collections::HashSet<usize>,
-    /// Re-entrancy guard so a `Class_Terminate` drain doesn't recursively drain;
-    /// cascades are handled by the drain loop instead.
-    draining: bool,
 }
 
-/// Run a bundle from its entry point, returning the VM (for slot inspection).
-pub fn run<'h>(bundle: &'h Bundle, host: &'h dyn HostServices) -> Result<Vm<'h>, VmError> {
-    let mut vm = Vm::new(bundle, host);
-    vm.run()?;
-    Ok(vm)
-}
-
-impl<'h> Vm<'h> {
-    pub fn new(bundle: &'h Bundle, host: &'h dyn HostServices) -> Self {
-        let entry = Frame {
-            locals: vec![Variant::empty(); bundle.entry_frame_slots],
-            aliases: HashMap::new(),
-            dst: None,
-            return_slot: None,
-            return_pc: 0,
-            capture: false,
-            saved_error_mode: ErrorMode::None,
-            saved_resume: ResumePoint::default(),
-        };
+impl<'h> LoadedBundle<'h> {
+    fn load(bundle: &'h Bundle) -> Self {
         let event_routes = bundle
             .event_routes
             .iter()
@@ -235,12 +214,136 @@ impl<'h> Vm<'h> {
         let statement_start_set = bundle.statement_starts.iter().copied().collect();
         Self {
             bundle,
-            host,
-            global_count: bundle.global_count,
             globals: vec![Variant::empty(); bundle.global_count],
-            frames: vec![entry],
-            pc: bundle.entry_pc,
-            next_pc: bundle.entry_pc,
+            // Resolved by `Vm::link` once all bundles are loaded (empty for a
+            // single bundle, which has no cross-bundle imports).
+            imports: Vec::new(),
+            event_routes,
+            class_descriptors,
+            statement_start_set,
+        }
+    }
+}
+
+/// The interpreter.
+pub struct Vm<'h> {
+    /// Loaded bundles (".NET assemblies"); bundle `0` is the entry bundle.
+    bundles: Vec<LoadedBundle<'h>>,
+    /// The bundle whose `ops` the `pc` currently indexes (the executing frame's).
+    cur: BundleId,
+    host: &'h dyn HostServices,
+    frames: Vec<Frame>,
+    pc: usize,
+    next_pc: usize,
+    halted: bool,
+    error_mode: ErrorMode,
+    resume: ResumePoint,
+    err: ErrObject,
+    lib: LibContext,
+    for_each: HashMap<usize, ForEachState>,
+    withevents: HashMap<i64, EventBinding>,
+    withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
+    /// Live host event subscriptions: subscription-token raw → sink handler.
+    com_subscriptions: HashMap<i32, ComEventSink>,
+    /// WithEvents key → host subscription tokens (for teardown on clear/terminate).
+    com_subscriptions_by_key: HashMap<i64, Vec<i32>>,
+    /// Re-entrancy guard for the inbound COM-event pump.
+    pumping: bool,
+    /// The most recent captured return value (see [`Frame::capture`]).
+    captured_return: Option<Variant>,
+    /// Monotonic per-instance identity counter, VM-global across all bundles (the
+    /// IUnknown is the true identity; this is the lookup key).
+    next_instance_id: i32,
+    /// Re-entrancy guard so a `Class_Terminate` drain doesn't recursively drain;
+    /// cascades are handled by the drain loop instead.
+    draining: bool,
+}
+
+/// A cross-bundle link failure (an unresolved/mismatched import).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkError {
+    pub message: String,
+}
+
+/// Run a single bundle from its entry point, returning the VM (for slot inspection).
+pub fn run<'h>(bundle: &'h Bundle, host: &'h dyn HostServices) -> Result<Vm<'h>, VmError> {
+    let mut vm = Vm::new(bundle, host);
+    vm.run()?;
+    Ok(vm)
+}
+
+impl<'h> Vm<'h> {
+    /// Build a single-bundle VM (the entry bundle is bundle 0). For a cross-bundle
+    /// image use [`Vm::link`].
+    pub fn new(bundle: &'h Bundle, host: &'h dyn HostServices) -> Self {
+        Self::link(&[bundle], host).expect("a single bundle always links")
+    }
+
+    /// Link N bundles (".NET assemblies") into one VM image. Bundles are given in
+    /// dependency order — each bundle's imports resolve against bundles *earlier*
+    /// in the slice (referenced-before-referrer; the project loader yields this
+    /// order). The **last** bundle is the entry unit (its `entry_pc` / `Sub Main`
+    /// runs). A reference to an unknown unit or a missing export is a [`LinkError`].
+    pub fn link(bundles: &[&'h Bundle], host: &'h dyn HostServices) -> Result<Self, LinkError> {
+        let entry = bundles
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| LinkError { message: "no bundles to link".into() })?;
+        let mut loaded: Vec<LoadedBundle<'h>> = bundles.iter().map(|b| LoadedBundle::load(b)).collect();
+
+        // Unit name (folded) → bundle id, for import resolution.
+        let mut by_name: HashMap<String, BundleId> = HashMap::new();
+        for (id, b) in bundles.iter().enumerate() {
+            if !b.unit_name.is_empty() {
+                by_name.insert(b.unit_name.to_ascii_lowercase(), id);
+            }
+        }
+        // Resolve each bundle's imports against the loaded bundles' exports.
+        for (id, b) in bundles.iter().enumerate() {
+            let mut resolved = Vec::with_capacity(b.imports.len());
+            for imp in &b.imports {
+                let target_bundle = *by_name
+                    .get(&imp.unit.to_ascii_lowercase())
+                    .ok_or_else(|| LinkError {
+                        message: format!(
+                            "bundle `{}` references unknown unit `{}`",
+                            b.unit_name, imp.unit
+                        ),
+                    })?;
+                let export = bundles[target_bundle]
+                    .exports
+                    .iter()
+                    .find(|e| e.token.matches(&imp.token))
+                    .ok_or_else(|| LinkError {
+                        message: format!(
+                            "unit `{}` has no export matching a reference from `{}`",
+                            imp.unit, b.unit_name
+                        ),
+                    })?;
+                resolved.push(ResolvedImport { bundle: target_bundle, target: export.target });
+            }
+            loaded[id].imports = resolved;
+        }
+
+        let entry_bundle = bundles[entry];
+        let frame = Frame {
+            locals: vec![Variant::empty(); entry_bundle.entry_frame_slots],
+            aliases: HashMap::new(),
+            dst: None,
+            return_slot: None,
+            return_pc: 0,
+            return_bundle: entry,
+            capture: false,
+            saved_error_mode: ErrorMode::None,
+            saved_resume: ResumePoint::default(),
+        };
+        Ok(Self {
+            bundles: loaded,
+            cur: entry,
+            host,
+            frames: vec![frame],
+            pc: entry_bundle.entry_pc,
+            next_pc: entry_bundle.entry_pc,
             halted: false,
             error_mode: ErrorMode::None,
             resume: ResumePoint::default(),
@@ -249,16 +352,19 @@ impl<'h> Vm<'h> {
             for_each: HashMap::new(),
             withevents: HashMap::new(),
             withevents_iters: Vec::new(),
-            event_routes,
             com_subscriptions: HashMap::new(),
             com_subscriptions_by_key: HashMap::new(),
             pumping: false,
             captured_return: None,
-            class_descriptors,
             next_instance_id: INSTANCE_ID_BASE,
-            statement_start_set,
             draining: false,
-        }
+        })
+    }
+
+    /// The bundle whose code the cursor currently executes. Returns the `&'h`
+    /// reference itself, so callers can hold it without borrowing `self`.
+    fn cur_bundle(&self) -> &'h Bundle {
+        self.bundles[self.cur].bundle
     }
 
     /// Read a slot's value (resolved against the current top frame).
@@ -273,15 +379,15 @@ impl<'h> Vm<'h> {
         // Start from a clean termination queue (the queue is thread-local; the VM
         // is single-threaded, so this isolates one run from the next).
         oxvba_runtime::reset_pending_terminations();
-        while !self.halted && self.pc < self.bundle.ops.len() {
+        while !self.halted && self.pc < self.cur_bundle().ops.len() {
             // At a statement boundary, run any `Class_Terminate`s parked by the
             // statement that just completed (VBA statement-granular timing) and
             // dispatch any inbound host (COM) events.
-            if self.statement_start_set.contains(&self.pc) {
+            if self.bundles[self.cur].statement_start_set.contains(&self.pc) {
                 self.maybe_drain();
                 self.pump_com_events();
             }
-            let op = self.bundle.ops[self.pc].clone();
+            let op = self.cur_bundle().ops[self.pc].clone();
             self.next_pc = self.pc + 1;
             match self.exec(&op) {
                 Ok(()) => self.pc = self.next_pc,
@@ -293,10 +399,11 @@ impl<'h> Vm<'h> {
 
     // ── Slot / place resolution ────────────────────────────────────────────────
     fn target(&self, slot: usize) -> Result<Place, Fault> {
-        if slot < self.global_count {
-            return Ok(Place::Global(slot));
+        let global_count = self.cur_bundle().global_count;
+        if slot < global_count {
+            return Ok(Place::Global(self.cur, slot));
         }
-        let rel = slot - self.global_count;
+        let rel = slot - global_count;
         let frame_index = self
             .frames
             .len()
@@ -310,9 +417,11 @@ impl<'h> Vm<'h> {
 
     fn read_place(&self, place: Place) -> Result<&Variant, Fault> {
         match place {
-            Place::Global(i) => {
-                self.globals.get(i).ok_or_else(|| Fault::new(9, "global slot out of range"))
-            }
+            Place::Global(b, i) => self
+                .bundles
+                .get(b)
+                .and_then(|lb| lb.globals.get(i))
+                .ok_or_else(|| Fault::new(9, "global slot out of range")),
             Place::Local(fi, ri) => self
                 .frames
                 .get(fi)
@@ -323,7 +432,7 @@ impl<'h> Vm<'h> {
 
     fn write_place(&mut self, place: Place, value: Variant) -> Result<(), Fault> {
         let target = match place {
-            Place::Global(i) => self.globals.get_mut(i),
+            Place::Global(b, i) => self.bundles.get_mut(b).and_then(|lb| lb.globals.get_mut(i)),
             Place::Local(fi, ri) => self.frames.get_mut(fi).and_then(|f| f.locals.get_mut(ri)),
         };
         match target {
@@ -359,7 +468,8 @@ impl<'h> Vm<'h> {
     /// Statement bounds for a pc: `(start, next)` from `bundle.statement_starts`
     /// (op-granularity if the table is empty).
     fn statement_bounds(&self, pc: usize) -> ResumePoint {
-        let starts = &self.bundle.statement_starts;
+        let bundle = self.cur_bundle();
+        let starts = &bundle.statement_starts;
         if starts.is_empty() {
             return ResumePoint { start: pc, next: pc + 1 };
         }
@@ -369,7 +479,7 @@ impl<'h> Vm<'h> {
             Err(i) => i - 1,
         };
         let start = starts[idx];
-        let next = starts.get(idx + 1).copied().unwrap_or(self.bundle.ops.len());
+        let next = starts.get(idx + 1).copied().unwrap_or(bundle.ops.len());
         ResumePoint { start, next }
     }
 
@@ -424,7 +534,7 @@ impl<'h> Vm<'h> {
     // ── Procedure calls ──────────────────────────────────────────────────────
     fn call_proc(&mut self, proc: usize, dst: Option<usize>, args: &[ProcArg]) -> Result<(), Fault> {
         let desc = self
-            .bundle
+            .cur_bundle()
             .procedures
             .get(proc)
             .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
@@ -463,11 +573,79 @@ impl<'h> Vm<'h> {
             dst: dst_place,
             return_slot,
             return_pc: self.pc + 1,
+            // An ordinary `CallProc` is intra-bundle (cross-bundle calls go through
+            // `Op::CallExtern`), so the callee runs in — and returns to — the
+            // caller's bundle.
+            return_bundle: self.cur,
             capture: false,
             saved_error_mode: self.error_mode,
             saved_resume: self.resume,
         });
         self.error_mode = ErrorMode::None; // each procedure starts with no handler
+        self.next_pc = entry;
+        Ok(())
+    }
+
+    /// A cross-bundle call: resolve `import` (an index into the current bundle's
+    /// resolved import table) to a `(target_bundle, proc)`, bind args/dst in the
+    /// *caller's* bundle, then push a frame that runs in — and returns to — the
+    /// target bundle. Mirrors [`Self::call_proc`] but switches `cur`.
+    fn call_extern(&mut self, import: usize, dst: Option<usize>, args: &[ProcArg]) -> Result<(), Fault> {
+        let resolved = self.bundles[self.cur]
+            .imports
+            .get(import)
+            .copied()
+            .ok_or_else(|| Fault::new(5, format!("unresolved import {import}")))?;
+        let ExportTarget::Proc(proc) = resolved.target else {
+            return Err(Fault::new(5, "cross-bundle reference is not a procedure"));
+        };
+        let target_bundle = resolved.bundle;
+        let desc = self.bundles[target_bundle]
+            .bundle
+            .procedures
+            .get(proc)
+            .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc} in unit {target_bundle}")))?;
+        let (frame_slots, return_slot, entry) = (desc.frame_slots, desc.return_slot, desc.entry_pc);
+
+        // Resolve dst + args in the CALLER's bundle (current `cur`) before switching.
+        let dst_place = match dst {
+            Some(slot) => Some(self.target(slot)?),
+            None => None,
+        };
+        let mut locals = vec![Variant::empty(); frame_slots];
+        let mut aliases = HashMap::new();
+        for (i, arg) in args.iter().enumerate() {
+            match arg {
+                ProcArg::ByVal(s) => {
+                    let value = self.cloned(*s)?;
+                    if i < locals.len() {
+                        locals[i] = value;
+                    }
+                }
+                ProcArg::ByRef(s) => {
+                    let place = self.target(*s)?;
+                    aliases.insert(i, place);
+                }
+                ProcArg::Omitted => {
+                    if i < locals.len() {
+                        locals[i] = Variant::from_error_code(MISSING_ARG);
+                    }
+                }
+            }
+        }
+        self.frames.push(Frame {
+            locals,
+            aliases,
+            dst: dst_place,
+            return_slot,
+            return_pc: self.pc + 1,
+            return_bundle: self.cur, // restore the caller's bundle on return
+            capture: false,
+            saved_error_mode: self.error_mode,
+            saved_resume: self.resume,
+        });
+        self.error_mode = ErrorMode::None;
+        self.cur = target_bundle; // execute the callee against its own bundle
         self.next_pc = entry;
         Ok(())
     }
@@ -483,6 +661,7 @@ impl<'h> Vm<'h> {
         self.error_mode = frame.saved_error_mode;
         self.resume = frame.saved_resume;
         self.next_pc = frame.return_pc;
+        self.cur = frame.return_bundle;
         // Writes during the call already hit the backing places (true aliasing),
         // so the only copy-out is the function's return value: captured for a
         // nested invocation, otherwise written into the caller place.
@@ -507,14 +686,20 @@ impl<'h> Vm<'h> {
         }
         self.draining = true;
         while oxvba_runtime::has_pending_terminations() {
-            for (instance_id, route_key) in oxvba_runtime::take_pending_terminations() {
-                let terminate =
-                    self.bundle.classes.get(route_key as usize).and_then(|class| class.terminate);
+            for (instance_id, bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
+                let bundle_id = bundle_id as usize;
+                let terminate = self
+                    .bundles
+                    .get(bundle_id)
+                    .and_then(|lb| lb.bundle.classes.get(route_key as usize))
+                    .and_then(|class| class.terminate);
                 if let (Some(proc), Some(object)) =
                     (terminate, oxvba_runtime::retained_parked_termination_object(instance_id))
                 {
-                    // Terminate runs under a fresh error scope; an unhandled error
-                    // in it is swallowed (observed VBA teardown behavior).
+                    // Terminate runs under a fresh error scope in the instance's own
+                    // bundle; an unhandled error in it is swallowed (VBA teardown).
+                    let saved_cur = self.cur;
+                    self.cur = bundle_id;
                     let _ = self.run_proc_with_me(
                         proc,
                         Variant::from_object_ref(object),
@@ -522,6 +707,7 @@ impl<'h> Vm<'h> {
                         true,
                         false,
                     );
+                    self.cur = saved_cur;
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
                 // Drop any WithEvents bindings + host subscriptions owned by the
@@ -590,7 +776,7 @@ impl<'h> Vm<'h> {
         capture: bool,
     ) -> Result<Variant, Fault> {
         let desc = self
-            .bundle
+            .cur_bundle()
             .procedures
             .get(proc)
             .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
@@ -606,6 +792,7 @@ impl<'h> Vm<'h> {
             self.error_mode,
             self.resume,
             self.captured_return.take(),
+            self.cur,
         );
 
         let mut locals = vec![Variant::empty(); frame_slots];
@@ -621,6 +808,10 @@ impl<'h> Vm<'h> {
             dst: None,
             return_slot,
             return_pc: 0,
+            // The proc runs in whatever bundle the caller set as current (the
+            // object's bundle for a cross-bundle method dispatch); `cur` is saved
+            // above and restored below, so `return_bundle` is informational here.
+            return_bundle: self.cur,
             capture,
             saved_error_mode: self.error_mode,
             saved_resume: self.resume,
@@ -631,12 +822,12 @@ impl<'h> Vm<'h> {
         self.halted = false;
 
         let mut result: Result<Variant, Fault> = Ok(Variant::empty());
-        while self.frames.len() > base && !self.halted && self.pc < self.bundle.ops.len() {
-            if self.statement_start_set.contains(&self.pc) {
+        while self.frames.len() > base && !self.halted && self.pc < self.cur_bundle().ops.len() {
+            if self.bundles[self.cur].statement_start_set.contains(&self.pc) {
                 self.maybe_drain();
                 self.pump_com_events();
             }
-            let op = self.bundle.ops[self.pc].clone();
+            let op = self.cur_bundle().ops[self.pc].clone();
             self.next_pc = self.pc + 1;
             match self.exec(&op) {
                 Ok(()) => self.pc = self.next_pc,
@@ -662,6 +853,7 @@ impl<'h> Vm<'h> {
         self.error_mode = saved.3;
         self.resume = saved.4;
         self.captured_return = saved.5;
+        self.cur = saved.6;
         result.map(|_| captured)
     }
 
@@ -706,7 +898,7 @@ impl<'h> Vm<'h> {
     /// given binding token, recording each subscription for dispatch + teardown.
     fn subscribe_com_events(&mut self, key: i64, binding_token: i32, owner: &Variant, source: &ObjectRef) {
         let routes: Vec<(i32, usize)> = self
-            .bundle
+            .cur_bundle()
             .event_routes
             .iter()
             .filter(|route| route.binding == binding_token)
@@ -819,10 +1011,10 @@ impl<'h> Vm<'h> {
         // only a `CallArg::ByRef` arg (marked from the typelib's param directions)
         // is written back.
         for (j, wb) in writebacks.into_iter().enumerate() {
-            if let Some(value) = wb {
-                if let Some(CallArg::ByRef(slot)) = method_args.get(j) {
-                    self.set(*slot, value)?;
-                }
+            if let Some(value) = wb
+                && let Some(CallArg::ByRef(slot)) = method_args.get(j)
+            {
+                self.set(*slot, value)?;
             }
         }
         Ok(ret)
@@ -846,7 +1038,7 @@ impl<'h> Vm<'h> {
             }
         };
         let proc = self
-            .bundle
+            .cur_bundle()
             .classes
             .get(class_idx)
             .and_then(|class| {
@@ -879,7 +1071,7 @@ impl<'h> Vm<'h> {
 
     fn declare_call(&mut self, descriptor_id: u32, args: &[CallArg]) -> Result<Variant, Fault> {
         let descriptor = self
-            .bundle
+            .cur_bundle()
             .external_call(descriptor_id)
             .ok_or_else(|| Fault::new(5, format!("unknown Declare descriptor {descriptor_id}")))?
             .clone();
@@ -912,10 +1104,10 @@ impl<'h> Vm<'h> {
         // args write back (a force-ByVal `(x)`/non-l-value lowered to `Slot`, so it
         // is correctly left unchanged).
         for (i, arg) in args.iter().enumerate() {
-            if let CallArg::ByRef(slot) = arg {
-                if let Some(value) = wb_values.get(i) {
-                    self.set(*slot, value.clone())?;
-                }
+            if let CallArg::ByRef(slot) = arg
+                && let Some(value) = wb_values.get(i)
+            {
+                self.set(*slot, value.clone())?;
             }
         }
         Ok(ret)
@@ -1087,13 +1279,14 @@ impl<'h> Vm<'h> {
                 }
             }
             Op::CallProc { proc, dst, args } => self.call_proc(*proc, *dst, args)?,
+            Op::CallExtern { import, dst, args } => self.call_extern(*import, *dst, args)?,
             Op::CallProcRef { dst, target, args } => {
                 // Resolve the procedure reference (the AddressOf value) to an index
                 // at runtime, then dispatch through the standard call machinery.
                 let proc = arith::int(self.get(*target)?).map_err(Fault::from_string)?;
                 let proc = usize::try_from(proc)
                     .ok()
-                    .filter(|&p| p < self.bundle.procedures.len())
+                    .filter(|&p| p < self.cur_bundle().procedures.len())
                     .ok_or_else(|| Fault::new(490, "invalid procedure reference"))?;
                 self.call_proc(proc, *dst, args)?
             }
@@ -1273,10 +1466,10 @@ impl<'h> Vm<'h> {
                     // A COM/foreign source is wired through the host's connection
                     // points; a project source is dispatched internally by
                     // RaiseEvent (no host subscription).
-                    if let Some(source) = v.as_object_ref() {
-                        if !source.is_project_instance() {
-                            self.subscribe_com_events(key, binding_tok as i32, &owner_value, &source);
-                        }
+                    if let Some(source) = v.as_object_ref()
+                        && !source.is_project_instance()
+                    {
+                        self.subscribe_com_events(key, binding_tok as i32, &owner_value, &source);
                     }
                     self.withevents
                         .insert(key, EventBinding { owner: owner_value, source: v.clone() });
@@ -1298,10 +1491,9 @@ impl<'h> Vm<'h> {
                     for (key, binding_data) in &self.withevents {
                         if Self::withevents_binding(*key) == (binding & 0xFFFF_FFFF)
                             && object_identity(&binding_data.source) == object_identity(&source)
+                            && let Some(owner) = binding_data.owner.as_object_ref()
                         {
-                            if let Some(owner) = binding_data.owner.as_object_ref() {
-                                owners.push(owner);
-                            }
+                            owners.push(owner);
                         }
                     }
                 }
@@ -1338,12 +1530,12 @@ impl<'h> Vm<'h> {
             // ── Project objects (New / fields) ──
             Op::NewObject { dst, class } => {
                 let class_idx = *class;
-                let descriptor = *self
+                let descriptor = *self.bundles[self.cur]
                     .class_descriptors
                     .get(class_idx)
                     .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
                 let meta = self
-                    .bundle
+                    .cur_bundle()
                     .classes
                     .get(class_idx)
                     .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
@@ -1354,6 +1546,7 @@ impl<'h> Vm<'h> {
                 let object = ObjectRef::from_project_instance(
                     instance_id,
                     class_idx as i32,
+                    self.cur as i32,
                     has_terminate,
                     descriptor,
                 );
@@ -1365,6 +1558,54 @@ impl<'h> Vm<'h> {
                         false,
                         false,
                     )?;
+                }
+                self.set(*dst, Variant::from_object_ref(object))?;
+            }
+            Op::NewExtern { dst, import } => {
+                // Allocate an instance of a class in another bundle. The object
+                // carries the target bundle's id, so its methods dispatch against
+                // that bundle's class table (see `dispatch_project_method`).
+                let resolved = self.bundles[self.cur]
+                    .imports
+                    .get(*import)
+                    .copied()
+                    .ok_or_else(|| Fault::new(5, format!("unresolved import {import}")))?;
+                let ExportTarget::Class(class_idx) = resolved.target else {
+                    return Err(Fault::new(5, "cross-bundle reference is not a class"));
+                };
+                let target_bundle = resolved.bundle;
+                let descriptor = *self.bundles[target_bundle]
+                    .class_descriptors
+                    .get(class_idx)
+                    .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
+                let meta = self.bundles[target_bundle]
+                    .bundle
+                    .classes
+                    .get(class_idx)
+                    .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
+                let has_terminate = meta.terminate.is_some();
+                let initialize = meta.initialize;
+                let instance_id = self.next_instance_id;
+                self.next_instance_id += 1;
+                let object = ObjectRef::from_project_instance(
+                    instance_id,
+                    class_idx as i32,
+                    target_bundle as i32,
+                    has_terminate,
+                    descriptor,
+                );
+                if let Some(init) = initialize {
+                    let saved_cur = self.cur;
+                    self.cur = target_bundle;
+                    let r = self.run_proc_with_me(
+                        init,
+                        Variant::from_object_ref(object.clone()),
+                        &[],
+                        false,
+                        false,
+                    );
+                    self.cur = saved_cur;
+                    r?;
                 }
                 self.set(*dst, Variant::from_object_ref(object))?;
             }
@@ -1389,7 +1630,7 @@ impl<'h> Vm<'h> {
                         continue;
                     }
                     let token = Self::withevents_binding(*key) as i32;
-                    if let Some(&handler) = self.event_routes.get(&(token, event_id)) {
+                    if let Some(&handler) = self.bundles[self.cur].event_routes.get(&(token, event_id)) {
                         let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
                         targets.push((sink_id, binding.owner.clone(), handler));
                     }
@@ -1481,14 +1722,14 @@ impl<'h> Vm<'h> {
             // (`Object`/`Variant`, or any non-project type) are not checked, and
             // `Nothing` is always allowed.
             Intent::Set if value.vtype() == VarType::Object && !target_type_name.is_empty() => {
-                let target_is_project = self.bundle.classes.iter().any(|c| {
+                let target_is_project = self.cur_bundle().classes.iter().any(|c| {
                     c.name.eq_ignore_ascii_case(target_type_name)
                         || c.implements.iter().any(|i| i.eq_ignore_ascii_case(target_type_name))
                 });
                 if target_is_project {
                     let obj = variant_to_object(value)?;
                     if obj.is_project_instance()
-                        && let Some(class) = self.bundle.classes.get(obj.route_key() as usize)
+                        && let Some(class) = self.cur_bundle().classes.get(obj.route_key() as usize)
                     {
                         let compatible = class.name.eq_ignore_ascii_case(target_type_name)
                             || class
@@ -1524,7 +1765,7 @@ impl<'h> Vm<'h> {
         // a foreign/COM object is described by the host's typelib (`prog_id_name`).
         if object.is_project_instance() {
             return Ok(self
-                .bundle
+                .cur_bundle()
                 .classes
                 .get(object.route_key() as usize)
                 .is_some_and(|class| {

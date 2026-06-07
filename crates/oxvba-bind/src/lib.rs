@@ -79,6 +79,11 @@ pub fn bind_program(
         external_calls: build_external_calls(&env),
         com_class_exports: build_com_class_exports(manifest),
         entry: ids.entry(),
+        // The bundle's unit name; its export/import manifest is populated when
+        // binding across projects (see `bind_projects`).
+        unit_name: manifest.project_name.clone(),
+        exports: Vec::new(),
+        imports: Vec::new(),
     })
 }
 

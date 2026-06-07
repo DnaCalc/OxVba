@@ -276,6 +276,9 @@ fn bundle_full(
         com_class_exports: Vec::new(),
         classes,
         event_routes: Vec::new(),
+        unit_name: String::new(),
+        exports: Vec::new(),
+        imports: Vec::new(),
     }
 }
 

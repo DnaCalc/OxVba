@@ -28,6 +28,7 @@ fn single(local_count: usize, body: Vec<CoreStmt>) -> CoreProgram {
         external_calls: Vec::new(),
         com_class_exports: Vec::new(),
         entry: None,
+        ..Default::default()
     }
 }
 

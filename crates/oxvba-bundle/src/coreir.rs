@@ -41,8 +41,9 @@ pub struct LabelId(pub usize);
 
 // ── Program / procedure / class ───────────────────────────────────────────────
 
-/// A complete compilation unit, ready to linearize.
-#[derive(Debug, Clone, PartialEq)]
+/// A complete compilation unit (one project = one ".NET assembly"), ready to
+/// linearize into its own [`crate::Bundle`].
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct CoreProgram {
     /// Module-level variables; index == [`GlobalId`].
     pub globals: Vec<CoreGlobal>,
@@ -58,6 +59,12 @@ pub struct CoreProgram {
     pub com_class_exports: Vec<ComClassExport>,
     /// Entry procedure; `None` ⇒ `Main` (case-insensitive) or the first proc.
     pub entry: Option<ProcId>,
+    /// This unit's name (its project name) — the key cross-bundle imports use.
+    pub unit_name: String,
+    /// Public members exported for cross-bundle references (the bundle manifest).
+    pub exports: Vec<crate::BundleExport>,
+    /// Cross-bundle references this unit makes (resolved at link time).
+    pub imports: Vec<crate::BundleImport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +252,10 @@ pub enum CoreValue {
     /// procedure index; calling through it (in-VM or via a real OS callback) is the
     /// native-runtime epic's concern.
     AddressOf(ProcId),
+    /// `New <referenced class>` — allocate an instance of a class in another bundle.
+    /// `import` indexes [`CoreProgram::imports`] (a `Class` token); the instance
+    /// carries the target bundle's id for cross-bundle method dispatch.
+    NewExtern { import: usize },
 }
 
 /// The resolved target of a [`CoreValue::Call`].
@@ -265,6 +276,10 @@ pub enum CoreCallee {
     /// in `args`: `[0]` = object, `[1]` = name string, `[2]` = calltype
     /// (`vbMethod`/`vbGet`/`vbLet`/`vbSet`), `[3..]` = the forwarded call arguments.
     DynamicByName,
+    /// A cross-bundle (".NET assembly") call to a referenced project's hidden-module
+    /// / free function. `import` indexes [`CoreProgram::imports`]; the linker
+    /// resolves it to a `(bundle, proc)` pair at load time.
+    ExternProc { import: usize },
 }
 
 /// A call argument. `ByRef` passes a place (true alias for slot places;

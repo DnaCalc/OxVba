@@ -5033,6 +5033,7 @@ impl Vm {
                             oxvba_runtime::ObjectRef::from_project_instance(
                                 instance_id,
                                 route_handle,
+                                0, // legacy single-bundle VM
                                 has_terminate,
                                 descriptor,
                             )
@@ -8621,7 +8622,7 @@ impl Vm {
         descriptor_selected_fastpaths: bool,
     ) -> Result<(), String> {
         while oxvba_runtime::has_pending_terminations() {
-            for (instance_id, route_key) in oxvba_runtime::take_pending_terminations() {
+            for (instance_id, _bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
                 let resolved = self
                     .project_dynamic_objects
                     .get(&route_key)

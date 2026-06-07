@@ -99,6 +99,7 @@ fn program(globals: usize, procs: Vec<CoreProc>, classes: Vec<CoreClass>, event_
         external_calls: Vec::new(),
         com_class_exports: Vec::new(),
         entry: Some(ProcId(0)),
+        ..Default::default()
     }
 }
 

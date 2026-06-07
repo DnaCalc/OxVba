@@ -260,6 +260,69 @@ pub struct Bundle {
     pub classes: Vec<ClassDescriptor>,
     /// `WithEvents` event routes (sink binding + event id → handler procedure).
     pub event_routes: Vec<EventRoute>,
+    /// This bundle's unit name (its project name) — the key other bundles'
+    /// imports reference. Empty for an anonymous single bundle.
+    pub unit_name: String,
+    /// Public members this bundle exports for cross-bundle (".NET assembly")
+    /// references, keyed by a stable [`ExportToken`].
+    pub exports: Vec<BundleExport>,
+    /// Cross-bundle members this bundle references; resolved against other loaded
+    /// bundles' `exports` at link time. An `Op::CallExtern` carries an index into
+    /// this vec.
+    pub imports: Vec<BundleImport>,
+}
+
+/// A stable, cross-bundle reference token for an exported member. These are
+/// *names*, not private indices — a bundle's internal proc/class indices are not
+/// part of its public contract (that is the whole point of separate compilation).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportToken {
+    /// A hidden-module / free function (a `TKIND_MODULE` member): the owning
+    /// module, the member name, and its accessor kind. Matched case-insensitively.
+    ModuleFunc { module: String, member: String, kind: ProjectMemberKind },
+    /// A public coclass, by name. Matched case-insensitively.
+    Class { name: String },
+}
+
+impl ExportToken {
+    /// Case-insensitive token equality (VBA name matching).
+    pub fn matches(&self, other: &ExportToken) -> bool {
+        match (self, other) {
+            (
+                ExportToken::ModuleFunc { module: m1, member: n1, kind: k1 },
+                ExportToken::ModuleFunc { module: m2, member: n2, kind: k2 },
+            ) => k1 == k2 && m1.eq_ignore_ascii_case(m2) && n1.eq_ignore_ascii_case(n2),
+            (ExportToken::Class { name: a }, ExportToken::Class { name: b }) => {
+                a.eq_ignore_ascii_case(b)
+            }
+            _ => false,
+        }
+    }
+}
+
+/// What an export token resolves to inside its own bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportTarget {
+    /// A procedure index into the exporting bundle's `procedures`.
+    Proc(usize),
+    /// A class index into the exporting bundle's `classes`.
+    Class(usize),
+}
+
+/// One exported member of a bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleExport {
+    pub token: ExportToken,
+    pub target: ExportTarget,
+}
+
+/// A cross-bundle reference a bundle makes (resolved at link time to a
+/// `(bundle, target)` pair).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleImport {
+    /// The referenced unit (project) name.
+    pub unit: String,
+    pub token: ExportToken,
 }
 
 impl Bundle {
@@ -277,6 +340,9 @@ impl Bundle {
             com_class_exports: Vec::new(),
             classes: Vec::new(),
             event_routes: Vec::new(),
+            unit_name: String::new(),
+            exports: Vec::new(),
+            imports: Vec::new(),
         }
     }
 

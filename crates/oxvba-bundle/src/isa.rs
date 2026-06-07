@@ -149,6 +149,11 @@ pub enum Op {
     /// call-through that a real OS-callback trampoline re-enters; `args` bind to
     /// the callee frame exactly as [`Op::CallProc`].
     CallProcRef { dst: Option<usize>, target: usize, args: Vec<ProcArg> },
+    /// A cross-bundle call (".NET assembly" reference). `import` indexes the
+    /// current bundle's resolved import table (→ a `(bundle, proc)` pair); the
+    /// callee runs in — and returns to — its own bundle. `args`/`dst` bind exactly
+    /// as [`Op::CallProc`] (resolved in the caller's bundle before the switch).
+    CallExtern { import: usize, dst: Option<usize>, args: Vec<ProcArg> },
     /// `CallByName` — dispatch a member call by a runtime name on a runtime object,
     /// routing through the same late-dispatch path as `CallNative`/`ComDispatch`.
     /// `object`/`name`/`calltype` are operand slots; `calltype` is the VbCallType
@@ -199,6 +204,11 @@ pub enum Op {
     /// its `Class_Initialize`, and store the object reference in `dst`. The
     /// instance is a refcounted IUnknown; release drives `Class_Terminate`.
     NewObject { dst: usize, class: usize },
+    /// Allocate a fresh instance of a class in ANOTHER bundle (`import` indexes the
+    /// current bundle's import table → a `(bundle, class)` pair); the instance
+    /// carries that bundle's id so its methods dispatch against the right class
+    /// table. Runs `Class_Initialize` in the owning bundle.
+    NewExtern { dst: usize, import: usize },
     /// Read instance field `field` (a field token) of the object in `object`.
     FieldGet { dst: usize, object: usize, field: i32 },
     /// Write `src` into instance field `field` of the object in `object`.

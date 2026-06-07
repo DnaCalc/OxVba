@@ -255,6 +255,10 @@ pub struct RuntimeObjectIdentity {
     /// belongs to. Distinct from `compat_identity` once instances are per-`New` allocations —
     /// many instances share one `route_key` but each has its own `compat_identity`.
     pub route_key: i32,
+    /// The bundle (".NET assembly") that owns this instance's class. `(bundle_id,
+    /// route_key)` together select the class dispatch table for a multi-bundle VM;
+    /// `0` for single-bundle runs. Identity (`Is`) remains the IUnknown pointer.
+    pub bundle_id: i32,
     /// True when this instance's class has a `Class_Terminate` — so the last `Release`
     /// (`compat_release` at refcount 0) enqueues it for the VM to run `Class_Terminate`.
     pub terminates_on_release: bool,
@@ -582,7 +586,9 @@ unsafe extern "C" fn compat_query_interface(
 /// original box and its fields can be released afterwards.
 #[derive(Default)]
 struct TerminationQueue {
-    pending: Vec<(i32, i32)>,
+    /// `(instance_id, bundle_id, route_key)` — the bundle + class needed to find
+    /// the parked instance's `Class_Terminate` at drain time.
+    pending: Vec<(i32, i32, i32)>,
     parked: BTreeMap<i32, *mut CompatObjectBase>,
 }
 
@@ -596,9 +602,9 @@ pub fn has_pending_terminations() -> bool {
     TERMINATIONS.with(|q| !q.borrow().pending.is_empty())
 }
 
-/// Drains and returns the queued `(instance_id, route_key)` terminations. The parked object boxes
-/// remain owned by the termination queue until `finish_pending_termination` is called.
-pub fn take_pending_terminations() -> Vec<(i32, i32)> {
+/// Drains and returns the queued `(instance_id, bundle_id, route_key)` terminations. The parked
+/// object boxes remain owned by the termination queue until `finish_pending_termination` is called.
+pub fn take_pending_terminations() -> Vec<(i32, i32, i32)> {
     TERMINATIONS.with(|q| std::mem::take(&mut q.borrow_mut().pending))
 }
 
@@ -681,8 +687,11 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
             TERMINATIONS.with(|q| {
                 let mut q = q.borrow_mut();
                 if !unsafe { (*owner).parked_for_termination.replace(true) } {
-                    q.pending
-                        .push((identity.compat_identity, identity.route_key));
+                    q.pending.push((
+                        identity.compat_identity,
+                        identity.bundle_id,
+                        identity.route_key,
+                    ));
                     q.parked.insert(identity.compat_identity, owner);
                 }
             });
@@ -734,7 +743,7 @@ impl ObjectRef {
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
         // Legacy/template path: identity key and route key coincide; no terminate hook.
-        Self::from_compat_object(compat_identity, compat_identity, false, class_descriptor)
+        Self::from_compat_object(compat_identity, compat_identity, 0, false, class_descriptor)
     }
 
     /// Allocates a fresh project-class instance: a distinct `CompatObjectBase` (a distinct
@@ -745,15 +754,17 @@ impl ObjectRef {
     pub fn from_project_instance(
         instance_id: i32,
         route_key: i32,
+        bundle_id: i32,
         has_terminate: bool,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
-        Self::from_compat_object(instance_id, route_key, has_terminate, class_descriptor)
+        Self::from_compat_object(instance_id, route_key, bundle_id, has_terminate, class_descriptor)
     }
 
     fn from_compat_object(
         compat_identity: i32,
         route_key: i32,
+        bundle_id: i32,
         terminates_on_release: bool,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
@@ -767,6 +778,7 @@ impl ObjectRef {
                 stable_object_id,
                 compat_identity,
                 route_key,
+                bundle_id,
                 terminates_on_release,
                 class_descriptor,
                 lifetime_policy: RuntimeLifetimePolicy::RefCounted,
@@ -801,6 +813,14 @@ impl ObjectRef {
     pub fn route_key(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         unsafe { (*owner).identity.route_key }
+    }
+
+    /// The bundle (".NET assembly") that owns this instance's class — `(bundle_id,
+    /// route_key)` selects the class dispatch table in a multi-bundle VM. `0` for
+    /// single-bundle runs.
+    pub fn bundle_id(&self) -> i32 {
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        unsafe { (*owner).identity.bundle_id }
     }
 
     pub fn is_project_instance(&self) -> bool {

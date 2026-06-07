@@ -156,6 +156,9 @@ impl<'p> Linearizer<'p> {
             com_class_exports: self.program.com_class_exports.clone(),
             classes,
             event_routes: self.program.event_routes.clone(),
+            unit_name: self.program.unit_name.clone(),
+            exports: self.program.exports.clone(),
+            imports: self.program.imports.clone(),
         })
     }
 
@@ -394,6 +397,11 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::NewObject { dst, class: class.0 });
                 Ok(dst)
             }
+            CoreValue::NewExtern { import } => {
+                let dst = self.new_temp();
+                self.emit(Op::NewExtern { dst, import: *import });
+                Ok(dst)
+            }
             CoreValue::Coerce { value, to } => {
                 let src = self.lower_value(value)?;
                 match to {
@@ -570,6 +578,13 @@ impl<'p> Linearizer<'p> {
             CoreCallee::VbaProc { proc } => {
                 let (proc_args, writebacks) = self.build_proc_args(args)?;
                 self.emit(Op::CallProc { proc: proc.0, dst, args: proc_args });
+                self.emit_arg_writebacks(writebacks)?;
+            }
+            CoreCallee::ExternProc { import } => {
+                // A cross-bundle call binds args exactly like a VbaProc; the linker
+                // resolves `import` to the target `(bundle, proc)` at load time.
+                let (proc_args, writebacks) = self.build_proc_args(args)?;
+                self.emit(Op::CallExtern { import: *import, dst, args: proc_args });
                 self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::Native(id) => {
