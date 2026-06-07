@@ -23,6 +23,10 @@ use crate::signature::{
 pub struct ModuleScan {
     pub module_name: String,
     pub module_scope: ScopeId,
+    /// The module's own `SymbolKind::Module` symbol (declared in the project
+    /// scope). Used as a class's stable identity in the export surface, so the
+    /// binder keys `New <coclass>` off the same symbol.
+    pub module_symbol: SymbolId,
     pub members: Vec<ScannedMember>,
 }
 
@@ -56,7 +60,7 @@ pub fn scan_module(
     } else {
         module.attributes.vb_name.clone()
     };
-    symbols.declare_symbol(
+    let module_symbol = symbols.declare_symbol(
         project_scope,
         SymbolNamespace::Module,
         SymbolKind::Module,
@@ -66,7 +70,8 @@ pub fn scan_module(
     )?;
     let module_scope = symbols.add_scope(crate::model::ScopeKind::Module, project_scope, Some(&module_name))?;
 
-    let mut scan = ModuleScan { module_name: module_name.clone(), module_scope, members: Vec::new() };
+    let mut scan =
+        ModuleScan { module_name: module_name.clone(), module_scope, module_symbol, members: Vec::new() };
     let mut ctx = ScanCtx { symbols, signatures, next_descriptor_id, scan: &mut scan, module_name: &module_name };
     ctx.walk(module_scope, module_syntax, true)?;
     Ok(scan)

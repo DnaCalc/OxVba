@@ -23,7 +23,7 @@ use oxvba_bundle::ProjectMemberKind;
 use oxvba_com::{TypeLibMemberInvokeKind, TypeLibParamType};
 
 use crate::manifest::{Instancing, ModuleKind, ModuleUnit};
-use crate::model::{fold_identifier, SymbolId, SymbolImpl, SymbolKind, SymbolTable, Visibility};
+use crate::model::{SymbolId, SymbolImpl, SymbolKind, SymbolTable, Visibility};
 use crate::scanner::{ModuleScan, ScannedMember};
 use crate::signature::{BuiltinType, PassingMode, Signature, SignatureTable, VarTypeRef};
 
@@ -148,14 +148,16 @@ pub fn synthesize_export_surface(
             SurfaceTypeKind::Coclass {
                 prog_id: attrs.prog_id.clone(),
                 creatable: attrs.vb_creatable || creatable_instancing(attrs.instancing),
-                class_symbol: type_symbol(symbols, scan),
+                class_symbol: scan.module_symbol,
             }
         } else {
             SurfaceTypeKind::Module
         };
         let global_namespace = match kind {
-            // A standard module's public procedures are callable unqualified.
-            SurfaceTypeKind::Module => true,
+            // Only a *standard* module's public procedures are callable unqualified
+            // (injected into the referencer's global namespace). Document/Form/
+            // Extension modules are class-like — their members are qualified-only.
+            SurfaceTypeKind::Module => module.module_kind == ModuleKind::Procedural,
             // `GlobalMultiUse`/`GlobalSingleUse` classes inject members globally.
             SurfaceTypeKind::Coclass { .. } => global_instancing(attrs.instancing),
         };
@@ -177,7 +179,10 @@ pub fn synthesize_export_surface(
                     let dispid = take_dispid(member.is_default, &mut next_dispid);
                     property_members(member, dispid, is_class, &mut next_vtable, symbols, signatures, &mut members);
                 }
-                SymbolKind::Field | SymbolKind::WithEventsField => {
+                // A public field surfaces as a read/write property pair. A
+                // `WithEventsField` is Private-only in VBA (no `Public WithEvents`)
+                // and is not an exportable accessor, so it never reaches the surface.
+                SymbolKind::Field => {
                     let dispid = take_dispid(member.is_default, &mut next_dispid);
                     field_members(member, dispid, is_class, &mut next_vtable, symbols, &mut members);
                 }
@@ -387,32 +392,6 @@ fn member_name(symbols: &SymbolTable, member: &ScannedMember) -> String {
         .and_then(|s| symbols.name(s.name))
         .map(|n| n.first_spelling.clone())
         .unwrap_or_else(|| member.name_folded.clone())
-}
-
-/// The module's own type symbol (the `SymbolKind::Module` symbol declared in the
-/// parent project scope) — used as the coclass's `class_symbol`.
-fn type_symbol(symbols: &SymbolTable, scan: &ModuleScan) -> SymbolId {
-    // The class type resolves (in a referencing project) by the module's name; the
-    // binder keys `class_of_sym` by the same symbol the scanner declared for the
-    // module. Find it by scanning the project scope for the module's name.
-    let folded = fold_identifier(&scan.module_name);
-    let parent = symbols
-        .scope(scan.module_scope)
-        .ok()
-        .and_then(|m| m.parent)
-        .unwrap_or_else(|| symbols.global_scope());
-    symbols
-        .symbols_in_scope(parent)
-        .unwrap_or_default()
-        .into_iter()
-        .find(|id| {
-            let Some(s) = symbols.symbol(*id) else { return false };
-            s.kind == SymbolKind::Module
-                && symbols.name(s.name).map(|n| n.folded == folded).unwrap_or(false)
-        })
-        // Fall back to the first symbol declared in the module scope's owner; in
-        // practice the module symbol always exists (the scanner declares it).
-        .unwrap_or(SymbolId(0))
 }
 
 fn creatable_instancing(instancing: Option<Instancing>) -> bool {

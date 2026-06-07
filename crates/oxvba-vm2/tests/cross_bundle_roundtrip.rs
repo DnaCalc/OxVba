@@ -104,6 +104,86 @@ fn cross_bundle_call_runs_in_the_referenced_bundle() {
     assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(5));
 }
 
+/// Library bundle whose `Boom` raises VBA error 5.
+fn boom_lib_program() -> CoreProgram {
+    let boom = CoreProc {
+        name: "Boom".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: Vec::new(),
+        return_local: None,
+        body: vec![CoreStmt::Error(ErrorOp::Raise { code: 5 })],
+    };
+    CoreProgram {
+        procs: vec![boom],
+        unit_name: "Lib".into(),
+        exports: vec![BundleExport {
+            token: ExportToken::ModuleFunc {
+                module: "Lib".into(),
+                member: "Boom".into(),
+                kind: ProjectMemberKind::Method,
+            },
+            target: ExportTarget::Proc(0),
+        }],
+        ..Default::default()
+    }
+}
+
+/// Referrer: `Sub Main()` with `On Error Resume Next`, calls `Lib.Boom` (which
+/// raises across the bundle boundary), then stores 42. The fault must unwind to
+/// Main's handler in App's bundle, so the resume + the store run in App.
+fn error_app_program() -> CoreProgram {
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: Vec::new(),
+        return_local: None,
+        body: vec![
+            CoreStmt::Error(ErrorOp::OnErrorResumeNext),
+            // Faults inside Lib; Resume Next skips this statement.
+            assign(
+                CorePlace::Global(GlobalId(0)),
+                CoreValue::Call {
+                    callee: CoreCallee::ExternProc { import: 0 },
+                    args: Vec::new(),
+                },
+                "result",
+            ),
+            // Resumed-to statement — must execute in App's bundle.
+            assign(CorePlace::Global(GlobalId(0)), CoreValue::Const(CoreConst::I32(42)), "result"),
+        ],
+    };
+    CoreProgram {
+        globals: vec![CoreGlobal { name: "result".into(), array_element: None }],
+        procs: vec![main],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: ExportToken::ModuleFunc {
+                module: "Lib".into(),
+                member: "Boom".into(),
+                kind: ProjectMemberKind::Method,
+            },
+        }],
+        unit_name: "App".into(),
+        entry: Some(ProcId(0)),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cross_bundle_fault_unwinds_to_the_callers_bundle_handler() {
+    let lib = linearize(&boom_lib_program()).expect("linearize lib");
+    let app = linearize(&error_app_program()).expect("linearize app");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = oxvba_vm2::Vm::link(&[&lib, &app], &host).expect("link");
+    vm.run().expect("run");
+    // The error raised in Lib was caught by App's `On Error Resume Next`, and the
+    // resumed statement ran in App's bundle → global 0 == 42. (Regression for the
+    // route_fault `cur` restore.)
+    assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+}
+
 #[test]
 fn link_rejects_an_unresolved_reference() {
     // App imports unit "Lib", but we only load App → the link must fail.

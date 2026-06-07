@@ -118,7 +118,7 @@ type BundleId = usize;
 /// A storage location: a module global of a specific bundle, or a local of a
 /// specific frame. Globals are bundle-qualified so a `ByRef` global aliased across
 /// a bundle boundary still resolves to the owning bundle's slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Place {
     Global(BundleId, usize),
     Local(usize, usize), // (frame index, relative local index)
@@ -240,7 +240,10 @@ pub struct Vm<'h> {
     resume: ResumePoint,
     err: ErrObject,
     lib: LibContext,
-    for_each: HashMap<usize, ForEachState>,
+    /// `For Each` enumerator state, keyed by the iterator's resolved storage
+    /// `Place` (bundle- and frame-unique) so concurrent/reentrant/cross-bundle
+    /// loops that reuse the same slot *number* never alias.
+    for_each: HashMap<Place, ForEachState>,
     withevents: HashMap<i64, EventBinding>,
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
     /// Live host event subscriptions: subscription-token raw → sink handler.
@@ -279,11 +282,11 @@ impl<'h> Vm<'h> {
         Self::link(&[bundle], host).expect("a single bundle always links")
     }
 
-    /// Link N bundles (".NET assemblies") into one VM image. Bundles are given in
-    /// dependency order — each bundle's imports resolve against bundles *earlier*
-    /// in the slice (referenced-before-referrer; the project loader yields this
-    /// order). The **last** bundle is the entry unit (its `entry_pc` / `Sub Main`
-    /// runs). A reference to an unknown unit or a missing export is a [`LinkError`].
+    /// Link N bundles (".NET assemblies") into one VM image. Imports resolve
+    /// against any loaded unit by (case-insensitive) `unit_name`, so slice order
+    /// only determines the **entry** unit: the **last** bundle is the entry (its
+    /// `entry_pc` / `Sub Main` runs). An unknown unit, a missing export, or a
+    /// duplicate `unit_name` is a [`LinkError`].
     pub fn link(bundles: &[&'h Bundle], host: &'h dyn HostServices) -> Result<Self, LinkError> {
         let entry = bundles
             .len()
@@ -291,11 +294,16 @@ impl<'h> Vm<'h> {
             .ok_or_else(|| LinkError { message: "no bundles to link".into() })?;
         let mut loaded: Vec<LoadedBundle<'h>> = bundles.iter().map(|b| LoadedBundle::load(b)).collect();
 
-        // Unit name (folded) → bundle id, for import resolution.
+        // Unit name (folded) → bundle id, for import resolution. A duplicate unit
+        // name is ambiguous (which one does an import mean?) — reject it.
         let mut by_name: HashMap<String, BundleId> = HashMap::new();
         for (id, b) in bundles.iter().enumerate() {
-            if !b.unit_name.is_empty() {
-                by_name.insert(b.unit_name.to_ascii_lowercase(), id);
+            if !b.unit_name.is_empty()
+                && by_name.insert(b.unit_name.to_ascii_lowercase(), id).is_some()
+            {
+                return Err(LinkError {
+                    message: format!("duplicate unit name `{}`", b.unit_name),
+                });
             }
         }
         // Resolve each bundle's imports against the loaded bundles' exports.
@@ -526,6 +534,10 @@ impl<'h> Vm<'h> {
                     errored_pc = frame.return_pc.saturating_sub(1);
                     self.error_mode = frame.saved_error_mode;
                     self.resume = frame.saved_resume;
+                    // Restore the caller's bundle so `statement_bounds` and the
+                    // resumed/handler pc index the right bundle's ops (a fault can
+                    // unwind across a cross-bundle `CallExtern` boundary).
+                    self.cur = frame.return_bundle;
                 }
             }
         }
@@ -1423,10 +1435,12 @@ impl<'h> Vm<'h> {
                     Some(arr) => arr.variant_elements().unwrap_or_default(),
                     None => Vec::new(),
                 };
-                self.for_each.insert(*iter, ForEachState { elements, position: 0 });
+                let key = self.target(*iter)?;
+                self.for_each.insert(key, ForEachState { elements, position: 0 });
             }
             Op::ForEachNext { iter, item, has_value } => {
-                let next = self.for_each.get_mut(iter).and_then(|state| {
+                let key = self.target(*iter)?;
+                let next = self.for_each.get_mut(&key).and_then(|state| {
                     let value = state.elements.get(state.position).cloned();
                     if value.is_some() {
                         state.position += 1;
