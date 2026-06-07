@@ -20,6 +20,38 @@ Keep `oxvba-debug` (debugger) and `oxvba-languageservice`/`oxvba-lsp`/`oxvba-web
 (language support) in `_legacy_harvest/` **as reference until we re-implement them** on the
 clean stack — do not delete.
 
+## Clean-stack gaps (from the re-pointed `feature_coverage` corpus)
+
+`crates/oxvba-bind/tests/feature_coverage.rs` re-points the legacy `vm_feature_coverage`
+VBA-semantics corpus at the clean stack (bind→linearize→vm2). First run: **27 pass, 26
+fail**. The clean stack handles all the core *shapes* (scalar/double arithmetic, most
+const folding, strings + `Left/Mid/UCase/Len`, fixed+dynamic arrays, `For`/`While`/
+`If`, logical ops as r-values, type-suffix literals). The 26 failures are 6 specific,
+fixable gaps (each failing test is `#[ignore = "gap X: …"]` in the corpus — un-ignore as
+fixed):
+
+- **A — store coercion to declared type** (~10 tests): an assigned value isn't coerced to
+  the target variable's declared type. `Dim x As Long: x = x*3+4` → stored `Double(10)`
+  not `Long(10)`; a boolean const folds to `Long(0)` and stays `Long` in a `Boolean` var.
+  (Note: in some cases the clean stack is *more* VBA-correct than the legacy expectation —
+  e.g. `Dim b As Byte: b = 3` → `Byte(3)` clean vs `Long(3)` legacy; those expectations
+  should be re-checked against the Excel oracle, not just "fixed".) Biggest cluster.
+- **B — overflow detection** (2): fixed-integer overflow (`Dim x As Long: x = 2e9: x = x +
+  2e9`) widens to `Double` instead of raising run-time error 6. Tied to A (no coerce/check
+  on store).
+- **C — UDTs** (2): `Type … End Type` + `p.X = 3` → `424 Object required`. User-defined
+  types not supported in the clean stack.
+- **D — Optional parameter defaults** (9): an omitted `Optional ByVal x As T = <default>`
+  passes `Missing` (an Error variant) instead of binding the default value.
+- **E — indexed `Property Let`** (2): `Item(i) = x` → bind error "not an assignable
+  variable" (indexed `Property Get` works).
+- **F — division-by-zero error code** (1): `1 / 0` yields error 13 (Type mismatch) instead
+  of 11 (Division by zero).
+
+Next gap-analysis steps: re-point the host `com_*`/`file_io`/`pointer`/`invoke` suites
+(objects, COM, file I/O, pointers) — those will surface the object/COM/host-call gaps the
+scalar corpus can't.
+
 ## Deferred decisions
 
 - **CLI `--references` injection** — REMOVED for now (the `.basproj` reference graph is the
