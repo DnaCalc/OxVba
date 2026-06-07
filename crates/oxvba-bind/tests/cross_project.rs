@@ -1,0 +1,265 @@
+//! End-to-end cross-VBA-project references: real source for *several* projects →
+//! `oxvba_bind::bind_projects` (one bundle per project) → `oxvba_bundle::linearize`
+//! → `oxvba_vm2::Vm::link` (the ".NET assembly" model) → run. Exercises every
+//! cross-bundle binding form: a hidden-module function call, `New` + method on a
+//! referenced coclass, a referenced `Const`/`Enum` value, cross-bundle `WithEvents`,
+//! `TypeOf … Is` a referenced interface, and multi-level / diamond reference chains.
+
+use std::collections::BTreeMap;
+
+use oxvba_bind::bind_projects;
+use oxvba_hal::adapters::null::NullHostServices;
+use oxvba_hal::HostPolicy;
+use oxvba_symbol::manifest::{
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference,
+    ReferencedProjectManifest, SymbolProjectManifest,
+};
+use oxvba_symbol::provider::TypeLibResolver;
+
+struct NullTypeLibs;
+impl TypeLibResolver for NullTypeLibs {
+    fn resolve(
+        &self,
+        _request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        None
+    }
+}
+
+// ── Fixture builders ─────────────────────────────────────────────────────────
+
+fn proc_module(name: &str, src: &str) -> ModuleUnit {
+    ModuleUnit {
+        module_name: name.into(),
+        module_kind: ModuleKind::Procedural,
+        attributes: ModuleAttributes::named(name),
+        source: src.into(),
+    }
+}
+
+fn class_module(name: &str, src: &str, creatable: bool) -> ModuleUnit {
+    let mut attrs = ModuleAttributes::named(name);
+    attrs.vb_exposed = true;
+    attrs.vb_creatable = creatable;
+    ModuleUnit {
+        module_name: name.into(),
+        module_kind: ModuleKind::Class,
+        attributes: attrs,
+        source: src.into(),
+    }
+}
+
+fn referenced(project_name: &str, modules: Vec<ModuleUnit>) -> ReferencedProjectManifest {
+    ReferencedProjectManifest {
+        project_name: project_name.into(),
+        project_kind: ProjectKind::Library,
+        modules,
+    }
+}
+
+fn project(
+    name: &str,
+    modules: Vec<ModuleUnit>,
+    refs: Vec<ReferencedProjectManifest>,
+) -> SymbolProjectManifest {
+    let references = refs
+        .iter()
+        .map(|r| ProjectReference::Project { referenced_project_name: r.project_name.clone() })
+        .collect();
+    SymbolProjectManifest {
+        project_name: name.into(),
+        project_kind: ProjectKind::Source,
+        modules,
+        references,
+        reference_projects: refs,
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
+/// Bind the whole closure (leaf-first, entry last), linearize each project to a
+/// bundle, link them (entry last), run, and return the entry bundle's global 0.
+fn link_run_global0_i32(closure_leaf_first: &[SymbolProjectManifest]) -> Option<i32> {
+    let programs = bind_projects(closure_leaf_first, &NullTypeLibs).expect("bind_projects");
+    let bundles: Vec<_> = programs.iter().map(|p| oxvba_bundle::linearize(p).expect("linearize")).collect();
+    let refs: Vec<&_> = bundles.iter().collect();
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = oxvba_vm2::Vm::link(&refs, &host).expect("link");
+    vm.run().expect("run");
+    vm.slot(0).and_then(|v| v.as_i32())
+}
+
+// ── The Lib + App two-project fixture ────────────────────────────────────────
+
+/// A reusable `Lib` project: a hidden-module function + a `Const`/`Enum`, a
+/// creatable `Widget` with a method, an event source `Clock`, an interface `IShape`
+/// and an implementer `Circle`.
+fn lib_modules() -> Vec<ModuleUnit> {
+    vec![
+        proc_module(
+            "LibMod",
+            "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\n\
+             Add = a + b\n\
+             End Function\n\
+             Public Const KMax As Long = 10\n\
+             Public Enum Color\n  Red = 1\n  Green\nEnd Enum\n",
+        ),
+        class_module(
+            "Widget",
+            "Public Function Doubled(ByVal n As Long) As Long\nDoubled = n * 2\nEnd Function\n",
+            true,
+        ),
+        class_module(
+            "Clock",
+            "Public Event Tick(ByVal n As Long)\n\
+             Public Sub Fire()\nRaiseEvent Tick(7)\nEnd Sub\n",
+            true,
+        ),
+        class_module("IShape", "Public Sub Draw()\nEnd Sub\n", false),
+        class_module(
+            "Circle",
+            "Implements IShape\nPrivate Sub IShape_Draw()\nEnd Sub\n",
+            true,
+        ),
+    ]
+}
+
+#[test]
+fn cross_project_call_const_enum_new_method_and_typeof() {
+    // App references Lib and exercises: a hidden-module function call, a referenced
+    // `Const` and `Enum` value, `New` + a method on a referenced coclass, and
+    // `TypeOf … Is` a referenced interface — accumulating one bit per check.
+    let lib = project("Lib", lib_modules(), vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             \x20   r = 0\n\
+             \x20   If Add(2, 3) = 5 Then r = r + 1\n\
+             \x20   If KMax = 10 Then r = r + 2\n\
+             \x20   If Green = 2 Then r = r + 4\n\
+             \x20   Dim w As Widget\n\
+             \x20   Set w = New Lib.Widget\n\
+             \x20   If w.Doubled(21) = 42 Then r = r + 8\n\
+             \x20   Dim s As Object\n\
+             \x20   Set s = New Lib.Circle\n\
+             \x20   If TypeOf s Is Lib.IShape Then r = r + 16\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", lib_modules())],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(1 + 2 + 4 + 8 + 16));
+}
+
+#[test]
+fn cross_project_withevents() {
+    // A sink class in App holds `WithEvents src As Lib.Clock`; firing the source's
+    // event (in Lib's bundle) must route to the sink's handler (in App's bundle).
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public r As Long\n\
+                 Sub Main()\n\
+                 \x20   Dim L As Listener\n\
+                 \x20   Set L = New Listener\n\
+                 \x20   L.Hook\n\
+                 \x20   L.Go\n\
+                 \x20   r = L.Fired\n\
+                 End Sub\n",
+            ),
+            class_module(
+                "Listener",
+                "Private WithEvents src As Lib.Clock\n\
+                 Public Fired As Long\n\
+                 Public Sub Hook()\nSet src = New Lib.Clock\nEnd Sub\n\
+                 Public Sub Go()\nsrc.Fire\nEnd Sub\n\
+                 Private Sub src_Tick(ByVal n As Long)\nFired = n\nEnd Sub\n",
+                true,
+            ),
+        ],
+        vec![referenced("Lib", lib_modules())],
+    );
+    // The event carried 7 from Lib's `RaiseEvent Tick(7)` into App's `src_Tick`.
+    let lib = project("Lib", lib_modules(), vec![]);
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(7));
+}
+
+#[test]
+fn cross_bundle_call_arg_reads_callers_global() {
+    // A cross-bundle call argument that is one of the *caller's* module globals must
+    // be resolved against the caller's bundle, BEFORE dispatch switches to the
+    // callee's bundle (bare global slots resolve against the current bundle). `seed`
+    // is App global 1; if it were read after the bundle switch it would resolve to
+    // Lib's globals (wrong / out of range).
+    let lib = project(
+        "Lib",
+        vec![proc_module(
+            "LibMod",
+            "Public Function Echo(ByVal n As Long) As Long\nEcho = n\nEnd Function\n",
+        )],
+        vec![],
+    );
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Public seed As Long\n\
+             Sub Main()\n\
+             \x20   seed = 41\n\
+             \x20   r = Echo(seed) + 1\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![proc_module(
+            "LibMod",
+            "Public Function Echo(ByVal n As Long) As Long\nEcho = n\nEnd Function\n",
+        )])],
+    );
+    // r (App global 0) = Echo(seed=41) + 1 = 42.
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
+}
+
+// ── Multi-level chain + diamond ──────────────────────────────────────────────
+
+#[test]
+fn multi_level_chain_a_b_c() {
+    // A → B → C: A calls a B function that itself calls a C function. Each project
+    // is bound from its own manifest (carrying its transitive reference source); the
+    // transitive imports compose at link time.
+    let c = || referenced("C", vec![proc_module("CMod", "Public Function CVal() As Long\nCVal = 100\nEnd Function\n")]);
+    let b_modules =
+        vec![proc_module("BMod", "Public Function BVal() As Long\nBVal = CVal() + 1\nEnd Function\n")];
+    let c_proj = project("C", c().modules, vec![]);
+    let b_proj = project("B", b_modules.clone(), vec![c()]);
+    let a_proj = project(
+        "A",
+        vec![proc_module("Main", "Public r As Long\nSub Main()\nr = BVal()\nEnd Sub\n")],
+        vec![referenced("B", b_modules)],
+    );
+    // r = B.BVal() = C.CVal() + 1 = 101, computed across three bundles.
+    assert_eq!(link_run_global0_i32(&[c_proj, b_proj, a_proj]), Some(101));
+}
+
+#[test]
+fn diamond_a_b_d_a_c_d_links_d_once() {
+    // A → B → D and A → C → D: D is referenced via two paths. `Vm::link` resolves
+    // both B's and C's import of D to the single loaded D bundle (D links once).
+    let d = || referenced("D", vec![proc_module("DMod", "Public Function DVal() As Long\nDVal = 50\nEnd Function\n")]);
+    let b_modules =
+        vec![proc_module("BMod", "Public Function BFromD() As Long\nBFromD = DVal()\nEnd Function\n")];
+    let c_modules =
+        vec![proc_module("CMod", "Public Function CFromD() As Long\nCFromD = DVal()\nEnd Function\n")];
+    let d_proj = project("D", d().modules, vec![]);
+    let b_proj = project("B", b_modules.clone(), vec![d()]);
+    let c_proj = project("C", c_modules.clone(), vec![d()]);
+    let a_proj = project(
+        "A",
+        vec![proc_module("Main", "Public r As Long\nSub Main()\nr = BFromD() + CFromD()\nEnd Sub\n")],
+        vec![referenced("B", b_modules), referenced("C", c_modules)],
+    );
+    // r = D.DVal() + D.DVal() = 100; both paths resolve to the one D bundle.
+    assert_eq!(link_run_global0_i32(&[d_proj, b_proj, c_proj, a_proj]), Some(100));
+}

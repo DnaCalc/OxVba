@@ -738,6 +738,29 @@ impl<'h> Vm<'h> {
     /// args; late-bound methods pass the call args and set `capture` to recover
     /// the function result. With `suppress`, an unhandled fault is swallowed
     /// (Terminate teardown); otherwise it propagates out.
+    /// Resolve call arguments against the caller (current top frame + `cur`): ByVal
+    /// args are cloned to values, ByRef args to self-describing `Place`s. The result
+    /// is bundle-independent, so the caller may switch `cur` before running the body.
+    #[allow(clippy::type_complexity)]
+    fn resolve_proc_args(
+        &self,
+        args: &[ProcArg],
+    ) -> Result<(Vec<(usize, Variant)>, HashMap<usize, Place>), Fault> {
+        let mut byval: Vec<(usize, Variant)> = Vec::new();
+        let mut aliases = HashMap::new();
+        for (i, arg) in args.iter().enumerate() {
+            let local = 1 + i; // local 0 is `Me`
+            match arg {
+                ProcArg::ByVal(s) => byval.push((local, self.cloned(*s)?)),
+                ProcArg::ByRef(s) => {
+                    aliases.insert(local, self.target(*s)?);
+                }
+                ProcArg::Omitted => byval.push((local, Variant::from_error_code(MISSING_ARG))),
+            }
+        }
+        Ok((byval, aliases))
+    }
+
     fn run_proc_with_me(
         &mut self,
         proc: usize,
@@ -747,20 +770,29 @@ impl<'h> Vm<'h> {
         capture: bool,
     ) -> Result<Variant, Fault> {
         // Resolve arguments in the caller (current top frame) before pushing.
-        let mut byval: Vec<(usize, Variant)> = Vec::new();
-        let mut aliases = HashMap::new();
-        for (i, arg) in args.iter().enumerate() {
-            let local = 1 + i; // local 0 is `Me`
-            match arg {
-                ProcArg::ByVal(s) => byval.push((local, self.cloned(*s)?)),
-                ProcArg::ByRef(s) => {
-                    let place = self.target(*s)?;
-                    aliases.insert(local, place);
-                }
-                ProcArg::Omitted => byval.push((local, Variant::from_error_code(MISSING_ARG))),
-            }
-        }
+        let (byval, aliases) = self.resolve_proc_args(args)?;
         self.run_proc_core(proc, me, byval, aliases, suppress, capture)
+    }
+
+    /// Like `run_proc_with_me`, but runs the body against `target_bundle` (the
+    /// object's / sink's own bundle for a cross-bundle method or event dispatch).
+    /// Arguments are still resolved in the **caller's** bundle (current `cur`) before
+    /// the switch, so a global-slot argument resolves against the caller's globals.
+    fn run_proc_in_bundle(
+        &mut self,
+        proc: usize,
+        me: Variant,
+        args: &[ProcArg],
+        target_bundle: usize,
+        suppress: bool,
+        capture: bool,
+    ) -> Result<Variant, Fault> {
+        let (byval, aliases) = self.resolve_proc_args(args)?;
+        let saved_cur = self.cur;
+        self.cur = target_bundle;
+        let result = self.run_proc_core(proc, me, byval, aliases, suppress, capture);
+        self.cur = saved_cur;
+        result
     }
 
     /// Invoke a procedure with `me` and pre-resolved by-value arguments. Used for
@@ -899,7 +931,13 @@ impl<'h> Vm<'h> {
                         .unwrap_or_else(|_| Variant::empty());
                     values.push(value);
                 }
+                // The handler is a proc in the sink's (owner's) bundle — run it there.
+                let owner_bundle =
+                    owner.as_object_ref().map(|o| o.bundle_id() as usize).unwrap_or(self.cur);
+                let saved_cur = self.cur;
+                self.cur = owner_bundle;
                 let _ = self.run_proc_with_values(handler, owner, values, true, false);
+                self.cur = saved_cur;
             }
             let _ = self.host.com().release_event_callback_variant(payload.callback);
         }
@@ -1043,6 +1081,10 @@ impl<'h> Vm<'h> {
         method_args: &[CallArg],
     ) -> Result<Variant, Fault> {
         let class_idx = object.route_key() as usize;
+        // The object's class table lives in the bundle that created it (a cross-
+        // bundle dispatch resolves the method by name there, and the method body
+        // runs against that bundle — exactly like a COM call into another image).
+        let obj_bundle = object.bundle_id() as usize;
         let name = match selector {
             ComMemberSelector::Name(name) => name.clone(),
             ComMemberSelector::DispatchId(_) => {
@@ -1050,9 +1092,9 @@ impl<'h> Vm<'h> {
             }
         };
         let proc = self
-            .cur_bundle()
-            .classes
-            .get(class_idx)
+            .bundles
+            .get(obj_bundle)
+            .and_then(|lb| lb.bundle.classes.get(class_idx))
             .and_then(|class| {
                 class
                     .methods
@@ -1067,9 +1109,9 @@ impl<'h> Vm<'h> {
         let proc_args: Vec<ProcArg> = method_args
             .iter()
             .map(|a| match a {
-                // ByRef args alias the caller's slot through `run_proc_with_me`;
-                // ByVal/Named copy in. (Parenthesised `(x)` and non-l-values were
-                // lowered to `Slot`, so they correctly do not write back.)
+                // ByRef args alias the caller's slot; ByVal/Named copy in.
+                // (Parenthesised `(x)` and non-l-values were lowered to `Slot`, so
+                // they correctly do not write back.)
                 CallArg::ByRef(s) => ProcArg::ByRef(*s),
                 CallArg::Slot(s) => ProcArg::ByVal(*s),
                 CallArg::Named { slot, .. } => ProcArg::ByVal(*slot),
@@ -1078,7 +1120,14 @@ impl<'h> Vm<'h> {
                 CallArg::Omitted | CallArg::Const(_) => ProcArg::Omitted,
             })
             .collect();
-        self.run_proc_with_me(proc, Variant::from_object_ref(object), &proc_args, false, true)
+        self.run_proc_in_bundle(
+            proc,
+            Variant::from_object_ref(object),
+            &proc_args,
+            obj_bundle,
+            false,
+            true,
+        )
     }
 
     fn declare_call(&mut self, descriptor_id: u32, args: &[CallArg]) -> Result<Variant, Fault> {
@@ -1636,24 +1685,34 @@ impl<'h> Vm<'h> {
             Op::RaiseEvent { source, event, args } => {
                 let source_id = object_identity(&self.cloned(*source)?);
                 let event_id = *event;
-                // Collect subscribers (sink Me + handler) whose binding holds this
-                // source and routes this event; sort for deterministic order.
-                let mut targets: Vec<(i32, Variant, usize)> = Vec::new();
+                // Collect subscribers (sink Me + handler + sink bundle) whose binding
+                // holds this source and routes this event. The route + handler live in
+                // the SINK's bundle (a cross-bundle WithEvents sink), and the raised
+                // `event_id` equals the surface id the sink's routes were built from.
+                let mut targets: Vec<(i32, Variant, usize, usize)> = Vec::new();
                 for (key, binding) in &self.withevents {
                     if object_identity(&binding.source) != source_id {
                         continue;
                     }
                     let token = Self::withevents_binding(*key) as i32;
-                    if let Some(&handler) = self.bundles[self.cur].event_routes.get(&(token, event_id)) {
+                    let sink_bundle = binding
+                        .owner
+                        .as_object_ref()
+                        .map(|o| o.bundle_id() as usize)
+                        .unwrap_or(self.cur);
+                    if let Some(&handler) =
+                        self.bundles[sink_bundle].event_routes.get(&(token, event_id))
+                    {
                         let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
-                        targets.push((sink_id, binding.owner.clone(), handler));
+                        targets.push((sink_id, binding.owner.clone(), handler, sink_bundle));
                     }
                 }
-                targets.sort_by_key(|(sink_id, _, _)| *sink_id);
-                for (_, sink, handler) in targets {
-                    // Handlers run in sequence; an unhandled error propagates to the
-                    // raiser. `args` follow the event's ByVal/ByRef signature.
-                    self.run_proc_with_me(handler, sink, args, false, false)?;
+                targets.sort_by_key(|(sink_id, ..)| *sink_id);
+                for (_, sink, handler, sink_bundle) in targets {
+                    // Handlers run in sequence in the sink's bundle; an unhandled error
+                    // propagates to the raiser. `args` follow the event signature and
+                    // resolve in the raiser's bundle before the dispatch.
+                    self.run_proc_in_bundle(handler, sink, args, sink_bundle, false, false)?;
                 }
             }
 
@@ -1736,20 +1795,23 @@ impl<'h> Vm<'h> {
             // (`Object`/`Variant`, or any non-project type) are not checked, and
             // `Nothing` is always allowed.
             Intent::Set if value.vtype() == VarType::Object && !target_type_name.is_empty() => {
-                let target_is_project = self.cur_bundle().classes.iter().any(|c| {
-                    c.name.eq_ignore_ascii_case(target_type_name)
-                        || c.implements.iter().any(|i| i.eq_ignore_ascii_case(target_type_name))
-                });
-                if target_is_project {
-                    let obj = variant_to_object(value)?;
-                    if obj.is_project_instance()
-                        && let Some(class) = self.cur_bundle().classes.get(obj.route_key() as usize)
+                let obj = variant_to_object(value)?;
+                // Both the target type and the source's class are resolved in the
+                // source object's **own** bundle, against the bare target name (a
+                // referenced type may be `Lib.Widget`) — unambiguous in a DAG.
+                let bare_target = target_type_name.rsplit('.').next().unwrap_or(target_type_name);
+                if obj.is_project_instance()
+                    && let Some(lb) = self.bundles.get(obj.bundle_id() as usize)
+                {
+                    let target_is_project = lb.bundle.classes.iter().any(|c| {
+                        c.name.eq_ignore_ascii_case(bare_target)
+                            || c.implements.iter().any(|i| i.eq_ignore_ascii_case(bare_target))
+                    });
+                    if target_is_project
+                        && let Some(class) = lb.bundle.classes.get(obj.route_key() as usize)
                     {
-                        let compatible = class.name.eq_ignore_ascii_case(target_type_name)
-                            || class
-                                .implements
-                                .iter()
-                                .any(|i| i.eq_ignore_ascii_case(target_type_name));
+                        let compatible = class.name.eq_ignore_ascii_case(bare_target)
+                            || class.implements.iter().any(|i| i.eq_ignore_ascii_case(bare_target));
                         if !compatible {
                             return Err(Fault::new(
                                 13,
@@ -1777,14 +1839,18 @@ impl<'h> Vm<'h> {
         let object = variant_to_object(self.get(object_slot)?)?;
         // A project instance is its own class and every interface it `Implements`;
         // a foreign/COM object is described by the host's typelib (`prog_id_name`).
+        // The class is looked up in the object's **own** bundle and matched against
+        // the bare type name (a referenced type may be written `Lib.IShape`); the
+        // lookup-in-its-own-bundle makes the bare match unambiguous in a DAG.
         if object.is_project_instance() {
+            let bare = type_name.rsplit('.').next().unwrap_or(type_name);
             return Ok(self
-                .cur_bundle()
-                .classes
-                .get(object.route_key() as usize)
+                .bundles
+                .get(object.bundle_id() as usize)
+                .and_then(|lb| lb.bundle.classes.get(object.route_key() as usize))
                 .is_some_and(|class| {
-                    class.name.eq_ignore_ascii_case(type_name)
-                        || class.implements.iter().any(|i| i.eq_ignore_ascii_case(type_name))
+                    class.name.eq_ignore_ascii_case(bare)
+                        || class.implements.iter().any(|i| i.eq_ignore_ascii_case(bare))
                 }));
         }
         match self.host.com().describe_object(object) {
