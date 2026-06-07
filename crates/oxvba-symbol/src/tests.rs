@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_com::{
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
@@ -173,29 +174,70 @@ fn referenced_project_resolves_through_its_export_surface() {
     let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
     let ctx = ResolutionContext::at(env.module_scope("Main").unwrap());
 
-    // A referenced standard-module Public function resolves UNQUALIFIED, as an
-    // in-image project call (devirtualized hidden-module member).
+    // A referenced standard-module Public function resolves UNQUALIFIED, as a
+    // cross-bundle extern with no receiver (an import-backed `ExternProc` call).
     let add = env.resolve(&ctx, "Add").expect("referenced Add resolves unqualified");
-    assert!(matches!(add.route, DispatchRoute::ProjectMember { .. }));
+    assert!(matches!(
+        add.route,
+        DispatchRoute::ExternMember { has_receiver: false, ref unit, .. } if unit == "Lib"
+    ));
 
     // It also resolves qualified `Lib.LibMod.Add`.
     assert!(env.resolve_qualified(&["Lib", "LibMod", "Add"]).is_some());
 
-    // A referenced Public Enum member is a global-namespace constant.
+    // A referenced Public Enum member resolves to its published literal value.
     let red = env.resolve(&ctx, "Red").expect("referenced enum member resolves");
-    assert!(matches!(red.route, DispatchRoute::Value));
+    assert!(matches!(red.route, DispatchRoute::ConstValue(CoreConst::I32(1))));
 
     // A referenced Private member does NOT cross the boundary.
     assert!(env.resolve(&ctx, "Secret").is_none());
 
-    // A referenced exposed class member resolves on a typed receiver as an
-    // early-bound COM member (the VM dispatches it in-image, WS-H).
+    // A referenced exposed class member resolves on a typed receiver as a
+    // cross-bundle extern WITH a receiver (dispatched by name in the object's bundle).
     let recv = VarTypeRef::Object("Widget".into());
     let gv = env.resolve_member(&recv, "GetValue", None).expect("Widget.GetValue resolves");
-    assert!(matches!(gv.route, DispatchRoute::ComMember { .. }));
+    assert!(matches!(
+        gv.route,
+        DispatchRoute::ExternMember { has_receiver: true, ref member, .. } if member == "GetValue"
+    ));
+
+    // `New Lib.Widget` (and bare `New Widget`) resolve to a creatable extern coclass.
+    assert_eq!(
+        env.resolve_extern_coclass("Lib.Widget"),
+        Some(("Lib".to_string(), "Widget".to_string()))
+    );
+    assert_eq!(
+        env.resolve_extern_coclass("Widget"),
+        Some(("Lib".to_string(), "Widget".to_string()))
+    );
 
     // The active project keeps its own surface available to the binder.
     assert_eq!(env.export_surfaces().len(), 2, "active + one referenced surface");
+}
+
+#[test]
+fn const_and_enum_values_fold_into_the_type_system() {
+    let m = manifest(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const KMax As Long = 10\n\
+             Public Const KTwice As Long = KMax * 2\n\
+             Public Enum Color\n  Red = 1\n  Green\n  Blue = 10\n  Indigo\nEnd Enum\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Mod1").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("KMax"), Some(CoreConst::I32(10)));
+    assert_eq!(val("KTwice"), Some(CoreConst::I32(20))); // cross-const reference
+    assert_eq!(val("Red"), Some(CoreConst::I32(1)));
+    assert_eq!(val("Green"), Some(CoreConst::I32(2))); // enum auto-increment
+    assert_eq!(val("Blue"), Some(CoreConst::I32(10))); // explicit value resets
+    assert_eq!(val("Indigo"), Some(CoreConst::I32(11))); // resumes from 10
 }
 
 // ── COM provider: early/late + events ────────────────────────────────────────

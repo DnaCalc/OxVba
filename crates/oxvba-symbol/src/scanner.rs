@@ -28,6 +28,10 @@ pub struct ModuleScan {
     /// binder keys `New <coclass>` off the same symbol.
     pub module_symbol: SymbolId,
     pub members: Vec<ScannedMember>,
+    /// Interface display names from this module's `Implements` clauses (bare type
+    /// names, source order). Published per coclass in the export surface so a
+    /// referrer mangles dispatch on an interface-typed receiver.
+    pub implements: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +45,10 @@ pub struct ScannedMember {
     pub is_default: bool,
     /// Declared visibility (drives cross-project / COM export-surface exposure).
     pub visibility: Visibility,
+    /// For a `SymbolKind::EnumMember`, the display name of its containing `Enum`
+    /// (so the surface can publish `EnumName.Member` qualified resolution). `None`
+    /// for every other member kind.
+    pub enum_name: Option<String>,
 }
 
 /// Scan `module`'s pre-parsed CST into a fresh module scope under `project_scope`.
@@ -70,8 +78,13 @@ pub fn scan_module(
     )?;
     let module_scope = symbols.add_scope(crate::model::ScopeKind::Module, project_scope, Some(&module_name))?;
 
-    let mut scan =
-        ModuleScan { module_name: module_name.clone(), module_scope, module_symbol, members: Vec::new() };
+    let mut scan = ModuleScan {
+        module_name: module_name.clone(),
+        module_scope,
+        module_symbol,
+        members: Vec::new(),
+        implements: Vec::new(),
+    };
     let mut ctx = ScanCtx { symbols, signatures, next_descriptor_id, scan: &mut scan, module_name: &module_name };
     ctx.walk(module_scope, module_syntax, true)?;
     Ok(scan)
@@ -99,7 +112,7 @@ impl ScanCtx<'_> {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
                     let sig = self.signatures.alloc(self.build_signature(node, CallShape::EventRaise));
-                    self.declare(scope, SymbolNamespace::Member, SymbolKind::Event, name, token, SymbolImpl::Signature(sig), module_level, decl_visibility(node, Visibility::Public))?;
+                    self.declare(scope, SymbolNamespace::Member, SymbolKind::Event, name, token, SymbolImpl::Signature(sig), module_level, decl_visibility(node, Visibility::Public), None)?;
                 }
             }
             SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
@@ -113,9 +126,11 @@ impl ScanCtx<'_> {
                     } else {
                         SymbolKind::Type
                     };
-                    self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level, vis)?;
+                    self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level, vis, None)?;
                 }
                 if node.kind() == SyntaxKind::EnumBlock {
+                    let enum_name =
+                        first_identifier_token(node).map(|t| normalize_identifier_token(t.text).to_string());
                     for member in node.enum_members() {
                         if let Some(token) = member.declarator_name() {
                             let name = normalize_identifier_token(token.text);
@@ -128,6 +143,7 @@ impl ScanCtx<'_> {
                                 SymbolImpl::None,
                                 module_level,
                                 vis,
+                                enum_name.as_deref(),
                             )?;
                         }
                     }
@@ -145,10 +161,14 @@ impl ScanCtx<'_> {
                     };
                     let name = normalize_identifier_token(token.text);
                     let declared_type = declared_var_type(declarator);
-                    let (ns, kind) = if !module_level {
-                        (SymbolNamespace::Local, SymbolKind::Local)
-                    } else if is_const {
+                    let (ns, kind) = if is_const {
+                        // A `Const` is a constant at any scope (module- or proc-level):
+                        // namespace `Local`, kind `Const`. Its value is folded by the
+                        // symbol layer, so it gets no runtime slot (see the frame
+                        // builder, which skips `Const`).
                         (SymbolNamespace::Local, SymbolKind::Const)
+                    } else if !module_level {
+                        (SymbolNamespace::Local, SymbolKind::Local)
                     } else if declarator.is_with_events() {
                         (SymbolNamespace::Member, SymbolKind::WithEventsField)
                     } else {
@@ -163,7 +183,16 @@ impl ScanCtx<'_> {
                         SymbolImpl::DeclaredType(declared_type),
                         module_level,
                         vis,
+                        None,
                     )?;
+                }
+            }
+            SyntaxKind::ImplementsStmt => {
+                if let Some(type_ref) = node.child_node(SyntaxKind::TypeRef) {
+                    let name = type_ref.text().trim().to_string();
+                    if !name.is_empty() {
+                        self.scan.implements.push(name);
+                    }
                 }
             }
             _ => {}
@@ -216,6 +245,7 @@ impl ScanCtx<'_> {
                     if module_level {
                         self.scan.members.push(ScannedMember {
                             name_folded: fold_identifier(&logical),
+                            enum_name: None,
                             symbol,
                             kind: SymbolKind::Property,
                             namespace: SymbolNamespace::Procedure,
@@ -245,6 +275,7 @@ impl ScanCtx<'_> {
         if module_level {
             self.scan.members.push(ScannedMember {
                 name_folded: fold_identifier(&logical),
+                enum_name: None,
                 symbol,
                 kind,
                 namespace: SymbolNamespace::Procedure,
@@ -344,6 +375,7 @@ impl ScanCtx<'_> {
             SymbolImpl::Declare(declare),
             module_level,
             decl_visibility(node, Visibility::Private),
+            None,
         )?;
         Ok(())
     }
@@ -376,6 +408,7 @@ impl ScanCtx<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn declare(
         &mut self,
         scope: ScopeId,
@@ -386,6 +419,7 @@ impl ScanCtx<'_> {
         imp: SymbolImpl,
         module_level: bool,
         visibility: Visibility,
+        enum_name: Option<&str>,
     ) -> Result<(), SymbolModelError> {
         let symbol = self.symbols.declare_symbol(scope, namespace, kind, name, provenance(self.module_name, token), imp)?;
         if module_level {
@@ -396,6 +430,7 @@ impl ScanCtx<'_> {
                 namespace,
                 is_default: false,
                 visibility,
+                enum_name: enum_name.map(str::to_string),
             });
         }
         Ok(())

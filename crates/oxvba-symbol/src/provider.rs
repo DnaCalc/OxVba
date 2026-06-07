@@ -66,6 +66,13 @@ pub trait Provider {
         let _ = name;
         None
     }
+    /// If `name` is a creatable coclass published by a *referenced project*, return
+    /// its `(unit, class)` names so `New Lib.Widget` (or bare `New Widget`) lowers
+    /// to a cross-bundle `NewExtern` against that project's bundle.
+    fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
+        let _ = name;
+        None
+    }
 }
 
 /// Resolves a typelib reference to its metadata blob. The default impl uses the
@@ -130,6 +137,10 @@ pub struct ResolutionEnvironment {
     /// project's (same order as `manifest.reference_projects`). The binder reads
     /// these to build per-class dispid→method dispatch maps (WS-H).
     surfaces: Vec<ProjectExportSurface>,
+    /// Folded compile-time `Const`/`Enum`-member values for the whole closure
+    /// (active + referenced), keyed by `SymbolId`. Const-folding is a published
+    /// type-system property, computed once here and read uniformly by the binder.
+    const_values: std::collections::HashMap<SymbolId, oxvba_bundle::coreir::CoreConst>,
 }
 
 impl ResolutionEnvironment {
@@ -147,6 +158,12 @@ impl ResolutionEnvironment {
     /// The activation ProgID for a creatable COM coclass name (for `New <coclass>`).
     pub fn resolve_coclass(&self, name: &str) -> Option<String> {
         self.providers.iter().find_map(|provider| provider.resolve_coclass(name))
+    }
+
+    /// The `(unit, class)` of a creatable coclass published by a referenced project
+    /// (for `New Lib.Widget` / bare `New Widget` → a cross-bundle `NewExtern`).
+    pub fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
+        self.providers.iter().find_map(|provider| provider.resolve_extern_coclass(name))
     }
 
     /// Resolve `recv.name` (member access) against the providers.
@@ -198,6 +215,12 @@ impl ResolutionEnvironment {
     /// The synthesized export surfaces (active first, then referenced projects).
     pub fn export_surfaces(&self) -> &[ProjectExportSurface] {
         &self.surfaces
+    }
+
+    /// The folded compile-time value of a `Const` / `Enum` member symbol (anywhere
+    /// in the closure), if it folded to a constant.
+    pub fn const_value(&self, sym: SymbolId) -> Option<&oxvba_bundle::coreir::CoreConst> {
+        self.const_values.get(&sym)
     }
 
     /// Find a module scope by (case-insensitive) name — convenience for callers
@@ -304,10 +327,10 @@ pub fn build_resolution_environment(
 
     // Referenced projects: scan their modules into a ReferencedProject scope AND
     // retain the CSTs — the binder lowers their bodies into the same bundle
-    // (cross-project references are devirtualized in-image). Each referenced
-    // project's public surface is synthesized so a referencing call binds through
-    // the same COM contract a compiled component would present.
-    let mut referenced_surfaces: Vec<ProjectExportSurface> = Vec::new();
+    // (cross-project references are devirtualized in-image). The scans are kept so
+    // each project's public surface is synthesized *after* the whole closure's
+    // consts are folded (the surface publishes folded literal values).
+    let mut referenced_scans: Vec<Vec<ModuleScan>> = Vec::new();
     for referenced in &manifest.reference_projects {
         let scope = symbols.add_scope(
             ScopeKind::ReferencedProject,
@@ -337,14 +360,36 @@ pub fn build_resolution_environment(
             });
             scans.push(scan);
         }
-        referenced_surfaces.push(synthesize_export_surface(
-            &referenced.project_name,
-            &referenced.modules,
-            &scans,
-            &symbols,
-            &signatures,
-        ));
+        referenced_scans.push(scans);
     }
+
+    // Fold the whole closure's Const/Enum values once (a published type-system
+    // property), so each surface publishes its folded literal values and the binder
+    // reads constant values uniformly via `const_value`. Folded before any surface
+    // is synthesized so a cross-project `Const X = Other.Y` resolves.
+    let const_values = {
+        let roots: Vec<(ScopeId, SyntaxNode<'_>)> =
+            module_csts.iter().map(|m| (m.module_scope, m.parse.syntax())).collect();
+        crate::const_eval::fold_const_values(&symbols, &roots)
+    };
+
+    // Each referenced project's public surface — a referencing call binds through
+    // the same COM contract a compiled component would present.
+    let referenced_surfaces: Vec<ProjectExportSurface> = manifest
+        .reference_projects
+        .iter()
+        .zip(referenced_scans.iter())
+        .map(|(referenced, scans)| {
+            synthesize_export_surface(
+                &referenced.project_name,
+                &referenced.modules,
+                scans,
+                &symbols,
+                &signatures,
+                &const_values,
+            )
+        })
+        .collect();
 
     // The active project's own surface (consumed by the binder for per-class
     // dispid→method dispatch maps, and by a future COM-server emit).
@@ -354,6 +399,7 @@ pub fn build_resolution_environment(
         &active_scans,
         &symbols,
         &signatures,
+        &const_values,
     );
     let mut surfaces = vec![active_surface];
     surfaces.extend(referenced_surfaces.iter().cloned());
@@ -403,5 +449,5 @@ pub fn build_resolution_environment(
         providers.push(Box::new(com));
     }
 
-    Ok(ResolutionEnvironment { symbols, signatures, providers, module_csts, surfaces })
+    Ok(ResolutionEnvironment { symbols, signatures, providers, module_csts, surfaces, const_values })
 }

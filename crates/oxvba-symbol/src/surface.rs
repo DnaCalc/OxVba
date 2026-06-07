@@ -19,6 +19,9 @@
 //! to an in-image `ProcId`/`ClassId`, and a **dispid assigned once here** that the
 //! runtime class descriptor reuses (so source- and compiled-form dispatch agree).
 
+use std::collections::HashMap;
+
+use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_com::{TypeLibMemberInvokeKind, TypeLibParamType};
 
@@ -36,6 +39,10 @@ pub struct ProjectExportSurface {
     /// `Public Enum` members + `Public Const`s — global-namespace named constants
     /// (resolvable unqualified, like VBA enum members).
     pub consts: Vec<SurfaceConst>,
+    /// Bare names of this project's interface types — every class that appears as
+    /// an `Implements` target of some class. A referrer mangles dispatch on a
+    /// receiver typed as one of these (`Interface_Member`).
+    pub interfaces: Vec<String>,
 }
 
 /// One typelib type in the surface.
@@ -51,6 +58,8 @@ pub struct SurfaceType {
     pub members: Vec<SurfaceMember>,
     /// Source-interface events (coclasses only).
     pub events: Vec<SurfaceEvent>,
+    /// Bare interface names this coclass `Implements` (coclasses only).
+    pub implements: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +116,10 @@ pub struct SurfaceEvent {
     pub name: String,
     pub callback_arity: u8,
     pub symbol: SymbolId,
+    /// Per-coclass stable event id (source/scan order). The runtime routes a
+    /// `RaiseEvent` by this id, and a sink's `WithEvents` routes are built from it,
+    /// so it **must equal** the binder's `ids.event_index_of` for the source class.
+    pub event_id: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +127,11 @@ pub struct SurfaceConst {
     pub name: String,
     /// `Public Const` vs an `Enum` member (both are global-namespace consts).
     pub symbol: SymbolId,
+    /// The folded compile-time value — the published literal a referrer binds to.
+    pub value: CoreConst,
+    /// For an `Enum` member, the display name of its containing enum (so a referrer
+    /// resolves `EnumName.Member`); `None` for a plain `Public Const`.
+    pub enum_name: Option<String>,
 }
 
 /// Synthesize a project's export surface from its modules + scans.
@@ -126,9 +144,19 @@ pub fn synthesize_export_surface(
     scans: &[ModuleScan],
     symbols: &SymbolTable,
     signatures: &SignatureTable,
+    const_values: &HashMap<SymbolId, CoreConst>,
 ) -> ProjectExportSurface {
     let mut types = Vec::new();
     let mut consts = Vec::new();
+    // Project-wide interface set: every class named by some class's `Implements`.
+    let mut interfaces: Vec<String> = Vec::new();
+    for scan in scans {
+        for iface in &scan.implements {
+            if !interfaces.iter().any(|i| i.eq_ignore_ascii_case(iface)) {
+                interfaces.push(iface.clone());
+            }
+        }
+    }
 
     for (module, scan) in modules.iter().zip(scans.iter()) {
         let attrs = &module.attributes;
@@ -140,7 +168,7 @@ pub fn synthesize_export_surface(
         let is_class = module.module_kind == ModuleKind::Class;
         // A class is only part of the COM surface if it is exposed.
         if is_class && !attrs.vb_exposed {
-            collect_consts(scan, symbols, &mut consts);
+            collect_consts(scan, symbols, const_values, &mut consts);
             continue;
         }
 
@@ -166,6 +194,7 @@ pub fn synthesize_export_surface(
         let mut events = Vec::new();
         let mut next_dispid = 1i32;
         let mut next_vtable = 7u16;
+        let mut next_event_id = 0i32;
         for member in &scan.members {
             if member.visibility != Visibility::Public {
                 continue;
@@ -187,31 +216,57 @@ pub fn synthesize_export_surface(
                     field_members(member, dispid, is_class, &mut next_vtable, symbols, &mut members);
                 }
                 SymbolKind::Event => {
+                    let event_id = next_event_id;
+                    next_event_id += 1;
                     events.push(SurfaceEvent {
                         name: member_name(symbols, member),
                         callback_arity: event_arity(symbols, signatures, member.symbol),
                         symbol: member.symbol,
+                        event_id,
                     });
                 }
                 _ => {}
             }
         }
 
-        types.push(SurfaceType { name: scan.module_name.clone(), kind, global_namespace, members, events });
-        collect_consts(scan, symbols, &mut consts);
+        // A coclass publishes the interfaces it implements; a hidden module has none.
+        let implements = if is_class { scan.implements.clone() } else { Vec::new() };
+        types.push(SurfaceType {
+            name: scan.module_name.clone(),
+            kind,
+            global_namespace,
+            members,
+            events,
+            implements,
+        });
+        collect_consts(scan, symbols, const_values, &mut consts);
     }
 
-    ProjectExportSurface { project_name: project_name.to_string(), types, consts }
+    ProjectExportSurface { project_name: project_name.to_string(), types, consts, interfaces }
 }
 
-/// `Public Enum` members + `Public Const`s of a (non-private) module.
-fn collect_consts(scan: &ModuleScan, symbols: &SymbolTable, out: &mut Vec<SurfaceConst>) {
+/// `Public Enum` members + `Public Const`s of a (non-private) module, each with its
+/// folded value (the published literal) and, for an enum member, its enum's name.
+fn collect_consts(
+    scan: &ModuleScan,
+    symbols: &SymbolTable,
+    const_values: &HashMap<SymbolId, CoreConst>,
+    out: &mut Vec<SurfaceConst>,
+) {
     for member in &scan.members {
         if member.visibility != Visibility::Public {
             continue;
         }
         if matches!(member.kind, SymbolKind::Const | SymbolKind::EnumMember) {
-            out.push(SurfaceConst { name: member_name(symbols, member), symbol: member.symbol });
+            // A const that fails to fold publishes `Empty` (a referrer that reads a
+            // missing value sees Empty rather than a binding failure).
+            let value = const_values.get(&member.symbol).cloned().unwrap_or(CoreConst::Empty);
+            out.push(SurfaceConst {
+                name: member_name(symbols, member),
+                symbol: member.symbol,
+                value,
+                enum_name: member.enum_name.clone(),
+            });
         }
     }
 }
@@ -488,15 +543,20 @@ mod tests {
             .add_scope(ScopeKind::Project, symbols.global_scope(), Some("P"))
             .unwrap();
         let mut scans = Vec::new();
+        let mut parses = Vec::new();
         for m in &modules {
             let parse = oxvba_syntax::parse(&m.source);
             assert!(parse.errors().is_empty(), "parse errors in {}: {:?}", m.module_name, parse.errors());
-            scans.push(
+            let scan =
                 crate::scanner::scan_module(&mut symbols, &mut signatures, &mut next, m, parse.syntax(), project)
-                    .unwrap(),
-            );
+                    .unwrap();
+            scans.push(scan);
+            parses.push(parse);
         }
-        synthesize_export_surface("P", &modules, &scans, &symbols, &signatures)
+        let roots: Vec<_> =
+            scans.iter().zip(parses.iter()).map(|(s, p)| (s.module_scope, p.syntax())).collect();
+        let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
+        synthesize_export_surface("P", &modules, &scans, &symbols, &signatures, &const_values)
     }
 
     fn find_type<'a>(s: &'a ProjectExportSurface, name: &str) -> Option<&'a SurfaceType> {
@@ -584,6 +644,60 @@ mod tests {
         assert!(s.consts.iter().any(|c| c.name.eq_ignore_ascii_case("Green")));
         // Members of a Private enum do not cross the boundary.
         assert!(!s.consts.iter().any(|c| c.name.eq_ignore_ascii_case("Hidden")));
+    }
+
+    #[test]
+    fn surface_publishes_const_values_enum_ids_events_and_interfaces() {
+        let s = synth(vec![
+            proc_mod(
+                "Lib",
+                "Public Const KMax As Long = 10\n\
+                 Public Enum Color\n  Red = 1\n  Green\n  Blue = 10\n  Indigo\nEnd Enum\n",
+                false,
+            ),
+            class_mod(
+                "Clock",
+                "Public Event Tick(ByVal n As Long)\nPublic Event Done()\n",
+                true,
+                true,
+            ),
+            class_mod("IShape", "Public Sub Draw()\nEnd Sub\n", true, false),
+            class_mod(
+                "Circle",
+                "Implements IShape\nPrivate Sub IShape_Draw()\nEnd Sub\n",
+                true,
+                true,
+            ),
+        ]);
+
+        // Const + enum-member values are published (auto-increment + reset).
+        let val = |name: &str| s.consts.iter().find(|c| c.name.eq_ignore_ascii_case(name)).map(|c| c.value.clone());
+        assert_eq!(val("KMax"), Some(CoreConst::I32(10)));
+        assert_eq!(val("Red"), Some(CoreConst::I32(1)));
+        assert_eq!(val("Green"), Some(CoreConst::I32(2)), "auto-increment");
+        assert_eq!(val("Blue"), Some(CoreConst::I32(10)), "explicit value resets");
+        assert_eq!(val("Indigo"), Some(CoreConst::I32(11)), "resumes from reset");
+
+        // An enum member carries its enum's name; a plain Const does not.
+        let red = s.consts.iter().find(|c| c.name.eq_ignore_ascii_case("Red")).unwrap();
+        assert_eq!(red.enum_name.as_deref(), Some("Color"));
+        let kmax = s.consts.iter().find(|c| c.name.eq_ignore_ascii_case("KMax")).unwrap();
+        assert_eq!(kmax.enum_name, None);
+
+        // Coclass events get sequential per-class ids in source order.
+        let clock = find_type(&s, "Clock").unwrap();
+        let tick = clock.events.iter().find(|e| e.name.eq_ignore_ascii_case("Tick")).unwrap();
+        let done = clock.events.iter().find(|e| e.name.eq_ignore_ascii_case("Done")).unwrap();
+        assert_eq!(tick.event_id, 0);
+        assert_eq!(done.event_id, 1);
+
+        // The implementing coclass publishes its interface; the project interface
+        // set names the interface type.
+        let circle = find_type(&s, "Circle").unwrap();
+        assert!(circle.implements.iter().any(|i| i.eq_ignore_ascii_case("IShape")));
+        assert!(s.interfaces.iter().any(|i| i.eq_ignore_ascii_case("IShape")));
+        // A non-implementing class carries no implements.
+        assert!(clock.implements.is_empty());
     }
 
     #[test]

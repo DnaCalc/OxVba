@@ -2,8 +2,9 @@
 //! that holds exactly enough for the binder to emit a `coreir::CoreCallee`.
 //! Folds the legacy `frontend_member_dispatch::MemberDispatchClass`.
 
+use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::{NativeImplId, ProjectMemberKind};
-use oxvba_com::{TypeLibEventDispatchPath, TypeLibMemberInvokeKind};
+use oxvba_com::{TypeLibEventDispatchPath, TypeLibMemberInvokeKind, TypeLibParamType};
 
 use crate::model::{LibraryConstValue, PredeclaredObjectId, SymbolId};
 use crate::structural::StructuralIntrinsic;
@@ -32,11 +33,38 @@ pub enum DispatchRoute {
     Value,
     /// A `vb*` base-library constant (carries the value for the binder).
     LibraryConst(LibraryConstValue),
+    /// A `Public Const` / `Enum` member published by a *referenced project's*
+    /// export surface — the folded literal value, carried in the route so binding
+    /// is surface-driven (no dependence on shared symbol identity across bundles).
+    ConstValue(CoreConst),
     /// A reference to a predeclared object (`Debug`/`Err`/`Collection`); the
     /// binder uses it as the receiver type for member access.
     PredeclaredObject(PredeclaredObjectId),
     /// A project proc/property/event → `CoreCallee::VbaProc { member }`.
     ProjectMember { kind: ProjectMemberKind },
+    /// A member published by a *referenced project's* export surface — bound
+    /// through that project's contract (its bundle is a separate ".NET assembly").
+    /// The binder lowers it to a cross-bundle extern by context:
+    ///   * `has_receiver: false` (a hidden-module free function) → a `BundleImport`
+    ///     keyed by `(unit, ExportToken::ModuleFunc{owner, member, kind})` +
+    ///     `CoreCallee::ExternProc`;
+    ///   * `has_receiver: true` (a coclass member) → `CoreCallee::LateDispatch` by
+    ///     `member` name on the receiver (whose `bundle_id` selects the class table).
+    ExternMember {
+        /// The referenced unit (project) name — the bundle key for the import.
+        unit: String,
+        /// Owning type: a hidden module's name (free function) or the coclass name.
+        owner: String,
+        /// The member name (the import-token member / the receiver-dispatch name).
+        member: String,
+        kind: ProjectMemberKind,
+        /// Per-parameter typelib types — the binder coerces each argument to these
+        /// and reads `is_by_ref()` for ByRef write-back, exactly as for `ComMember`.
+        param_types: Vec<TypeLibParamType>,
+        /// `true` for a coclass member (dispatched on a receiver); `false` for a
+        /// global-namespace / hidden-module function (no receiver).
+        has_receiver: bool,
+    },
     /// A base-library intrinsic → `CoreCallee::Native(id)`.
     Native(NativeImplId),
     /// A `Declare Lib` external call → `CoreCallee::Declare { descriptor_id }`.

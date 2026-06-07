@@ -1,20 +1,21 @@
-//! Resolves names against a *referenced project's* synthesized COM export
-//! surface ([`crate::surface::ProjectExportSurface`]). This is how a referencing
-//! project binds to a referenced one: through the same COM contract it would see
-//! if the referenced project were a compiled COM component.
+//! Resolves names against a *referenced project's* synthesized export surface
+//! ([`crate::surface::ProjectExportSurface`]) — the complete published contract a
+//! referrer binds against, exactly as if the referenced project were a separate
+//! compiled assembly (its own bundle).
 //!
-//! Route choice mirrors the COM shape:
-//!   * a **coclass** member (resolved on a typed object receiver) → an early-bound
-//!     [`DispatchRoute::ComMember`] carrying the surface dispid; the VM dispatches
-//!     it in-image and dispid-faithfully (WS-H).
-//!   * a **hidden-module** / global-namespace function (no receiver — COM has no
-//!     free functions) → [`DispatchRoute::ProjectMember`] carrying the originating
-//!     symbol, which the binder devirtualizes to an in-image `CallProc`.
-//!   * a `Public Enum` member / `Public Const` → [`DispatchRoute::Value`].
+//! Every published member resolves to one uniform [`DispatchRoute::ExternMember`]
+//! that the binder lowers to a cross-bundle extern by context:
+//!   * a **coclass** member (resolved on a typed object receiver) →
+//!     `has_receiver: true`; the binder emits a `LateDispatch` by name, routed in
+//!     the object's own bundle.
+//!   * a **hidden-module** / global-namespace function (no receiver) →
+//!     `has_receiver: false`; the binder registers a `BundleImport` and emits an
+//!     `ExternProc` call.
+//!   * a `Public Enum` member / `Public Const` → [`DispatchRoute::ConstValue`]
+//!     carrying the published folded literal.
 //!
-//! `New <coclass>` is **not** resolved here: a referenced class is lowered into the
-//! same bundle, so it instantiates via the binder's `class_of_sym` → `New(ClassId)`
-//! (WS-D), not via COM activation.
+//! `New Lib.Widget` resolves via [`Provider::resolve_extern_coclass`] → a
+//! cross-bundle `NewExtern` against the referenced project's bundle.
 
 use oxvba_bundle::ProjectMemberKind;
 
@@ -22,7 +23,7 @@ use crate::binding::{Binding, DispatchRoute};
 use crate::model::fold_identifier;
 use crate::provider::Provider;
 use crate::signature::VarTypeRef;
-use crate::surface::{ProjectExportSurface, SurfaceMember, SurfaceType, SurfaceTypeKind};
+use crate::surface::{ProjectExportSurface, SurfaceConst, SurfaceMember, SurfaceType, SurfaceTypeKind};
 
 pub struct SurfaceProvider {
     surface: ProjectExportSurface,
@@ -59,39 +60,48 @@ impl SurfaceProvider {
             .or_else(|| ty.members.iter().find(|m| fold_identifier(&m.name) == folded))
     }
 
-    fn member_binding(ty: &SurfaceType, m: &SurfaceMember) -> Binding {
-        if Self::is_coclass(ty) {
-            // Early-bound COM member — the VM dispatches the dispid in-image (WS-H).
-            Binding {
-                symbol: None,
-                is_default: m.is_default,
-                route: DispatchRoute::ComMember {
-                    member_name: m.name.clone(),
-                    dispid: m.dispid,
-                    vtable_slot: m.vtable_slot,
-                    invoke_kind: m.invoke_kind,
-                    member_kind: m.member_kind,
-                    is_default_member: m.is_default,
-                    param_by_ref: m.parameter_types.iter().map(|t| t.is_by_ref()).collect(),
-                },
-            }
-        } else {
-            // Hidden-module / global function — devirtualizes to an in-image call.
-            Binding {
-                symbol: Some(m.symbol),
-                is_default: m.is_default,
-                route: DispatchRoute::ProjectMember { kind: m.member_kind },
-            }
+    /// One uniform cross-bundle route. A coclass member dispatches on its receiver
+    /// (`has_receiver: true`); a hidden-module function is an import-backed call.
+    fn member_binding(&self, ty: &SurfaceType, m: &SurfaceMember) -> Binding {
+        Binding {
+            symbol: None,
+            is_default: m.is_default,
+            route: DispatchRoute::ExternMember {
+                unit: self.surface.project_name.clone(),
+                owner: ty.name.clone(),
+                member: m.name.clone(),
+                kind: m.member_kind,
+                param_types: m.parameter_types.clone(),
+                has_receiver: Self::is_coclass(ty),
+            },
         }
     }
 
+    fn const_binding_of(c: &SurfaceConst) -> Binding {
+        Binding::new(Some(c.symbol), DispatchRoute::ConstValue(c.value.clone()))
+    }
+
+    /// A `Public Const` / `Enum` member by bare name (unqualified).
     fn const_binding(&self, name: &str) -> Option<Binding> {
         let folded = fold_identifier(name);
         self.surface
             .consts
             .iter()
             .find(|c| fold_identifier(&c.name) == folded)
-            .map(|c| Binding::new(Some(c.symbol), DispatchRoute::Value))
+            .map(Self::const_binding_of)
+    }
+
+    /// An `Enum` member qualified by its enum name (`Color.Red`).
+    fn enum_member_binding(&self, enum_name: &str, member: &str) -> Option<Binding> {
+        let (enum_folded, member_folded) = (fold_identifier(enum_name), fold_identifier(member));
+        self.surface
+            .consts
+            .iter()
+            .find(|c| {
+                fold_identifier(&c.name) == member_folded
+                    && c.enum_name.as_deref().is_some_and(|e| fold_identifier(e) == enum_folded)
+            })
+            .map(Self::const_binding_of)
     }
 
     /// Unqualified resolution: a global-namespace (hidden-module) member, then a
@@ -99,15 +109,20 @@ impl SurfaceProvider {
     fn resolve_global(&self, name: &str) -> Option<Binding> {
         for ty in self.surface.types.iter().filter(|t| t.global_namespace && !Self::is_coclass(t)) {
             if let Some(m) = Self::find_member(ty, name, None) {
-                return Some(Self::member_binding(ty, m));
+                return Some(self.member_binding(ty, m));
             }
         }
         self.const_binding(name)
     }
 
     fn resolve_type_member(&self, owner: &str, member: &str) -> Option<Binding> {
-        let ty = self.type_by_name(owner)?;
-        Self::find_member(ty, member, None).map(|m| Self::member_binding(ty, m))
+        if let Some(ty) = self.type_by_name(owner)
+            && let Some(m) = Self::find_member(ty, member, None)
+        {
+            return Some(self.member_binding(ty, m));
+        }
+        // `Owner` may be an enum name rather than a coclass/module type.
+        self.enum_member_binding(owner, member)
     }
 }
 
@@ -126,7 +141,7 @@ impl Provider for SurfaceProvider {
             return None;
         };
         let ty = self.type_by_name(type_name)?;
-        Self::find_member(ty, name, want).map(|m| Self::member_binding(ty, m))
+        Self::find_member(ty, name, want).map(|m| self.member_binding(ty, m))
     }
 
     fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
@@ -152,6 +167,23 @@ impl Provider for SurfaceProvider {
         ty.members
             .iter()
             .find(|m| m.is_default)
-            .map(|m| Self::member_binding(ty, m))
+            .map(|m| self.member_binding(ty, m))
+    }
+
+    fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
+        // `New <name>` where `<name>` is a bare class (`Widget`) or project-qualified
+        // (`Lib.Widget`). A leading segment matching this unit's name is stripped.
+        let class = match name.split_once('.') {
+            Some((project, class)) if fold_identifier(project) == self.project_folded => class,
+            Some(_) => return None,
+            None => name,
+        };
+        let ty = self.type_by_name(class)?;
+        match ty.kind {
+            SurfaceTypeKind::Coclass { creatable: true, .. } => {
+                Some((self.surface.project_name.clone(), ty.name.clone()))
+            }
+            _ => None,
+        }
     }
 }
