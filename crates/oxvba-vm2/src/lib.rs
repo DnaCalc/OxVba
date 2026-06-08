@@ -1473,6 +1473,42 @@ impl<'h> Vm<'h> {
                     arr.replace_variant_elements(elems).map_err(Fault::from_string)?;
                 self.set(*array, Variant::from_safearray(updated))?;
             }
+
+            // ── UDT records (a value aggregate backed by a record store) ──
+            // The `SafeArray` backing is internal: it is read/written only through these
+            // record ops and value-copied by the normal `Variant` clone. It must NOT be
+            // exposed across the native-interop boundary — UDT marshalling lays fields
+            // out per the static UDT type (see POST_CLEANUP.md).
+            Op::NewRecord { dst, fields } => {
+                let record = SafeArray::from_variants(vec![Variant::empty(); *fields]);
+                self.set(*dst, Variant::from_safearray(record))?;
+            }
+            Op::RecordGet { dst, record, index } => {
+                let rec = self
+                    .get(*record)?
+                    .as_safearray()
+                    .ok_or_else(|| Fault::new(13, "record expected"))?;
+                let value = rec
+                    .variant_elements()
+                    .unwrap_or_default()
+                    .get(*index)
+                    .cloned()
+                    .ok_or_else(|| Fault::new(9, "record field out of range"))?;
+                self.set(*dst, value)?;
+            }
+            Op::RecordSet { record, index, src } => {
+                let rec = self
+                    .get(*record)?
+                    .as_safearray()
+                    .ok_or_else(|| Fault::new(13, "record expected"))?;
+                let mut elems = rec.variant_elements().unwrap_or_default();
+                if *index >= elems.len() {
+                    return Err(Fault::new(9, "record field out of range"));
+                }
+                elems[*index] = self.cloned(*src)?;
+                let updated = rec.replace_variant_elements(elems).map_err(Fault::from_string)?;
+                self.set(*record, Variant::from_safearray(updated))?;
+            }
             Op::LBound { dst, src } => {
                 let arr = self.array_of(*src)?;
                 let bounds = arr.bounds().ok_or_else(|| Fault::new(9, "array has no bounds"))?;

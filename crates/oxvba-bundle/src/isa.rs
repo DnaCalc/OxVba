@@ -106,6 +106,14 @@ pub enum Op {
     Neg { dst: usize, src: usize, mode: NumericMode },
     Copy { dst: usize, src: usize },
 
+    // ── UDT records (value aggregates, backed by a record store) ───────────
+    /// Allocate a default-initialized record of `fields` fields.
+    NewRecord { dst: usize, fields: usize },
+    /// Read field `index` of the record in slot `record`.
+    RecordGet { dst: usize, record: usize, index: usize },
+    /// Set field `index` of the record in slot `record` (updates the record in place).
+    RecordSet { record: usize, index: usize, src: usize },
+
     // ── Coercion ─────────────────────────────────────────────
     CoerceNumeric { slot: usize, target: NumericCoerceTarget },
     CoerceFixedString { slot: usize, len: usize },

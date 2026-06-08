@@ -1,7 +1,7 @@
 //! The l-value binder: `bind_place` classifies an assignable expression into a
 //! `CorePlace` (local/global slot, array element, …) and reports its type.
 
-use oxvba_bundle::coreir::{CoreConst, CorePlace, CoreValue};
+use oxvba_bundle::coreir::{CorePlace, CoreValue};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
@@ -98,10 +98,7 @@ impl<'a> ProcLower<'a> {
         else {
             return Ok(None);
         };
-        let place = CorePlace::Index {
-            array: Box::new(base_place),
-            indices: vec![CoreValue::Const(CoreConst::I32(index as i32))],
-        };
+        let place = CorePlace::RecordField { base: Box::new(base_place), index };
         Ok(Some((place, self.g.resolve_udt_type(field_ty))))
     }
 

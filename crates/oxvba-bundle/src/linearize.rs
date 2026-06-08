@@ -316,6 +316,12 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::ArrayGet { dst, array: array_slot, indices: index_slots });
                 Ok(dst)
             }
+            CorePlace::RecordField { base, index } => {
+                let (record, _writeback) = self.array_target(base)?;
+                let dst = self.new_temp();
+                self.emit(Op::RecordGet { dst, record, index: *index });
+                Ok(dst)
+            }
             CorePlace::WithEvents { owner, binding } => {
                 let owner = self.lower_value(owner)?;
                 let binding = self.binding_token_slot(*binding);
@@ -345,6 +351,15 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::ArraySet { array: array_slot, indices: index_slots, src });
                 if let Some(place) = writeback {
                     self.lower_place_store(&place, array_slot)?;
+                }
+            }
+            CorePlace::RecordField { base, index } => {
+                // Update the field in the record slot, then store the (copy-on-write)
+                // record back through to its base place when held indirectly.
+                let (record, writeback) = self.array_target(base)?;
+                self.emit(Op::RecordSet { record, index: *index, src });
+                if let Some(place) = writeback {
+                    self.lower_place_store(&place, record)?;
                 }
             }
             CorePlace::WithEvents { owner, binding } => {
@@ -395,6 +410,11 @@ impl<'p> Linearizer<'p> {
             CoreValue::New(class) => {
                 let dst = self.new_temp();
                 self.emit(Op::NewObject { dst, class: class.0 });
+                Ok(dst)
+            }
+            CoreValue::NewRecord { fields } => {
+                let dst = self.new_temp();
+                self.emit(Op::NewRecord { dst, fields: *fields });
                 Ok(dst)
             }
             CoreValue::NewExtern { import } => {

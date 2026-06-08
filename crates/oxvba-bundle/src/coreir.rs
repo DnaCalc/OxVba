@@ -136,6 +136,9 @@ pub enum CorePlace {
     Field { object: Box<CoreValue>, field: i32 },
     /// Array element (`array(i, j, …)`).
     Index { array: Box<CorePlace>, indices: Vec<CoreValue> },
+    /// A UDT field at a fixed index into `base`'s record (`p.X`). A value aggregate
+    /// (backed by a record at run time), so the field is a positional slot.
+    RecordField { base: Box<CorePlace>, index: usize },
     /// A `WithEvents` sink field: read → `WithEventsGet`, assign → `WithEventsSet`.
     WithEvents { owner: Box<CoreValue>, binding: i32 },
 }
@@ -253,6 +256,8 @@ pub enum CoreValue {
     Call { callee: CoreCallee, args: Vec<CoreArg> },
     /// `New <Class>` — allocate a project instance and run `Class_Initialize`.
     New(ClassId),
+    /// Allocate a default-initialized UDT record of `fields` fields (a value aggregate).
+    NewRecord { fields: usize },
     Coerce { value: Box<CoreValue>, to: CoerceTarget },
     TypeOfIs { object: Box<CoreValue>, type_name: String },
     Ptr { kind: PtrKind, place: CorePlace },

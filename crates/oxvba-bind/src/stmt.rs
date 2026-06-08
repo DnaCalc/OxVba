@@ -565,10 +565,9 @@ impl<'a> ProcLower<'a> {
         };
         let Some(field_count) = self.g.env.udt_field_count(&udt) else { return Ok(None) };
         let place = self.place_by_name(name)?;
-        let fields = vec![CoreValue::Const(CoreConst::Empty); field_count];
         Ok(Some(CoreStmt::Assign {
             place,
-            value: CoreValue::ArrayLiteral(fields),
+            value: CoreValue::NewRecord { fields: field_count },
             intent: AssignmentIntent::Let,
             target_kind: oxvba_bundle::AssignmentTargetKind::Scalar,
             target_name: name.to_string(),

@@ -84,17 +84,27 @@ Cranelift JIT), not as a separate binder coercion node:
 - **C — UDTs** (2): `Type … End Type` records are a **value-type aggregate**. The symbol layer
   captures each `Type`'s field table (`scanner::collect_udt_fields` → `env.udt_field`/
   `udt_field_count`); a declared `Object(name)` whose name is a `Type` becomes
-  `VarTypeRef::Udt` (`Lower::resolve_udt_type`, at `symbol_type`). A record is backed by a
-  `SafeArray` of its fields (value-copy comes free from the existing `Variant` deep-clone), so
-  field access (`p.X`) is a fixed-index `CorePlace::Index` (`place.rs::udt_field_place`, used by
-  both l-value and r-value member binding), `Dim p As T` allocates a default record
-  (`stmt.rs::udt_record_init`, hoisted to entry), and `q = p` is a plain `Let` (value copy).
-  Generalizes through calls — a ByRef param writes a field back, a ByVal param copies
-  (`udt_passed_byref_writes_through_byval_copies` test). NOTE: records reuse the array
-  opcodes (`ArrayLiteral`/`ArrayGet`/`ArraySet` at a constant index) rather than dedicated
-  `NewRecord`/`FieldGet`/`FieldSet` ops; the latter are a follow-up linearize specialization
-  (a JIT hint, no semantic change) — see [[project_typed_arithmetic_model]] for the bundle/JIT
-  philosophy.
+  `VarTypeRef::Udt` (`Lower::resolve_udt_type`, at `symbol_type`). The bytecode has **dedicated
+  record opcodes** — `NewRecord` / `RecordGet` / `RecordSet` (coreir `CoreValue::NewRecord` +
+  `CorePlace::RecordField`) — so the VM and JIT see records distinctly from arrays. `Dim p As T`
+  allocates a default record (`stmt.rs::udt_record_init`, hoisted to entry), `p.X` is a
+  fixed-index `RecordField` (`place.rs::udt_field_place`, l-value + r-value), `q = p` is a plain
+  `Let` (value copy). Generalizes through calls — a ByRef param writes a field back, a ByVal
+  param copies (`udt_passed_byref_writes_through_byval_copies` test). The VM **backs** a record
+  with a `SafeArray` of its fields (value-copy comes free from the `Variant` deep-clone); that
+  storage is internal — see the interop constraint below.
+
+**Design constraint — UDT native interop (before it ships):** a UDT value is backed at run
+time by a `SafeArray` (`vtype = VT_ARRAY`), so a UDT `Variant` is indistinguishable from a
+Variant array *at the runtime-`Variant` level*. UDT native interop (`Declare` / COM params,
+typelib export) must therefore marshal a UDT by laying its fields out per the **static UDT
+type** at the call site (read fields by index from the symbol field table → packed native
+struct / `VT_RECORD`), **never** by passing or inspecting the backing `SafeArray` — otherwise
+the callee would observe our `SAFEARRAY` storage instead of VBA's struct. The dedicated record
+opcodes already distinguish records from arrays in the bytecode; the remaining hook is a
+UDT-aware `CallExtern`/COM marshalling path (the alternative — a distinct `VT_RECORD` runtime
+tag, touching the unsafe `Variant` — is heavier and deferrable). Today no tested path marshals
+a UDT across the boundary, so nothing leaks; this note exists so it is handled when it does.
 
 The re-pointed `feature_coverage` corpus now passes in full (57/0).
 
