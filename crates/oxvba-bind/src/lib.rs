@@ -142,6 +142,17 @@ fn bind_one(
         });
     }
 
+    // Module-level fixed-size array globals are allocated once at program entry,
+    // before the entry procedure's own body runs.
+    if let Some(entry_id) = ids.entry() {
+        let inits = lower.module_global_array_inits(&ids.procs[entry_id.0])?;
+        if !inits.is_empty() {
+            let body = &mut procs[entry_id.0].body;
+            let tail = std::mem::take(body);
+            *body = inits.into_iter().chain(tail).collect();
+        }
+    }
+
     // The active project's published surface → this bundle's exports (the contract
     // a referrer's imports resolve against). Imports were accumulated while lowering.
     let exports = build_exports(env, &ids);

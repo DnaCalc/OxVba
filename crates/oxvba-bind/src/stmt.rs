@@ -63,12 +63,12 @@ impl<'a> ProcLower<'a> {
             // `Put #n, [rec], value` flags a fixed-length-string source (no prefix).
             PutStmt => self.bind_put(node),
             RaiseEventStmt => self.bind_raise_event(node),
-            // A `Dim` allocates any fixed-size array it declares; otherwise it is a
-            // declaration only (the frame is already built).
-            DimStmt => self.bind_dim(node),
-            // Declarations contribute no executable statement (frame already built).
-            ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt | AttributeStmt
-            | ImplementsStmt | EventDecl => Ok(Vec::new()),
+            // Declarations contribute no executable statement (the frame is already
+            // built; any fixed-size array a `Dim` declares is allocated once at proc
+            // entry — `collect_fixed_array_inits` — so a `Dim` in a loop body, or after
+            // its first use, behaves as VBA's hoisted declaration).
+            DimStmt | ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt
+            | AttributeStmt | ImplementsStmt | EventDecl => Ok(Vec::new()),
             other => Err(BindError::Unsupported(format!("statement {other:?}"))),
         }
     }
@@ -121,6 +121,8 @@ impl<'a> ProcLower<'a> {
             _ => ProjectMemberKind::PropertyLet,
         };
         match target.kind() {
+            // `Prop(index…) = rhs` — an indexed Property Let/Set.
+            SyntaxKind::IndexExpr => self.bind_indexed_property_let(target, kind, &val.value),
             SyntaxKind::IdentExpr => {
                 let Some(name) = target.ident_name_token().map(|t| t.text) else {
                     return Ok(None);
@@ -503,11 +505,37 @@ impl<'a> ProcLower<'a> {
         Ok(bounds)
     }
 
-    /// A `Dim`/`Static` with a *fixed-size* array declarator (`Dim a(1 To 3)`) allocates
-    /// the array where it is declared, reusing the `ReDim` path; a dynamic array
-    /// (`Dim a()`) stays unallocated until a `ReDim`. (Other declarators are
-    /// declarations only — the frame is already built.)
-    fn bind_dim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+    /// Collect the fixed-size array allocations for every `Dim` anywhere under `node`
+    /// (recursively, including loop/`If` bodies). VBA hoists declarations, so these run
+    /// once at proc entry regardless of where the `Dim` appears; a dynamic `Dim a()` is
+    /// skipped (allocated by a later `ReDim`).
+    pub(crate) fn collect_fixed_array_inits(
+        &mut self,
+        node: SyntaxNode<'_>,
+    ) -> Result<Vec<CoreStmt>, BindError> {
+        let mut out = Vec::new();
+        self.walk_fixed_array_inits(node, &mut out)?;
+        Ok(out)
+    }
+
+    fn walk_fixed_array_inits(
+        &mut self,
+        node: SyntaxNode<'_>,
+        out: &mut Vec<CoreStmt>,
+    ) -> Result<(), BindError> {
+        if node.kind() == SyntaxKind::DimStmt {
+            out.extend(self.bind_dim(node)?);
+        }
+        for child in node.child_nodes() {
+            self.walk_fixed_array_inits(child, out)?;
+        }
+        Ok(())
+    }
+
+    /// A `Dim` with a *fixed-size* array declarator (`Dim a(1 To 3)`) allocates the
+    /// array, reusing the `ReDim` path; a dynamic array (`Dim a()`) stays unallocated
+    /// until a `ReDim`. (Other declarators are declarations only.)
+    pub(crate) fn bind_dim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let mut out = Vec::new();
         for declarator in node.declarators() {
             let Some(bounds_node) = declarator.array_bounds() else { continue };

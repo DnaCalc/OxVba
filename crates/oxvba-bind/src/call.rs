@@ -4,7 +4,7 @@
 //! (the `Err` object for now; objects/COM arrive in a later phase).
 
 use oxvba_bundle::coreir::{
-    BoundWhich, CoreArg, CoreCallee, CoreConst, CorePlace, CoreValue, ErrField,
+    BoundWhich, CoreArg, CoreCallee, CoreConst, CorePlace, CoreStmt, CoreValue, ErrField,
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
@@ -342,6 +342,54 @@ impl<'a> ProcLower<'a> {
             }
         }
         Ok(args)
+    }
+
+    /// `Prop(index…) = rhs` — an indexed `Property Let`/`Set`. Lowers to a call of the
+    /// accessor proc with the index arguments followed by the assigned value (the
+    /// accessor's trailing parameter). Returns `None` when the base is not a bare
+    /// project property (e.g. an array-element store, or a member-qualified target),
+    /// so the caller falls back to a place store.
+    pub(crate) fn bind_indexed_property_let(
+        &mut self,
+        target: SyntaxNode<'_>,
+        kind: ProjectMemberKind,
+        rhs: &CoreValue,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        let Some(base) = target.index_base() else { return Ok(None) };
+        if base.kind() != SyntaxKind::IdentExpr {
+            return Ok(None); // a member-qualified indexed property is a place store path
+        }
+        let Some(name) = base.ident_name_token().map(|t| t.text) else { return Ok(None) };
+        let Some(binding) = self.resolve(name) else { return Ok(None) };
+        if !matches!(
+            binding.route,
+            DispatchRoute::ProjectMember {
+                kind: ProjectMemberKind::PropertyGet
+                    | ProjectMemberKind::PropertyLet
+                    | ProjectMemberKind::PropertySet
+            }
+        ) {
+            return Ok(None); // not a property (e.g. an array → place store)
+        }
+        let Some(sym) = binding.symbol else { return Ok(None) };
+        let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied() else {
+            return Ok(None);
+        };
+        // Bind the index arguments against the accessor's signature (its trailing
+        // value parameter is supplied by the RHS, not the index list).
+        let signature = self.proc_signature_for(sym, kind);
+        let mut args = match &signature {
+            Some(sig) => self.bind_proc_args(target.index_arg_list(), sig, sym)?,
+            None => self.bind_args(target.index_arg_list(), None)?,
+        };
+        match args.last_mut() {
+            Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+            None => args.push(CoreArg::ByVal(rhs.clone())),
+        }
+        Ok(Some(vec![CoreStmt::Eval(CoreValue::Call {
+            callee: CoreCallee::VbaProc { proc: proc_id },
+            args,
+        })]))
     }
 
     /// Arguments for a project `VbaProc`: named args are reordered into their

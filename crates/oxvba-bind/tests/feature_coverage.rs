@@ -121,14 +121,15 @@ fn scalar_single_const_carrier_executes() {
 }
 
 #[test]
-#[ignore = "gap I: snippet uses a non-standard `^` LongLong type-char (not VBA 7.1; the \
-            clean parser correctly rejects it). Coercion of the others is covered. (POST_CLEANUP.md)"]
 fn scalar_type_char_const_carriers_execute() {
+    // VBA 7.1 type-declaration chars are `% & ! # @ $` (there is no LongLong char), so
+    // the `LongLong` carrier uses an explicit `As LongLong` rather than the legacy
+    // snippet's non-standard `^`.
     let snap = run(
-        "Const CInteger% = 7\nConst CLong& = 8\nConst CLongLong^ = 5000000000\nConst CTotal! = 1.5\nConst CDouble# = 2\nConst CAmount@ = 1.25\nConst CText$ = \"ok\"\nSub Main()\nDim i As Integer\nDim l As Long\nDim ll As LongLong\nDim x As Single\nDim d As Double\nDim amount As Currency\nDim s As String\ni = CInteger\nl = CLong\nll = CLongLong\nx = CTotal\nd = CDouble\namount = CAmount\ns = CText\nEnd Sub",
+        "Const CInteger% = 7\nConst CLong& = 8\nConst CLongLong As LongLong = 5000000000\nConst CTotal! = 1.5\nConst CDouble# = 2\nConst CAmount@ = 1.25\nConst CText$ = \"ok\"\nSub Main()\nDim i As Integer\nDim l As Long\nDim ll As LongLong\nDim x As Single\nDim d As Double\nDim amount As Currency\nDim s As String\ni = CInteger\nl = CLong\nll = CLongLong\nx = CTotal\nd = CDouble\namount = CAmount\ns = CText\nEnd Sub",
     );
-    // Each carrier coerces to its declared (type-char) type: `%`→Integer, `&`→Long,
-    // `^`→LongLong, `!`→Single, `#`→Double, `@`→Currency, `$`→String.
+    // Each carrier coerces to its declared type: `%`→Integer, `&`→Long, `As LongLong`,
+    // `!`→Single, `#`→Double, `@`→Currency, `$`→String.
     assert_eq!(
         snap,
         vec![
@@ -416,18 +417,14 @@ fn indexed_property_get_executes_through_package_vm() {
     assert_eq!(snap, vec![Variant::from_i32(7)]);
 }
 
-#[test]
-#[ignore = "gap E: indexed Property Let assignment not supported (POST_CLEANUP.md)"]
-fn indexed_property_let_executes_through_package_vm() {
+#[test]fn indexed_property_let_executes_through_package_vm() {
     let snap = run(
         "Sub Main()\nDim value As Long\nItem(value) = 3\nEnd Sub\nProperty Let Item(ByRef target As Long, ByVal newValue As Long)\ntarget = newValue + 4\nEnd Property",
     );
     assert_eq!(snap, vec![Variant::from_i32(7)]);
 }
 
-#[test]
-#[ignore = "gap E: indexed Property Let assignment not supported (POST_CLEANUP.md)"]
-fn named_indexed_property_let_executes_through_package_vm() {
+#[test]fn named_indexed_property_let_executes_through_package_vm() {
     let snap = run(
         "Sub Main()\nDim value As Long\nItem(target := value) = 3\nEnd Sub\nProperty Let Item(ByRef target As Long, ByVal newValue As Long)\ntarget = newValue + 4\nEnd Property",
     );
@@ -463,6 +460,27 @@ fn dynamic_array_redim_and_use() {
         "Sub Main()\nDim a() As Long\nDim v As Long\nReDim a(2)\na(0) = 7\na(2) = 5\nv = a(0) + a(2)\nEnd Sub",
     );
     assert_eq!(snap.last(), Some(&Variant::from_i32(12)));
+}
+
+#[test]
+fn fixed_array_dim_in_loop_is_hoisted() {
+    // VBA hoists declarations: a fixed-size array `Dim`'d inside a loop is allocated
+    // once at proc entry, so element `a(1)` accumulates across iterations (3) rather
+    // than resetting to 0 each pass.
+    let snap = run(
+        "Sub Main()\nDim total As Long\nDim i As Long\nFor i = 1 To 3\nDim a(1 To 2) As Long\na(1) = a(1) + 1\nNext i\ntotal = a(1)\nEnd Sub",
+    );
+    assert!(snap.contains(&Variant::from_i32(3)), "expected accumulated a(1)=3 in {snap:?}");
+}
+
+#[test]
+fn module_level_fixed_array_global_is_allocated() {
+    // A module-level `Dim g(1 To 3)` global is allocated at program entry, before the
+    // entry body runs.
+    let snap = run(
+        "Dim g(1 To 3) As Long\nSub Main()\ng(1) = 10\ng(2) = 20\nDim total As Long\ntotal = g(1) + g(2)\nEnd Sub",
+    );
+    assert!(snap.contains(&Variant::from_i32(30)), "expected g(1)+g(2)=30 in {snap:?}");
 }
 
 #[test]

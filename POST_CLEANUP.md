@@ -25,8 +25,10 @@ clean stack — do not delete.
 `crates/oxvba-bind/tests/feature_coverage.rs` re-points the legacy `vm_feature_coverage`
 VBA-semantics corpus at the clean stack (bind→linearize→vm2). First run: 27 pass / 26 fail
 across 6 categories (A–F). Round 2 (typed arithmetic + coercion) closed A, B, F and the
-pure-Boolean-const cases (→ 35/18). **Round 3 closed D, G, H → now 50 pass, 5 ignored.**
-Each remaining failure stays `#[ignore = "gap X: …"]` in the corpus — un-ignore as fixed.
+pure-Boolean-const cases (→ 35/18). Round 3 closed D, G, H (→ 50/5). **Round 4 closed E
+(indexed Property Let), I (the non-standard `^` test, rewritten with `As LongLong`), and
+the G follow-ups (fixed-array Dim hoisting + module-level array globals) → now 55 pass, 2
+ignored.** Each remaining failure stays `#[ignore = "gap X: …"]` — un-ignore as fixed.
 
 **Closed (commit: typed arithmetic in the bytecode/VM + store coercion):** the numeric
 type/regime lives **on the arithmetic op** (so the bundle fully describes the code for the
@@ -59,22 +61,31 @@ Cranelift JIT), not as a separate binder coercion node:
   (`call.rs::omitted_optional_arg`) substitutes the folded default (coerced to the param
   type), else the declared-type zero (`Object`→`Nothing`), else `Missing` (a `Variant`
   optional with no default).
-- **G — fixed-size array local** (1): a `Dim a(1 To 3) As Long` now allocates the array where
-  declared (`stmt.rs::bind_dim` emits a `ReDim` for fixed-bounds declarators, reusing the
-  bounds parser; a dynamic `Dim a()` stays unallocated). Module-level fixed-array *globals*
-  and loop-hoisting are not yet handled (position-emission; refine later).
+- **G — fixed-size array local** (1): a `Dim a(1 To 3) As Long` now allocates the array
+  (`stmt.rs::bind_dim` emits a `ReDim` for fixed-bounds declarators, reusing the bounds
+  parser; a dynamic `Dim a()` stays unallocated).
 - **H — string relational / `Like` const folding** (3): `const_eval::fold_const_binary` folds
   string `=`/`<>`/`<`/… and `Like` (compact VBA matcher) under the module's `Option Compare`
   (threaded through the evaluator). Also unblocks the `Like`/string Optional defaults in D.
 
-**Remaining (5 ignored):**
-- **C — UDTs** (2): `Type … End Type` + `p.X = 3` → `424 Object required`. User-defined
-  types not supported in the clean stack.
-- **E — indexed `Property Let`** (2): `Item(i) = x` → bind error "not an assignable
-  variable" (indexed `Property Get` works).
-- **I — non-standard `^` LongLong type-char** (1): the snippet declares `Const CLongLong^`;
-  `^` is not a VBA 7.1 type-declaration char (the valid set is `% & ! # @ $`), and the clean
-  parser correctly rejects it. The coercion of the *other* type-char carriers is covered.
+**Closed (round 4 — E/I + G follow-ups):**
+- **E — indexed `Property Let`/`Set`** (2): `Item(index…) = rhs` lowers to a call of the
+  accessor proc with the index args followed by the RHS (`call.rs::bind_indexed_property_let`,
+  via the assignment binder's new `IndexExpr` arm); named index args reorder too. A
+  member-qualified `obj.P(i)=x` still falls back to the place-store path (follow-up).
+- **G follow-ups**: fixed-array `Dim`s are **hoisted** to proc entry
+  (`collect_fixed_array_inits`, so a `Dim` in a loop allocates once), and module-level
+  **fixed-array globals** allocate at program entry (`Lower::module_global_array_inits`,
+  prepended to the entry proc).
+- **I**: the legacy snippet's non-standard `^` LongLong type-char (not VBA 7.1) was rewritten
+  to an explicit `As LongLong`; the clean parser correctly rejects `^`.
+
+**Remaining (2 ignored):**
+- **C — UDTs** (2): `Type … End Type` + `p.X = 3` → `424 Object required`. The clean stack
+  has no aggregate **value-type** (the runtime `Variant` stores heap types as raw pointers
+  with hand-written `Clone`/`Drop`; `Object` is ref-counted, but a UDT is copied by value).
+  A real fix needs a record value-type spanning runtime/symbol/binder/coreir/vm2 — the
+  largest single gap; see the design options under discussion.
 
 Next gap-analysis steps: re-point the host `com_*`/`file_io`/`pointer`/`invoke` suites
 (objects, COM, file I/O, pointers) — those will surface the object/COM/host-call gaps the
