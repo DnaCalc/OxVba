@@ -253,11 +253,19 @@ impl Engine {
     }
 
     /// Execute a single VBA **source** module on the clean path (`oxvba run <source>`):
-    /// wrap it in a one-module project and run via the closure path; snapshot its globals.
+    /// wrap it in a one-module project, run it, and snapshot the module-level globals
+    /// **followed by the entry `Sub Main` frame's locals** (the script's variables —
+    /// the meaningful result of a bare-source run, matching the bind-layer harness and
+    /// what the legacy host returned). The closure entry point
+    /// (`execute_project_closure_with_variant_snapshot`) snapshots globals only, since a
+    /// multi-project closure has no single "the script's locals".
     pub fn execute_source_with_variant_snapshot_clean(
         &self,
         source: &str,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        if self.config.enable_jit {
+            return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+        }
         use oxvba_symbol::manifest as sym;
         let manifest = sym::SymbolProjectManifest {
             project_name: "Main".to_string(),
@@ -272,6 +280,24 @@ impl Engine {
             reference_projects: Vec::new(),
             conditional_constants: std::collections::BTreeMap::new(),
         };
-        self.execute_project_closure_with_variant_snapshot(std::slice::from_ref(&manifest))
+        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
+        let program = oxvba_bind::bind_program(&manifest, &typelibs)
+            .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
+        let bundle = oxvba_bundle::linearize(&program)
+            .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
+        let mut vm = oxvba_vm2::Vm::link(&[&bundle], &*self.host_services)
+            .map_err(|e| PhaseDiagnostic::runtime(e.message))?;
+        vm.run().map_err(|e| PhaseDiagnostic::runtime(e.message))?;
+        // Snapshot = module globals + the entry frame's locals (the script's variables).
+        let local_count = program
+            .entry
+            .and_then(|entry| program.procs.get(entry.0))
+            .map(|main| main.locals.len())
+            .unwrap_or(0);
+        let count = bundle.global_count + local_count;
+        let values = (0..count)
+            .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
+            .collect();
+        Ok(values)
     }
 }

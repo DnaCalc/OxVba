@@ -162,8 +162,17 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   `oxvba-bind/tests/feature_coverage.rs`. **Remaining**: the full native-DLL round-trip
   (the deleted `pointer_helpers_end_to_end`/`native_declare_string_marshalling_end_to_end`)
   also needs the `Declare` string-marshalling gap below (ByRef `String`, `String` return);
-  the pointer registry never evicts (a pin-per-`VarPtr` leak, acceptable for now); and
+  the pointer registry never evicts (a pin-per-`VarPtr` leak — see the dedicated follow-up below); and
   pinning a *copy* means native write-back doesn't reach the original variable (read-oriented).
+- **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
+  `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that
+  **never evicts** — each pointer-helper call permanently leaks its pinned cell (BSTR / VARIANT / byte
+  buffer). Fine for short scripts, unbounded for long-running/looping code. Replace the global
+  never-evicting map with a **scoped pin lifetime**: a pin should live exactly as long as the native
+  `Declare` call it feeds (register on marshal → free after the call returns and any write-back is
+  applied), i.e. a per-call (or per-statement) pin arena. Matches VBA's "pointer valid for the duration
+  of the call" contract. Must land **after** pointer write-back (the free has to happen after the
+  post-call read-back within the same call).
 - **Native `Declare` string marshalling** (clean VM): `ByVal As String` to ANSI (A) and wide
   (W) APIs works; **missing** — ByRef `String` (no string variant in `NativeByRefStorage`),
   `String` *return* type, fixed-length `String * N`, and Unix ByRef. The deleted

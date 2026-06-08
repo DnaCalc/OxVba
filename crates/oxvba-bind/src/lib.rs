@@ -320,10 +320,22 @@ fn source_events(
 /// runtime-resolution fields (`symbol`/`marshal_lane`/`selection_policy`) get the
 /// loader's canonical defaults. ByRef write-back targets are the call-site
 /// `CallArg::ByRef` slots, so the descriptor carries no write-back list.
+///
+/// `marshal_lane` is a **static** property of the target: a real library binds to
+/// the native FFI lane (`m1-native-ffi`); the synthetic `host` library (the HAL's
+/// `hostping`/`hostdouble` self-test symbols) stays on the deterministic lane. The
+/// HAL decides at run time whether to actually call native code (it requires
+/// `allow_dynamic_link` + a non-deterministic policy on a matching host profile),
+/// so sandboxed/deterministic runs stay safe without any binder-side policy logic.
 fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescriptor> {
     let mut out: Vec<ExternalCallDescriptor> = Vec::new();
     for sym in env.symbols.symbols() {
         let SymbolImpl::Declare(d) = &sym.imp else { continue };
+        let marshal_lane = if d.library.eq_ignore_ascii_case("host") {
+            "m0-deterministic"
+        } else {
+            "m1-native-ffi"
+        };
         out.push(ExternalCallDescriptor {
             descriptor_id: d.descriptor_id,
             declared_name: d.declared_name.clone(),
@@ -331,7 +343,7 @@ fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescript
             alias: d.alias.clone(),
             ordinal_alias: d.ordinal_alias,
             symbol: DynLinkSymbol::new(d.descriptor_id as i32),
-            marshal_lane: "m0-deterministic".to_string(),
+            marshal_lane: marshal_lane.to_string(),
             calling_convention: "platform-default".to_string(),
             selection_policy: if d.ordinal_alias {
                 "ordinal-literal-canonical".to_string()
