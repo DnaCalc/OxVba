@@ -22,8 +22,8 @@
 use oxvba_bundle::coreir::*;
 use oxvba_bundle::linearize::linearize;
 use oxvba_bundle::{
-    AssignmentIntent, AssignmentTargetKind, EventRoute, ProcedureKind, ProjectMemberKind,
-    StringCompareMode,
+    AssignmentIntent, AssignmentTargetKind, EventRoute, NumericMode, ProcedureKind,
+    ProjectMemberKind, StringCompareMode,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -44,7 +44,13 @@ fn field(object: CoreValue, token: i32) -> CorePlace {
     CorePlace::Field { object: Box::new(object), field: token }
 }
 fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
-    CoreValue::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs), mode: StringCompareMode::Binary }
+    CoreValue::Binary {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        mode: StringCompareMode::Binary,
+        num: NumericMode::Widening,
+    }
 }
 fn param(name: &str) -> CoreParam {
     CoreParam { name: name.into(), by_ref: false, variadic: false }

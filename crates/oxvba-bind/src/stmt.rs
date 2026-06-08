@@ -7,7 +7,7 @@ use oxvba_bundle::coreir::{
     CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::{AssignmentIntent, ProjectMemberKind};
+use oxvba_bundle::{AssignmentIntent, NumericMode, ProjectMemberKind};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::fold_identifier;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
@@ -90,7 +90,10 @@ impl<'a> ProcLower<'a> {
             return Ok(stmts);
         }
         let (place, target_ty) = self.bind_place(target_node)?;
-        let value = types::coerce(val.value, &val.ty, &target_ty);
+        // A declared scalar variable holds its declared type: coerce the value to the
+        // target type on store (unconditionally — the value's static type is not a
+        // reliable proxy for its run-time tag). No-op for String/Object/Variant/array.
+        let value = types::coerce_store(val.value, &target_ty);
         Ok(vec![CoreStmt::Assign {
             place,
             value,
@@ -586,9 +589,11 @@ impl<'a> ProcLower<'a> {
                 lhs: Box::new(filenum),
                 rhs: Box::new(CoreValue::Const(CoreConst::I32(65536))),
                 mode: self.info.compare_mode,
+                num: NumericMode::Widening,
             }),
             rhs: Box::new(CoreValue::Const(CoreConst::I32(mode_code))),
             mode: self.info.compare_mode,
+            num: NumericMode::Widening,
         };
         let record_len = match exprs.get(1) {
             Some(e) => self.bind_expr(*e)?.value,
@@ -640,7 +645,11 @@ impl<'a> ProcLower<'a> {
                     callee: CoreCallee::Native(NativeImplId::Len),
                     args: vec![CoreArg::ByVal(target_value)],
                 };
-                CoreValue::Unary { op: oxvba_bundle::coreir::CoreUnOp::Negate, expr: Box::new(len) }
+                CoreValue::Unary {
+                    op: oxvba_bundle::coreir::CoreUnOp::Negate,
+                    expr: Box::new(len),
+                    num: NumericMode::Widening,
+                }
             }
             _ => CoreValue::Const(CoreConst::I32(0)),
         };

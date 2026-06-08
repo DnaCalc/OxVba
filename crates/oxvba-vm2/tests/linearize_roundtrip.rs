@@ -11,7 +11,10 @@
 use oxvba_bundle::coreir::*;
 use oxvba_bundle::linearize::linearize;
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::{ArrayElementType, AssignmentIntent, AssignmentTargetKind, ProcedureKind, StringCompareMode};
+use oxvba_bundle::{
+    ArrayElementType, AssignmentIntent, AssignmentTargetKind, NumericMode, ProcedureKind,
+    StringCompareMode,
+};
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 
@@ -59,7 +62,13 @@ fn load(slot: usize) -> CoreValue {
     CoreValue::Load(CorePlace::Local(LocalId(slot)))
 }
 fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
-    CoreValue::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs), mode: StringCompareMode::Binary }
+    CoreValue::Binary {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        mode: StringCompareMode::Binary,
+        num: NumericMode::Widening,
+    }
 }
 fn set(slot: usize, value: CoreValue) -> CoreStmt {
     CoreStmt::Assign {

@@ -346,7 +346,18 @@ fn addressof_binds_to_proc_ref() {
     let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";
     let program = bind(src);
     let main = program.procs.iter().find(|p| p.name.eq_ignore_ascii_case("Main")).unwrap();
-    assert!(main.body.iter().any(|s| matches!(s, CoreStmt::Assign { value: CoreValue::AddressOf(_), .. })));
+    // The proc-ref is stored into a `Long`, so the store coerces it to `Long`
+    // (a no-op for an integer pointer); look through that `Coerce` wrapper.
+    fn is_addressof(v: &CoreValue) -> bool {
+        match v {
+            CoreValue::AddressOf(_) => true,
+            CoreValue::Coerce { value, .. } => is_addressof(value),
+            _ => false,
+        }
+    }
+    assert!(
+        main.body.iter().any(|s| matches!(s, CoreStmt::Assign { value, .. } if is_addressof(value)))
+    );
 }
 
 #[test]

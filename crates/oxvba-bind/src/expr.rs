@@ -2,6 +2,7 @@
 //! `VarTypeRef` bottom-up, and emits a `CoreValue` (plus a `CorePlace` when the
 //! expression denotes an l-value).
 
+use oxvba_bundle::NumericMode;
 use oxvba_bundle::coreir::{CoreArg, CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::SymbolKind;
@@ -45,7 +46,11 @@ impl<'a> ProcLower<'a> {
             .first_significant_token()
             .ok_or_else(|| BindError::Malformed("empty literal".into()))?;
         let (value, ty) = match tok.kind {
-            SyntaxKind::IntLiteral => (parse_int(tok.text)?, builtin(BuiltinType::Long)),
+            SyntaxKind::IntLiteral => {
+                let c = parse_int(tok.text)?;
+                let ty = int_literal_type(tok.text, &c);
+                (c, ty)
+            }
             SyntaxKind::HexLiteral => (parse_radix(tok.text, 16)?, builtin(BuiltinType::Long)),
             SyntaxKind::OctLiteral => (parse_radix(tok.text, 8)?, builtin(BuiltinType::Long)),
             SyntaxKind::FloatLiteral => (
@@ -145,11 +150,17 @@ impl<'a> ProcLower<'a> {
         let operand = self.bind_expr(operand_node)?;
         match op.kind {
             SyntaxKind::Plus => Ok(operand),
-            SyntaxKind::Minus => Ok(Bound {
-                ty: operand.ty.clone(),
-                value: CoreValue::Unary { op: CoreUnOp::Negate, expr: Box::new(operand.value) },
-                place: None,
-            }),
+            // Unary minus is fixed-typed arithmetic: `-ai` (Integer) overflows at
+            // `-(-32768)`; the numeric regime rides on the op.
+            SyntaxKind::Minus => {
+                let ty = operand.ty.clone();
+                let value = CoreValue::Unary {
+                    op: CoreUnOp::Negate,
+                    expr: Box::new(operand.value),
+                    num: types::numeric_mode(&ty),
+                };
+                Ok(value_bound(value, ty))
+            }
             SyntaxKind::KwNot => {
                 let ty = if types::is_boolean(&operand.ty) {
                     builtin(BuiltinType::Boolean)
@@ -157,7 +168,11 @@ impl<'a> ProcLower<'a> {
                     builtin(BuiltinType::Long)
                 };
                 Ok(value_bound(
-                    CoreValue::Unary { op: CoreUnOp::Not, expr: Box::new(operand.value) },
+                    CoreValue::Unary {
+                        op: CoreUnOp::Not,
+                        expr: Box::new(operand.value),
+                        num: NumericMode::Widening,
+                    },
                     ty,
                 ))
             }
@@ -194,26 +209,28 @@ impl<'a> ProcLower<'a> {
         let rhs = self.bind_expr(
             node.binary_rhs().ok_or_else(|| BindError::Malformed("binary rhs".into()))?,
         )?;
-        // `\` and `Mod` operate on integers — coerce operands to the widest integer
-        // type involved (LongLong when either side is 64-bit, else Long) so a
-        // 64-bit operand isn't truncated to Long before the operation.
-        let (lv, rv, ty) = if matches!(op, CoreBinOp::IntDiv | CoreBinOp::Mod) {
+        // `\` and `Mod` always yield an integer (`LongLong` when either side is 64-bit,
+        // else `Long`); the VM rounds the operands. Every other op's result type comes
+        // from the promotion lattice.
+        let ty = if matches!(op, CoreBinOp::IntDiv | CoreBinOp::Mod) {
             if types::is_longlong(&lhs.ty) || types::is_longlong(&rhs.ty) {
-                (
-                    types::coerce_to_longlong(lhs.value),
-                    types::coerce_to_longlong(rhs.value),
-                    builtin(BuiltinType::LongLong),
-                )
+                builtin(BuiltinType::LongLong)
             } else {
-                (types::coerce_to_long(lhs.value), types::coerce_to_long(rhs.value), builtin(BuiltinType::Long))
+                builtin(BuiltinType::Long)
             }
         } else {
-            (lhs.value, rhs.value, types::result_type(op, &lhs.ty, &rhs.ty))
+            types::result_type(op, &lhs.ty, &rhs.ty)
         };
-        Ok(value_bound(
-            CoreValue::Binary { op, lhs: Box::new(lv), rhs: Box::new(rv), mode: self.info.compare_mode },
-            ty,
-        ))
+        // The numeric regime (checked-fixed vs widening) rides on the op itself, so the
+        // VM and the JIT type the arithmetic without a separate coercion node.
+        let value = CoreValue::Binary {
+            op,
+            lhs: Box::new(lhs.value),
+            rhs: Box::new(rhs.value),
+            mode: self.info.compare_mode,
+            num: types::numeric_mode(&ty),
+        };
+        Ok(value_bound(value, ty))
     }
 
     pub(crate) fn bind_index_or_call(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {
@@ -320,6 +337,27 @@ fn parse_int(text: &str) -> Result<CoreConst, BindError> {
     } else {
         CoreConst::I64(n)
     })
+}
+
+/// The static type of a decimal integer literal: an explicit type-suffix wins,
+/// else the smallest integer type that holds the value (`Integer` ≤ 32767, then
+/// `Long`, then `LongLong`) — VBA's literal typing. This is what makes
+/// `Integer + Integer` overflow as `Integer` (the classic `30000 * 30000` gotcha)
+/// rather than silently widening; the run-time payload stays `I32`/`I64` and is
+/// re-tagged by the result coercion ([`types::narrow_arith`]).
+fn int_literal_type(text: &str, c: &CoreConst) -> VarTypeRef {
+    match text.trim().chars().next_back() {
+        Some('%') => builtin(BuiltinType::Integer),
+        Some('&') => builtin(BuiltinType::Long),
+        Some('^') => builtin(BuiltinType::LongLong),
+        _ => match c {
+            CoreConst::I32(n) if (i32::from(i16::MIN)..=i32::from(i16::MAX)).contains(n) => {
+                builtin(BuiltinType::Integer)
+            }
+            CoreConst::I64(_) => builtin(BuiltinType::LongLong),
+            _ => builtin(BuiltinType::Long),
+        },
+    }
 }
 
 fn parse_radix(text: &str, radix: u32) -> Result<CoreConst, BindError> {

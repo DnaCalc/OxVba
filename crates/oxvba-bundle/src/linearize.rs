@@ -14,7 +14,7 @@ use crate::coreir::*;
 use crate::isa::{CallArg, NativeCallee, Op, ProcArg};
 use crate::{
     AssignmentIntent, AssignmentTargetKind, Bundle, ClassDescriptor, ClassMethod, ComMemberSelector,
-    ProcedureDescriptor, StringCompareMode,
+    NumericMode, ProcedureDescriptor, StringCompareMode,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -371,20 +371,20 @@ impl<'p> Linearizer<'p> {
                 Ok(slot)
             }
             CoreValue::Load(place) => self.lower_place_load(place),
-            CoreValue::Unary { op, expr } => {
+            CoreValue::Unary { op, expr, num } => {
                 let src = self.lower_value(expr)?;
                 let dst = self.new_temp();
                 self.emit(match op {
-                    CoreUnOp::Negate => Op::Neg { dst, src },
+                    CoreUnOp::Negate => Op::Neg { dst, src, mode: *num },
                     CoreUnOp::Not => Op::Not { dst, src },
                 });
                 Ok(dst)
             }
-            CoreValue::Binary { op, lhs, rhs, mode } => {
+            CoreValue::Binary { op, lhs, rhs, mode, num } => {
                 let l = self.lower_value(lhs)?;
                 let r = self.lower_value(rhs)?;
                 let dst = self.new_temp();
-                self.emit_binary(*op, dst, l, r, *mode);
+                self.emit_binary(*op, dst, l, r, *mode, *num);
                 Ok(dst)
             }
             CoreValue::Call { callee, args } => {
@@ -470,14 +470,22 @@ impl<'p> Linearizer<'p> {
         }
     }
 
-    fn emit_binary(&mut self, op: CoreBinOp, dst: usize, lhs: usize, rhs: usize, mode: StringCompareMode) {
+    fn emit_binary(
+        &mut self,
+        op: CoreBinOp,
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+        mode: StringCompareMode,
+        num: NumericMode,
+    ) {
         let op = match op {
-            CoreBinOp::Add => Op::Add { dst, lhs, rhs },
-            CoreBinOp::Sub => Op::Sub { dst, lhs, rhs },
-            CoreBinOp::Mul => Op::Mul { dst, lhs, rhs },
+            CoreBinOp::Add => Op::Add { dst, lhs, rhs, mode: num },
+            CoreBinOp::Sub => Op::Sub { dst, lhs, rhs, mode: num },
+            CoreBinOp::Mul => Op::Mul { dst, lhs, rhs, mode: num },
             CoreBinOp::Div => Op::Div { dst, lhs, rhs },
-            CoreBinOp::IntDiv => Op::IntDiv { dst, lhs, rhs },
-            CoreBinOp::Mod => Op::Mod { dst, lhs, rhs },
+            CoreBinOp::IntDiv => Op::IntDiv { dst, lhs, rhs, mode: num },
+            CoreBinOp::Mod => Op::Mod { dst, lhs, rhs, mode: num },
             CoreBinOp::Pow => Op::Pow { dst, lhs, rhs },
             CoreBinOp::Concat => Op::Concat { dst, lhs, rhs },
             CoreBinOp::Eq => Op::CmpEq { dst, lhs, rhs, mode },
@@ -759,7 +767,9 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::CmpLe { dst: cond, lhs: var_slot, rhs: limit, mode: StringCompareMode::Binary });
                 let jz = self.emit(Op::JumpIfZero { cond_slot: cond, target_pc: 0 });
                 self.lower_block(body)?;
-                self.emit(Op::Add { dst: var_slot, lhs: var_slot, rhs: step_slot });
+                // The loop-counter increment widens (the counter slot already holds the
+                // declared numeric type; typed-overflow of a `For` counter is out of scope).
+                self.emit(Op::Add { dst: var_slot, lhs: var_slot, rhs: step_slot, mode: NumericMode::Widening });
                 self.emit(Op::Jump { target_pc: top });
                 let after = self.here();
                 self.patch(jz, after);
@@ -916,7 +926,8 @@ impl<'p> Linearizer<'p> {
                 CaseClause::Is { op, value } => {
                     let vs = self.lower_value(value)?;
                     let dst = self.new_temp();
-                    self.emit_binary(*op, dst, scrutinee, vs, m);
+                    // A `Case Is <op> value` is a comparison — the numeric mode is unused.
+                    self.emit_binary(*op, dst, scrutinee, vs, m, NumericMode::Widening);
                     dst
                 }
             };

@@ -17,7 +17,8 @@ use oxvba_runtime::variant::VarType;
 use crate::native::NativeImplId;
 use crate::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, ComClassExport, EventRoute,
-    ExternalCallDescriptor, NumericCoerceTarget, ProcedureKind, ProjectMemberKind, StringCompareMode,
+    ExternalCallDescriptor, NumericCoerceTarget, NumericMode, ProcedureKind, ProjectMemberKind,
+    StringCompareMode,
 };
 
 // ── Resolved logical ids ──────────────────────────────────────────────────────
@@ -236,8 +237,18 @@ pub enum BoundWhich {
 pub enum CoreValue {
     Const(CoreConst),
     Load(CorePlace),
-    Unary { op: CoreUnOp, expr: Box<CoreValue> },
-    Binary { op: CoreBinOp, lhs: Box<CoreValue>, rhs: Box<CoreValue>, mode: StringCompareMode },
+    // `num` is the arithmetic numeric regime (the operands' promoted fixed type or
+    // `Widening`); it drives `Negate`/arithmetic ops and is `Widening` otherwise.
+    Unary { op: CoreUnOp, expr: Box<CoreValue>, num: NumericMode },
+    // `mode` is the string-comparison mode (comparison ops); `num` is the arithmetic
+    // numeric regime (arithmetic ops). Each op uses one.
+    Binary {
+        op: CoreBinOp,
+        lhs: Box<CoreValue>,
+        rhs: Box<CoreValue>,
+        mode: StringCompareMode,
+        num: NumericMode,
+    },
     /// The one call node — project proc, library, COM, or `Declare`.
     Call { callee: CoreCallee, args: Vec<CoreArg> },
     /// `New <Class>` — allocate a project instance and run `Class_Initialize`.

@@ -7,7 +7,7 @@ use oxvba_bundle::coreir::*;
 use oxvba_bundle::linearize::linearize;
 use oxvba_bundle::{
     AssignmentIntent, AssignmentTargetKind, BundleExport, BundleImport, ExportTarget, ExportToken,
-    ProcedureKind, ProjectMemberKind, StringCompareMode,
+    NumericMode, ProcedureKind, ProjectMemberKind, StringCompareMode,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -50,6 +50,7 @@ fn lib_program() -> CoreProgram {
                 lhs: Box::new(CoreValue::Load(CorePlace::Local(LocalId(0)))),
                 rhs: Box::new(CoreValue::Load(CorePlace::Local(LocalId(1)))),
                 mode: StringCompareMode::Binary,
+                num: NumericMode::Widening,
             },
             "Add",
         )],

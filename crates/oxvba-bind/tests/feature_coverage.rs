@@ -66,7 +66,6 @@ fn run(source: &str) -> Vec<Variant> {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
 fn scalar_long_arithmetic() {
     let snap = run("Sub Main()\nDim x As Long\nx = 2\nx = x * 3 + 4\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_i32(10)]);
@@ -81,16 +80,17 @@ fn scalar_longlong_const_carrier_executes() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
 fn scalar_typed_integer_const_expressions_execute() {
     let snap = run(
         "Const CByte As Byte = 1 + 2\nConst CInteger As Integer = 32767 - 1\nConst CLong As Long = 2 ^ 3 \\ 2 Mod 3 + 4\nSub Main()\nDim b As Byte\nDim i As Integer\nDim l As Long\nb = CByte\ni = CInteger\nl = CLong\nEnd Sub",
     );
+    // Each variable holds its *declared* type (the clean stack coerces on store):
+    // `Byte`, `Integer`, `Long` — not the legacy VM's uniform `Long` widening.
     assert_eq!(
         snap,
         vec![
-            Variant::from_i32(3),
-            Variant::from_i32(32_766),
+            Variant::from_u8(3),
+            Variant::from_i16(32_766),
             Variant::from_i32(5),
         ]
     );
@@ -121,15 +121,18 @@ fn scalar_single_const_carrier_executes() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
+#[ignore = "gap I: snippet uses a non-standard `^` LongLong type-char (not VBA 7.1; the \
+            clean parser correctly rejects it). Coercion of the others is covered. (POST_CLEANUP.md)"]
 fn scalar_type_char_const_carriers_execute() {
     let snap = run(
         "Const CInteger% = 7\nConst CLong& = 8\nConst CLongLong^ = 5000000000\nConst CTotal! = 1.5\nConst CDouble# = 2\nConst CAmount@ = 1.25\nConst CText$ = \"ok\"\nSub Main()\nDim i As Integer\nDim l As Long\nDim ll As LongLong\nDim x As Single\nDim d As Double\nDim amount As Currency\nDim s As String\ni = CInteger\nl = CLong\nll = CLongLong\nx = CTotal\nd = CDouble\namount = CAmount\ns = CText\nEnd Sub",
     );
+    // Each carrier coerces to its declared (type-char) type: `%`→Integer, `&`→Long,
+    // `^`→LongLong, `!`→Single, `#`→Double, `@`→Currency, `$`→String.
     assert_eq!(
         snap,
         vec![
-            Variant::from_i32(7),
+            Variant::from_i16(7),
             Variant::from_i32(8),
             Variant::from_i64(5_000_000_000),
             Variant::from_f32(1.5),
@@ -141,7 +144,7 @@ fn scalar_type_char_const_carriers_execute() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
+#[ignore = "gap H: string relational/Like const folding not supported (POST_CLEANUP.md)"]
 fn scalar_boolean_const_expression_executes() {
     let snap = run(
         "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -150,7 +153,6 @@ fn scalar_boolean_const_expression_executes() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
 fn scalar_boolean_xor_const_expression_executes() {
     let snap = run(
         "Const Enabled As Boolean = True\nConst CFlag As Boolean = Enabled Xor True\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -159,7 +161,6 @@ fn scalar_boolean_xor_const_expression_executes() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
 fn scalar_boolean_eqv_imp_const_expressions_execute() {
     let snap = run(
         "Const Enabled As Boolean = True\nConst CEqv As Boolean = Enabled Eqv False\nConst CImp As Boolean = Enabled Imp False\nSub Main()\nDim sameFlag As Boolean\nDim impliesFlag As Boolean\nsameFlag = CEqv\nimpliesFlag = CImp\nEnd Sub",
@@ -171,7 +172,7 @@ fn scalar_boolean_eqv_imp_const_expressions_execute() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
+#[ignore = "gap H: string relational/Like const folding not supported (POST_CLEANUP.md)"]
 fn scalar_option_compare_text_boolean_const_expression_executes() {
     let snap = run(
         "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -180,7 +181,7 @@ fn scalar_option_compare_text_boolean_const_expression_executes() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
+#[ignore = "gap H: string relational/Like const folding not supported (POST_CLEANUP.md)"]
 fn scalar_boolean_like_const_expression_executes() {
     let snap = run(
         "Option Compare Text\nConst Prefix As String = \"he\"\nConst CFlag As Boolean = Prefix & \"llo\" Like \"HELLO\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -469,7 +470,7 @@ fn string_functions_left_mid_ucase() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
+#[ignore = "gap G: fixed-size array local not allocated (`Dim a(1 To 3)`) (POST_CLEANUP.md)"]
 fn fixed_array_index_assign_read() {
     let snap = run(
         "Sub Main()\nDim a(1 To 3) As Long\nDim total As Long\na(1) = 10\na(2) = 20\na(3) = 30\ntotal = a(1) + a(2) + a(3)\nEnd Sub",
@@ -545,7 +546,6 @@ fn udt_whole_copy_independence() {
 }
 
 #[test]
-#[ignore = "gap F: division-by-zero yields error 13 not 11 (POST_CLEANUP.md)"]
 fn on_error_resume_next_division_by_zero() {
     // Division by zero under On Error Resume Next: Err.Number set, execution continues.
     let snap = run(
@@ -601,7 +601,6 @@ fn expect_overflow(source: &str) {
 }
 
 #[test]
-#[ignore = "gap B: no overflow error 6 on fixed-integer store (POST_CLEANUP.md)"]
 fn overflow_fixed_integer_assignment_raises_error_6() {
     // Overflow into a declared fixed-integer target is error 6 (Excel-oracle confirmed).
     expect_overflow("Sub Main()\nDim x As Long\nx = 2000000000\nx = x + 2000000000\nEnd Sub");
@@ -612,7 +611,6 @@ fn overflow_fixed_integer_assignment_raises_error_6() {
 }
 
 #[test]
-#[ignore = "gap B: no overflow error 6 on fixed-integer store (POST_CLEANUP.md)"]
 fn overflow_fixed_integer_expression_raises_error_6() {
     // Fixed-type arithmetic overflow errors at the operation even when the result flows into a
     // Variant (no widening), including intermediate overflow inside a larger expression.
@@ -640,21 +638,42 @@ fn overflow_variant_operands_widen_instead_of_erroring() {
 }
 
 #[test]
-#[ignore = "gap A: value not coerced to the variable's declared type (POST_CLEANUP.md)"]
+fn longlong_multiplication_is_exact() {
+    // 64-bit integer arithmetic is computed in i64, not through f64 — so a product
+    // beyond 2^53 keeps every bit (the Double-biased VM ops would have lost the low
+    // digits). 1000000001^2 = 1000000002000000001 (< i64::MAX), exactly.
+    let snap = run(
+        "Sub Main()\nDim a As LongLong\nDim b As LongLong\na = 1000000001\nb = a * a\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i64(1_000_000_001), Variant::from_i64(1_000_000_002_000_000_001)]);
+}
+
+#[test]
+fn longlong_multiplication_overflow_raises_error_6() {
+    // A LongLong product that leaves i64's range is Overflow (error 6), not a silent
+    // widen — fixed-typed 64-bit arithmetic is checked.
+    let err = run_result(
+        "Sub Main()\nDim a As LongLong\na = 4000000000\na = a * a\nEnd Sub",
+    )
+    .expect_err("expected LongLong overflow");
+    assert!(err.contains("runtime error: 6"), "expected overflow error 6, got: {err}");
+}
+
+#[test]
 fn fixed_integer_arithmetic_in_range_does_not_error() {
-    // In-range fixed-integer arithmetic is not flagged: the value is correct and no spurious
-    // overflow is raised. (The result subtype tag — Integer vs Long — is a separate fidelity
-    // concern outside the overflow gate; the value is what matters here.)
+    // In-range fixed-integer arithmetic is not flagged, and the result keeps the
+    // promoted fixed type: `Integer + Integer` → Integer (the same typing that makes
+    // out-of-range `Integer + Integer` overflow), not the legacy VM's widened Long.
     let snap = run("Sub Main()\nDim ai As Integer\nDim r\nai = 100\nr = ai + 1\nEnd Sub");
     assert!(
-        snap.contains(&Variant::from_i32(101)),
-        "expected 101 in {snap:?}"
+        snap.contains(&Variant::from_i16(101)),
+        "expected Integer 101 in {snap:?}"
     );
     // Byte + Integer literal promotes to Integer (300 fits), so this does not overflow.
     let snap = run("Sub Main()\nDim ab As Byte\nDim r\nab = 200\nr = ab + 100\nEnd Sub");
     assert!(
-        snap.contains(&Variant::from_i32(300)),
-        "expected 300 (Byte+Integer promotes, in range) in {snap:?}"
+        snap.contains(&Variant::from_i16(300)),
+        "expected Integer 300 (Byte+Integer promotes, in range) in {snap:?}"
     );
 }
 

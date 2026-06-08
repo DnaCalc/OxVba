@@ -8,8 +8,8 @@
 
 use oxvba_bundle::{
     Bundle, ClassDescriptor, ClassMethod, ComMemberSelector, DeclareParamType, EventRoute,
-    ExternalCallDescriptor, NativeCallee, NativeImplId, Op, ProcArg, ProcedureDescriptor,
-    ProcedureKind, ProjectMemberKind, StringCompareMode, isa::CallArg,
+    ExternalCallDescriptor, NativeCallee, NativeImplId, NumericMode, Op, ProcArg,
+    ProcedureDescriptor, ProcedureKind, ProjectMemberKind, StringCompareMode, isa::CallArg,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -318,9 +318,9 @@ fn arithmetic() {
         vec![
             Op::LoadI32 { slot: 0, value: 10 },
             Op::LoadI32 { slot: 1, value: 5 },
-            Op::Add { dst: 2, lhs: 0, rhs: 1 },
+            Op::Add { dst: 2, lhs: 0, rhs: 1, mode: NumericMode::Widening },
             Op::LoadI32 { slot: 3, value: 2 },
-            Op::Mul { dst: 4, lhs: 2, rhs: 3 },
+            Op::Mul { dst: 4, lhs: 2, rhs: 3, mode: NumericMode::Widening },
             Op::Halt,
         ],
         5,
@@ -328,7 +328,8 @@ fn arithmetic() {
     );
     let h = host();
     let vm = run(&b, &h).unwrap();
-    assert_eq!(vm.slot(4).unwrap().as_f64(), Some(30.0));
+    // Integer arithmetic stays integer: `(10+5)*2` is `Long(30)`, not Double.
+    assert_eq!(vm.slot(4).unwrap().as_i32(), Some(30));
 }
 
 #[test]
@@ -380,7 +381,7 @@ fn call_proc_ref_dispatches_through_address_of() {
             Op::LoadProcRef { dst: 1, proc: 0 },                                               // 1
             Op::CallProcRef { dst: Some(2), target: 1, args: vec![ProcArg::ByVal(0)] }, // 2
             Op::Halt,                                                                          // 3
-            Op::Add { dst: 1, lhs: 0, rhs: 0 },                                                // 4 (Double entry; local 1 = return)
+            Op::Add { dst: 1, lhs: 0, rhs: 0, mode: NumericMode::Widening },                    // 4 (Double entry; local 1 = return)
             Op::Return,                                                                        // 5
         ],
         3,
@@ -399,7 +400,7 @@ fn proc_function_return() {
             Op::LoadI32 { slot: 0, value: 21 },                                                  // 0
             Op::CallProc { proc: 0, dst: Some(1), args: vec![ProcArg::ByVal(0)] }, // 1
             Op::Halt,                                                                            // 2
-            Op::Add { dst: 1, lhs: 0, rhs: 0 },                                                  // 3 (Double entry; local 1 = return)
+            Op::Add { dst: 1, lhs: 0, rhs: 0, mode: NumericMode::Widening },                      // 3 (Double entry; local 1 = return)
             Op::Return,                                                                          // 4
         ],
         2,
@@ -427,7 +428,7 @@ fn recursion_factorial() {
             Op::Copy { dst: 3, src: 0 },                                                         // 8 n-1 = n
             Op::SubConstI32 { slot: 3, value: 1 },                                               // 9 n-1
             Op::CallProc { proc: 0, dst: Some(4), args: vec![ProcArg::ByVal(3)] }, // 10 Fact(n-1)
-            Op::Mul { dst: 5, lhs: 0, rhs: 4 },                                                  // 11 result = n * Fact(n-1)
+            Op::Mul { dst: 5, lhs: 0, rhs: 4, mode: NumericMode::Widening },                      // 11 result = n * Fact(n-1)
             Op::Return,                                                                          // 12
         ],
         2,
@@ -435,7 +436,8 @@ fn recursion_factorial() {
     );
     let h = host();
     let vm = run(&b, &h).unwrap();
-    assert_eq!(vm.slot(1).unwrap().as_f64(), Some(120.0));
+    // `5! = 120` via integer `Mul` is `Long(120)`, not Double.
+    assert_eq!(vm.slot(1).unwrap().as_i32(), Some(120));
 }
 
 #[test]
@@ -477,7 +479,7 @@ fn counted_loop_sum() {
             Op::LoadI32 { slot: 2, value: 6 },                                     // 2 limit
             Op::CmpLt { dst: 3, lhs: 1, rhs: 2, mode: StringCompareMode::Binary }, // 3 i<6
             Op::JumpIfZero { cond_slot: 3, target_pc: 8 },                         // 4 exit
-            Op::Add { dst: 0, lhs: 0, rhs: 1 },                                    // 5 acc+=i
+            Op::Add { dst: 0, lhs: 0, rhs: 1, mode: NumericMode::Widening },        // 5 acc+=i
             Op::IncSlot { slot: 1 },                                               // 6 i++
             Op::Jump { target_pc: 3 },                                            // 7 loop
             Op::Halt,                                                              // 8

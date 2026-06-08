@@ -10,7 +10,7 @@
 //! `Coerce` on assignment to a typed variable.
 
 use oxvba_bundle::coreir::{CoerceTarget, CoreBinOp, CoreValue};
-use oxvba_bundle::{ArrayElementType, AssignmentTargetKind, NumericCoerceTarget};
+use oxvba_bundle::{ArrayElementType, AssignmentTargetKind, NumericCoerceTarget, NumericMode};
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 
 // ── Type → coreir mappings (frame builder + ReDim) ──────────────────────────
@@ -85,6 +85,8 @@ pub fn coerce_target(to: &VarTypeRef) -> Option<CoerceTarget> {
 
 fn numeric_target(b: BuiltinType) -> Option<NumericCoerceTarget> {
     Some(match b {
+        // Storing into a `Boolean` is `CBool`: non-zero → `True`, zero → `False`.
+        BuiltinType::Boolean => NumericCoerceTarget::Boolean,
         BuiltinType::Byte => NumericCoerceTarget::Byte,
         BuiltinType::Integer => NumericCoerceTarget::Integer,
         // LongPtr is LongLong on 64-bit Office (the modern default).
@@ -94,8 +96,43 @@ fn numeric_target(b: BuiltinType) -> Option<NumericCoerceTarget> {
         BuiltinType::Double => NumericCoerceTarget::Double,
         BuiltinType::Currency => NumericCoerceTarget::Currency,
         BuiltinType::Date => NumericCoerceTarget::Date,
-        BuiltinType::Boolean | BuiltinType::String => return None,
+        BuiltinType::String => return None,
     })
+}
+
+/// The [`NumericMode`] for an arithmetic op (`+`/`-`/`*`/`\`/`Mod`/unary `-`) whose
+/// static result type is `ty`: `Checked(target)` when the operands promote to a fixed
+/// numeric type (so the VM computes in it and raises Overflow on out-of-range), else
+/// `Widening` (a `Variant` operand, or the `Double` ceiling — the VBA widening regime).
+/// VBA's overflow-vs-widen choice is *static* (identical run-time tags can mean either),
+/// so the binder picks it here and stamps it on the op; the VM and JIT read it back.
+/// `Boolean`/`String`/`Date`/`Variant` results map to `Widening` (non-arithmetic or
+/// already-widest), as does `Double`.
+pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
+    let VarTypeRef::Builtin(b) = ty else { return NumericMode::Widening };
+    match b {
+        BuiltinType::Double | BuiltinType::Boolean | BuiltinType::Date | BuiltinType::String => {
+            NumericMode::Widening
+        }
+        other => numeric_target(*other).map_or(NumericMode::Widening, NumericMode::Checked),
+    }
+}
+
+/// Coerce a value being **stored** into a declared scalar target to that target's
+/// type — unconditionally (unlike [`coerce`], which trusts the source's static type
+/// and skips identity conversions). A declared variable must hold its declared type
+/// at run time regardless of the value's static-vs-runtime tag (the VM ops are
+/// Double-biased and integer literals carry a `Long` payload). No-op for
+/// `String`/`Object`/`Variant`/array targets (their store needs no narrowing). Skips
+/// re-wrapping a value already coerced to the same target.
+pub fn coerce_store(value: CoreValue, to: &VarTypeRef) -> CoreValue {
+    let Some(target) = coerce_target(to) else { return value };
+    if let CoreValue::Coerce { to: existing, .. } = &value
+        && *existing == target
+    {
+        return value;
+    }
+    CoreValue::Coerce { value: Box::new(value), to: target }
 }
 
 /// Coerce `value` (of type `from`) to type `to`, wrapping in a `Coerce` node only
@@ -108,16 +145,6 @@ pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue
         Some(target) => CoreValue::Coerce { value: Box::new(value), to: target },
         None => value,
     }
-}
-
-/// Coerce a value to `Long` (operands of `\` / `Mod`).
-pub fn coerce_to_long(value: CoreValue) -> CoreValue {
-    CoreValue::Coerce { value: Box::new(value), to: CoerceTarget::Numeric(NumericCoerceTarget::Long) }
-}
-
-/// Coerce a value to `LongLong` (operands of `\` / `Mod` when either side is 64-bit).
-pub fn coerce_to_longlong(value: CoreValue) -> CoreValue {
-    CoreValue::Coerce { value: Box::new(value), to: CoerceTarget::Numeric(NumericCoerceTarget::LongLong) }
 }
 
 pub fn is_longlong(ty: &VarTypeRef) -> bool {

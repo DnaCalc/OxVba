@@ -5,7 +5,10 @@
 
 use oxvba_bundle::coreir::*;
 use oxvba_bundle::linearize::linearize;
-use oxvba_bundle::{AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, ProcedureKind, StringCompareMode};
+use oxvba_bundle::{
+    AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, NumericMode, ProcedureKind,
+    StringCompareMode,
+};
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 
@@ -42,7 +45,13 @@ fn cb(value: bool) -> CoreValue {
     CoreValue::Const(CoreConst::Bool(value))
 }
 fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
-    CoreValue::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs), mode: StringCompareMode::Binary }
+    CoreValue::Binary {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        mode: StringCompareMode::Binary,
+        num: NumericMode::Widening,
+    }
 }
 fn coerce(value: CoreValue, target: NumericCoerceTarget) -> CoreValue {
     CoreValue::Coerce { value: Box::new(value), to: CoerceTarget::Numeric(target) }

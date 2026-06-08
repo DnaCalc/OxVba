@@ -31,7 +31,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use oxvba_bundle::{
-    Bundle, CallArg, ComMemberSelector, ExportTarget, NativeCallee, Op, ProcArg, ProjectMemberKind,
+    Bundle, CallArg, ComMemberSelector, ExportTarget, NativeCallee, NumericMode, Op, ProcArg,
+    ProjectMemberKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -77,7 +78,11 @@ impl Fault {
         Self { code, message: message.into() }
     }
     fn from_string(message: String) -> Self {
-        Fault::new(13, message) // Type mismatch
+        Fault::new(13, message) // Type mismatch — a bare untyped message
+    }
+    /// An arithmetic/coercion error carries its VBA code structurally.
+    fn from_arith(err: arith::ArithError) -> Self {
+        Fault::new(err.code, err.message)
     }
     fn from_lib(err: LibError) -> Self {
         Fault { code: err.code, message: err.message }
@@ -1183,7 +1188,7 @@ impl<'h> Vm<'h> {
         let mut bounds = Vec::with_capacity(upper_bounds.len());
         for (i, upper_slot) in upper_bounds.iter().enumerate() {
             let lower = lower_bounds.get(i).copied().unwrap_or(0);
-            let upper = arith::int(self.get(*upper_slot)?).map_err(Fault::from_string)? as i32;
+            let upper = arith::int(self.get(*upper_slot)?).map_err(Fault::from_arith)? as i32;
             if upper < lower {
                 return Err(Fault::new(9, "array upper bound below lower bound"));
             }
@@ -1201,7 +1206,7 @@ impl<'h> Vm<'h> {
         }
         let mut flat = 0usize;
         for (i, index_slot) in indices.iter().enumerate() {
-            let raw = arith::int(self.get(*index_slot)?).map_err(Fault::from_string)? as i32;
+            let raw = arith::int(self.get(*index_slot)?).map_err(Fault::from_arith)? as i32;
             let bound = &bounds[i];
             let offset = i64::from(raw) - i64::from(bound.lower);
             if offset < 0 || offset >= i64::from(bound.count) {
@@ -1262,31 +1267,32 @@ impl<'h> Vm<'h> {
             }
 
             // ── Arithmetic ──
+            // The fast-path const/inc ops are loop-counter helpers — the widening regime.
             Op::AddConstI32 { slot, value } => {
-                let v = arith::add(self.get(*slot)?, &Variant::from_i32(*value))
-                    .map_err(Fault::from_string)?;
+                let v = arith::add(self.get(*slot)?, &Variant::from_i32(*value), NumericMode::Widening)
+                    .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
             Op::SubConstI32 { slot, value } => {
-                let v = arith::sub(self.get(*slot)?, &Variant::from_i32(*value))
-                    .map_err(Fault::from_string)?;
+                let v = arith::sub(self.get(*slot)?, &Variant::from_i32(*value), NumericMode::Widening)
+                    .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
             Op::IncSlot { slot } => {
-                let v = arith::add(self.get(*slot)?, &Variant::from_i32(1))
-                    .map_err(Fault::from_string)?;
+                let v = arith::add(self.get(*slot)?, &Variant::from_i32(1), NumericMode::Widening)
+                    .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
-            Op::Add { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::add)?,
-            Op::Sub { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::sub)?,
-            Op::Mul { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::mul)?,
+            Op::Add { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::add(l, r, *mode))?,
+            Op::Sub { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::sub(l, r, *mode))?,
+            Op::Mul { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::mul(l, r, *mode))?,
             Op::Div { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::div)?,
-            Op::IntDiv { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::int_div)?,
-            Op::Mod { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::modulo)?,
+            Op::IntDiv { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::int_div(l, r, *mode))?,
+            Op::Mod { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::modulo(l, r, *mode))?,
             Op::Pow { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::pow)?,
             Op::Concat { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::concat)?,
-            Op::Neg { dst, src } => {
-                let v = arith::neg(self.get(*src)?).map_err(Fault::from_string)?;
+            Op::Neg { dst, src, mode } => {
+                let v = arith::neg(self.get(*src)?, *mode).map_err(Fault::from_arith)?;
                 self.set(*dst, v)?;
             }
             Op::Copy { dst, src } => {
@@ -1297,7 +1303,7 @@ impl<'h> Vm<'h> {
             // ── Coercion ──
             Op::CoerceNumeric { slot, target } => {
                 let v = arith::coerce_numeric(self.get(*slot)?, *target)
-                    .map_err(Fault::from_string)?;
+                    .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
             Op::CoerceFixedString { slot, len } => {
@@ -1323,7 +1329,7 @@ impl<'h> Vm<'h> {
 
             // ── Boolean ──
             Op::Not { dst, src } => {
-                let v = arith::not(self.get(*src)?).map_err(Fault::from_string)?;
+                let v = arith::not(self.get(*src)?).map_err(Fault::from_arith)?;
                 self.set(*dst, v)?;
             }
             Op::And { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::and)?,
@@ -1335,7 +1341,7 @@ impl<'h> Vm<'h> {
             // ── Control flow ──
             Op::Jump { target_pc } => self.next_pc = *target_pc,
             Op::JumpIfZero { cond_slot, target_pc } => {
-                if !arith::is_truthy(self.get(*cond_slot)?).map_err(Fault::from_string)? {
+                if !arith::is_truthy(self.get(*cond_slot)?).map_err(Fault::from_arith)? {
                     self.next_pc = *target_pc;
                 }
             }
@@ -1344,7 +1350,7 @@ impl<'h> Vm<'h> {
             Op::CallProcRef { dst, target, args } => {
                 // Resolve the procedure reference (the AddressOf value) to an index
                 // at runtime, then dispatch through the standard call machinery.
-                let proc = arith::int(self.get(*target)?).map_err(Fault::from_string)?;
+                let proc = arith::int(self.get(*target)?).map_err(Fault::from_arith)?;
                 let proc = usize::try_from(proc)
                     .ok()
                     .filter(|&p| p < self.cur_bundle().procedures.len())
@@ -1372,7 +1378,7 @@ impl<'h> Vm<'h> {
             Op::CallByName { dst, object, name, calltype, args } => {
                 let obj = variant_to_object(self.get(*object)?)?;
                 let member_name = arith::as_string(self.get(*name)?);
-                let ct = arith::int(self.get(*calltype)?).map_err(Fault::from_string)?;
+                let ct = arith::int(self.get(*calltype)?).map_err(Fault::from_arith)?;
                 let kind = match ct {
                     1 => Some(ProjectMemberKind::Method),
                     2 => Some(ProjectMemberKind::PropertyGet),
@@ -1518,7 +1524,7 @@ impl<'h> Vm<'h> {
             Op::WithEventsSet { dst, owner, binding, value } => {
                 let owner_value = self.cloned(*owner)?;
                 let owner_ref = variant_to_object(&owner_value)?;
-                let binding_tok = arith::int(self.get(*binding)?).map_err(Fault::from_string)?;
+                let binding_tok = arith::int(self.get(*binding)?).map_err(Fault::from_arith)?;
                 let key = Self::withevents_key(&owner_ref, binding_tok);
                 let v = self.cloned(*value)?;
                 // Replacing a binding tears down its old host subscriptions first.
@@ -1548,7 +1554,7 @@ impl<'h> Vm<'h> {
             }
             Op::WithEventsFirstOwner { dst, source, binding } => {
                 let source = self.cloned(*source)?;
-                let binding = arith::int(self.get(*binding)?).map_err(Fault::from_string)?;
+                let binding = arith::int(self.get(*binding)?).map_err(Fault::from_arith)?;
                 let mut owners: Vec<ObjectRef> = Vec::new();
                 if !is_nothing(&source) {
                     for (key, binding_data) in &self.withevents {
@@ -1757,9 +1763,9 @@ impl<'h> Vm<'h> {
         dst: usize,
         lhs: usize,
         rhs: usize,
-        f: impl Fn(&Variant, &Variant) -> Result<Variant, String>,
+        f: impl Fn(&Variant, &Variant) -> Result<Variant, arith::ArithError>,
     ) -> Result<(), Fault> {
-        let value = f(self.get(lhs)?, self.get(rhs)?).map_err(Fault::from_string)?;
+        let value = f(self.get(lhs)?, self.get(rhs)?).map_err(Fault::from_arith)?;
         self.set(dst, value)
     }
 
@@ -1772,7 +1778,7 @@ impl<'h> Vm<'h> {
         op: CmpOp,
     ) -> Result<(), Fault> {
         let value =
-            arith::compare(self.get(lhs)?, self.get(rhs)?, mode, op).map_err(Fault::from_string)?;
+            arith::compare(self.get(lhs)?, self.get(rhs)?, mode, op).map_err(Fault::from_arith)?;
         self.set(dst, value)
     }
 
@@ -1836,7 +1842,7 @@ impl<'h> Vm<'h> {
 
     fn withevents_lookup_key(&self, owner: usize, binding: usize) -> Result<i64, Fault> {
         let owner_ref = variant_to_object(self.get(owner)?)?;
-        let binding = arith::int(self.get(binding)?).map_err(Fault::from_string)?;
+        let binding = arith::int(self.get(binding)?).map_err(Fault::from_arith)?;
         Ok(Self::withevents_key(&owner_ref, binding))
     }
 

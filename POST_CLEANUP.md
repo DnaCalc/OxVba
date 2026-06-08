@@ -23,34 +23,54 @@ clean stack — do not delete.
 ## Clean-stack gaps (from the re-pointed `feature_coverage` corpus)
 
 `crates/oxvba-bind/tests/feature_coverage.rs` re-points the legacy `vm_feature_coverage`
-VBA-semantics corpus at the clean stack (bind→linearize→vm2). First run: **27 pass, 26
-fail**. The clean stack handles all the core *shapes* (scalar/double arithmetic, most
-const folding, strings + `Left/Mid/UCase/Len`, fixed+dynamic arrays, `For`/`While`/
-`If`, logical ops as r-values, type-suffix literals). The 26 failures are 6 specific,
-fixable gaps (each failing test is `#[ignore = "gap X: …"]` in the corpus — un-ignore as
-fixed):
+VBA-semantics corpus at the clean stack (bind→linearize→vm2). First run: 27 pass / 26 fail
+across 6 categories (A–F). **Round 2 (typed arithmetic + coercion) closed A, B, F and the
+pure-Boolean-const cases: now 35 pass, 18 ignored.** Each remaining failure stays
+`#[ignore = "gap X: …"]` in the corpus — un-ignore as fixed.
 
-- **A — store coercion to declared type** (~10 tests): an assigned value isn't coerced to
-  the target variable's declared type. `Dim x As Long: x = x*3+4` → stored `Double(10)`
-  not `Long(10)`; a boolean const folds to `Long(0)` and stays `Long` in a `Boolean` var.
-  (Note: in some cases the clean stack is *more* VBA-correct than the legacy expectation —
-  e.g. `Dim b As Byte: b = 3` → `Byte(3)` clean vs `Long(3)` legacy; those expectations
-  should be re-checked against the Excel oracle, not just "fixed".) Biggest cluster.
-- **B — overflow detection** (2): fixed-integer overflow (`Dim x As Long: x = 2e9: x = x +
-  2e9`) widens to `Double` instead of raising run-time error 6. Tied to A (no coerce/check
-  on store).
+**Closed (commit: typed arithmetic in the bytecode/VM + store coercion):** the numeric
+type/regime lives **on the arithmetic op** (so the bundle fully describes the code for the
+Cranelift JIT), not as a separate binder coercion node:
+- **typed-op ISA** — `Op::{Add,Sub,Mul,Neg,IntDiv,Mod}` carry `mode: NumericMode =
+  Widening | Checked(ty)`. The binder picks the regime from the operands' static types
+  (`types::numeric_mode`); the VM computes integers **exactly in i64** and raises Overflow
+  (error 6) for `Checked`, or Integer→Long→Double promotion for `Widening`.
+- **A — store coercion to declared type** — a store into a declared scalar coerces to that
+  type (`types::coerce_store`, an explicit `CoerceNumeric` op); declared vars hold their
+  declared tag (`Dim b As Byte: b = 3` → `Byte(3)`, not the legacy VM's `Long(3)`). Several
+  legacy corpus expectations encoded the old `Long`-biased tags and were corrected to the
+  oracle-true tags (`Byte`/`Integer`/`Long`).
+- **B — overflow detection** — integer literals take the smallest fitting static type
+  (`int_literal_type`), so `Integer + Integer` is Integer arithmetic (the `30000*30000`
+  gotcha). Intermediate overflow (`(al+al) Mod 7`) is caught at the inner op; 64-bit is
+  exact (no f64 round-trip) — `longlong_multiplication_is_exact` guards it.
+- **F — error codes** — the arith layer carries the VBA code structurally
+  (`arith::ArithError`: Overflow 6, Division-by-zero 11, Invalid-use-of-Null 94, else 13);
+  `Fault::from_arith` propagates it. No string→code matching.
+- **Boolean coerce target** — `NumericCoerceTarget::Boolean` (`CBool` in vm2) so an
+  `And`/`Xor`/`Eqv`/`Imp`-folded `I32` const stored into a `Boolean` var coerces to
+  `True`/`False`.
+
+**Remaining (18 ignored):**
 - **C — UDTs** (2): `Type … End Type` + `p.X = 3` → `424 Object required`. User-defined
   types not supported in the clean stack.
 - **D — Optional parameter defaults** (9): an omitted `Optional ByVal x As T = <default>`
-  passes `Missing` (an Error variant) instead of binding the default value.
+  passes `Missing` (an Error variant) instead of binding the default value. Biggest cluster.
 - **E — indexed `Property Let`** (2): `Item(i) = x` → bind error "not an assignable
   variable" (indexed `Property Get` works).
-- **F — division-by-zero error code** (1): `1 / 0` yields error 13 (Type mismatch) instead
-  of 11 (Division by zero).
+- **G — fixed-size array local** (1): `Dim a(1 To 3) As Long` — the local isn't allocated as
+  an array (`424`/`13 expected an array` at the first element store).
+- **H — string relational / `Like` const folding** (3): `Const b As Boolean = "a" = "A"` /
+  `… Like …` don't fold (the const evaluator only folds numeric comparisons; needs string
+  comparison + `Like`, honoring `Option Compare`).
+- **I — non-standard `^` LongLong type-char** (1): the snippet declares `Const CLongLong^`;
+  `^` is not a VBA 7.1 type-declaration char (the valid set is `% & ! # @ $`), and the clean
+  parser correctly rejects it. The coercion of the *other* type-char carriers is covered.
 
 Next gap-analysis steps: re-point the host `com_*`/`file_io`/`pointer`/`invoke` suites
 (objects, COM, file I/O, pointers) — those will surface the object/COM/host-call gaps the
-scalar corpus can't.
+scalar corpus can't. Of the remaining bind/VM gaps, **D** (Optional defaults) is the
+highest-value next fix.
 
 ## Deferred decisions
 

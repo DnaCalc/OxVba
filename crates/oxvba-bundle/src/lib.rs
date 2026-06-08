@@ -39,6 +39,7 @@ pub enum StringCompareMode {
 /// Target type of a fixed-scalar narrowing coercion (`CoerceNumeric`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NumericCoerceTarget {
+    Boolean,
     Byte,
     Integer,
     Long,
@@ -47,6 +48,21 @@ pub enum NumericCoerceTarget {
     Double,
     Currency,
     Date,
+}
+
+/// How an arithmetic opcode (`Add`/`Sub`/`Mul`/`Neg`/`IntDiv`/`Mod`) types its result
+/// — the bytecode's *complete* description of the numeric regime. The binder picks it
+/// from the operands' static types (the same runtime tags can mean different regimes,
+/// so only the binder knows); the VM and the future Cranelift JIT read it off the op,
+/// with no separate coercion node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NumericMode {
+    /// A `Variant` operand: widen the result (Integer→Long→Double) on overflow; never
+    /// raises. The VBA "Variant arithmetic" regime.
+    Widening,
+    /// Fixed-typed operands: compute in this numeric type and raise Overflow (error 6)
+    /// when the result leaves its range.
+    Checked(NumericCoerceTarget),
 }
 
 /// Element type of a runtime array (for `ReDim`/typed element storage).

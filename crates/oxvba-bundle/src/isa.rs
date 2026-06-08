@@ -14,7 +14,7 @@
 use crate::native::NativeImplId;
 use crate::{
     AssignmentIntent, AssignmentTargetKind, ArrayElementType, ComMemberSelector, NumericCoerceTarget,
-    ProjectMemberKind, StringCompareMode,
+    NumericMode, ProjectMemberKind, StringCompareMode,
 };
 
 /// What a `CallNative` targets — the dispatch route for a non-VBA-procedure call.
@@ -92,15 +92,18 @@ pub enum Op {
     AddConstI32 { slot: usize, value: i32 },
     SubConstI32 { slot: usize, value: i32 },
     IncSlot { slot: usize },
-    Add { dst: usize, lhs: usize, rhs: usize },
-    Sub { dst: usize, lhs: usize, rhs: usize },
-    Mul { dst: usize, lhs: usize, rhs: usize },
+    // `mode` carries the numeric regime (the operands' promoted fixed type, or
+    // `Widening` for a Variant operand) — the VM computes the result in that type and
+    // raises Overflow (6) on out-of-range; see [`NumericMode`].
+    Add { dst: usize, lhs: usize, rhs: usize, mode: NumericMode },
+    Sub { dst: usize, lhs: usize, rhs: usize, mode: NumericMode },
+    Mul { dst: usize, lhs: usize, rhs: usize, mode: NumericMode },
     Div { dst: usize, lhs: usize, rhs: usize },
-    IntDiv { dst: usize, lhs: usize, rhs: usize },
-    Mod { dst: usize, lhs: usize, rhs: usize },
+    IntDiv { dst: usize, lhs: usize, rhs: usize, mode: NumericMode },
+    Mod { dst: usize, lhs: usize, rhs: usize, mode: NumericMode },
     Pow { dst: usize, lhs: usize, rhs: usize },
     Concat { dst: usize, lhs: usize, rhs: usize },
-    Neg { dst: usize, src: usize },
+    Neg { dst: usize, src: usize, mode: NumericMode },
     Copy { dst: usize, src: usize },
 
     // ── Coercion ─────────────────────────────────────────────
