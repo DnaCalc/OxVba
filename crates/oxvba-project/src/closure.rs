@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use oxvba_compiler as legacy;
+use crate::manifest as legacy;
 use oxvba_symbol::manifest as sym;
 
 use crate::error::BasProjError;
@@ -42,7 +42,13 @@ pub fn load_project_closure_with_entry(
     let mut order: Vec<PathBuf> = Vec::new();
     let mut nodes: HashMap<PathBuf, ProjectNode> = HashMap::new();
     let mut ancestors: HashSet<PathBuf> = HashSet::new();
-    walk(&root, &mut order, &mut nodes, &mut ancestors, entry_override)?;
+    walk(
+        &root,
+        &mut order,
+        &mut nodes,
+        &mut ancestors,
+        entry_override,
+    )?;
 
     let mut manifests = Vec::with_capacity(order.len());
     for canonical_path in &order {
@@ -247,12 +253,12 @@ fn build_references(basproj: &BasProj) -> Vec<sym::ProjectReference> {
     for pr in &basproj.project_references {
         let name = module_name_of(&pr.include);
         references.push(match pr.kind {
-            BasProjProjectReferenceKind::Project => {
-                sym::ProjectReference::Project { referenced_project_name: name }
-            }
-            BasProjProjectReferenceKind::HostInjected => {
-                sym::ProjectReference::HostInjected { referenced_project_name: name }
-            }
+            BasProjProjectReferenceKind::Project => sym::ProjectReference::Project {
+                referenced_project_name: name,
+            },
+            BasProjProjectReferenceKind::HostInjected => sym::ProjectReference::HostInjected {
+                referenced_project_name: name,
+            },
         });
     }
     for cr in &basproj.com_references {
@@ -304,9 +310,10 @@ fn adapt_instancing(instancing: model::Instancing) -> sym::Instancing {
 }
 
 fn canonical(path: &Path) -> Result<PathBuf, BasProjError> {
-    path.canonicalize().map_err(|_| BasProjError::ProjectReferenceNotFound {
-        include: path.display().to_string(),
-    })
+    path.canonicalize()
+        .map_err(|_| BasProjError::ProjectReferenceNotFound {
+            include: path.display().to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -443,7 +450,10 @@ mod tests {
             "D",
             "Library",
             None,
-            &[("DMod.bas", "Public Function DVal() As Long\nDVal = 50\nEnd Function\n")],
+            &[(
+                "DMod.bas",
+                "Public Function DVal() As Long\nDVal = 50\nEnd Function\n",
+            )],
             &[],
         );
         write_project(
@@ -451,7 +461,10 @@ mod tests {
             "B",
             "Library",
             None,
-            &[("BMod.bas", "Public Function BFromD() As Long\nBFromD = DVal()\nEnd Function\n")],
+            &[(
+                "BMod.bas",
+                "Public Function BFromD() As Long\nBFromD = DVal()\nEnd Function\n",
+            )],
             &["../D/D.basproj"],
         );
         write_project(
@@ -459,7 +472,10 @@ mod tests {
             "C",
             "Library",
             None,
-            &[("CMod.bas", "Public Function CFromD() As Long\nCFromD = DVal()\nEnd Function\n")],
+            &[(
+                "CMod.bas",
+                "Public Function CFromD() As Long\nCFromD = DVal()\nEnd Function\n",
+            )],
             &["../D/D.basproj"],
         );
         let app = write_project(
@@ -473,7 +489,11 @@ mod tests {
 
         let closure = load_project_closure(&app).expect("closure");
         let names: Vec<&str> = closure.iter().map(|m| m.project_name.as_str()).collect();
-        assert_eq!(names.iter().filter(|n| **n == "D").count(), 1, "D appears once");
+        assert_eq!(
+            names.iter().filter(|n| **n == "D").count(),
+            1,
+            "D appears once"
+        );
         assert_eq!(names.last(), Some(&"App"), "entry project is last");
         // D precedes both B and C (leaf-first).
         let pos = |n: &str| names.iter().position(|x| *x == n).unwrap();
@@ -503,7 +523,10 @@ mod tests {
         );
         // Start from B so the cycle B→A→B is on the active chain.
         let err = load_project_closure(&b).expect_err("cycle must be rejected");
-        assert!(matches!(err, BasProjError::CyclicProjectReference { .. }), "{err:?}");
+        assert!(
+            matches!(err, BasProjError::CyclicProjectReference { .. }),
+            "{err:?}"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 }

@@ -2,14 +2,11 @@
 //!
 //! The previous Cranelift prototype was intentionally removed because it
 //! silently fell back to VM execution and used the interpreter's `Variant` slot
-//! file as its core execution model. This crate stays as the stable boundary
-//! for the future JIT v2 design, but no executable JIT is currently available.
+//! file as its core execution model. This crate stays as the stable boundary for
+//! the future JIT v2 design — which will lower the clean `oxvba_bundle::Bundle`
+//! (its self-describing ISA: typed `NumericMode` arithmetic, record ops, …) — but
+//! no executable JIT is currently available.
 
-use std::sync::Arc;
-
-use oxvba_compiler::OxBundle;
-use oxvba_hal::traits::HostServices;
-use oxvba_runtime::Variant;
 use thiserror::Error;
 
 pub const JIT_NOT_IMPLEMENTED_MESSAGE: &str =
@@ -28,23 +25,6 @@ impl JitEngine {
     pub fn compile_function(&self, _symbol: &str) -> Result<(), JitError> {
         Err(JitError::NotImplemented(JIT_NOT_IMPLEMENTED_MESSAGE))
     }
-
-    /// OxBundle-backed retained value-model snapshot API.
-    pub fn execute_bundle_and_snapshot_variants(
-        &self,
-        _bundle: &OxBundle,
-    ) -> Result<Vec<Variant>, JitError> {
-        Err(JitError::NotImplemented(JIT_NOT_IMPLEMENTED_MESSAGE))
-    }
-
-    /// OxBundle-backed retained value-model host-backed snapshot API.
-    pub fn execute_bundle_and_snapshot_variants_with_host(
-        &self,
-        _bundle: &OxBundle,
-        _host_services: Arc<dyn HostServices>,
-    ) -> Result<Vec<Variant>, JitError> {
-        Err(JitError::NotImplemented(JIT_NOT_IMPLEMENTED_MESSAGE))
-    }
 }
 
 #[cfg(test)]
@@ -55,7 +35,6 @@ mod tests {
     fn jit_api_reports_not_implemented() {
         let jit = JitEngine;
         let err = jit.compile_function("main").expect_err("jit is disabled");
-
         assert_eq!(err.to_string(), JIT_NOT_IMPLEMENTED_MESSAGE);
     }
 }

@@ -3,14 +3,11 @@ members = [
     "crates/oxvba-hal",
     "crates/oxvba-syntax",
     "crates/oxvba-runtime",
-    "crates/oxvba-compiler",
-    "crates/oxvba-vm",
     "crates/oxvba-jit",
     "crates/oxvba-com",
     "crates/oxvba-host",
     "crates/oxvba-cli",
     "crates/oxvba-project",
-    "crates/oxvba-build",
     "crates/oxvba-bundle",
     "crates/oxvba-lib",
     "crates/oxvba-vm2",
@@ -33,13 +30,10 @@ repository = "https://github.com/DnaCalc/OxVba"
 oxvba-syntax = { path = "crates/oxvba-syntax" }
 oxvba-hal = { path = "crates/oxvba-hal" }
 oxvba-runtime = { path = "crates/oxvba-runtime" }
-oxvba-compiler = { path = "crates/oxvba-compiler" }
-oxvba-vm = { path = "crates/oxvba-vm" }
 oxvba-jit = { path = "crates/oxvba-jit" }
 oxvba-com = { path = "crates/oxvba-com" }
 oxvba-host = { path = "crates/oxvba-host" }
 oxvba-project = { path = "crates/oxvba-project" }
-oxvba-build = { path = "crates/oxvba-build" }
 oxvba-bundle = { path = "crates/oxvba-bundle" }
 oxvba-lib = { path = "crates/oxvba-lib" }
 oxvba-vm2 = { path = "crates/oxvba-vm2" }

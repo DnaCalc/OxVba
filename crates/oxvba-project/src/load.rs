@@ -3,18 +3,13 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use oxvba_com::{TypeLibResolveRequest, resolve_known_typelib_identity};
-use oxvba_compiler::{
-    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
-    ReferenceKind, ReferencedProjectManifest, module_unit_from_source,
-    project::project_imported_typelib_reference,
-};
-use oxvba_host::TypeLibraryCatalogEntry;
-
 use crate::error::BasProjError;
+use crate::manifest::{
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
+    ReferenceKind,
+};
 use crate::model::*;
 use crate::parse::{merge_import, parse_basproj_xml};
-use crate::resolve;
 
 /// Result of loading a `.basproj` file: a `ProjectManifest` for compilation plus
 /// any native export descriptors declared in the project.
@@ -29,12 +24,10 @@ pub struct LoadedProject {
     pub default_policy_preset: Option<String>,
     pub default_root_object: String,
     pub entry_point: Option<String>,
-    pub type_library_catalog: Vec<TypeLibraryCatalogEntry>,
     /// Per-class metadata keyed by module name (instancing, prog_id, description).
     pub class_module_metadata: BTreeMap<String, ClassModuleMetadata>,
 }
 
-const TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME: &str = "__OxVbaTypeLibBindingDiagnostic";
 const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
 const TOP_LEVEL_MAINLINE_PROC_PREFIX: &str = "__OxVbaTopLevelMainline";
 
@@ -58,18 +51,10 @@ pub fn load_basproj_from_str(xml: &str, project_dir: &Path) -> Result<LoadedProj
     // (they were collected during parse but we need to resolve and merge them)
     process_imports(&mut basproj, xml, project_dir)?;
 
-    let mut loaded = build_loaded_project(&basproj, project_dir)?;
-
-    // Resolve project references (recursive with cycle detection)
-    if !basproj.project_references.is_empty() {
-        let mut ancestors = std::collections::HashSet::new();
-        let mut seen = std::collections::HashSet::new();
-        loaded.manifest.reference_projects =
-            resolve::resolve_project_references(&basproj, project_dir, &mut ancestors, &mut seen)
-                .unwrap_or_default();
-    }
-    inject_type_library_reference_projects(&mut loaded);
-
+    // The clean path resolves the project-reference graph in `crate::closure`
+    // (leaf-first, diamond-deduped) rather than here; `build_loaded_project` only
+    // loads this project's own modules. `reference_projects` stays empty.
+    let loaded = build_loaded_project(&basproj, project_dir)?;
     Ok(loaded)
 }
 
@@ -163,20 +148,6 @@ pub(crate) fn build_loaded_project(
         });
     }
 
-    // Build type library catalog entries
-    let type_library_catalog: Vec<TypeLibraryCatalogEntry> = basproj
-        .com_references
-        .iter()
-        .map(|cr| TypeLibraryCatalogEntry {
-            library_name: cr.include.clone(),
-            importlib: cr.import_lib.clone().unwrap_or_default(),
-            libid: cr.guid.clone(),
-            major_version: cr.version_major.unwrap_or(0),
-            minor_version: cr.version_minor.unwrap_or(0),
-            lcid: cr.lcid,
-        })
-        .collect();
-
     // Build native export descriptors
     let mut native_exports = Vec::new();
     let mut seen_export_names = std::collections::HashSet::new();
@@ -263,7 +234,6 @@ pub(crate) fn build_loaded_project(
             .clone()
             .unwrap_or_else(|| "Application".to_string()),
         entry_point: effective_entry_point,
-        type_library_catalog,
         class_module_metadata,
     })
 }
@@ -738,192 +708,92 @@ fn output_type_name(output_type: OutputType) -> &'static str {
     }
 }
 
-fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
-    for reference in &loaded.manifest.references {
-        if reference.reference_kind != ReferenceKind::TypeLibrary {
-            continue;
-        }
-
-        let Some(catalog_entry) = loaded.type_library_catalog.iter().find(|entry| {
-            entry
-                .library_name
-                .eq_ignore_ascii_case(&reference.referenced_project_name)
-        }) else {
-            continue;
-        };
-
-        let request = TypeLibResolveRequest {
-            reference_name: reference.referenced_project_name.clone(),
-            requested_coclass: None,
-            importlib_hint: non_empty_trimmed(&catalog_entry.importlib),
-            libid_hint: catalog_entry.libid.clone(),
-            major_version_hint: Some(catalog_entry.major_version),
-            minor_version_hint: Some(catalog_entry.minor_version),
-            lcid_hint: catalog_entry.lcid,
-        };
-        let importlib_missing_on_filesystem = request
-            .importlib_hint
-            .as_deref()
-            .is_some_and(is_missing_filesystem_importlib_hint);
-        let identity = resolve_known_typelib_identity(&request);
-        if importlib_missing_on_filesystem {
-            let Some(identity) = identity else {
-                let diagnostic =
-                    build_typelib_binding_diagnostic_project_for_missing_importlib(&request);
-                if loaded.manifest.reference_projects.iter().any(|project| {
-                    project
-                        .project_name
-                        .eq_ignore_ascii_case(&diagnostic.project_name)
-                }) {
-                    continue;
-                }
-                loaded.manifest.reference_projects.push(diagnostic);
-                continue;
-            };
-            let mut synthetic = project_imported_typelib_reference(&identity).manifest;
-            append_typelib_binding_diagnostic_module(
-                &mut synthetic,
-                build_typelib_binding_diagnostic_module_for_missing_importlib(&request),
-            );
-            if loaded.manifest.reference_projects.iter().any(|project| {
-                project
-                    .project_name
-                    .eq_ignore_ascii_case(&synthetic.project_name)
-            }) {
-                continue;
-            }
-            loaded.manifest.reference_projects.push(synthetic);
-            continue;
-        }
-        let Some(identity) = identity else {
-            let diagnostic = build_typelib_binding_diagnostic_project(&request);
-            if loaded.manifest.reference_projects.iter().any(|project| {
-                project
-                    .project_name
-                    .eq_ignore_ascii_case(&diagnostic.project_name)
-            }) {
-                continue;
-            }
-            loaded.manifest.reference_projects.push(diagnostic);
-            continue;
-        };
-
-        let synthetic = project_imported_typelib_reference(&identity).manifest;
-        if loaded.manifest.reference_projects.iter().any(|project| {
-            project
-                .project_name
-                .eq_ignore_ascii_case(&synthetic.project_name)
-        }) {
-            continue;
-        }
-        loaded.manifest.reference_projects.push(synthetic);
-    }
-}
-
-fn build_typelib_binding_diagnostic_project(
-    request: &TypeLibResolveRequest,
-) -> ReferencedProjectManifest {
-    let (code, message) = match (
-        request.libid_hint.as_deref(),
-        request.importlib_hint.as_deref(),
-    ) {
-        (Some(libid), _) => (
-            "PMR-E-TYPELIB-LIBID-UNRESOLVED",
-            format!(
-                "type-library reference `{}` with LIBID `{}` could not be resolved",
-                request.reference_name, libid
-            ),
-        ),
-        (None, Some(importlib)) => (
-            "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED",
-            format!(
-                "type-library reference `{}` with importlib `{}` could not be resolved",
-                request.reference_name, importlib
-            ),
-        ),
-        (None, None) => (
-            "PMR-E-TYPELIB-IMPORTLIB-MISSING",
-            format!(
-                "type-library reference `{}` is missing an importlib hint",
-                request.reference_name
-            ),
-        ),
+/// Build a [`ModuleUnit`] from raw source, parsing its `Attribute VB_*` header
+/// lines into [`ModuleAttributes`]. The module's semantic identity is its
+/// `Attribute VB_Name` (falling back to the supplied `module_name`), so a file
+/// stem may differ from the VBA module name. Relocated from the deleted
+/// `oxvba-compiler` — VBA module-header parsing is a source-shape concern owned
+/// by the project loader.
+fn module_unit_from_source(
+    module_name: impl Into<String>,
+    module_kind: ModuleKind,
+    source: impl Into<String>,
+) -> Result<ModuleUnit, BasProjError> {
+    let module_name = module_name.into();
+    let source = source.into();
+    let mut attrs = ModuleAttributes {
+        vb_name: module_name.clone(),
+        ..ModuleAttributes::default()
     };
-    ReferencedProjectManifest {
-        project_name: request.reference_name.clone(),
-        modules: vec![ModuleUnit {
-            module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
-            module_kind: ModuleKind::Procedural,
-            attributes: ModuleAttributes {
-                vb_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
-                ..ModuleAttributes::default()
-            },
-            source: format!(
-                "Attribute VB_Name = \"{TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME}\"\ncode={code}\nmessage={message}\n"
-            ),
-        }],
+    for line in source.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("attribute ") {
+            parse_attribute_line(trimmed, &mut attrs, &module_name)?;
+        } else if lower == "option private module" {
+            attrs.option_private_module = true;
+        }
     }
+    let semantic_module_name = attrs.vb_name.clone();
+    Ok(ModuleUnit {
+        module_name: semantic_module_name,
+        module_kind,
+        attributes: attrs,
+        source,
+    })
 }
 
-fn build_typelib_binding_diagnostic_project_for_missing_importlib(
-    request: &TypeLibResolveRequest,
-) -> ReferencedProjectManifest {
-    ReferencedProjectManifest {
-        project_name: request.reference_name.clone(),
-        modules: vec![build_typelib_binding_diagnostic_module_for_missing_importlib(request)],
+fn parse_attribute_line(
+    line: &str,
+    attrs: &mut ModuleAttributes,
+    module_name: &str,
+) -> Result<(), BasProjError> {
+    let Some(rest) = line
+        .strip_prefix("Attribute ")
+        .or_else(|| line.strip_prefix("attribute "))
+    else {
+        return Ok(());
+    };
+    let header_invalid = || BasProjError::ModuleSourceInvalid {
+        include: module_name.to_string(),
+        message: format!("invalid module header line: {line}"),
+    };
+    let Some((lhs, rhs)) = rest.split_once('=') else {
+        return Err(header_invalid());
+    };
+    let key = lhs.trim().to_ascii_lowercase();
+    if key.is_empty() {
+        return Err(header_invalid());
     }
+    let value_text = rhs.trim().trim_matches('"');
+    match key.as_str() {
+        "vb_name" => attrs.vb_name = value_text.to_string(),
+        "vb_globalnamespace" => {
+            attrs.vb_global_namespace =
+                parse_bool_attribute(value_text).ok_or_else(header_invalid)?
+        }
+        "vb_creatable" => {
+            attrs.vb_creatable = parse_bool_attribute(value_text).ok_or_else(header_invalid)?
+        }
+        "vb_predeclaredid" => {
+            attrs.vb_predeclared_id = parse_bool_attribute(value_text).ok_or_else(header_invalid)?
+        }
+        "vb_exposed" => {
+            attrs.vb_exposed = parse_bool_attribute(value_text).ok_or_else(header_invalid)?
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
-fn build_typelib_binding_diagnostic_module_for_missing_importlib(
-    request: &TypeLibResolveRequest,
-) -> ModuleUnit {
-    let importlib = request.importlib_hint.as_deref().unwrap_or_default();
-    ModuleUnit {
-        module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
-        module_kind: ModuleKind::Procedural,
-        attributes: ModuleAttributes {
-            vb_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
-            ..ModuleAttributes::default()
-        },
-        source: format!(
-            "Attribute VB_Name = \"{TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME}\"\ncode=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED\nmessage=type-library reference `{}` with importlib `{}` could not be resolved\n",
-            request.reference_name, importlib
-        ),
-    }
-}
-
-fn append_typelib_binding_diagnostic_module(
-    project: &mut ReferencedProjectManifest,
-    diagnostic: ModuleUnit,
-) {
-    if project
-        .modules
-        .iter()
-        .any(|module| module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME)
-    {
-        return;
-    }
-    project.modules.push(diagnostic);
-}
-
-fn non_empty_trimmed(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
+fn parse_bool_attribute(value: &str) -> Option<bool> {
+    if value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value.eq_ignore_ascii_case("false") {
+        Some(false)
     } else {
-        Some(trimmed.to_string())
+        None
     }
-}
-
-fn is_missing_filesystem_importlib_hint(importlib_hint: &str) -> bool {
-    let trimmed = importlib_hint.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    let path = Path::new(trimmed);
-    let looks_like_filesystem_path =
-        path.is_absolute() || trimmed.contains('\\') || trimmed.contains('/');
-    looks_like_filesystem_path && !path.exists()
 }
 
 /// Process `<Import>` elements by re-scanning the XML for them, loading the
@@ -1168,74 +1038,6 @@ mod tests {
             "Project_123_demo"
         );
         assert_eq!(infer_project_name_from_path(Path::new("___")), "Project");
-    }
-
-    #[test]
-    fn known_libid_with_missing_filesystem_importlib_stays_diagnostic() {
-        let unique = format!(
-            "oxvba_project_load_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("unix epoch")
-                .as_nanos()
-        );
-        let temp_root = std::env::temp_dir().join(unique);
-        std::fs::create_dir_all(&temp_root).expect("create temp project root");
-        let main_path = temp_root.join("Main.bas");
-        std::fs::write(&main_path, "Public Sub Main()\nEnd Sub\n").expect("write main module");
-        let missing_importlib = temp_root.join("missing").join("OxVba.TestEventServer.tlb");
-        let xml = format!(
-            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n\
-  <PropertyGroup>\n\
-    <OutputType>Exe</OutputType>\n\
-    <ProjectName>ProjectA</ProjectName>\n\
-    <EntryPoint>Main.Main</EntryPoint>\n\
-  </PropertyGroup>\n\
-  <ItemGroup>\n\
-    <Module Include=\"Main.bas\" />\n\
-  </ItemGroup>\n\
-  <ItemGroup>\n\
-    <COMReference Include=\"OxVbaMissingBase\">\n\
-      <Guid>{{E2A30001-0001-0001-0001-000000000001}}</Guid>\n\
-      <VersionMajor>1</VersionMajor>\n\
-      <VersionMinor>0</VersionMinor>\n\
-      <Lcid>0</Lcid>\n\
-      <ImportLib>{}</ImportLib>\n\
-    </COMReference>\n\
-  </ItemGroup>\n\
-</Project>\n",
-            missing_importlib.display()
-        );
-
-        let loaded = load_basproj_from_str(&xml, &temp_root).expect("basproj should load");
-        let diagnostic = loaded
-            .manifest
-            .reference_projects
-            .iter()
-            .find(|project| {
-                project.modules.iter().any(|module| {
-                    module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME
-                        && module
-                            .source
-                            .contains("code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED")
-                })
-            })
-            .expect("expected synthetic diagnostic project for broken importlib");
-        let diagnostic_module = diagnostic
-            .modules
-            .iter()
-            .find(|module| module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME)
-            .expect("diagnostic module present");
-        assert!(
-            diagnostic_module
-                .source
-                .contains("code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
-            "expected unresolved importlib code, got: {}",
-            diagnostic_module.source
-        );
-
-        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }
 
     #[test]
@@ -1776,136 +1578,6 @@ mod tests {
     }
 
     #[test]
-    fn loaded_project_preserves_default_member_lowering_for_class_property_get() {
-        let unique = format!(
-            "oxvba_project_load_default_member_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("unix epoch")
-                .as_nanos()
-        );
-        let temp_root = std::env::temp_dir().join(unique);
-        std::fs::create_dir_all(&temp_root).expect("create temp project root");
-        std::fs::write(
-            temp_root.join("Main.bas"),
-            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub\n",
-        )
-        .expect("write main module");
-        std::fs::write(
-            temp_root.join("Widget.cls"),
-            concat!(
-                "Attribute VB_Name = \"Widget\"\n",
-                "Option Explicit\n",
-                "Private stored As Long\n",
-                "Public Sub Class_Initialize()\n",
-                "stored = 41\n",
-                "End Sub\n",
-                "Public Property Get Value() As Long\n",
-                "Value = stored + 1\n",
-                "End Property\n",
-                "Attribute Value.VB_UserMemId = 0\n"
-            ),
-        )
-        .expect("write widget module");
-
-        let main_source = "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub\n";
-        let widget_source = concat!(
-            "Attribute VB_Name = \"Widget\"\n",
-            "Option Explicit\n",
-            "Private stored As Long\n",
-            "Public Sub Class_Initialize()\n",
-            "stored = 41\n",
-            "End Sub\n",
-            "Public Property Get Value() As Long\n",
-            "Value = stored + 1\n",
-            "End Property\n",
-            "Attribute Value.VB_UserMemId = 0\n"
-        );
-        let short_manifest = ProjectManifest {
-            project_name: "ProjectA".to_string(),
-            project_kind: ProjectKind::Source,
-            modules: vec![
-                module_unit_from_source("Main", ModuleKind::Procedural, main_source)
-                    .expect("short main parses"),
-                module_unit_from_source("Widget", ModuleKind::Class, widget_source)
-                    .expect("short widget parses"),
-            ],
-            references: Vec::new(),
-            reference_projects: Vec::new(),
-            conditional_constants: BTreeMap::new(),
-        };
-        let short_compiled =
-            oxvba_compiler::compile_project(&short_manifest).expect("short manifest compiles");
-        let short_lowered = short_compiled.rewritten_source.to_ascii_lowercase();
-        assert!(
-            short_lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget)"),
-            "{short_lowered}"
-        );
-
-        let direct_manifest = ProjectManifest {
-            project_name: "AttributeOracleProject".to_string(),
-            project_kind: ProjectKind::Source,
-            modules: vec![
-                module_unit_from_source("Main", ModuleKind::Procedural, main_source)
-                    .expect("direct main parses"),
-                module_unit_from_source("Widget", ModuleKind::Class, widget_source)
-                    .expect("direct widget parses"),
-            ],
-            references: Vec::new(),
-            reference_projects: Vec::new(),
-            conditional_constants: BTreeMap::new(),
-        };
-        let direct_compiled =
-            oxvba_compiler::compile_project(&direct_manifest).expect("direct manifest compiles");
-        let direct_lowered = direct_compiled.rewritten_source.to_ascii_lowercase();
-        assert!(
-            direct_lowered.contains("valueout = property_get_pmr_"),
-            "{direct_lowered}"
-        );
-        assert!(
-            direct_lowered.contains("property get pmr_"),
-            "{direct_lowered}"
-        );
-
-        let loaded = load_basproj_from_str(
-            "\
-<Project Sdk=\"OxVba.Sdk/0.1.0\">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <ProjectName>AttributeOracleProject</ProjectName>
-    <EntryPoint>Main.Main</EntryPoint>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include=\"Main.bas\" />
-    <ClassModule Include=\"Widget.cls\" />
-  </ItemGroup>
-</Project>
-",
-            &temp_root,
-        )
-        .expect("load project");
-
-        let loaded_compiled =
-            oxvba_compiler::compile_project(&loaded.manifest).expect("loaded manifest compiles");
-        let loaded_lowered = loaded_compiled.rewritten_source.to_ascii_lowercase();
-        assert!(
-            loaded_lowered.contains("valueout = property_get_pmr_"),
-            "{loaded_lowered}"
-        );
-        assert!(
-            loaded_lowered.contains("property get pmr_"),
-            "{loaded_lowered}"
-        );
-        assert!(
-            loaded_lowered.contains("pmr_attributeoracleproject_widget_value ="),
-            "{loaded_lowered}"
-        );
-
-        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
-    }
-
-    #[test]
     fn load_basproj_uses_vb_name_as_semantic_identity_while_preserving_include_path() {
         let unique = format!(
             "oxvba-vb-name-load-{}-{}",
@@ -1947,54 +1619,6 @@ mod tests {
             .find(|module| module.module_name == "Sqlite3")
             .expect("loaded manifest should contain semantic Sqlite3 module");
         assert_eq!(sqlite_module.attributes.vb_name, "Sqlite3");
-
-        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
-    }
-
-    #[test]
-    fn load_basproj_allows_mismatched_file_stems_but_duplicate_vb_names_still_fail_compile() {
-        let unique = format!(
-            "oxvba-vb-name-duplicate-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("unix epoch")
-                .as_nanos()
-        );
-        let temp_root = std::env::temp_dir().join(unique);
-        std::fs::create_dir_all(&temp_root).expect("create temp project root");
-        std::fs::write(
-            temp_root.join("Sqlite3_64.bas"),
-            "Attribute VB_Name = \"Sqlite3\"\nPublic Sub Main()\nEnd Sub\n",
-        )
-        .expect("write first module");
-        std::fs::write(
-            temp_root.join("Sqlite3Arm64.bas"),
-            "Attribute VB_Name = \"Sqlite3\"\nPublic Sub Worker()\nEnd Sub\n",
-        )
-        .expect("write second module");
-
-        let loaded = load_basproj_from_str(
-            "\
-<Project Sdk=\"OxVba.Sdk/0.1.0\">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <ProjectName>SqliteFixture</ProjectName>
-    <EntryPoint>Sqlite3.Main</EntryPoint>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include=\"Sqlite3_64.bas\" />
-    <Module Include=\"Sqlite3Arm64.bas\" />
-  </ItemGroup>
-</Project>
-",
-            &temp_root,
-        )
-        .expect("load project");
-
-        let err = oxvba_compiler::compile_project(&loaded.manifest)
-            .expect_err("duplicate semantic module names should still fail");
-        assert_eq!(err.code(), "PMR-E-MODULE-NAME-DUPLICATE");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }

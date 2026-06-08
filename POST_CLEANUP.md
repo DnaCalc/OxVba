@@ -121,8 +121,11 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   `load_project_closure` (merge the injected project's closure + add to the root's refs),
   not the legacy loader.
 - **Convention-only directories** (a folder of `.bas`/`.cls` with no `.basproj`) on the
-  clean run path — currently falls back to the legacy executor; decide whether to support
-  via a synthesized single-/multi-module manifest.
+  clean run path — the legacy-executor fallback was **removed** with the legacy stack, so
+  `oxvba run-project <convention-dir>` now errors ("no .basproj or .vbp project file
+  found"). Decide whether to support via a synthesized single-/multi-module manifest fed to
+  `load_project_closure` (the loader already builds a convention `LoadedProject`; it just is
+  not wired to the closure path).
 
 ## Deferred features / capabilities
 
@@ -140,6 +143,38 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
 - **`End` → `Op::Halt` snapshot** (review item N7): if/when the VBA `End` statement is wired
   to `Op::Halt`, have the host snapshot read the entry bundle's globals explicitly (or have
   `run()` restore `cur` to the entry bundle on exit) — currently unreachable.
+- **`Debug.Print` / console output** (clean VM): the clean binder rejects `Debug.Print` and
+  `Print` call statements ("unsupported construct: call route PredeclaredObject(Debug)" /
+  "unresolved name `Print`"). The deleted host test `console_stdio_end_to_end` covered this
+  on the legacy host — re-cover once the clean stack routes console/debug output through the
+  HAL console callbacks.
+- **`VarPtr` / `StrPtr` / `ObjPtr` pointer helpers + native string marshalling** (clean VM):
+  the clean binder rejects the `Structural(VarPtr)` / `Structural(StrPtr)` call routes, so
+  `Declare`-based native string/pointer round-trips do not yet execute. The deleted host
+  tests `pointer_helpers_end_to_end` + `native_declare_string_marshalling_end_to_end`
+  covered this on the legacy host — re-cover when the pointer-helper ops + `Declare` string
+  marshalling land in `oxvba-bind`/`oxvba-vm2`.
+
+## Legacy stack removed (this pass)
+
+The legacy execution stack is gone; the workspace builds and tests green on the clean stack
+only. Removed: `oxvba-compiler`, `oxvba-vm` (deleted); `oxvba-build` (moved to
+`_legacy_harvest/`, COM/`.tlb`/XLL knowledge cataloged). `oxvba-jit` is a `thiserror`-only
+stub (kept). `oxvba-host` was rewritten to a thin clean `Engine` (two entry points:
+`execute_source_with_variant_snapshot_clean`, `execute_project_closure_with_variant_snapshot`).
+
+- **`oxvba-project`** severed off the deleted crates: the project-manifest types it borrowed
+  from `oxvba-compiler` are localized in `src/manifest.rs`; the COM-typelib-diagnostic
+  injection + legacy reference resolution were dropped from `load.rs` (the clean closure
+  builder in `closure.rs` owns reference resolution); the host-IDE tooling modules
+  (`com_selection`, `host_helpers`, `generate`, `validate`, `resolve`) were deleted. The
+  crate now depends only on `oxvba-symbol` + `quick-xml` + `thiserror`. `load_basproj` no
+  longer populates `manifest.reference_projects` (empty; the closure path resolves the graph).
+- **`oxvba-cli`** rewritten fresh to the clean `run` / `run-project` subcommands +
+  runner-bootstrap flags only. Dropped: `compile`, `build`, `com-ref`, `repl`/`immediate`,
+  `native-ready-runner`, `explain`, `init`, `import-vbp`, native-export packaging, the XLL
+  shim, and the `oxvba-reflect-wrapper` bin. Re-add project-authoring conveniences
+  (`import-vbp`, `init`) against the clean modules if wanted — they are not the execution path.
 
 ## Re-implement on the clean stack (kept as reference in `_legacy_harvest/`)
 

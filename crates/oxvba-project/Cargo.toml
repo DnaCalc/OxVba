@@ -7,13 +7,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-oxvba-compiler.workspace = true
-oxvba-com.workspace = true
-oxvba-host.workspace = true
 oxvba-symbol.workspace = true
 quick-xml.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-oxvba-runtime.workspace = true
-oxvba-com = { workspace = true, features = ["fixture-typelibs"] }

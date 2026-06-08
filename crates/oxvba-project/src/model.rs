@@ -179,10 +179,11 @@ pub struct NativeExportDescriptor {
     pub procedure_name: String,
     pub calling_convention: CallingConvention,
     pub ordinal: Option<u16>,
-    /// Populated by validate.rs after compilation.
-    pub kind: Option<oxvba_compiler::ExportKind>,
-    pub param_types: Option<Vec<oxvba_compiler::DeclareParamType>>,
-    pub return_type: Option<Option<oxvba_compiler::DeclareParamType>>,
+    /// Native export signature, when known (the clean path leaves these `None`;
+    /// the legacy native-export validator that populated them was removed).
+    pub kind: Option<crate::manifest::ExportKind>,
+    pub param_types: Option<Vec<crate::manifest::DeclareParamType>>,
+    pub return_type: Option<Option<crate::manifest::DeclareParamType>>,
     /// XLL addin metadata (carried through from `.basproj` for round-trip fidelity).
     pub category: Option<String>,
     pub description: Option<String>,

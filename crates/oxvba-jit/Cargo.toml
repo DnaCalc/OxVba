@@ -7,9 +7,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-oxvba-compiler.workspace = true
-oxvba-runtime.workspace = true
-oxvba-hal.workspace = true
 thiserror.workspace = true
 
 [features]

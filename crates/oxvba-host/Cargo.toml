@@ -6,14 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
-[features]
-default = ["jit"]
-jit = ["dep:oxvba-jit"]
-
 [dependencies]
-oxvba-vm.workspace = true
-oxvba-jit = { workspace = true, optional = true }
-oxvba-compiler.workspace = true
 oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 oxvba-hal.workspace = true

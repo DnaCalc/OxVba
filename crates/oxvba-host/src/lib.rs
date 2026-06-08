@@ -1,71 +1,10 @@
-//! oxvba-host: engine orchestration and host integration scaffolding.
+//! oxvba-host: engine orchestration for the clean execution stack.
 
-pub mod direct_host;
-pub mod embedded;
 pub mod engine;
-pub mod events;
-pub mod immediate;
-pub mod native_ready_runner;
-pub mod project;
 pub mod runner;
-pub mod udf_policy_example;
-pub mod vba_host;
 
-pub use direct_host::{
-    DirectHostBreakpointId, DirectHostBuildRequestId, DirectHostCapability,
-    DirectHostCapabilityKind, DirectHostCapabilityStatus, DirectHostCommandStatus,
-    DirectHostDebugSessionId, DirectHostDiagnostic, DirectHostDocumentId,
-    DirectHostImmediateSessionId, DirectHostIssue, DirectHostIssueContext, DirectHostIssueKind,
-    DirectHostModuleId, DirectHostProjectId, DirectHostRetryability, DirectHostRunRequestId,
-    DirectHostRuntimeSessionId, DirectHostSourceSpan, DirectHostSourceSpanStatus,
-    DirectHostSourceUnavailableReason, DirectHostStackFrameId, DirectHostTextPosition,
-    DirectHostWatchId, DirectHostWorkspaceId,
-};
-pub use embedded::{
-    EmbeddedBuildArtifactKind, EmbeddedBuildArtifactPlan, EmbeddedBuildPlan, EmbeddedBuildRequest,
-    EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
-    EmbeddedBuildRunHostCommandStatus, EmbeddedBuildStartedEvent, EmbeddedBuildStatus,
-    EmbeddedBuildTarget, EmbeddedComRegistrationScope, EmbeddedComServerCapabilityProfile,
-    EmbeddedComServerRegistrationPlan, EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget,
-    EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureVariantRequest, EmbeddedInvokeStatus,
-    EmbeddedInvokeVariantResult, EmbeddedOutputChannel, EmbeddedOutputLine,
-    EmbeddedProcedureTarget, EmbeddedRequiredTool, EmbeddedResetKind, EmbeddedResetRequest,
-    EmbeddedResetResult, EmbeddedResetStatus, EmbeddedRunRequest, EmbeddedRunResult,
-    EmbeddedRunSession, EmbeddedRunSessionCommandStatus, EmbeddedRunSessionError,
-    EmbeddedRunStartedEvent, EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
-};
-pub use engine::{
-    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
-    HostVariantSnapshotWithPackageIdentity, PhaseDiagnostic, ProjectRuntimeSession,
-};
-pub use immediate::{
-    ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,
-    ImmediateSession, ImmediateSessionCommandStatus, ImmediateSessionError,
-    ImmediateVariantEvaluationOutput, ImmediateVariantEvaluationResult,
-    ImmediateVariantValueProjection,
-};
-pub use native_ready_runner::{
-    NATIVE_READY_RUNNER_SCHEMA_HEADER, NativeReadyRunnerConfig, NativeReadyRunnerRow,
-    emit_native_ready_vm_jit_csv, produce_native_ready_vm_jit_rows,
-};
-pub use project::{
-    GraphPublicSymbolResolution, HostExportKind, HostProcedureExport, ModuleAttributes, ModuleKind,
-    ModuleNode, Project, ProjectGraph, ProjectKind, ProjectModelError, ProjectNode,
-    ProjectReference, PublicSymbolResolution, ReferenceBindingState, ReferenceKind,
-    TypeLibraryBindingRecord, TypeLibraryBindingStatus, TypeLibraryCatalogEntry,
-};
+pub use engine::{DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic};
 pub use runner::{
     PolicyOverrides, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
     RuntimeProfileId, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
-};
-pub use udf_policy_example::{
-    AdmittedUdf, RejectedUdfCandidate, UdfAdmissionPolicy, UdfAdmissionReport,
-    W093CallableMetadata, W093Capability, W093InvocationTarget, W093RegistrationRequest,
-    W093SourceIdentity,
-};
-pub use vba_host::{
-    HostCallContext, HostCaller, HostContextObservations, HostContextValue, HostDiagnostic,
-    HostDiagnosticPhase, InvocationResult, LoadedVbaProject, PreparedVbaProject, ProjectFile,
-    ProjectFileSet, ProjectModuleText, ProjectSource, TypedInvocationResult, TypedValue, VbaHost,
-    VbaHostOptions,
 };

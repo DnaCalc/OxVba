@@ -1,6 +1,5 @@
-//! Tests for `.basproj` XML parsing, loading, and round-trip generation.
+//! Tests for `.basproj` XML parsing and loading.
 
-use oxvba_compiler::{ModuleKind, ProjectKind, ReferenceKind};
 use oxvba_project::*;
 
 // ---------------------------------------------------------------------------
@@ -399,11 +398,6 @@ fn load_use_case_a_from_str() {
         "Excel"
     );
 
-    // Type library catalog
-    assert_eq!(loaded.type_library_catalog.len(), 1);
-    assert_eq!(loaded.type_library_catalog[0].library_name, "Excel");
-    assert_eq!(loaded.type_library_catalog[0].importlib, "excel.exe");
-
     // Metadata
     assert_eq!(loaded.output_type, OutputType::HostModule);
     assert_eq!(loaded.build_target, BuildTarget::Bundle);
@@ -627,169 +621,9 @@ fn auto_discover_modules() {
 // Round-trip: ProjectManifest → .basproj XML → ProjectManifest
 // ---------------------------------------------------------------------------
 
-#[test]
-fn round_trip_host_module() {
-    let tmp = std::env::temp_dir().join("oxvba_test_round_trip");
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).unwrap();
-
-    // Write module source files that the loader will read
-    std::fs::write(tmp.join("Module1.bas"), "Public Sub Hello()\nEnd Sub\n").unwrap();
-    std::fs::write(
-        tmp.join("Calculator.cls"),
-        "Public Function Add(a As Long, b As Long) As Long\n  Add = a + b\nEnd Function\n",
-    )
-    .unwrap();
-
-    // Step 1: Load from known XML
-    let xml = r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>HostModule</OutputType>
-    <ProjectName>TestProject</ProjectName>
-    <DefaultRootObject>Application</DefaultRootObject>
-    <DefineConstants>VBA7=1;WIN64=1</DefineConstants>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="Module1.bas" />
-    <ClassModule Include="Calculator.cls">
-      <VBExposed>True</VBExposed>
-      <VBPredeclaredId>True</VBPredeclaredId>
-    </ClassModule>
-  </ItemGroup>
-</Project>"#;
-
-    let loaded1 = load_basproj_from_str(xml, &tmp).unwrap();
-
-    // Step 2: Generate XML from the loaded manifest
-    let generated_xml = generate_basproj_xml(
-        &loaded1.manifest,
-        loaded1.output_type,
-        Some(loaded1.build_target),
-        loaded1.entry_point.as_deref(),
-        Some(loaded1.runtime_flavor),
-        loaded1.default_runtime_profile.as_deref(),
-        loaded1.default_policy_preset.as_deref(),
-        Some(&loaded1.default_root_object),
-        &loaded1.type_library_catalog,
-        &loaded1.native_exports,
-        &loaded1.class_module_metadata,
-    );
-
-    // Step 3: Re-load from generated XML
-    let loaded2 = load_basproj_from_str(&generated_xml, &tmp).unwrap();
-
-    // Step 4: Compare
-    assert_eq!(loaded1.manifest.project_name, loaded2.manifest.project_name);
-    assert_eq!(loaded1.manifest.project_kind, loaded2.manifest.project_kind);
-    assert_eq!(
-        loaded1.manifest.modules.len(),
-        loaded2.manifest.modules.len()
-    );
-    for (m1, m2) in loaded1
-        .manifest
-        .modules
-        .iter()
-        .zip(loaded2.manifest.modules.iter())
-    {
-        assert_eq!(m1.module_name, m2.module_name);
-        assert_eq!(m1.module_kind, m2.module_kind);
-        assert_eq!(
-            m1.attributes.vb_exposed, m2.attributes.vb_exposed,
-            "vb_exposed mismatch for {}",
-            m1.module_name
-        );
-        assert_eq!(
-            m1.attributes.vb_predeclared_id, m2.attributes.vb_predeclared_id,
-            "vb_predeclared_id mismatch for {}",
-            m1.module_name
-        );
-    }
-    assert_eq!(
-        loaded1.manifest.conditional_constants,
-        loaded2.manifest.conditional_constants
-    );
-    assert_eq!(loaded1.output_type, loaded2.output_type);
-    assert_eq!(loaded1.build_target, loaded2.build_target);
-    assert_eq!(loaded1.default_root_object, loaded2.default_root_object);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-}
-
 // ---------------------------------------------------------------------------
 // Round-trip with native exports
 // ---------------------------------------------------------------------------
-
-#[test]
-fn round_trip_library_with_exports() {
-    let tmp = std::env::temp_dir().join("oxvba_test_round_trip_exports");
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).unwrap();
-
-    std::fs::write(tmp.join("Mod1.bas"), "Public Sub Proc1()\nEnd Sub\n").unwrap();
-
-    let xml = r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ExportLib</ProjectName>
-    <RuntimeFlavor>Jit</RuntimeFlavor>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="Mod1.bas" />
-  </ItemGroup>
-  <ItemGroup>
-    <NativeExport Include="ExportedProc">
-      <Module>Mod1</Module>
-      <Procedure>Proc1</Procedure>
-      <CallingConvention>Cdecl</CallingConvention>
-      <Ordinal>5</Ordinal>
-    </NativeExport>
-  </ItemGroup>
-</Project>"#;
-
-    let loaded1 = load_basproj_from_str(xml, &tmp).unwrap();
-    assert_eq!(loaded1.native_exports.len(), 1);
-    assert_eq!(loaded1.native_exports[0].exported_name, "ExportedProc");
-    assert_eq!(
-        loaded1.native_exports[0].calling_convention,
-        CallingConvention::Cdecl
-    );
-    assert_eq!(loaded1.native_exports[0].ordinal, Some(5));
-
-    // Generate and re-load
-    let generated_xml = generate_basproj_xml(
-        &loaded1.manifest,
-        loaded1.output_type,
-        Some(loaded1.build_target),
-        loaded1.entry_point.as_deref(),
-        Some(loaded1.runtime_flavor),
-        None,
-        None,
-        None,
-        &loaded1.type_library_catalog,
-        &loaded1.native_exports,
-        &loaded1.class_module_metadata,
-    );
-
-    let loaded2 = load_basproj_from_str(&generated_xml, &tmp).unwrap();
-
-    assert_eq!(loaded1.native_exports.len(), loaded2.native_exports.len());
-    assert_eq!(
-        loaded1.native_exports[0].exported_name,
-        loaded2.native_exports[0].exported_name
-    );
-    assert_eq!(
-        loaded1.native_exports[0].calling_convention,
-        loaded2.native_exports[0].calling_convention
-    );
-    assert_eq!(
-        loaded1.native_exports[0].ordinal,
-        loaded2.native_exports[0].ordinal
-    );
-    assert_eq!(loaded1.runtime_flavor, loaded2.runtime_flavor);
-    assert_eq!(loaded1.build_target, loaded2.build_target);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-}
 
 // ---------------------------------------------------------------------------
 // Missing OutputType is an error
@@ -902,83 +736,9 @@ fn parse_wrapped_com_server_build_target_and_compat_alias() {
     }
 }
 
-#[test]
-fn serialize_build_target_property_when_present() {
-    let basproj = BasProj {
-        sdk: "OxVba.Sdk/0.1.0".to_string(),
-        properties: BasProjProperties {
-            output_type: Some(OutputType::Exe),
-            build_target: Some(BuildTarget::WrapperExe),
-            project_name: Some("Tool".to_string()),
-            ..Default::default()
-        },
-        modules: Vec::new(),
-        project_references: Vec::new(),
-        com_references: Vec::new(),
-        native_references: Vec::new(),
-        native_exports: Vec::new(),
-    };
-
-    let xml = serialize_basproj_xml(&basproj);
-    assert!(xml.contains("<BuildTarget>WrapperExe</BuildTarget>"));
-}
-
-#[test]
-fn serialize_wrapped_com_server_uses_canonical_spelling() {
-    let basproj = BasProj {
-        sdk: "OxVba.Sdk/0.1.0".to_string(),
-        properties: BasProjProperties {
-            output_type: Some(OutputType::ComServer),
-            build_target: Some(BuildTarget::WrappedComServer),
-            project_name: Some("ComWidget".to_string()),
-            ..Default::default()
-        },
-        modules: vec![],
-        project_references: vec![],
-        com_references: vec![],
-        native_references: vec![],
-        native_exports: vec![],
-    };
-
-    let xml = serialize_basproj_xml(&basproj);
-    assert!(xml.contains("<BuildTarget>WrappedComServer</BuildTarget>"));
-    assert!(!xml.contains("<BuildTarget>WrapperComServer</BuildTarget>"));
-}
-
 // ---------------------------------------------------------------------------
 // COMReference with all fields
 // ---------------------------------------------------------------------------
-
-#[test]
-fn com_reference_maps_to_type_library_catalog() {
-    let tmp = std::env::temp_dir().join("oxvba_test_com_catalog");
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).unwrap();
-
-    std::fs::write(tmp.join("Module1.bas"), "Public Sub X()\nEnd Sub\n").unwrap();
-    std::fs::write(tmp.join("Calculator.cls"), "Public Sub X()\nEnd Sub\n").unwrap();
-    std::fs::write(tmp.join("Sheet1.cls"), "Private Sub X()\nEnd Sub\n").unwrap();
-    std::fs::write(tmp.join("ThisWorkbook.cls"), "Private Sub X()\nEnd Sub\n").unwrap();
-
-    let loaded = load_basproj_from_str(USE_CASE_A_XML, &tmp).unwrap();
-
-    assert_eq!(loaded.type_library_catalog.len(), 1);
-    let entry = &loaded.type_library_catalog[0];
-    assert_eq!(entry.library_name, "Excel");
-    assert_eq!(entry.importlib, "excel.exe");
-    assert_eq!(
-        entry.libid.as_deref(),
-        Some("{00020813-0000-0000-C000-000000000046}")
-    );
-    assert_eq!(entry.major_version, 1);
-    assert_eq!(entry.minor_version, 9);
-    assert_eq!(entry.lcid, Some(0));
-    assert_eq!(loaded.manifest.reference_projects.len(), 1);
-    assert_eq!(loaded.manifest.reference_projects[0].project_name, "Excel");
-    assert_eq!(loaded.manifest.reference_projects[0].modules.len(), 1);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-}
 
 // ---------------------------------------------------------------------------
 // ComServer OutputType parsing
@@ -1085,55 +845,6 @@ fn load_com_server_project() {
 // ComServer + Instancing/ProgId round-trip
 // ---------------------------------------------------------------------------
 
-#[test]
-fn round_trip_com_server_with_instancing() {
-    let tmp = std::env::temp_dir().join("oxvba_test_rt_com_server");
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).unwrap();
-
-    std::fs::write(tmp.join("Helpers.bas"), "Public Sub H()\nEnd Sub\n").unwrap();
-    std::fs::write(tmp.join("Widget.cls"), "Public Sub W()\nEnd Sub\n").unwrap();
-    std::fs::write(tmp.join("Factory.cls"), "Public Sub F()\nEnd Sub\n").unwrap();
-
-    let loaded1 = load_basproj_from_str(COM_SERVER_XML, &tmp).unwrap();
-
-    let generated_xml = generate_basproj_xml(
-        &loaded1.manifest,
-        loaded1.output_type,
-        Some(loaded1.build_target),
-        loaded1.entry_point.as_deref(),
-        Some(loaded1.runtime_flavor),
-        loaded1.default_runtime_profile.as_deref(),
-        loaded1.default_policy_preset.as_deref(),
-        Some(&loaded1.default_root_object),
-        &loaded1.type_library_catalog,
-        &loaded1.native_exports,
-        &loaded1.class_module_metadata,
-    );
-
-    let loaded2 = load_basproj_from_str(&generated_xml, &tmp).unwrap();
-
-    assert_eq!(loaded1.output_type, loaded2.output_type);
-    assert_eq!(loaded1.build_target, loaded2.build_target);
-    assert_eq!(loaded1.manifest.project_name, loaded2.manifest.project_name);
-    assert_eq!(
-        loaded1.class_module_metadata.len(),
-        loaded2.class_module_metadata.len()
-    );
-
-    let w1 = loaded1.class_module_metadata.get("Widget").unwrap();
-    let w2 = loaded2.class_module_metadata.get("Widget").unwrap();
-    assert_eq!(w1.instancing, w2.instancing);
-    assert_eq!(w1.prog_id, w2.prog_id);
-    assert_eq!(w1.description, w2.description);
-
-    let f1 = loaded1.class_module_metadata.get("Factory").unwrap();
-    let f2 = loaded2.class_module_metadata.get("Factory").unwrap();
-    assert_eq!(f1.instancing, f2.instancing);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-}
-
 // ---------------------------------------------------------------------------
 // All Instancing variants parse correctly
 // ---------------------------------------------------------------------------
@@ -1177,231 +888,13 @@ fn all_instancing_variants_parse() {
 // Project reference resolution: two-project chain
 // ---------------------------------------------------------------------------
 
-#[test]
-fn resolve_two_project_chain() {
-    let base = std::env::temp_dir().join("oxvba_test_ref_chain");
-    let _ = std::fs::remove_dir_all(&base);
-
-    // Project B (referenced)
-    let proj_b = base.join("ProjB");
-    std::fs::create_dir_all(&proj_b).unwrap();
-    std::fs::write(
-        proj_b.join("ProjB.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjB</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModB.bas" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_b.join("ModB.bas"), "Public Sub B()\nEnd Sub\n").unwrap();
-
-    // Project A (references B)
-    let proj_a = base.join("ProjA");
-    std::fs::create_dir_all(&proj_a).unwrap();
-    std::fs::write(
-        proj_a.join("ProjA.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjA</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModA.bas" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\ProjB\ProjB.basproj" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_a.join("ModA.bas"), "Public Sub A()\nEnd Sub\n").unwrap();
-
-    let loaded = load_basproj(&proj_a.join("ProjA.basproj")).unwrap();
-
-    assert_eq!(loaded.manifest.project_name, "ProjA");
-    assert_eq!(loaded.manifest.references.len(), 1);
-    assert_eq!(
-        loaded.manifest.references[0].reference_kind,
-        ReferenceKind::Project
-    );
-    assert_eq!(loaded.manifest.reference_projects.len(), 1);
-    assert_eq!(loaded.manifest.reference_projects[0].project_name, "ProjB");
-    assert_eq!(loaded.manifest.reference_projects[0].modules.len(), 1);
-    assert_eq!(
-        loaded.manifest.reference_projects[0].modules[0].module_name,
-        "ModB"
-    );
-
-    let _ = std::fs::remove_dir_all(&base);
-}
-
 // ---------------------------------------------------------------------------
 // Diamond dependency: A→B, A→C, B→C
 // ---------------------------------------------------------------------------
 
-#[test]
-fn resolve_diamond_dependency() {
-    let base = std::env::temp_dir().join("oxvba_test_diamond");
-    let _ = std::fs::remove_dir_all(&base);
-
-    // Project C (leaf)
-    let proj_c = base.join("ProjC");
-    std::fs::create_dir_all(&proj_c).unwrap();
-    std::fs::write(
-        proj_c.join("ProjC.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjC</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModC.bas" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_c.join("ModC.bas"), "Public Sub C()\nEnd Sub\n").unwrap();
-
-    // Project B (references C)
-    let proj_b = base.join("ProjB");
-    std::fs::create_dir_all(&proj_b).unwrap();
-    std::fs::write(
-        proj_b.join("ProjB.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjB</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModB.bas" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\ProjC\ProjC.basproj" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_b.join("ModB.bas"), "Public Sub B()\nEnd Sub\n").unwrap();
-
-    // Project A (references B and C)
-    let proj_a = base.join("ProjA");
-    std::fs::create_dir_all(&proj_a).unwrap();
-    std::fs::write(
-        proj_a.join("ProjA.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjA</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModA.bas" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\ProjB\ProjB.basproj" />
-    <ProjectReference Include="..\ProjC\ProjC.basproj" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_a.join("ModA.bas"), "Public Sub A()\nEnd Sub\n").unwrap();
-
-    let loaded = load_basproj(&proj_a.join("ProjA.basproj")).unwrap();
-
-    assert_eq!(loaded.manifest.project_name, "ProjA");
-    // B→C resolved first, then A→C. The diamond resolves to both B and C appearing.
-    assert!(loaded.manifest.reference_projects.len() >= 2);
-    let names: Vec<&str> = loaded
-        .manifest
-        .reference_projects
-        .iter()
-        .map(|r| r.project_name.as_str())
-        .collect();
-    assert!(names.contains(&"ProjB"), "Expected ProjB in {names:?}");
-    assert!(names.contains(&"ProjC"), "Expected ProjC in {names:?}");
-
-    let _ = std::fs::remove_dir_all(&base);
-}
-
 // ---------------------------------------------------------------------------
 // Cyclic project reference detection
 // ---------------------------------------------------------------------------
-
-#[test]
-fn resolve_cyclic_reference_detected() {
-    let base = std::env::temp_dir().join("oxvba_test_cyclic_ref");
-    let _ = std::fs::remove_dir_all(&base);
-
-    // ProjA references ProjB, ProjB references ProjA → cycle
-    let proj_a = base.join("ProjA");
-    let proj_b = base.join("ProjB");
-    std::fs::create_dir_all(&proj_a).unwrap();
-    std::fs::create_dir_all(&proj_b).unwrap();
-
-    std::fs::write(
-        proj_a.join("ProjA.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjA</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModA.bas" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\ProjB\ProjB.basproj" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_a.join("ModA.bas"), "Public Sub A()\nEnd Sub\n").unwrap();
-
-    std::fs::write(
-        proj_b.join("ProjB.basproj"),
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <ProjectName>ProjB</ProjectName>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="ModB.bas" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\ProjA\ProjA.basproj" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(proj_b.join("ModB.bas"), "Public Sub B()\nEnd Sub\n").unwrap();
-
-    // Call resolve_project_references directly (load_basproj swallows the error)
-    let xml = std::fs::read_to_string(proj_a.join("ProjA.basproj")).unwrap();
-    let basproj = oxvba_project::parse_basproj_xml(&xml).unwrap();
-    let mut ancestors = std::collections::HashSet::new();
-    let mut seen = std::collections::HashSet::new();
-    let canonical = proj_a.join("ProjA.basproj").canonicalize().unwrap();
-    ancestors.insert(canonical);
-
-    let result = oxvba_project::resolve::resolve_project_references(
-        &basproj,
-        &proj_a,
-        &mut ancestors,
-        &mut seen,
-    );
-
-    assert!(result.is_err(), "expected cyclic reference error");
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("cyclic project reference"),
-        "expected cyclic error, got: {err}"
-    );
-
-    let _ = std::fs::remove_dir_all(&base);
-}
 
 // ---------------------------------------------------------------------------
 // Missing project reference error
@@ -1440,27 +933,6 @@ fn missing_project_reference_resolves_gracefully() {
 // ---------------------------------------------------------------------------
 // Native reference validation
 // ---------------------------------------------------------------------------
-
-#[test]
-fn native_reference_not_found_error() {
-    let tmp = std::env::temp_dir().join("oxvba_test_native_ref");
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).unwrap();
-
-    let result = oxvba_project::resolve::resolve_native_references(
-        &[oxvba_project::BasProjNativeReference {
-            include: "SomeLib".to_string(),
-            path: Some("nonexistent.dll".to_string()),
-        }],
-        &tmp,
-    );
-
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("native reference not found"), "got: {err}");
-
-    let _ = std::fs::remove_dir_all(&tmp);
-}
 
 // ---------------------------------------------------------------------------
 // VBP round-trip: parse VBP → generate basproj XML → re-parse XML
