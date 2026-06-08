@@ -219,6 +219,25 @@ pub enum PtrKind {
     Obj,
 }
 
+/// The payload a `Declare` pointer-argument write-back reads back from the pinned
+/// pointer after the native call: a string (BSTR/UTF-16 cell) or a byte buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PtrWritebackKind {
+    String,
+    ByteArray,
+}
+
+/// A `Declare` argument that is `StrPtr(x)` / `VarPtr(x)` over an l-value: after
+/// the native call, the pinned buffer at the `arg_index`-th argument's pointer is
+/// read back into `target` (the source variable). This is VBA's expression-shape
+/// driven write-back — an r-value pointer operand records no write-back.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PtrWriteback {
+    pub arg_index: usize,
+    pub target: CorePlace,
+    pub kind: PtrWritebackKind,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrField {
     Number,
@@ -290,7 +309,9 @@ pub enum CoreCallee {
     /// Late-bound COM dispatch (`Object`/`Variant` receiver, by name).
     LateDispatch { name: String, kind: Option<ProjectMemberKind> },
     /// A `Declare Lib` external call (descriptor in `CoreProgram::external_calls`).
-    Declare { descriptor_id: u32 },
+    /// `ptr_writebacks` carries the pointer-helper arguments whose pinned buffer is
+    /// read back into a source l-value after the call (see [`PtrWriteback`]).
+    Declare { descriptor_id: u32, ptr_writebacks: Vec<PtrWriteback> },
     /// `CallByName(obj, name, calltype, args…)` — dispatch by a *runtime* member
     /// name through the same machinery as `LateDispatch`. The operands are carried
     /// in `args`: `[0]` = object, `[1]` = name string, `[2]` = calltype

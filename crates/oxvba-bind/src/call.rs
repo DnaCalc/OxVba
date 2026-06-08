@@ -5,6 +5,7 @@
 
 use oxvba_bundle::coreir::{
     BoundWhich, CoreArg, CoreCallee, CoreConst, CorePlace, CoreStmt, CoreValue, ErrField, PtrKind,
+    PtrWriteback, PtrWritebackKind,
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
@@ -71,11 +72,16 @@ impl<'a> ProcLower<'a> {
                 ))
             }
             DispatchRoute::Declare { descriptor_id } => {
-                // ByRef `Declare` params write back to the caller slot (copy-out).
+                // ByRef `Declare` params write back to the caller slot (copy-out); a
+                // `StrPtr(x)`/`VarPtr(x)` pointer argument over an l-value records a
+                // pointer write-back (the pinned buffer → `x` after the call).
                 let by_ref = self.declare_param_by_ref(binding.symbol);
-                let args = self.bind_args_byref(arglist, &by_ref)?;
+                let (args, ptr_writebacks) = self.bind_declare_args(arglist, &by_ref)?;
                 Ok(value_bound(
-                    CoreValue::Call { callee: CoreCallee::Declare { descriptor_id: *descriptor_id }, args },
+                    CoreValue::Call {
+                        callee: CoreCallee::Declare { descriptor_id: *descriptor_id, ptr_writebacks },
+                        args,
+                    },
                     VarTypeRef::Variant,
                 ))
             }
@@ -147,10 +153,9 @@ impl<'a> ProcLower<'a> {
                     ArgItem::Positional(e) => e,
                     _ => return Err(BindError::Malformed(format!("`{name}` argument"))),
                 };
-                let operand = self.bind_expr(expr)?;
-                let kind = pointer_kind(*s, &operand.ty);
+                let (kind, value, _writeback) = self.pointer_operand(*s, expr)?;
                 Ok(value_bound(
-                    CoreValue::Ptr { kind, value: Box::new(operand.value) },
+                    CoreValue::Ptr { kind, value: Box::new(value) },
                     builtin(BuiltinType::LongPtr),
                 ))
             }
@@ -249,6 +254,119 @@ impl<'a> ProcLower<'a> {
             }
         }
         Ok(args)
+    }
+
+    /// Bind `Declare` arguments (ByRef-aware, like [`Self::bind_args_byref`]) and
+    /// collect pointer-helper write-backs: a positional `StrPtr(x)` / `VarPtr(x)`
+    /// over a simple-variable l-value records a [`PtrWriteback`] so the VM reads the
+    /// pinned buffer back into `x` after the call (VBA's expression-shape-driven
+    /// write-back). An r-value pointer operand (e.g. `StrPtr("lit")`), a compound
+    /// l-value, or a kind with no buffer projection records no write-back.
+    fn bind_declare_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        param_by_ref: &[bool],
+    ) -> Result<(Vec<CoreArg>, Vec<PtrWriteback>), BindError> {
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let mut args = Vec::with_capacity(items.len());
+        let mut writebacks = Vec::new();
+        for (i, item) in items.into_iter().enumerate() {
+            match item {
+                ArgItem::Omitted => args.push(CoreArg::Omitted),
+                ArgItem::Named { name, value } => args.push(CoreArg::Named {
+                    name: name.text.to_string(),
+                    value: self.bind_expr(value)?.value,
+                }),
+                ArgItem::Positional(expr) => {
+                    if let Some((intrinsic, operand)) = self.pointer_call(expr) {
+                        let (kind, value, wb) = self.pointer_operand(intrinsic, operand)?;
+                        args.push(CoreArg::ByVal(CoreValue::Ptr { kind, value: Box::new(value) }));
+                        if let Some((target, kind)) = wb {
+                            writebacks.push(PtrWriteback { arg_index: i, target, kind });
+                        }
+                    } else {
+                        args.push(
+                            self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?,
+                        );
+                    }
+                }
+            }
+        }
+        Ok((args, writebacks))
+    }
+
+    /// If `expr` is a `StrPtr`/`VarPtr`/`ObjPtr` call, return the intrinsic and its
+    /// single operand expression; otherwise `None`.
+    fn pointer_call<'b>(
+        &self,
+        expr: SyntaxNode<'b>,
+    ) -> Option<(StructuralIntrinsic, SyntaxNode<'b>)> {
+        if expr.kind() != SyntaxKind::IndexExpr {
+            return None;
+        }
+        let base = expr.index_base()?;
+        if base.kind() != SyntaxKind::IdentExpr {
+            return None;
+        }
+        let intrinsic = match self.resolve(base.ident_name_token()?.text).map(|b| b.route) {
+            Some(DispatchRoute::Structural(
+                s @ (StructuralIntrinsic::VarPtr
+                | StructuralIntrinsic::StrPtr
+                | StructuralIntrinsic::ObjPtr),
+            )) => s,
+            _ => return None,
+        };
+        match expr.index_arg_list()?.arg_items().into_iter().next()? {
+            ArgItem::Positional(operand) => Some((intrinsic, operand)),
+            _ => None,
+        }
+    }
+
+    /// Bind a pointer-helper operand: the `PtrKind` + the operand **value** the VM
+    /// pins, plus an optional write-back target (the source l-value + payload kind)
+    /// for use as a `Declare` argument. `VarPtr` of an array element points at the
+    /// whole contiguous array buffer (VBA's `VarPtr(a(0))` idiom); a simple String /
+    /// String-`VarPtr` / array-`VarPtr` l-value writes back; an r-value operand
+    /// (e.g. `StrPtr("lit")`) or a compound target writes back nothing.
+    fn pointer_operand(
+        &mut self,
+        intrinsic: StructuralIntrinsic,
+        operand: SyntaxNode<'_>,
+    ) -> Result<(PtrKind, CoreValue, Option<(CorePlace, PtrWritebackKind)>), BindError> {
+        if let Ok((place, ty)) = self.bind_place(operand) {
+            // `VarPtr(a(i))` → a pointer to the array's contiguous storage (read and
+            // write the whole buffer), keyed off the base array place.
+            if matches!(intrinsic, StructuralIntrinsic::VarPtr)
+                && let CorePlace::Index { array, .. } = &place
+            {
+                let array_place = (**array).clone();
+                let writeback = matches!(array_place, CorePlace::Local(_) | CorePlace::Global(_))
+                    .then(|| (array_place.clone(), PtrWritebackKind::ByteArray));
+                return Ok((PtrKind::Var, CoreValue::Load(array_place), writeback));
+            }
+            let kind = pointer_kind(intrinsic, &ty);
+            // Write-back only into a simple variable (a slot the VM stores into).
+            let writeback = if matches!(place, CorePlace::Local(_) | CorePlace::Global(_)) {
+                match kind {
+                    PtrKind::Str | PtrKind::VarString => {
+                        Some((place.clone(), PtrWritebackKind::String))
+                    }
+                    PtrKind::Var if matches!(ty, VarTypeRef::Array(_)) => {
+                        Some((place.clone(), PtrWritebackKind::ByteArray))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            return Ok((kind, CoreValue::Load(place), writeback));
+        }
+        // An r-value operand (literal / expression): pin the value, no write-back.
+        let operand = self.bind_expr(operand)?;
+        Ok((pointer_kind(intrinsic, &operand.ty), operand.value, None))
     }
 
     /// Bind one positional cross-bundle extern argument against its published

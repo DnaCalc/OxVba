@@ -31,8 +31,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use oxvba_bundle::{
-    Bundle, CallArg, ComMemberSelector, ExportTarget, NativeCallee, NumericMode, Op, ProcArg,
-    ProjectMemberKind,
+    Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget, NativeCallee,
+    NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -1135,7 +1135,12 @@ impl<'h> Vm<'h> {
         )
     }
 
-    fn declare_call(&mut self, descriptor_id: u32, args: &[CallArg]) -> Result<Variant, Fault> {
+    fn declare_call(
+        &mut self,
+        descriptor_id: u32,
+        args: &[CallArg],
+        ptr_writebacks: &[DeclarePtrWriteback],
+    ) -> Result<Variant, Fault> {
         let descriptor = self
             .cur_bundle()
             .external_call(descriptor_id)
@@ -1175,6 +1180,27 @@ impl<'h> Vm<'h> {
             {
                 self.set(*slot, value.clone())?;
             }
+        }
+        // Pointer-helper write-back: a `StrPtr(x)`/`VarPtr(x)` argument over an
+        // l-value reads the pinned buffer (the native call may have mutated it) back
+        // into the source variable. The argument value is the registered pointer; the
+        // runtime registry projects it back to a string or byte-array Variant.
+        for wb in ptr_writebacks {
+            let pointer = arg_variants
+                .get(wb.arg_index)
+                .and_then(Variant::as_i64)
+                .unwrap_or(0);
+            let value = match wb.kind {
+                PtrWritebackKind::String => {
+                    pointer_helpers::read_back_string_payload_variant(pointer)
+                        .map_err(Fault::from_string)?
+                }
+                PtrWritebackKind::ByteArray => {
+                    pointer_helpers::read_back_byte_array_payload_variant(pointer)
+                        .map_err(Fault::from_string)?
+                }
+            };
+            self.set(wb.target_slot, value)?;
         }
         Ok(ret)
     }
@@ -1367,8 +1393,8 @@ impl<'h> Vm<'h> {
                     NativeCallee::ComDispatch { selector, kind_hint, .. } => {
                         self.com_dispatch(selector, *kind_hint, args)?
                     }
-                    NativeCallee::Declare { descriptor_id } => {
-                        self.declare_call(*descriptor_id, args)?
+                    NativeCallee::Declare { descriptor_id, ptr_writebacks } => {
+                        self.declare_call(*descriptor_id, args, ptr_writebacks)?
                     }
                 };
                 if let Some(dst) = dst {

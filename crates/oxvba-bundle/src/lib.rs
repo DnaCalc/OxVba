@@ -16,13 +16,14 @@ pub mod isa;
 pub mod linearize;
 pub mod native;
 
-pub use isa::{CallArg, NativeCallee, Op, ProcArg};
+pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 pub use linearize::{LinearizeError, linearize};
 pub use native::{LibraryModule, NativeImplId};
 
 pub use coreir::{
     CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreConst, CoreParam, CorePlace, CoreProc,
     CoreProgram, CoreStmt, CoreUnOp, CoreValue, GlobalId, LabelId, LocalId, ProcId,
+    PtrWritebackKind,
 };
 
 use oxvba_runtime::DynLinkSymbol;

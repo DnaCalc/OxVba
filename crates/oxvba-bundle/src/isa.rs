@@ -30,8 +30,20 @@ pub enum NativeCallee {
         kind_hint: Option<ProjectMemberKind>,
     },
     /// A `Declare Lib` external call; the full marshalling descriptor lives in the
-    /// bundle's `external_calls` table, keyed by `descriptor_id`.
-    Declare { descriptor_id: u32 },
+    /// bundle's `external_calls` table, keyed by `descriptor_id`. `ptr_writebacks`
+    /// are the pointer-helper arguments (`StrPtr(x)`/`VarPtr(x)` over an l-value)
+    /// whose pinned buffer is read back into a caller slot after the call.
+    Declare { descriptor_id: u32, ptr_writebacks: Vec<DeclarePtrWriteback> },
+}
+
+/// A resolved `Declare` pointer-argument write-back: after the native call, read the
+/// pinned buffer at the `arg_index`-th argument's pointer and store it into
+/// `target_slot`. `kind` selects the read-back projection (string vs byte buffer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeclarePtrWriteback {
+    pub arg_index: usize,
+    pub target_slot: usize,
+    pub kind: crate::coreir::PtrWritebackKind,
 }
 
 /// A single argument to a `CallNative`. Positional by default; `Omitted`

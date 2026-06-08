@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use crate::coreir::*;
-use crate::isa::{CallArg, NativeCallee, Op, ProcArg};
+use crate::isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 use crate::{
     AssignmentIntent, AssignmentTargetKind, Bundle, ClassDescriptor, ClassMethod, ComMemberSelector,
     NumericMode, ProcedureDescriptor, StringCompareMode,
@@ -646,11 +646,23 @@ impl<'p> Linearizer<'p> {
                 });
                 self.emit_arg_writebacks(writebacks)?;
             }
-            CoreCallee::Declare { descriptor_id } => {
+            CoreCallee::Declare { descriptor_id, ptr_writebacks } => {
                 let (args, writebacks) = self.build_call_args(args)?;
+                // Resolve each pointer write-back target (a simple variable l-value)
+                // to its slot; the VM reads the pinned buffer back into it post-call.
+                let ptr_writebacks = ptr_writebacks
+                    .iter()
+                    .map(|wb| {
+                        Ok(DeclarePtrWriteback {
+                            arg_index: wb.arg_index,
+                            target_slot: self.simple_slot(&wb.target)?,
+                            kind: wb.kind,
+                        })
+                    })
+                    .collect::<Res<Vec<_>>>()?;
                 self.emit(Op::CallNative {
                     dst,
-                    callee: NativeCallee::Declare { descriptor_id: *descriptor_id },
+                    callee: NativeCallee::Declare { descriptor_id: *descriptor_id, ptr_writebacks },
                     args,
                 });
                 self.emit_arg_writebacks(writebacks)?;
