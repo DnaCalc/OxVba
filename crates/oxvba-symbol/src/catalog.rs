@@ -162,7 +162,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         FileRead => e(FileRead, &[], variadic(0), Ordinary),
         FileWrite => e(FileWrite, &[], variadic(0), FileStatement),
         FilePrint => e(FilePrint, &[], variadic(0), FileStatement),
-        ConsolePrint => e(ConsolePrint, &[], variadic(0), FileStatement),
+        ConsolePrint => e(ConsolePrint, &["Print"], variadic(0), FileStatement),
         FileInput => e(FileInput, &[], variadic(0), FileStatement),
         ConsoleInput => e(ConsoleInput, &[], variadic(0), FileStatement),
         FileLineInput => e(FileLineInput, &[], variadic(0), FileStatement),

@@ -143,11 +143,16 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
 - **`End` → `Op::Halt` snapshot** (review item N7): if/when the VBA `End` statement is wired
   to `Op::Halt`, have the host snapshot read the entry bundle's globals explicitly (or have
   `run()` restore `cur` to the entry bundle on exit) — currently unreachable.
-- **`Debug.Print` / console output** (clean VM): the clean binder rejects `Debug.Print` and
-  `Print` call statements ("unsupported construct: call route PredeclaredObject(Debug)" /
-  "unresolved name `Print`"). The deleted host test `console_stdio_end_to_end` covered this
-  on the legacy host — re-cover once the clean stack routes console/debug output through the
-  HAL console callbacks.
+- **`Debug.Print` / console output** — DONE. `Debug.Print`/`Debug.Assert` (statement-level
+  special-case in `stmt.rs`, mirroring `Err`) and bare `Print` (a `ConsolePrint` catalog name)
+  now route through the existing HAL diagnostics/console callbacks. Multi-arg join +
+  display formatting live in `oxvba_runtime::print_display_text` (the HAL's
+  `variant_to_display_text` delegates to it). Covered by
+  `oxvba-host/tests/debug_and_console_print.rs`. **Remaining fidelity** (deferred): the `;`
+  no-space separator (only `,`→tab is rendered), `Tab(n)`/`Spc(n)` positioning, trailing
+  `;`/`,` newline suppression, and VBA's leading/trailing space around printed numbers;
+  console `Input`/`Line Input` (no file number) still route to the file intrinsics, not the
+  `ConsoleInput`/`ConsoleLineInput` ones.
 - **`VarPtr` / `StrPtr` / `ObjPtr` pointer helpers + native string marshalling** (clean VM):
   the clean binder rejects the `Structural(VarPtr)` / `Structural(StrPtr)` call routes, so
   `Declare`-based native string/pointer round-trips do not yet execute. The deleted host

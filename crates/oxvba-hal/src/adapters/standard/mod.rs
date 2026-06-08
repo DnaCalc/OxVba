@@ -879,58 +879,9 @@ impl StandardHostServices {
     }
 
     fn variant_to_display_text(&self, value: &Variant) -> String {
-        match value.vtype() {
-            VarType::String => value
-                .as_bstr()
-                .map(|text| text.as_str().to_string())
-                .unwrap_or_default(),
-            VarType::Boolean => {
-                if value.as_bool().unwrap_or(false) {
-                    "True".to_string()
-                } else {
-                    "False".to_string()
-                }
-            }
-            VarType::Empty => String::new(),
-            VarType::Null => "Null".to_string(),
-            VarType::Error => format!("Error {}", value.as_error_code().unwrap_or(0)),
-            VarType::Integer => value.as_i16().unwrap_or(0).to_string(),
-            VarType::Long => value.as_i32().unwrap_or(0).to_string(),
-            VarType::LongLong => value.as_i64().unwrap_or(0).to_string(),
-            VarType::SignedByte => value.as_i8().unwrap_or(0).to_string(),
-            VarType::Byte => value.as_u8().unwrap_or(0).to_string(),
-            VarType::UnsignedInteger => value.as_u16().unwrap_or(0).to_string(),
-            VarType::UnsignedLong | VarType::UnsignedInt => value.as_u32().unwrap_or(0).to_string(),
-            VarType::UnsignedLongLong => value.as_u64().unwrap_or(0).to_string(),
-            VarType::Single => value.as_f32().unwrap_or(0.0).to_string(),
-            VarType::Double => value.as_f64().unwrap_or(0.0).to_string(),
-            VarType::Date => value.as_date_f64().unwrap_or(0.0).to_string(),
-            VarType::Decimal => value
-                .as_decimal96()
-                .map(|decimal| decimal.to_string())
-                .unwrap_or_default(),
-            VarType::Currency => value
-                .as_currency_scaled_i64()
-                .map(|scaled| {
-                    let whole = scaled / 10_000;
-                    let frac = (scaled % 10_000).unsigned_abs();
-                    if frac == 0 {
-                        format!("{whole}")
-                    } else {
-                        let frac_str = format!("{frac:04}").trim_end_matches('0').to_string();
-                        format!("{whole}.{frac_str}")
-                    }
-                })
-                .unwrap_or_default(),
-            VarType::ArrayVariant => value
-                .as_safearray()
-                .map(|array| format!("<array:{}>", array.len()))
-                .unwrap_or_else(|| "<array:invalid>".to_string()),
-            VarType::Object => value
-                .as_object_ref()
-                .map(|handle| format!("<object:{handle}>"))
-                .unwrap_or_else(|| "<object:invalid>".to_string()),
-        }
+        // VBA `Print`/`Debug.Print` display formatting lives in oxvba-runtime
+        // (next to `Variant`), shared with the `Debug.Print`/`Print` intrinsics.
+        oxvba_runtime::print_display_text(value)
     }
 
     fn variant_to_path(

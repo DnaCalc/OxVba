@@ -179,8 +179,49 @@ impl<'a> ProcLower<'a> {
                         .text;
                     return self.bind_err_statement(member, arglist);
                 }
+        // `Debug.Print` / `Debug.Assert` are diagnostics statements; `Debug` is a
+        // predeclared object that is not a value (so it cannot bind as a receiver
+        // through the general member-call path).
+        if callee.kind() == SyntaxKind::MemberExpr
+            && let Some(recv) = callee.member_receiver()
+                && self.is_debug_receiver(recv) {
+                    let member = callee
+                        .member_name_token()
+                        .ok_or_else(|| BindError::Malformed("Debug member".into()))?
+                        .text;
+                    return self.bind_debug_statement(member, arglist);
+                }
         let bound = self.bind_call_from_callee(callee, arglist)?;
         Ok(vec![CoreStmt::Eval(bound.value)])
+    }
+
+    /// `Debug.Print <items>` / `Debug.Assert <cond>`. `Print` joins its arguments
+    /// through the `DebugPrint` host intrinsic (the HAL diagnostics callback);
+    /// `Assert` evaluates its condition for side effects but does not break into a
+    /// debugger in a headless runtime (a real IDE break is deferred — see
+    /// POST_CLEANUP.md).
+    fn bind_debug_statement(
+        &mut self,
+        member: &str,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Vec<CoreStmt>, BindError> {
+        match fold_identifier(member).as_str() {
+            "print" => {
+                let args = self.bind_args(arglist, None)?;
+                Ok(vec![CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::DebugPrint),
+                    args,
+                })])
+            }
+            "assert" => {
+                let values = match arglist {
+                    Some(a) => self.bind_positional_values(a)?,
+                    None => Vec::new(),
+                };
+                Ok(values.into_iter().map(CoreStmt::Eval).collect())
+            }
+            other => Err(BindError::Unsupported(format!("Debug.{other}"))),
+        }
     }
 
     /// `RaiseEvent E(args)` inside a class — the source is the current instance

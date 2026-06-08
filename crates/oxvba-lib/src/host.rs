@@ -61,7 +61,7 @@ pub fn file_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Varian
     Ok(host.fs().print_line_variant(req(args, 0)?, req(args, 1)?)?)
 }
 pub fn console_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.console().print_line_variant(req(args, 0)?)?)
+    Ok(host.console().print_line_variant(print_joined(args))?)
 }
 pub fn file_input(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().input_fields_variant(req(args, 0)?, req(args, 1)?)?)
@@ -212,5 +212,19 @@ pub fn com_release_event_callback(
 
 // ── Diagnostics ──
 pub fn debug_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.diag().debug_print_variant(req(args, 0)?)?)
+    Ok(host.diag().debug_print_variant(print_joined(args))?)
+}
+
+/// Join `Print`/`Debug.Print` arguments into the single display string the host
+/// emits. VBA's `,` separator advances to the next print zone; we render it as a
+/// tab (the `;` no-space separator and `Tab()`/`Spc()` positioning are a deferred
+/// fidelity refinement — see POST_CLEANUP.md). An empty arg list prints a blank
+/// line.
+fn print_joined(args: &[Variant]) -> Variant {
+    let text = args
+        .iter()
+        .map(oxvba_runtime::print_display_text)
+        .collect::<Vec<_>>()
+        .join("\t");
+    Variant::from_string(text)
 }

@@ -901,6 +901,17 @@ impl<'a> ProcLower<'a> {
             })
     }
 
+    /// True if `recv` denotes the predeclared `Debug` object.
+    pub(crate) fn is_debug_receiver(&self, recv: SyntaxNode<'_>) -> bool {
+        recv.kind() == SyntaxKind::IdentExpr
+            && recv.ident_name_token().is_some_and(|t| {
+                matches!(
+                    self.resolve(t.text).map(|b| b.route),
+                    Some(DispatchRoute::PredeclaredObject(PredeclaredObjectId::Debug))
+                )
+            })
+    }
+
     /// Lower a statement-position callee (`Inc x`, `Call Foo(a)`, `obj.M`) to its
     /// call value.
     pub(crate) fn bind_call_from_callee(

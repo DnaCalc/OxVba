@@ -18,7 +18,7 @@ pub use call_frame::{
     RuntimeCallError, RuntimeCallFrame, RuntimeCallKind, RuntimeCallResult, RuntimeCallSelector,
     RuntimeCallSource, RuntimeNamedArgument,
 };
-pub use coerce::variant_to_vba_string;
+pub use coerce::{print_display_text, variant_to_vba_string};
 pub use decimal::Decimal96;
 pub use object_ref::{
     ObjectRef, RUNTIME_GUID_ICONNECTIONPOINT, RUNTIME_GUID_ICONNECTIONPOINTCONTAINER,
