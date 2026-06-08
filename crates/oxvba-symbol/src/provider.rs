@@ -141,6 +141,10 @@ pub struct ResolutionEnvironment {
     /// (active + referenced), keyed by `SymbolId`. Const-folding is a published
     /// type-system property, computed once here and read uniformly by the binder.
     const_values: std::collections::HashMap<SymbolId, oxvba_bundle::coreir::CoreConst>,
+    /// Folded `Optional` parameter defaults, keyed by `(procedure symbol, parameter
+    /// index)`. The binder substitutes these for omitted optional arguments.
+    optional_defaults:
+        std::collections::HashMap<(SymbolId, usize), oxvba_bundle::coreir::CoreConst>,
 }
 
 impl ResolutionEnvironment {
@@ -221,6 +225,16 @@ impl ResolutionEnvironment {
     /// in the closure), if it folded to a constant.
     pub fn const_value(&self, sym: SymbolId) -> Option<&oxvba_bundle::coreir::CoreConst> {
         self.const_values.get(&sym)
+    }
+
+    /// The folded default of optional parameter `index` of procedure `proc`, if it
+    /// has an explicit (foldable) default expression.
+    pub fn optional_default(
+        &self,
+        proc: SymbolId,
+        index: usize,
+    ) -> Option<&oxvba_bundle::coreir::CoreConst> {
+        self.optional_defaults.get(&(proc, index))
     }
 
     /// Find a module scope by (case-insensitive) name — convenience for callers
@@ -367,11 +381,12 @@ pub fn build_resolution_environment(
     // property), so each surface publishes its folded literal values and the binder
     // reads constant values uniformly via `const_value`. Folded before any surface
     // is synthesized so a cross-project `Const X = Other.Y` resolves.
-    let const_values = {
-        let roots: Vec<(ScopeId, SyntaxNode<'_>)> =
-            module_csts.iter().map(|m| (m.module_scope, m.parse.syntax())).collect();
-        crate::const_eval::fold_const_values(&symbols, &roots)
-    };
+    let roots: Vec<(ScopeId, SyntaxNode<'_>)> =
+        module_csts.iter().map(|m| (m.module_scope, m.parse.syntax())).collect();
+    let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
+    // Optional-parameter defaults fold against the closure's const values.
+    let optional_defaults = crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values);
+    drop(roots);
 
     // Each referenced project's public surface — a referencing call binds through
     // the same COM contract a compiled component would present.
@@ -449,5 +464,13 @@ pub fn build_resolution_environment(
         providers.push(Box::new(com));
     }
 
-    Ok(ResolutionEnvironment { symbols, signatures, providers, module_csts, surfaces, const_values })
+    Ok(ResolutionEnvironment {
+        symbols,
+        signatures,
+        providers,
+        module_csts,
+        surfaces,
+        const_values,
+        optional_defaults,
+    })
 }

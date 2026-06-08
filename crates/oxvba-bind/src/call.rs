@@ -3,7 +3,9 @@
 //! named / omitted, ByVal coercion, ByRef aliasing), and lowers member access
 //! (the `Err` object for now; objects/COM arrive in a later phase).
 
-use oxvba_bundle::coreir::{BoundWhich, CoreArg, CoreCallee, CorePlace, CoreValue, ErrField};
+use oxvba_bundle::coreir::{
+    BoundWhich, CoreArg, CoreCallee, CoreConst, CorePlace, CoreValue, ErrField,
+};
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_com::TypeLibParamType;
@@ -146,7 +148,7 @@ impl<'a> ProcLower<'a> {
 
         let signature = self.proc_signature_for(sym, kind);
         let args = match &signature {
-            Some(sig) => self.bind_proc_args(arglist, sig)?,
+            Some(sig) => self.bind_proc_args(arglist, sig, sym)?,
             None => self.bind_args(arglist, None)?,
         };
         let ty = signature
@@ -349,6 +351,7 @@ impl<'a> ProcLower<'a> {
         &mut self,
         arglist: Option<SyntaxNode<'_>>,
         signature: &Signature,
+        proc_sym: SymbolId,
     ) -> Result<Vec<CoreArg>, BindError> {
         let items = match arglist {
             Some(a) => a.arg_items(),
@@ -405,7 +408,19 @@ impl<'a> ProcLower<'a> {
                 }
             }
         }
-        let mut args: Vec<CoreArg> = slots.into_iter().map(|s| s.unwrap_or(CoreArg::Omitted)).collect();
+        // An omitted optional slot (trailing, or an explicit `,`) binds the parameter's
+        // default — its folded default expression, else the declared-type zero, else
+        // `Missing` (a Variant optional with no default).
+        let mut args: Vec<CoreArg> = slots
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| match s {
+                Some(CoreArg::Omitted) | None => {
+                    self.omitted_optional_arg(proc_sym, i, &signature.params[i])
+                }
+                Some(arg) => arg,
+            })
+            .collect();
         match variadic_index {
             // Box the variadic tail into one fresh 0-based array for the ParamArray
             // slot (empty tail → an empty array, UBound -1). Doing this in the binder
@@ -418,6 +433,23 @@ impl<'a> ProcLower<'a> {
             None => args.extend(tail),
         }
         Ok(args)
+    }
+
+    /// The argument for an omitted optional parameter: its folded default expression
+    /// (coerced to the declared type), else the declared-type zero value, else
+    /// `Missing` (a `Variant` optional with no default — an `Object` yields `Nothing`).
+    fn omitted_optional_arg(&self, proc_sym: SymbolId, index: usize, param: &Param) -> CoreArg {
+        if let Some(c) = self.g.env.optional_default(proc_sym, index) {
+            return CoreArg::ByVal(types::coerce_store(CoreValue::Const(c.clone()), &param.ty));
+        }
+        if !param.optional {
+            return CoreArg::Omitted;
+        }
+        match &param.ty {
+            VarTypeRef::Variant => CoreArg::Omitted, // the `Missing` marker
+            VarTypeRef::Object(_) => CoreArg::ByVal(CoreValue::Const(CoreConst::Nothing)),
+            ty => CoreArg::ByVal(types::coerce_store(zero_const(ty), ty)),
+        }
     }
 
     /// `CallByName(Object, ProcName$, CallType, [Args…])` — dispatch by a runtime
@@ -655,12 +687,13 @@ impl<'a> ProcLower<'a> {
             Some(binding) => match &binding.route {
                 DispatchRoute::ProjectMember { kind } => {
                     let kind = *kind;
+                    let member_sym = binding.symbol;
                     // Use the method's signature so ByRef params alias the caller
                     // (and named args reorder into positional slots for dispatch).
-                    let signature = binding.symbol.and_then(|s| self.proc_signature_for(s, kind));
-                    let method_args = match &signature {
-                        Some(sig) => self.bind_proc_args(arglist, sig)?,
-                        None => self.bind_args(arglist, None)?,
+                    let signature = member_sym.and_then(|s| self.proc_signature_for(s, kind));
+                    let method_args = match (&signature, member_sym) {
+                        (Some(sig), Some(s)) => self.bind_proc_args(arglist, sig, s)?,
+                        _ => self.bind_args(arglist, None)?,
                     };
                     let ty = signature.and_then(|s| s.return_type).unwrap_or(VarTypeRef::Variant);
                     let dispatch = self.interface_dispatch_name(&recv.ty, member);
@@ -853,6 +886,19 @@ fn paramarray_element(arg: CoreArg) -> CoreValue {
         CoreArg::Omitted => CoreValue::Const(oxvba_bundle::coreir::CoreConst::Empty),
         CoreArg::ByRef(place) => CoreValue::Load(place),
     }
+}
+
+/// The zero/empty constant seed for a declared scalar type's default (an omitted
+/// `Optional … As <type>` with no explicit default). The caller coerces it to `ty`
+/// (`I32(0)` → `Long(0)`/`Boolean(False)`/`Currency(0)`/`Date(0)`; `""` for strings).
+fn zero_const(ty: &VarTypeRef) -> CoreValue {
+    let c = match ty {
+        VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_) => {
+            CoreConst::Str(String::new())
+        }
+        _ => CoreConst::I32(0),
+    };
+    CoreValue::Const(c)
 }
 
 fn library_const(value: &LibraryConstValue) -> Bound {

@@ -11,6 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use oxvba_bundle::StringCompareMode;
 use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
@@ -27,6 +28,9 @@ pub fn fold_const_values(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
 ) -> HashMap<SymbolId, CoreConst> {
+    // The string comparison/`Like` regime is the declaring module's `Option Compare`.
+    let module_modes: HashMap<ScopeId, StringCompareMode> =
+        module_roots.iter().map(|(scope, root)| (*scope, module_compare_mode(*root))).collect();
     // 1) Collect plain `Const` declarators (module- and proc-level).
     let mut pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)> = Vec::new();
     let mut const_syms: HashSet<SymbolId> = HashSet::new();
@@ -34,12 +38,99 @@ pub fn fold_const_values(
         collect_consts(symbols, *module_scope, *root, &mut pending, &mut const_syms);
     }
     // 2) Fold them by fixed point (forward + cross-const references).
-    let mut values = resolve_const_worklist(symbols, pending, &const_syms);
+    let mut values = resolve_const_worklist(symbols, pending, &const_syms, &module_modes);
     // 3) Fold `Enum` members (sequential auto-increment, reading earlier values).
     for (module_scope, root) in module_roots {
-        fold_enums(symbols, *module_scope, *root, &mut values);
+        let mode = module_modes.get(module_scope).copied().unwrap_or(StringCompareMode::Binary);
+        fold_enums(symbols, *module_scope, *root, &mut values, mode);
     }
     values
+}
+
+/// A module's `Option Compare` mode (`Text` → case-insensitive string ops; default
+/// `Binary`). Mirrors the binder's `module_compare_mode` so const-folded string
+/// comparisons/`Like` match run-time behaviour.
+fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
+    for node in module.child_nodes() {
+        if node.kind() != SyntaxKind::OptionStmt {
+            continue;
+        }
+        let toks = node.child_tokens();
+        let is_compare = toks.iter().any(|t| t.kind == SyntaxKind::KwCompare);
+        let is_text =
+            toks.iter().any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Text"));
+        if is_compare && is_text {
+            return StringCompareMode::Text;
+        }
+    }
+    StringCompareMode::Binary
+}
+
+/// The `Option Compare` mode in effect for `scope` — its module's mode (a proc scope
+/// inherits its module's).
+fn mode_for_scope(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    module_modes: &HashMap<ScopeId, StringCompareMode>,
+) -> StringCompareMode {
+    let mut cur = Some(scope);
+    while let Some(s) = cur {
+        if let Some(m) = module_modes.get(&s) {
+            return *m;
+        }
+        cur = symbols.scopes().iter().find(|sc| sc.id == s).and_then(|sc| sc.parent);
+    }
+    StringCompareMode::Binary
+}
+
+/// Fold every `Optional` parameter's **default expression** to a constant, keyed by
+/// `(procedure symbol, parameter index)`. VBA Optional defaults are constant
+/// expressions (they may reference module/global `Const`s), so they fold here in the
+/// published type system, after `fold_const_values`. A parameter with no default, or
+/// one that does not fold, is simply absent (the binder supplies the declared-type
+/// zero / `Missing`).
+pub fn fold_optional_defaults(
+    symbols: &SymbolTable,
+    module_roots: &[(ScopeId, SyntaxNode<'_>)],
+    values: &HashMap<SymbolId, CoreConst>,
+) -> HashMap<(SymbolId, usize), CoreConst> {
+    let module_modes: HashMap<ScopeId, StringCompareMode> =
+        module_roots.iter().map(|(scope, root)| (*scope, module_compare_mode(*root))).collect();
+    let mut out = HashMap::new();
+    for (module_scope, root) in module_roots {
+        let mode = mode_for_scope(symbols, *module_scope, &module_modes);
+        collect_proc_defaults(symbols, *module_scope, *root, values, mode, &mut out);
+    }
+    out
+}
+
+fn collect_proc_defaults(
+    symbols: &SymbolTable,
+    module_scope: ScopeId,
+    node: SyntaxNode<'_>,
+    values: &HashMap<SymbolId, CoreConst>,
+    mode: StringCompareMode,
+    out: &mut HashMap<(SymbolId, usize), CoreConst>,
+) {
+    if matches!(
+        node.kind(),
+        SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl
+    ) && let Some(name) = node.proc_name_token()
+        && let Ok(Some(proc_sym)) =
+            symbols.find_in_scope(module_scope, SymbolNamespace::Procedure, name.text)
+        && let Some(param_list) = node.param_list()
+    {
+        for (i, param) in param_list.params().iter().enumerate() {
+            if let Some(def) = param.param_default().and_then(|d| d.first_expr_child())
+                && let ConstEval::Value(c) = eval_const_expr(symbols, module_scope, def, values, mode)
+            {
+                out.insert((proc_sym, i), c);
+            }
+        }
+    }
+    for child in node.child_nodes() {
+        collect_proc_defaults(symbols, module_scope, child, values, mode, out);
+    }
 }
 
 /// Walk for `ConstStmt`s under `scope`; proc bodies open their own `Procedure`
@@ -95,6 +186,7 @@ fn fold_enums(
     module_scope: ScopeId,
     node: SyntaxNode<'_>,
     values: &mut HashMap<SymbolId, CoreConst>,
+    mode: StringCompareMode,
 ) {
     if node.kind() == SyntaxKind::EnumBlock {
         let mut next = 0i32;
@@ -106,7 +198,7 @@ fn fold_enums(
                 continue;
             };
             let value = match member.first_expr_child() {
-                Some(init) => match eval_const_expr(symbols, module_scope, init, values) {
+                Some(init) => match eval_const_expr(symbols, module_scope, init, values, mode) {
                     ConstEval::Value(c) => as_i32(&c).unwrap_or(next),
                     _ => next,
                 },
@@ -117,7 +209,7 @@ fn fold_enums(
         }
     }
     for child in node.child_nodes() {
-        fold_enums(symbols, module_scope, child, values);
+        fold_enums(symbols, module_scope, child, values, mode);
     }
 }
 
@@ -149,6 +241,7 @@ fn resolve_const_worklist(
     symbols: &SymbolTable,
     pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)>,
     const_syms: &HashSet<SymbolId>,
+    module_modes: &HashMap<ScopeId, StringCompareMode>,
 ) -> HashMap<SymbolId, CoreConst> {
     let mut values: HashMap<SymbolId, CoreConst> = HashMap::new();
     let mut remaining = pending;
@@ -159,7 +252,8 @@ fn resolve_const_worklist(
             if values.contains_key(&sym) {
                 continue;
             }
-            match eval_const_expr_syms(symbols, scope, init, &values, const_syms) {
+            let mode = mode_for_scope(symbols, scope, module_modes);
+            match eval_const_expr_syms(symbols, scope, init, &values, const_syms, mode) {
                 ConstEval::Value(v) => {
                     values.insert(sym, v);
                     progress = true;
@@ -183,8 +277,9 @@ fn eval_const_expr_syms(
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
     const_syms: &HashSet<SymbolId>,
+    mode: StringCompareMode,
 ) -> ConstEval {
-    eval_inner(symbols, scope, node, values, Some(const_syms))
+    eval_inner(symbols, scope, node, values, Some(const_syms), mode)
 }
 
 /// Evaluate with no pending set (enum initializers, read after consts are folded).
@@ -193,8 +288,9 @@ fn eval_const_expr(
     scope: ScopeId,
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
+    mode: StringCompareMode,
 ) -> ConstEval {
-    eval_inner(symbols, scope, node, values, None)
+    eval_inner(symbols, scope, node, values, None, mode)
 }
 
 fn eval_inner(
@@ -203,6 +299,7 @@ fn eval_inner(
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
     const_syms: Option<&HashSet<SymbolId>>,
+    mode: StringCompareMode,
 ) -> ConstEval {
     match node.kind() {
         SyntaxKind::LiteralExpr => match fold_const_literal(node) {
@@ -210,12 +307,12 @@ fn eval_inner(
             None => ConstEval::Unresolvable,
         },
         SyntaxKind::ParenExpr => match node.paren_inner() {
-            Some(inner) => eval_inner(symbols, scope, inner, values, const_syms),
+            Some(inner) => eval_inner(symbols, scope, inner, values, const_syms, mode),
             None => ConstEval::Unresolvable,
         },
         SyntaxKind::UnaryExpr => {
             let Some(operand) = node.unary_operand() else { return ConstEval::Unresolvable };
-            let inner = match eval_inner(symbols, scope, operand, values, const_syms) {
+            let inner = match eval_inner(symbols, scope, operand, values, const_syms, mode) {
                 ConstEval::Value(c) => c,
                 other => return other,
             };
@@ -252,11 +349,11 @@ fn eval_inner(
             };
             let Some(op) = core_binop(op_tok.kind) else { return ConstEval::Unresolvable };
             match (
-                eval_inner(symbols, scope, lhs_n, values, const_syms),
-                eval_inner(symbols, scope, rhs_n, values, const_syms),
+                eval_inner(symbols, scope, lhs_n, values, const_syms, mode),
+                eval_inner(symbols, scope, rhs_n, values, const_syms, mode),
             ) {
                 (ConstEval::Pending, _) | (_, ConstEval::Pending) => ConstEval::Pending,
-                (ConstEval::Value(l), ConstEval::Value(r)) => opt(fold_const_binary(op, &l, &r)),
+                (ConstEval::Value(l), ConstEval::Value(r)) => opt(fold_const_binary(op, &l, &r, mode)),
                 _ => ConstEval::Unresolvable,
             }
         }
@@ -389,10 +486,22 @@ fn const_to_string(c: &CoreConst) -> Option<String> {
     })
 }
 
-fn fold_const_binary(op: CoreBinOp, lhs: &CoreConst, rhs: &CoreConst) -> Option<CoreConst> {
+fn fold_const_binary(
+    op: CoreBinOp,
+    lhs: &CoreConst,
+    rhs: &CoreConst,
+    mode: StringCompareMode,
+) -> Option<CoreConst> {
     use CoreBinOp::*;
     if matches!(op, Concat) {
         return Some(CoreConst::Str(const_to_string(lhs)? + &const_to_string(rhs)?));
+    }
+    // String relational / `Like`: when both operands are strings, compare them under
+    // the module's `Option Compare` (Text → case-insensitive) rather than numerically.
+    if let (CoreConst::Str(ls), CoreConst::Str(rs)) = (lhs, rhs)
+        && let Some(b) = fold_string_relational(op, ls, rs, mode)
+    {
+        return Some(CoreConst::Bool(b));
     }
     let (l, r) = (const_num(lhs)?, const_num(rhs)?);
     let both_int = matches!((&l, &r), (ConstNum::Int(_), ConstNum::Int(_)));
@@ -425,6 +534,53 @@ fn fold_const_binary(op: CoreBinOp, lhs: &CoreConst, rhs: &CoreConst) -> Option<
         Ge => bool_const(lf >= rf),
         Concat | Is | Like => return None,
     })
+}
+
+/// Fold a relational / `Like` operator on two string operands under `Option Compare`
+/// (`Text` → case-insensitive). Returns `None` for non-relational operators.
+fn fold_string_relational(
+    op: CoreBinOp,
+    lhs: &str,
+    rhs: &str,
+    mode: StringCompareMode,
+) -> Option<bool> {
+    let norm = |s: &str| match mode {
+        StringCompareMode::Text => s.to_lowercase(),
+        StringCompareMode::Binary => s.to_string(),
+    };
+    let (l, r) = (norm(lhs), norm(rhs));
+    use CoreBinOp::*;
+    Some(match op {
+        Eq => l == r,
+        Ne => l != r,
+        Lt => l < r,
+        Le => l <= r,
+        Gt => l > r,
+        Ge => l >= r,
+        Like => like_match(&l.chars().collect::<Vec<_>>(), &r.chars().collect::<Vec<_>>()),
+        _ => return None,
+    })
+}
+
+/// VBA `Like` pattern match: `?` any char, `*` any run, `#` any digit,
+/// `[chars]`/`[!chars]` a (negated) set. Case is already normalised by the caller.
+fn like_match(s: &[char], p: &[char]) -> bool {
+    match p.first() {
+        None => s.is_empty(),
+        Some('*') => (0..=s.len()).any(|i| like_match(&s[i..], &p[1..])),
+        Some('?') => !s.is_empty() && like_match(&s[1..], &p[1..]),
+        Some('#') => !s.is_empty() && s[0].is_ascii_digit() && like_match(&s[1..], &p[1..]),
+        Some('[') => match p.iter().position(|&c| c == ']') {
+            Some(end) => {
+                let set = &p[1..end];
+                let (negate, set) =
+                    if set.first() == Some(&'!') { (true, &set[1..]) } else { (false, set) };
+                !s.is_empty() && (set.contains(&s[0]) != negate) && like_match(&s[1..], &p[end + 1..])
+            }
+            None => !s.is_empty() && s[0] == '[' && like_match(&s[1..], &p[1..]),
+        },
+        Some(&c) => !s.is_empty() && s[0] == c && like_match(&s[1..], &p[1..]),
+    }
 }
 
 fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {

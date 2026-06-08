@@ -63,9 +63,12 @@ impl<'a> ProcLower<'a> {
             // `Put #n, [rec], value` flags a fixed-length-string source (no prefix).
             PutStmt => self.bind_put(node),
             RaiseEventStmt => self.bind_raise_event(node),
+            // A `Dim` allocates any fixed-size array it declares; otherwise it is a
+            // declaration only (the frame is already built).
+            DimStmt => self.bind_dim(node),
             // Declarations contribute no executable statement (frame already built).
-            DimStmt | ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt
-            | AttributeStmt | ImplementsStmt | EventDecl => Ok(Vec::new()),
+            ConstStmt | DeclareStmt | TypeBlock | EnumBlock | OptionStmt | AttributeStmt
+            | ImplementsStmt | EventDecl => Ok(Vec::new()),
             other => Err(BindError::Unsupported(format!("statement {other:?}"))),
         }
     }
@@ -475,11 +478,18 @@ impl<'a> ProcLower<'a> {
         preserve: bool,
     ) -> Result<CoreStmt, BindError> {
         let (array, element_type) = self.redim_target(segments)?;
+        let bounds = self.bind_array_bounds(bounds_node)?;
+        Ok(CoreStmt::ReDim { array, bounds, element_type, preserve })
+    }
+
+    /// Lower an `ArrayBounds` node to `CoreBound`s (each `lower To upper`, or `0 To
+    /// upper` for a single bound). The lower bound must be a constant.
+    fn bind_array_bounds(&mut self, bounds_node: SyntaxNode<'_>) -> Result<Vec<CoreBound>, BindError> {
         let mut bounds = Vec::new();
         for b in bounds_node.children_of(SyntaxKind::Bound) {
             let exprs = b.expr_children();
             let (lower, upper) = match exprs.len() {
-                0 => return Err(BindError::Malformed("empty ReDim bound".into())),
+                0 => return Err(BindError::Malformed("empty array bound".into())),
                 1 => (0, self.bind_expr(exprs[0])?.value),
                 _ => {
                     let lo_val = self.bind_expr(exprs[0])?.value;
@@ -490,7 +500,26 @@ impl<'a> ProcLower<'a> {
             };
             bounds.push(CoreBound { upper, lower });
         }
-        Ok(CoreStmt::ReDim { array, bounds, element_type, preserve })
+        Ok(bounds)
+    }
+
+    /// A `Dim`/`Static` with a *fixed-size* array declarator (`Dim a(1 To 3)`) allocates
+    /// the array where it is declared, reusing the `ReDim` path; a dynamic array
+    /// (`Dim a()`) stays unallocated until a `ReDim`. (Other declarators are
+    /// declarations only — the frame is already built.)
+    fn bind_dim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let mut out = Vec::new();
+        for declarator in node.declarators() {
+            let Some(bounds_node) = declarator.array_bounds() else { continue };
+            if bounds_node.children_of(SyntaxKind::Bound).is_empty() {
+                continue; // `Dim a()` — dynamic, no allocation yet.
+            }
+            let Some(name) = declarator.declarator_name() else { continue };
+            let (array, element_type) = self.redim_target(&[name.text])?;
+            let bounds = self.bind_array_bounds(bounds_node)?;
+            out.push(CoreStmt::ReDim { array, bounds, element_type, preserve: false });
+        }
+        Ok(out)
     }
 
     fn bind_erase(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {

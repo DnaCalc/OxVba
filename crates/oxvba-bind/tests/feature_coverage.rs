@@ -144,7 +144,6 @@ fn scalar_type_char_const_carriers_execute() {
 }
 
 #[test]
-#[ignore = "gap H: string relational/Like const folding not supported (POST_CLEANUP.md)"]
 fn scalar_boolean_const_expression_executes() {
     let snap = run(
         "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -172,7 +171,6 @@ fn scalar_boolean_eqv_imp_const_expressions_execute() {
 }
 
 #[test]
-#[ignore = "gap H: string relational/Like const folding not supported (POST_CLEANUP.md)"]
 fn scalar_option_compare_text_boolean_const_expression_executes() {
     let snap = run(
         "Option Compare Text\nConst CFlag As Boolean = \"a\" = \"A\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -181,7 +179,6 @@ fn scalar_option_compare_text_boolean_const_expression_executes() {
 }
 
 #[test]
-#[ignore = "gap H: string relational/Like const folding not supported (POST_CLEANUP.md)"]
 fn scalar_boolean_like_const_expression_executes() {
     let snap = run(
         "Option Compare Text\nConst Prefix As String = \"he\"\nConst CFlag As Boolean = Prefix & \"llo\" Like \"HELLO\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
@@ -319,9 +316,7 @@ fn string_concat_and_len() {
     );
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nCall Fill(s, b)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\ntarget = text\nflagTarget = flag\nEnd Sub",
     );
@@ -334,9 +329,7 @@ fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
     );
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const CText = \"ready\"\nConst CFlag = True\nSub Main()\nDim s As String\nDim b As Boolean\nCall Fill(s, b)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, Optional ByVal text As String = CText, Optional ByVal flag As Boolean = CFlag)\ntarget = text\nflagTarget = flag\nEnd Sub",
     );
@@ -349,45 +342,35 @@ fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args()
     );
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_string_concat_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_string_concat_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"re\"\nSub Main()\nDim s As String\nCall Fill(s)\nEnd Sub\nSub Fill(ByRef target As String, Optional ByVal text As String = Prefix & \"ady\")\ntarget = text\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_string(BStr::from("ready"))]);
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_string_scalar_concat_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_string_scalar_concat_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nSub Main()\nDim s As String\nCall Fill(s)\nEnd Sub\nSub Fill(ByRef target As String, Optional ByVal text As String = Prefix & CNumber & CFlag)\ntarget = text\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_string(BStr::from("v7True"))]);
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Enabled = True\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\ntarget = flag\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_boolean_like_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_boolean_like_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"he\"\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Prefix & \"llo\" Like \"hello\")\ntarget = flag\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nDim n As Long\nCall Fill(s, b, n)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, ByRef numberTarget As Long, Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal value As Long)\ntarget = text\nflagTarget = flag\nnumberTarget = value\nEnd Sub",
     );
@@ -401,18 +384,14 @@ fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     );
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_longlong_module_constant_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_longlong_module_constant_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Big As LongLong = 5000000000\nSub Main()\nDim n As LongLong\nCall Fill(n)\nEnd Sub\nSub Fill(ByRef target As LongLong, Optional ByVal value As LongLong = Big + 7)\ntarget = value\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_i64(5_000_000_007)]);
 }
 
-#[test]
-#[ignore = "gap D: Optional parameter defaults not bound for omitted args (POST_CLEANUP.md)"]
-fn optional_date_currency_defaults_are_bound_for_omitted_args() {
+#[test]fn optional_date_currency_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim amount As Variant\nDim stamp As Variant\nDim literalStamp As Variant\nDim numericStamp As Variant\nDim blankAmount As Variant\nDim blankStamp As Variant\nCall Fill(amount, stamp, literalStamp, numericStamp, blankAmount, blankStamp)\nEnd Sub\nSub Fill(ByRef amountTarget As Variant, ByRef stampTarget As Variant, ByRef literalStampTarget As Variant, ByRef numericStampTarget As Variant, ByRef blankAmountTarget As Variant, ByRef blankStampTarget As Variant, Optional ByVal amount As Currency = 1.25@ * 2@ - 1.0@, Optional ByVal stamp As Date = (2.0 + 3.0) / 2.0, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal numericStamp As Date = #2/28/2026#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\namountTarget = amount\nstampTarget = stamp\nliteralStampTarget = literalStamp\nnumericStampTarget = numericStamp\nblankAmountTarget = blankAmount\nblankStampTarget = blankStamp\nEnd Sub",
     );
@@ -470,7 +449,6 @@ fn string_functions_left_mid_ucase() {
 }
 
 #[test]
-#[ignore = "gap G: fixed-size array local not allocated (`Dim a(1 To 3)`) (POST_CLEANUP.md)"]
 fn fixed_array_index_assign_read() {
     let snap = run(
         "Sub Main()\nDim a(1 To 3) As Long\nDim total As Long\na(1) = 10\na(2) = 20\na(3) = 30\ntotal = a(1) + a(2) + a(3)\nEnd Sub",

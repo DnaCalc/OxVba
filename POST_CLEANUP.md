@@ -24,9 +24,9 @@ clean stack — do not delete.
 
 `crates/oxvba-bind/tests/feature_coverage.rs` re-points the legacy `vm_feature_coverage`
 VBA-semantics corpus at the clean stack (bind→linearize→vm2). First run: 27 pass / 26 fail
-across 6 categories (A–F). **Round 2 (typed arithmetic + coercion) closed A, B, F and the
-pure-Boolean-const cases: now 35 pass, 18 ignored.** Each remaining failure stays
-`#[ignore = "gap X: …"]` in the corpus — un-ignore as fixed.
+across 6 categories (A–F). Round 2 (typed arithmetic + coercion) closed A, B, F and the
+pure-Boolean-const cases (→ 35/18). **Round 3 closed D, G, H → now 50 pass, 5 ignored.**
+Each remaining failure stays `#[ignore = "gap X: …"]` in the corpus — un-ignore as fixed.
 
 **Closed (commit: typed arithmetic in the bytecode/VM + store coercion):** the numeric
 type/regime lives **on the arithmetic op** (so the bundle fully describes the code for the
@@ -51,26 +51,34 @@ Cranelift JIT), not as a separate binder coercion node:
   `And`/`Xor`/`Eqv`/`Imp`-folded `I32` const stored into a `Boolean` var coerces to
   `True`/`False`.
 
-**Remaining (18 ignored):**
+**Closed (round 3 — D/G/H):**
+- **D — Optional parameter defaults** (9): an omitted optional arg now binds the parameter's
+  default. The default *expression* folds in the symbol layer via the const evaluator
+  (`const_eval::fold_optional_defaults`, after `fold_const_values`), keyed by `(proc symbol,
+  param index)` and exposed by `ResolutionEnvironment::optional_default`; the binder
+  (`call.rs::omitted_optional_arg`) substitutes the folded default (coerced to the param
+  type), else the declared-type zero (`Object`→`Nothing`), else `Missing` (a `Variant`
+  optional with no default).
+- **G — fixed-size array local** (1): a `Dim a(1 To 3) As Long` now allocates the array where
+  declared (`stmt.rs::bind_dim` emits a `ReDim` for fixed-bounds declarators, reusing the
+  bounds parser; a dynamic `Dim a()` stays unallocated). Module-level fixed-array *globals*
+  and loop-hoisting are not yet handled (position-emission; refine later).
+- **H — string relational / `Like` const folding** (3): `const_eval::fold_const_binary` folds
+  string `=`/`<>`/`<`/… and `Like` (compact VBA matcher) under the module's `Option Compare`
+  (threaded through the evaluator). Also unblocks the `Like`/string Optional defaults in D.
+
+**Remaining (5 ignored):**
 - **C — UDTs** (2): `Type … End Type` + `p.X = 3` → `424 Object required`. User-defined
   types not supported in the clean stack.
-- **D — Optional parameter defaults** (9): an omitted `Optional ByVal x As T = <default>`
-  passes `Missing` (an Error variant) instead of binding the default value. Biggest cluster.
 - **E — indexed `Property Let`** (2): `Item(i) = x` → bind error "not an assignable
   variable" (indexed `Property Get` works).
-- **G — fixed-size array local** (1): `Dim a(1 To 3) As Long` — the local isn't allocated as
-  an array (`424`/`13 expected an array` at the first element store).
-- **H — string relational / `Like` const folding** (3): `Const b As Boolean = "a" = "A"` /
-  `… Like …` don't fold (the const evaluator only folds numeric comparisons; needs string
-  comparison + `Like`, honoring `Option Compare`).
 - **I — non-standard `^` LongLong type-char** (1): the snippet declares `Const CLongLong^`;
   `^` is not a VBA 7.1 type-declaration char (the valid set is `% & ! # @ $`), and the clean
   parser correctly rejects it. The coercion of the *other* type-char carriers is covered.
 
 Next gap-analysis steps: re-point the host `com_*`/`file_io`/`pointer`/`invoke` suites
 (objects, COM, file I/O, pointers) — those will surface the object/COM/host-call gaps the
-scalar corpus can't. Of the remaining bind/VM gaps, **D** (Optional defaults) is the
-highest-value next fix.
+scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most substantial.
 
 ## Deferred decisions
 
