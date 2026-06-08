@@ -153,12 +153,21 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   `;`/`,` newline suppression, and VBA's leading/trailing space around printed numbers;
   console `Input`/`Line Input` (no file number) still route to the file intrinsics, not the
   `ConsoleInput`/`ConsoleLineInput` ones.
-- **`VarPtr` / `StrPtr` / `ObjPtr` pointer helpers + native string marshalling** (clean VM):
-  the clean binder rejects the `Structural(VarPtr)` / `Structural(StrPtr)` call routes, so
-  `Declare`-based native string/pointer round-trips do not yet execute. The deleted host
-  tests `pointer_helpers_end_to_end` + `native_declare_string_marshalling_end_to_end`
-  covered this on the legacy host — re-cover when the pointer-helper ops + `Declare` string
-  marshalling land in `oxvba-bind`/`oxvba-vm2`.
+- **`VarPtr` / `StrPtr` / `ObjPtr` pointer helpers** — binding DONE. The binder now lowers
+  the `Structural(VarPtr|StrPtr|ObjPtr)` route to `CoreValue::Ptr { kind, place }` (`StrPtr`→
+  `Str`, `ObjPtr`→`Obj`, `VarPtr`→`Var`/`VarString`/`VarVariant` by the operand's static type),
+  yielding a `LongPtr`. The `Op::Ptr*` handlers + the runtime pointer registry
+  (`oxvba_runtime::pointer_helpers`) were already complete, so the route now executes
+  (a pinned pointer per call). Covered by the `*_yields_nonzero_pointer` tests in
+  `oxvba-bind/tests/feature_coverage.rs`. **Remaining**: the full native-DLL round-trip
+  (the deleted `pointer_helpers_end_to_end`/`native_declare_string_marshalling_end_to_end`)
+  also needs the `Declare` string-marshalling gap below (ByRef `String`, `String` return);
+  the pointer registry never evicts (a pin-per-`VarPtr` leak, acceptable for now); and
+  pinning a *copy* means native write-back doesn't reach the original variable (read-oriented).
+- **Native `Declare` string marshalling** (clean VM): `ByVal As String` to ANSI (A) and wide
+  (W) APIs works; **missing** — ByRef `String` (no string variant in `NativeByRefStorage`),
+  `String` *return* type, fixed-length `String * N`, and Unix ByRef. The deleted
+  `native_declare_string_marshalling_end_to_end` covered these on the legacy host.
 
 ## Legacy stack removed (this pass)
 

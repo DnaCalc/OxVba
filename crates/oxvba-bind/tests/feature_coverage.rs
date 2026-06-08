@@ -698,3 +698,46 @@ fn logical_operator_precedence_with_comparison() {
         "expected inRange=True for x=5 in {snap:?}"
     );
 }
+
+// ── Pointer helpers (VarPtr / StrPtr / ObjPtr) ──
+// These bind to `CoreValue::Ptr` and execute the `Op::Ptr*` ops, materializing a
+// pinned pointer via the runtime pointer registry. The address is non-deterministic,
+// so each test asserts a non-zero `LongPtr` (and that binding no longer rejects the
+// `Structural(...)` route). The runtime layer's exact pinning is unit-tested in
+// oxvba-runtime/src/pointer_helpers.rs.
+
+/// The last snapshot slot (the most-recently declared local) as a non-zero pointer.
+fn assert_nonzero_pointer(snap: &[Variant], context: &str) {
+    let ptr = snap.last().and_then(Variant::as_i64);
+    assert!(
+        matches!(ptr, Some(p) if p != 0),
+        "{context}: expected a non-zero LongPtr, got {:?} in {snap:?}",
+        snap.last()
+    );
+}
+
+#[test]
+fn strptr_of_string_yields_nonzero_pointer() {
+    let snap = run("Sub Main()\nDim s As String\nDim p\ns = \"abc\"\np = StrPtr(s)\nEnd Sub");
+    assert_nonzero_pointer(&snap, "StrPtr(String)");
+}
+
+#[test]
+fn varptr_of_scalar_yields_nonzero_pointer() {
+    let snap = run("Sub Main()\nDim n As Long\nDim p\nn = 42\np = VarPtr(n)\nEnd Sub");
+    assert_nonzero_pointer(&snap, "VarPtr(Long)");
+}
+
+#[test]
+fn varptr_of_string_variable_yields_nonzero_pointer() {
+    // A String variable routes through `PtrKind::VarString` (the BSTR cell).
+    let snap = run("Sub Main()\nDim s As String\nDim p\ns = \"abc\"\np = VarPtr(s)\nEnd Sub");
+    assert_nonzero_pointer(&snap, "VarPtr(String var)");
+}
+
+#[test]
+fn varptr_of_variant_variable_yields_nonzero_pointer() {
+    // A Variant variable routes through `PtrKind::VarVariant` (the VARIANT cell).
+    let snap = run("Sub Main()\nDim v\nDim p\nv = 7\np = VarPtr(v)\nEnd Sub");
+    assert_nonzero_pointer(&snap, "VarPtr(Variant var)");
+}

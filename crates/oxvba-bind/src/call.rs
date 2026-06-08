@@ -4,12 +4,13 @@
 //! (the `Err` object for now; objects/COM arrive in a later phase).
 
 use oxvba_bundle::coreir::{
-    BoundWhich, CoreArg, CoreCallee, CoreConst, CorePlace, CoreStmt, CoreValue, ErrField,
+    BoundWhich, CoreArg, CoreCallee, CoreConst, CorePlace, CoreStmt, CoreValue, ErrField, PtrKind,
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
+use oxvba_symbol::structural::StructuralIntrinsic;
 use oxvba_symbol::model::{
     fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind,
 };
@@ -125,6 +126,42 @@ impl<'a> ProcLower<'a> {
             DispatchRoute::SpecialForm(SpecialForm::CallByName) => self.bind_callbyname(arglist),
             DispatchRoute::ErrMember(_) => {
                 Err(BindError::Unsupported(format!("`{name}` Err member in value context")))
+            }
+            // The pointer-helper intrinsics take an l-value and yield its address as
+            // a `LongPtr`. The pointer is materialized at run time by the runtime
+            // pointer registry (pinned for the duration of the native call it feeds);
+            // see oxvba_runtime::pointer_helpers and POST_CLEANUP.md for the
+            // lifetime contract. `AddressOf` (a procedure pointer) is a SpecialForm,
+            // handled separately in `expr.rs`.
+            DispatchRoute::Structural(
+                s @ (StructuralIntrinsic::VarPtr
+                | StructuralIntrinsic::StrPtr
+                | StructuralIntrinsic::ObjPtr),
+            ) => {
+                let first = arglist
+                    .and_then(|a| a.arg_items().into_iter().next())
+                    .ok_or_else(|| BindError::Malformed(format!("`{name}` requires an argument")))?;
+                let expr = match first {
+                    ArgItem::Positional(e) => e,
+                    _ => return Err(BindError::Malformed(format!("`{name}` argument"))),
+                };
+                let (place, ty) = self.bind_place(expr)?;
+                let kind = match s {
+                    StructuralIntrinsic::StrPtr => PtrKind::Str,
+                    StructuralIntrinsic::ObjPtr => PtrKind::Obj,
+                    // `VarPtr` of a String/fixed-string variable exposes the BSTR
+                    // cell; of a Variant variable, the VARIANT cell; otherwise the
+                    // scalar/array storage.
+                    StructuralIntrinsic::VarPtr => match ty {
+                        VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_) => {
+                            PtrKind::VarString
+                        }
+                        VarTypeRef::Variant => PtrKind::VarVariant,
+                        _ => PtrKind::Var,
+                    },
+                    _ => unreachable!("outer pattern restricts to the pointer helpers"),
+                };
+                Ok(value_bound(CoreValue::Ptr { kind, place }, builtin(BuiltinType::LongPtr)))
             }
             other => Err(BindError::Unsupported(format!("call route {other:?} for `{name}`"))),
         }
