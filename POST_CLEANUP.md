@@ -153,17 +153,29 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   `;`/`,` newline suppression, and VBA's leading/trailing space around printed numbers;
   console `Input`/`Line Input` (no file number) still route to the file intrinsics, not the
   `ConsoleInput`/`ConsoleLineInput` ones.
-- **`VarPtr` / `StrPtr` / `ObjPtr` pointer helpers** — binding DONE. The binder now lowers
-  the `Structural(VarPtr|StrPtr|ObjPtr)` route to `CoreValue::Ptr { kind, place }` (`StrPtr`→
-  `Str`, `ObjPtr`→`Obj`, `VarPtr`→`Var`/`VarString`/`VarVariant` by the operand's static type),
-  yielding a `LongPtr`. The `Op::Ptr*` handlers + the runtime pointer registry
-  (`oxvba_runtime::pointer_helpers`) were already complete, so the route now executes
-  (a pinned pointer per call). Covered by the `*_yields_nonzero_pointer` tests in
-  `oxvba-bind/tests/feature_coverage.rs`. **Remaining**: the full native-DLL round-trip
-  (the deleted `pointer_helpers_end_to_end`/`native_declare_string_marshalling_end_to_end`)
-  also needs the `Declare` string-marshalling gap below (ByRef `String`, `String` return);
-  the pointer registry never evicts (a pin-per-`VarPtr` leak — see the dedicated follow-up below); and
-  pinning a *copy* means native write-back doesn't reach the original variable (read-oriented).
+- **Native `Declare` execution (`VarPtr`/`StrPtr`/`ObjPtr` + the FFI lane)** — DONE for the
+  pointer-driven path (L1–L3). `Declare Lib` now invokes real DLLs: the binder emits the
+  `m1-native-ffi` lane for real libraries (HAL gates actual execution on policy, so sandboxed runs
+  stay safe); `StrPtr`/`VarPtr`/`ObjPtr` bind value-based (r-values like `StrPtr("x")` work);
+  `VarPtr(a(i))` points at the whole array buffer; and a `StrPtr(x)`/`VarPtr(x)` argument over an
+  l-value writes the pinned buffer back into `x` after the call (`CoreCallee::Declare.ptr_writebacks`
+  → vm2 `read_back_*`). Proven by `oxvba-host/tests/native_declare_string_marshalling_end_to_end.rs`
+  (15/15 on Windows: LoadLibraryA, GetModuleHandleExW, MultiByteToWideChar/WideCharToMultiByte
+  buffers, SysReAllocString, oleaut32 ByRef numeric conversions, msvcrt sqrt).
+  **Remaining (separate features, not the pointer path):** `pointer_helpers_end_to_end`'s
+  byte-array Declare *parameter* passing + `VarPtr` of a Variant-Decimal/i64; the registry leak
+  (next bullet); and the **true `As String` marshalling** further down.
+- **SQLiteForExcel acceptance test — blocked on CONDITIONAL COMPILATION.** The real-world acceptance
+  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) drives `sqlite3.dll` via the
+  bounded demo. Its `Sqlite3Demo.bas` uses **57 `#If Win64`/`#Else`/`#End If`** directives that the
+  clean lexer/parser does not handle (a `#` starts date-literal lexing → ~150 cascading
+  "unexpected statement" parse errors). **Gate = implement conditional compilation**: lexer recognizes
+  `#If`/`#ElseIf`/`#Else`/`#End If`/`#Const` (don't mistake `#If` for a date literal); a preprocessor
+  evaluates them against the project's conditional constants **plus the predefined `Win64`/`VBA7`/
+  `Win32`/`Mac` constants** (set from process bitness) and strips inactive branches before parse. Also
+  needs `Lib`-path resolution for `Lib "SQLite3"` (the demo `LoadLibraryA`s the dll by path first). The
+  Declare *execution* path it exercises is already proven (above) — this is a parser/preprocessor gap.
+- **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that
   **never evicts** — each pointer-helper call permanently leaks its pinned cell (BSTR / VARIANT / byte
