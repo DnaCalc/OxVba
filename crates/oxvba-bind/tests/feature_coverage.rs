@@ -741,3 +741,10 @@ fn varptr_of_variant_variable_yields_nonzero_pointer() {
     let snap = run("Sub Main()\nDim v\nDim p\nv = 7\np = VarPtr(v)\nEnd Sub");
     assert_nonzero_pointer(&snap, "VarPtr(Variant var)");
 }
+
+#[test]
+fn strptr_of_string_literal_yields_nonzero_pointer() {
+    // `StrPtr` of an r-value literal (not an l-value) binds and pins a temporary.
+    let snap = run("Sub Main()\nDim p\np = StrPtr(\"alpha\")\nEnd Sub");
+    assert_nonzero_pointer(&snap, "StrPtr(literal)");
+}

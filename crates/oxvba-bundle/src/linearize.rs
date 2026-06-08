@@ -446,8 +446,8 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::TypeOfIs { dst, object_slot, type_name: type_name.clone() });
                 Ok(dst)
             }
-            CoreValue::Ptr { kind, place } => {
-                let src = self.lower_place_load(place)?;
+            CoreValue::Ptr { kind, value } => {
+                let src = self.lower_value(value)?;
                 let dst = self.new_temp();
                 self.emit(match kind {
                     PtrKind::Str => Op::PtrStr { dst, src },

@@ -260,7 +260,11 @@ pub enum CoreValue {
     NewRecord { fields: usize },
     Coerce { value: Box<CoreValue>, to: CoerceTarget },
     TypeOfIs { object: Box<CoreValue>, type_name: String },
-    Ptr { kind: PtrKind, place: CorePlace },
+    /// A pointer-helper (`VarPtr`/`StrPtr`/`ObjPtr`) over its operand **value**: the
+    /// VM pins the value in the pointer registry and yields its address. The operand
+    /// is a value (not a place) so r-values like `StrPtr("literal")` work; write-back
+    /// into an l-value operand is recorded separately on the `Declare` call.
+    Ptr { kind: PtrKind, value: Box<CoreValue> },
     ErrField(ErrField),
     ArrayLiteral(Vec<CoreValue>),
     Bound { which: BoundWhich, array: Box<CorePlace> },
