@@ -384,6 +384,16 @@ impl Lower<'_> {
     fn intern_import(&self, import: BundleImport) -> usize {
         self.imports.borrow_mut().intern(import)
     }
+
+    /// A declared type names a class *or* a `Type` (UDT) — the parser/scanner can't
+    /// tell them apart, so an `Object(name)` whose name is a declared UDT is a record
+    /// value type. (Applied wherever the binder reads a variable's declared type.)
+    fn resolve_udt_type(&self, ty: VarTypeRef) -> VarTypeRef {
+        match ty {
+            VarTypeRef::Object(name) if self.env.is_udt(&name) => VarTypeRef::Udt(name),
+            other => other,
+        }
+    }
 }
 
 /// Per-procedure mutable lowering state.
@@ -436,10 +446,11 @@ impl<'a> ProcLower<'a> {
 
     /// The declared type of a resolved symbol (Variant if it has no declared type).
     fn symbol_type(&self, sym: SymbolId) -> VarTypeRef {
-        match self.g.env.symbols.symbol(sym).map(|s| &s.imp) {
+        let ty = match self.g.env.symbols.symbol(sym).map(|s| &s.imp) {
             Some(SymbolImpl::DeclaredType(t)) => t.clone(),
             _ => VarTypeRef::Variant,
-        }
+        };
+        self.g.resolve_udt_type(ty)
     }
 
     /// The place + type for a resolved variable symbol: a local/param slot, a

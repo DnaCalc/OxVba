@@ -20,7 +20,9 @@ pub fn array_element_of(elem: &VarTypeRef) -> ArrayElementType {
     match elem {
         VarTypeRef::Builtin(b) => builtin_element(*b),
         VarTypeRef::FixedString(_) => ArrayElementType::String,
-        VarTypeRef::Object(_) | VarTypeRef::Variant | VarTypeRef::Array(_) => ArrayElementType::Variant,
+        VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Variant | VarTypeRef::Array(_) => {
+            ArrayElementType::Variant
+        }
     }
 }
 
@@ -53,9 +55,12 @@ pub fn assignment_target_kind(ty: &VarTypeRef) -> AssignmentTargetKind {
     match ty {
         VarTypeRef::Object(_) => AssignmentTargetKind::Object,
         VarTypeRef::Variant => AssignmentTargetKind::Variant,
-        VarTypeRef::Builtin(_) | VarTypeRef::Array(_) | VarTypeRef::FixedString(_) => {
-            AssignmentTargetKind::Scalar
-        }
+        // A UDT is a value aggregate: `q = p` is a `Let` (value copy of the record),
+        // never `Set`.
+        VarTypeRef::Builtin(_)
+        | VarTypeRef::Udt(_)
+        | VarTypeRef::Array(_)
+        | VarTypeRef::FixedString(_) => AssignmentTargetKind::Scalar,
     }
 }
 
@@ -63,7 +68,7 @@ pub fn assignment_target_kind(ty: &VarTypeRef) -> AssignmentTargetKind {
 pub fn type_name(ty: &VarTypeRef) -> String {
     match ty {
         VarTypeRef::Builtin(b) => format!("{b:?}"),
-        VarTypeRef::Object(name) => name.clone(),
+        VarTypeRef::Object(name) | VarTypeRef::Udt(name) => name.clone(),
         VarTypeRef::Variant => "Variant".into(),
         VarTypeRef::Array(inner) => format!("{}()", type_name(inner)),
         VarTypeRef::FixedString(_) => "String".into(),

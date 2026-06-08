@@ -1,7 +1,7 @@
 //! The l-value binder: `bind_place` classifies an assignable expression into a
 //! `CorePlace` (local/global slot, array element, …) and reports its type.
 
-use oxvba_bundle::coreir::{CorePlace, CoreValue};
+use oxvba_bundle::coreir::{CoreConst, CorePlace, CoreValue};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
@@ -50,6 +50,10 @@ impl<'a> ProcLower<'a> {
                 self.bind_place(inner)
             }
             SyntaxKind::MemberExpr => {
+                // A field of a UDT value (`p.X`) is a fixed-index element of the record.
+                if let Some(place) = self.udt_field_place(node)? {
+                    return Ok(place);
+                }
                 let member = node
                     .member_name_token()
                     .ok_or_else(|| BindError::Malformed("member target without name".into()))?
@@ -74,6 +78,31 @@ impl<'a> ProcLower<'a> {
             }
             other => Err(BindError::InvalidAssignment(format!("{other:?} is not an l-value"))),
         }
+    }
+
+    /// If `node` is `<udt>.<field>` (a member access on a UDT value), the field place:
+    /// a fixed-index element of the record (a `SafeArray`), with the field's type.
+    /// `None` when the receiver is not a UDT place (the caller falls back to object /
+    /// property member resolution).
+    pub(crate) fn udt_field_place(
+        &mut self,
+        node: SyntaxNode<'_>,
+    ) -> Result<Option<(CorePlace, VarTypeRef)>, BindError> {
+        let Some(member) = node.member_name_token().map(|t| t.text) else { return Ok(None) };
+        let Some(recv_node) = node.member_receiver() else { return Ok(None) };
+        let Ok((base_place, VarTypeRef::Udt(udt))) = self.bind_place(recv_node) else {
+            return Ok(None);
+        };
+        let Some((index, field_ty)) =
+            self.g.env.udt_field(&udt, member).map(|(i, t)| (i, t.clone()))
+        else {
+            return Ok(None);
+        };
+        let place = CorePlace::Index {
+            array: Box::new(base_place),
+            indices: vec![CoreValue::Const(CoreConst::I32(index as i32))],
+        };
+        Ok(Some((place, self.g.resolve_udt_type(field_ty))))
     }
 
     /// Bind the index expressions of an `IndexExpr` to a list of values.

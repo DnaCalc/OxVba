@@ -532,22 +532,48 @@ impl<'a> ProcLower<'a> {
         Ok(())
     }
 
-    /// A `Dim` with a *fixed-size* array declarator (`Dim a(1 To 3)`) allocates the
-    /// array, reusing the `ReDim` path; a dynamic array (`Dim a()`) stays unallocated
-    /// until a `ReDim`. (Other declarators are declarations only.)
+    /// A `Dim` declarator allocation: a *fixed-size* array (`Dim a(1 To 3)`) via the
+    /// `ReDim` path, or a UDT value (`Dim p As Point`) as a default-initialized record.
+    /// A dynamic array (`Dim a()`) and plain scalars need no allocation.
     pub(crate) fn bind_dim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let mut out = Vec::new();
         for declarator in node.declarators() {
-            let Some(bounds_node) = declarator.array_bounds() else { continue };
-            if bounds_node.children_of(SyntaxKind::Bound).is_empty() {
-                continue; // `Dim a()` — dynamic, no allocation yet.
-            }
             let Some(name) = declarator.declarator_name() else { continue };
-            let (array, element_type) = self.redim_target(&[name.text])?;
-            let bounds = self.bind_array_bounds(bounds_node)?;
-            out.push(CoreStmt::ReDim { array, bounds, element_type, preserve: false });
+            // A fixed-size array allocates via ReDim.
+            if let Some(bounds_node) = declarator.array_bounds() {
+                if !bounds_node.children_of(SyntaxKind::Bound).is_empty() {
+                    let (array, element_type) = self.redim_target(&[name.text])?;
+                    let bounds = self.bind_array_bounds(bounds_node)?;
+                    out.push(CoreStmt::ReDim { array, bounds, element_type, preserve: false });
+                }
+                continue; // a dynamic `Dim a()` stays unallocated.
+            }
+            // A UDT value allocates a default record.
+            if let Some(init) = self.udt_record_init(name.text)? {
+                out.push(init);
+            }
         }
         Ok(out)
+    }
+
+    /// `Some(record allocation)` if `name` is a UDT-typed variable: a fresh record (a
+    /// `SafeArray` of the type's fields, default-initialized) stored into its slot.
+    fn udt_record_init(&mut self, name: &str) -> Result<Option<CoreStmt>, BindError> {
+        let Some(sym) = self.resolve(name).and_then(|b| b.symbol) else { return Ok(None) };
+        let oxvba_symbol::signature::VarTypeRef::Udt(udt) = self.symbol_type(sym) else {
+            return Ok(None);
+        };
+        let Some(field_count) = self.g.env.udt_field_count(&udt) else { return Ok(None) };
+        let place = self.place_by_name(name)?;
+        let fields = vec![CoreValue::Const(CoreConst::Empty); field_count];
+        Ok(Some(CoreStmt::Assign {
+            place,
+            value: CoreValue::ArrayLiteral(fields),
+            intent: AssignmentIntent::Let,
+            target_kind: oxvba_bundle::AssignmentTargetKind::Scalar,
+            target_name: name.to_string(),
+            target_type_name: udt,
+        }))
     }
 
     fn bind_erase(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {

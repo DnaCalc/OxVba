@@ -25,10 +25,10 @@ clean stack — do not delete.
 `crates/oxvba-bind/tests/feature_coverage.rs` re-points the legacy `vm_feature_coverage`
 VBA-semantics corpus at the clean stack (bind→linearize→vm2). First run: 27 pass / 26 fail
 across 6 categories (A–F). Round 2 (typed arithmetic + coercion) closed A, B, F and the
-pure-Boolean-const cases (→ 35/18). Round 3 closed D, G, H (→ 50/5). **Round 4 closed E
+pure-Boolean-const cases (→ 35/18). Round 3 closed D, G, H (→ 50/5). Round 4 closed E
 (indexed Property Let), I (the non-standard `^` test, rewritten with `As LongLong`), and
-the G follow-ups (fixed-array Dim hoisting + module-level array globals) → now 55 pass, 2
-ignored.** Each remaining failure stays `#[ignore = "gap X: …"]` — un-ignore as fixed.
+the G follow-ups (fixed-array Dim hoisting + module-level array globals) (→ 55/2).
+**Round 5 closed C (UDTs) → the whole corpus passes: 57 pass, 0 ignored.**
 
 **Closed (commit: typed arithmetic in the bytecode/VM + store coercion):** the numeric
 type/regime lives **on the arithmetic op** (so the bundle fully describes the code for the
@@ -80,12 +80,23 @@ Cranelift JIT), not as a separate binder coercion node:
 - **I**: the legacy snippet's non-standard `^` LongLong type-char (not VBA 7.1) was rewritten
   to an explicit `As LongLong`; the clean parser correctly rejects `^`.
 
-**Remaining (2 ignored):**
-- **C — UDTs** (2): `Type … End Type` + `p.X = 3` → `424 Object required`. The clean stack
-  has no aggregate **value-type** (the runtime `Variant` stores heap types as raw pointers
-  with hand-written `Clone`/`Drop`; `Object` is ref-counted, but a UDT is copied by value).
-  A real fix needs a record value-type spanning runtime/symbol/binder/coreir/vm2 — the
-  largest single gap; see the design options under discussion.
+**Closed (round 5 — C):**
+- **C — UDTs** (2): `Type … End Type` records are a **value-type aggregate**. The symbol layer
+  captures each `Type`'s field table (`scanner::collect_udt_fields` → `env.udt_field`/
+  `udt_field_count`); a declared `Object(name)` whose name is a `Type` becomes
+  `VarTypeRef::Udt` (`Lower::resolve_udt_type`, at `symbol_type`). A record is backed by a
+  `SafeArray` of its fields (value-copy comes free from the existing `Variant` deep-clone), so
+  field access (`p.X`) is a fixed-index `CorePlace::Index` (`place.rs::udt_field_place`, used by
+  both l-value and r-value member binding), `Dim p As T` allocates a default record
+  (`stmt.rs::udt_record_init`, hoisted to entry), and `q = p` is a plain `Let` (value copy).
+  Generalizes through calls — a ByRef param writes a field back, a ByVal param copies
+  (`udt_passed_byref_writes_through_byval_copies` test). NOTE: records reuse the array
+  opcodes (`ArrayLiteral`/`ArrayGet`/`ArraySet` at a constant index) rather than dedicated
+  `NewRecord`/`FieldGet`/`FieldSet` ops; the latter are a follow-up linearize specialization
+  (a JIT hint, no semantic change) — see [[project_typed_arithmetic_model]] for the bundle/JIT
+  philosophy.
+
+The re-pointed `feature_coverage` corpus now passes in full (57/0).
 
 Next gap-analysis steps: re-point the host `com_*`/`file_io`/`pointer`/`invoke` suites
 (objects, COM, file I/O, pointers) — those will surface the object/COM/host-call gaps the

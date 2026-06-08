@@ -498,6 +498,9 @@ fn param_type(ty: &VarTypeRef, by_ref: bool) -> TypeLibParamType {
         VarTypeRef::Object(_) => T::Object,
         // A SAFEARRAY parameter marshals as a Variant at the COM boundary.
         VarTypeRef::Array(_) => T::Variant,
+        // A UDT crossing the COM boundary marshals as a Variant (record export is out
+        // of scope; in-project UDTs never reach here).
+        VarTypeRef::Udt(_) => T::Variant,
         VarTypeRef::Variant => T::Variant,
     };
     if by_ref { to_by_ref(base) } else { base }

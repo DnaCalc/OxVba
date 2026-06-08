@@ -145,6 +145,10 @@ pub struct ResolutionEnvironment {
     /// index)`. The binder substitutes these for omitted optional arguments.
     optional_defaults:
         std::collections::HashMap<(SymbolId, usize), oxvba_bundle::coreir::CoreConst>,
+    /// User-defined `Type` (UDT) field tables: folded type name → ordered
+    /// `(folded field name, field type)`. The binder reads field index + type for
+    /// `p.X` access and the field count for record allocation.
+    udt_fields: std::collections::HashMap<String, Vec<(String, crate::signature::VarTypeRef)>>,
 }
 
 impl ResolutionEnvironment {
@@ -235,6 +239,27 @@ impl ResolutionEnvironment {
         index: usize,
     ) -> Option<&oxvba_bundle::coreir::CoreConst> {
         self.optional_defaults.get(&(proc, index))
+    }
+
+    /// Is `name` (any case) a user-defined `Type`?
+    pub fn is_udt(&self, name: &str) -> bool {
+        self.udt_fields.contains_key(&crate::model::fold_identifier(name))
+    }
+
+    /// The field count of UDT `name` (for record allocation).
+    pub fn udt_field_count(&self, name: &str) -> Option<usize> {
+        self.udt_fields.get(&crate::model::fold_identifier(name)).map(Vec::len)
+    }
+
+    /// The (index, type) of field `field` in UDT `name`, for `p.<field>` access.
+    pub fn udt_field(
+        &self,
+        name: &str,
+        field: &str,
+    ) -> Option<(usize, &crate::signature::VarTypeRef)> {
+        let fields = self.udt_fields.get(&crate::model::fold_identifier(name))?;
+        let folded = crate::model::fold_identifier(field);
+        fields.iter().enumerate().find_map(|(i, (f, ty))| (*f == folded).then_some((i, ty)))
     }
 
     /// Find a module scope by (case-insensitive) name — convenience for callers
@@ -386,6 +411,9 @@ pub fn build_resolution_environment(
     let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
     // Optional-parameter defaults fold against the closure's const values.
     let optional_defaults = crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values);
+    // UDT field tables, for `Dim p As <Type>` field access + record allocation.
+    let udt_roots: Vec<SyntaxNode<'_>> = roots.iter().map(|(_, n)| *n).collect();
+    let udt_fields = crate::scanner::collect_udt_fields(&udt_roots);
     drop(roots);
 
     // Each referenced project's public surface — a referencing call binds through
@@ -472,5 +500,6 @@ pub fn build_resolution_environment(
         surfaces,
         const_values,
         optional_defaults,
+        udt_fields,
     })
 }

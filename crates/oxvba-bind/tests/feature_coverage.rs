@@ -518,7 +518,6 @@ fn if_elseif_else_branch() {
 }
 
 #[test]
-#[ignore = "gap C: user-defined Type (UDT) not supported (POST_CLEANUP.md)"]
 fn udt_field_assign_and_read() {
     let snap = run("Type Point\nX As Long\nY As Long\nEnd Type\n\
          Sub Main()\nDim p As Point\nDim s As Long\np.X = 3\np.Y = 4\ns = p.X + p.Y\nEnd Sub");
@@ -529,7 +528,6 @@ fn udt_field_assign_and_read() {
 }
 
 #[test]
-#[ignore = "gap C: user-defined Type (UDT) not supported (POST_CLEANUP.md)"]
 fn udt_whole_copy_independence() {
     // Copying a UDT must be by value: mutating the copy must not affect the source.
     let snap = run("Type Pair\nA As Long\nB As Long\nEnd Type\n\
@@ -538,6 +536,22 @@ fn udt_whole_copy_independence() {
     assert!(
         snap.contains(&Variant::from_i32(1)),
         "expected source p.A=1 preserved in {snap:?}"
+    );
+}
+
+#[test]
+fn udt_passed_byref_writes_through_byval_copies() {
+    // A UDT generalizes through calls: a ByRef parameter writes a field back to the
+    // caller's record; a ByVal parameter mutates an independent copy.
+    let snap = run("Type P\nV As Long\nEnd Type\n\
+         Sub Main()\nDim a As P\nDim afterRef As Long\nDim afterVal As Long\n\
+         a.V = 1\nBumpRef a\nafterRef = a.V\nTouchVal a\nafterVal = a.V\nEnd Sub\n\
+         Sub BumpRef(ByRef x As P)\nx.V = x.V + 1\nEnd Sub\n\
+         Sub TouchVal(ByVal x As P)\nx.V = 99\nEnd Sub");
+    // ByRef bumped a.V to 2; ByVal left it at 2 (its 99 stayed in the local copy).
+    assert!(
+        snap.contains(&Variant::from_i32(2)) && !snap.contains(&Variant::from_i32(99)),
+        "expected a.V=2 after ByRef + unchanged by ByVal in {snap:?}"
     );
 }
 

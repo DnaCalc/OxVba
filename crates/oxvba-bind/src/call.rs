@@ -596,6 +596,10 @@ impl<'a> ProcLower<'a> {
         if let Some(bound) = self.try_module_qualified(node, member, None)? {
             return Ok(bound);
         }
+        // A field read of a UDT value (`p.X`) — load the record's fixed-index element.
+        if let Some((place, ty)) = self.udt_field_place(node)? {
+            return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
+        }
         let recv = self.member_receiver_bound(node)?;
         self.bind_member_value(recv, member)
     }

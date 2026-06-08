@@ -26,6 +26,11 @@ pub enum VarTypeRef {
     Builtin(BuiltinType),
     /// A typed object/class/coclass receiver, by (folded) type name.
     Object(String),
+    /// A user-defined `Type` (UDT) value, by (folded) type name. A value aggregate
+    /// (copied by value, fields accessed by index) — distinct from `Object` (a
+    /// reference). Produced by the binder when an `Object`-named type resolves to a
+    /// declared `Type`.
+    Udt(String),
     /// Untyped `Variant`/`Object` — forces late binding for member access.
     Variant,
     Array(Box<VarTypeRef>),

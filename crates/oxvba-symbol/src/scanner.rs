@@ -666,6 +666,43 @@ fn parse_fixed_string_len(node: SyntaxNode<'_>) -> Option<u32> {
 }
 
 /// Map a `TypeRef` node to a resolved type reference.
+/// Scan every `Type … End Type` block reachable from the module roots into a
+/// `folded type name → ordered [(folded field name, field type)]` map — the binder's
+/// UDT field table (field indices + types for `p.X` access and record allocation).
+pub fn collect_udt_fields(
+    module_roots: &[SyntaxNode<'_>],
+) -> std::collections::HashMap<String, Vec<(String, VarTypeRef)>> {
+    let mut out = std::collections::HashMap::new();
+    for root in module_roots {
+        collect_udt_fields_in(*root, &mut out);
+    }
+    out
+}
+
+fn collect_udt_fields_in(
+    node: SyntaxNode<'_>,
+    out: &mut std::collections::HashMap<String, Vec<(String, VarTypeRef)>>,
+) {
+    if node.kind() == SyntaxKind::TypeBlock
+        && let Some(token) = first_identifier_token(node)
+    {
+        let name = fold_identifier(normalize_identifier_token(token.text));
+        let fields = node
+            .type_fields()
+            .into_iter()
+            .filter_map(|f| {
+                let field = fold_identifier(normalize_identifier_token(f.declarator_name()?.text));
+                let ty = f.declared_type().map(type_ref_node).unwrap_or(VarTypeRef::Variant);
+                Some((field, ty))
+            })
+            .collect();
+        out.insert(name, fields);
+    }
+    for child in node.child_nodes() {
+        collect_udt_fields_in(child, out);
+    }
+}
+
 fn type_ref_node(node: SyntaxNode<'_>) -> VarTypeRef {
     let text = node.text();
     let name = text.split_whitespace().next().unwrap_or("").trim();
@@ -703,7 +740,7 @@ fn declare_param_type(ty: &VarTypeRef) -> DeclareParamType {
             DeclareParamType::String
         }
         VarTypeRef::Variant => DeclareParamType::Variant,
-        VarTypeRef::Object(_) | VarTypeRef::Array(_) => DeclareParamType::Any,
+        VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Array(_) => DeclareParamType::Any,
     }
 }
 
