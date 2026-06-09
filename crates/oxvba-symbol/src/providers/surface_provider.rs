@@ -205,4 +205,23 @@ impl Provider for SurfaceProvider {
             _ => None,
         }
     }
+
+    fn resolve_extern_predeclared(&self, name: &str) -> Option<(String, String)> {
+        // A bare class name (`ThisWorkbook`) or project-qualified (`Host.ThisWorkbook`)
+        // naming a `VB_PredeclaredId` coclass → its singleton in this project's bundle.
+        // `creatable` is irrelevant: a predeclared document class is typically
+        // `VB_Creatable = False` yet still has a global instance.
+        let class = match name.split_once('.') {
+            Some((project, class)) if fold_identifier(project) == self.project_folded => class,
+            Some(_) => return None,
+            None => name,
+        };
+        let ty = self.type_by_name(class)?;
+        match ty.kind {
+            SurfaceTypeKind::Coclass { .. } if ty.predeclared => {
+                Some((self.surface.project_name.clone(), ty.name.clone()))
+            }
+            _ => None,
+        }
+    }
 }

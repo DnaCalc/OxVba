@@ -295,6 +295,16 @@ pub enum CoreValue {
     /// `import` indexes [`CoreProgram::imports`] (a `Class` token); the instance
     /// carries the target bundle's id for cross-bundle method dispatch.
     NewExtern { import: usize },
+    /// A `VB_PredeclaredId` class referenced by its name → its global singleton
+    /// instance (created lazily on first access, then persisting for the run).
+    /// Distinct from `New`, which always allocates a fresh instance. This form is a
+    /// class of the **active** project (same bundle).
+    Predeclared { class: ClassId },
+    /// A `VB_PredeclaredId` class published by a *referenced project* → its singleton
+    /// in that project's bundle. `import` indexes [`CoreProgram::imports`] (a `Class`
+    /// token); the returned instance carries the owning bundle's id for cross-bundle
+    /// member dispatch (exactly like [`CoreValue::NewExtern`], but a shared singleton).
+    PredeclaredExtern { import: usize },
 }
 
 /// The resolved target of a [`CoreValue::Call`].

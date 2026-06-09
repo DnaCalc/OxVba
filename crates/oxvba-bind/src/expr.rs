@@ -4,6 +4,7 @@
 
 use oxvba_bundle::NumericMode;
 use oxvba_bundle::coreir::{CoreArg, CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
+use oxvba_bundle::{BundleImport, ExportToken};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::SymbolKind;
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
@@ -105,9 +106,18 @@ impl<'a> ProcLower<'a> {
                 place: Some(place),
             });
         }
-        let binding = self
-            .resolve(name)
-            .ok_or_else(|| self.unresolved(name, "expression"))?;
+        let binding = match self.resolve(name) {
+            Some(b) => b,
+            None => {
+                // An unresolved bare name may still be a `VB_PredeclaredId` class
+                // name (a referenced project's exposed predeclared instance is not a
+                // global-namespace name, so it doesn't `resolve`).
+                if let Some(bound) = self.bind_predeclared_instance(name)? {
+                    return Ok(bound);
+                }
+                return Err(self.unresolved(name, "expression"));
+            }
+        };
         // A referenced project's published `Const`/`Enum` value carries its literal
         // in the route (surface-driven, no shared-symbol dependence).
         if let DispatchRoute::ConstValue(c) = &binding.route {
@@ -136,8 +146,41 @@ impl<'a> ProcLower<'a> {
                 && let Some((place, ty)) = self.place_for_symbol(sym) {
                     return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
                 }
+        // A `VB_PredeclaredId` class name (which resolves as a class type/module, not
+        // a plain value) → its global singleton instance.
+        if let Some(bound) = self.bind_predeclared_instance(name)? {
+            return Ok(bound);
+        }
         // Otherwise a constant or a 0-argument call.
         self.bind_call_route(name, &binding, None)
+    }
+
+    /// A `VB_PredeclaredId` class referenced by its name → its global singleton: an
+    /// active-project class lowers to `CoreValue::Predeclared`; a referenced project's
+    /// exposed predeclared class lowers to a cross-bundle `CoreValue::PredeclaredExtern`
+    /// (registering a `Class` import). These are VBA's document/class predeclared
+    /// instances — `ThisWorkbook`, `Sheet1`, `UserForm1`, … Returns `None` when `name`
+    /// is not a predeclared class.
+    fn bind_predeclared_instance(&mut self, name: &str) -> Result<Option<Bound>, BindError> {
+        let folded = oxvba_symbol::model::fold_identifier(name);
+        if let Some(&class_id) = self.g.ids.predeclared_class_of.get(&folded) {
+            let class_name = self.g.ids.classes[class_id.0].name.clone();
+            return Ok(Some(value_bound(
+                CoreValue::Predeclared { class: class_id },
+                VarTypeRef::Object(class_name),
+            )));
+        }
+        if let Some((unit, class)) = self.g.env.resolve_extern_predeclared(name) {
+            let import = self.g.intern_import(BundleImport {
+                unit,
+                token: ExportToken::Class { name: class.clone() },
+            });
+            return Ok(Some(value_bound(
+                CoreValue::PredeclaredExtern { import },
+                VarTypeRef::Object(class),
+            )));
+        }
+        Ok(None)
     }
 
     fn bind_unary(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {

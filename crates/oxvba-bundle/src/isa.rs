@@ -232,6 +232,16 @@ pub enum Op {
     /// carries that bundle's id so its methods dispatch against the right class
     /// table. Runs `Class_Initialize` in the owning bundle.
     NewExtern { dst: usize, import: usize },
+    /// Load (creating on first access) the `VB_PredeclaredId` singleton of `class`
+    /// (index into this bundle's `classes`) into `dst`. The instance persists for the
+    /// whole run; `Class_Initialize` runs once, on creation. Unlike [`Op::NewObject`],
+    /// repeated executions yield the *same* instance.
+    PredeclaredInstance { dst: usize, class: usize },
+    /// Load (creating on first access) the predeclared singleton of a class in
+    /// ANOTHER bundle (`import` → a `(bundle, class)` pair); the instance carries that
+    /// bundle's id so its members dispatch against the right class table. The
+    /// cross-bundle analogue of [`Op::PredeclaredInstance`].
+    PredeclaredInstanceExtern { dst: usize, import: usize },
     /// Read instance field `field` (a field token) of the object in `object`.
     FieldGet { dst: usize, object: usize, field: i32 },
     /// Write `src` into instance field `field` of the object in `object`.

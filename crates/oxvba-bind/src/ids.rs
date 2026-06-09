@@ -66,6 +66,11 @@ pub struct IdAllocator {
     pub prop_accessor_of: HashMap<(SymbolId, ProjectMemberKind), ProcId>,
     /// Folded class display name → `ClassId` (index into `classes`).
     pub class_of: HashMap<String, ClassId>,
+    /// Folded display name → `ClassId` for the active project's `VB_PredeclaredId`
+    /// classes — a bare reference to one of these names is its global singleton
+    /// (`CoreValue::Predeclared`), not a `New`. Active-project only; a referenced
+    /// project's predeclared classes resolve through its export surface.
+    pub predeclared_class_of: HashMap<String, ClassId>,
     /// A class instance field symbol → its stable field token (`CorePlace::Field`).
     pub field_token_of: HashMap<SymbolId, i32>,
     /// A `WithEvents` field symbol → its binding token (`CorePlace::WithEvents`).
@@ -92,6 +97,7 @@ impl IdAllocator {
             proc_of: HashMap::new(),
             prop_accessor_of: HashMap::new(),
             class_of: HashMap::new(),
+            predeclared_class_of: HashMap::new(),
             field_token_of: HashMap::new(),
             withevents_binding_of: HashMap::new(),
             event_index_of: HashMap::new(),
@@ -177,6 +183,7 @@ impl IdAllocator {
         //    table + Class_Initialize/Terminate. Built after procs so ProcIds exist.
         let mut classes = Vec::new();
         let mut class_of = HashMap::new();
+        let mut predeclared_class_of = HashMap::new();
         // Folded module name → module scope, for resolving `Implements` targets.
         let module_scope_by_name: HashMap<String, ScopeId> = env
             .modules()
@@ -188,6 +195,11 @@ impl IdAllocator {
             };
             let class_id = ClassId(classes.len());
             class_of.insert(fold_identifier(&display), class_id);
+            // A `VB_PredeclaredId = True` class has a global singleton reachable by
+            // its name (the `ThisWorkbook`/`Sheet1` document-module shape).
+            if predeclared_class(manifest, module.module_name) {
+                predeclared_class_of.insert(fold_identifier(&display), class_id);
+            }
             let folded = fold_identifier(&display);
             let mut initialize = None;
             let mut terminate = None;
@@ -224,6 +236,7 @@ impl IdAllocator {
         }
         alloc.classes = classes;
         alloc.class_of = class_of;
+        alloc.predeclared_class_of = predeclared_class_of;
 
         Ok(alloc)
     }
@@ -515,6 +528,18 @@ fn class_name_for(manifest: &SymbolProjectManifest, module_name: &str) -> Option
     manifest.modules.iter().find_map(|m| {
         let name = if m.attributes.vb_name.is_empty() { &m.module_name } else { &m.attributes.vb_name };
         (fold_identifier(name) == folded && m.module_kind == ModuleKind::Class).then(|| name.clone())
+    })
+}
+
+/// True if the active-project class module `module_name` is a `VB_PredeclaredId`
+/// class (its name denotes a global singleton instance).
+fn predeclared_class(manifest: &SymbolProjectManifest, module_name: &str) -> bool {
+    let folded = fold_identifier(module_name);
+    manifest.modules.iter().any(|m| {
+        let name = if m.attributes.vb_name.is_empty() { &m.module_name } else { &m.attributes.vb_name };
+        fold_identifier(name) == folded
+            && m.module_kind == ModuleKind::Class
+            && m.attributes.vb_predeclared_id
     })
 }
 

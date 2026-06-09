@@ -55,6 +55,10 @@ pub struct SurfaceType {
     /// project: hidden `TKIND_MODULE`s and `GlobalMultiUse`/`GlobalSingleUse`
     /// classes inject their members into the referencer's global namespace.
     pub global_namespace: bool,
+    /// True for a `VB_PredeclaredId = True` class (coclasses only): a referencing
+    /// project reaches its global singleton by the class name (the `ThisWorkbook`
+    /// document-module shape). Always `false` for a hidden module.
+    pub predeclared: bool,
     pub members: Vec<SurfaceMember>,
     /// Source-interface events (coclasses only).
     pub events: Vec<SurfaceEvent>,
@@ -243,6 +247,9 @@ pub fn synthesize_export_surface(
             name: scan.module_name.clone(),
             kind,
             global_namespace,
+            // Only an exposed class can be a predeclared coclass in the surface; a
+            // hidden module is never predeclared.
+            predeclared: is_class && attrs.vb_predeclared_id,
             members,
             events,
             implements,

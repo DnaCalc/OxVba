@@ -422,6 +422,16 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::NewExtern { dst, import: *import });
                 Ok(dst)
             }
+            CoreValue::Predeclared { class } => {
+                let dst = self.new_temp();
+                self.emit(Op::PredeclaredInstance { dst, class: class.0 });
+                Ok(dst)
+            }
+            CoreValue::PredeclaredExtern { import } => {
+                let dst = self.new_temp();
+                self.emit(Op::PredeclaredInstanceExtern { dst, import: *import });
+                Ok(dst)
+            }
             CoreValue::Coerce { value, to } => {
                 let src = self.lower_value(value)?;
                 match to {

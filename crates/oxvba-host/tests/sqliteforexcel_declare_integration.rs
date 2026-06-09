@@ -40,12 +40,12 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "blocked on the `ThisWorkbook` predeclared document instance: the demo resolves the dll \
-            directory via `ThisWorkbook.Path` (a PredeclaredId document class supplied by the \
-            referenced HostEnvironment project), which the clean binder does not yet expose as a \
-            global instance by name. Conditional compilation (#If Win64) + native Declare execution \
-            (L1-L3) are done and proven; this is a host/document-object gap. Un-ignore once \
-            cross-project predeclared document instances resolve — see POST_CLEANUP.md."]
+#[ignore = "blocked on `Err.LastDllError`: conditional compilation + the `ThisWorkbook` predeclared \
+            document instance (cross-project, by name) now bind, so the demo gets past `ThisWorkbook.Path`; \
+            it next fails binding `Err.LastDllError` (in the init-failure Debug.Print branch) — the clean \
+            binder handles `Err.Number`/`Description`/`Source` but not `LastDllError` as a member read. \
+            Native Declare execution (L1-L3) + predeclared instances are done and proven. Un-ignore once \
+            `Err.LastDllError` binds + `Lib`-path resolution lands — see POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)
         .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");

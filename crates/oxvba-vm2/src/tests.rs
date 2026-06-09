@@ -224,7 +224,7 @@ fn declare_byref_writes_back_to_call_site_slot() {
             Op::LoadI32 { slot: 0, value: 5 },
             Op::CallNative {
                 dst: None,
-                callee: NativeCallee::Declare { descriptor_id: 0 },
+                callee: NativeCallee::Declare { descriptor_id: 0, ptr_writebacks: Vec::new() },
                 args: vec![CallArg::ByRef(0)],
             },
             Op::Halt,

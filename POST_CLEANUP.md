@@ -175,15 +175,31 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   (`conditional_compilation_*`). **Follow-up:** referenced projects evaluate `#If` against the
   predefined constants only (a `ReferencedProjectManifest` does not carry its own `DefineConstants`);
   predefined constants are hardcoded 64-bit (parameterize by target bitness when 32-bit support is needed).
-- **SQLiteForExcel acceptance test — now blocked on the `ThisWorkbook` predeclared document instance.**
-  Conditional compilation cleared the parse gate; the bounded demo
+- **Predeclared instances (`VB_PredeclaredId`)** — DONE. A class/document module with
+  `VB_PredeclaredId = True` (e.g. `ThisWorkbook`, `Sheet1`, `UserForm1`) is reachable as a **global
+  singleton by its module name** — created lazily on first access, persisting for the run, distinct
+  from `New` (which still allocates a fresh instance). Two IR forms mirror `New`/`NewExtern`:
+  `CoreValue::Predeclared { class }` (active project) and `PredeclaredExtern { import }` (a referenced
+  project's exposed predeclared class) → `Op::PredeclaredInstance` / `Op::PredeclaredInstanceExtern`.
+  The VM caches one instance per class per `LoadedBundle` (cached before `Class_Initialize` runs so a
+  re-entrant access sees the same object), carrying the owning bundle's id so members dispatch into the
+  right bundle (reusing the cross-bundle object path). Resolution: the binder's
+  `ids.predeclared_class_of` (active) + `env.resolve_extern_predeclared` (referenced, via a new
+  `SurfaceType.predeclared` flag). Covered by `oxvba-bind/tests/cross_project.rs`
+  (`predeclared_instance_singleton_in_active_project`, `predeclared_new_makes_independent_instance`,
+  `cross_project_predeclared_instance_property` — the `ThisWorkbook.Path` shape — and
+  `cross_project_predeclared_instance_persists_state`).
+- **SQLiteForExcel acceptance test — now blocked on `Err.LastDllError`.** Conditional compilation
+  cleared the parse gate, and predeclared instances cleared `ThisWorkbook.Path`; the bounded demo
   (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) now fails binding on
-  `ThisWorkbook.Path` — the demo resolves the dll directory from `ThisWorkbook`, a `VB_PredeclaredId`
-  document class supplied by the referenced `HostEnvironment` project, which the clean binder does not
-  yet expose as a global instance accessible by its module name (cross-project predeclared document
-  instance). The native Declare *execution* path the demo needs is already proven. Remaining gates:
-  (1) predeclared document-module instances (by-name global access), across a project reference;
-  (2) `Lib`-path resolution for `Lib "SQLite3"` (the demo `LoadLibraryA`s the dll by path first).
+  `Err.LastDllError` (in the init-failure `Debug.Print` branch). The clean binder handles
+  `Err.Number`/`Description`/`Source` but not `LastDllError`/`Raise`/`Clear`/`HelpFile`/`HelpContext`
+  as value/member reads (the bare `Err` receiver has no value form, so binding the receiver fails). The
+  native Declare *execution* path + predeclared instances the demo needs are proven. Remaining gates:
+  (1) **`Err.LastDllError`** (and the other Err members) as a member read — the last Win32 error from a
+  `Declare` call; (2) **`Lib`-path resolution** for `Declare … Lib "SQLite3"` (the demo `LoadLibraryA`s
+  the dll by full path first, then the declares must resolve the already-loaded module by base name);
+  (3) the fixture's **relative** dll path vs the `cargo test` cwd.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

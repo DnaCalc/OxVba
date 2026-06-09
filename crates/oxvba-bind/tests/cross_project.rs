@@ -49,6 +49,15 @@ fn class_module(name: &str, src: &str, creatable: bool) -> ModuleUnit {
     }
 }
 
+/// A `VB_PredeclaredId = True` class module — its name denotes a global singleton
+/// instance (the `ThisWorkbook`/`Sheet1` document-module shape). Exposed so a
+/// referencing project can reach it cross-bundle.
+fn predeclared_class_module(name: &str, src: &str) -> ModuleUnit {
+    let mut m = class_module(name, src, false);
+    m.attributes.vb_predeclared_id = true;
+    m
+}
+
 fn referenced(project_name: &str, modules: Vec<ModuleUnit>) -> ReferencedProjectManifest {
     ReferencedProjectManifest {
         project_name: project_name.into(),
@@ -259,6 +268,124 @@ fn referenced_module_variable_is_not_cross_project_bindable() {
     );
     let result = bind_projects(&[lib, app], &NullTypeLibs);
     assert!(result.is_err(), "a referenced module variable must not resolve cross-project");
+}
+
+// ── Predeclared instances (VB_PredeclaredId) ─────────────────────────────────
+
+#[test]
+fn predeclared_instance_singleton_in_active_project() {
+    // A `VB_PredeclaredId` class is reachable as a global singleton by its module
+    // name; its per-instance state persists across accesses (it is one instance,
+    // created on first use), distinct from `New`.
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public r As Long\n\
+                 Sub Main()\n\
+                 \x20   Counter.Bump\n\
+                 \x20   Counter.Bump\n\
+                 \x20   Counter.Bump\n\
+                 \x20   r = Counter.Total\n\
+                 End Sub\n",
+            ),
+            predeclared_class_module(
+                "Counter",
+                "Private n As Long\n\
+                 Public Sub Bump()\nn = n + 1\nEnd Sub\n\
+                 Public Property Get Total() As Long\nTotal = n\nEnd Property\n",
+            ),
+        ],
+        vec![],
+    );
+    // Three Bump()s on the one singleton → Total = 3 (a fresh instance would be 0).
+    assert_eq!(link_run_global0_i32(&[app]), Some(3));
+}
+
+#[test]
+fn predeclared_new_makes_independent_instance() {
+    // `New <predeclared class>` allocates a fresh instance, independent of the
+    // global singleton — bumping the new one does not change the singleton's state.
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public r As Long\n\
+                 Sub Main()\n\
+                 \x20   Dim fresh As Counter\n\
+                 \x20   Set fresh = New Counter\n\
+                 \x20   fresh.Bump\n\
+                 \x20   fresh.Bump\n\
+                 \x20   Counter.Bump\n\
+                 \x20   r = Counter.Total + fresh.Total * 10\n\
+                 End Sub\n",
+            ),
+            predeclared_class_module(
+                "Counter",
+                "Private n As Long\n\
+                 Public Sub Bump()\nn = n + 1\nEnd Sub\n\
+                 Public Property Get Total() As Long\nTotal = n\nEnd Property\n",
+            ),
+        ],
+        vec![],
+    );
+    // singleton.Total = 1, fresh.Total = 2 → 1 + 2*10 = 21.
+    assert_eq!(link_run_global0_i32(&[app]), Some(21));
+}
+
+#[test]
+fn cross_project_predeclared_instance_property() {
+    // A referenced project exposes a `VB_PredeclaredId` class; the active project
+    // reaches its singleton by bare name and reads a `Property Get` — exactly the
+    // `ThisWorkbook.Path` shape. The instance lives in (and dispatches into) the
+    // referenced project's bundle.
+    let host = || {
+        predeclared_class_module(
+            "HostEnv",
+            "Public Property Get Answer() As Long\nAnswer = 42\nEnd Property\n",
+        )
+    };
+    let lib = project("Lib", vec![host()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = HostEnv.Answer\nEnd Sub\n",
+        )],
+        vec![referenced("Lib", vec![host()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
+}
+
+#[test]
+fn cross_project_predeclared_instance_persists_state() {
+    // The referenced predeclared singleton holds state across accesses from the
+    // active project (one shared instance in the owning bundle).
+    let host = || {
+        predeclared_class_module(
+            "HostEnv",
+            "Private mHits As Long\n\
+             Public Sub Touch()\nmHits = mHits + 1\nEnd Sub\n\
+             Public Property Get Hits() As Long\nHits = mHits\nEnd Property\n",
+        )
+    };
+    let lib = project("Lib", vec![host()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             \x20   HostEnv.Touch\n\
+             \x20   HostEnv.Touch\n\
+             \x20   r = HostEnv.Hits\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![host()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(2));
 }
 
 // ── Multi-level chain + diamond ──────────────────────────────────────────────

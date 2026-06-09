@@ -195,6 +195,11 @@ struct LoadedBundle<'h> {
     class_descriptors: Vec<&'static RuntimeClassDescriptor>,
     /// O(1) statement-boundary membership test.
     statement_start_set: std::collections::HashSet<usize>,
+    /// `VB_PredeclaredId` singletons of this bundle's classes, created lazily on
+    /// first access and cached by class index (so a bare reference to a predeclared
+    /// class name yields one persistent instance per run). `New` of the same class
+    /// is independent and never consults this.
+    predeclared_singletons: HashMap<usize, Variant>,
 }
 
 impl<'h> LoadedBundle<'h> {
@@ -226,6 +231,7 @@ impl<'h> LoadedBundle<'h> {
             event_routes,
             class_descriptors,
             statement_start_set,
+            predeclared_singletons: HashMap::new(),
         }
     }
 }
@@ -467,6 +473,54 @@ impl<'h> Vm<'h> {
     fn set(&mut self, slot: usize, value: Variant) -> Result<(), Fault> {
         let place = self.target(slot)?;
         self.write_place(place, value)
+    }
+
+    /// The `VB_PredeclaredId` singleton of class `class_idx` in `bundle`, creating it
+    /// on first access: allocate the instance (carrying the owning bundle's id, so its
+    /// members dispatch against the right class table), cache it, then run
+    /// `Class_Initialize` in that bundle. Mirrors `Op::NewObject`/`Op::NewExtern`, but
+    /// the instance is cached and shared (one per class per run). The instance is
+    /// cached *before* `Class_Initialize` runs, so an access from within
+    /// initialization sees the same instance (and the singleton persists for the run,
+    /// VBA-consistent — it is never drained/terminated).
+    fn predeclared_instance(
+        &mut self,
+        bundle: BundleId,
+        class_idx: usize,
+    ) -> Result<Variant, Fault> {
+        if let Some(existing) = self.bundles[bundle].predeclared_singletons.get(&class_idx) {
+            return Ok(existing.clone());
+        }
+        let descriptor = *self.bundles[bundle]
+            .class_descriptors
+            .get(class_idx)
+            .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
+        let meta = self.bundles[bundle]
+            .bundle
+            .classes
+            .get(class_idx)
+            .ok_or_else(|| Fault::new(5, format!("unknown class {class_idx}")))?;
+        let has_terminate = meta.terminate.is_some();
+        let initialize = meta.initialize;
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            class_idx as i32,
+            bundle as i32,
+            has_terminate,
+            descriptor,
+        );
+        let value = Variant::from_object_ref(object);
+        self.bundles[bundle].predeclared_singletons.insert(class_idx, value.clone());
+        if let Some(init) = initialize {
+            let saved_cur = self.cur;
+            self.cur = bundle;
+            let r = self.run_proc_with_me(init, value.clone(), &[], false, false);
+            self.cur = saved_cur;
+            r?;
+        }
+        Ok(value)
     }
 
     // ── Error handling ─────────────────────────────────────────────────────────
@@ -1739,6 +1793,22 @@ impl<'h> Vm<'h> {
                     r?;
                 }
                 self.set(*dst, Variant::from_object_ref(object))?;
+            }
+            Op::PredeclaredInstance { dst, class } => {
+                let value = self.predeclared_instance(self.cur, *class)?;
+                self.set(*dst, value)?;
+            }
+            Op::PredeclaredInstanceExtern { dst, import } => {
+                let resolved = self.bundles[self.cur]
+                    .imports
+                    .get(*import)
+                    .copied()
+                    .ok_or_else(|| Fault::new(5, format!("unresolved import {import}")))?;
+                let ExportTarget::Class(class_idx) = resolved.target else {
+                    return Err(Fault::new(5, "cross-bundle predeclared reference is not a class"));
+                };
+                let value = self.predeclared_instance(resolved.bundle, class_idx)?;
+                self.set(*dst, value)?;
             }
             Op::FieldGet { dst, object, field } => {
                 let instance = variant_to_object(self.get(*object)?)?;

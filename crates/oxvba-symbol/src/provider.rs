@@ -74,6 +74,14 @@ pub trait Provider {
         let _ = name;
         None
     }
+    /// If `name` is a `VB_PredeclaredId` class published by a *referenced project*,
+    /// return its `(unit, class)` names so a bare reference to the class name lowers
+    /// to a cross-bundle `PredeclaredExtern` (the `ThisWorkbook` document-instance
+    /// shape) against that project's bundle.
+    fn resolve_extern_predeclared(&self, name: &str) -> Option<(String, String)> {
+        let _ = name;
+        None
+    }
 }
 
 /// Resolves a typelib reference to its metadata blob. The default impl uses the
@@ -173,6 +181,12 @@ impl ResolutionEnvironment {
     /// (for `New Lib.Widget` / bare `New Widget` → a cross-bundle `NewExtern`).
     pub fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
         self.providers.iter().find_map(|provider| provider.resolve_extern_coclass(name))
+    }
+
+    /// The `(unit, class)` of a `VB_PredeclaredId` class published by a referenced
+    /// project (for a bare class-name reference → a cross-bundle `PredeclaredExtern`).
+    pub fn resolve_extern_predeclared(&self, name: &str) -> Option<(String, String)> {
+        self.providers.iter().find_map(|provider| provider.resolve_extern_predeclared(name))
     }
 
     /// Resolve `recv.name` (member access) against the providers.
