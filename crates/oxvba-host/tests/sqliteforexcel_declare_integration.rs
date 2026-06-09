@@ -28,7 +28,15 @@ fn bounded_demo_basproj() -> PathBuf {
 
 /// Load the bounded demo's project-reference closure and run it on the requested
 /// backend under the interactive-dev policy (which enables native dynamic linking).
+///
+/// The fixture's `ThisWorkbook.Path` is a workspace-relative directory
+/// (`.external/sqliteforexcel/upstream/Distribution`) — in real Excel it would be the
+/// workbook's absolute folder. `SQLite3Initialize` `LoadLibrary`s `ThisWorkbook.Path
+/// + "\x64\SQLite3.dll"`, so the run must happen with the workspace root as the
+/// current directory for that relative path to resolve.
 fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
+    std::env::set_current_dir(workspace_root())
+        .map_err(|err| format!("could not set cwd to the workspace root: {err}"))?;
     let closure = oxvba_project::load_project_closure_with_entry(&bounded_demo_basproj(), None)
         .map_err(|err| format!("closure load failed: {err}"))?;
     let mut engine = Engine::new(HostConfig { enable_jit });
@@ -40,12 +48,13 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "the infinite-recursion crash is fixed (module-qualified-call resolution) and the demo now \
-            runs to completion, but the fixture's `ThisWorkbook.Path` is RELATIVE \
-            (`.external\\sqliteforexcel\\upstream\\Distribution`), so `LoadLibrary` fails (error 126) \
-            under the test's cwd and SQLite3Initialize bails before any real SQLite work — the pass is \
-            hollow. Un-ignore once the test runs from the workspace root (so the relative dll path \
-            resolves) and the full native sqlite3.dll round-trip is verified end to end. See \
+#[ignore = "recursion fixed + runs from the workspace root, so it now drives REAL sqlite3.dll: \
+            SQLite3LibVersion returns \"3.11.1\" and SQLite3Open/Close succeed. Next gap (in \
+            TestOpenCloseV2 → SQLite3OpenV2 → StringToUtf8Bytes): assigning a Variant array to a \
+            `Dim buf() As Byte` dynamic-array variable coerces to the scalar element type — the scanner \
+            (`declared_var_type`) types `Dim x() As T` as scalar `T`, not `Array(T)`, so whole-array \
+            assignment emits `CoerceNumeric` on the array (\"unsupported coercion from ArrayVariant to \
+            Double\"). Un-ignore once dynamic-array typing + the rest of the round-trip work. See \
             POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)

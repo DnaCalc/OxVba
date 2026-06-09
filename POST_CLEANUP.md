@@ -230,15 +230,22 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   range → Overflow (6) (`oxvba-lib::alloc_count`); (3) `ReDim` bounds its element count → "Out of
   memory" (7) (`vm2::build_bounds`). These caught/contained the symptom class; the recursion fix above
   is the actual cause.
-- **SQLiteForExcel acceptance test — recursion fixed; demo runs; last gate is the fixture's relative
-  dll path.** With every binding gate cleared and the recursion fixed, the bounded demo
-  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) now binds + executes + returns
-  cleanly (and real `Debug.Print` output appears). But `ThisWorkbook.Path` is **relative**
-  (`.external\sqliteforexcel\upstream\Distribution`), so `SQLite3Initialize`'s `LoadLibrary` fails with
-  error 126 under the test's cwd (`crates/oxvba-host`) and `AllTests` bails before any real SQLite work —
-  the pass is hollow. **Next (final gate):** run the test from the workspace root (so the relative dll
-  path resolves) and verify the full native `sqlite3.dll` round-trip (open/prepare/step/column/blob),
-  then un-ignore. This is where the native-FFI marshalling correctness finally gets exercised.
+- **SQLiteForExcel acceptance test — now drives REAL `sqlite3.dll`; next gap is dynamic-array typing.**
+  Recursion fixed + the test runs from the workspace root (so the fixture's relative `ThisWorkbook.Path`
+  resolves for `LoadLibrary`), so the bounded demo now genuinely exercises native SQLite:
+  `SQLite3LibVersion` returns `"3.11.1"` and `SQLite3Open`/`SQLite3Close` succeed (real DB open/close).
+  It reaches `TestOpenCloseV2` → `SQLite3OpenV2` → `StringToUtf8Bytes`, which assigns a `Variant` byte
+  array to a `Dim bufFileName() As Byte` and then fails: **"unsupported coercion from ArrayVariant to
+  Double"**.
+- **Dynamic-array declarators are typed as their scalar element (real bug, NEXT).** `declared_var_type`
+  (`oxvba-symbol/src/scanner.rs`) reads only the `As <Type>` clause and ignores the array parens, so
+  `Dim x() As Byte` / `Dim x(1 To 3) As Long` are typed `VarTypeRef::Builtin(T)`, not `Array(T)`.
+  Indexing/ReDim still work, but a **whole-array assignment** (`x = someArray`) goes through
+  `types::coerce_store` → `coerce_target(Builtin(T))` → `CoerceNumeric(T)` → `coerce_numeric` on the
+  array → error. Fix: wrap an array declarator's base type in `VarTypeRef::Array(..)` in the scanner
+  (and verify indexing, `ReDim`, `array_element`, ByRef array params, and the existing array tests still
+  hold — this touches array typing broadly). Then the SQLiteForExcel round-trip can continue
+  (prepare/step/column/blob/backup), and the acceptance test can be un-ignored.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that
