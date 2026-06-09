@@ -449,4 +449,30 @@ End Sub
             );
         }
     }
+
+    #[test]
+    fn err_lastdllerror_reads_os_error_after_native_declare_in_vm_and_rejects_jit() {
+        // `SetLastError(N)` sets the thread's Win32 last-error to N; the HAL captures
+        // `GetLastError` immediately after the native call, and `Err.LastDllError` reads
+        // it back — proving the capture is wired end to end (not a constant 0).
+        let source = r#"
+Private Declare PtrSafe Sub SetLastError Lib "kernel32" (ByVal dwErrCode As Long)
+
+Sub Main()
+    Dim captured As Long
+    SetLastError 12345
+    captured = Err.LastDllError
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
+            assert!(
+                snapshot.iter().any(|value| value.as_i32() == Some(12345)),
+                "Err.LastDllError should read the SetLastError value for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
 }

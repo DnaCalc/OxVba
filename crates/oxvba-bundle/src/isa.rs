@@ -99,6 +99,9 @@ pub enum Op {
     LoadErrNumber { slot: usize },
     LoadErrDescription { slot: usize },
     LoadErrSource { slot: usize },
+    /// `Err.LastDllError` — the Win32 last-error captured after the most recent
+    /// native `Declare` call (0 if none / non-native).
+    LoadErrLastDllError { slot: usize },
 
     // ── Arithmetic ───────────────────────────────────────────
     AddConstI32 { slot: usize, value: i32 },

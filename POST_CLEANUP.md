@@ -189,17 +189,26 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   (`predeclared_instance_singleton_in_active_project`, `predeclared_new_makes_independent_instance`,
   `cross_project_predeclared_instance_property` — the `ThisWorkbook.Path` shape — and
   `cross_project_predeclared_instance_persists_state`).
-- **SQLiteForExcel acceptance test — now blocked on `Err.LastDllError`.** Conditional compilation
-  cleared the parse gate, and predeclared instances cleared `ThisWorkbook.Path`; the bounded demo
-  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) now fails binding on
-  `Err.LastDllError` (in the init-failure `Debug.Print` branch). The clean binder handles
-  `Err.Number`/`Description`/`Source` but not `LastDllError`/`Raise`/`Clear`/`HelpFile`/`HelpContext`
-  as value/member reads (the bare `Err` receiver has no value form, so binding the receiver fails). The
-  native Declare *execution* path + predeclared instances the demo needs are proven. Remaining gates:
-  (1) **`Err.LastDllError`** (and the other Err members) as a member read — the last Win32 error from a
-  `Declare` call; (2) **`Lib`-path resolution** for `Declare … Lib "SQLite3"` (the demo `LoadLibraryA`s
-  the dll by full path first, then the declares must resolve the already-loaded module by base name);
-  (3) the fixture's **relative** dll path vs the `cargo test` cwd.
+- **`Err.LastDllError`** — DONE. Binds as a `Long` member read (`call.rs::err_field` →
+  `ErrField::LastDllError` → `Op::LoadErrLastDllError`) returning the OS last-error the VM captured
+  after the most recent native `Declare` call. The standard HAL adapter captures `GetLastError`
+  (`std::io::Error::last_os_error()`) immediately after `invoke_stdcall` into a shared cell, exposed via
+  a new `DynamicLinkHal::last_dll_error()` (default 0 for non-native/null/wasm adapters); the VM stores
+  it after each `declare_call` and `Err.LastDllError` reads it. Covered by a portable bind/default test
+  (`feature_coverage::err_lastdllerror_binds_and_defaults_to_zero`) and a Windows faithful-capture test
+  (`native_declare…::err_lastdllerror_reads_os_error_after_native_declare…`, `SetLastError 12345` →
+  `12345`). **Not done** (no tested path needs them): the other `Err` members as member reads
+  (`HelpFile`/`HelpContext`) — `Raise`/`Clear` already lower as statements.
+- **SQLiteForExcel acceptance test — now blocked on the `CDbl` conversion intrinsic.** Conditional
+  compilation, predeclared instances, and `Err.LastDllError` all bind now; the bounded demo
+  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) next fails binding `CDbl`
+  (`Sqlite3.bas:704` `ToJulianDay = CDbl(oleDate) + JULIANDAY_OFFSET`). The clean symbol catalog has
+  `CStr`/`CDate`/`CVErr` but **not** the numeric conversion functions: `CDbl`/`CLng`/`CInt`/`CSng`/
+  `CByte`/`CBool`/`CCur`/`CLngLng`/`CLngPtr`/`CDec`/`CVar`. The native Declare *execution* path the demo
+  needs is proven. Remaining gates: (1) **the `Cxxx` numeric conversion intrinsics** (catalog +
+  native bodies + result types); (2) **`Lib`-path resolution** for `Declare … Lib "SQLite3"` (the demo
+  `LoadLibraryA`s the dll by full path first, then the declares must resolve the already-loaded module
+  by base name); (3) the fixture's **relative** dll path vs the `cargo test` cwd.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

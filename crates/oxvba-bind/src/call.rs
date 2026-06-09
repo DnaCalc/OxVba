@@ -1170,6 +1170,7 @@ pub(crate) fn err_field(member: &str) -> Option<(ErrField, VarTypeRef)> {
         "number" => Some((ErrField::Number, builtin(BuiltinType::Long))),
         "description" => Some((ErrField::Description, builtin(BuiltinType::String))),
         "source" => Some((ErrField::Source, builtin(BuiltinType::String))),
+        "lastdllerror" => Some((ErrField::LastDllError, builtin(BuiltinType::Long))),
         _ => None,
     }
 }

@@ -66,6 +66,15 @@ fn run(source: &str) -> Vec<Variant> {
 }
 
 #[test]
+fn err_lastdllerror_binds_and_defaults_to_zero() {
+    // `Err.LastDllError` binds as a `Long` member read; with no native `Declare` call
+    // it reads 0. The captured-after-a-real-call value is exercised on Windows by the
+    // native_declare suite (which makes an actual FFI call that sets the OS error).
+    let snap = run("Sub Main()\nDim x As Long\nx = Err.LastDllError\nEnd Sub");
+    assert_eq!(snap, vec![Variant::from_i32(0)]);
+}
+
+#[test]
 fn scalar_long_arithmetic() {
     let snap = run("Sub Main()\nDim x As Long\nx = 2\nx = x * 3 + 4\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_i32(10)]);

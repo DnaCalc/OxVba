@@ -243,6 +243,9 @@ pub enum ErrField {
     Number,
     Description,
     Source,
+    /// `Err.LastDllError` — the Win32 last-error code captured after the most recent
+    /// `Declare Lib` call (a `Long`).
+    LastDllError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

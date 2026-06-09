@@ -250,6 +250,9 @@ pub struct Vm<'h> {
     error_mode: ErrorMode,
     resume: ResumePoint,
     err: ErrObject,
+    /// The OS last-error captured after the most recent native `Declare` call, read
+    /// by `Err.LastDllError`. Updated from the HAL after each `declare_call`.
+    last_dll_error: i32,
     lib: LibContext,
     /// `For Each` enumerator state, keyed by the iterator's resolved storage
     /// `Place` (bundle- and frame-unique) so concurrent/reentrant/cross-bundle
@@ -367,6 +370,7 @@ impl<'h> Vm<'h> {
             error_mode: ErrorMode::None,
             resume: ResumePoint::default(),
             err: ErrObject::default(),
+            last_dll_error: 0,
             lib: LibContext::default(),
             for_each: HashMap::new(),
             withevents: HashMap::new(),
@@ -1224,6 +1228,9 @@ impl<'h> Vm<'h> {
             .dynlink()
             .invoke_descriptor_variants(&view, &arg_variants)
             .map_err(Fault::from_hal)?;
+        // VBA updates `Err.LastDllError` after every `Declare` call (the OS last-error
+        // the HAL captured immediately after the native call); non-native lanes report 0.
+        self.last_dll_error = self.host.dynlink().last_dll_error();
         // Copy each ByRef argument's marshaled-back value to its caller slot. The
         // dynlink host returns `wb_values` aligned to `args`; only `CallArg::ByRef`
         // args write back (a force-ByVal `(x)`/non-l-value lowered to `Slot`, so it
@@ -1338,6 +1345,9 @@ impl<'h> Vm<'h> {
             // call-through or a real OS callback thunk) is the native-runtime epic;
             // for now it is a plain integer that marshals to a `Declare`.
             Op::LoadProcRef { dst, proc } => self.set(*dst, Variant::from_i32(*proc as i32))?,
+            Op::LoadErrLastDllError { slot } => {
+                self.set(*slot, Variant::from_i32(self.last_dll_error))?
+            }
             Op::LoadErrNumber { slot } => self.set(*slot, Variant::from_i32(self.err.number))?,
             Op::LoadErrDescription { slot } => {
                 self.set(*slot, Variant::from_string(self.err.description.clone()))?

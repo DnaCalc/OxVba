@@ -414,6 +414,14 @@ pub trait DynamicLinkHal: Send + Sync {
     fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::DynamicLinking, "invoke_symbol_variant")
     }
+
+    /// The OS last-error code captured immediately after the most recent native
+    /// `Declare` call on this adapter — what VBA's `Err.LastDllError` reads. `0` for
+    /// adapters that make no real native call (deterministic / null / wasm), or before
+    /// any native call has run.
+    fn last_dll_error(&self) -> i32 {
+        0
+    }
 }
 
 pub trait DiagnosticsHal: Send + Sync {

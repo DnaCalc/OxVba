@@ -474,6 +474,7 @@ impl<'p> Linearizer<'p> {
                     ErrField::Number => Op::LoadErrNumber { slot },
                     ErrField::Description => Op::LoadErrDescription { slot },
                     ErrField::Source => Op::LoadErrSource { slot },
+                    ErrField::LastDllError => Op::LoadErrLastDllError { slot },
                 });
                 Ok(slot)
             }

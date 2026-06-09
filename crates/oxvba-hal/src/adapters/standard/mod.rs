@@ -132,6 +132,10 @@ pub(crate) struct StandardHostServices {
     #[cfg(target_os = "windows")]
     com_bridge: Arc<WindowsComBridge>,
     dynlink_state: Arc<Mutex<DynLinkBindingState>>,
+    /// OS last-error captured after the most recent native `Declare` call (shared
+    /// across clones), read back by `Err.LastDllError`. `Arc` so a cloned adapter
+    /// observes the same value.
+    last_dll_error: Arc<std::sync::atomic::AtomicI32>,
     portable_objects: Option<Arc<PortableComProjection>>,
     callbacks: Option<Arc<dyn crate::callbacks::HostCallbacks>>,
 }
@@ -259,6 +263,7 @@ impl StandardHostServices {
                 prog_ids_by_handle: std::collections::BTreeMap::new(),
             })),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
+            last_dll_error: Arc::new(std::sync::atomic::AtomicI32::new(0)),
             portable_objects: None,
             callbacks: None,
         }

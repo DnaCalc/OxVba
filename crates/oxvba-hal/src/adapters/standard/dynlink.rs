@@ -377,6 +377,10 @@ impl DynamicLinkHal for StandardHostServices {
         }
         Ok(Variant::from_i32(symbol.raw().saturating_add(arg)))
     }
+
+    fn last_dll_error(&self) -> i32 {
+        self.last_dll_error.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 // ── m1-native-ffi invocation ──
@@ -462,6 +466,14 @@ fn invoke_m1_native(
 
     let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
         .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
+    // Capture `GetLastError` immediately — nothing between the native call and here
+    // touches the OS last-error (the x64 thunk returns straight to `invoke_stdcall`,
+    // and the Ok-path `map_err`/`?` make no syscall). This is what `Err.LastDllError`
+    // reads. `last_os_error()` is `GetLastError` on Windows.
+    host.last_dll_error.store(
+        std::io::Error::last_os_error().raw_os_error().unwrap_or(0),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 
     let result = unmarshal_ffi_to_variant(raw_result, descriptor.return_type.as_deref());
     let mut writeback_values = args.to_vec();
@@ -551,6 +563,11 @@ fn invoke_m1_native(
 
     let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
         .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
+    // Capture `errno` (the Unix analogue of the Win32 last-error) for `Err.LastDllError`.
+    host.last_dll_error.store(
+        std::io::Error::last_os_error().raw_os_error().unwrap_or(0),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 
     let result = unmarshal_ffi_to_variant(raw_result, descriptor.return_type.as_deref());
     Ok((result, Vec::new()))
