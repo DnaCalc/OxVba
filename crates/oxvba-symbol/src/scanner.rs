@@ -644,11 +644,20 @@ fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
     fixed_string_refine(base, node)
 }
 
-/// A declarator/field/param's declared type, refining `As String * N` to a
-/// fixed-length string when a literal length is present.
+/// A declarator's declared type, refining `As String * N` to a fixed-length string,
+/// and wrapping an **array** declarator (`x()` or `x(1 To 3)`) in [`VarTypeRef::Array`]
+/// of its element type. The array wrap matters because the binder distinguishes a
+/// whole-array assignment (`x = arr`, no scalar coercion) from a scalar store, and
+/// reads the element type back through `Array(..)` for `ReDim`/`Erase`/frame layout —
+/// without it a `Dim x() As Byte` would be typed as a scalar `Byte` and a whole-array
+/// assignment would wrongly coerce the array to that scalar.
 fn declared_var_type(declarator: SyntaxNode<'_>) -> VarTypeRef {
     let base = declarator.declared_type().map(type_ref_node).unwrap_or(VarTypeRef::Variant);
-    fixed_string_refine(base, declarator)
+    let element = fixed_string_refine(base, declarator);
+    if declarator.array_bounds().is_some() {
+        return VarTypeRef::Array(Box::new(element));
+    }
+    element
 }
 
 fn fixed_string_refine(base: VarTypeRef, node: SyntaxNode<'_>) -> VarTypeRef {

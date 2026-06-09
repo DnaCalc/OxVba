@@ -66,6 +66,23 @@ fn run(source: &str) -> Vec<Variant> {
 }
 
 #[test]
+fn dynamic_array_whole_assignment_is_a_copy_not_a_scalar_coercion() {
+    // `Dim dst() As Byte` is an array; `dst = src` copies the whole array. The
+    // declarator must type `dst` as `Array(Byte)`, not scalar `Byte` — otherwise the
+    // assignment scalar-coerces the array and fails ("ArrayVariant to …"). (This
+    // blocked SQLiteForExcel's `StringToUtf8Bytes`.)
+    let snap = run(
+        "Public r As Long\n\
+         Sub Main()\n\
+         Dim src(2) As Byte\nsrc(0) = 10\nsrc(1) = 20\nsrc(2) = 30\n\
+         Dim dst() As Byte\ndst = src\n\
+         r = dst(1)\n\
+         End Sub",
+    );
+    assert_eq!(snap[0], Variant::from_i32(20));
+}
+
+#[test]
 fn err_lastdllerror_binds_and_defaults_to_zero() {
     // `Err.LastDllError` binds as a `Long` member read; with no native `Declare` call
     // it reads 0. The captured-after-a-real-call value is exercised on Windows by the

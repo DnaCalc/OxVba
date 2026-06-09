@@ -237,15 +237,22 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   It reaches `TestOpenCloseV2` → `SQLite3OpenV2` → `StringToUtf8Bytes`, which assigns a `Variant` byte
   array to a `Dim bufFileName() As Byte` and then fails: **"unsupported coercion from ArrayVariant to
   Double"**.
-- **Dynamic-array declarators are typed as their scalar element (real bug, NEXT).** `declared_var_type`
-  (`oxvba-symbol/src/scanner.rs`) reads only the `As <Type>` clause and ignores the array parens, so
-  `Dim x() As Byte` / `Dim x(1 To 3) As Long` are typed `VarTypeRef::Builtin(T)`, not `Array(T)`.
-  Indexing/ReDim still work, but a **whole-array assignment** (`x = someArray`) goes through
-  `types::coerce_store` → `coerce_target(Builtin(T))` → `CoerceNumeric(T)` → `coerce_numeric` on the
-  array → error. Fix: wrap an array declarator's base type in `VarTypeRef::Array(..)` in the scanner
-  (and verify indexing, `ReDim`, `array_element`, ByRef array params, and the existing array tests still
-  hold — this touches array typing broadly). Then the SQLiteForExcel round-trip can continue
-  (prepare/step/column/blob/backup), and the acceptance test can be un-ignored.
+- **Dynamic/array declarators typed as their scalar element — FIXED.** `declared_var_type`
+  (`oxvba-symbol/src/scanner.rs`) now wraps an array declarator (`x()` or `x(1 To 3)`) in
+  `VarTypeRef::Array(element)`. The binder was already built for this (`bind_redim`/`bind_dim`/`Erase`
+  peel `Array(inner)`; `array_element` reads it; indexing discards the base type), so a whole-array
+  assignment (`x = arr`) no longer scalar-coerces, and `ReDim x(n)` now allocates the declared element
+  type instead of `Variant`. No existing test regressed; regression test
+  `feature_coverage::dynamic_array_whole_assignment_is_a_copy_not_a_scalar_coercion`.
+- **SQLiteForExcel — native marshalling proven correct; remaining gaps are VBA-library completeness.**
+  The demo now drives real `sqlite3.dll` end to end through `TestVersion` → `TestOpenClose` →
+  `TestError` → `TestInsert` → a full `TestSelect` (columns read back as INTEGER/TEXT/FLOAT/NULL with the
+  right values — the string/int/float/null marshalling round-trip is correct). It reaches `TestBinding`
+  and fails on `DateValue("1 Jan 2000")`: the `DateValue` library parser doesn't accept the `d mmm yyyy`
+  text form ("cannot parse date `1 Jan 2000`"). **Next:** fill the `DateValue` parser's accepted formats
+  (and whatever further library gaps the rest of the demo — `TestDates`/`TestStrings`/`TestBlob`/
+  `TestBackup` — exercises), then un-ignore. These are ordinary `oxvba-lib` date/string gaps, not the
+  native FFI path.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

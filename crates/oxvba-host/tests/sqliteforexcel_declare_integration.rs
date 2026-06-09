@@ -48,14 +48,13 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "recursion fixed + runs from the workspace root, so it now drives REAL sqlite3.dll: \
-            SQLite3LibVersion returns \"3.11.1\" and SQLite3Open/Close succeed. Next gap (in \
-            TestOpenCloseV2 → SQLite3OpenV2 → StringToUtf8Bytes): assigning a Variant array to a \
-            `Dim buf() As Byte` dynamic-array variable coerces to the scalar element type — the scanner \
-            (`declared_var_type`) types `Dim x() As T` as scalar `T`, not `Array(T)`, so whole-array \
-            assignment emits `CoerceNumeric` on the array (\"unsupported coercion from ArrayVariant to \
-            Double\"). Un-ignore once dynamic-array typing + the rest of the round-trip work. See \
-            POST_CLEANUP.md."]
+#[ignore = "drives REAL sqlite3.dll and the native string/int/float/null marshalling round-trip is \
+            correct: it runs TestVersion (\"3.11.1\"), TestOpenClose, TestError, TestInsert, and a full \
+            TestSelect (columns read back as INTEGER/TEXT/FLOAT/NULL with the right values). Next gap \
+            (in TestBinding): `DateValue(\"1 Jan 2000\")` — the `DateValue` library parser doesn't accept \
+            the `d mmm yyyy` text form (\"cannot parse date `1 Jan 2000`\"). This is a VBA-library \
+            date-parsing gap, not native FFI. Un-ignore once the remaining library gaps the demo \
+            exercises (DateValue formats, …) are filled. See POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)
         .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");
