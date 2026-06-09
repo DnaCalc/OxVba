@@ -277,10 +277,33 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   to any `Declare` (e.g. `Debug.Print StrPtr(x)`) is not reclaimed — a degenerate case, since the
   helpers exist to feed native calls. Tests: `pointer_helpers::free_pins_releases_only_the_named_addresses`,
   `feature_coverage::pointer_helper_pins_are_freed_per_native_call_not_leaked`.
-- **Native `Declare` string marshalling** (clean VM): `ByVal As String` to ANSI (A) and wide
-  (W) APIs works; **missing** — ByRef `String` (no string variant in `NativeByRefStorage`),
-  `String` *return* type, fixed-length `String * N`, and Unix ByRef. The deleted
-  `native_declare_string_marshalling_end_to_end` covered these on the legacy host.
+- **Native `Declare` string marshalling — DONE (faithful ANSI model).** VBA marshals every
+  `Declare` String as **system-codepage ANSI** (never wide, regardless of the export's A/W
+  name) — the previous A-suffix-alias heuristic (wide for non-A exports) was a deviation and
+  is removed. All three As-String shapes now implemented:
+  - **`ByVal … As String`** — ANSI buffer in a marshal cell; after the call the (possibly
+    callee-mutated) buffer converts back into the variable at its **full length** (embedded
+    NULs preserved) — `ByVal` notwithstanding; that is VBA's pre-sized-buffer idiom. The
+    binder (`bind_byval_string_arg`) binds a String-typed, non-parenthesised l-value ByRef so
+    the marshaled-back value reaches the variable; literals/expressions/`(s)`/non-String
+    l-values stay ByVal (their conversion temp is discarded, as in VBA).
+  - **`ByRef … As String`** — an `LPSTR*` cell over the ANSI buffer. Read-back follows
+    whichever pointer the cell finally holds: unchanged → full-length buffer decode; replaced
+    → capped NUL-terminated ANSI read. *Deliberate safety deviation:* the replacement pointer
+    is **not freed** (real VBA frees its temp here, which crashes on static/CRT-owned
+    pointers — guest code must never abort this host), accepting a leak in the rare
+    callee-allocated case.
+  - **`String` return** — the VB contract: the callee returns a BSTR of ANSI bytes
+    (`SysAllocStringByteLen`); the runtime decodes it to Unicode and frees it.
+  ANSI decode (`utf16_from_ansi`, CP_ACP, length-bounded) lives next to `ansi_c_string` in
+  `oxvba_com::windows_ffi_bridge`. Windows e2e tests: `lstrcpyA` (ByVal write-back +
+  full-length), `_get_pgmptr` (ByRef replaced pointer), `SysAllocStringByteLen` (String
+  return); bind shape: `declare_byval_string_lvalue_binds_byref_for_ansi_writeback`.
+  **Parked:** fixed-length `String * N` as a *Declare param* (no length in
+  `DeclareParamType`; scanner folds it to `String` — fine for the descriptor, but a
+  fixed-string variable arg binds ByVal/no-write-back); Variant-variable args get no
+  write-back (VBA discards the conversion temp too); Unix keeps wide ByVal marshalling, no
+  ByRef-String, and rejects String returns (no BSTR/codepage ABI there).
 
 ## Legacy stack removed (this pass)
 

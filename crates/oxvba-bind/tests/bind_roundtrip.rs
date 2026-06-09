@@ -279,6 +279,41 @@ fn random_access_file_statements_bind_and_lower() {
 }
 
 #[test]
+fn declare_byval_string_lvalue_binds_byref_for_ansi_writeback() {
+    // VBA marshals a `Declare` String argument through a system-codepage ANSI
+    // buffer and converts the (possibly callee-mutated) buffer back into the
+    // variable after the call — even when the parameter is declared `ByVal` (the
+    // pre-sized-buffer idiom). The call site must therefore bind a String-typed
+    // l-value argument ByRef so the marshaled-back value reaches the variable,
+    // while an r-value (here a literal) stays ByVal with no write-back target.
+    let program = bind(
+        "Private Declare PtrSafe Function lstrcpyA Lib \"kernel32\" (ByVal dst As String, ByVal src As String) As LongPtr\n\
+         Sub Main()\n    Dim buffer As String\n    lstrcpyA buffer, \"alpha\"\nEnd Sub\n",
+    );
+    let entry = program.entry.expect("entry");
+    let args = program.procs[entry.0]
+        .body
+        .iter()
+        .find_map(|stmt| match stmt {
+            CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Declare { .. }, args }) => {
+                Some(args.clone())
+            }
+            _ => None,
+        })
+        .expect("the Declare call should lower in Main's body");
+    assert!(
+        matches!(args[0], CoreArg::ByRef(_)),
+        "a String l-value to a ByVal String param must bind ByRef (ANSI write-back), got {:?}",
+        args[0]
+    );
+    assert!(
+        matches!(args[1], CoreArg::ByVal(_)),
+        "a literal String argument must stay ByVal, got {:?}",
+        args[1]
+    );
+}
+
+#[test]
 fn kill_statement_resolves_to_file_kill_native() {
     // `Kill pathname` is not a lexer keyword (unlike Open/Close/Print#/Name/…), so it
     // parses as an ordinary statement-call and must resolve by name to the FileKill

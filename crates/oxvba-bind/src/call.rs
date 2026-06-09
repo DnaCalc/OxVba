@@ -74,9 +74,12 @@ impl<'a> ProcLower<'a> {
             DispatchRoute::Declare { descriptor_id } => {
                 // ByRef `Declare` params write back to the caller slot (copy-out); a
                 // `StrPtr(x)`/`VarPtr(x)` pointer argument over an l-value records a
-                // pointer write-back (the pinned buffer → `x` after the call).
+                // pointer write-back (the pinned buffer → `x` after the call). String
+                // params write back even when `ByVal` (the ANSI-buffer contract).
                 let by_ref = self.declare_param_by_ref(binding.symbol);
-                let (args, ptr_writebacks) = self.bind_declare_args(arglist, &by_ref)?;
+                let is_string = self.declare_param_is_string(binding.symbol);
+                let (args, ptr_writebacks) =
+                    self.bind_declare_args(arglist, &by_ref, &is_string)?;
                 Ok(value_bound(
                     CoreValue::Call {
                         callee: CoreCallee::Declare { descriptor_id: *descriptor_id, ptr_writebacks },
@@ -266,6 +269,7 @@ impl<'a> ProcLower<'a> {
         &mut self,
         arglist: Option<SyntaxNode<'_>>,
         param_by_ref: &[bool],
+        param_is_string: &[bool],
     ) -> Result<(Vec<CoreArg>, Vec<PtrWriteback>), BindError> {
         let items = match arglist {
             Some(a) => a.arg_items(),
@@ -281,21 +285,41 @@ impl<'a> ProcLower<'a> {
                     value: self.bind_expr(value)?.value,
                 }),
                 ArgItem::Positional(expr) => {
+                    let by_ref = param_by_ref.get(i).copied().unwrap_or(false);
                     if let Some((intrinsic, operand)) = self.pointer_call(expr) {
                         let (kind, value, wb) = self.pointer_operand(intrinsic, operand)?;
                         args.push(CoreArg::ByVal(CoreValue::Ptr { kind, value: Box::new(value) }));
                         if let Some((target, kind)) = wb {
                             writebacks.push(PtrWriteback { arg_index: i, target, kind });
                         }
+                    } else if !by_ref && param_is_string.get(i).copied().unwrap_or(false) {
+                        args.push(self.bind_byval_string_arg(expr)?);
                     } else {
-                        args.push(
-                            self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?,
-                        );
+                        args.push(self.bind_arg_byref(expr, by_ref)?);
                     }
                 }
             }
         }
         Ok((args, writebacks))
+    }
+
+    /// Bind a `ByVal … As String` `Declare` argument. VBA converts a `Declare`
+    /// String argument to a system-codepage ANSI buffer for the call and converts
+    /// the (possibly callee-mutated) buffer back into the variable afterwards —
+    /// `ByVal` notwithstanding; that is the pre-sized-buffer idiom
+    /// (`s = String(255, 0): GetWindowsDirectoryA s, 255`). A String-typed,
+    /// non-parenthesised l-value therefore binds ByRef so the marshaled-back value
+    /// reaches the variable; anything else (a literal, an expression, `(s)`, or a
+    /// non-String l-value, whose conversion temp VBA also discards) binds ByVal
+    /// with no write-back.
+    fn bind_byval_string_arg(&mut self, expr: SyntaxNode<'_>) -> Result<CoreArg, BindError> {
+        if expr.kind() != SyntaxKind::ParenExpr
+            && let Ok((place, ty)) = self.bind_place(expr)
+            && matches!(ty, VarTypeRef::Builtin(BuiltinType::String))
+        {
+            return Ok(CoreArg::ByRef(place));
+        }
+        Ok(CoreArg::ByVal(self.bind_expr(expr)?.value))
     }
 
     /// If `expr` is a `StrPtr`/`VarPtr`/`ObjPtr` call, return the intrinsic and its
@@ -699,6 +723,20 @@ impl<'a> ProcLower<'a> {
     fn declare_param_by_ref(&self, sym: Option<SymbolId>) -> Vec<bool> {
         match sym.and_then(|s| self.g.env.symbols.symbol(s)).map(|s| &s.imp) {
             Some(SymbolImpl::Declare(d)) => d.param_by_ref.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The per-parameter `As String`-ness of a `Declare` symbol (empty if
+    /// unknown) — String params marshal through an ANSI buffer that writes back
+    /// even when declared `ByVal` (see [`Self::bind_byval_string_arg`]).
+    fn declare_param_is_string(&self, sym: Option<SymbolId>) -> Vec<bool> {
+        match sym.and_then(|s| self.g.env.symbols.symbol(s)).map(|s| &s.imp) {
+            Some(SymbolImpl::Declare(d)) => d
+                .param_types
+                .iter()
+                .map(|t| matches!(t, oxvba_bundle::DeclareParamType::String))
+                .collect(),
             _ => Vec::new(),
         }
     }

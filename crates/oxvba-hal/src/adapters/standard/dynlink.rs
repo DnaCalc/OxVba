@@ -438,16 +438,7 @@ fn invoke_m1_native(
                 .map(|s| s.as_str())
                 .unwrap_or("Long");
             let by_ref = descriptor.param_by_ref.get(i).copied().unwrap_or(false);
-            marshal_variant_to_ffi(
-                host.profile,
-                value,
-                param_type,
-                by_ref,
-                descriptor.alias,
-                descriptor.ordinal_alias,
-                i,
-                &mut byref_cells,
-            )
+            marshal_variant_to_ffi(host.profile, value, param_type, by_ref, i, &mut byref_cells)
         })
         .collect::<Result<_, _>>()?;
 
@@ -461,6 +452,9 @@ fn invoke_m1_native(
         Some("Single") => FfiReturnType::Single,
         Some("LongLong") => FfiReturnType::LongLong,
         Some("LongPtr") => FfiReturnType::LongPtr,
+        // A `String` return is a BSTR — pointer-sized in the return register;
+        // `unmarshal_ffi_to_variant` decodes and frees it.
+        Some("String") => FfiReturnType::LongPtr,
         Some(_) => FfiReturnType::Long,
     };
 
@@ -558,6 +552,15 @@ fn invoke_m1_native(
         Some("Single") => FfiReturnType::Single,
         Some("LongLong") => FfiReturnType::LongLong,
         Some("LongPtr") => FfiReturnType::LongPtr,
+        // The `String` return contract is BSTR-based (OLE) — Windows-only.
+        Some("String") => {
+            return Err(HalError::adapter_fault(
+                host.profile,
+                capability,
+                "invoke_symbol",
+                "`Declare … As String` return marshaling is not implemented on Unix hosts",
+            ));
+        }
         Some(_) => FfiReturnType::Long,
     };
 
@@ -573,6 +576,49 @@ fn invoke_m1_native(
     Ok((result, Vec::new()))
 }
 
+#[cfg(target_os = "windows")]
+use windows_sys::{
+    Win32::Foundation::{SysFreeString, SysStringByteLen},
+    core::BSTR,
+};
+
+/// Decode system-codepage ANSI bytes into a canonical string Variant (embedded
+/// NULs preserved — the slice length bounds the conversion, as VBA converts a
+/// `Declare` string buffer back at its full length, not to the first NUL).
+#[cfg(target_os = "windows")]
+fn variant_from_ansi_bytes(bytes: &[u8]) -> Variant {
+    use oxvba_runtime::bstr::BStr;
+    let units = oxvba_com::windows_ffi_bridge::utf16_from_ansi(bytes);
+    Variant::from_string(BStr::from_utf16_lossy(&units))
+}
+
+/// Decode an [`ansi_c_string`]-shaped buffer (ANSI payload + our trailing NUL)
+/// back to a string Variant at the payload's full length.
+#[cfg(target_os = "windows")]
+fn variant_from_ansi_payload(buffer: &[u8]) -> Variant {
+    variant_from_ansi_bytes(&buffer[..buffer.len().saturating_sub(1)])
+}
+
+/// Decode a NUL-terminated ANSI string at `ptr` (capped at 1 MiB so a missing
+/// terminator cannot scan unbounded memory).
+#[cfg(target_os = "windows")]
+fn variant_from_ansi_c_str(ptr: *const u8) -> Variant {
+    use oxvba_runtime::bstr::BStr;
+    if ptr.is_null() {
+        return Variant::from_string(BStr::empty());
+    }
+    const CAP: usize = 1 << 20;
+    let mut len = 0usize;
+    while len < CAP && unsafe { *ptr.add(len) } != 0 {
+        len += 1;
+    }
+    variant_from_ansi_bytes(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
+/// A post-call read-back cell for one argument: declared-`ByRef` scalars, and
+/// `String` arguments in **either** direction (VBA converts a `Declare` String
+/// argument to an ANSI buffer for the call and converts the buffer back into
+/// the variable afterwards — even when declared `ByVal`).
 #[cfg(target_os = "windows")]
 struct NativeByRefCell {
     index: usize,
@@ -590,6 +636,18 @@ enum NativeByRefStorage {
     I64(Box<i64>),
     Currency(Box<i64>),
     Date(Box<f64>),
+    /// `ByVal … As String`: the system-codepage ANSI conversion of the argument
+    /// (payload + NUL). The callee receives the buffer pointer (`LPSTR`) and may
+    /// mutate the payload in place; read-back decodes the full payload length
+    /// back to Unicode (VBA's pre-sized-buffer idiom).
+    AnsiBuffer(Vec<u8>),
+    /// `ByRef … As String`: an `LPSTR` cell initialized to the ANSI buffer. The
+    /// callee receives `&cell` (`LPSTR*`) and may overwrite the pointer itself;
+    /// read-back follows whichever pointer the cell finally holds.
+    AnsiStringCell {
+        buffer: Vec<u8>,
+        cell: Box<*mut u8>,
+    },
 }
 
 #[cfg(target_os = "windows")]
@@ -628,6 +686,15 @@ impl NativeByRefStorage {
                     .unwrap_or_else(|| variant_f64(value));
                 Self::Date(Box::new(raw))
             }
+            "String" => {
+                let text = value
+                    .as_bstr()
+                    .map(|text| text.as_str())
+                    .unwrap_or_default();
+                let mut buffer = oxvba_com::windows_ffi_bridge::ansi_c_string(&text);
+                let cell = Box::new(buffer.as_mut_ptr());
+                Self::AnsiStringCell { buffer, cell }
+            }
             other => {
                 return Err(format!(
                     "native ByRef marshaling for declare parameter type `{other}` is not yet supported"
@@ -650,6 +717,10 @@ impl NativeByRefStorage {
             Self::I64(value) => FfiArg::Pointer((&mut **value as *mut i64).cast::<c_void>()),
             Self::Currency(value) => FfiArg::Pointer((&mut **value as *mut i64).cast::<c_void>()),
             Self::Date(value) => FfiArg::Pointer((&mut **value as *mut f64).cast::<c_void>()),
+            Self::AnsiBuffer(buffer) => FfiArg::Pointer(buffer.as_mut_ptr().cast::<c_void>()),
+            Self::AnsiStringCell { cell, .. } => {
+                FfiArg::Pointer((&mut **cell as *mut *mut u8).cast::<c_void>())
+            }
         }
     }
 
@@ -664,6 +735,20 @@ impl NativeByRefStorage {
             Self::I64(value) => Variant::from_i64(**value),
             Self::Currency(value) => Variant::from_currency_scaled_i64(**value),
             Self::Date(value) => Variant::from_date_f64(**value),
+            Self::AnsiBuffer(buffer) => variant_from_ansi_payload(buffer),
+            Self::AnsiStringCell { buffer, cell } => {
+                if std::ptr::eq(*(*cell) as *const u8, buffer.as_ptr()) {
+                    variant_from_ansi_payload(buffer)
+                } else {
+                    // The callee replaced the pointer; read the replacement as a
+                    // NUL-terminated ANSI string. We deliberately do NOT free the
+                    // replacement (VBA frees its temp here, which crashes real VBA
+                    // whenever the callee stored a static/CRT-owned pointer — guest
+                    // code must never abort this host, so we accept the leak in the
+                    // callee-allocated case instead).
+                    variant_from_ansi_c_str((*(*cell)).cast_const())
+                }
+            }
         }
     }
 }
@@ -712,14 +797,11 @@ fn marshal_variant_to_ffi_unix(
 }
 
 #[cfg(target_os = "windows")]
-#[allow(clippy::too_many_arguments)]
 fn marshal_variant_to_ffi(
     profile: HalProfileId,
     value: &Variant,
     param_type: &str,
     by_ref: bool,
-    alias: &str,
-    ordinal_alias: bool,
     arg_index: usize,
     byref_cells: &mut Vec<NativeByRefCell>,
 ) -> Result<oxvba_com::windows_ffi_bridge::FfiArg, HalError> {
@@ -761,17 +843,23 @@ fn marshal_variant_to_ffi(
             }
         }
         "String" => {
+            // VBA marshals every `Declare` String argument as system-codepage
+            // ANSI — never wide, regardless of the export's A/W name — and
+            // converts the (possibly callee-mutated) buffer back into the
+            // argument after the call even for `ByVal`. Keep the buffer in a
+            // cell so the post-call read-back can decode it.
             let text = value
                 .as_bstr()
                 .map(|text| text.as_str())
                 .unwrap_or_default();
-            if !ordinal_alias && alias.ends_with('A') {
-                return Ok(FfiArg::AnsiString(
-                    oxvba_com::windows_ffi_bridge::ansi_c_string(&text),
-                ));
-            }
-            let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-            Ok(FfiArg::String(wide))
+            let mut storage =
+                NativeByRefStorage::AnsiBuffer(oxvba_com::windows_ffi_bridge::ansi_c_string(&text));
+            let ffi_arg = storage.as_ffi_arg();
+            byref_cells.push(NativeByRefCell {
+                index: arg_index,
+                storage,
+            });
+            Ok(ffi_arg)
         }
         _ => Ok(FfiArg::Long(variant_i32(value))),
     }
@@ -787,6 +875,32 @@ fn unmarshal_ffi_to_variant(raw: i64, return_type: Option<&str>) -> Variant {
         Some("Double") => Variant::from_f64(f64::from_bits(raw as u64)),
         Some("Single") => Variant::from_f32(f32::from_bits(raw as u32)),
         Some("LongLong") | Some("LongPtr") => Variant::from_i64(raw),
+        Some("String") => {
+            // The VB contract for `Declare Function … As String`: the DLL returns
+            // a BSTR holding ANSI bytes (`SysAllocStringByteLen`); the caller
+            // decodes it to Unicode and owns — so frees — it. (A DLL returning a
+            // plain `char*` is invalid under this contract in real VBA too.)
+            #[cfg(target_os = "windows")]
+            {
+                let bstr = raw as usize as BSTR;
+                if bstr.is_null() {
+                    Variant::from_string(oxvba_runtime::bstr::BStr::empty())
+                } else {
+                    let byte_len = unsafe { SysStringByteLen(bstr) } as usize;
+                    let bytes = unsafe { std::slice::from_raw_parts(bstr.cast::<u8>(), byte_len) };
+                    let value = variant_from_ansi_bytes(bytes);
+                    unsafe { SysFreeString(bstr) };
+                    value
+                }
+            }
+            // Unreachable on Unix (the invoke path rejects String returns first);
+            // kept total so this function stays platform-independent.
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = raw;
+                Variant::empty()
+            }
+        }
         Some(_) => Variant::from_i32(raw as i32),
     }
 }

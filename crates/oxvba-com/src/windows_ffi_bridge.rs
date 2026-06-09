@@ -177,6 +177,14 @@ unsafe extern "system" {
         lpDefaultChar: *const u8,
         lpUsedDefaultChar: *mut i32,
     ) -> i32;
+    fn MultiByteToWideChar(
+        CodePage: u32,
+        dwFlags: u32,
+        lpMultiByteStr: *const u8,
+        cbMultiByte: i32,
+        lpWideCharStr: *mut u16,
+        cchWideChar: i32,
+    ) -> i32;
 }
 
 #[cfg(target_os = "windows")]
@@ -281,6 +289,35 @@ pub fn ansi_c_string(text: &str) -> Vec<u8> {
     bytes.truncate(written as usize + 1);
     bytes[written as usize] = 0;
     bytes
+}
+
+/// Decode system-codepage (CP_ACP) ANSI bytes to UTF-16 units — the inverse of
+/// [`ansi_c_string`]. Embedded NULs are preserved (the byte length, not a NUL
+/// scan, bounds the conversion), matching how VBA converts a `Declare` call's
+/// ANSI string buffer back to Unicode at its full length.
+#[cfg(target_os = "windows")]
+pub fn utf16_from_ansi(bytes: &[u8]) -> Vec<u16> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+    let len = i32::try_from(bytes.len()).unwrap_or(i32::MAX);
+    let required = unsafe {
+        MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0)
+    };
+    if required <= 0 {
+        // Degenerate conversion failure: fall back to a Latin-1 widening so the
+        // caller still gets a string of the right length.
+        return bytes.iter().map(|b| u16::from(*b)).collect();
+    }
+    let mut units = vec![0u16; required as usize];
+    let written = unsafe {
+        MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, units.as_mut_ptr(), required)
+    };
+    if written <= 0 {
+        return bytes.iter().map(|b| u16::from(*b)).collect();
+    }
+    units.truncate(written as usize);
+    units
 }
 
 /// Resolves a function address from a loaded module.

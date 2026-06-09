@@ -451,6 +451,104 @@ End Sub
     }
 
     #[test]
+    fn lstrcpya_byval_string_buffer_writes_back_in_vm_and_rejects_jit() {
+        // The VBA pre-sized-buffer idiom: a `ByVal … As String` argument marshals
+        // as a system-codepage ANSI copy, and the callee-mutated buffer converts
+        // BACK into the variable after the call — `ByVal` notwithstanding.
+        // lstrcpyA writes "alpha\0" over the front of the 10-char buffer; the
+        // write-back must preserve the buffer's full length (`Len` stays 10, the
+        // "*" tail survives past the embedded NUL), and the VBA code trims at the
+        // C terminator as real callers do.
+        let source = r#"
+Private Declare PtrSafe Function lstrcpyA Lib "kernel32" (ByVal dst As String, ByVal src As String) As LongPtr
+
+Sub Main()
+    Dim buffer As String
+    Dim copied As String
+    Dim keptLen As Long
+
+    buffer = String(10, "*")
+    lstrcpyA buffer, "alpha"
+    keptLen = Len(buffer)
+    copied = Left(buffer, InStr(buffer, Chr(0)) - 1)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
+            assert!(
+                contains_string(&snapshot, "alpha"),
+                "lstrcpyA should write back through the ByVal String buffer for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+            assert!(
+                snapshot.iter().any(|value| value.as_i32() == Some(10)),
+                "the write-back should keep the full ANSI buffer length for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn get_pgmptr_byref_string_reads_replaced_pointer_in_vm_and_rejects_jit() {
+        // `ByRef … As String` passes an `LPSTR*` cell. `_get_pgmptr` REPLACES the
+        // pointer with a CRT-owned copy of the program path, so the read-back must
+        // follow the replacement pointer (NUL-terminated ANSI) rather than the
+        // original buffer — and must not free the CRT's memory.
+        let source = r#"
+Private Declare PtrSafe Function GetProgramPath Lib "msvcrt" Alias "_get_pgmptr" (ByRef path As String) As Long
+
+Sub Main()
+    Dim path As String
+    Dim status As Long
+    Dim exeAt As Long
+
+    status = GetProgramPath(path)
+    exeAt = InStr(1, LCase(path), ".exe")
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
+            assert!(
+                snapshot
+                    .iter()
+                    .any(|value| value.as_i32().is_some_and(|at| at > 0)),
+                "_get_pgmptr should populate the ByRef String with the .exe path for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sysallocstringbytelen_string_return_unmarshals_ansi_bstr_in_vm_and_rejects_jit() {
+        // The VB contract for `Declare Function … As String`: the callee returns a
+        // BSTR holding ANSI bytes; the runtime decodes it to Unicode and frees it.
+        // SysAllocStringByteLen is that contract's own constructor — it copies the
+        // 5 ANSI bytes of "alpha" (marshaled in from the ByVal String argument)
+        // into a fresh ANSI BSTR and returns it.
+        let source = r#"
+Private Declare PtrSafe Function MakeAnsiBstr Lib "oleaut32" Alias "SysAllocStringByteLen" (ByVal source As String, ByVal byteLength As Long) As String
+
+Sub Main()
+    Dim made As String
+    made = MakeAnsiBstr("alpha", 5)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
+            assert!(
+                contains_string(&snapshot, "alpha"),
+                "a String-returning Declare should decode the ANSI BSTR for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
     fn err_lastdllerror_reads_os_error_after_native_declare_in_vm_and_rejects_jit() {
         // `SetLastError(N)` sets the thread's Win32 last-error to N; the HAL captures
         // `GetLastError` immediately after the native call, and `Err.LastDllError` reads
