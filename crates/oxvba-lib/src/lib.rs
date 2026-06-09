@@ -138,6 +138,23 @@ pub(crate) fn as_usize(value: &Variant) -> LibResult<usize> {
     usize::try_from(v).map_err(|_| LibError::invalid_call("expected a non-negative count"))
 }
 
+/// Read a guest-controlled **allocation** count (`String`/`Space`/… lengths) as a
+/// `usize`, bounded to VBA's `Long` range. VBA passes these counts as `Long`, so a
+/// value outside `0..=2^31-1` is invalid: a negative is "Invalid procedure call" (5),
+/// and an out-of-`Long` magnitude is "Overflow" (6). This prevents a garbage/huge
+/// count from driving an unbounded host allocation that would abort the process —
+/// guest code must never be able to crash the VM.
+pub(crate) fn alloc_count(value: &Variant) -> LibResult<usize> {
+    let v = as_i64(value)?;
+    if v < 0 {
+        return Err(LibError::invalid_call(format!("negative allocation count {v}")));
+    }
+    if v > i64::from(i32::MAX) {
+        return Err(LibError::overflow(format!("allocation count {v} exceeds Long range")));
+    }
+    Ok(v as usize)
+}
+
 pub(crate) fn as_str(value: &Variant) -> LibResult<String> {
     Ok(variant_to_vba_string(value)?.as_str())
 }

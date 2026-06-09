@@ -270,6 +270,75 @@ fn referenced_module_variable_is_not_cross_project_bindable() {
     assert!(result.is_err(), "a referenced module variable must not resolve cross-project");
 }
 
+#[test]
+fn module_qualified_call_resolves_when_qualifier_also_names_a_sub() {
+    // The entry-shim shape that made the SQLiteForExcel demo recurse infinitely: the
+    // closure loader injects a `Sub Main` shim that does `Call Main.Main`, and the
+    // project's own entry is module `Main`'s `Sub Main`. The shim's `Main.Main` must
+    // resolve the module-qualified `Main.Main` proc — NOT bind the receiver `Main` as
+    // the (shim's own) `Main` sub and self-recurse. `ids.entry()` picks the first
+    // `Main` (the shim, module-first), so the shim is the entry here.
+    let app = project(
+        "App",
+        vec![
+            proc_module("Shim", "Public Sub Main()\n    Call Main.Main\nEnd Sub\n"),
+            proc_module("Main", "Public r As Long\nPublic Sub Main()\n    r = 7\nEnd Sub\n"),
+        ],
+        vec![],
+    );
+    assert_eq!(link_run_global0_i32(&[app]), Some(7));
+}
+
+#[test]
+fn module_qualified_call_with_conditional_compilation_resolves_named_proc() {
+    // The SQLiteForExcel shape: the called module has `#If Win64`-wrapped proc
+    // signatures (each proc declared twice, one branch blanked by cond-comp) before
+    // and around the target. If cond-comp desyncs proc-decl ↔ ProcId alignment, the
+    // qualified call lands on the wrong proc (the demo recursed into `Main`).
+    let helper = "Public r As Long\n\
+         #If Win64 Then\n\
+         Public Sub First(ByVal a As LongPtr)\n\
+         #Else\n\
+         Public Sub First(ByVal a As Long)\n\
+         #End If\n\
+         End Sub\n\
+         #If Win64 Then\n\
+         Public Sub Go()\n\
+         #Else\n\
+         Public Sub Go()\n\
+         #End If\n\
+         \x20   r = 42\n\
+         End Sub\n";
+    let app = project(
+        "App",
+        vec![
+            proc_module("Main", "Sub Main()\n    Call Helper.Go\nEnd Sub\n"),
+            proc_module("Helper", helper),
+        ],
+        vec![],
+    );
+    assert_eq!(link_run_global0_i32(&[app]), Some(42));
+}
+
+#[test]
+fn module_qualified_call_from_main_resolves_the_named_proc() {
+    // `Call Helper.Go` from `Sub Main` (in module `Main`) must invoke `Helper.Go`,
+    // NOT recurse into `Main` (proc 0). Regression for the SQLiteForExcel demo's
+    // `Main` → `Call Sqlite3Demo.AllTests` infinite recursion.
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public r As Long\nSub Main()\n    Call Helper.Go\nEnd Sub\n",
+            ),
+            proc_module("Helper", "Public Sub Go()\n    r = 42\nEnd Sub\n"),
+        ],
+        vec![],
+    );
+    assert_eq!(link_run_global0_i32(&[app]), Some(42));
+}
+
 // ── Predeclared instances (VB_PredeclaredId) ─────────────────────────────────
 
 #[test]
@@ -357,6 +426,65 @@ fn cross_project_predeclared_instance_property() {
         vec![referenced("Lib", vec![host()])],
     );
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
+}
+
+#[test]
+fn cross_project_predeclared_string_property_returns_intact() {
+    // A cross-bundle `Property Get … As String` on a predeclared instance, then a
+    // `+` string concat — exactly the SQLiteForExcel `ThisWorkbook.Path + "\x64"`
+    // shape. The returned BStr must cross the bundle boundary intact (a corrupted
+    // length would make the concat allocate gigabytes). Asserting on `Len` keeps the
+    // i32 harness.
+    let host = || {
+        predeclared_class_module(
+            "HostEnv",
+            "Public Property Get Path() As String\nPath = \"abc\"\nEnd Property\n",
+        )
+    };
+    let lib = project("Lib", vec![host()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = Len(HostEnv.Path + \"def\")\nEnd Sub\n",
+        )],
+        vec![referenced("Lib", vec![host()])],
+    );
+    // Len("abc" + "def") = 6.
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(6));
+}
+
+#[test]
+fn cross_project_predeclared_string_through_optional_byval_param() {
+    // The exact `SQLite3Initialize(ThisWorkbook.Path + "\x64")` shape: a cross-bundle
+    // predeclared `Property Get … As String` result is passed through another proc's
+    // `Optional ByVal … As String` parameter and then string-manipulated. A corrupted
+    // BStr length here would make the inner concat allocate gigabytes.
+    let host = || {
+        predeclared_class_module(
+            "HostEnv",
+            "Public Property Get Path() As String\nPath = \"abc\"\nEnd Property\n",
+        )
+    };
+    let lib = project("Lib", vec![host()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             \x20   r = Init(HostEnv.Path + \"\\x64\")\n\
+             End Sub\n\
+             Function Init(Optional ByVal libDir As String) As Long\n\
+             \x20   If libDir = \"\" Then libDir = \"default\"\n\
+             \x20   If Right(libDir, 1) <> \"\\\" Then libDir = libDir & \"\\\"\n\
+             \x20   Init = Len(libDir + \"SQLite3.dll\")\n\
+             End Function\n",
+        )],
+        vec![referenced("Lib", vec![host()])],
+    );
+    // libDir = "abc\x64" -> "abc\x64\" (8); Len("abc\x64\SQLite3.dll") = 8 + 11 = 19.
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(19));
 }
 
 #[test]

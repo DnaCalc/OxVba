@@ -212,20 +212,33 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   catalog name `"Kill"`. Unlike Open/Close/Print#/Name/Lock/…, `Kill` is not a lexer keyword, so it
   parses as an ordinary statement-call and must resolve by name (a 1-arg native). Covered by
   `bind_roundtrip::kill_statement_resolves_to_file_kill_native`.
-- **SQLiteForExcel acceptance test — all binding gates cleared; now a RUNTIME native-FFI bug.** With
-  conditional compilation, predeclared instances, `Err.LastDllError`, the conversion intrinsics, and
-  `Kill` all binding, the bounded demo (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`,
-  `#[ignore]`d) now **binds + linearizes + executes** — it loads `sqlite3.dll` and runs native calls for
-  ~60s, then aborts with a runaway ~45 GB allocation + `STATUS_STACK_BUFFER_OVERRUN`. This is a native
-  marshalling bug (a garbage length/pointer being read back as a buffer size), almost certainly in the
-  string/pointer return or `RtlMoveMemory`/blob path against `sqlite3.dll` — the exact runtime
-  correctness the acceptance test exists to validate. **Next:** debug the native-FFI marshalling (likely
-  `SQLite3ColumnText`/`ColumnBlob` string/byte read-back, or a `LongPtr` handle truncation), narrowing
-  with a minimal Declare repro before the full demo. The earlier suspected gates (`Lib`-path resolution,
-  relative dll path) did **not** block — the demo's `SQLite3Initialize(ThisWorkbook.Path + "\x64")`
-  `LoadLibraryA`s by full path and the `Lib "SQLite3"` declares resolve the already-loaded module by
-  base name, and the relative path resolves against the test's cwd. The test must stay `#[ignore]`d (it
-  currently aborts the process) until the marshalling bug is fixed.
+- **Module-qualified-call recursion (the demo's ~45 GB "crash") — FIXED.** The runaway allocation was
+  NOT native marshalling: it was the VM frame stack growing under **infinite recursion**. The closure
+  loader injects a startup shim (module `__OxVbaStartupEntryShim`, `Public Sub Main()`) whose body is
+  `Call <EntryPoint>` = `Call Main.Main` (the demo's entry is module `Main`'s `Sub Main`). Binding
+  `Main.Main`, `is_module_qualifier("Main")` asked `resolve("Main")` whether it's a module — but
+  `resolve` prioritises the **Procedure** namespace over **Module**, so `Main` resolved to the *sub*
+  `Main`, the qualified path was skipped, and `Main.Main` mis-bound as member access on the `Main`
+  proc-call (the shim, proc 0) → self-recursion. Fix: `is_module_qualifier` reads module-ness from the
+  authoritative module list (`all_modules`), and only a **local/parameter** variable of the same name
+  shadows a qualifier — a same-named `Sub`/`Function` does not. Regression tests in
+  `oxvba-bind/tests/cross_project.rs` (`module_qualified_call_resolves_when_qualifier_also_names_a_sub`
+  + two more).
+- **VM robustness against guest-triggered unbounded allocation/recursion.** A VBA program must never
+  abort the host: (1) `vm2` bounds the call-frame depth → "Out of stack space" (28) instead of OOM
+  (`guard_call_depth`, applied at every frame push); (2) `String`/`Space` bound their count to `Long`
+  range → Overflow (6) (`oxvba-lib::alloc_count`); (3) `ReDim` bounds its element count → "Out of
+  memory" (7) (`vm2::build_bounds`). These caught/contained the symptom class; the recursion fix above
+  is the actual cause.
+- **SQLiteForExcel acceptance test — recursion fixed; demo runs; last gate is the fixture's relative
+  dll path.** With every binding gate cleared and the recursion fixed, the bounded demo
+  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) now binds + executes + returns
+  cleanly (and real `Debug.Print` output appears). But `ThisWorkbook.Path` is **relative**
+  (`.external\sqliteforexcel\upstream\Distribution`), so `SQLite3Initialize`'s `LoadLibrary` fails with
+  error 126 under the test's cwd (`crates/oxvba-host`) and `AllTests` bails before any real SQLite work —
+  the pass is hollow. **Next (final gate):** run the test from the workspace root (so the relative dll
+  path resolves) and verify the full native `sqlite3.dll` round-trip (open/prepare/step/column/blob),
+  then un-ignore. This is where the native-FFI marshalling correctness finally gets exercised.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

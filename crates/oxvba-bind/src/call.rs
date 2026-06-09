@@ -13,7 +13,7 @@ use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::structural::StructuralIntrinsic;
 use oxvba_symbol::model::{
-    fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind,
+    fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolNamespace,
 };
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
 use oxvba_syntax::red::ArgItem;
@@ -810,22 +810,37 @@ impl<'a> ProcLower<'a> {
     }
 
     /// True if `name` is a **standard** (`Procedural`) module — a free-call namespace
-    /// qualifier. Class / Document / Form modules are also `SymbolKind::Module` but
-    /// are NOT qualifiers (their members need an instance), so they are excluded.
+    /// qualifier, so `name.Member` is a module-qualified call. Class / Document / Form
+    /// modules need an instance, so they are excluded.
+    ///
+    /// Module-ness is read from the authoritative module list, **not** from `resolve`:
+    /// a `Sub`/`Function` of the same name as a module must not block `Module.Member`
+    /// (a procedure isn't a value receiver), and `resolve` prioritises the Procedure
+    /// namespace over Module — so the entry shim's `Main.Main` (module `Main`, sub
+    /// `Main`) would otherwise mis-bind as a self-call. Only a **local/parameter
+    /// variable** of the same name shadows the qualifier (`x.Member` is then member
+    /// access on that variable's value).
     fn is_module_qualifier(&self, name: &str) -> bool {
-        let is_module = self
-            .resolve(name)
-            .and_then(|b| b.symbol)
-            .and_then(|s| self.g.env.symbols.symbol(s))
-            .is_some_and(|s| s.kind == SymbolKind::Module);
-        if !is_module {
-            return false;
-        }
         let folded = fold_identifier(name);
-        self.g.env.all_modules().any(|m| {
+        let is_proc_module = self.g.env.all_modules().any(|m| {
             fold_identifier(m.module_name) == folded
                 && m.module_kind == oxvba_symbol::manifest::ModuleKind::Procedural
-        })
+        });
+        is_proc_module && !self.resolves_to_local_value(name)
+    }
+
+    /// True if `name` resolves to a local or parameter variable in the current scope
+    /// (which shadows a same-named module qualifier).
+    fn resolves_to_local_value(&self, name: &str) -> bool {
+        self.resolve(name)
+            .and_then(|b| b.symbol)
+            .and_then(|s| self.g.env.symbols.symbol(s))
+            .is_some_and(|s| {
+                matches!(
+                    s.namespace,
+                    SymbolNamespace::Local | SymbolNamespace::Parameter
+                )
+            })
     }
 
     /// Lower `recv.member` (already-bound receiver, no args) to a value.

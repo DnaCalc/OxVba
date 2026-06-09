@@ -40,12 +40,13 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "all binding gates cleared (conditional compilation, ThisWorkbook predeclared instance, \
-            Err.LastDllError, conversion intrinsics, Kill); the bounded demo now binds + executes — it \
-            loads sqlite3.dll and runs native calls — but aborts at runtime with a runaway ~45 GB \
-            allocation + STATUS_STACK_BUFFER_OVERRUN: a native-FFI marshalling bug (a garbage length/\
-            pointer read back as a buffer size), to be narrowed with a minimal Declare repro. Stays \
-            ignored because it currently aborts the process. See POST_CLEANUP.md."]
+#[ignore = "the infinite-recursion crash is fixed (module-qualified-call resolution) and the demo now \
+            runs to completion, but the fixture's `ThisWorkbook.Path` is RELATIVE \
+            (`.external\\sqliteforexcel\\upstream\\Distribution`), so `LoadLibrary` fails (error 126) \
+            under the test's cwd and SQLite3Initialize bails before any real SQLite work — the pass is \
+            hollow. Un-ignore once the test runs from the workspace root (so the relative dll path \
+            resolves) and the full native sqlite3.dll round-trip is verified end to end. See \
+            POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)
         .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");

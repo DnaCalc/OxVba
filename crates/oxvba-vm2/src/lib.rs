@@ -607,6 +607,19 @@ impl<'h> Vm<'h> {
     }
 
     // ── Procedure calls ──────────────────────────────────────────────────────
+    /// Guard against unbounded recursion: a VBA program that recurses without
+    /// terminating must raise "Out of stack space" (error 28), never abort the host
+    /// by exhausting memory growing the frame stack. Frames are heap-backed (not the
+    /// OS stack), so the limit is generous — far above any legitimate recursion that
+    /// real VBA would itself run — yet bounded so an infinite cycle fails cleanly.
+    fn guard_call_depth(&self) -> Result<(), Fault> {
+        const MAX_CALL_DEPTH: usize = 50_000;
+        if self.frames.len() >= MAX_CALL_DEPTH {
+            return Err(Fault::new(28, "Out of stack space"));
+        }
+        Ok(())
+    }
+
     fn call_proc(&mut self, proc: usize, dst: Option<usize>, args: &[ProcArg]) -> Result<(), Fault> {
         let desc = self
             .cur_bundle()
@@ -642,6 +655,7 @@ impl<'h> Vm<'h> {
             }
         }
 
+        self.guard_call_depth()?;
         self.frames.push(Frame {
             locals,
             aliases,
@@ -708,6 +722,7 @@ impl<'h> Vm<'h> {
                 }
             }
         }
+        self.guard_call_depth()?;
         self.frames.push(Frame {
             locals,
             aliases,
@@ -909,6 +924,7 @@ impl<'h> Vm<'h> {
                 locals[local] = value;
             }
         }
+        self.guard_call_depth()?;
         self.frames.push(Frame {
             locals,
             aliases,
@@ -1279,7 +1295,14 @@ impl<'h> Vm<'h> {
             if upper < lower {
                 return Err(Fault::new(9, "array upper bound below lower bound"));
             }
-            let count = (i64::from(upper) - i64::from(lower) + 1) as u32;
+            // Bound the element count so a garbage/huge upper raises VBA "Out of
+            // memory" (7) instead of attempting an unbounded host allocation that
+            // would abort the process (guest code must never crash the VM).
+            let span = i64::from(upper) - i64::from(lower) + 1;
+            if span > i64::from(u32::MAX) {
+                return Err(Fault::new(7, format!("array dimension too large ({span} elements)")));
+            }
+            let count = span as u32;
             bounds.push(SafeArrayBound { count, lower });
         }
         Ok(bounds)

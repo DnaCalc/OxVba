@@ -6,8 +6,8 @@
 //! access (awaits the vm2 object model) and `StrConv`'s CJK/encoding modes.
 
 use crate::{
-    LibContext, LibError, LibResult, as_f64, as_i32, as_i64, as_str, as_usize, need, opt, vbool,
-    vf64, vi32, vstr, vunit,
+    LibContext, LibError, LibResult, alloc_count, as_f64, as_i32, as_i64, as_str, as_usize, need,
+    opt, vbool, vf64, vi32, vstr, vunit,
 };
 use oxvba_runtime::{Variant, safe_array::SafeArray, variant::VarType};
 
@@ -300,12 +300,12 @@ pub fn asc(args: &[Variant]) -> LibResult<Variant> {
 }
 
 pub fn space(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vstr(" ".repeat(as_usize(need(args, 0)?)?)))
+    Ok(vstr(" ".repeat(alloc_count(need(args, 0)?)?)))
 }
 
 /// `String(number, character)` — `character` may be a code or a string.
 pub fn string_repeat(args: &[Variant]) -> LibResult<Variant> {
-    let count = as_usize(need(args, 0)?)?;
+    let count = alloc_count(need(args, 0)?)?;
     let arg = need(args, 1)?;
     let ch = if let Ok(code) = as_i32(arg) {
         char::from_u32(code as u32).unwrap_or(' ')
