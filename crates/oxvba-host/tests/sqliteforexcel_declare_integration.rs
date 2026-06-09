@@ -40,12 +40,12 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "blocked on the `CDbl` conversion intrinsic: conditional compilation, the `ThisWorkbook` \
-            predeclared instance, and `Err.LastDllError` now bind, so the demo gets past those; it next \
-            fails binding `CDbl` (Sqlite3.bas `ToJulianDay = CDbl(oleDate) + ...`) — the clean catalog has \
-            `CStr`/`CDate` but not the numeric conversion functions (CDbl/CLng/CInt/CSng/CByte/CBool/CCur/\
-            CLngLng/CLngPtr/CDec/CVar). Native Declare execution (L1-L3) is proven. Un-ignore once the \
-            conversion intrinsics + `Lib`-path resolution land — see POST_CLEANUP.md."]
+#[ignore = "blocked on the `Kill` file statement: conditional compilation, the `ThisWorkbook` \
+            predeclared instance, `Err.LastDllError`, and the numeric conversion intrinsics now bind, so \
+            the demo gets past those; it next fails binding `Kill TestFile` — `FileKill` is in the catalog \
+            but unnamed (and `Kill` is not a lexer keyword), so the call does not resolve. Native Declare \
+            execution (L1-L3) is proven. Un-ignore once `Kill` resolves + `Lib`-path resolution lands — \
+            see POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)
         .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");

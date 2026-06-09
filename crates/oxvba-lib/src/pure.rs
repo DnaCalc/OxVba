@@ -594,6 +594,95 @@ pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_error_code(as_i32(need(args, 0)?)?))
 }
 
+// VBA numeric / type conversions. Each coerces its single argument to the named
+// type with VBA banker's rounding and raises Overflow (6) when the rounded value is
+// out of the target's range — matching `CLng`/`CInt`/etc.
+
+/// Read a conversion argument as `f64`, parsing a numeric string (VBA `CDbl("3.5")`
+/// etc.). `as_f64` alone does not parse strings — only numeric Variants.
+fn conv_f64(value: &Variant) -> LibResult<f64> {
+    if value.vtype() == VarType::String {
+        return as_str(value)?
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| LibError::type_mismatch("expected a numeric value"));
+    }
+    as_f64(value)
+}
+/// Read a conversion argument as `i64` with VBA banker's rounding, parsing a numeric
+/// string first. A non-string numeric keeps its exact value via `as_i64`.
+fn conv_i64(value: &Variant) -> LibResult<i64> {
+    if value.vtype() == VarType::String {
+        let d = conv_f64(value)?;
+        if !d.is_finite() || d.abs() >= 9.223_372_036_854_775e18 {
+            return Err(LibError::overflow("integer overflow"));
+        }
+        return Ok(d.round_ties_even() as i64);
+    }
+    as_i64(value)
+}
+
+/// `CDbl` — to `Double` (no overflow; the full f64 range).
+pub fn cdbl(args: &[Variant]) -> LibResult<Variant> {
+    Ok(vf64(conv_f64(need(args, 0)?)?))
+}
+/// `CSng` — to `Single`; a value outside the `Single` range overflows.
+pub fn csng(args: &[Variant]) -> LibResult<Variant> {
+    let value = conv_f64(need(args, 0)?)?;
+    if value.is_finite() && value.abs() > f64::from(f32::MAX) {
+        return Err(LibError::overflow("value does not fit in Single"));
+    }
+    Ok(Variant::from_f32(value as f32))
+}
+/// `CInt` — to `Integer` (banker's rounding, range −32768..32767).
+pub fn cint(args: &[Variant]) -> LibResult<Variant> {
+    let value = conv_i64(need(args, 0)?)?;
+    let narrowed = i16::try_from(value).map_err(|_| LibError::overflow("value does not fit in Integer"))?;
+    Ok(Variant::from_i16(narrowed))
+}
+/// `CLng` — to `Long` (banker's rounding, range −2^31..2^31−1).
+pub fn clng(args: &[Variant]) -> LibResult<Variant> {
+    let value = conv_i64(need(args, 0)?)?;
+    let narrowed = i32::try_from(value).map_err(|_| LibError::overflow("value does not fit in Long"))?;
+    Ok(vi32(narrowed))
+}
+/// `CLngLng` / `CLngPtr` (on the 64-bit runtime) — to `LongLong` (banker's rounding).
+pub fn clnglng(args: &[Variant]) -> LibResult<Variant> {
+    Ok(Variant::from_i64(conv_i64(need(args, 0)?)?))
+}
+/// `CByte` — to `Byte` (banker's rounding, range 0..255).
+pub fn cbyte(args: &[Variant]) -> LibResult<Variant> {
+    let value = conv_i64(need(args, 0)?)?;
+    let narrowed = u8::try_from(value).map_err(|_| LibError::overflow("value does not fit in Byte"))?;
+    Ok(Variant::from_u8(narrowed))
+}
+/// `CBool` — to `Boolean` (0 → False, any non-zero → True; `"True"`/`"False"` too).
+pub fn cbool(args: &[Variant]) -> LibResult<Variant> {
+    let value = need(args, 0)?;
+    if value.vtype() == VarType::String {
+        let text = as_str(value)?;
+        match text.trim().to_ascii_lowercase().as_str() {
+            "true" => return Ok(vbool(true)),
+            "false" => return Ok(vbool(false)),
+            _ => {}
+        }
+    }
+    Ok(vbool(conv_f64(value)? != 0.0))
+}
+/// `CCur` — to `Currency` (a fixed 4-decimal scaled i64); out of range overflows.
+pub fn ccur(args: &[Variant]) -> LibResult<Variant> {
+    let scale = oxvba_runtime::CurrencyValue::SCALE as f64;
+    let scaled = (conv_f64(need(args, 0)?)? * scale).round_ties_even();
+    if !scaled.is_finite() || scaled.abs() >= 9.223_372_036_854_775e18 {
+        return Err(LibError::overflow("value does not fit in Currency"));
+    }
+    Ok(Variant::from_currency_scaled_i64(scaled as i64))
+}
+/// `CVar` — to `Variant`: the value unchanged (everything is already a Variant).
+pub fn cvar(args: &[Variant]) -> LibResult<Variant> {
+    Ok(need(args, 0)?.clone())
+}
+
 // ── Random ───────────────────────────────────────────────────────────────────
 //
 // VBA's `Rnd` is the VB6/VBA 24-bit linear-congruential generator:

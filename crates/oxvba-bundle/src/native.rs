@@ -79,6 +79,18 @@ pub enum NativeImplId {
     Val,
     CDate,
     CVErr,
+    // Numeric / type conversions (`CDbl`/`CLng`/… — coerce the argument to the named
+    // type with VBA banker's rounding + overflow). `CDec` is not yet supported.
+    CBool,
+    CByte,
+    CInt,
+    CLng,
+    CLngLng,
+    CLngPtr,
+    CSng,
+    CDbl,
+    CCur,
+    CVar,
 
     // ── Random ───────────────────────────────────────────────
     Rnd,
@@ -187,7 +199,8 @@ impl NativeImplId {
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
             | Day | Weekday | MonthName | DateNow | TimeNow | Now | Timer => M::DateTime,
-            Hex | Oct | CStr | Str | Val | CDate | CVErr => M::Conversion,
+            Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng | CLngLng
+            | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
             Rnd | Randomize => M::Random,
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull

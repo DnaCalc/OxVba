@@ -116,6 +116,16 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Val => e(Val, &["Val"], sig(1, 1), Ordinary),
         CDate => e(CDate, &["CDate", "CVDate"], sig(1, 1), Ordinary),
         CVErr => e(CVErr, &["CVErr"], sig(1, 1), Ordinary),
+        CBool => e(CBool, &["CBool"], sig(1, 1), Ordinary),
+        CByte => e(CByte, &["CByte"], sig(1, 1), Ordinary),
+        CInt => e(CInt, &["CInt"], sig(1, 1), Ordinary),
+        CLng => e(CLng, &["CLng"], sig(1, 1), Ordinary),
+        CLngLng => e(CLngLng, &["CLngLng"], sig(1, 1), Ordinary),
+        CLngPtr => e(CLngPtr, &["CLngPtr"], sig(1, 1), Ordinary),
+        CSng => e(CSng, &["CSng"], sig(1, 1), Ordinary),
+        CDbl => e(CDbl, &["CDbl"], sig(1, 1), Ordinary),
+        CCur => e(CCur, &["CCur"], sig(1, 1), Ordinary),
+        CVar => e(CVar, &["CVar"], sig(1, 1), Ordinary),
 
         // ── Random ──
         Rnd => e(Rnd, &["Rnd"], sig(0, 1), Ordinary),
@@ -211,7 +221,8 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         LTrim, RTrim, StrComp, Like, Chr, Asc, Space, StringRepeat, StrReverse, StrConv, Format,
         Abs, Int, Fix, Sgn, Round, Sqr, Sin, Cos, Log, Exp, Atn, Tan, DateSerial, TimeSerial,
         DateValue, TimeValue, DateAdd, DateDiff, Year, Month, Day, Weekday, MonthName, DateNow,
-        TimeNow, Now, Timer, Hex, Oct, CStr, Str, Val, CDate, CVErr, Rnd, Randomize, Fv, Pv, Pmt,
+        TimeNow, Now, Timer, Hex, Oct, CStr, Str, Val, CDate, CVErr, CBool, CByte, CInt, CLng,
+        CLngLng, CLngPtr, CSng, CDbl, CCur, CVar, Rnd, Randomize, Fv, Pv, Pmt,
         Npv, Irr, Mirr, Rate, NPer, IsArray, VarType, TypeName, IsNumeric, IsError, IsDate,
         IsObject, IsNull, IsEmpty, IIf, Choose, Switch, CollectionAdd, CollectionItem,
         CollectionRemove, CollectionCount,
@@ -240,8 +251,8 @@ mod tests {
 
     #[test]
     fn catalog_covers_every_native_impl_id() {
-        // 111 variants in oxvba-bundle's NativeImplId today.
-        assert_eq!(ALL_INTRINSICS.len(), 120);
+        // Variants in oxvba-bundle's NativeImplId today (the catalog must cover each).
+        assert_eq!(ALL_INTRINSICS.len(), 130);
     }
 
     #[test]

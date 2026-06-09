@@ -199,16 +199,25 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   (`native_declare…::err_lastdllerror_reads_os_error_after_native_declare…`, `SetLastError 12345` →
   `12345`). **Not done** (no tested path needs them): the other `Err` members as member reads
   (`HelpFile`/`HelpContext`) — `Raise`/`Clear` already lower as statements.
-- **SQLiteForExcel acceptance test — now blocked on the `CDbl` conversion intrinsic.** Conditional
-  compilation, predeclared instances, and `Err.LastDllError` all bind now; the bounded demo
-  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) next fails binding `CDbl`
-  (`Sqlite3.bas:704` `ToJulianDay = CDbl(oleDate) + JULIANDAY_OFFSET`). The clean symbol catalog has
-  `CStr`/`CDate`/`CVErr` but **not** the numeric conversion functions: `CDbl`/`CLng`/`CInt`/`CSng`/
-  `CByte`/`CBool`/`CCur`/`CLngLng`/`CLngPtr`/`CDec`/`CVar`. The native Declare *execution* path the demo
-  needs is proven. Remaining gates: (1) **the `Cxxx` numeric conversion intrinsics** (catalog +
-  native bodies + result types); (2) **`Lib`-path resolution** for `Declare … Lib "SQLite3"` (the demo
-  `LoadLibraryA`s the dll by full path first, then the declares must resolve the already-loaded module
-  by base name); (3) the fixture's **relative** dll path vs the `cargo test` cwd.
+- **VBA numeric/type conversion intrinsics (`CDbl`/`CLng`/`CInt`/…)** — DONE (except `CDec`). Added
+  `CBool`/`CByte`/`CInt`/`CLng`/`CLngLng`/`CLngPtr`/`CSng`/`CDbl`/`CCur`/`CVar` to the catalog +
+  `NativeImplId` + oxvba-lib bodies (`CStr`/`CDate`/`CVErr` were already present). Each coerces its
+  argument to the named type with VBA banker's rounding (half-to-even) and raises Overflow (6) when the
+  rounded value is out of range; numeric strings parse (`CDbl("3.5")`), `CVar` is identity. Covered by
+  `feature_coverage` (`numeric_conversion_intrinsics_with_bankers_rounding`,
+  `conversion_intrinsic_overflow_is_error_6`). **`CDec` deferred** (loud "unresolved name `CDec`", not a
+  silent stub): faithful `CDec` needs real f64→`Decimal96` conversion (`Decimal96` has only `from_parts`,
+  no `from_f64`), a separate sub-feature; no tested path needs it.
+- **SQLiteForExcel acceptance test — now blocked on `Kill`.** Conditional compilation, predeclared
+  instances, `Err.LastDllError`, and the conversion intrinsics all bind now; the bounded demo
+  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) next fails binding the `Kill`
+  file-delete statement (`Kill TestFile`). `FileKill` exists in the catalog but with no name (it was
+  intended as a parser-routed statement, but `Kill` is not a lexer keyword, so `Kill path` parses as a
+  generic call and fails to resolve). The native Declare *execution* path the demo needs is proven.
+  Remaining gates: (1) **`Kill`** (and any other unnamed file statements the demo uses) resolvable by
+  name; (2) **`Lib`-path resolution** for `Declare … Lib "SQLite3"` (the demo `LoadLibraryA`s the dll by
+  full path first, then the declares must resolve the already-loaded module by base name); (3) the
+  fixture's **relative** dll path vs the `cargo test` cwd.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

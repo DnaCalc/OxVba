@@ -75,6 +75,46 @@ fn err_lastdllerror_binds_and_defaults_to_zero() {
 }
 
 #[test]
+fn numeric_conversion_intrinsics_with_bankers_rounding() {
+    // The `Cxxx` conversions coerce to the named type; integer targets use VBA
+    // banker's rounding (half-to-even). Each variable holds its declared type.
+    let snap = run(
+        "Sub Main()\n\
+         Dim a As Double\nDim b As Long\nDim c As Integer\nDim d As Byte\n\
+         Dim e As Boolean\nDim f As Single\nDim g As LongLong\nDim h As Currency\n\
+         a = CDbl(\"3.5\")\n\
+         b = CLng(2.5)\n\
+         c = CInt(-3.5)\n\
+         d = CByte(255.4)\n\
+         e = CBool(5)\n\
+         f = CSng(1.25)\n\
+         g = CLngLng(2.5)\n\
+         h = CCur(1.5)\n\
+         End Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_f64(3.5),                    // CDbl parses the string
+            Variant::from_i32(2),                      // CLng(2.5) half-to-even → 2
+            Variant::from_i16(-4),                     // CInt(-3.5) half-to-even → -4
+            Variant::from_u8(255),                     // CByte(255.4) → 255
+            Variant::from_bool(true),                  // CBool(5) → True
+            Variant::from_f32(1.25),                   // CSng
+            Variant::from_i64(2),                      // CLngLng(2.5) half-to-even → 2
+            Variant::from_currency_scaled_i64(15_000), // CCur(1.5) → 1.5 scaled
+        ]
+    );
+}
+
+#[test]
+fn conversion_intrinsic_overflow_is_error_6() {
+    let err = run_result("Sub Main()\nDim x As Integer\nx = CInt(100000)\nEnd Sub")
+        .expect_err("CInt overflow should be a runtime error");
+    assert!(err.contains("does not fit in Integer"), "unexpected diagnostic: {err}");
+}
+
+#[test]
 fn scalar_long_arithmetic() {
     let snap = run("Sub Main()\nDim x As Long\nx = 2\nx = x * 3 + 4\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_i32(10)]);

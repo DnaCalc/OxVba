@@ -235,6 +235,15 @@ pub fn invoke(
         Val => pure::val(args),
         CDate => pure::cdate(args),
         CVErr => pure::cverr(args),
+        CDbl => pure::cdbl(args),
+        CSng => pure::csng(args),
+        CInt => pure::cint(args),
+        CLng => pure::clng(args),
+        CLngLng | CLngPtr => pure::clnglng(args),
+        CByte => pure::cbyte(args),
+        CBool => pure::cbool(args),
+        CCur => pure::ccur(args),
+        CVar => pure::cvar(args),
 
         // ── Random ──
         Rnd => pure::rnd(args, ctx),
