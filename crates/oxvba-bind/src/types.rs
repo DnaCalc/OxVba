@@ -206,8 +206,11 @@ fn numeric_rank(ty: &VarTypeRef) -> Option<u8> {
         VarTypeRef::Builtin(b) => match b {
             BuiltinType::Byte => Some(0),
             BuiltinType::Integer => Some(1),
-            BuiltinType::Long | BuiltinType::LongPtr => Some(2),
-            BuiltinType::LongLong => Some(3),
+            BuiltinType::Long => Some(2),
+            // On the Win64 runtime target `LongPtr` is a 64-bit type, so it
+            // widens with `LongLong` — ranking it with `Long` would compute a
+            // pointer-sized operand's arithmetic in 32 bits and overflow.
+            BuiltinType::LongLong | BuiltinType::LongPtr => Some(3),
             BuiltinType::Currency => Some(4),
             BuiltinType::Single => Some(5),
             BuiltinType::Double => Some(6),

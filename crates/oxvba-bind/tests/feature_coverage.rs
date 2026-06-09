@@ -98,6 +98,20 @@ fn array_return_function_is_an_array_copy() {
 }
 
 #[test]
+fn longptr_arithmetic_widens_to_64_bit_not_long() {
+    // `LongPtr` is 64-bit on the Win64 runtime target, so `p + p` for p just under
+    // 2^31 must compute in 64 bits (4_294_967_294). If `LongPtr` ranked with `Long`,
+    // the sum would coerce-store into a 32-bit Long temp and overflow (error 6).
+    let snap = run(
+        "Public r As LongLong\n\
+         Sub Main()\n\
+         Dim p As LongPtr\np = 2147483647\nr = p + p\n\
+         End Sub",
+    );
+    assert_eq!(snap[0], Variant::from_i64(4_294_967_294));
+}
+
+#[test]
 fn ubound_of_byref_array_param() {
     // `UBound`/`LBound` of a ByRef array parameter (the SQLiteForExcel
     // `SQLite3BindBlob(ByRef Value() As Byte)` shape) must read the array's bounds,
