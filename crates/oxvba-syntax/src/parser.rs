@@ -987,11 +987,15 @@ impl<'a> Parser<'a> {
         }
         self.eat_whitespace();
 
-        // Return type: As Type
+        // Return type: As Type, optionally an array return (`As Byte()`).
         if self.at(SyntaxKind::KwAs) {
             self.bump();
             self.eat_whitespace();
             self.parse_type_ref();
+            self.eat_whitespace();
+            if self.at(SyntaxKind::LParen) {
+                self.parse_array_bounds();
+            }
         }
 
         self.eat_to_eol();

@@ -244,15 +244,25 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   assignment (`x = arr`) no longer scalar-coerces, and `ReDim x(n)` now allocates the declared element
   type instead of `Variant`. No existing test regressed; regression test
   `feature_coverage::dynamic_array_whole_assignment_is_a_copy_not_a_scalar_coercion`.
-- **SQLiteForExcel — native marshalling proven correct; remaining gaps are VBA-library completeness.**
-  The demo now drives real `sqlite3.dll` end to end through `TestVersion` → `TestOpenClose` →
-  `TestError` → `TestInsert` → a full `TestSelect` (columns read back as INTEGER/TEXT/FLOAT/NULL with the
-  right values — the string/int/float/null marshalling round-trip is correct). It reaches `TestBinding`
-  and fails on `DateValue("1 Jan 2000")`: the `DateValue` library parser doesn't accept the `d mmm yyyy`
-  text form ("cannot parse date `1 Jan 2000`"). **Next:** fill the `DateValue` parser's accepted formats
-  (and whatever further library gaps the rest of the demo — `TestDates`/`TestStrings`/`TestBlob`/
-  `TestBackup` — exercises), then un-ignore. These are ordinary `oxvba-lib` date/string gaps, not the
-  native FFI path.
+- **SQLiteForExcel — PASSES end to end.** The acceptance test
+  `sqliteforexcel_declare_integration::bounded_demo_completes_on_vm_via_native_sqlite` is **un-ignored**
+  and green: the real SQLiteForExcel VBA project drives the real `sqlite3.dll` through the clean stack
+  (closure → bind → linearize → vm2 → HAL native FFI) for the entire bounded demo — `TestVersion`
+  ("3.11.1") → `TestOpenClose` → `TestError` → `TestInsert` → `TestSelect` (INTEGER/TEXT/FLOAT/NULL read
+  back correctly) → `TestBinding` → `TestDates` → `TestStrings` (10 000-char `String`/`String(n,c)`) →
+  `TestBackup` → `TestBlob` (`SQLite3ColumnBlob` byte-array round-trip) → `TestWriteReadOnly`
+  (read-only enforcement), printing `----- All Tests Complete -----`. The native string/int/float/null
+  marshalling round-trip is proven correct. Library/binder gaps cleared to get here, all with regression
+  tests in `oxvba-bind/tests/`: `#If` conditional compilation; the `ThisWorkbook` predeclared instance;
+  `Err.LastDllError`; the numeric/type conversion intrinsics (`CDbl`/`CLng`/`CInt`/`CSng`/`CByte`/
+  `CBool`/`CCur`/`CLngLng`/`CLngPtr`/`CVar`) with banker's rounding + overflow; `Kill`; `DateValue`'s
+  `d mmm yyyy` text form and `CDate` of a numeric serial; array declarators typed as `Array(element)`
+  (whole-array assignment is a copy); and array-return functions (`Function F() As Byte()` — parser +
+  `build_signature` wrap the return type in `Array`). The earlier "45 GB allocation" was **infinite
+  recursion**, not marshalling: `is_module_qualifier` resolved `Main.Main` as a self-call because
+  `resolve()` ranks the Procedure namespace over Module — fixed to read module-ness from the authoritative
+  module list. VM hardening so guest code can never abort the host: frame-depth limit → VBA error 28,
+  `String`/`Space` count bound → error 6, `ReDim` element-count bound → error 7.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

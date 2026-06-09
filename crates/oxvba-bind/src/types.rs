@@ -146,6 +146,13 @@ pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue
     if from == to {
         return value;
     }
+    // An array value is never numerically coercible — passing an array argument to a
+    // parameter (`f(arr)`) copies the array, it does not coerce its elements. Without
+    // this guard a `Dim a() As Byte` passed by value (or to a scalar-typed slot) would
+    // emit a `CoerceNumeric` on the whole array and fault at run time.
+    if matches!(from, VarTypeRef::Array(_)) {
+        return value;
+    }
     match coerce_target(to) {
         Some(target) => CoreValue::Coerce { value: Box::new(value), to: target },
         None => value,

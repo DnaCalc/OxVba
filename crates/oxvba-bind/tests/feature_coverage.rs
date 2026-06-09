@@ -66,6 +66,56 @@ fn run(source: &str) -> Vec<Variant> {
 }
 
 #[test]
+fn datevalue_month_name_and_cdate_numeric() {
+    // `DateValue` parses the `d mmm yyyy` text form; `CDate` of a numeric is the date
+    // serial directly. Both blocked SQLiteForExcel's TestBinding/TestDates.
+    let snap = run(
+        "Public a As Long\nPublic b As Boolean\n\
+         Sub Main()\n\
+         a = DateValue(\"1 Jan 2000\") - DateSerial(2000, 1, 1)\n\
+         b = (CDate(36526) = DateSerial(2000, 1, 1))\n\
+         End Sub",
+    );
+    assert_eq!(snap[0], Variant::from_i32(0)); // DateValue("1 Jan 2000") == DateSerial(2000,1,1)
+    assert_eq!(snap[1], Variant::from_bool(true)); // CDate(36526) == that serial
+}
+
+#[test]
+fn array_return_function_is_an_array_copy() {
+    // `Function F() As Byte()` returns an array; the return type must be `Array(Byte)`
+    // so `F = arr` (and the caller's `x = F()`) is a whole-array copy, not a scalar
+    // coercion. This blocked SQLiteForExcel's `SQLite3ColumnBlob`.
+    let snap = run(
+        "Public r As Long\n\
+         Sub Main()\n\
+         Dim x() As Byte\nx = MakeBytes()\nr = x(1)\n\
+         End Sub\n\
+         Function MakeBytes() As Byte()\n\
+         Dim t(2) As Byte\nt(0) = 10\nt(1) = 20\nt(2) = 30\nMakeBytes = t\n\
+         End Function",
+    );
+    assert_eq!(snap[0], Variant::from_i32(20));
+}
+
+#[test]
+fn ubound_of_byref_array_param() {
+    // `UBound`/`LBound` of a ByRef array parameter (the SQLiteForExcel
+    // `SQLite3BindBlob(ByRef Value() As Byte)` shape) must read the array's bounds,
+    // not coerce the array.
+    let snap = run(
+        "Public r As Long\n\
+         Sub Main()\n\
+         Dim b(2) As Byte\nb(0) = 90\n\
+         r = BlobLen(b)\n\
+         End Sub\n\
+         Function BlobLen(ByRef Value() As Byte) As Long\n\
+         BlobLen = UBound(Value) - LBound(Value) + 1\n\
+         End Function\n",
+    );
+    assert_eq!(snap[0], Variant::from_i32(3));
+}
+
+#[test]
 fn dynamic_array_whole_assignment_is_a_copy_not_a_scalar_coercion() {
     // `Dim dst() As Byte` is an array; `dst = src` copies the whole array. The
     // declarator must type `dst` as `Array(Byte)`, not scalar `Byte` — otherwise the

@@ -400,9 +400,19 @@ impl ScanCtx<'_> {
                 });
             }
         }
+        // An array return (`Function F() As Byte()`) is typed `Array(element)`, so a
+        // whole-array `F = arr` assignment is a copy, not a scalar coercion (the proc
+        // decl carries the return's `ArrayBounds` as a direct child).
+        let return_type = node.return_type().map(type_ref_node).map(|t| {
+            if node.array_bounds().is_some() {
+                VarTypeRef::Array(Box::new(t))
+            } else {
+                t
+            }
+        });
         Signature {
             params,
-            return_type: node.return_type().map(type_ref_node),
+            return_type,
             call_shape,
         }
     }

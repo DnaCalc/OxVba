@@ -457,15 +457,57 @@ pub fn time_value(args: &[Variant]) -> LibResult<Variant> {
 
 fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
     let err = || LibError::type_mismatch(format!("cannot parse date `{s}`"));
-    if let Some((y, rest)) = s.split_once('-') {
-        let (m, d) = rest.split_once('-').ok_or_else(err)?;
-        return Ok((y.trim().parse().map_err(|_| err())?, m.trim().parse().map_err(|_| err())?, d.trim().parse().map_err(|_| err())?));
+    let s = s.trim();
+    // ISO `YYYY-MM-DD` (all-numeric; falls through to the month-name path otherwise).
+    if let Some((y, rest)) = s.split_once('-')
+        && let Some((m, d)) = rest.split_once('-')
+        && let (Ok(y), Ok(m), Ok(d)) =
+            (y.trim().parse::<i64>(), m.trim().parse::<i64>(), d.trim().parse::<i64>())
+    {
+        return Ok((y, m, d));
     }
-    if let Some((m, rest)) = s.split_once('/') {
-        let (d, y) = rest.split_once('/').ok_or_else(err)?;
-        return Ok((y.trim().parse().map_err(|_| err())?, m.trim().parse().map_err(|_| err())?, d.trim().parse().map_err(|_| err())?));
+    // US `M/D/YYYY`.
+    if let Some((m, rest)) = s.split_once('/')
+        && let Some((d, y)) = rest.split_once('/')
+        && let (Ok(m), Ok(d), Ok(y)) =
+            (m.trim().parse::<i64>(), d.trim().parse::<i64>(), y.trim().parse::<i64>())
+    {
+        return Ok((y, m, d));
+    }
+    // Month-name forms: `d mmm yyyy`, `mmm d, yyyy`, `dd mmmm yyyy`, … — a month name
+    // plus a day and a year, in either order, space/comma separated.
+    let mut month = None;
+    let mut nums: Vec<i64> = Vec::new();
+    for tok in s.split([' ', ',', '\t']).filter(|t| !t.is_empty()) {
+        if let Some(m) = month_from_name(tok) {
+            month = Some(m);
+        } else if let Ok(n) = tok.trim().parse::<i64>() {
+            nums.push(n);
+        } else {
+            return Err(err());
+        }
+    }
+    if let (Some(m), [a, b]) = (month, nums.as_slice()) {
+        // The year is the value that can't be a day-of-month (> 31); the other is the
+        // day. A 2-digit year uses VBA's window: 0-29 → 2000s, 30-99 → 1900s.
+        let (day, year) = if *a > 31 { (*b, *a) } else { (*a, *b) };
+        let year = match year {
+            0..=29 => year + 2000,
+            30..=99 => year + 1900,
+            other => other,
+        };
+        return Ok((year, m, day));
     }
     Err(err())
+}
+
+/// The 1-based month number for a month name or its 3-letter prefix (`Jan`,
+/// `January`, `jan.`, …). Each English month's 3-letter prefix is unique.
+fn month_from_name(tok: &str) -> Option<i64> {
+    const ABBR: [&str; 12] =
+        ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    let t = tok.trim().to_ascii_lowercase();
+    ABBR.iter().position(|a| t.starts_with(a)).map(|i| i as i64 + 1)
 }
 
 /// FIDELITY: supports day/week/hour/minute/second additions exactly; month/year
@@ -588,7 +630,37 @@ pub fn val(args: &[Variant]) -> LibResult<Variant> {
     Ok(vf64(trimmed[..end].parse::<f64>().unwrap_or(0.0)))
 }
 pub fn cdate(args: &[Variant]) -> LibResult<Variant> {
-    Ok(oxvba_runtime::coerce::coerce_to(need(args, 0)?, VarType::Date)?)
+    let v = need(args, 0)?;
+    match v.vtype() {
+        VarType::Date => Ok(v.clone()),
+        // A string parses as a date and/or time; everything else numeric IS the date
+        // serial (the integer part is the day, the fraction the time of day).
+        VarType::String => cdate_from_string(&as_str(v)?),
+        _ => Ok(Variant::from_date_f64(conv_f64(v)?)),
+    }
+}
+
+/// `CDate`/`CVDate` of a string: `"date"`, `"time"`, or `"date time"` — reusing the
+/// `DateValue`/`TimeValue` parsers, summing the day serial and time-of-day fraction.
+fn cdate_from_string(s: &str) -> LibResult<Variant> {
+    let s = s.trim();
+    let has_date = s.contains('/')
+        || s.contains('-')
+        || s.split([' ', ',', '\t']).any(|t| month_from_name(t).is_some());
+    // A pure time ("HH:MM[:SS]") with no date component.
+    if s.contains(':') && !has_date {
+        return time_value(&[vstr(s)]);
+    }
+    // "date time" — split a trailing time off the date.
+    if let Some((date_part, time_part)) = s.rsplit_once(' ')
+        && time_part.contains(':')
+    {
+        let (y, m, d) = parse_date(date_part.trim())?;
+        let time = time_value(&[vstr(time_part.trim())])?.as_date_f64().unwrap_or(0.0);
+        return Ok(Variant::from_date_f64(ymd_to_serial(y, m, d) + time));
+    }
+    let (y, m, d) = parse_date(s)?;
+    Ok(Variant::from_date_f64(ymd_to_serial(y, m, d)))
 }
 pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_error_code(as_i32(need(args, 0)?)?))
