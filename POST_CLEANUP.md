@@ -264,15 +264,19 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   module list. VM hardening so guest code can never abort the host: frame-depth limit → VBA error 28,
   `String`/`Space` count bound → error 6, `ReDim` element-count bound → error 7.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
-- **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
-  `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that
-  **never evicts** — each pointer-helper call permanently leaks its pinned cell (BSTR / VARIANT / byte
-  buffer). Fine for short scripts, unbounded for long-running/looping code. Replace the global
-  never-evicting map with a **scoped pin lifetime**: a pin should live exactly as long as the native
-  `Declare` call it feeds (register on marshal → free after the call returns and any write-back is
-  applied), i.e. a per-call (or per-statement) pin arena. Matches VBA's "pointer valid for the duration
-  of the call" contract. Must land **after** pointer write-back (the free has to happen after the
-  post-call read-back within the same call).
+- **Pointer-registry lifetime** — DONE. `oxvba_runtime::pointer_helpers` still backs every
+  `VarPtr`/`StrPtr` with a process-global `PointerRegistry`, but pins are now **scoped to the native
+  call that consumes them** instead of leaking. `vm2::declare_call` collects the `LongLong`-carried
+  registry addresses of its arguments and calls the new `pointer_helpers::free_pins` after the call
+  returns and any pointer write-back has read the pins back (and on the invoke-error path), so a
+  looping `Declare` no longer accumulates one cell per iteration. This matches VBA's "the pointer is
+  valid for the duration of the call" contract. Chosen over a statement-boundary drain because ordinary
+  project calls run in the flat `run()` loop, so a pin created mid-statement can straddle a nested
+  call's statement boundaries (`Foo(StrPtr(s), Bar())`) — per-call freeing is the hazard-free point and
+  also supports the split idiom (`p = VarPtr(buf): CopyMemory p, …`). **Residual:** a pin never passed
+  to any `Declare` (e.g. `Debug.Print StrPtr(x)`) is not reclaimed — a degenerate case, since the
+  helpers exist to feed native calls. Tests: `pointer_helpers::free_pins_releases_only_the_named_addresses`,
+  `feature_coverage::pointer_helper_pins_are_freed_per_native_call_not_leaked`.
 - **Native `Declare` string marshalling** (clean VM): `ByVal As String` to ANSI (A) and wide
   (W) APIs works; **missing** — ByRef `String` (no string variant in `NativeByRefStorage`),
   `String` *return* type, fixed-length `String * N`, and Unix ByRef. The deleted

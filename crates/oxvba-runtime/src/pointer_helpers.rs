@@ -749,11 +749,39 @@ pub fn register_byte_buffer(bytes: Vec<u8>) -> Result<i64, String> {
     Ok(guard.insert(PointerEntry::Bytes(bytes.into_boxed_slice())))
 }
 
+/// Release the pinned cells at the given addresses, dropping each entry (which
+/// frees its native BSTR/VARIANT/buffer). Addresses not in the registry — `0`,
+/// already-freed, or never-pinned integers — are ignored. Pins are scoped to the
+/// VBA statement that creates them: the VM drains the addresses it pinned at each
+/// statement boundary (after any pointer write-back has read them), matching VBA's
+/// "the pointer is valid for the duration of the call" contract and keeping the
+/// registry bounded for long-running/looping code instead of leaking every pin.
+pub fn free_pins(addrs: &[i64]) {
+    if addrs.is_empty() {
+        return;
+    }
+    let Ok(mut guard) = registry().lock() else {
+        return;
+    };
+    for addr in addrs {
+        if *addr != 0 {
+            guard.entries.remove(&(*addr as usize));
+        }
+    }
+}
+
+/// Number of pinned cells currently live in the registry. Diagnostic — used by
+/// tests to assert that pointer-helper pins do not accumulate across a loop.
+pub fn live_pin_count() -> usize {
+    registry().lock().map(|guard| guard.entries.len()).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        lookup_pointer, register_object_variant_pointer, register_string_variant_pointer,
-        register_utf16_string, register_variant_pointer, register_variant_var_variant_pointer,
+        free_pins, lookup_pointer, register_byte_buffer, register_object_variant_pointer,
+        register_string_variant_pointer, register_utf16_string, register_variant_pointer,
+        register_variant_var_variant_pointer,
     };
     use crate::{Decimal96, ObjectRef, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
@@ -785,6 +813,25 @@ mod tests {
         assert!(!raw.is_null());
         let len = unsafe { SysStringLen(raw.cast()) };
         assert_eq!(len, 3);
+    }
+
+    #[test]
+    fn free_pins_releases_only_the_named_addresses() {
+        // `free_pins` removes exactly the listed pins (idempotent on absent
+        // addresses) so the VM can scope a statement's pins without disturbing
+        // any other live pin. Keyed by concrete addresses, so it is robust to
+        // pins other tests leave in the shared global registry.
+        let a = register_byte_buffer(vec![1, 2, 3]).expect("register a");
+        let b = register_byte_buffer(vec![4, 5, 6]).expect("register b");
+        assert!(lookup_pointer(a).is_some());
+        assert!(lookup_pointer(b).is_some());
+
+        free_pins(&[a, 0, a]); // includes a no-op `0` and a duplicate
+        assert!(lookup_pointer(a).is_none(), "a should be released");
+        assert!(lookup_pointer(b).is_some(), "b must be untouched");
+
+        free_pins(&[b]);
+        assert!(lookup_pointer(b).is_none(), "b should be released");
     }
 
     #[test]

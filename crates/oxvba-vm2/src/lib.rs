@@ -1239,14 +1239,26 @@ impl<'h> Vm<'h> {
             param_by_ref: &descriptor.param_by_ref,
             return_type: descriptor.return_type.as_ref().map(|rt| Cow::Owned(format!("{rt:?}"))),
         };
-        let (ret, wb_values) = self
-            .host
-            .dynlink()
-            .invoke_descriptor_variants(&view, &arg_variants)
-            .map_err(Fault::from_hal)?;
+        // Pointer-helper pins this call feeds (the `LongLong`-carried registry
+        // addresses of `StrPtr`/`VarPtr` args). A pin's life ends with the call it
+        // feeds — the VBA "the pointer is valid for the duration of the call"
+        // contract — so we free it once the call returns and any write-back has
+        // read it back, instead of leaking one cell per helper call. Non-pin integer
+        // args are not in the registry and are ignored by `free_pins`. (A pin never
+        // passed to a `Declare` is not reclaimed here; that degenerate case is the
+        // documented residual.)
+        let pin_addrs: Vec<i64> = arg_variants.iter().filter_map(Variant::as_i64).collect();
+        let invoke = self.host.dynlink().invoke_descriptor_variants(&view, &arg_variants);
         // VBA updates `Err.LastDllError` after every `Declare` call (the OS last-error
         // the HAL captured immediately after the native call); non-native lanes report 0.
         self.last_dll_error = self.host.dynlink().last_dll_error();
+        let (ret, wb_values) = match invoke {
+            Ok(pair) => pair,
+            Err(err) => {
+                pointer_helpers::free_pins(&pin_addrs);
+                return Err(Fault::from_hal(err));
+            }
+        };
         // Copy each ByRef argument's marshaled-back value to its caller slot. The
         // dynlink host returns `wb_values` aligned to `args`; only `CallArg::ByRef`
         // args write back (a force-ByVal `(x)`/non-l-value lowered to `Slot`, so it
@@ -1279,6 +1291,9 @@ impl<'h> Vm<'h> {
             };
             self.set(wb.target_slot, value)?;
         }
+        // The pins are fully consumed (the call ran and any write-back read them
+        // back); release them so the registry stays bounded across looping Declares.
+        pointer_helpers::free_pins(&pin_addrs);
         Ok(ret)
     }
 
@@ -1893,6 +1908,10 @@ impl<'h> Vm<'h> {
             }
 
             // ── Pointer helpers ──
+            // `StrPtr`/`VarPtr` pin a cloned cell in the process-global registry;
+            // the native `declare_call` that consumes the pointer frees the pin
+            // afterwards (see `declare_call`). `PtrObj` returns a live IUnknown
+            // address (no registry cell), so there is nothing to free.
             Op::PtrStr { dst, src } => {
                 let p = pointer_helpers::register_utf16_string(&arith::as_string(self.get(*src)?))
                     .map_err(Fault::from_string)?;

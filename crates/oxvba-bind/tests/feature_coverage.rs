@@ -98,6 +98,30 @@ fn array_return_function_is_an_array_copy() {
 }
 
 #[test]
+fn pointer_helper_pins_are_freed_per_native_call_not_leaked() {
+    // Each `StrPtr` pins a cloned cell in the process-global registry; the
+    // consuming `Declare` call frees it afterwards. Under the deterministic policy
+    // the native lane is denied, so the call errors and the error path frees the
+    // pin (`On Error Resume Next` keeps the loop running). The registry must
+    // therefore not grow with the iteration count instead of leaking one pin/iter.
+    let before = oxvba_runtime::pointer_helpers::live_pin_count();
+    run(
+        "Declare PtrSafe Function FakeApi Lib \"fake\" (ByVal p As LongPtr) As Long\n\
+         Sub Main()\n\
+         On Error Resume Next\n\
+         Dim s As String\ns = \"payload\"\n\
+         Dim i As Long\n\
+         For i = 1 To 3000\nFakeApi StrPtr(s)\nNext\n\
+         End Sub",
+    );
+    let after = oxvba_runtime::pointer_helpers::live_pin_count();
+    assert!(
+        after.saturating_sub(before) < 200,
+        "pointer-helper pins leaked across the loop: before={before} after={after}"
+    );
+}
+
+#[test]
 fn longptr_arithmetic_widens_to_64_bit_not_long() {
     // `LongPtr` is 64-bit on the Win64 runtime target, so `p + p` for p just under
     // 2^31 must compute in 64 bits (4_294_967_294). If `LongPtr` ranked with `Long`,
