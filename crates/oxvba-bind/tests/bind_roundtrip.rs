@@ -279,6 +279,26 @@ fn random_access_file_statements_bind_and_lower() {
 }
 
 #[test]
+fn kill_statement_resolves_to_file_kill_native() {
+    // `Kill pathname` is not a lexer keyword (unlike Open/Close/Print#/Name/…), so it
+    // parses as an ordinary statement-call and must resolve by name to the FileKill
+    // native (a 1-argument call).
+    let program = bind("Sub Main()\n    Kill \"scratch.tmp\"\nEnd Sub\n");
+    assert!(oxvba_bundle::linearize(&program).is_ok());
+    let entry = program.entry.expect("entry");
+    let lowered = program.procs[entry.0].body.iter().any(|stmt| {
+        matches!(
+            stmt,
+            CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::Native(NativeImplId::FileKill),
+                ..
+            })
+        )
+    });
+    assert!(lowered, "`Kill` should lower to a FileKill native call");
+}
+
+#[test]
 fn random_file_put_get_round_trips_through_vm() {
     // End-to-end: Open Random with Len=8, Put a Long at record 2, Get it back —
     // exercising the mode + Len plumbing through the standard host's in-memory file.

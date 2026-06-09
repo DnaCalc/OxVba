@@ -40,12 +40,12 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "blocked on the `Kill` file statement: conditional compilation, the `ThisWorkbook` \
-            predeclared instance, `Err.LastDllError`, and the numeric conversion intrinsics now bind, so \
-            the demo gets past those; it next fails binding `Kill TestFile` — `FileKill` is in the catalog \
-            but unnamed (and `Kill` is not a lexer keyword), so the call does not resolve. Native Declare \
-            execution (L1-L3) is proven. Un-ignore once `Kill` resolves + `Lib`-path resolution lands — \
-            see POST_CLEANUP.md."]
+#[ignore = "all binding gates cleared (conditional compilation, ThisWorkbook predeclared instance, \
+            Err.LastDllError, conversion intrinsics, Kill); the bounded demo now binds + executes — it \
+            loads sqlite3.dll and runs native calls — but aborts at runtime with a runaway ~45 GB \
+            allocation + STATUS_STACK_BUFFER_OVERRUN: a native-FFI marshalling bug (a garbage length/\
+            pointer read back as a buffer size), to be narrowed with a minimal Declare repro. Stays \
+            ignored because it currently aborts the process. See POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)
         .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");

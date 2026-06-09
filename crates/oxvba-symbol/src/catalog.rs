@@ -168,7 +168,10 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         FreeFile => e(FreeFile, &["FreeFile"], sig(0, 1), Ordinary),
         FileOpen => e(FileOpen, &[], variadic(0), FileStatement),
         FileClose => e(FileClose, &[], variadic(0), FileStatement),
-        FileKill => e(FileKill, &[], sig(1, 1), FileStatement),
+        // `Kill pathname` deletes files. Unlike Open/Close/Print#/Name/Lock/…, `Kill`
+        // is not a lexer keyword, so it parses as an ordinary statement-call and must
+        // resolve by name (a 1-argument native).
+        FileKill => e(FileKill, &["Kill"], sig(1, 1), FileStatement),
         FileRead => e(FileRead, &[], variadic(0), Ordinary),
         FileWrite => e(FileWrite, &[], variadic(0), FileStatement),
         FilePrint => e(FilePrint, &[], variadic(0), FileStatement),

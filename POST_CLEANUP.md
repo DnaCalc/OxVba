@@ -208,16 +208,24 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   `conversion_intrinsic_overflow_is_error_6`). **`CDec` deferred** (loud "unresolved name `CDec`", not a
   silent stub): faithful `CDec` needs real f64→`Decimal96` conversion (`Decimal96` has only `from_parts`,
   no `from_f64`), a separate sub-feature; no tested path needs it.
-- **SQLiteForExcel acceptance test — now blocked on `Kill`.** Conditional compilation, predeclared
-  instances, `Err.LastDllError`, and the conversion intrinsics all bind now; the bounded demo
-  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) next fails binding the `Kill`
-  file-delete statement (`Kill TestFile`). `FileKill` exists in the catalog but with no name (it was
-  intended as a parser-routed statement, but `Kill` is not a lexer keyword, so `Kill path` parses as a
-  generic call and fails to resolve). The native Declare *execution* path the demo needs is proven.
-  Remaining gates: (1) **`Kill`** (and any other unnamed file statements the demo uses) resolvable by
-  name; (2) **`Lib`-path resolution** for `Declare … Lib "SQLite3"` (the demo `LoadLibraryA`s the dll by
-  full path first, then the declares must resolve the already-loaded module by base name); (3) the
-  fixture's **relative** dll path vs the `cargo test` cwd.
+- **`Kill` file statement** — DONE. `Kill pathname` (delete files) now resolves: `FileKill` got the
+  catalog name `"Kill"`. Unlike Open/Close/Print#/Name/Lock/…, `Kill` is not a lexer keyword, so it
+  parses as an ordinary statement-call and must resolve by name (a 1-arg native). Covered by
+  `bind_roundtrip::kill_statement_resolves_to_file_kill_native`.
+- **SQLiteForExcel acceptance test — all binding gates cleared; now a RUNTIME native-FFI bug.** With
+  conditional compilation, predeclared instances, `Err.LastDllError`, the conversion intrinsics, and
+  `Kill` all binding, the bounded demo (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`,
+  `#[ignore]`d) now **binds + linearizes + executes** — it loads `sqlite3.dll` and runs native calls for
+  ~60s, then aborts with a runaway ~45 GB allocation + `STATUS_STACK_BUFFER_OVERRUN`. This is a native
+  marshalling bug (a garbage length/pointer being read back as a buffer size), almost certainly in the
+  string/pointer return or `RtlMoveMemory`/blob path against `sqlite3.dll` — the exact runtime
+  correctness the acceptance test exists to validate. **Next:** debug the native-FFI marshalling (likely
+  `SQLite3ColumnText`/`ColumnBlob` string/byte read-back, or a `LongPtr` handle truncation), narrowing
+  with a minimal Declare repro before the full demo. The earlier suspected gates (`Lib`-path resolution,
+  relative dll path) did **not** block — the demo's `SQLite3Initialize(ThisWorkbook.Path + "\x64")`
+  `LoadLibraryA`s by full path and the `Lib "SQLite3"` declares resolve the already-loaded module by
+  base name, and the relative path resolves against the test's cwd. The test must stay `#[ignore]`d (it
+  currently aborts the process) until the marshalling bug is fixed.
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that
