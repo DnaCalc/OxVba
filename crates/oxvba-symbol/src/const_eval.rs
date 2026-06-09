@@ -369,7 +369,7 @@ fn opt(c: Option<CoreConst>) -> ConstEval {
 }
 
 /// Fold a literal/sign/paren initializer to a value.
-fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
+pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
     match node.kind() {
         SyntaxKind::LiteralExpr => {
             let tok = node.first_significant_token()?;
@@ -423,7 +423,7 @@ fn unquote(text: &str) -> String {
     inner.replace("\"\"", "\"")
 }
 
-fn negate_const(c: CoreConst) -> Option<CoreConst> {
+pub(crate) fn negate_const(c: CoreConst) -> Option<CoreConst> {
     Some(match c {
         CoreConst::I32(n) => CoreConst::I32(n.checked_neg()?),
         CoreConst::I64(n) => CoreConst::I64(n.checked_neg()?),
@@ -432,7 +432,7 @@ fn negate_const(c: CoreConst) -> Option<CoreConst> {
     })
 }
 
-fn not_const(c: CoreConst) -> Option<CoreConst> {
+pub(crate) fn not_const(c: CoreConst) -> Option<CoreConst> {
     Some(match c {
         CoreConst::Bool(b) => CoreConst::Bool(!b),
         CoreConst::I32(n) => CoreConst::I32(!n),
@@ -486,7 +486,7 @@ fn const_to_string(c: &CoreConst) -> Option<String> {
     })
 }
 
-fn fold_const_binary(
+pub(crate) fn fold_const_binary(
     op: CoreBinOp,
     lhs: &CoreConst,
     rhs: &CoreConst,
@@ -583,7 +583,7 @@ fn like_match(s: &[char], p: &[char]) -> bool {
     }
 }
 
-fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {
+pub(crate) fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {
     Some(match kind {
         SyntaxKind::Plus => CoreBinOp::Add,
         SyntaxKind::Minus => CoreBinOp::Sub,

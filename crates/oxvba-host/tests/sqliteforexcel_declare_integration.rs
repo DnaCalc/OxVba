@@ -40,12 +40,12 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "blocked on conditional compilation: Sqlite3Demo.bas uses 57 #If Win64/#Else/#End If \
-            directives the clean lexer/parser does not yet handle (a `#` starts date-literal \
-            lexing → ~150 cascading parse errors). Also needs predefined Win64/VBA7 constants + \
-            Lib-path resolution. The Declare execution path (L1-L3) is proven by \
-            native_declare_string_marshalling_end_to_end. Un-ignore once conditional compilation \
-            lands — see POST_CLEANUP.md."]
+#[ignore = "blocked on the `ThisWorkbook` predeclared document instance: the demo resolves the dll \
+            directory via `ThisWorkbook.Path` (a PredeclaredId document class supplied by the \
+            referenced HostEnvironment project), which the clean binder does not yet expose as a \
+            global instance by name. Conditional compilation (#If Win64) + native Declare execution \
+            (L1-L3) are done and proven; this is a host/document-object gap. Un-ignore once \
+            cross-project predeclared document instances resolve — see POST_CLEANUP.md."]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
     run_bounded_demo(false)
         .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");

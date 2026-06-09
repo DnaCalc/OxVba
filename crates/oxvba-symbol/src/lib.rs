@@ -11,6 +11,7 @@
 
 pub mod binding;
 pub mod catalog;
+pub mod cond_comp;
 pub mod const_eval;
 pub mod manifest;
 pub mod model;

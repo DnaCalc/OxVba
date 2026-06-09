@@ -46,6 +46,26 @@ pub fn parse(source: &str) -> Parse {
     Parse { green, errors }
 }
 
+/// Parse a single VBA expression (e.g. a `#If` conditional-compilation condition).
+/// The returned `Parse`'s root (`SourceFile`) wraps the expression as its sole
+/// non-trivia child; callers walk to the first expression child to evaluate it.
+pub fn parse_expression(source: &str) -> Parse {
+    let tokens = lexer::tokenize(source);
+    let mut p = Parser::new(&tokens);
+    p.start_node(SyntaxKind::SourceFile);
+    p.eat_trivia();
+    if !p.at_eof() {
+        p.parse_expr();
+    }
+    p.eat_trivia();
+    if p.at(SyntaxKind::Eof) {
+        p.bump();
+    }
+    p.finish_node();
+    let (green, errors) = p.finish();
+    Parse { green, errors }
+}
+
 /// File-I/O statements whose leading word lexes as an identifier (not a keyword).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FileIoIdent {

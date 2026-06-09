@@ -7,6 +7,7 @@ use oxvba_bundle::ProjectMemberKind;
 use oxvba_syntax::{Parse, SyntaxNode};
 
 use crate::binding::{Binding, DispatchRoute};
+use crate::cond_comp;
 use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
 use crate::model::{ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable};
 use crate::providers::com::ComTypeLibProvider;
@@ -338,11 +339,17 @@ pub fn build_resolution_environment(
 
     let mut next_descriptor_id: u32 = 0;
     let mut active_scans: Vec<ModuleScan> = Vec::new();
+    // Conditional-compilation environment for the active project: predefined host
+    // constants + the project's `DefineConstants`. Each module's `#If`/`#Const`
+    // directives are evaluated here and inactive branches stripped before parse.
+    let active_cc = cond_comp::base_cc_constants(&manifest.conditional_constants);
     // Active-project modules: parse once, scan against the parsed CST, and retain
     // the `Parse` so the binder lowers the same tree (no second parse).
     let mut module_csts: Vec<ModuleCst> = Vec::new();
     for module in &manifest.modules {
-        let parse = oxvba_syntax::parse(&module.source);
+        let source = cond_comp::preprocess(&module.source, &active_cc)
+            .map_err(SymbolModelError::Syntax)?;
+        let parse = oxvba_syntax::parse(&source);
         if !parse.errors().is_empty() {
             return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
         }
@@ -376,9 +383,14 @@ pub fn build_resolution_environment(
             symbols.global_scope(),
             Some(&referenced.project_name),
         )?;
+        // A referenced project's manifest does not carry its own `DefineConstants`,
+        // so its `#If`s evaluate against the predefined host constants only.
+        let referenced_cc = cond_comp::predefined_cc_constants();
         let mut scans: Vec<ModuleScan> = Vec::new();
         for module in &referenced.modules {
-            let parse = oxvba_syntax::parse(&module.source);
+            let source = cond_comp::preprocess(&module.source, &referenced_cc)
+                .map_err(SymbolModelError::Syntax)?;
+            let parse = oxvba_syntax::parse(&source);
             if !parse.errors().is_empty() {
                 return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
             }

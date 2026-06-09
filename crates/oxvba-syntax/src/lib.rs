@@ -11,6 +11,6 @@ pub mod red;
 pub mod syntax_kind;
 
 pub use green::{Checkpoint, GreenChild, GreenNode, GreenNodeBuilder};
-pub use parser::{Parse, ParseError, parse};
+pub use parser::{Parse, ParseError, parse, parse_expression};
 pub use red::{SyntaxElement, SyntaxNode, SyntaxToken};
 pub use syntax_kind::{SyntaxKind, keyword_kind};

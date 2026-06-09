@@ -165,16 +165,25 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   **Remaining (separate features, not the pointer path):** `pointer_helpers_end_to_end`'s
   byte-array Declare *parameter* passing + `VarPtr` of a Variant-Decimal/i64; the registry leak
   (next bullet); and the **true `As String` marshalling** further down.
-- **SQLiteForExcel acceptance test — blocked on CONDITIONAL COMPILATION.** The real-world acceptance
-  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) drives `sqlite3.dll` via the
-  bounded demo. Its `Sqlite3Demo.bas` uses **57 `#If Win64`/`#Else`/`#End If`** directives that the
-  clean lexer/parser does not handle (a `#` starts date-literal lexing → ~150 cascading
-  "unexpected statement" parse errors). **Gate = implement conditional compilation**: lexer recognizes
-  `#If`/`#ElseIf`/`#Else`/`#End If`/`#Const` (don't mistake `#If` for a date literal); a preprocessor
-  evaluates them against the project's conditional constants **plus the predefined `Win64`/`VBA7`/
-  `Win32`/`Mac` constants** (set from process bitness) and strips inactive branches before parse. Also
-  needs `Lib`-path resolution for `Lib "SQLite3"` (the demo `LoadLibraryA`s the dll by path first). The
-  Declare *execution* path it exercises is already proven (above) — this is a parser/preprocessor gap.
+- **Conditional compilation (`#If`/`#ElseIf`/`#Else`/`#End If`/`#Const`)** — DONE.
+  `oxvba_symbol::cond_comp::preprocess` runs before each module is parsed: it evaluates the directives
+  against the predefined host constants (`Win64`/`VBA7`/`Win32` = True on the 64-bit runtime, others
+  False), the project `DefineConstants`, and module `#Const`s, and blanks directive + inactive-branch
+  lines (offset-preserving) so inactive branches are never parsed. `#If` conditions reuse the real
+  expression grammar (`oxvba_syntax::parse_expression`) + the const-expr folder, so their semantics
+  match VBA `Const`. Covered by `cond_comp` unit tests + `feature_coverage` end-to-end
+  (`conditional_compilation_*`). **Follow-up:** referenced projects evaluate `#If` against the
+  predefined constants only (a `ReferencedProjectManifest` does not carry its own `DefineConstants`);
+  predefined constants are hardcoded 64-bit (parameterize by target bitness when 32-bit support is needed).
+- **SQLiteForExcel acceptance test — now blocked on the `ThisWorkbook` predeclared document instance.**
+  Conditional compilation cleared the parse gate; the bounded demo
+  (`oxvba-host/tests/sqliteforexcel_declare_integration.rs`, `#[ignore]`d) now fails binding on
+  `ThisWorkbook.Path` — the demo resolves the dll directory from `ThisWorkbook`, a `VB_PredeclaredId`
+  document class supplied by the referenced `HostEnvironment` project, which the clean binder does not
+  yet expose as a global instance accessible by its module name (cross-project predeclared document
+  instance). The native Declare *execution* path the demo needs is already proven. Remaining gates:
+  (1) predeclared document-module instances (by-name global access), across a project reference;
+  (2) `Lib`-path resolution for `Lib "SQLite3"` (the demo `LoadLibraryA`s the dll by path first).
 - **`VarPtr`/`StrPtr`/`ObjPtr` binding** — DONE (folded into native Declare execution above).
 - **Clean up the pointer-registry lifetime** (follow-up): `oxvba_runtime::pointer_helpers` backs every
   `VarPtr`/`StrPtr`/`ObjPtr` with a process-global `PointerRegistry` (`HashMap` keyed by address) that

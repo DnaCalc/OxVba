@@ -748,3 +748,25 @@ fn strptr_of_string_literal_yields_nonzero_pointer() {
     let snap = run("Sub Main()\nDim p\np = StrPtr(\"alpha\")\nEnd Sub");
     assert_nonzero_pointer(&snap, "StrPtr(literal)");
 }
+
+// ── Conditional compilation (#If) ──
+// The predefined `Win64` constant is true on the 64-bit runtime, so the active
+// branch compiles and runs; the inactive branch is stripped before parse.
+
+#[test]
+fn conditional_compilation_selects_win64_branch() {
+    let snap = run(
+        "Sub Main()\nDim x As Long\n#If Win64 Then\nx = 64\n#Else\nx = 32\n#End If\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(64)]);
+}
+
+#[test]
+fn conditional_compilation_does_not_compile_inactive_branch() {
+    // The inactive `#If Mac` branch references an unresolved name + bad arity; it
+    // must be stripped (not compiled), so only `x = 7` runs.
+    let snap = run(
+        "Sub Main()\nDim x As Long\n#If Mac Then\nx = NoSuchFunction(1, 2, 3)\n#Else\nx = 7\n#End If\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(7)]);
+}
