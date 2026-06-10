@@ -319,6 +319,23 @@ impl<'a> ProcLower<'a> {
         {
             return self.bind_call_route(tok.text, &binding, node.index_arg_list());
         }
+        // `c(i)` on a `Collection` variable is the default member `c.Item(i)`, not
+        // an array subscript. (VBA has no general default-member resolution; this is
+        // scoped strictly to the built-in `Collection` object type.) Lower it to the
+        // same by-name cross-bundle dispatch `c.Item(i)` uses.
+        if base.kind() == SyntaxKind::IdentExpr
+            && let Some(tok) = base.ident_name_token()
+            && let Some(sym) = self.resolve(tok.text).and_then(|b| b.symbol)
+            && let VarTypeRef::Object(ty_name) = self.symbol_type(sym)
+            && oxvba_symbol::model::fold_identifier(&ty_name) == "collection"
+        {
+            let recv = CoreValue::Load(self.place_by_name(tok.text)?);
+            let args = self.bind_extern_args(node.index_arg_list(), &[])?;
+            return Ok(value_bound(
+                self.late_member_call("Item", oxvba_bundle::ProjectMemberKind::Method, recv, args),
+                VarTypeRef::Variant,
+            ));
+        }
         // `obj.Member(args)` — a method/property call, or an index into a member
         // array. The member binder decides by resolving the member.
         if base.kind() == SyntaxKind::MemberExpr {
@@ -337,11 +354,29 @@ impl<'a> ProcLower<'a> {
         let name = node
             .new_type_name()
             .ok_or_else(|| BindError::Malformed("New without a type".into()))?;
-        let folded = oxvba_symbol::model::fold_identifier(&name);
+        let (value, ty) = self.new_value_for_type(&name)?;
+        Ok(value_bound(value, ty))
+    }
+
+    /// Resolve `New <name>` to its instantiation value + inferred object type — the
+    /// resolution ladder shared by the `New` expression and `Dim x As New Foo`
+    /// auto-instantiation. A project class mints in-bundle; a referenced project's
+    /// coclass mints cross-bundle; a COM coclass activates via `CreateObject`.
+    pub(crate) fn new_value_for_type(
+        &mut self,
+        name: &str,
+    ) -> Result<
+        (
+            oxvba_bundle::coreir::CoreValue,
+            oxvba_symbol::signature::VarTypeRef,
+        ),
+        BindError,
+    > {
+        let folded = oxvba_symbol::model::fold_identifier(name);
         if let Some(&class_id) = self.g.ids.class_of.get(&folded) {
-            return Ok(value_bound(
+            return Ok((
                 CoreValue::New(class_id),
-                VarTypeRef::Object(name),
+                VarTypeRef::Object(name.to_string()),
             ));
         }
         // A creatable coclass published by a *referenced project*: instantiate it in
@@ -349,31 +384,28 @@ impl<'a> ProcLower<'a> {
         // carries the target bundle's id, so later method dispatch routes there). The
         // result is typed by the bare class name so member access binds against the
         // referenced surface.
-        if let Some((unit, class)) = self.g.env.resolve_extern_coclass(&name) {
+        if let Some((unit, class)) = self.g.env.resolve_extern_coclass(name) {
             let import = self.g.intern_import(oxvba_bundle::BundleImport {
                 unit,
                 token: oxvba_bundle::ExportToken::Class {
                     name: class.clone(),
                 },
             });
-            return Ok(value_bound(
-                CoreValue::NewExtern { import },
-                VarTypeRef::Object(class),
-            ));
+            return Ok((CoreValue::NewExtern { import }, VarTypeRef::Object(class)));
         }
         // A creatable COM coclass (from a referenced typelib) instantiates via the
         // same activation path as `CreateObject("<ProgID>")`; the result is typed
         // as the coclass so member access resolves against its typelib.
-        if let Some(prog_id) = self.g.env.resolve_coclass(&name) {
+        if let Some(prog_id) = self.g.env.resolve_coclass(name) {
             let args = vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))];
-            return Ok(value_bound(
+            return Ok((
                 CoreValue::Call {
                     callee: oxvba_bundle::coreir::CoreCallee::Native(
                         oxvba_bundle::native::NativeImplId::CreateObject,
                     ),
                     args,
                 },
-                VarTypeRef::Object(name),
+                VarTypeRef::Object(name.to_string()),
             ));
         }
         Err(BindError::Unsupported(format!(

@@ -848,9 +848,27 @@ fn collect_udt_fields_in(
     }
 }
 
+/// Trim a leading `New` keyword from a `TypeRef`'s text (`As New Foo` ⇒ `Foo`).
+/// The keyword only counts when it is followed by whitespace, so a type literally
+/// named `Newfoo` is left untouched.
+fn strip_leading_new_keyword(s: &str) -> &str {
+    let s = s.trim_start();
+    if let Some(prefix) = s.get(..3)
+        && prefix.eq_ignore_ascii_case("new")
+        && s[3..].starts_with(char::is_whitespace)
+    {
+        return s[3..].trim();
+    }
+    s
+}
+
 fn type_ref_node(node: SyntaxNode<'_>) -> VarTypeRef {
     let text = node.text();
-    let name = text.split_whitespace().next().unwrap_or("").trim();
+    let name = strip_leading_new_keyword(&text)
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim();
     let name = normalize_identifier_token(name);
     match name.to_ascii_lowercase().as_str() {
         "boolean" => VarTypeRef::Builtin(BuiltinType::Boolean),

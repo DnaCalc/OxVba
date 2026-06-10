@@ -77,13 +77,12 @@ fn vba_collection_new_add_count_item() {
     // The built-in `Collection` is a class of the VBA library bundle: `New
     // Collection` mints it via the cross-bundle coclass path, and `.Add`/`.Count`/
     // `.Item` dispatch by name into native method bodies — no predeclared/Native
-    // route. (`Dim c As New Collection` auto-instantiation is a separate
-    // pre-existing `As New` gap, so use the `Set c = New Collection` form.)
+    // route. `Dim c As New Collection` auto-instantiates `c` at scope entry, so no
+    // explicit `Set c = New Collection` is needed.
     let snap = run("Public n As Long\n\
          Public a As Long\n\
          Sub Main()\n\
-             Dim c As Collection\n\
-             Set c = New Collection\n\
+             Dim c As New Collection\n\
              c.Add 10\n\
              c.Add 20\n\
              n = c.Count\n\
@@ -91,6 +90,20 @@ fn vba_collection_new_add_count_item() {
          End Sub\n");
     assert_eq!(snap[0].as_i32(), Some(2), "Count after two Adds: {snap:?}");
     assert_eq!(snap[1].as_i32(), Some(20), "Item(2): {snap:?}");
+}
+
+#[test]
+fn vba_collection_default_member_indexing() {
+    // `c(i)` on a `Collection` variable is the default member `c.Item(i)`, not an
+    // array subscript: `x = c(2)` must read the second element.
+    let snap = run("Public x As Long\n\
+         Sub Main()\n\
+             Dim c As New Collection\n\
+             c.Add 10\n\
+             c.Add 20\n\
+             x = c(2)\n\
+         End Sub\n");
+    assert_eq!(snap[0].as_i32(), Some(20), "default-member c(2): {snap:?}");
 }
 
 #[test]

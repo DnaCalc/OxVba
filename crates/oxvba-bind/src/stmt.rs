@@ -732,6 +732,27 @@ impl<'a> ProcLower<'a> {
             if self.is_static_local(name.text) != want_static {
                 continue;
             }
+            // `Dim x As New Foo` auto-instantiates `x` before use: hoist a `Set x =
+            // New Foo` to scope entry. (The rare re-instantiate-after-`Set x =
+            // Nothing` case is an accepted documented residual.) The declared type
+            // carries the class name; a non-object declared type is not As-New.
+            if declarator.is_new()
+                && let Some(sym) = self.resolve(name.text).and_then(|b| b.symbol)
+                && let oxvba_symbol::signature::VarTypeRef::Object(type_name) =
+                    self.symbol_type(sym)
+            {
+                let (value, _ty) = self.new_value_for_type(&type_name)?;
+                let place = self.place_by_name(name.text)?;
+                out.push(CoreStmt::Assign {
+                    place,
+                    value,
+                    intent: AssignmentIntent::Set,
+                    target_kind: oxvba_bundle::AssignmentTargetKind::Object,
+                    target_name: name.text.to_string(),
+                    target_type_name: type_name,
+                });
+                continue; // an As-New object is neither an array nor a UDT value.
+            }
             // A fixed-size array allocates via ReDim.
             if let Some(bounds_node) = declarator.array_bounds() {
                 if !bounds_node.children_of(SyntaxKind::Bound).is_empty() {

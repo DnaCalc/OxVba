@@ -711,6 +711,24 @@ fn implements_typeof_true_for_implementer() {
 }
 
 #[test]
+fn as_new_auto_instantiates_a_user_class() {
+    // `Dim t As New Thing` auto-instantiates `t` at scope entry — not Collection-
+    // specific: any project class works. Without the fix `t` was `Nothing` (and was
+    // mis-typed `Object("new")` by the parser-absorbs-`New` bug), so `t.GetVal()`
+    // would fault.
+    let main =
+        "Sub Main()\n    Dim r As Long\n    Dim t As New Thing\n    r = t.GetVal()\nEnd Sub\n";
+    let thing = "Public Function GetVal() As Long\n    GetVal = 7\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        Some(7.0)
+    );
+}
+
+#[test]
 fn implements_typeof_false_for_non_implementer() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim o As Object\n    Set o = New CRock\n    If TypeOf o Is IAnimal Then\n        r = 1\n    Else\n        r = 0\n    End If\nEnd Sub\n";
     let crock = "Public Function Foo() As Long\nEnd Function\n";

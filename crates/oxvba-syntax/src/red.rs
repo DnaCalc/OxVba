@@ -268,6 +268,18 @@ impl<'a> SyntaxNode<'a> {
             .any(|t| t.kind == SyntaxKind::KwWithEvents)
     }
 
+    /// `True` for an auto-instantiating declarator (`Dim x As New Foo`): the `New`
+    /// keyword sits inside the declarator's `TypeRef`.
+    pub fn is_new(&self) -> bool {
+        self.child_node(SyntaxKind::TypeRef)
+            .map(|t| {
+                t.child_tokens()
+                    .iter()
+                    .any(|tok| tok.kind == SyntaxKind::KwNew)
+            })
+            .unwrap_or(false)
+    }
+
     /// True if this node carries a `Static` keyword among its direct tokens — a
     /// `Static x` declaration statement, or a `Static Sub/Function/Property`
     /// header (whose locals all become static). Only the node's own header
