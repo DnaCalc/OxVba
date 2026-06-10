@@ -285,6 +285,19 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_value_projects_full_u64_range_without_panicking() {
+        // W1-com-005: a COM server can return VT_UI8 above i64::MAX; passing
+        // that Variant back as a call argument must project, not abort.
+        let value = DynamicValue::from_variant(oxvba_runtime::Variant::from_u64(u64::MAX));
+        let com = value.to_com_value();
+        assert_eq!(com, ComValue::U64(u64::MAX));
+        assert_eq!(
+            com.to_variant().expect("round trip").as_u64(),
+            Some(u64::MAX)
+        );
+    }
+
+    #[test]
     fn dynamic_call_request_roundtrips_back_to_com_when_member_token_is_known() {
         let request = DynamicCallRequest {
             object: ObjectRef::from_compat_identity(20_007),

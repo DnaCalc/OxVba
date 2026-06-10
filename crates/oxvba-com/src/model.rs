@@ -82,6 +82,10 @@ pub enum ComValue {
     Bool(bool),
     I32(i32),
     I64(i64),
+    /// `VT_UI8` payloads above `i64::MAX` — carried exactly (Excel parity
+    /// keeps UnsignedLongLong results unclamped), so `from_variant` is total
+    /// over every Variant a COM result can produce.
+    U64(u64),
     F64(F64Value),
     Decimal(Decimal96),
     Currency(CurrencyValue),
@@ -143,11 +147,7 @@ impl ComValue {
                     .ok_or_else(|| "invalid UnsignedLongLong VARIANT payload".to_string())?;
                 match i64::try_from(value) {
                     Ok(narrowed) => Self::I64(narrowed),
-                    Err(_) => {
-                        return Err(format!(
-                            "UnsignedLongLong VARIANT value {value} exceeds i64 carrier range"
-                        ));
-                    }
+                    Err(_) => Self::U64(value),
                 }
             }
             oxvba_runtime::VarType::Single => Self::F64(F64Value::from_single_f64(
@@ -220,6 +220,7 @@ impl ComValue {
             Self::Bool(value) => Variant::from_bool(*value),
             Self::I32(value) => Variant::from_i32(*value),
             Self::I64(value) => Variant::from_i64(*value),
+            Self::U64(value) => Variant::from_u64(*value),
             Self::F64(value) => match value.subtype() {
                 oxvba_runtime::F64Subtype::Single => Variant::from_f32(value.as_f64() as f32),
                 oxvba_runtime::F64Subtype::Double => Variant::from_f64(value.as_f64()),

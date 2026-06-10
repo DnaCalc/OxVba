@@ -14,6 +14,8 @@ pub fn com_value_to_runtime_token(value: &ComValue) -> Result<i32, String> {
         ComValue::I32(value) => Ok(*value),
         ComValue::I64(value) => i32::try_from(*value)
             .map_err(|_| format!("COM i64 value {value} is outside i32 token range")),
+        ComValue::U64(value) => i32::try_from(*value)
+            .map_err(|_| format!("COM u64 value {value} is outside i32 token range")),
         ComValue::F64(value) => Ok(value.as_f64() as i32),
         ComValue::Decimal(value) => value
             .to_string()

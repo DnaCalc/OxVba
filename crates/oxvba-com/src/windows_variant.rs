@@ -1640,6 +1640,10 @@ where
             (*variant).Anonymous.Anonymous.vt = VT_I8;
             (*variant).Anonymous.Anonymous.Anonymous.llVal = *value;
         }
+        ComValue::U64(value) => {
+            (*variant).Anonymous.Anonymous.vt = VT_UI8;
+            (*variant).Anonymous.Anonymous.Anonymous.ullVal = *value;
+        }
         ComValue::F64(value) => match value.subtype() {
             F64Subtype::Single => {
                 (*variant).Anonymous.Anonymous.vt = VT_R4_VARENUM;
