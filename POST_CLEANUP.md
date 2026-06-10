@@ -307,6 +307,14 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   `oxvba_com::windows_ffi_bridge`. Windows e2e tests: `lstrcpyA` (ByVal write-back +
   full-length), `_get_pgmptr` (ByRef replaced pointer), `SysAllocStringByteLen` (String
   return); bind shape: `declare_byval_string_lvalue_binds_byref_for_ansi_writeback`.
+  - **Raw (non-libffi) invocation paths reject float lanes and arity > 6** (review finding
+    W1-com-006, P0): the Unix and Windows-non-x86_64 paths dispatch through i64 transmutes,
+    which cannot express floating-point argument/return registers or stack-passed arguments —
+    they previously miscalled (floats read garbage registers; args 7+ silently dropped).
+    Those shapes now fail deterministically with a clear error. **Follow-up:** extend the
+    libffi path (today Windows-x86_64-only) to all targets, which lifts both limits and
+    retires `raw_invoke_shape_error`; needs the `libffi` dependency un-gated from the
+    Windows-only target table plus Linux/macOS CI verification.
   **Parked:** fixed-length `String * N` as a *Declare param* (no length in
   `DeclareParamType`; scanner folds it to `String` — fine for the descriptor, but a
   fixed-string variable arg binds ByVal/no-write-back); Variant-variable args get no

@@ -370,7 +370,10 @@ pub fn invoke_stdcall(
 
     #[cfg(not(target_arch = "x86_64"))]
     {
-        // Marshal arguments to raw i64 values for the call on the legacy integer-only path.
+        if let Some(message) = raw_invoke_shape_error(args, return_type) {
+            return Err(message);
+        }
+        // Marshal arguments to raw i64 values for the call on the integer-only path.
         let mut raw_args: Vec<i64> = Vec::with_capacity(args.len());
         for arg in args {
             match arg {
@@ -391,8 +394,45 @@ pub fn invoke_stdcall(
     }
 }
 
+/// Shape guard for the raw (non-libffi) invocation paths: floating-point
+/// argument/return lanes and arities beyond the 6 register-passed integer
+/// slots cannot be expressed by the i64 transmute dispatch — on SysV
+/// x86_64/AArch64 floats travel in vector registers and extra arguments on
+/// the stack, so calling anyway computes garbage or worse. Fail
+/// deterministically instead (HAL_DECLARE_ABI_SPEC_V1: invalid shapes fail
+/// with no UB and no silent coercion). The libffi path (Windows x86_64) has
+/// none of these limits; extending libffi to all targets is the tracked
+/// follow-up in POST_CLEANUP.md.
+#[cfg_attr(all(target_os = "windows", target_arch = "x86_64"), allow(dead_code))]
+fn raw_invoke_shape_error(args: &[FfiArg], return_type: FfiReturnType) -> Option<String> {
+    if args.len() > 6 {
+        return Some(format!(
+            "native call with {} arguments is not supported on this platform's raw FFI path \
+             (integer-register dispatch handles at most 6)",
+            args.len()
+        ));
+    }
+    if args
+        .iter()
+        .any(|a| matches!(a, FfiArg::Double(_) | FfiArg::Single(_)))
+    {
+        return Some(
+            "floating-point Declare arguments are not supported on this platform's raw FFI path"
+                .into(),
+        );
+    }
+    if matches!(return_type, FfiReturnType::Double | FfiReturnType::Single) {
+        return Some(
+            "floating-point Declare returns are not supported on this platform's raw FFI path"
+                .into(),
+        );
+    }
+    None
+}
+
 /// Raw stdcall invocation. This dispatches based on argument count
-/// for common arities and falls back to a generic approach for larger calls.
+/// for the register-passed arities; larger calls are rejected by
+/// [`raw_invoke_shape_error`] before reaching here.
 #[cfg(target_os = "windows")]
 #[cfg(not(target_arch = "x86_64"))]
 unsafe fn invoke_stdcall_raw(proc_addr: usize, args: &[i64], _return_type: FfiReturnType) -> i64 {
@@ -417,18 +457,8 @@ unsafe fn invoke_stdcall_raw(proc_addr: usize, args: &[i64], _return_type: FfiRe
         6 => std::mem::transmute::<usize, Fn6>(f)(
             args[0], args[1], args[2], args[3], args[4], args[5],
         ),
-        _ => {
-            // Fallback: for large argument counts, call with first 6 args
-            // This is a simplification; full coverage would need assembly thunks
-            std::mem::transmute::<usize, Fn6>(f)(
-                args.first().copied().unwrap_or(0),
-                args.get(1).copied().unwrap_or(0),
-                args.get(2).copied().unwrap_or(0),
-                args.get(3).copied().unwrap_or(0),
-                args.get(4).copied().unwrap_or(0),
-                args.get(5).copied().unwrap_or(0),
-            )
-        }
+        // INVARIANT: raw_invoke_shape_error rejected arity > 6 before this call.
+        _ => unreachable!("raw stdcall dispatch guarded to at most 6 arguments"),
     }
 }
 
@@ -623,18 +653,17 @@ pub fn get_proc_address_ordinal(_module: usize, ordinal: u16) -> Result<usize, S
 ///
 /// On Linux/macOS the platform calling convention is the System V AMD64 ABI (on x86_64)
 /// or the standard C ABI on other architectures. We use `extern "C"` function pointer
-/// transmutes matching the Windows bridge's arity-dispatch approach.
+/// transmutes over integer-register arguments only; shapes the dispatch cannot express
+/// (floating-point lanes, arity > 6) are rejected deterministically by
+/// [`raw_invoke_shape_error`] rather than miscalled.
 #[cfg(not(target_os = "windows"))]
 pub fn invoke_stdcall(
     proc_addr: usize,
     args: &[FfiArg],
     return_type: FfiReturnType,
 ) -> Result<i64, String> {
-    if args.len() > 32 {
-        return Err(format!(
-            "too many arguments for native invocation: {}",
-            args.len()
-        ));
+    if let Some(message) = raw_invoke_shape_error(args, return_type) {
+        return Err(message);
     }
 
     let mut raw_args: Vec<i64> = Vec::with_capacity(args.len());
@@ -680,20 +709,8 @@ unsafe fn invoke_c_abi_raw(proc_addr: usize, args: &[i64], _return_type: FfiRetu
         6 => std::mem::transmute::<usize, Fn6>(f)(
             args[0], args[1], args[2], args[3], args[4], args[5],
         ),
-        _ => {
-            // Fallback: for large argument counts, call with first 6 args.
-            // The System V AMD64 ABI passes the first 6 integer args in registers,
-            // so this covers the register-passed arguments. Full coverage for more
-            // than 6 args would require platform-specific stack manipulation.
-            std::mem::transmute::<usize, Fn6>(f)(
-                args.first().copied().unwrap_or(0),
-                args.get(1).copied().unwrap_or(0),
-                args.get(2).copied().unwrap_or(0),
-                args.get(3).copied().unwrap_or(0),
-                args.get(4).copied().unwrap_or(0),
-                args.get(5).copied().unwrap_or(0),
-            )
-        }
+        // INVARIANT: raw_invoke_shape_error rejected arity > 6 before this call.
+        _ => unreachable!("raw C-ABI dispatch guarded to at most 6 arguments"),
     }
 }
 
@@ -732,6 +749,27 @@ mod tests {
         assert!(
             (value - 12.5).abs() < 1.0e-10,
             "sqrt should round-trip the double lane; got {value}"
+        );
+    }
+
+    #[test]
+    fn raw_shape_guard_rejects_floats_and_large_arity() {
+        // W1-com-006: the raw (non-libffi) paths must reject the shapes their
+        // i64 transmute dispatch cannot express, not miscall with a wrong ABI.
+        assert!(raw_invoke_shape_error(&[FfiArg::Double(1.0)], FfiReturnType::Long).is_some());
+        assert!(raw_invoke_shape_error(&[FfiArg::Single(1.0)], FfiReturnType::Long).is_some());
+        assert!(raw_invoke_shape_error(&[], FfiReturnType::Double).is_some());
+        assert!(raw_invoke_shape_error(&[], FfiReturnType::Single).is_some());
+        let seven: Vec<FfiArg> = (0..7).map(|_| FfiArg::Long(0)).collect();
+        assert!(raw_invoke_shape_error(&seven, FfiReturnType::Long).is_some());
+        let six: Vec<FfiArg> = (0..6).map(|_| FfiArg::Long(0)).collect();
+        assert!(raw_invoke_shape_error(&six, FfiReturnType::Long).is_none());
+        assert!(
+            raw_invoke_shape_error(
+                &[FfiArg::LongLong(1), FfiArg::Boolean(0)],
+                FfiReturnType::Void
+            )
+            .is_none()
         );
     }
 
