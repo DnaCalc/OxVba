@@ -26,13 +26,15 @@
 //! opcodes rather than library calls because `Variant` boxing dominates.
 
 mod arith;
+mod collection;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use collection::CollectionData;
 use oxvba_bundle::{
     Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget, NativeCallee,
-    NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
+    NativeMethodId, NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -280,6 +282,11 @@ pub struct Vm<'h> {
     /// Re-entrancy guard so a `Class_Terminate` drain doesn't recursively drain;
     /// cascades are handled by the drain loop instead.
     draining: bool,
+    /// Built-in `VBA.Collection` instance contents, keyed by the instance's
+    /// `compat_identity`. Created lazily on first `Add`; never pruned (an entry
+    /// outlives its object until VM drop — bounded by `New Collection` count, and
+    /// consistent with the object-cycle-leak stance). See `collection.rs`.
+    collections: HashMap<i32, CollectionData>,
 }
 
 /// A cross-bundle link failure (an unresolved/mismatched import).
@@ -393,6 +400,7 @@ impl<'h> Vm<'h> {
             captured_return: None,
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
+            collections: HashMap::new(),
         })
     }
 
@@ -656,7 +664,22 @@ impl<'h> Vm<'h> {
             .procedures
             .get(proc)
             .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
-        let (frame_slots, return_slot, entry) = (desc.frame_slots, desc.return_slot, desc.entry_pc);
+        let (frame_slots, return_slot, entry, native) = (
+            desc.frame_slots,
+            desc.return_slot,
+            desc.entry_pc,
+            desc.native,
+        );
+        // Native-bodied procs live only in the VBA library bundle and are reached
+        // by cross-bundle dispatch (late member dispatch → `run_proc_core`), never
+        // by an intra-bundle `CallProc`. Guard rather than push a frame into the
+        // placeholder body (which would silently return Empty).
+        if native.is_some() {
+            return Err(Fault::new(
+                5,
+                "native-bodied procedure is not callable via CallProc",
+            ));
+        }
 
         // Resolve everything in the *caller* context before pushing the callee.
         let dst_place = match dst {
@@ -734,7 +757,22 @@ impl<'h> Vm<'h> {
                     format!("unknown procedure {proc} in unit {target_bundle}"),
                 )
             })?;
-        let (frame_slots, return_slot, entry) = (desc.frame_slots, desc.return_slot, desc.entry_pc);
+        let (frame_slots, return_slot, entry, native) = (
+            desc.frame_slots,
+            desc.return_slot,
+            desc.entry_pc,
+            desc.native,
+        );
+        // Native-bodied library *functions* called cross-bundle land here in a later
+        // phase; today the only native bodies are `Collection` *methods*, reached by
+        // late member dispatch (`run_proc_core`), so a native body here is not yet
+        // expected. Guard rather than execute the placeholder body.
+        if native.is_some() {
+            return Err(Fault::new(
+                5,
+                "native-bodied procedure is not yet callable via CallExtern",
+            ));
+        }
 
         // Resolve dst + args in the CALLER's bundle (current `cur`) before switching.
         let dst_place = match dst {
@@ -944,19 +982,37 @@ impl<'h> Vm<'h> {
         suppress: bool,
         capture: bool,
     ) -> Result<Variant, Fault> {
-        let desc = self
-            .cur_bundle()
-            .procedures
-            .get(proc)
-            .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
+        let (native, entry, return_slot, desc_frame_slots) = {
+            let desc = self
+                .cur_bundle()
+                .procedures
+                .get(proc)
+                .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
+            (
+                desc.native,
+                desc.entry_pc,
+                desc.return_slot,
+                desc.frame_slots,
+            )
+        };
+        // A native-bodied procedure (a built-in library member, e.g. a `Collection`
+        // method) runs directly with `Me` + its positional arguments instead of
+        // pushing a bytecode frame. `resolve_proc_args` placed args at slots `1..`
+        // (slot 0 is `Me`); recover them in order. ByRef args (none today) would
+        // arrive via `aliases` and are not yet threaded through.
+        if let Some(native_id) = native {
+            let mut ordered = byval;
+            ordered.sort_by_key(|(slot, _)| *slot);
+            let args: Vec<Variant> = ordered.into_iter().map(|(_, value)| value).collect();
+            return self.run_native_method(native_id, me, args);
+        }
         let max_local = byval
             .iter()
             .map(|(l, _)| *l)
             .chain(aliases.keys().copied())
             .max()
             .unwrap_or(0);
-        let frame_slots = desc.frame_slots.max(max_local + 1);
-        let (entry, return_slot) = (desc.entry_pc, desc.return_slot);
+        let frame_slots = desc_frame_slots.max(max_local + 1);
         let base = self.frames.len();
         let saved = (
             self.pc,
@@ -1032,6 +1088,50 @@ impl<'h> Vm<'h> {
         self.captured_return = saved.5;
         self.cur = saved.6;
         result.map(|_| captured)
+    }
+
+    /// Invoke a native-bodied library method (a built-in object's member). `me` is
+    /// the receiver object; `args` are the positional arguments in declaration
+    /// order (omitted optionals arrive as the `MISSING_ARG` sentinel). The built-in
+    /// object's mutable state is reached via the receiver's `compat_identity`.
+    /// Errors map to VBA run-time error numbers (9 = bad index/key, 13 = type
+    /// mismatch). This is the native counterpart of pushing a bytecode frame.
+    fn run_native_method(
+        &mut self,
+        id: NativeMethodId,
+        me: Variant,
+        args: Vec<Variant>,
+    ) -> Result<Variant, Fault> {
+        let key = variant_to_object(&me)?.compat_identity();
+        match id {
+            NativeMethodId::CollectionCount => Ok(Variant::from_i32(
+                self.collections.get(&key).map_or(0, CollectionData::count),
+            )),
+            NativeMethodId::CollectionAdd => {
+                let value = args.into_iter().next().unwrap_or_else(Variant::empty);
+                self.collections.entry(key).or_default().add(value);
+                Ok(Variant::empty())
+            }
+            NativeMethodId::CollectionItem => {
+                let index = native_index_arg(args.first())?;
+                self.collections
+                    .get(&key)
+                    .and_then(|c| c.item_by_index(index))
+                    .ok_or_else(|| Fault::new(9, "Subscript out of range"))
+            }
+            NativeMethodId::CollectionRemove => {
+                let index = native_index_arg(args.first())?;
+                let removed = self
+                    .collections
+                    .get_mut(&key)
+                    .is_some_and(|c| c.remove_by_index(index));
+                if removed {
+                    Ok(Variant::empty())
+                } else {
+                    Err(Fault::new(9, "Subscript out of range"))
+                }
+            }
+        }
     }
 
     /// Drain inbound host (COM) events: poll the host for delivered callbacks and
@@ -2372,6 +2472,19 @@ fn variant_to_object(value: &Variant) -> Result<ObjectRef, Fault> {
             .map_err(|_| Fault::new(13, "object handle exceeds i32 range"));
     }
     Err(Fault::new(424, "Object required"))
+}
+
+/// Coerce a native-method index argument (`Collection.Item`/`Remove`) to `i32`.
+/// Numeric Variants are accepted leniently (Integer/Long/Double, rounded); an
+/// omitted argument is error 449, a non-numeric one is error 13. String keys are
+/// a later phase.
+fn native_index_arg(arg: Option<&Variant>) -> Result<i32, Fault> {
+    let value = arg.ok_or_else(|| Fault::new(449, "Argument not optional"))?;
+    value
+        .as_i32()
+        .or_else(|| value.as_i64().map(|n| n as i32))
+        .or_else(|| value.as_f64().map(|n| n.round() as i32))
+        .ok_or_else(|| Fault::new(13, "Type mismatch"))
 }
 
 /// Object-identity key for `Is`: the object raw, or 0 for Nothing/non-object.

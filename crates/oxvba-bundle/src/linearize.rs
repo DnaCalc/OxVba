@@ -117,6 +117,9 @@ impl<'p> Linearizer<'p> {
                 param_count: proc.params.len(),
                 frame_slots: self.frame_slots,
                 return_slot,
+                // Bytecode body; native-bodied procs are only synthesized directly
+                // into the VBA library bundle, never lowered from Core IR.
+                native: None,
             });
         }
 

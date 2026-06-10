@@ -18,7 +18,7 @@ pub mod native;
 
 pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 pub use linearize::{LinearizeError, linearize};
-pub use native::{LibraryModule, NativeImplId};
+pub use native::{LibraryModule, NativeImplId, NativeMethodId};
 
 pub use coreir::{
     CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreConst, CoreParam, CorePlace, CoreProc,
@@ -187,6 +187,11 @@ pub struct ProcedureDescriptor {
     pub frame_slots: usize,
     /// Frame-local slot holding the function's result (`None` for a `Sub`).
     pub return_slot: Option<usize>,
+    /// `Some` when this procedure's body is native VM code (a built-in library
+    /// member such as a `Collection` method) rather than bytecode at `entry_pc`.
+    /// The VM invokes the native body directly instead of pushing a frame; the
+    /// `entry_pc` body is then just a `Return` placeholder keeping indices valid.
+    pub native: Option<NativeMethodId>,
 }
 
 /// pc → source line, for diagnostics / error reporting / debugging.

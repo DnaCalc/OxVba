@@ -333,6 +333,7 @@ fn proc(
         param_count,
         frame_slots,
         return_slot,
+        native: None,
     }
 }
 
@@ -560,6 +561,7 @@ fn global_persists_across_calls() {
             param_count: 0,
             frame_slots: 0,
             return_slot: None,
+            native: None,
         }],
         Vec::new(),
     );

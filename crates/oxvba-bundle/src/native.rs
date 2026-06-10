@@ -283,3 +283,24 @@ impl NativeImplId {
         )
     }
 }
+
+/// The body of a procedure or class method that is implemented as native VM code
+/// rather than bytecode. Distinct from [`NativeImplId`]: a `NativeImplId` body is
+/// a pure/host library function (`oxvba-lib`, no VM access), whereas a
+/// `NativeMethodId` body runs inside the VM with `&mut self` access — needed for
+/// built-in objects (`Collection`, …) whose methods mutate VM-held instance
+/// state. A [`ProcedureDescriptor`](crate::ProcedureDescriptor) carrying
+/// `Some(NativeMethodId)` is invoked by the VM directly instead of pushing a
+/// bytecode frame; this is how the synthetic `VBA` library bundle's classes get
+/// native method bodies while dispatching through the ordinary class machinery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NativeMethodId {
+    /// `Collection.Add(item, [key], [before], [after])`.
+    CollectionAdd,
+    /// `Collection.Item(indexOrKey)` (also the default member).
+    CollectionItem,
+    /// `Collection.Count`.
+    CollectionCount,
+    /// `Collection.Remove(indexOrKey)`.
+    CollectionRemove,
+}
