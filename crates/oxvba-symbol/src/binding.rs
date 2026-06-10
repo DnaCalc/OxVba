@@ -6,7 +6,7 @@ use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::{NativeImplId, ProjectMemberKind};
 use oxvba_com::{TypeLibEventDispatchPath, TypeLibMemberInvokeKind, TypeLibParamType};
 
-use crate::model::{LibraryConstValue, PredeclaredObjectId, SymbolId};
+use crate::model::{PredeclaredObjectId, SymbolId};
 use crate::structural::StructuralIntrinsic;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,11 +35,11 @@ impl Binding {
 pub enum DispatchRoute {
     /// A constant / variable / field read — not a call.
     Value,
-    /// A `vb*` base-library constant (carries the value for the binder).
-    LibraryConst(LibraryConstValue),
-    /// A `Public Const` / `Enum` member published by a *referenced project's*
-    /// export surface — the folded literal value, carried in the route so binding
-    /// is surface-driven (no dependence on shared symbol identity across bundles).
+    /// A folded constant literal carried in the route: a `Public Const`/`Enum`
+    /// member published by a *referenced project's* export surface **and** the
+    /// `vb*` base-library value constants (which resolve through this same shared
+    /// route — see `providers::vba_library`). Surface-driven: no dependence on
+    /// shared symbol identity across bundles.
     ConstValue(CoreConst),
     /// A reference to a predeclared object (`Debug`/`Err`/`Collection`); the
     /// binder uses it as the receiver type for member access.

@@ -15,7 +15,7 @@ use oxvba_bundle::StringCompareMode;
 use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::model::{LibraryConstValue, ScopeId, SymbolId, SymbolNamespace, SymbolTable};
+use crate::model::{ScopeId, SymbolId, SymbolNamespace, SymbolTable};
 use crate::providers::vba_library;
 
 /// Fold every `Const` and `Enum` member reachable from the given module roots into
@@ -360,7 +360,7 @@ fn eval_inner(
                 }
             }
             match vba_library::library_constant(tok.text) {
-                Some(v) => ConstEval::Value(library_const_value(&v)),
+                Some(v) => ConstEval::Value(v),
                 None => ConstEval::Unresolvable,
             }
         }
@@ -476,13 +476,6 @@ pub(crate) fn not_const(c: CoreConst) -> Option<CoreConst> {
         CoreConst::I64(n) => CoreConst::I64(!n),
         _ => return None,
     })
-}
-
-fn library_const_value(v: &LibraryConstValue) -> CoreConst {
-    match v {
-        LibraryConstValue::Str(s) => CoreConst::Str(s.clone()),
-        LibraryConstValue::Int(i) => CoreConst::I32(*i),
-    }
 }
 
 enum ConstNum {

@@ -12,7 +12,7 @@ use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{
-    LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolNamespace, fold_identifier,
+    PredeclaredObjectId, SymbolId, SymbolImpl, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
 use oxvba_symbol::structural::StructuralIntrinsic;
@@ -38,7 +38,16 @@ impl<'a> ProcLower<'a> {
         arglist: Option<SyntaxNode<'_>>,
     ) -> Result<Bound, BindError> {
         match &binding.route {
-            DispatchRoute::LibraryConst(value) => Ok(library_const(value)),
+            // A folded constant literal (a referenced project's `Public Const`/`Enum`
+            // member, or a `vb*` base-library constant) used in callee/index position
+            // (`Call vbCrLf`, `vbReadOnly(0)`): inline the literal, ignoring any index
+            // arguments — exactly as the value path does. The normal value paths in
+            // `expr::bind_ident` / `finish_value_or_call` intercept `ConstValue` first;
+            // this arm covers the callee-shaped sites that still route here.
+            DispatchRoute::ConstValue(c) => Ok(value_bound(
+                CoreValue::Const(c.clone()),
+                crate::expr::const_type(c),
+            )),
             DispatchRoute::ProjectMember { kind } => {
                 self.bind_project_call(name, binding, *kind, arglist)
             }
@@ -1431,19 +1440,6 @@ fn pointer_kind(intrinsic: StructuralIntrinsic, ty: &VarTypeRef) -> PtrKind {
         // Not a pointer helper — callers restrict to the three above; default to
         // scalar storage defensively.
         _ => PtrKind::Var,
-    }
-}
-
-fn library_const(value: &LibraryConstValue) -> Bound {
-    match value {
-        LibraryConstValue::Str(s) => value_bound(
-            CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(s.clone())),
-            builtin(BuiltinType::String),
-        ),
-        LibraryConstValue::Int(i) => value_bound(
-            CoreValue::Const(oxvba_bundle::coreir::CoreConst::I32(*i)),
-            builtin(BuiltinType::Long),
-        ),
     }
 }
 

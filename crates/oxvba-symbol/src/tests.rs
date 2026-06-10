@@ -158,7 +158,7 @@ fn table_keeps_namespaces_distinct() {
 fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     let p = VbaLibraryProvider;
     assert!(
-        matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::LibraryConst(_)))
+        matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
     assert!(matches!(p.resolve("Len"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
     assert!(
@@ -476,7 +476,7 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
     // Library + intrinsic still resolve through the same source-agnostic path.
     assert!(matches!(
         env.resolve(&from_global, "vbCrLf"),
-        Some(b) if matches!(b.route, DispatchRoute::LibraryConst(_))
+        Some(b) if matches!(b.route, DispatchRoute::ConstValue(_))
     ));
     assert!(matches!(
         env.resolve(&from_global, "Len"),

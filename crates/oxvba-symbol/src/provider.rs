@@ -338,7 +338,6 @@ impl ResolutionEnvironment {
             SymbolImpl::Declare(declare) => DispatchRoute::Declare {
                 descriptor_id: declare.descriptor_id,
             },
-            SymbolImpl::LibraryConst(_) => DispatchRoute::Value,
             // A property resolves (by default, read context) to its Get accessor;
             // the binder selects Let/Set for assignment from the symbol's group.
             SymbolImpl::Property(_) => DispatchRoute::ProjectMember {

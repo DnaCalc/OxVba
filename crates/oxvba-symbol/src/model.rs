@@ -117,13 +117,6 @@ pub struct Scope {
     pub name: Option<InternedNameId>,
 }
 
-/// A library `vb*` constant value (ported from the legacy library provider).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LibraryConstValue {
-    Str(String),
-    Int(i32),
-}
-
 /// The predeclared base-library objects. `Collection` is intentionally absent:
 /// it resolves as a class of the built-in `VBA` library bundle (via the
 /// cross-bundle coclass/member path), not as a predeclared object.
@@ -163,8 +156,6 @@ pub enum SymbolImpl {
     Property(PropertyGroup),
     /// A field/local/parameter's declared type.
     DeclaredType(VarTypeRef),
-    /// A `vb*` library constant.
-    LibraryConst(LibraryConstValue),
     /// A base-library intrinsic body.
     Native(oxvba_bundle::NativeImplId),
     /// A compiler-internal structural intrinsic.
