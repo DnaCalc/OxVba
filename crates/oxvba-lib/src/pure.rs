@@ -667,17 +667,43 @@ pub enum DatePart {
     Month,
     Day,
     Weekday,
+    Hour,
+    Minute,
+    Second,
+}
+
+/// Hours/minutes/seconds of a date serial's time-of-day. VBA derives the time
+/// from the serial's fractional part (the integer part is the date); rounding
+/// to the nearest second matches VBA's display.
+fn serial_to_hms(serial: f64) -> (i64, i64, i64) {
+    let frac = serial.abs().fract();
+    let total = ((frac * 86_400.0).round() as i64).rem_euclid(86_400);
+    (total / 3600, (total % 3600) / 60, total % 60)
 }
 
 pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
     let serial = as_f64(need(args, 0)?)?;
-    let (y, m, d) = serial_to_ymd(serial);
     Ok(vi32(match part {
-        DatePart::Year => y as i32,
-        DatePart::Month => m as i32,
-        DatePart::Day => d as i32,
-        // VBA Weekday: 1 = Sunday. Sakamoto returns 0 = Sunday, so add 1.
-        DatePart::Weekday => day_of_week(y as i32, m as u32, d as u32) + 1,
+        DatePart::Year | DatePart::Month | DatePart::Day | DatePart::Weekday => {
+            let (y, m, d) = serial_to_ymd(serial);
+            match part {
+                DatePart::Year => y as i32,
+                DatePart::Month => m as i32,
+                DatePart::Day => d as i32,
+                // VBA Weekday: 1 = Sunday. Sakamoto returns 0 = Sunday, so add 1.
+                DatePart::Weekday => day_of_week(y as i32, m as u32, d as u32) + 1,
+                _ => unreachable!(),
+            }
+        }
+        DatePart::Hour | DatePart::Minute | DatePart::Second => {
+            let (h, mi, s) = serial_to_hms(serial);
+            match part {
+                DatePart::Hour => h as i32,
+                DatePart::Minute => mi as i32,
+                DatePart::Second => s as i32,
+                _ => unreachable!(),
+            }
+        }
     }))
 }
 
@@ -697,10 +723,54 @@ pub fn month_name(args: &[Variant]) -> LibResult<Variant> {
         "December",
     ];
     let n = as_usize(need(args, 0)?)?;
+    let abbreviate = matches!(opt(args, 1), Some(v) if as_bool_lenient(v));
     NAMES
         .get(n.wrapping_sub(1))
-        .map(|s| vstr(*s))
+        .map(|s| vstr(if abbreviate { &s[..3] } else { s }))
         .ok_or_else(|| LibError::invalid_call("MonthName index out of range"))
+}
+
+/// `WeekdayName(weekday, [abbreviate], [firstdayofweek])` — the weekday is
+/// relative to `firstdayofweek` (default vbSunday = 1), 1-based.
+pub fn weekday_name(args: &[Variant]) -> LibResult<Variant> {
+    const NAMES: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    let weekday = as_i32(need(args, 0)?)?;
+    let abbreviate = matches!(opt(args, 1), Some(v) if as_bool_lenient(v));
+    // firstdayofweek: 0 = vbUseSystemDayOfWeek (treat as Sunday), default vbSunday.
+    let first = match opt(args, 2) {
+        Some(v) => as_i32(v)?,
+        None => 1,
+    };
+    if !(1..=7).contains(&weekday) {
+        return Err(LibError::invalid_call("WeekdayName weekday out of range"));
+    }
+    let first = if first == 0 { 1 } else { first };
+    let idx = ((weekday - 1) + (first - 1)).rem_euclid(7) as usize;
+    let name = NAMES[idx];
+    Ok(vstr(if abbreviate { &name[..3] } else { name }))
+}
+
+/// `LenB(string)` — byte length. VBA stores strings as UTF-16, so the byte
+/// count is twice the code-unit count.
+pub fn len_b(args: &[Variant]) -> LibResult<Variant> {
+    Ok(vi32(
+        (as_str(need(args, 0)?)?.encode_utf16().count() * 2) as i32,
+    ))
+}
+
+/// Lenient truthiness for an optional Boolean-ish flag argument.
+fn as_bool_lenient(v: &Variant) -> bool {
+    v.as_bool()
+        .or_else(|| as_i32(v).ok().map(|n| n != 0))
+        .unwrap_or(false)
 }
 
 // ── Conversion ─────────────────────────────────────────────────────────────────

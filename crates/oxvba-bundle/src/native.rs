@@ -16,6 +16,7 @@
 pub enum NativeImplId {
     // ── Strings ──────────────────────────────────────────────
     Len,
+    LenB,
     Left,
     Right,
     Mid,
@@ -65,7 +66,11 @@ pub enum NativeImplId {
     Month,
     Day,
     Weekday,
+    Hour,
+    Minute,
+    Second,
     MonthName,
+    WeekdayName,
     DateNow, // `Date`
     TimeNow, // `Time`
     Now,
@@ -195,12 +200,13 @@ impl NativeImplId {
         use LibraryModule as M;
         use NativeImplId::*;
         match self {
-            Len | Left | Right | Mid | MidStmt | InStr | InStrRev | LCase | UCase | Split
-            | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc | Space
-            | StringRepeat | StrReverse | StrConv | Format => M::Strings,
+            Len | LenB | Left | Right | Mid | MidStmt | InStr | InStrRev | LCase | UCase
+            | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc
+            | Space | StringRepeat | StrReverse | StrConv | Format => M::Strings,
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
-            | Day | Weekday | MonthName | DateNow | TimeNow | Now | Timer => M::DateTime,
+            | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DateNow
+            | TimeNow | Now | Timer => M::DateTime,
             Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
             | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
             Rnd | Randomize => M::Random,

@@ -340,6 +340,28 @@ fn scalar_boolean_like_const_expression_executes() {
 }
 
 #[test]
+fn time_and_weekday_intrinsics() {
+    // Hour/Minute/Second extract the time-of-day from a serial; WeekdayName
+    // maps a 1-based weekday (1 = Sunday) to its name; LenB is 2× the UTF-16
+    // code-unit length.
+    let snap = run(
+        "Public h As Long\nPublic m As Long\nPublic s As Long\nPublic w As String\nPublic b As Long\n\
+         Sub Main()\n\
+         h = Hour(TimeSerial(13, 45, 30))\n\
+         m = Minute(TimeSerial(13, 45, 30))\n\
+         s = Second(TimeSerial(13, 45, 30))\n\
+         w = WeekdayName(1)\n\
+         b = LenB(\"hi\")\n\
+         End Sub",
+    );
+    assert_eq!(snap[0], Variant::from_i32(13));
+    assert_eq!(snap[1], Variant::from_i32(45));
+    assert_eq!(snap[2], Variant::from_i32(30));
+    assert_eq!(snap[3], Variant::from_string(BStr::from("Sunday")));
+    assert_eq!(snap[4], Variant::from_i32(4));
+}
+
+#[test]
 fn nested_scalar_udt_fields_are_recursively_materialized() {
     // A UDT field that is itself a UDT (`Outer.Item As Inner`) is recursively
     // default-initialized as a record, so `o.Item.N` is a live nested-record

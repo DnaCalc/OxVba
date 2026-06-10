@@ -66,6 +66,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
     match id {
         // ── Strings ──
         Len => e(Len, &["Len"], sig(1, 1), Ordinary),
+        LenB => e(LenB, &["LenB"], sig(1, 1), Ordinary),
         Left => e(Left, &["Left", "Left$"], sig(2, 2), Ordinary),
         Right => e(Right, &["Right", "Right$"], sig(2, 2), Ordinary),
         Mid => e(Mid, &["Mid", "Mid$"], sig(2, 3), Ordinary),
@@ -115,7 +116,11 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Month => e(Month, &["Month"], sig(1, 1), Ordinary),
         Day => e(Day, &["Day"], sig(1, 1), Ordinary),
         Weekday => e(Weekday, &["Weekday"], sig(1, 2), Ordinary),
+        Hour => e(Hour, &["Hour"], sig(1, 1), Ordinary),
+        Minute => e(Minute, &["Minute"], sig(1, 1), Ordinary),
+        Second => e(Second, &["Second"], sig(1, 1), Ordinary),
         MonthName => e(MonthName, &["MonthName"], sig(1, 2), Ordinary),
+        WeekdayName => e(WeekdayName, &["WeekdayName"], sig(1, 3), Ordinary),
         DateNow => e(DateNow, &["Date", "Date$"], sig(0, 0), Ordinary),
         TimeNow => e(TimeNow, &["Time", "Time$"], sig(0, 0), Ordinary),
         Now => e(Now, &["Now"], sig(0, 0), Ordinary),
@@ -238,6 +243,7 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
     use NativeImplId::*;
     &[
         Len,
+        LenB,
         Left,
         Right,
         Mid,
@@ -283,7 +289,11 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         Month,
         Day,
         Weekday,
+        Hour,
+        Minute,
+        Second,
         MonthName,
+        WeekdayName,
         DateNow,
         TimeNow,
         Now,
@@ -389,7 +399,7 @@ mod tests {
     #[test]
     fn catalog_covers_every_native_impl_id() {
         // Variants in oxvba-bundle's NativeImplId today (the catalog must cover each).
-        assert_eq!(ALL_INTRINSICS.len(), 130);
+        assert_eq!(ALL_INTRINSICS.len(), 137);
     }
 
     #[test]

@@ -198,6 +198,7 @@ pub fn invoke(
     match id {
         // ── Strings ──
         Len => pure::len(args),
+        LenB => pure::len_b(args),
         Left => pure::left(args),
         Right => pure::right(args),
         Mid => pure::mid(args),
@@ -247,7 +248,11 @@ pub fn invoke(
         Month => pure::date_part(args, pure::DatePart::Month),
         Day => pure::date_part(args, pure::DatePart::Day),
         Weekday => pure::date_part(args, pure::DatePart::Weekday),
+        Hour => pure::date_part(args, pure::DatePart::Hour),
+        Minute => pure::date_part(args, pure::DatePart::Minute),
+        Second => pure::date_part(args, pure::DatePart::Second),
         MonthName => pure::month_name(args),
+        WeekdayName => pure::weekday_name(args),
         DateNow => host::date_now(host),
         TimeNow => host::time_now(host),
         Now => host::now(host),
