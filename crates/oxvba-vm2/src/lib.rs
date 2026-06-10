@@ -318,6 +318,20 @@ impl<'h> Vm<'h> {
         let entry = bundles.len().checked_sub(1).ok_or_else(|| LinkError {
             message: "no bundles to link".into(),
         })?;
+        // Always link the built-in `VBA` library so `New Collection` (and, in later
+        // phases, the rest of the built-in surface) resolves against a real unit.
+        // Appended *after* the entry bundle: every caller-supplied bundle keeps its
+        // index and the entry selection is unchanged, and imports resolve it by
+        // unit name like any other unit. Skipped if the caller already supplied a
+        // unit named "VBA" (avoids a duplicate-unit-name error).
+        let mut all: Vec<&'h Bundle> = bundles.to_vec();
+        if !bundles
+            .iter()
+            .any(|b| b.unit_name.eq_ignore_ascii_case("VBA"))
+        {
+            all.push(oxvba_bundle::vba_library_bundle());
+        }
+        let bundles: &[&'h Bundle] = &all;
         let mut loaded: Vec<LoadedBundle<'h>> =
             bundles.iter().map(|b| LoadedBundle::load(b)).collect();
 

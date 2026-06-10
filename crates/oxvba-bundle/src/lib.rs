@@ -15,10 +15,12 @@ pub mod coreir;
 pub mod isa;
 pub mod linearize;
 pub mod native;
+pub mod vba_library;
 
 pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 pub use linearize::{LinearizeError, linearize};
 pub use native::{LibraryModule, NativeImplId, NativeMethodId};
+pub use vba_library::vba_library_bundle;
 
 pub use coreir::{
     CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreConst, CoreParam, CorePlace, CoreProc,

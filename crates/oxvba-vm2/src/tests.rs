@@ -7,9 +7,10 @@
 //! procedure's slot `n` and the caller's slot `n` are distinct storage.
 
 use oxvba_bundle::{
-    Bundle, ClassDescriptor, ClassMethod, ComMemberSelector, DeclareParamType, EventRoute,
-    ExternalCallDescriptor, NativeCallee, NativeImplId, NumericMode, Op, ProcArg,
-    ProcedureDescriptor, ProcedureKind, ProjectMemberKind, StringCompareMode, isa::CallArg,
+    Bundle, BundleImport, ClassDescriptor, ClassMethod, ComMemberSelector, DeclareParamType,
+    EventRoute, ExportToken, ExternalCallDescriptor, NativeCallee, NativeImplId, NumericMode, Op,
+    ProcArg, ProcedureDescriptor, ProcedureKind, ProjectMemberKind, StringCompareMode,
+    isa::CallArg,
 };
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken,
@@ -1011,6 +1012,68 @@ fn late_bound_method_dispatch() {
     let h = host();
     let vm = run(&b, &h).unwrap();
     assert_eq!(vm.slot(1).unwrap().as_i32(), Some(42));
+}
+
+#[test]
+fn vba_collection_new_extern_dispatch() {
+    // An app bundle imports `VBA.Collection`, `New`s one, adds two items, then
+    // reads Count and Item(2). Exercises the synthetic `VBA` bundle that
+    // `Vm::link` appends, the cross-bundle `NewExtern` mint, and native-bodied
+    // (`NativeMethodId`) method dispatch through the ordinary class machinery.
+    let add = |arg: usize| Op::CallNative {
+        dst: None,
+        callee: NativeCallee::ComDispatch {
+            selector: ComMemberSelector::Name("Add".to_string()),
+            early_bound: false,
+            kind_hint: Some(ProjectMemberKind::Method),
+        },
+        args: vec![CallArg::Slot(0), CallArg::Slot(arg)],
+    };
+    let mut b = bundle(
+        vec![
+            Op::NewExtern { dst: 0, import: 0 }, // 0  c = New Collection
+            Op::LoadI32 { slot: 1, value: 10 },  // 1
+            add(1),                              // 2  c.Add 10
+            Op::LoadI32 { slot: 1, value: 20 },  // 3
+            add(1),                              // 4  c.Add 20
+            Op::CallNative {
+                dst: Some(2),
+                callee: NativeCallee::ComDispatch {
+                    selector: ComMemberSelector::Name("Count".to_string()),
+                    early_bound: false,
+                    kind_hint: Some(ProjectMemberKind::PropertyGet),
+                },
+                args: vec![CallArg::Slot(0)],
+            }, // 5  cnt = c.Count
+            Op::LoadI32 { slot: 3, value: 2 },   // 6
+            Op::CallNative {
+                dst: Some(4),
+                callee: NativeCallee::ComDispatch {
+                    selector: ComMemberSelector::Name("Item".to_string()),
+                    early_bound: false,
+                    kind_hint: Some(ProjectMemberKind::Method),
+                },
+                args: vec![CallArg::Slot(0), CallArg::Slot(3)],
+            }, // 7  item = c.Item(2)
+            Op::Halt,                            // 8
+        ],
+        5, // entry locals: c, arg, cnt, idx, item
+        vec![],
+    );
+    b.imports = vec![BundleImport {
+        unit: "VBA".to_string(),
+        token: ExportToken::Class {
+            name: "Collection".to_string(),
+        },
+    }];
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(
+        vm.slot(2).unwrap().as_i32(),
+        Some(2),
+        "Count after two Adds"
+    );
+    assert_eq!(vm.slot(4).unwrap().as_i32(), Some(20), "Item(2)");
 }
 
 #[test]
