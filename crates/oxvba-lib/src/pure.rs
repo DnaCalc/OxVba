@@ -93,8 +93,16 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
 /// source's `Option Compare`. (`InStrRev`'s own `start` argument awaits the
 /// canonical arg layout.)
 pub fn instr(args: &[Variant], rev: bool) -> LibResult<Variant> {
-    let base = if !rev && args.first().is_some_and(is_numeric_typed) { 1 } else { 0 };
-    let start = if base == 1 { as_i32(need(args, 0)?)? } else { 1 };
+    let base = if !rev && args.first().is_some_and(is_numeric_typed) {
+        1
+    } else {
+        0
+    };
+    let start = if base == 1 {
+        as_i32(need(args, 0)?)?
+    } else {
+        1
+    };
     if start < 1 {
         return Err(LibError::invalid_call("InStr start must be >= 1"));
     }
@@ -217,8 +225,12 @@ pub fn str_comp(args: &[Variant]) -> LibResult<Variant> {
 /// as plain equality). FIDELITY: `[charlist]` ranges not yet supported.
 pub fn like(args: &[Variant]) -> LibResult<Variant> {
     let text = text_compare(args, 2)?;
-    let s: Vec<char> = norm_compare(as_str(need(args, 0)?)?, text).chars().collect();
-    let p: Vec<char> = norm_compare(as_str(need(args, 1)?)?, text).chars().collect();
+    let s: Vec<char> = norm_compare(as_str(need(args, 0)?)?, text)
+        .chars()
+        .collect();
+    let p: Vec<char> = norm_compare(as_str(need(args, 1)?)?, text)
+        .chars()
+        .collect();
     Ok(vbool(like_match(&s, &p)))
 }
 
@@ -289,13 +301,17 @@ fn char_in_charlist(c: char, body: &[char]) -> bool {
 
 pub fn chr(args: &[Variant]) -> LibResult<Variant> {
     let code = as_i32(need(args, 0)?)? as u32;
-    let ch = char::from_u32(code).ok_or_else(|| LibError::invalid_call("invalid character code"))?;
+    let ch =
+        char::from_u32(code).ok_or_else(|| LibError::invalid_call("invalid character code"))?;
     Ok(vstr(ch.to_string()))
 }
 
 pub fn asc(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
-    let ch = s.chars().next().ok_or_else(|| LibError::invalid_call("Asc of empty string"))?;
+    let ch = s
+        .chars()
+        .next()
+        .ok_or_else(|| LibError::invalid_call("Asc of empty string"))?;
     Ok(vi32(ch as i32))
 }
 
@@ -316,7 +332,9 @@ pub fn string_repeat(args: &[Variant]) -> LibResult<Variant> {
 }
 
 pub fn str_reverse(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vstr(as_str(need(args, 0)?)?.chars().rev().collect::<String>()))
+    Ok(vstr(
+        as_str(need(args, 0)?)?.chars().rev().collect::<String>(),
+    ))
 }
 
 /// FIDELITY: handles vbUpperCase/vbLowerCase/vbProperCase; other modes pass through.
@@ -433,7 +451,9 @@ pub fn time_serial(args: &[Variant]) -> LibResult<Variant> {
     let h = as_f64(need(args, 0)?)?;
     let m = as_f64(need(args, 1)?)?;
     let s = as_f64(need(args, 2)?)?;
-    Ok(Variant::from_date_f64((h * 3600.0 + m * 60.0 + s) / 86400.0))
+    Ok(Variant::from_date_f64(
+        (h * 3600.0 + m * 60.0 + s) / 86400.0,
+    ))
 }
 
 /// FIDELITY: parses ISO-ish `YYYY-MM-DD` and `M/D/YYYY`; locale formats later.
@@ -452,7 +472,9 @@ pub fn time_value(args: &[Variant]) -> LibResult<Variant> {
     let h = parts.first().copied().unwrap_or(0.0);
     let m = parts.get(1).copied().unwrap_or(0.0);
     let sec = parts.get(2).copied().unwrap_or(0.0);
-    Ok(Variant::from_date_f64((h * 3600.0 + m * 60.0 + sec) / 86400.0))
+    Ok(Variant::from_date_f64(
+        (h * 3600.0 + m * 60.0 + sec) / 86400.0,
+    ))
 }
 
 fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
@@ -461,16 +483,22 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
     // ISO `YYYY-MM-DD` (all-numeric; falls through to the month-name path otherwise).
     if let Some((y, rest)) = s.split_once('-')
         && let Some((m, d)) = rest.split_once('-')
-        && let (Ok(y), Ok(m), Ok(d)) =
-            (y.trim().parse::<i64>(), m.trim().parse::<i64>(), d.trim().parse::<i64>())
+        && let (Ok(y), Ok(m), Ok(d)) = (
+            y.trim().parse::<i64>(),
+            m.trim().parse::<i64>(),
+            d.trim().parse::<i64>(),
+        )
     {
         return Ok((y, m, d));
     }
     // US `M/D/YYYY`.
     if let Some((m, rest)) = s.split_once('/')
         && let Some((d, y)) = rest.split_once('/')
-        && let (Ok(m), Ok(d), Ok(y)) =
-            (m.trim().parse::<i64>(), d.trim().parse::<i64>(), y.trim().parse::<i64>())
+        && let (Ok(m), Ok(d), Ok(y)) = (
+            m.trim().parse::<i64>(),
+            d.trim().parse::<i64>(),
+            y.trim().parse::<i64>(),
+        )
     {
         return Ok((y, m, d));
     }
@@ -504,10 +532,13 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
 /// The 1-based month number for a month name or its 3-letter prefix (`Jan`,
 /// `January`, `jan.`, …). Each English month's 3-letter prefix is unique.
 fn month_from_name(tok: &str) -> Option<i64> {
-    const ABBR: [&str; 12] =
-        ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const ABBR: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
     let t = tok.trim().to_ascii_lowercase();
-    ABBR.iter().position(|a| t.starts_with(a)).map(|i| i as i64 + 1)
+    ABBR.iter()
+        .position(|a| t.starts_with(a))
+        .map(|i| i as i64 + 1)
 }
 
 /// FIDELITY: supports day/week/hour/minute/second additions exactly; month/year
@@ -534,7 +565,11 @@ pub fn date_add(args: &[Variant]) -> LibResult<Variant> {
         "h" => serial + number / 24.0,
         "n" => serial + number / 1440.0,
         "s" => serial + number / 86400.0,
-        _ => return Err(LibError::invalid_call(format!("unknown DateAdd interval `{interval}`"))),
+        _ => {
+            return Err(LibError::invalid_call(format!(
+                "unknown DateAdd interval `{interval}`"
+            )));
+        }
     };
     Ok(Variant::from_date_f64(result))
 }
@@ -561,7 +596,11 @@ pub fn date_diff(args: &[Variant]) -> LibResult<Variant> {
                 _ => months as f64,
             }
         }
-        _ => return Err(LibError::invalid_call(format!("unknown DateDiff interval `{interval}`"))),
+        _ => {
+            return Err(LibError::invalid_call(format!(
+                "unknown DateDiff interval `{interval}`"
+            )));
+        }
     };
     Ok(vf64(result.trunc()))
 }
@@ -588,8 +627,18 @@ pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
 
 pub fn month_name(args: &[Variant]) -> LibResult<Variant> {
     const NAMES: [&str; 12] = [
-        "January", "February", "March", "April", "May", "June", "July", "August", "September",
-        "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ];
     let n = as_usize(need(args, 0)?)?;
     NAMES
@@ -646,7 +695,8 @@ fn cdate_from_string(s: &str) -> LibResult<Variant> {
     let s = s.trim();
     let has_date = s.contains('/')
         || s.contains('-')
-        || s.split([' ', ',', '\t']).any(|t| month_from_name(t).is_some());
+        || s.split([' ', ',', '\t'])
+            .any(|t| month_from_name(t).is_some());
     // A pure time ("HH:MM[:SS]") with no date component.
     if s.contains(':') && !has_date {
         return time_value(&[vstr(s)]);
@@ -656,7 +706,9 @@ fn cdate_from_string(s: &str) -> LibResult<Variant> {
         && time_part.contains(':')
     {
         let (y, m, d) = parse_date(date_part.trim())?;
-        let time = time_value(&[vstr(time_part.trim())])?.as_date_f64().unwrap_or(0.0);
+        let time = time_value(&[vstr(time_part.trim())])?
+            .as_date_f64()
+            .unwrap_or(0.0);
         return Ok(Variant::from_date_f64(ymd_to_serial(y, m, d) + time));
     }
     let (y, m, d) = parse_date(s)?;
@@ -709,13 +761,15 @@ pub fn csng(args: &[Variant]) -> LibResult<Variant> {
 /// `CInt` — to `Integer` (banker's rounding, range −32768..32767).
 pub fn cint(args: &[Variant]) -> LibResult<Variant> {
     let value = conv_i64(need(args, 0)?)?;
-    let narrowed = i16::try_from(value).map_err(|_| LibError::overflow("value does not fit in Integer"))?;
+    let narrowed =
+        i16::try_from(value).map_err(|_| LibError::overflow("value does not fit in Integer"))?;
     Ok(Variant::from_i16(narrowed))
 }
 /// `CLng` — to `Long` (banker's rounding, range −2^31..2^31−1).
 pub fn clng(args: &[Variant]) -> LibResult<Variant> {
     let value = conv_i64(need(args, 0)?)?;
-    let narrowed = i32::try_from(value).map_err(|_| LibError::overflow("value does not fit in Long"))?;
+    let narrowed =
+        i32::try_from(value).map_err(|_| LibError::overflow("value does not fit in Long"))?;
     Ok(vi32(narrowed))
 }
 /// `CLngLng` / `CLngPtr` (on the 64-bit runtime) — to `LongLong` (banker's rounding).
@@ -725,7 +779,8 @@ pub fn clnglng(args: &[Variant]) -> LibResult<Variant> {
 /// `CByte` — to `Byte` (banker's rounding, range 0..255).
 pub fn cbyte(args: &[Variant]) -> LibResult<Variant> {
     let value = conv_i64(need(args, 0)?)?;
-    let narrowed = u8::try_from(value).map_err(|_| LibError::overflow("value does not fit in Byte"))?;
+    let narrowed =
+        u8::try_from(value).map_err(|_| LibError::overflow("value does not fit in Byte"))?;
     Ok(Variant::from_u8(narrowed))
 }
 /// `CBool` — to `Boolean` (0 → False, any non-zero → True; `"True"`/`"False"` too).
@@ -830,7 +885,11 @@ fn cashflows(v: &Variant) -> LibResult<Vec<f64>> {
 }
 
 pub fn fv(args: &[Variant]) -> LibResult<Variant> {
-    let (i, n, pmt) = (as_f64(need(args, 0)?)?, as_f64(need(args, 1)?)?, as_f64(need(args, 2)?)?);
+    let (i, n, pmt) = (
+        as_f64(need(args, 0)?)?,
+        as_f64(need(args, 1)?)?,
+        as_f64(need(args, 2)?)?,
+    );
     let pv = opt_f64(args, 3, 0.0)?;
     let t = opt_f64(args, 4, 0.0)?;
     Ok(vf64(if i == 0.0 {
@@ -842,7 +901,11 @@ pub fn fv(args: &[Variant]) -> LibResult<Variant> {
 }
 
 pub fn pv(args: &[Variant]) -> LibResult<Variant> {
-    let (i, n, pmt) = (as_f64(need(args, 0)?)?, as_f64(need(args, 1)?)?, as_f64(need(args, 2)?)?);
+    let (i, n, pmt) = (
+        as_f64(need(args, 0)?)?,
+        as_f64(need(args, 1)?)?,
+        as_f64(need(args, 2)?)?,
+    );
     let fv = opt_f64(args, 3, 0.0)?;
     let t = opt_f64(args, 4, 0.0)?;
     Ok(vf64(if i == 0.0 {
@@ -854,7 +917,11 @@ pub fn pv(args: &[Variant]) -> LibResult<Variant> {
 }
 
 pub fn pmt(args: &[Variant]) -> LibResult<Variant> {
-    let (i, n, pv) = (as_f64(need(args, 0)?)?, as_f64(need(args, 1)?)?, as_f64(need(args, 2)?)?);
+    let (i, n, pv) = (
+        as_f64(need(args, 0)?)?,
+        as_f64(need(args, 1)?)?,
+        as_f64(need(args, 2)?)?,
+    );
     let fv = opt_f64(args, 3, 0.0)?;
     let t = opt_f64(args, 4, 0.0)?;
     Ok(vf64(if i == 0.0 {
@@ -866,7 +933,11 @@ pub fn pmt(args: &[Variant]) -> LibResult<Variant> {
 }
 
 pub fn nper(args: &[Variant]) -> LibResult<Variant> {
-    let (i, pmt, pv) = (as_f64(need(args, 0)?)?, as_f64(need(args, 1)?)?, as_f64(need(args, 2)?)?);
+    let (i, pmt, pv) = (
+        as_f64(need(args, 0)?)?,
+        as_f64(need(args, 1)?)?,
+        as_f64(need(args, 2)?)?,
+    );
     let fv = opt_f64(args, 3, 0.0)?;
     let t = opt_f64(args, 4, 0.0)?;
     Ok(vf64(if i == 0.0 {
@@ -947,7 +1018,9 @@ pub fn mirr(args: &[Variant]) -> LibResult<Variant> {
         .map(|(k, cf)| cf * (1.0 + reinvest).powi(n - 1 - k as i32))
         .sum();
     if neg == 0.0 || n <= 1 {
-        return Err(LibError::invalid_call("MIRR requires positive and negative flows"));
+        return Err(LibError::invalid_call(
+            "MIRR requires positive and negative flows",
+        ));
     }
     Ok(vf64((-pos / neg).powf(1.0 / (n as f64 - 1.0)) - 1.0))
 }
@@ -964,7 +1037,8 @@ fn rate_func(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64) -> f64 {
 fn rate_func_derivative(r: f64, nper: f64, pmt: f64, pv: f64, due: f64) -> f64 {
     if r.abs() < 1e-8 {
         let step = 1e-7;
-        (rate_func(r + step, nper, pmt, pv, 0.0, due) - rate_func(r - step, nper, pmt, pv, 0.0, due))
+        (rate_func(r + step, nper, pmt, pv, 0.0, due)
+            - rate_func(r - step, nper, pmt, pv, 0.0, due))
             / (2.0 * step)
     } else {
         let base = 1.0 + r;
@@ -986,7 +1060,11 @@ pub fn rate(args: &[Variant]) -> LibResult<Variant> {
     let pmt = as_f64(need(args, 1)?)?;
     let pv = as_f64(need(args, 2)?)?;
     let fv = opt_f64(args, 3, 0.0)?;
-    let due = if opt_f64(args, 4, 0.0)? != 0.0 { 1.0 } else { 0.0 };
+    let due = if opt_f64(args, 4, 0.0)? != 0.0 {
+        1.0
+    } else {
+        0.0
+    };
     if nper == 0.0 {
         return Err(LibError::invalid_call("Rate requires nper <> 0"));
     }
@@ -1043,7 +1121,9 @@ pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
 }
 
 pub fn is_numeric(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vbool(oxvba_runtime::coerce::coerce_to(need(args, 0)?, VarType::Double).is_ok()))
+    Ok(vbool(
+        oxvba_runtime::coerce::coerce_to(need(args, 0)?, VarType::Double).is_ok(),
+    ))
 }
 
 pub fn is_date(args: &[Variant]) -> LibResult<Variant> {
@@ -1079,7 +1159,10 @@ pub fn choose(args: &[Variant]) -> LibResult<Variant> {
     if idx < 1 {
         return Ok(Variant::null());
     }
-    Ok(args.get(idx as usize).cloned().unwrap_or_else(Variant::null))
+    Ok(args
+        .get(idx as usize)
+        .cloned()
+        .unwrap_or_else(Variant::null))
 }
 
 /// `Switch(c1, v1, c2, v2, …)` — returns the first `vi` whose `ci` is truthy,
@@ -1160,11 +1243,17 @@ mod tests {
     fn instr_start_and_compare() {
         assert_eq!(instr_(&[vs("hello world"), vs("o")], false), 5);
         // Leading numeric `start` = 6 → first 'o' at or after position 6.
-        assert_eq!(instr_(&[Variant::from_i32(6), vs("hello world"), vs("o")], false), 8);
+        assert_eq!(
+            instr_(&[Variant::from_i32(6), vs("hello world"), vs("o")], false),
+            8
+        );
         // InStrRev finds the last 'o'.
         assert_eq!(instr_(&[vs("hello world"), vs("o")], true), 8);
         // Text compare (mode 1): case-insensitive.
-        assert_eq!(instr_(&[vs("ABC"), vs("b"), Variant::from_i32(1)], false), 2);
+        assert_eq!(
+            instr_(&[vs("ABC"), vs("b"), Variant::from_i32(1)], false),
+            2
+        );
         // Binary compare (default): no match for differing case.
         assert_eq!(instr_(&[vs("ABC"), vs("b")], false), 0);
     }

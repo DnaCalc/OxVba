@@ -18,7 +18,9 @@ pub struct HostProvider {
 
 impl HostProvider {
     pub fn new(blobs: Vec<TypeLibMetadataBlob>) -> Self {
-        Self { blobs: blobs.into_iter().map(ComTypeLibProvider::new).collect() }
+        Self {
+            blobs: blobs.into_iter().map(ComTypeLibProvider::new).collect(),
+        }
     }
 }
 
@@ -33,6 +35,8 @@ impl Provider for HostProvider {
         name: &str,
         want: Option<ProjectMemberKind>,
     ) -> Option<Binding> {
-        self.blobs.iter().find_map(|blob| blob.resolve_member(recv, name, want))
+        self.blobs
+            .iter()
+            .find_map(|blob| blob.resolve_member(recv, name, want))
     }
 }

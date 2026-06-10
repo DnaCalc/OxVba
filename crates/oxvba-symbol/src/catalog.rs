@@ -31,10 +31,18 @@ pub struct IntrinsicEntry {
 }
 
 const fn sig(min: u8, max: u8) -> IntrinsicSig {
-    IntrinsicSig { min_args: min, max_args: Some(max), param_array: false }
+    IntrinsicSig {
+        min_args: min,
+        max_args: Some(max),
+        param_array: false,
+    }
 }
 const fn variadic(min: u8) -> IntrinsicSig {
-    IntrinsicSig { min_args: min, max_args: None, param_array: true }
+    IntrinsicSig {
+        min_args: min,
+        max_args: None,
+        param_array: true,
+    }
 }
 const fn e(
     id: NativeImplId,
@@ -42,7 +50,12 @@ const fn e(
     sig: IntrinsicSig,
     call_shape: CallShape,
 ) -> IntrinsicEntry {
-    IntrinsicEntry { id, names, sig, call_shape }
+    IntrinsicEntry {
+        id,
+        names,
+        sig,
+        call_shape,
+    }
 }
 
 /// Total classification of every intrinsic. No wildcard arm — exhaustiveness is
@@ -220,21 +233,136 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
 pub const ALL_INTRINSICS: &[NativeImplId] = {
     use NativeImplId::*;
     &[
-        Len, Left, Right, Mid, MidStmt, InStr, InStrRev, LCase, UCase, Split, Join, Replace, Trim,
-        LTrim, RTrim, StrComp, Like, Chr, Asc, Space, StringRepeat, StrReverse, StrConv, Format,
-        Abs, Int, Fix, Sgn, Round, Sqr, Sin, Cos, Log, Exp, Atn, Tan, DateSerial, TimeSerial,
-        DateValue, TimeValue, DateAdd, DateDiff, Year, Month, Day, Weekday, MonthName, DateNow,
-        TimeNow, Now, Timer, Hex, Oct, CStr, Str, Val, CDate, CVErr, CBool, CByte, CInt, CLng,
-        CLngLng, CLngPtr, CSng, CDbl, CCur, CVar, Rnd, Randomize, Fv, Pv, Pmt,
-        Npv, Irr, Mirr, Rate, NPer, IsArray, VarType, TypeName, IsNumeric, IsError, IsDate,
-        IsObject, IsNull, IsEmpty, IIf, Choose, Switch, CollectionAdd, CollectionItem,
-        CollectionRemove, CollectionCount,
-        FreeFile, FileOpen, FileClose, FileKill, FileRead, FileWrite, FilePrint, ConsolePrint,
-        FileInput, ConsoleInput, FileLineInput, ConsoleLineInput, FileEof, FileLof, FileSeek,
-        FileLoc, FilePut, FileGetInto, FileWidth, FileRename, FileLock, FileUnlock,
-        MsgBox, InputBox, Beep, DoEvents, Shell, Environ, Dir, CreateObject,
-        ComSubscribeEvent, ComUnsubscribeEvent, ComEventCallbackSubscription, ComEventCallbackArg,
-        ComReleaseEventCallback, DebugPrint,
+        Len,
+        Left,
+        Right,
+        Mid,
+        MidStmt,
+        InStr,
+        InStrRev,
+        LCase,
+        UCase,
+        Split,
+        Join,
+        Replace,
+        Trim,
+        LTrim,
+        RTrim,
+        StrComp,
+        Like,
+        Chr,
+        Asc,
+        Space,
+        StringRepeat,
+        StrReverse,
+        StrConv,
+        Format,
+        Abs,
+        Int,
+        Fix,
+        Sgn,
+        Round,
+        Sqr,
+        Sin,
+        Cos,
+        Log,
+        Exp,
+        Atn,
+        Tan,
+        DateSerial,
+        TimeSerial,
+        DateValue,
+        TimeValue,
+        DateAdd,
+        DateDiff,
+        Year,
+        Month,
+        Day,
+        Weekday,
+        MonthName,
+        DateNow,
+        TimeNow,
+        Now,
+        Timer,
+        Hex,
+        Oct,
+        CStr,
+        Str,
+        Val,
+        CDate,
+        CVErr,
+        CBool,
+        CByte,
+        CInt,
+        CLng,
+        CLngLng,
+        CLngPtr,
+        CSng,
+        CDbl,
+        CCur,
+        CVar,
+        Rnd,
+        Randomize,
+        Fv,
+        Pv,
+        Pmt,
+        Npv,
+        Irr,
+        Mirr,
+        Rate,
+        NPer,
+        IsArray,
+        VarType,
+        TypeName,
+        IsNumeric,
+        IsError,
+        IsDate,
+        IsObject,
+        IsNull,
+        IsEmpty,
+        IIf,
+        Choose,
+        Switch,
+        CollectionAdd,
+        CollectionItem,
+        CollectionRemove,
+        CollectionCount,
+        FreeFile,
+        FileOpen,
+        FileClose,
+        FileKill,
+        FileRead,
+        FileWrite,
+        FilePrint,
+        ConsolePrint,
+        FileInput,
+        ConsoleInput,
+        FileLineInput,
+        ConsoleLineInput,
+        FileEof,
+        FileLof,
+        FileSeek,
+        FileLoc,
+        FilePut,
+        FileGetInto,
+        FileWidth,
+        FileRename,
+        FileLock,
+        FileUnlock,
+        MsgBox,
+        InputBox,
+        Beep,
+        DoEvents,
+        Shell,
+        Environ,
+        Dir,
+        CreateObject,
+        ComSubscribeEvent,
+        ComUnsubscribeEvent,
+        ComEventCallbackSubscription,
+        ComEventCallbackArg,
+        ComReleaseEventCallback,
+        DebugPrint,
     ]
 };
 
@@ -269,10 +397,25 @@ mod tests {
 
     #[test]
     fn quirky_call_shapes_are_classified() {
-        assert_eq!(intrinsic_entry(NativeImplId::MidStmt).call_shape, CallShape::AssignmentTarget);
-        assert_eq!(intrinsic_entry(NativeImplId::FileOpen).call_shape, CallShape::FileStatement);
-        assert_eq!(intrinsic_entry(NativeImplId::FilePrint).call_shape, CallShape::FileStatement);
-        assert_eq!(intrinsic_entry(NativeImplId::DebugPrint).call_shape, CallShape::DebugMember);
-        assert_eq!(intrinsic_entry(NativeImplId::CreateObject).call_shape, CallShape::SpecialForm);
+        assert_eq!(
+            intrinsic_entry(NativeImplId::MidStmt).call_shape,
+            CallShape::AssignmentTarget
+        );
+        assert_eq!(
+            intrinsic_entry(NativeImplId::FileOpen).call_shape,
+            CallShape::FileStatement
+        );
+        assert_eq!(
+            intrinsic_entry(NativeImplId::FilePrint).call_shape,
+            CallShape::FileStatement
+        );
+        assert_eq!(
+            intrinsic_entry(NativeImplId::DebugPrint).call_shape,
+            CallShape::DebugMember
+        );
+        assert_eq!(
+            intrinsic_entry(NativeImplId::CreateObject).call_shape,
+            CallShape::SpecialForm
+        );
     }
 }

@@ -21,7 +21,11 @@ pub struct Binding {
 
 impl Binding {
     pub fn new(symbol: Option<SymbolId>, route: DispatchRoute) -> Self {
-        Self { symbol, is_default: false, route }
+        Self {
+            symbol,
+            is_default: false,
+            route,
+        }
     }
 }
 

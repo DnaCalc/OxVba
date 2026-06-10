@@ -9,7 +9,10 @@ use oxvba_syntax::{Parse, SyntaxNode};
 use crate::binding::{Binding, DispatchRoute};
 use crate::cond_comp;
 use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
-use crate::model::{ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable};
+use crate::model::{
+    ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
+    SymbolTable,
+};
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::host::HostProvider;
 use crate::providers::project::ProjectProvider;
@@ -17,7 +20,7 @@ use crate::providers::surface_provider::SurfaceProvider;
 use crate::providers::vba_library::VbaLibraryProvider;
 use crate::scanner::{self, ModuleScan};
 use crate::signature::{SignatureTable, VarTypeRef};
-use crate::surface::{synthesize_export_surface, ProjectExportSurface};
+use crate::surface::{ProjectExportSurface, synthesize_export_surface};
 
 /// The context a resolution happens in: the innermost source scope and, for
 /// member access, the receiver's static type.
@@ -29,7 +32,10 @@ pub struct ResolutionContext {
 
 impl ResolutionContext {
     pub fn at(scope: ScopeId) -> Self {
-        Self { scope, receiver: None }
+        Self {
+            scope,
+            receiver: None,
+        }
     }
 }
 
@@ -87,14 +93,20 @@ pub trait Provider {
 /// Resolves a typelib reference to its metadata blob. The default impl uses the
 /// `oxvba-com` catalog; tests pass a fixture impl for determinism.
 pub trait TypeLibResolver {
-    fn resolve(&self, request: &oxvba_com::TypeLibResolveRequest) -> Option<oxvba_com::TypeLibMetadataBlob>;
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob>;
 }
 
 /// The default resolver: drive the real `oxvba-com` typelib catalog.
 pub struct CatalogTypeLibResolver;
 
 impl TypeLibResolver for CatalogTypeLibResolver {
-    fn resolve(&self, request: &oxvba_com::TypeLibResolveRequest) -> Option<oxvba_com::TypeLibMetadataBlob> {
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
         let identity = oxvba_com::resolve_known_typelib_identity(request)?;
         Some(oxvba_com::build_typelib_metadata(&identity))
     }
@@ -169,24 +181,32 @@ impl ResolutionEnvironment {
                 return Some(self.binding_for_symbol(symbol));
             }
         }
-        self.providers.iter().find_map(|provider| provider.resolve(name))
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve(name))
     }
 
     /// The activation ProgID for a creatable COM coclass name (for `New <coclass>`).
     pub fn resolve_coclass(&self, name: &str) -> Option<String> {
-        self.providers.iter().find_map(|provider| provider.resolve_coclass(name))
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve_coclass(name))
     }
 
     /// The `(unit, class)` of a creatable coclass published by a referenced project
     /// (for `New Lib.Widget` / bare `New Widget` → a cross-bundle `NewExtern`).
     pub fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
-        self.providers.iter().find_map(|provider| provider.resolve_extern_coclass(name))
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve_extern_coclass(name))
     }
 
     /// The `(unit, class)` of a `VB_PredeclaredId` class published by a referenced
     /// project (for a bare class-name reference → a cross-bundle `PredeclaredExtern`).
     pub fn resolve_extern_predeclared(&self, name: &str) -> Option<(String, String)> {
-        self.providers.iter().find_map(|provider| provider.resolve_extern_predeclared(name))
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve_extern_predeclared(name))
     }
 
     /// Resolve `recv.name` (member access) against the providers.
@@ -203,13 +223,17 @@ impl ResolutionEnvironment {
 
     /// Resolve a qualified name (`Module.Member` / `Project.Module.Member`).
     pub fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
-        self.providers.iter().find_map(|provider| provider.resolve_qualified(parts))
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve_qualified(parts))
     }
 
     /// Resolve the default member of `recv`'s type (for `obj` used in value
     /// context). COM: the `[id(0)]` member; project: the `VB_UserMemId = 0` member.
     pub fn resolve_default_member(&self, recv: &VarTypeRef) -> Option<Binding> {
-        self.providers.iter().find_map(|provider| provider.resolve_default_member(recv))
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve_default_member(recv))
     }
 
     pub fn push_provider(&mut self, provider: Box<dyn Provider>) {
@@ -258,12 +282,15 @@ impl ResolutionEnvironment {
 
     /// Is `name` (any case) a user-defined `Type`?
     pub fn is_udt(&self, name: &str) -> bool {
-        self.udt_fields.contains_key(&crate::model::fold_identifier(name))
+        self.udt_fields
+            .contains_key(&crate::model::fold_identifier(name))
     }
 
     /// The field count of UDT `name` (for record allocation).
     pub fn udt_field_count(&self, name: &str) -> Option<usize> {
-        self.udt_fields.get(&crate::model::fold_identifier(name)).map(Vec::len)
+        self.udt_fields
+            .get(&crate::model::fold_identifier(name))
+            .map(Vec::len)
     }
 
     /// The (index, type) of field `field` in UDT `name`, for `p.<field>` access.
@@ -274,7 +301,10 @@ impl ResolutionEnvironment {
     ) -> Option<(usize, &crate::signature::VarTypeRef)> {
         let fields = self.udt_fields.get(&crate::model::fold_identifier(name))?;
         let folded = crate::model::fold_identifier(field);
-        fields.iter().enumerate().find_map(|(i, (f, ty))| (*f == folded).then_some((i, ty)))
+        fields
+            .iter()
+            .enumerate()
+            .find_map(|(i, (f, ty))| (*f == folded).then_some((i, ty)))
     }
 
     /// Find a module scope by (case-insensitive) name — convenience for callers
@@ -297,20 +327,24 @@ impl ResolutionEnvironment {
         let route = match &symbol.imp {
             SymbolImpl::Native(native) => DispatchRoute::Native(*native),
             SymbolImpl::Structural(structural) => DispatchRoute::Structural(*structural),
-            SymbolImpl::Declare(declare) => {
-                DispatchRoute::Declare { descriptor_id: declare.descriptor_id }
-            }
+            SymbolImpl::Declare(declare) => DispatchRoute::Declare {
+                descriptor_id: declare.descriptor_id,
+            },
             SymbolImpl::LibraryConst(_) => DispatchRoute::Value,
             // A property resolves (by default, read context) to its Get accessor;
             // the binder selects Let/Set for assignment from the symbol's group.
-            SymbolImpl::Property(_) => DispatchRoute::ProjectMember { kind: ProjectMemberKind::PropertyGet },
+            SymbolImpl::Property(_) => DispatchRoute::ProjectMember {
+                kind: ProjectMemberKind::PropertyGet,
+            },
             SymbolImpl::Signature(_)
             | SymbolImpl::DeclaredType(_)
             | SymbolImpl::None
             | SymbolImpl::ComClass(_)
             | SymbolImpl::Predeclared(_) => match symbol.kind {
                 SymbolKind::Procedure | SymbolKind::Function | SymbolKind::Event => {
-                    DispatchRoute::ProjectMember { kind: ProjectMemberKind::Method }
+                    DispatchRoute::ProjectMember {
+                        kind: ProjectMemberKind::Method,
+                    }
                 }
                 _ => DispatchRoute::Value,
             },
@@ -321,17 +355,22 @@ impl ResolutionEnvironment {
 
 fn request_from(reference: &ProjectReference) -> Option<oxvba_com::TypeLibResolveRequest> {
     match reference {
-        ProjectReference::TypeLibrary { name, guid, version_major, version_minor, lcid, import_lib } => {
-            Some(oxvba_com::TypeLibResolveRequest {
-                reference_name: name.clone(),
-                requested_coclass: None,
-                importlib_hint: import_lib.clone(),
-                libid_hint: guid.clone(),
-                major_version_hint: *version_major,
-                minor_version_hint: *version_minor,
-                lcid_hint: *lcid,
-            })
-        }
+        ProjectReference::TypeLibrary {
+            name,
+            guid,
+            version_major,
+            version_minor,
+            lcid,
+            import_lib,
+        } => Some(oxvba_com::TypeLibResolveRequest {
+            reference_name: name.clone(),
+            requested_coclass: None,
+            importlib_hint: import_lib.clone(),
+            libid_hint: guid.clone(),
+            major_version_hint: *version_major,
+            minor_version_hint: *version_minor,
+            lcid_hint: *lcid,
+        }),
         _ => None,
     }
 }
@@ -348,8 +387,11 @@ pub fn build_resolution_environment(
     let mut symbols = SymbolTable::new();
     let mut signatures = SignatureTable::new();
 
-    let project_scope =
-        symbols.add_scope(ScopeKind::Project, symbols.global_scope(), Some(&manifest.project_name))?;
+    let project_scope = symbols.add_scope(
+        ScopeKind::Project,
+        symbols.global_scope(),
+        Some(&manifest.project_name),
+    )?;
 
     let mut next_descriptor_id: u32 = 0;
     let mut active_scans: Vec<ModuleScan> = Vec::new();
@@ -361,8 +403,8 @@ pub fn build_resolution_environment(
     // the `Parse` so the binder lowers the same tree (no second parse).
     let mut module_csts: Vec<ModuleCst> = Vec::new();
     for module in &manifest.modules {
-        let source = cond_comp::preprocess(&module.source, &active_cc)
-            .map_err(SymbolModelError::Syntax)?;
+        let source =
+            cond_comp::preprocess(&module.source, &active_cc).map_err(SymbolModelError::Syntax)?;
         let parse = oxvba_syntax::parse(&source);
         if !parse.errors().is_empty() {
             return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
@@ -432,11 +474,14 @@ pub fn build_resolution_environment(
     // property), so each surface publishes its folded literal values and the binder
     // reads constant values uniformly via `const_value`. Folded before any surface
     // is synthesized so a cross-project `Const X = Other.Y` resolves.
-    let roots: Vec<(ScopeId, SyntaxNode<'_>)> =
-        module_csts.iter().map(|m| (m.module_scope, m.parse.syntax())).collect();
+    let roots: Vec<(ScopeId, SyntaxNode<'_>)> = module_csts
+        .iter()
+        .map(|m| (m.module_scope, m.parse.syntax()))
+        .collect();
     let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
     // Optional-parameter defaults fold against the closure's const values.
-    let optional_defaults = crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values);
+    let optional_defaults =
+        crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values);
     // UDT field tables, for `Dim p As <Type>` field access + record allocation.
     let udt_roots: Vec<SyntaxNode<'_>> = roots.iter().map(|(_, n)| *n).collect();
     let udt_fields = crate::scanner::collect_udt_fields(&udt_roots);
@@ -486,7 +531,10 @@ pub fn build_resolution_environment(
         {
             com_providers.push(ComTypeLibProvider::new(blob));
         }
-        if let ProjectReference::HostInjected { referenced_project_name } = reference {
+        if let ProjectReference::HostInjected {
+            referenced_project_name,
+        } = reference
+        {
             // A host-injected reference that names a registered typelib contributes
             // the host object model (Application/ThisWorkbook) via the same path.
             let request = oxvba_com::TypeLibResolveRequest {

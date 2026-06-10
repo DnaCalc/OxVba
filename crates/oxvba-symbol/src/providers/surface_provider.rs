@@ -35,12 +35,18 @@ pub struct SurfaceProvider {
 impl SurfaceProvider {
     pub fn new(surface: ProjectExportSurface) -> Self {
         let project_folded = fold_identifier(&surface.project_name);
-        Self { surface, project_folded }
+        Self {
+            surface,
+            project_folded,
+        }
     }
 
     fn type_by_name(&self, name: &str) -> Option<&SurfaceType> {
         let folded = fold_identifier(name);
-        self.surface.types.iter().find(|t| fold_identifier(&t.name) == folded)
+        self.surface
+            .types
+            .iter()
+            .find(|t| fold_identifier(&t.name) == folded)
     }
 
     fn is_coclass(ty: &SurfaceType) -> bool {
@@ -63,7 +69,10 @@ impl SurfaceProvider {
             .filter(bindable)
             .find(|m| fold_identifier(&m.name) == folded && want.is_none_or(|k| k == m.member_kind))
             .or_else(|| {
-                ty.members.iter().filter(bindable).find(|m| fold_identifier(&m.name) == folded)
+                ty.members
+                    .iter()
+                    .filter(bindable)
+                    .find(|m| fold_identifier(&m.name) == folded)
             })
     }
 
@@ -118,7 +127,9 @@ impl SurfaceProvider {
             .iter()
             .find(|c| {
                 fold_identifier(&c.name) == member_folded
-                    && c.enum_name.as_deref().is_some_and(|e| fold_identifier(e) == enum_folded)
+                    && c.enum_name
+                        .as_deref()
+                        .is_some_and(|e| fold_identifier(e) == enum_folded)
             })
             .map(Self::const_binding_of)
     }
@@ -126,7 +137,12 @@ impl SurfaceProvider {
     /// Unqualified resolution: a global-namespace (hidden-module) member, then a
     /// global-namespace constant.
     fn resolve_global(&self, name: &str) -> Option<Binding> {
-        for ty in self.surface.types.iter().filter(|t| t.global_namespace && !Self::is_coclass(t)) {
+        for ty in self
+            .surface
+            .types
+            .iter()
+            .filter(|t| t.global_namespace && !Self::is_coclass(t))
+        {
             if let Some(m) = Self::find_member(ty, name, None) {
                 return Some(self.member_binding(ty, m));
             }
@@ -199,9 +215,9 @@ impl Provider for SurfaceProvider {
         };
         let ty = self.type_by_name(class)?;
         match ty.kind {
-            SurfaceTypeKind::Coclass { creatable: true, .. } => {
-                Some((self.surface.project_name.clone(), ty.name.clone()))
-            }
+            SurfaceTypeKind::Coclass {
+                creatable: true, ..
+            } => Some((self.surface.project_name.clone(), ty.name.clone())),
             _ => None,
         }
     }

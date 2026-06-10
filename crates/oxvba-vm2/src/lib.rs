@@ -75,7 +75,10 @@ struct Fault {
 
 impl Fault {
     fn new(code: i32, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
     fn from_string(message: String) -> Self {
         Fault::new(13, message) // Type mismatch — a bare untyped message
@@ -85,7 +88,10 @@ impl Fault {
         Fault::new(err.code, err.message)
     }
     fn from_lib(err: LibError) -> Self {
-        Fault { code: err.code, message: err.message }
+        Fault {
+            code: err.code,
+            message: err.message,
+        }
     }
     fn from_hal(err: oxvba_hal::HalError) -> Self {
         Fault::new(5, format!("{err:?}"))
@@ -302,18 +308,20 @@ impl<'h> Vm<'h> {
     /// `entry_pc` / `Sub Main` runs). An unknown unit, a missing export, or a
     /// duplicate `unit_name` is a [`LinkError`].
     pub fn link(bundles: &[&'h Bundle], host: &'h dyn HostServices) -> Result<Self, LinkError> {
-        let entry = bundles
-            .len()
-            .checked_sub(1)
-            .ok_or_else(|| LinkError { message: "no bundles to link".into() })?;
-        let mut loaded: Vec<LoadedBundle<'h>> = bundles.iter().map(|b| LoadedBundle::load(b)).collect();
+        let entry = bundles.len().checked_sub(1).ok_or_else(|| LinkError {
+            message: "no bundles to link".into(),
+        })?;
+        let mut loaded: Vec<LoadedBundle<'h>> =
+            bundles.iter().map(|b| LoadedBundle::load(b)).collect();
 
         // Unit name (folded) → bundle id, for import resolution. A duplicate unit
         // name is ambiguous (which one does an import mean?) — reject it.
         let mut by_name: HashMap<String, BundleId> = HashMap::new();
         for (id, b) in bundles.iter().enumerate() {
             if !b.unit_name.is_empty()
-                && by_name.insert(b.unit_name.to_ascii_lowercase(), id).is_some()
+                && by_name
+                    .insert(b.unit_name.to_ascii_lowercase(), id)
+                    .is_some()
             {
                 return Err(LinkError {
                     message: format!("duplicate unit name `{}`", b.unit_name),
@@ -324,14 +332,15 @@ impl<'h> Vm<'h> {
         for (id, b) in bundles.iter().enumerate() {
             let mut resolved = Vec::with_capacity(b.imports.len());
             for imp in &b.imports {
-                let target_bundle = *by_name
-                    .get(&imp.unit.to_ascii_lowercase())
-                    .ok_or_else(|| LinkError {
-                        message: format!(
-                            "bundle `{}` references unknown unit `{}`",
-                            b.unit_name, imp.unit
-                        ),
-                    })?;
+                let target_bundle =
+                    *by_name
+                        .get(&imp.unit.to_ascii_lowercase())
+                        .ok_or_else(|| LinkError {
+                            message: format!(
+                                "bundle `{}` references unknown unit `{}`",
+                                b.unit_name, imp.unit
+                            ),
+                        })?;
                 let export = bundles[target_bundle]
                     .exports
                     .iter()
@@ -342,7 +351,10 @@ impl<'h> Vm<'h> {
                             imp.unit, b.unit_name
                         ),
                     })?;
-                resolved.push(ResolvedImport { bundle: target_bundle, target: export.target });
+                resolved.push(ResolvedImport {
+                    bundle: target_bundle,
+                    target: export.target,
+                });
             }
             loaded[id].imports = resolved;
         }
@@ -406,7 +418,10 @@ impl<'h> Vm<'h> {
             // At a statement boundary, run any `Class_Terminate`s parked by the
             // statement that just completed (VBA statement-granular timing) and
             // dispatch any inbound host (COM) events.
-            if self.bundles[self.cur].statement_start_set.contains(&self.pc) {
+            if self.bundles[self.cur]
+                .statement_start_set
+                .contains(&self.pc)
+            {
                 self.maybe_drain();
                 self.pump_com_events();
             }
@@ -516,7 +531,9 @@ impl<'h> Vm<'h> {
             descriptor,
         );
         let value = Variant::from_object_ref(object);
-        self.bundles[bundle].predeclared_singletons.insert(class_idx, value.clone());
+        self.bundles[bundle]
+            .predeclared_singletons
+            .insert(class_idx, value.clone());
         if let Some(init) = initialize {
             let saved_cur = self.cur;
             self.cur = bundle;
@@ -542,11 +559,19 @@ impl<'h> Vm<'h> {
         let bundle = self.cur_bundle();
         let starts = &bundle.statement_starts;
         if starts.is_empty() {
-            return ResumePoint { start: pc, next: pc + 1 };
+            return ResumePoint {
+                start: pc,
+                next: pc + 1,
+            };
         }
         let idx = match starts.binary_search(&pc) {
             Ok(i) => i,
-            Err(0) => return ResumePoint { start: pc, next: pc + 1 },
+            Err(0) => {
+                return ResumePoint {
+                    start: pc,
+                    next: pc + 1,
+                };
+            }
             Err(i) => i - 1,
         };
         let start = starts[idx];
@@ -620,7 +645,12 @@ impl<'h> Vm<'h> {
         Ok(())
     }
 
-    fn call_proc(&mut self, proc: usize, dst: Option<usize>, args: &[ProcArg]) -> Result<(), Fault> {
+    fn call_proc(
+        &mut self,
+        proc: usize,
+        dst: Option<usize>,
+        args: &[ProcArg],
+    ) -> Result<(), Fault> {
         let desc = self
             .cur_bundle()
             .procedures
@@ -679,7 +709,12 @@ impl<'h> Vm<'h> {
     /// resolved import table) to a `(target_bundle, proc)`, bind args/dst in the
     /// *caller's* bundle, then push a frame that runs in — and returns to — the
     /// target bundle. Mirrors [`Self::call_proc`] but switches `cur`.
-    fn call_extern(&mut self, import: usize, dst: Option<usize>, args: &[ProcArg]) -> Result<(), Fault> {
+    fn call_extern(
+        &mut self,
+        import: usize,
+        dst: Option<usize>,
+        args: &[ProcArg],
+    ) -> Result<(), Fault> {
         let resolved = self.bundles[self.cur]
             .imports
             .get(import)
@@ -693,7 +728,12 @@ impl<'h> Vm<'h> {
             .bundle
             .procedures
             .get(proc)
-            .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc} in unit {target_bundle}")))?;
+            .ok_or_else(|| {
+                Fault::new(
+                    5,
+                    format!("unknown procedure {proc} in unit {target_bundle}"),
+                )
+            })?;
         let (frame_slots, return_slot, entry) = (desc.frame_slots, desc.return_slot, desc.entry_pc);
 
         // Resolve dst + args in the CALLER's bundle (current `cur`) before switching.
@@ -747,7 +787,9 @@ impl<'h> Vm<'h> {
             return Ok(());
         }
         let frame = self.frames.pop().unwrap();
-        let return_value = frame.return_slot.and_then(|rs| frame.locals.get(rs).cloned());
+        let return_value = frame
+            .return_slot
+            .and_then(|rs| frame.locals.get(rs).cloned());
         self.error_mode = frame.saved_error_mode;
         self.resume = frame.saved_resume;
         self.next_pc = frame.return_pc;
@@ -783,9 +825,10 @@ impl<'h> Vm<'h> {
                     .get(bundle_id)
                     .and_then(|lb| lb.bundle.classes.get(route_key as usize))
                     .and_then(|class| class.terminate);
-                if let (Some(proc), Some(object)) =
-                    (terminate, oxvba_runtime::retained_parked_termination_object(instance_id))
-                {
+                if let (Some(proc), Some(object)) = (
+                    terminate,
+                    oxvba_runtime::retained_parked_termination_object(instance_id),
+                ) {
                     // Terminate runs under a fresh error scope in the instance's own
                     // bundle; an unhandled error in it is swallowed (VBA teardown).
                     let saved_cur = self.cur;
@@ -884,7 +927,11 @@ impl<'h> Vm<'h> {
         suppress: bool,
         capture: bool,
     ) -> Result<Variant, Fault> {
-        let byval = values.into_iter().enumerate().map(|(i, v)| (1 + i, v)).collect();
+        let byval = values
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| (1 + i, v))
+            .collect();
         self.run_proc_core(proc, me, byval, HashMap::new(), suppress, capture)
     }
 
@@ -902,8 +949,12 @@ impl<'h> Vm<'h> {
             .procedures
             .get(proc)
             .ok_or_else(|| Fault::new(5, format!("unknown procedure {proc}")))?;
-        let max_local =
-            byval.iter().map(|(l, _)| *l).chain(aliases.keys().copied()).max().unwrap_or(0);
+        let max_local = byval
+            .iter()
+            .map(|(l, _)| *l)
+            .chain(aliases.keys().copied())
+            .max()
+            .unwrap_or(0);
         let frame_slots = desc.frame_slots.max(max_local + 1);
         let (entry, return_slot) = (desc.entry_pc, desc.return_slot);
         let base = self.frames.len();
@@ -946,7 +997,10 @@ impl<'h> Vm<'h> {
 
         let mut result: Result<Variant, Fault> = Ok(Variant::empty());
         while self.frames.len() > base && !self.halted && self.pc < self.cur_bundle().ops.len() {
-            if self.bundles[self.cur].statement_start_set.contains(&self.pc) {
+            if self.bundles[self.cur]
+                .statement_start_set
+                .contains(&self.pc)
+            {
                 self.maybe_drain();
                 self.pump_com_events();
             }
@@ -1000,7 +1054,11 @@ impl<'h> Vm<'h> {
                 .get(&payload.subscription.raw())
                 .map(|sink| (sink.owner.clone(), sink.handler));
             if let Some((owner, handler)) = sink {
-                let arity = self.host.com().event_callback_arity(payload.callback).unwrap_or(0);
+                let arity = self
+                    .host
+                    .com()
+                    .event_callback_arity(payload.callback)
+                    .unwrap_or(0);
                 let mut values = Vec::with_capacity(arity);
                 for index in 0..arity {
                     let value = self
@@ -1011,21 +1069,32 @@ impl<'h> Vm<'h> {
                     values.push(value);
                 }
                 // The handler is a proc in the sink's (owner's) bundle — run it there.
-                let owner_bundle =
-                    owner.as_object_ref().map(|o| o.bundle_id() as usize).unwrap_or(self.cur);
+                let owner_bundle = owner
+                    .as_object_ref()
+                    .map(|o| o.bundle_id() as usize)
+                    .unwrap_or(self.cur);
                 let saved_cur = self.cur;
                 self.cur = owner_bundle;
                 let _ = self.run_proc_with_values(handler, owner, values, true, false);
                 self.cur = saved_cur;
             }
-            let _ = self.host.com().release_event_callback_variant(payload.callback);
+            let _ = self
+                .host
+                .com()
+                .release_event_callback_variant(payload.callback);
         }
         self.pumping = false;
     }
 
     /// Subscribe a WithEvents sink (`owner`) to a COM `source`'s events for the
     /// given binding token, recording each subscription for dispatch + teardown.
-    fn subscribe_com_events(&mut self, key: i64, binding_token: i32, owner: &Variant, source: &ObjectRef) {
+    fn subscribe_com_events(
+        &mut self,
+        key: i64,
+        binding_token: i32,
+        owner: &Variant,
+        source: &ObjectRef,
+    ) {
         let routes: Vec<(i32, usize)> = self
             .cur_bundle()
             .event_routes
@@ -1034,12 +1103,22 @@ impl<'h> Vm<'h> {
             .map(|route| (route.event, route.handler))
             .collect();
         for (event, handler) in routes {
-            if let Ok(subscription) =
-                self.host.com().subscribe_event(source.clone(), ComMemberToken::new(event))
+            if let Ok(subscription) = self
+                .host
+                .com()
+                .subscribe_event(source.clone(), ComMemberToken::new(event))
             {
-                self.com_subscriptions
-                    .insert(subscription.raw(), ComEventSink { owner: owner.clone(), handler });
-                self.com_subscriptions_by_key.entry(key).or_default().push(subscription.raw());
+                self.com_subscriptions.insert(
+                    subscription.raw(),
+                    ComEventSink {
+                        owner: owner.clone(),
+                        handler,
+                    },
+                );
+                self.com_subscriptions_by_key
+                    .entry(key)
+                    .or_default()
+                    .push(subscription.raw());
             }
         }
     }
@@ -1047,7 +1126,10 @@ impl<'h> Vm<'h> {
     fn unsubscribe_com_key(&mut self, key: i64) {
         if let Some(tokens) = self.com_subscriptions_by_key.remove(&key) {
             for raw in tokens {
-                let _ = self.host.com().unsubscribe_event_variant(ComSubscriptionToken::new(raw));
+                let _ = self
+                    .host
+                    .com()
+                    .unsubscribe_event_variant(ComSubscriptionToken::new(raw));
                 self.com_subscriptions.remove(&raw);
             }
         }
@@ -1123,7 +1205,10 @@ impl<'h> Vm<'h> {
                 CallArg::Omitted => (None, None),
                 CallArg::Const(value) => (Some(Variant::from_i32(*value)), None),
             };
-            call_args.push(DynamicCallArg { value: value.map(DynamicValue::from_variant), name });
+            call_args.push(DynamicCallArg {
+                value: value.map(DynamicValue::from_variant),
+                name,
+            });
         }
         let request = DynamicCallRequest {
             object,
@@ -1167,7 +1252,10 @@ impl<'h> Vm<'h> {
         let name = match selector {
             ComMemberSelector::Name(name) => name.clone(),
             ComMemberSelector::DispatchId(_) => {
-                return Err(Fault::new(438, "late-bound dispatch by dispid on a project object"));
+                return Err(Fault::new(
+                    438,
+                    "late-bound dispatch by dispid on a project object",
+                ));
             }
         };
         let proc = self
@@ -1179,8 +1267,7 @@ impl<'h> Vm<'h> {
                     .methods
                     .iter()
                     .find(|m| {
-                        m.name.eq_ignore_ascii_case(&name)
-                            && kind_hint.is_none_or(|k| k == m.kind)
+                        m.name.eq_ignore_ascii_case(&name) && kind_hint.is_none_or(|k| k == m.kind)
                     })
                     .map(|m| m.proc)
             })
@@ -1222,8 +1309,11 @@ impl<'h> Vm<'h> {
             .clone();
         let arg_variants = self.native_args(args)?;
 
-        let param_type_strings: Vec<String> =
-            descriptor.param_types.iter().map(|pt| format!("{pt:?}")).collect();
+        let param_type_strings: Vec<String> = descriptor
+            .param_types
+            .iter()
+            .map(|pt| format!("{pt:?}"))
+            .collect();
         let view = DynLinkDescriptorView {
             descriptor_id: descriptor.descriptor_id,
             declared_name: &descriptor.declared_name,
@@ -1237,7 +1327,10 @@ impl<'h> Vm<'h> {
             param_count: descriptor.param_count,
             param_types: &param_type_strings,
             param_by_ref: &descriptor.param_by_ref,
-            return_type: descriptor.return_type.as_ref().map(|rt| Cow::Owned(format!("{rt:?}"))),
+            return_type: descriptor
+                .return_type
+                .as_ref()
+                .map(|rt| Cow::Owned(format!("{rt:?}"))),
         };
         // Pointer-helper pins this call feeds (the `LongLong`-carried registry
         // addresses of `StrPtr`/`VarPtr` args). A pin's life ends with the call it
@@ -1248,7 +1341,10 @@ impl<'h> Vm<'h> {
         // passed to a `Declare` is not reclaimed here; that degenerate case is the
         // documented residual.)
         let pin_addrs: Vec<i64> = arg_variants.iter().filter_map(Variant::as_i64).collect();
-        let invoke = self.host.dynlink().invoke_descriptor_variants(&view, &arg_variants);
+        let invoke = self
+            .host
+            .dynlink()
+            .invoke_descriptor_variants(&view, &arg_variants);
         // VBA updates `Err.LastDllError` after every `Declare` call (the OS last-error
         // the HAL captured immediately after the native call); non-native lanes report 0.
         self.last_dll_error = self.host.dynlink().last_dll_error();
@@ -1315,7 +1411,10 @@ impl<'h> Vm<'h> {
             // would abort the process (guest code must never crash the VM).
             let span = i64::from(upper) - i64::from(lower) + 1;
             if span > i64::from(u32::MAX) {
-                return Err(Fault::new(7, format!("array dimension too large ({span} elements)")));
+                return Err(Fault::new(
+                    7,
+                    format!("array dimension too large ({span} elements)"),
+                ));
             }
             let count = span as u32;
             bounds.push(SafeArrayBound { count, lower });
@@ -1343,7 +1442,9 @@ impl<'h> Vm<'h> {
     }
 
     fn array_of(&self, slot: usize) -> Result<SafeArray, Fault> {
-        self.get(slot)?.as_safearray().ok_or_else(|| Fault::new(13, "expected an array"))
+        self.get(slot)?
+            .as_safearray()
+            .ok_or_else(|| Fault::new(13, "expected an array"))
     }
 
     // ── WithEvents ───────────────────────────────────────────────────────────
@@ -1364,9 +1465,15 @@ impl<'h> Vm<'h> {
             Op::LoadI32 { slot, value } => self.set(*slot, Variant::from_i32(*value))?,
             Op::LoadI64 { slot, value } => self.set(*slot, Variant::from_i64(*value))?,
             Op::LoadBool { slot, value } => self.set(*slot, Variant::from_bool(*value))?,
-            Op::LoadString { slot, value } => self.set(*slot, Variant::from_string(value.clone()))?,
-            Op::LoadF64 { slot, bits } => self.set(*slot, Variant::from_f64(f64::from_bits(*bits)))?,
-            Op::LoadF32 { slot, bits } => self.set(*slot, Variant::from_f32(f32::from_bits(*bits)))?,
+            Op::LoadString { slot, value } => {
+                self.set(*slot, Variant::from_string(value.clone()))?
+            }
+            Op::LoadF64 { slot, bits } => {
+                self.set(*slot, Variant::from_f64(f64::from_bits(*bits)))?
+            }
+            Op::LoadF32 { slot, bits } => {
+                self.set(*slot, Variant::from_f32(f32::from_bits(*bits)))?
+            }
             Op::LoadCurrency { slot, scaled } => {
                 self.set(*slot, Variant::from_currency_scaled_i64(*scaled))?
             }
@@ -1397,26 +1504,63 @@ impl<'h> Vm<'h> {
             // ── Arithmetic ──
             // The fast-path const/inc ops are loop-counter helpers — the widening regime.
             Op::AddConstI32 { slot, value } => {
-                let v = arith::add(self.get(*slot)?, &Variant::from_i32(*value), NumericMode::Widening)
-                    .map_err(Fault::from_arith)?;
+                let v = arith::add(
+                    self.get(*slot)?,
+                    &Variant::from_i32(*value),
+                    NumericMode::Widening,
+                )
+                .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
             Op::SubConstI32 { slot, value } => {
-                let v = arith::sub(self.get(*slot)?, &Variant::from_i32(*value), NumericMode::Widening)
-                    .map_err(Fault::from_arith)?;
+                let v = arith::sub(
+                    self.get(*slot)?,
+                    &Variant::from_i32(*value),
+                    NumericMode::Widening,
+                )
+                .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
             Op::IncSlot { slot } => {
-                let v = arith::add(self.get(*slot)?, &Variant::from_i32(1), NumericMode::Widening)
-                    .map_err(Fault::from_arith)?;
+                let v = arith::add(
+                    self.get(*slot)?,
+                    &Variant::from_i32(1),
+                    NumericMode::Widening,
+                )
+                .map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
-            Op::Add { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::add(l, r, *mode))?,
-            Op::Sub { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::sub(l, r, *mode))?,
-            Op::Mul { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::mul(l, r, *mode))?,
+            Op::Add {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.binop(*dst, *lhs, *rhs, |l, r| arith::add(l, r, *mode))?,
+            Op::Sub {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.binop(*dst, *lhs, *rhs, |l, r| arith::sub(l, r, *mode))?,
+            Op::Mul {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.binop(*dst, *lhs, *rhs, |l, r| arith::mul(l, r, *mode))?,
             Op::Div { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::div)?,
-            Op::IntDiv { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::int_div(l, r, *mode))?,
-            Op::Mod { dst, lhs, rhs, mode } => self.binop(*dst, *lhs, *rhs, |l, r| arith::modulo(l, r, *mode))?,
+            Op::IntDiv {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.binop(*dst, *lhs, *rhs, |l, r| arith::int_div(l, r, *mode))?,
+            Op::Mod {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.binop(*dst, *lhs, *rhs, |l, r| arith::modulo(l, r, *mode))?,
             Op::Pow { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::pow)?,
             Op::Concat { dst, lhs, rhs } => self.binop(*dst, *lhs, *rhs, arith::concat)?,
             Op::Neg { dst, src, mode } => {
@@ -1430,25 +1574,67 @@ impl<'h> Vm<'h> {
 
             // ── Coercion ──
             Op::CoerceNumeric { slot, target } => {
-                let v = arith::coerce_numeric(self.get(*slot)?, *target)
-                    .map_err(Fault::from_arith)?;
+                let v =
+                    arith::coerce_numeric(self.get(*slot)?, *target).map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
             Op::CoerceFixedString { slot, len } => {
                 let v = arith::coerce_fixed_string(self.get(*slot)?, *len);
                 self.set(*slot, v)?;
             }
-            Op::ValidateAssignment { src, intent, target_kind, target_name, target_type_name } => {
-                self.validate_assignment(*src, *intent, *target_kind, target_name, target_type_name)?;
+            Op::ValidateAssignment {
+                src,
+                intent,
+                target_kind,
+                target_name,
+                target_type_name,
+            } => {
+                self.validate_assignment(
+                    *src,
+                    *intent,
+                    *target_kind,
+                    target_name,
+                    target_type_name,
+                )?;
             }
 
             // ── Comparison ──
-            Op::CmpEq { dst, lhs, rhs, mode } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Eq)?,
-            Op::CmpNe { dst, lhs, rhs, mode } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Ne)?,
-            Op::CmpLt { dst, lhs, rhs, mode } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Lt)?,
-            Op::CmpLe { dst, lhs, rhs, mode } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Le)?,
-            Op::CmpGt { dst, lhs, rhs, mode } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Gt)?,
-            Op::CmpGe { dst, lhs, rhs, mode } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Ge)?,
+            Op::CmpEq {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Eq)?,
+            Op::CmpNe {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Ne)?,
+            Op::CmpLt {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Lt)?,
+            Op::CmpLe {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Le)?,
+            Op::CmpGt {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Gt)?,
+            Op::CmpGe {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => self.cmp(*dst, *lhs, *rhs, *mode, CmpOp::Ge)?,
             Op::CmpObjectIs { dst, lhs, rhs } => {
                 let a = object_identity(self.get(*lhs)?);
                 let b = object_identity(self.get(*rhs)?);
@@ -1468,7 +1654,10 @@ impl<'h> Vm<'h> {
 
             // ── Control flow ──
             Op::Jump { target_pc } => self.next_pc = *target_pc,
-            Op::JumpIfZero { cond_slot, target_pc } => {
+            Op::JumpIfZero {
+                cond_slot,
+                target_pc,
+            } => {
                 if !arith::is_truthy(self.get(*cond_slot)?).map_err(Fault::from_arith)? {
                     self.next_pc = *target_pc;
                 }
@@ -1492,18 +1681,27 @@ impl<'h> Vm<'h> {
                         oxvba_lib::invoke(*id, &argv, self.host, &mut self.lib)
                             .map_err(Fault::from_lib)?
                     }
-                    NativeCallee::ComDispatch { selector, kind_hint, .. } => {
-                        self.com_dispatch(selector, *kind_hint, args)?
-                    }
-                    NativeCallee::Declare { descriptor_id, ptr_writebacks } => {
-                        self.declare_call(*descriptor_id, args, ptr_writebacks)?
-                    }
+                    NativeCallee::ComDispatch {
+                        selector,
+                        kind_hint,
+                        ..
+                    } => self.com_dispatch(selector, *kind_hint, args)?,
+                    NativeCallee::Declare {
+                        descriptor_id,
+                        ptr_writebacks,
+                    } => self.declare_call(*descriptor_id, args, ptr_writebacks)?,
                 };
                 if let Some(dst) = dst {
                     self.set(*dst, value)?;
                 }
             }
-            Op::CallByName { dst, object, name, calltype, args } => {
+            Op::CallByName {
+                dst,
+                object,
+                name,
+                calltype,
+                args,
+            } => {
                 let obj = variant_to_object(self.get(*object)?)?;
                 let member_name = arith::as_string(self.get(*name)?);
                 let ct = arith::int(self.get(*calltype)?).map_err(Fault::from_arith)?;
@@ -1537,9 +1735,14 @@ impl<'h> Vm<'h> {
 
             // ── Arrays / aggregates ──
             Op::ArrayLiteral { dst, values } => {
-                let elems =
-                    values.iter().map(|s| self.cloned(*s)).collect::<Result<Vec<_>, _>>()?;
-                self.set(*dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
+                let elems = values
+                    .iter()
+                    .map(|s| self.cloned(*s))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.set(
+                    *dst,
+                    Variant::from_safearray(SafeArray::from_variants(elems)),
+                )?;
             }
             Op::ArrayAppend { dst, array, item } => {
                 let mut elems = match self.get(*array)?.as_safearray() {
@@ -1547,19 +1750,33 @@ impl<'h> Vm<'h> {
                     None => Vec::new(),
                 };
                 elems.push(self.cloned(*item)?);
-                self.set(*dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
+                self.set(
+                    *dst,
+                    Variant::from_safearray(SafeArray::from_variants(elems)),
+                )?;
             }
-            Op::ArrayResize { dst, upper_bounds, lower_bounds, .. } => {
+            Op::ArrayResize {
+                dst,
+                upper_bounds,
+                lower_bounds,
+                ..
+            } => {
                 let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
                 let count: usize = bounds.iter().map(|b| b.count as usize).product();
                 // `from_shape` alone leaves a null payload (no element storage); a
                 // freshly `ReDim`-ed array must hold `count` Empty elements so a
                 // following `ArraySet`/`ArrayGet` lands in range.
-                let array = SafeArray::from_shape_and_variants(bounds, vec![Variant::empty(); count])
-                    .map_err(Fault::from_string)?;
+                let array =
+                    SafeArray::from_shape_and_variants(bounds, vec![Variant::empty(); count])
+                        .map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(array))?;
             }
-            Op::ArrayResizePreserve { dst, upper_bounds, lower_bounds, .. } => {
+            Op::ArrayResizePreserve {
+                dst,
+                upper_bounds,
+                lower_bounds,
+                ..
+            } => {
                 let old = self
                     .get(*dst)?
                     .as_safearray()
@@ -1577,9 +1794,15 @@ impl<'h> Vm<'h> {
                     .map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(array))?;
             }
-            Op::ArrayGet { dst, array, indices } => {
+            Op::ArrayGet {
+                dst,
+                array,
+                indices,
+            } => {
                 let arr = self.array_of(*array)?;
-                let bounds = arr.bounds().ok_or_else(|| Fault::new(9, "array has no bounds"))?;
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
                 let flat = self.flat_index(indices, &bounds)?;
                 let elems = arr.variant_elements().unwrap_or_default();
                 let value = elems
@@ -1588,17 +1811,24 @@ impl<'h> Vm<'h> {
                     .ok_or_else(|| Fault::new(9, "subscript out of range"))?;
                 self.set(*dst, value)?;
             }
-            Op::ArraySet { array, indices, src } => {
+            Op::ArraySet {
+                array,
+                indices,
+                src,
+            } => {
                 let arr = self.array_of(*array)?;
-                let bounds = arr.bounds().ok_or_else(|| Fault::new(9, "array has no bounds"))?;
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
                 let flat = self.flat_index(indices, &bounds)?;
                 let mut elems = arr.variant_elements().unwrap_or_default();
                 if flat >= elems.len() {
                     return Err(Fault::new(9, "subscript out of range"));
                 }
                 elems[flat] = self.cloned(*src)?;
-                let updated =
-                    arr.replace_variant_elements(elems).map_err(Fault::from_string)?;
+                let updated = arr
+                    .replace_variant_elements(elems)
+                    .map_err(Fault::from_string)?;
                 self.set(*array, Variant::from_safearray(updated))?;
             }
 
@@ -1634,19 +1864,28 @@ impl<'h> Vm<'h> {
                     return Err(Fault::new(9, "record field out of range"));
                 }
                 elems[*index] = self.cloned(*src)?;
-                let updated = rec.replace_variant_elements(elems).map_err(Fault::from_string)?;
+                let updated = rec
+                    .replace_variant_elements(elems)
+                    .map_err(Fault::from_string)?;
                 self.set(*record, Variant::from_safearray(updated))?;
             }
             Op::LBound { dst, src } => {
                 let arr = self.array_of(*src)?;
-                let bounds = arr.bounds().ok_or_else(|| Fault::new(9, "array has no bounds"))?;
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
                 let lower = bounds.first().map(|b| b.lower).unwrap_or(0);
                 self.set(*dst, Variant::from_i32(lower))?;
             }
             Op::UBound { dst, src } => {
                 let arr = self.array_of(*src)?;
-                let bounds = arr.bounds().ok_or_else(|| Fault::new(9, "array has no bounds"))?;
-                let upper = bounds.first().map(|b| b.lower + b.count as i32 - 1).unwrap_or(-1);
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
+                let upper = bounds
+                    .first()
+                    .map(|b| b.lower + b.count as i32 - 1)
+                    .unwrap_or(-1);
                 self.set(*dst, Variant::from_i32(upper))?;
             }
             Op::ForEachInit { iter, src } => {
@@ -1655,9 +1894,19 @@ impl<'h> Vm<'h> {
                     None => Vec::new(),
                 };
                 let key = self.target(*iter)?;
-                self.for_each.insert(key, ForEachState { elements, position: 0 });
+                self.for_each.insert(
+                    key,
+                    ForEachState {
+                        elements,
+                        position: 0,
+                    },
+                );
             }
-            Op::ForEachNext { iter, item, has_value } => {
+            Op::ForEachNext {
+                iter,
+                item,
+                has_value,
+            } => {
                 let key = self.target(*iter)?;
                 let next = self.for_each.get_mut(&key).and_then(|state| {
                     let value = state.elements.get(state.position).cloned();
@@ -1676,7 +1925,11 @@ impl<'h> Vm<'h> {
             }
 
             // ── Objects / WithEvents / type identity ──
-            Op::WithEventsGet { dst, owner, binding } => {
+            Op::WithEventsGet {
+                dst,
+                owner,
+                binding,
+            } => {
                 let key = self.withevents_lookup_key(*owner, *binding)?;
                 let value = self
                     .withevents
@@ -1685,7 +1938,12 @@ impl<'h> Vm<'h> {
                     .unwrap_or_else(|| Variant::from_i32(0));
                 self.set(*dst, value)?;
             }
-            Op::WithEventsSet { dst, owner, binding, value } => {
+            Op::WithEventsSet {
+                dst,
+                owner,
+                binding,
+                value,
+            } => {
                 let owner_value = self.cloned(*owner)?;
                 let owner_ref = variant_to_object(&owner_value)?;
                 let binding_tok = arith::int(self.get(*binding)?).map_err(Fault::from_arith)?;
@@ -1704,8 +1962,13 @@ impl<'h> Vm<'h> {
                     {
                         self.subscribe_com_events(key, binding_tok as i32, &owner_value, &source);
                     }
-                    self.withevents
-                        .insert(key, EventBinding { owner: owner_value, source: v.clone() });
+                    self.withevents.insert(
+                        key,
+                        EventBinding {
+                            owner: owner_value,
+                            source: v.clone(),
+                        },
+                    );
                 }
                 self.set(*dst, v)?;
             }
@@ -1716,7 +1979,11 @@ impl<'h> Vm<'h> {
                     .retain(|key, _| Self::withevents_owner(*key).raw() != owner_ref.raw());
                 self.set(*dst, Variant::from_i32(0))?;
             }
-            Op::WithEventsFirstOwner { dst, source, binding } => {
+            Op::WithEventsFirstOwner {
+                dst,
+                source,
+                binding,
+            } => {
                 let source = self.cloned(*source)?;
                 let binding = arith::int(self.get(*binding)?).map_err(Fault::from_arith)?;
                 let mut owners: Vec<ObjectRef> = Vec::new();
@@ -1755,7 +2022,11 @@ impl<'h> Vm<'h> {
                     }
                 }
             }
-            Op::TypeOfIs { dst, object_slot, type_name } => {
+            Op::TypeOfIs {
+                dst,
+                object_slot,
+                type_name,
+            } => {
                 let matches = self.type_of_is(*object_slot, type_name)?;
                 self.set(*dst, Variant::from_bool(matches))?;
             }
@@ -1853,14 +2124,19 @@ impl<'h> Vm<'h> {
                     .copied()
                     .ok_or_else(|| Fault::new(5, format!("unresolved import {import}")))?;
                 let ExportTarget::Class(class_idx) = resolved.target else {
-                    return Err(Fault::new(5, "cross-bundle predeclared reference is not a class"));
+                    return Err(Fault::new(
+                        5,
+                        "cross-bundle predeclared reference is not a class",
+                    ));
                 };
                 let value = self.predeclared_instance(resolved.bundle, class_idx)?;
                 self.set(*dst, value)?;
             }
             Op::FieldGet { dst, object, field } => {
                 let instance = variant_to_object(self.get(*object)?)?;
-                let value = instance.project_field_get(*field).unwrap_or_else(Variant::empty);
+                let value = instance
+                    .project_field_get(*field)
+                    .unwrap_or_else(Variant::empty);
                 self.set(*dst, value)?;
             }
             Op::FieldSet { object, field, src } => {
@@ -1868,7 +2144,11 @@ impl<'h> Vm<'h> {
                 let instance = variant_to_object(self.get(*object)?)?;
                 instance.project_field_set(*field, value);
             }
-            Op::RaiseEvent { source, event, args } => {
+            Op::RaiseEvent {
+                source,
+                event,
+                args,
+            } => {
                 let source_id = object_identity(&self.cloned(*source)?);
                 let event_id = *event;
                 // Collect subscribers (sink Me + handler + sink bundle) whose binding
@@ -1981,9 +2261,9 @@ impl<'h> Vm<'h> {
             Intent::Set if !is_object => {
                 Err(Fault::new(424, format!("Object required: {target_name}")))
             }
-            Intent::Let if target_kind == Kind::Object && value.vtype() == VarType::Object => {
-                Err(Fault::new(91, format!("Object variable requires Set: {target_name}")))
-            }
+            Intent::Let if target_kind == Kind::Object && value.vtype() == VarType::Object => Err(
+                Fault::new(91, format!("Object variable requires Set: {target_name}")),
+            ),
             // Strict `Set` type check (error 13): when the target's declared type is
             // a known project class/interface, a project-instance source must be
             // that class or implement that interface. Unconstrained targets
@@ -1994,19 +2274,27 @@ impl<'h> Vm<'h> {
                 // Both the target type and the source's class are resolved in the
                 // source object's **own** bundle, against the bare target name (a
                 // referenced type may be `Lib.Widget`) — unambiguous in a DAG.
-                let bare_target = target_type_name.rsplit('.').next().unwrap_or(target_type_name);
+                let bare_target = target_type_name
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(target_type_name);
                 if obj.is_project_instance()
                     && let Some(lb) = self.bundles.get(obj.bundle_id() as usize)
                 {
                     let target_is_project = lb.bundle.classes.iter().any(|c| {
                         c.name.eq_ignore_ascii_case(bare_target)
-                            || c.implements.iter().any(|i| i.eq_ignore_ascii_case(bare_target))
+                            || c.implements
+                                .iter()
+                                .any(|i| i.eq_ignore_ascii_case(bare_target))
                     });
                     if target_is_project
                         && let Some(class) = lb.bundle.classes.get(obj.route_key() as usize)
                     {
                         let compatible = class.name.eq_ignore_ascii_case(bare_target)
-                            || class.implements.iter().any(|i| i.eq_ignore_ascii_case(bare_target));
+                            || class
+                                .implements
+                                .iter()
+                                .any(|i| i.eq_ignore_ascii_case(bare_target));
                         if !compatible {
                             return Err(Fault::new(
                                 13,
@@ -2045,7 +2333,10 @@ impl<'h> Vm<'h> {
                 .and_then(|lb| lb.bundle.classes.get(object.route_key() as usize))
                 .is_some_and(|class| {
                     class.name.eq_ignore_ascii_case(bare)
-                        || class.implements.iter().any(|i| i.eq_ignore_ascii_case(bare))
+                        || class
+                            .implements
+                            .iter()
+                            .any(|i| i.eq_ignore_ascii_case(bare))
                 }));
         }
         match self.host.com().describe_object(object) {

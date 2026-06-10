@@ -379,7 +379,8 @@ impl DynamicLinkHal for StandardHostServices {
     }
 
     fn last_dll_error(&self) -> i32 {
-        self.last_dll_error.load(std::sync::atomic::Ordering::Relaxed)
+        self.last_dll_error
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

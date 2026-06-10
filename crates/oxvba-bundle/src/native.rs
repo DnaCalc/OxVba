@@ -199,8 +199,8 @@ impl NativeImplId {
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
             | Day | Weekday | MonthName | DateNow | TimeNow | Now | Timer => M::DateTime,
-            Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng | CLngLng
-            | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
+            Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
+            | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
             Rnd | Randomize => M::Random,
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
@@ -210,9 +210,19 @@ impl NativeImplId {
             | ConsolePrint | FileInput | ConsoleInput | FileLineInput | ConsoleLineInput
             | FileEof | FileLof | FileSeek | FileLoc | FilePut | FileGetInto | FileWidth
             | FileRename | FileLock | FileUnlock => M::FileIo,
-            MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir | CreateObject
-            | ComSubscribeEvent | ComUnsubscribeEvent | ComEventCallbackSubscription
-            | ComEventCallbackArg | ComReleaseEventCallback => M::Interaction,
+            MsgBox
+            | InputBox
+            | Beep
+            | DoEvents
+            | Shell
+            | Environ
+            | Dir
+            | CreateObject
+            | ComSubscribeEvent
+            | ComUnsubscribeEvent
+            | ComEventCallbackSubscription
+            | ComEventCallbackArg
+            | ComReleaseEventCallback => M::Interaction,
             DebugPrint => M::Diagnostics,
         }
     }

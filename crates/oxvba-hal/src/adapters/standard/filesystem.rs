@@ -48,17 +48,28 @@ fn serialize_record(value: &Variant, mode: i32, fixed: bool) -> Vec<u8> {
     match value.vtype() {
         VarType::Byte => vec![value.as_u8().unwrap_or(0)],
         VarType::Integer => value.as_i16().unwrap_or(0).to_le_bytes().to_vec(),
-        VarType::Boolean => {
-            (if value.as_bool().unwrap_or(false) { -1i16 } else { 0 }).to_le_bytes().to_vec()
-        }
+        VarType::Boolean => (if value.as_bool().unwrap_or(false) {
+            -1i16
+        } else {
+            0
+        })
+        .to_le_bytes()
+        .to_vec(),
         VarType::Long => value.as_i32().unwrap_or(0).to_le_bytes().to_vec(),
         VarType::Single => value.as_f32().unwrap_or(0.0).to_le_bytes().to_vec(),
         VarType::Double => value.as_f64().unwrap_or(0.0).to_le_bytes().to_vec(),
-        VarType::Currency => value.as_currency_scaled_i64().unwrap_or(0).to_le_bytes().to_vec(),
+        VarType::Currency => value
+            .as_currency_scaled_i64()
+            .unwrap_or(0)
+            .to_le_bytes()
+            .to_vec(),
         VarType::Date => value.as_date_f64().unwrap_or(0.0).to_le_bytes().to_vec(),
         VarType::LongLong => value.as_i64().unwrap_or(0).to_le_bytes().to_vec(),
         VarType::String => {
-            let s = value.as_bstr().map(|b| b.as_str().to_string()).unwrap_or_default();
+            let s = value
+                .as_bstr()
+                .map(|b| b.as_str().to_string())
+                .unwrap_or_default();
             let ansi = oxvba_com::ansi::ansi_encode(&s);
             if !fixed && mode == MODE_RANDOM {
                 // Variable-length string in a Random record: 2-byte length prefix.
@@ -1026,7 +1037,10 @@ impl FileSystemHal for StandardHostServices {
             Some(self.variant_to_i32(&position, capability, "put", "position")?)
         };
         // A fixed-length-string source writes raw (no length prefix) in any mode.
-        let fixed = self.variant_to_i32(&fixed, capability, "put", "fixed").unwrap_or(0) != 0;
+        let fixed = self
+            .variant_to_i32(&fixed, capability, "put", "fixed")
+            .unwrap_or(0)
+            != 0;
         let mut state = self.fs_lock(capability, "put")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "put")?;
         let mode = entry.mode;
@@ -1034,8 +1048,11 @@ impl FileSystemHal for StandardHostServices {
         // Random mode positions by fixed-width record slot (`(rec-1)*stride`),
         // padding the slot; Binary mode positions by byte offset.
         let (offset, slot) = if mode == MODE_RANDOM {
-            let stride =
-                if entry.record_len > 0 { entry.record_len as usize } else { bytes.len() };
+            let stride = if entry.record_len > 0 {
+                entry.record_len as usize
+            } else {
+                bytes.len()
+            };
             if entry.record_len > 0 && bytes.len() > stride {
                 return Err(HalError::adapter_fault(
                     self.profile,
@@ -1091,7 +1108,9 @@ impl FileSystemHal for StandardHostServices {
         // that many bytes (no prefix, any mode); <= 0 = a variable string, where
         // `-str_len` is the target's current Len (used for a Binary read; Random
         // uses the on-disk 2-byte length prefix).
-        let str_len = self.variant_to_i32(&str_len, capability, "get", "str_len").unwrap_or(0);
+        let str_len = self
+            .variant_to_i32(&str_len, capability, "get", "str_len")
+            .unwrap_or(0);
         let mut state = self.fs_lock(capability, "get")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "get")?;
         let mode = entry.mode;
@@ -1125,14 +1144,28 @@ impl FileSystemHal for StandardHostServices {
             (Some(size), _) => {
                 let (s, e) = at(offset, size);
                 let v = deserialize_record(vt, &entry.data[s..e]);
-                (v, if mode == MODE_RANDOM && stride > 0 { stride } else { size })
+                (
+                    v,
+                    if mode == MODE_RANDOM && stride > 0 {
+                        stride
+                    } else {
+                        size
+                    },
+                )
             }
             (None, VarType::String) if str_len > 0 => {
                 // Fixed-length string: exactly `str_len` ANSI bytes, no prefix.
                 let n = str_len as usize;
                 let (s, e) = at(offset, n);
                 let v = deserialize_record(VarType::String, &entry.data[s..e]);
-                (v, if mode == MODE_RANDOM && stride > 0 { stride } else { n })
+                (
+                    v,
+                    if mode == MODE_RANDOM && stride > 0 {
+                        stride
+                    } else {
+                        n
+                    },
+                )
             }
             (None, VarType::String) if mode == MODE_RANDOM => {
                 // Variable-length string in a Random record: 2-byte length prefix.
@@ -1192,7 +1225,11 @@ impl FileSystemHal for StandardHostServices {
                     self.profile,
                     capability,
                     "name",
-                    format!("failed to rename {} -> {}: {err}", old.display(), new.display()),
+                    format!(
+                        "failed to rename {} -> {}: {err}",
+                        old.display(),
+                        new.display()
+                    ),
                 )
             })?;
         }
@@ -1209,7 +1246,11 @@ impl FileSystemHal for StandardHostServices {
         let mut state = self.fs_lock(capability, "lock")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "lock")?;
         // Re-locking an already-locked range is VBA error 70 (permission denied).
-        if entry.locks.iter().any(|&(s, e)| range.0 <= e && s <= range.1) {
+        if entry
+            .locks
+            .iter()
+            .any(|&(s, e)| range.0 <= e && s <= range.1)
+        {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -1393,7 +1434,10 @@ mod record_io_tests {
     fn long_serializes_little_endian_and_round_trips() {
         let bytes = serialize_record(&Variant::from_i32(0x1234_5678), MODE_RANDOM, false);
         assert_eq!(bytes, vec![0x78, 0x56, 0x34, 0x12]);
-        assert_eq!(deserialize_record(VarType::Long, &bytes).as_i32(), Some(0x1234_5678));
+        assert_eq!(
+            deserialize_record(VarType::Long, &bytes).as_i32(),
+            Some(0x1234_5678)
+        );
     }
 
     #[test]
@@ -1412,7 +1456,10 @@ mod record_io_tests {
         assert_eq!(deserialize_record(VarType::Double, &d).as_f64(), Some(3.5));
         let b = serialize_record(&Variant::from_bool(true), MODE_RANDOM, false);
         assert_eq!(b, vec![0xFF, 0xFF]);
-        assert_eq!(deserialize_record(VarType::Boolean, &b).as_bool(), Some(true));
+        assert_eq!(
+            deserialize_record(VarType::Boolean, &b).as_bool(),
+            Some(true)
+        );
     }
 
     #[test]
@@ -1420,9 +1467,18 @@ mod record_io_tests {
         // Variable string, Random: 2-byte ANSI length prefix + ANSI bytes.
         let r = serialize_record(&Variant::from_string("Hi"), MODE_RANDOM, false);
         assert_eq!(r, vec![0x02, 0x00, b'H', b'i']);
-        assert_eq!(deserialize_record(VarType::String, &r[2..]).as_bstr().unwrap().as_str(), "Hi");
+        assert_eq!(
+            deserialize_record(VarType::String, &r[2..])
+                .as_bstr()
+                .unwrap()
+                .as_str(),
+            "Hi"
+        );
         // Variable string, Binary: raw ANSI, no length prefix.
-        assert_eq!(serialize_record(&Variant::from_string("Hi"), MODE_BINARY, false), vec![b'H', b'i']);
+        assert_eq!(
+            serialize_record(&Variant::from_string("Hi"), MODE_BINARY, false),
+            vec![b'H', b'i']
+        );
         // Fixed-length string (already padded to N): raw ANSI, no prefix, even in Random.
         let f = serialize_record(&Variant::from_string("ab  "), MODE_RANDOM, true);
         assert_eq!(f, vec![b'a', b'b', b' ', b' ']);

@@ -6,7 +6,7 @@
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_com::TypeLibMetadataBlob;
 
-use crate::binding::{member_kind_from_invoke, Binding, DispatchRoute};
+use crate::binding::{Binding, DispatchRoute, member_kind_from_invoke};
 use crate::model::fold_identifier;
 use crate::provider::Provider;
 use crate::signature::VarTypeRef;
@@ -61,7 +61,12 @@ impl Provider for ComTypeLibProvider {
             return Some(com_member_binding(member));
         }
 
-        if let Some(event) = self.blob.events.iter().find(|event| event.name.eq_ignore_ascii_case(name)) {
+        if let Some(event) = self
+            .blob
+            .events
+            .iter()
+            .find(|event| event.name.eq_ignore_ascii_case(name))
+        {
             return Some(Binding::new(
                 None,
                 DispatchRoute::ComEvent {
@@ -112,7 +117,11 @@ fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata) -> Binding {
             invoke_kind: member.invoke_kind,
             member_kind: member_kind_from_invoke(member.invoke_kind),
             is_default_member: member.is_default_member,
-            param_by_ref: member.parameter_types.iter().map(|t| t.is_by_ref()).collect(),
+            param_by_ref: member
+                .parameter_types
+                .iter()
+                .map(|t| t.is_by_ref())
+                .collect(),
         },
     }
 }

@@ -41,7 +41,10 @@ fn me() -> CoreValue {
     CoreValue::Load(CorePlace::Local(LocalId(0)))
 }
 fn field(object: CoreValue, token: i32) -> CorePlace {
-    CorePlace::Field { object: Box::new(object), field: token }
+    CorePlace::Field {
+        object: Box::new(object),
+        field: token,
+    }
 }
 fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
     CoreValue::Binary {
@@ -53,13 +56,25 @@ fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
     }
 }
 fn param(name: &str) -> CoreParam {
-    CoreParam { name: name.into(), by_ref: false, variadic: false }
+    CoreParam {
+        name: name.into(),
+        by_ref: false,
+        variadic: false,
+    }
 }
 fn local(name: &str) -> CoreLocal {
-    CoreLocal { name: name.into(), array_element: None }
+    CoreLocal {
+        name: name.into(),
+        array_element: None,
+    }
 }
 
-fn assign(place: CorePlace, value: CoreValue, intent: AssignmentIntent, target_kind: AssignmentTargetKind) -> CoreStmt {
+fn assign(
+    place: CorePlace,
+    value: CoreValue,
+    intent: AssignmentIntent,
+    target_kind: AssignmentTargetKind,
+) -> CoreStmt {
     CoreStmt::Assign {
         place,
         value,
@@ -70,35 +85,75 @@ fn assign(place: CorePlace, value: CoreValue, intent: AssignmentIntent, target_k
     }
 }
 fn let_local(slot: usize, value: CoreValue) -> CoreStmt {
-    assign(CorePlace::Local(LocalId(slot)), value, AssignmentIntent::Let, AssignmentTargetKind::Variant)
+    assign(
+        CorePlace::Local(LocalId(slot)),
+        value,
+        AssignmentIntent::Let,
+        AssignmentTargetKind::Variant,
+    )
 }
 fn set_local(slot: usize, value: CoreValue) -> CoreStmt {
-    assign(CorePlace::Local(LocalId(slot)), value, AssignmentIntent::Set, AssignmentTargetKind::Object)
+    assign(
+        CorePlace::Local(LocalId(slot)),
+        value,
+        AssignmentIntent::Set,
+        AssignmentTargetKind::Object,
+    )
 }
 
 /// A by-name object dispatch (`receiver.<name>(args)`), receiver passed as arg0.
-fn late_call(name: &str, kind: ProjectMemberKind, mut method_args: Vec<CoreArg>, receiver: CoreValue) -> CoreValue {
+fn late_call(
+    name: &str,
+    kind: ProjectMemberKind,
+    mut method_args: Vec<CoreArg>,
+    receiver: CoreValue,
+) -> CoreValue {
     let mut args = vec![CoreArg::ByVal(receiver)];
     args.append(&mut method_args);
-    CoreValue::Call { callee: CoreCallee::LateDispatch { name: name.into(), kind: Some(kind) }, args }
+    CoreValue::Call {
+        callee: CoreCallee::LateDispatch {
+            name: name.into(),
+            kind: Some(kind),
+        },
+        args,
+    }
 }
 
-fn class(name: &str, initialize: Option<usize>, terminate: Option<usize>, methods: Vec<(&str, ProjectMemberKind, usize)>) -> CoreClass {
+fn class(
+    name: &str,
+    initialize: Option<usize>,
+    terminate: Option<usize>,
+    methods: Vec<(&str, ProjectMemberKind, usize)>,
+) -> CoreClass {
     CoreClass {
         name: name.into(),
         initialize: initialize.map(ProcId),
         terminate: terminate.map(ProcId),
         methods: methods
             .into_iter()
-            .map(|(n, kind, p)| CoreClassMethod { name: n.into(), kind, proc: ProcId(p) })
+            .map(|(n, kind, p)| CoreClassMethod {
+                name: n.into(),
+                kind,
+                proc: ProcId(p),
+            })
             .collect(),
         implements: Vec::new(),
     }
 }
 
-fn program(globals: usize, procs: Vec<CoreProc>, classes: Vec<CoreClass>, event_routes: Vec<EventRoute>) -> CoreProgram {
+fn program(
+    globals: usize,
+    procs: Vec<CoreProc>,
+    classes: Vec<CoreClass>,
+    event_routes: Vec<EventRoute>,
+) -> CoreProgram {
     CoreProgram {
-        globals: (0..globals).map(|i| CoreGlobal { name: format!("g{i}"), array_element: None }).collect(),
+        globals: (0..globals)
+            .map(|i| CoreGlobal {
+                name: format!("g{i}"),
+                array_element: None,
+            })
+            .collect(),
         procs,
         classes,
         event_routes,
@@ -139,7 +194,10 @@ fn new_runs_initialize_then_method_reads_field() {
         return_local: None,
         body: vec![
             set_local(1, CoreValue::New(ClassId(0))),
-            let_local(0, late_call("Get", ProjectMemberKind::Method, vec![], local_load(1))),
+            let_local(
+                0,
+                late_call("Get", ProjectMemberKind::Method, vec![], local_load(1)),
+            ),
         ],
     };
     let init = CoreProc {
@@ -148,7 +206,12 @@ fn new_runs_initialize_then_method_reads_field() {
         params: vec![param("Me")], // Me = synthetic param 0
         locals: vec![],
         return_local: None,
-        body: vec![assign(field(me(), 0), ci(42), AssignmentIntent::Let, AssignmentTargetKind::Variant)],
+        body: vec![assign(
+            field(me(), 0),
+            ci(42),
+            AssignmentIntent::Let,
+            AssignmentTargetKind::Variant,
+        )],
     };
     let get = CoreProc {
         name: "Get".into(),
@@ -161,7 +224,12 @@ fn new_runs_initialize_then_method_reads_field() {
     let p = program(
         0,
         vec![main, init, get],
-        vec![class("C", Some(1), None, vec![("Get", ProjectMemberKind::Method, 2)])],
+        vec![class(
+            "C",
+            Some(1),
+            None,
+            vec![("Get", ProjectMemberKind::Method, 2)],
+        )],
         Vec::new(),
     );
     assert_eq!(first_local_i32(&p), Some(42));
@@ -178,7 +246,15 @@ fn late_method_dispatch_with_argument() {
         return_local: None,
         body: vec![
             set_local(1, CoreValue::New(ClassId(0))),
-            let_local(0, late_call("Inc", ProjectMemberKind::Method, vec![CoreArg::ByVal(ci(41))], local_load(1))),
+            let_local(
+                0,
+                late_call(
+                    "Inc",
+                    ProjectMemberKind::Method,
+                    vec![CoreArg::ByVal(ci(41))],
+                    local_load(1),
+                ),
+            ),
         ],
     };
     let inc = CoreProc {
@@ -189,7 +265,17 @@ fn late_method_dispatch_with_argument() {
         return_local: Some(LocalId(2)),
         body: vec![let_local(2, bin(CoreBinOp::Add, local_load(1), ci(1)))],
     };
-    let p = program(0, vec![main, inc], vec![class("C", None, None, vec![("Inc", ProjectMemberKind::Method, 1)])], Vec::new());
+    let p = program(
+        0,
+        vec![main, inc],
+        vec![class(
+            "C",
+            None,
+            None,
+            vec![("Inc", ProjectMemberKind::Method, 1)],
+        )],
+        Vec::new(),
+    );
     assert_eq!(first_local_i32(&p), Some(42));
 }
 
@@ -228,7 +314,17 @@ fn project_method_byref_mutates_caller() {
             AssignmentTargetKind::Variant,
         )],
     };
-    let p = program(0, vec![main, inc], vec![class("C", None, None, vec![("Inc", ProjectMemberKind::Method, 1)])], Vec::new());
+    let p = program(
+        0,
+        vec![main, inc],
+        vec![class(
+            "C",
+            None,
+            None,
+            vec![("Inc", ProjectMemberKind::Method, 1)],
+        )],
+        Vec::new(),
+    );
     assert_eq!(first_local_i32(&p), Some(105));
 }
 
@@ -246,7 +342,10 @@ fn set_of_nonobject_into_object_target_faults() {
     let p = program(0, vec![main], Vec::new(), Vec::new());
     let bundle = linearize(&p).expect("linearize");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    assert!(oxvba_vm2::run(&bundle, &host).is_err(), "Set of a non-object must fault");
+    assert!(
+        oxvba_vm2::run(&bundle, &host).is_err(),
+        "Set of a non-object must fault"
+    );
 }
 
 #[test]
@@ -267,12 +366,20 @@ fn withevents_raise_event_reaches_handler() {
                 // A non-trivial binding token (100): with the pre-fix linearize bug
                 // it would be passed as *slot* 100, so the stored token would not be
                 // 100 and the route lookup would miss — this test would then fail.
-                CorePlace::WithEvents { owner: Box::new(local_load(0)), binding: 100 },
+                CorePlace::WithEvents {
+                    owner: Box::new(local_load(0)),
+                    binding: 100,
+                },
                 local_load(1),
                 AssignmentIntent::Set,
                 AssignmentTargetKind::Object,
             ),
-            CoreStmt::Eval(late_call("DoFire", ProjectMemberKind::Method, vec![], local_load(1))),
+            CoreStmt::Eval(late_call(
+                "DoFire",
+                ProjectMemberKind::Method,
+                vec![],
+                local_load(1),
+            )),
         ],
     };
     let handler = CoreProc {
@@ -294,16 +401,33 @@ fn withevents_raise_event_reaches_handler() {
         params: vec![param("Me")],
         locals: vec![],
         return_local: None,
-        body: vec![CoreStmt::RaiseEvent { source: me(), event: 0, args: vec![CoreArg::ByVal(ci(42))] }],
+        body: vec![CoreStmt::RaiseEvent {
+            source: me(),
+            event: 0,
+            args: vec![CoreArg::ByVal(ci(42))],
+        }],
     };
     let p = program(
         1, // global 0 = the flag the handler writes
         vec![main, handler, do_fire],
         vec![
             class("Snk", None, None, Vec::new()),
-            class("Src", None, None, vec![("DoFire", ProjectMemberKind::Method, 2)]),
+            class(
+                "Src",
+                None,
+                None,
+                vec![("DoFire", ProjectMemberKind::Method, 2)],
+            ),
         ],
-        vec![EventRoute { binding: 100, event: 0, handler: 1 }],
+        vec![EventRoute {
+            binding: 100,
+            event: 0,
+            handler: 1,
+        }],
     );
-    assert_eq!(global0_i32(&p), Some(42), "the event handler ran with the event arg");
+    assert_eq!(
+        global0_i32(&p),
+        Some(42),
+        "the event handler ran with the event arg"
+    );
 }

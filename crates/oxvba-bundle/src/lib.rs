@@ -296,7 +296,11 @@ pub struct Bundle {
 pub enum ExportToken {
     /// A hidden-module / free function (a `TKIND_MODULE` member): the owning
     /// module, the member name, and its accessor kind. Matched case-insensitively.
-    ModuleFunc { module: String, member: String, kind: ProjectMemberKind },
+    ModuleFunc {
+        module: String,
+        member: String,
+        kind: ProjectMemberKind,
+    },
     /// A public coclass, by name. Matched case-insensitively.
     Class { name: String },
 }
@@ -306,8 +310,16 @@ impl ExportToken {
     pub fn matches(&self, other: &ExportToken) -> bool {
         match (self, other) {
             (
-                ExportToken::ModuleFunc { module: m1, member: n1, kind: k1 },
-                ExportToken::ModuleFunc { module: m2, member: n2, kind: k2 },
+                ExportToken::ModuleFunc {
+                    module: m1,
+                    member: n1,
+                    kind: k1,
+                },
+                ExportToken::ModuleFunc {
+                    module: m2,
+                    member: n2,
+                    kind: k2,
+                },
             ) => k1 == k2 && m1.eq_ignore_ascii_case(m2) && n1.eq_ignore_ascii_case(n2),
             (ExportToken::Class { name: a }, ExportToken::Class { name: b }) => {
                 a.eq_ignore_ascii_case(b)

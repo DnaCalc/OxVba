@@ -301,9 +301,8 @@ pub fn utf16_from_ansi(bytes: &[u8]) -> Vec<u16> {
         return Vec::new();
     }
     let len = i32::try_from(bytes.len()).unwrap_or(i32::MAX);
-    let required = unsafe {
-        MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0)
-    };
+    let required =
+        unsafe { MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
     if required <= 0 {
         // Degenerate conversion failure: fall back to a Latin-1 widening so the
         // caller still gets a string of the right length.

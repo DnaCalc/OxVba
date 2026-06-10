@@ -2558,7 +2558,10 @@ impl<'a> Parser<'a> {
         while j < self.tokens.len() && self.tokens[j].0.is_trivia() {
             j += 1;
         }
-        self.tokens.get(j).map(|(k, _)| *k).unwrap_or(SyntaxKind::Eof)
+        self.tokens
+            .get(j)
+            .map(|(k, _)| *k)
+            .unwrap_or(SyntaxKind::Eof)
     }
 
     fn peek_next_non_trivia_is(&self, target: SyntaxKind) -> bool {
@@ -2777,23 +2780,36 @@ mod tests {
 
     #[test]
     fn structures_dim_declarators() {
-        let p = parse_ok(&in_sub("Dim a As Long, b(1 To 10) As String, c As New Widget"));
-        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(), 3);
+        let p = parse_ok(&in_sub(
+            "Dim a As Long, b(1 To 10) As String, c As New Widget",
+        ));
+        assert_eq!(
+            collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(),
+            3
+        );
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ArrayBounds));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::Bound));
     }
 
     #[test]
     fn structures_withevents_and_fixed_string_dim() {
-        let p = parse_ok(&in_sub("Dim WithEvents src As Widget\nDim buf As String * 20"));
-        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(), 2);
+        let p = parse_ok(&in_sub(
+            "Dim WithEvents src As Widget\nDim buf As String * 20",
+        ));
+        assert_eq!(
+            collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(),
+            2
+        );
     }
 
     #[test]
     fn structures_const_declarators() {
         let p = parse_ok("Public Const PI As Double = 3.14, N = 5\n");
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ConstStmt));
-        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(), 2);
+        assert_eq!(
+            collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(),
+            2
+        );
     }
 
     #[test]
@@ -2830,8 +2846,14 @@ mod tests {
 
     #[test]
     fn structures_option_and_attribute_and_implements() {
-        assert!(has_node_kind(&parse_ok("Option Base 1\n").syntax(), SyntaxKind::OptionStmt));
-        assert!(has_node_kind(&parse_ok("Option Compare Text\n").syntax(), SyntaxKind::OptionStmt));
+        assert!(has_node_kind(
+            &parse_ok("Option Base 1\n").syntax(),
+            SyntaxKind::OptionStmt
+        ));
+        assert!(has_node_kind(
+            &parse_ok("Option Compare Text\n").syntax(),
+            SyntaxKind::OptionStmt
+        ));
         let attr = parse_ok("Attribute VB_Name = \"Mod1\"\n");
         assert!(has_node_kind(&attr.syntax(), SyntaxKind::AttributeStmt));
         assert!(has_node_kind(&attr.syntax(), SyntaxKind::LiteralExpr));
@@ -2866,7 +2888,9 @@ mod tests {
 
     #[test]
     fn structures_file_open_close() {
-        let p = parse_ok(&in_sub("Open \"data.txt\" For Input As #1\nClose #1\nReset"));
+        let p = parse_ok(&in_sub(
+            "Open \"data.txt\" For Input As #1\nClose #1\nReset",
+        ));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::OpenStmt));
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::CloseStmt).len(), 2); // Close + Reset
         assert!(has_node_kind(&p.syntax(), SyntaxKind::FileNumber));
@@ -2907,8 +2931,14 @@ mod tests {
     #[test]
     fn file_io_contextual_keywords_disambiguate() {
         // Statement form → file statement.
-        assert!(has_node_kind(&parse_ok(&in_sub("Put #1, , d")).syntax(), SyntaxKind::PutStmt));
-        assert!(has_node_kind(&parse_ok(&in_sub("Width #1, 80")).syntax(), SyntaxKind::WidthStmt));
+        assert!(has_node_kind(
+            &parse_ok(&in_sub("Put #1, , d")).syntax(),
+            SyntaxKind::PutStmt
+        ));
+        assert!(has_node_kind(
+            &parse_ok(&in_sub("Width #1, 80")).syntax(),
+            SyntaxKind::WidthStmt
+        ));
         // Identifier form → assignment / expression, NOT a file statement.
         let assign = parse_ok(&in_sub("Width = 80"));
         assert!(!has_node_kind(&assign.syntax(), SyntaxKind::WidthStmt));
@@ -3471,7 +3501,9 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
         assert!(
-            binaries.iter().any(|s| s.contains("TypeOf obj Is Lib.IShape")),
+            binaries
+                .iter()
+                .any(|s| s.contains("TypeOf obj Is Lib.IShape")),
             "expected a TypeOf … Is with a dotted type, got {:?}",
             binaries
         );

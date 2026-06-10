@@ -128,7 +128,10 @@ impl<'a> SyntaxNode<'a> {
     /// `BracketedIdent` or a keyword used as a name (`Function Name()`), so the
     /// scanner and the binder agree on exactly which decls are named procedures.
     pub fn proc_name_token(&self) -> Option<SyntaxToken<'a>> {
-        let mut toks = self.child_tokens().into_iter().filter(|t| !t.kind.is_trivia());
+        let mut toks = self
+            .child_tokens()
+            .into_iter()
+            .filter(|t| !t.kind.is_trivia());
         let mut decl_kw = None;
         for t in toks.by_ref() {
             if matches!(
@@ -143,7 +146,10 @@ impl<'a> SyntaxNode<'a> {
         let mut next = toks.next();
         if decl_kw == Some(SyntaxKind::KwProperty)
             && let Some(t) = next
-            && matches!(t.kind, SyntaxKind::KwGet | SyntaxKind::KwLet | SyntaxKind::KwSet)
+            && matches!(
+                t.kind,
+                SyntaxKind::KwGet | SyntaxKind::KwLet | SyntaxKind::KwSet
+            )
         {
             next = toks.next();
         }
@@ -302,12 +308,17 @@ impl<'a> SyntaxNode<'a> {
     /// First non-trivia direct child token (e.g. the operator of a Binary/Unary
     /// expression, or the name token of an `IdentExpr`).
     pub fn first_significant_token(&self) -> Option<SyntaxToken<'a>> {
-        self.child_tokens().into_iter().find(|t| !t.kind.is_trivia())
+        self.child_tokens()
+            .into_iter()
+            .find(|t| !t.kind.is_trivia())
     }
 
     /// All expression child nodes, in source order.
     pub fn expr_children(&self) -> Vec<SyntaxNode<'a>> {
-        self.child_nodes().into_iter().filter(|n| n.kind().is_expr()).collect()
+        self.child_nodes()
+            .into_iter()
+            .filter(|n| n.kind().is_expr())
+            .collect()
     }
 
     /// The first expression child node, if any (e.g. a statement's condition,
@@ -333,7 +344,9 @@ impl<'a> SyntaxNode<'a> {
     }
     /// True if this `BinaryExpr` is the `TypeOf <expr> Is <type>` form.
     pub fn is_typeof(&self) -> bool {
-        self.first_significant_token().map(|t| t.kind == SyntaxKind::KwTypeOf).unwrap_or(false)
+        self.first_significant_token()
+            .map(|t| t.kind == SyntaxKind::KwTypeOf)
+            .unwrap_or(false)
     }
     /// `TypeOf <operand> Is …` — the tested operand (first expression child).
     pub fn typeof_operand(&self) -> Option<SyntaxNode<'a>> {
@@ -360,7 +373,9 @@ impl<'a> SyntaxNode<'a> {
     }
     /// True if this `MemberExpr` is `obj ! name` (bang access) rather than `obj . name`.
     pub fn member_is_bang(&self) -> bool {
-        self.child_tokens().iter().any(|t| t.kind == SyntaxKind::Bang)
+        self.child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::Bang)
     }
     /// True if this is a leading-dot member (`.Value`) with no explicit receiver
     /// (resolves against the enclosing `With`).
@@ -376,7 +391,9 @@ impl<'a> SyntaxNode<'a> {
 
     /// `IndexExpr` base (the indexed expression, before the `(`).
     pub fn index_base(&self) -> Option<SyntaxNode<'a>> {
-        self.child_nodes().into_iter().find(|n| n.kind() != SyntaxKind::ArgList)
+        self.child_nodes()
+            .into_iter()
+            .find(|n| n.kind() != SyntaxKind::ArgList)
     }
     /// `IndexExpr` argument list.
     pub fn index_arg_list(&self) -> Option<SyntaxNode<'a>> {
@@ -389,11 +406,15 @@ impl<'a> SyntaxNode<'a> {
     }
     /// True if this `IdentExpr` is the `Me` keyword.
     pub fn ident_is_me(&self) -> bool {
-        self.first_significant_token().map(|t| t.kind == SyntaxKind::KwMe).unwrap_or(false)
+        self.first_significant_token()
+            .map(|t| t.kind == SyntaxKind::KwMe)
+            .unwrap_or(false)
     }
     /// The `TypeSuffix` token on an `IdentExpr`/`MemberExpr`, if present (`x%`, `s$`).
     pub fn type_suffix_token(&self) -> Option<SyntaxToken<'a>> {
-        self.child_tokens().into_iter().find(|t| t.kind == SyntaxKind::TypeSuffix)
+        self.child_tokens()
+            .into_iter()
+            .find(|t| t.kind == SyntaxKind::TypeSuffix)
     }
 
     /// `LiteralExpr` value token (skips a leading `#` for a `#n` file-number literal).
@@ -415,7 +436,10 @@ impl<'a> SyntaxNode<'a> {
             match t.kind {
                 SyntaxKind::KwNew | SyntaxKind::Dot => {}
                 k if k.is_trivia() => {}
-                k if k == SyntaxKind::Ident || k == SyntaxKind::BracketedIdent || k.is_keyword() => {
+                k if k == SyntaxKind::Ident
+                    || k == SyntaxKind::BracketedIdent
+                    || k.is_keyword() =>
+                {
                     parts.push(t.text)
                 }
                 _ => {}
@@ -457,14 +481,18 @@ impl<'a> SyntaxNode<'a> {
                     _ => None,
                 });
                 let named = seg.iter().any(|e| e.kind() == SyntaxKind::ColonEq);
-                let name = named.then(|| {
-                    seg.iter().find_map(|e| match e {
-                        SyntaxElement::Token(t) if t.kind == SyntaxKind::Ident || t.kind.is_keyword() => {
-                            Some(*t)
-                        }
-                        _ => None,
+                let name = named
+                    .then(|| {
+                        seg.iter().find_map(|e| match e {
+                            SyntaxElement::Token(t)
+                                if t.kind == SyntaxKind::Ident || t.kind.is_keyword() =>
+                            {
+                                Some(*t)
+                            }
+                            _ => None,
+                        })
                     })
-                }).flatten();
+                    .flatten();
                 match (name, value) {
                     (Some(name), Some(value)) => ArgItem::Named { name, value },
                     (None, Some(value)) => ArgItem::Positional(value),
@@ -495,7 +523,9 @@ impl<'a> SyntaxNode<'a> {
 
     /// True if this `ForStmt` is a `For Each` loop.
     pub fn for_is_each(&self) -> bool {
-        self.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwEach)
+        self.child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwEach)
     }
     /// `For` counter variable token (range form; `None` for `For Each`).
     pub fn for_counter_token(&self) -> Option<SyntaxToken<'a>> {
@@ -533,21 +563,32 @@ impl<'a> SyntaxNode<'a> {
 
     /// `DoStmt` pre-test condition (`Do While`/`Do Until …`), if any.
     pub fn do_pre_cond(&self) -> Option<SyntaxNode<'a>> {
-        let block = self.body_block().map(|b| b.text_range().0).unwrap_or(u32::MAX);
-        self.expr_children().into_iter().find(|e| e.text_range().0 < block)
+        let block = self
+            .body_block()
+            .map(|b| b.text_range().0)
+            .unwrap_or(u32::MAX);
+        self.expr_children()
+            .into_iter()
+            .find(|e| e.text_range().0 < block)
     }
     /// `DoStmt` post-test condition (`Loop While`/`Loop Until …`), if any.
     pub fn do_post_cond(&self) -> Option<SyntaxNode<'a>> {
         let block = self.body_block().map(|b| b.text_range().0)?;
-        self.expr_children().into_iter().find(|e| e.text_range().0 > block)
+        self.expr_children()
+            .into_iter()
+            .find(|e| e.text_range().0 > block)
     }
     /// True if the pre-test keyword is `Until` (vs `While`).
     pub fn do_pre_is_until(&self) -> bool {
-        self.do_loop_keyword(true).map(|t| t.kind == SyntaxKind::KwUntil).unwrap_or(false)
+        self.do_loop_keyword(true)
+            .map(|t| t.kind == SyntaxKind::KwUntil)
+            .unwrap_or(false)
     }
     /// True if the post-test keyword is `Until` (vs `While`).
     pub fn do_post_is_until(&self) -> bool {
-        self.do_loop_keyword(false).map(|t| t.kind == SyntaxKind::KwUntil).unwrap_or(false)
+        self.do_loop_keyword(false)
+            .map(|t| t.kind == SyntaxKind::KwUntil)
+            .unwrap_or(false)
     }
     fn do_loop_keyword(&self, before_block: bool) -> Option<SyntaxToken<'a>> {
         let block = self.body_block().map(|b| b.text_range().0);
@@ -576,13 +617,22 @@ impl<'a> SyntaxNode<'a> {
     }
     /// The selectors of a `CaseClause` (`Case Else`, `Case Is <op> e`, value, `lo To hi`).
     pub fn case_specs(&self) -> Vec<CaseSpec<'a>> {
-        if self.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwElse) {
+        if self
+            .child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwElse)
+        {
             return vec![CaseSpec::Else];
         }
-        if let Some(is_tok) = self.child_tokens().into_iter().find(|t| t.kind == SyntaxKind::KwIs) {
-            let op = self.child_tokens().into_iter().find(|t| {
-                t.offset > is_tok.offset && is_comparison_op(t.kind)
-            });
+        if let Some(is_tok) = self
+            .child_tokens()
+            .into_iter()
+            .find(|t| t.kind == SyntaxKind::KwIs)
+        {
+            let op = self
+                .child_tokens()
+                .into_iter()
+                .find(|t| t.offset > is_tok.offset && is_comparison_op(t.kind));
             let value = self.expr_children().into_iter().next();
             return match (op, value) {
                 (Some(op), Some(value)) => vec![CaseSpec::Is { op, value }],
@@ -590,7 +640,10 @@ impl<'a> SyntaxNode<'a> {
                 _ => Vec::new(),
             };
         }
-        let block = self.body_block().map(|b| b.text_range().0).unwrap_or(u32::MAX);
+        let block = self
+            .body_block()
+            .map(|b| b.text_range().0)
+            .unwrap_or(u32::MAX);
         let mut specs = Vec::new();
         let mut pending: Option<SyntaxNode<'a>> = None;
         let mut expecting_hi = false;
@@ -642,7 +695,10 @@ impl<'a> SyntaxNode<'a> {
 
     /// `RaiseEventStmt` event name token (the identifier after `RaiseEvent`).
     pub fn raise_event_name_token(&self) -> Option<SyntaxToken<'a>> {
-        let mut toks = self.child_tokens().into_iter().filter(|t| !t.kind.is_trivia());
+        let mut toks = self
+            .child_tokens()
+            .into_iter()
+            .filter(|t| !t.kind.is_trivia());
         toks.by_ref().find(|t| t.kind == SyntaxKind::KwRaiseEvent)?;
         toks.next().filter(|t| {
             matches!(t.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent) || t.kind.is_keyword()
@@ -672,7 +728,10 @@ pub enum ArgItem<'a> {
     /// A positional argument: the value expression.
     Positional(SyntaxNode<'a>),
     /// A named argument `name := value`.
-    Named { name: SyntaxToken<'a>, value: SyntaxNode<'a> },
+    Named {
+        name: SyntaxToken<'a>,
+        value: SyntaxNode<'a>,
+    },
     /// An omitted slot (`f(a, , c)`).
     Omitted,
 }
@@ -685,9 +744,15 @@ pub enum CaseSpec<'a> {
     /// A single value (`Case 3`).
     Value(SyntaxNode<'a>),
     /// An inclusive range (`Case 1 To 9`).
-    Range { lo: SyntaxNode<'a>, hi: SyntaxNode<'a> },
+    Range {
+        lo: SyntaxNode<'a>,
+        hi: SyntaxNode<'a>,
+    },
     /// A comparison (`Case Is >= 5`).
-    Is { op: SyntaxToken<'a>, value: SyntaxNode<'a> },
+    Is {
+        op: SyntaxToken<'a>,
+        value: SyntaxNode<'a>,
+    },
 }
 
 fn collect_text(node: &GreenNode, buf: &mut String) {
@@ -832,7 +897,9 @@ mod tests {
         if node.kind() == kind {
             return Some(node);
         }
-        node.child_nodes().into_iter().find_map(|c| find_kind(c, kind))
+        node.child_nodes()
+            .into_iter()
+            .find_map(|c| find_kind(c, kind))
     }
 
     #[test]
@@ -840,8 +907,14 @@ mod tests {
         let src = "Sub T()\n    RaiseEvent Tick(1)\nEnd Sub\n";
         let p = crate::parser::parse(src);
         let re = find_kind(p.syntax(), SyntaxKind::RaiseEventStmt).expect("RaiseEventStmt");
-        assert_eq!(re.raise_event_name_token().expect("event name").text, "Tick");
-        assert!(re.raise_event_arg_list().is_some(), "expected an ArgList for Tick(1)");
+        assert_eq!(
+            re.raise_event_name_token().expect("event name").text,
+            "Tick"
+        );
+        assert!(
+            re.raise_event_arg_list().is_some(),
+            "expected an ArgList for Tick(1)"
+        );
     }
 
     #[test]
@@ -909,8 +982,14 @@ mod tests {
         let p = crate::parser::parse(&in_sub("x = TypeOf obj Is Worksheet\n"));
         let b = find_first(p.syntax(), SyntaxKind::BinaryExpr).expect("typeof");
         assert!(b.is_typeof());
-        assert_eq!(b.typeof_operand().unwrap().ident_name_token().unwrap().text, "obj");
-        assert_eq!(b.typeof_type().unwrap().ident_name_token().unwrap().text, "Worksheet");
+        assert_eq!(
+            b.typeof_operand().unwrap().ident_name_token().unwrap().text,
+            "obj"
+        );
+        assert_eq!(
+            b.typeof_type().unwrap().ident_name_token().unwrap().text,
+            "Worksheet"
+        );
     }
 
     #[test]
@@ -1014,8 +1093,18 @@ mod tests {
         let p2 = crate::parser::parse(&in_sub("For Each it In coll\nx = it\nNext\n"));
         let fe = find_first(p2.syntax(), SyntaxKind::ForStmt).expect("for each");
         assert!(fe.for_is_each());
-        assert_eq!(fe.foreach_var().unwrap().ident_name_token().unwrap().text, "it");
-        assert_eq!(fe.foreach_collection().unwrap().ident_name_token().unwrap().text, "coll");
+        assert_eq!(
+            fe.foreach_var().unwrap().ident_name_token().unwrap().text,
+            "it"
+        );
+        assert_eq!(
+            fe.foreach_collection()
+                .unwrap()
+                .ident_name_token()
+                .unwrap()
+                .text,
+            "coll"
+        );
     }
 
     #[test]
@@ -1039,7 +1128,14 @@ mod tests {
             "Select Case n\nCase 1, 5 To 9\nx = 1\nCase Is > 100\nx = 2\nCase Else\nx = 3\nEnd Select\n",
         ));
         let sel = find_first(p.syntax(), SyntaxKind::SelectStmt).expect("select");
-        assert_eq!(sel.select_scrutinee().unwrap().ident_name_token().unwrap().text, "n");
+        assert_eq!(
+            sel.select_scrutinee()
+                .unwrap()
+                .ident_name_token()
+                .unwrap()
+                .text,
+            "n"
+        );
         let clauses = sel.select_case_clauses();
         assert_eq!(clauses.len(), 3);
         let s0 = clauses[0].case_specs();
@@ -1057,17 +1153,33 @@ mod tests {
     fn ctrl_with_set_and_call() {
         let p = crate::parser::parse(&in_sub("With obj\n.X = 1\nEnd With\n"));
         let w = find_first(p.syntax(), SyntaxKind::WithStmt).expect("with");
-        assert_eq!(w.condition_expr().unwrap().ident_name_token().unwrap().text, "obj");
+        assert_eq!(
+            w.condition_expr().unwrap().ident_name_token().unwrap().text,
+            "obj"
+        );
         assert!(w.body_block().is_some());
 
         let p2 = crate::parser::parse(&in_sub("Set a = b\n"));
         let set = find_first(p2.syntax(), SyntaxKind::SetStmt).expect("set");
-        assert_eq!(set.assign_target().unwrap().ident_name_token().unwrap().text, "a");
-        assert_eq!(set.assign_value().unwrap().ident_name_token().unwrap().text, "b");
+        assert_eq!(
+            set.assign_target()
+                .unwrap()
+                .ident_name_token()
+                .unwrap()
+                .text,
+            "a"
+        );
+        assert_eq!(
+            set.assign_value().unwrap().ident_name_token().unwrap().text,
+            "b"
+        );
 
         let p3 = crate::parser::parse(&in_sub("DoThing x, y\n"));
         let call = find_first(p3.syntax(), SyntaxKind::CallStmt).expect("call");
-        assert_eq!(call.call_callee().unwrap().ident_name_token().unwrap().text, "DoThing");
+        assert_eq!(
+            call.call_callee().unwrap().ident_name_token().unwrap().text,
+            "DoThing"
+        );
         assert_eq!(call.call_arg_list().unwrap().arg_items().len(), 2);
     }
 }

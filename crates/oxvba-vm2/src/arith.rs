@@ -23,16 +23,28 @@ pub struct ArithError {
 
 impl ArithError {
     pub fn overflow() -> Self {
-        Self { code: 6, message: "Overflow".into() }
+        Self {
+            code: 6,
+            message: "Overflow".into(),
+        }
     }
     pub fn div_by_zero() -> Self {
-        Self { code: 11, message: "Division by zero".into() }
+        Self {
+            code: 11,
+            message: "Division by zero".into(),
+        }
     }
     pub fn type_mismatch() -> Self {
-        Self { code: 13, message: "Type mismatch".into() }
+        Self {
+            code: 13,
+            message: "Type mismatch".into(),
+        }
     }
     pub fn null_use() -> Self {
-        Self { code: 94, message: "Invalid use of Null".into() }
+        Self {
+            code: 94,
+            message: "Invalid use of Null".into(),
+        }
     }
 }
 
@@ -45,7 +57,10 @@ impl From<String> for ArithError {
 }
 impl From<&str> for ArithError {
     fn from(message: &str) -> Self {
-        Self { code: 13, message: message.to_string() }
+        Self {
+            code: 13,
+            message: message.to_string(),
+        }
     }
 }
 
@@ -66,7 +81,9 @@ pub fn is_null(v: &Variant) -> bool {
 }
 
 pub fn as_string(v: &Variant) -> String {
-    variant_to_vba_string(v).map(|b| b.as_str()).unwrap_or_default()
+    variant_to_vba_string(v)
+        .map(|b| b.as_str())
+        .unwrap_or_default()
 }
 
 /// Read any numeric Variant as `f64` (the robust path: read `Double`/`Single`/
@@ -95,8 +112,15 @@ pub fn num(v: &Variant) -> Result<f64, ArithError> {
     match v.vtype() {
         VarType::Empty => Ok(0.0),
         VarType::Null => Err(ArithError::null_use()),
-        VarType::Boolean => Ok(if v.as_bool().unwrap_or(false) { -1.0 } else { 0.0 }),
-        VarType::String => as_string(v).trim().parse::<f64>().map_err(|_| ArithError::type_mismatch()),
+        VarType::Boolean => Ok(if v.as_bool().unwrap_or(false) {
+            -1.0
+        } else {
+            0.0
+        }),
+        VarType::String => as_string(v)
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ArithError::type_mismatch()),
         _ => read_f64(v),
     }
 }
@@ -194,9 +218,10 @@ pub fn neg(v: &Variant, mode: NumericMode) -> R {
         return Ok(Variant::null());
     }
     match mode {
-        NumericMode::Checked(ty) if is_integer_target(ty) => {
-            coerce_numeric(&Variant::from_i64(int(v)?.checked_neg().ok_or_else(ArithError::overflow)?), ty)
-        }
+        NumericMode::Checked(ty) if is_integer_target(ty) => coerce_numeric(
+            &Variant::from_i64(int(v)?.checked_neg().ok_or_else(ArithError::overflow)?),
+            ty,
+        ),
         NumericMode::Checked(ty) => coerce_numeric(&Variant::from_f64(-num(v)?), ty),
         NumericMode::Widening => rt::neg(v).map_err(ArithError::from),
     }
@@ -250,7 +275,11 @@ fn widening_add(l: &Variant, r: &Variant) -> R {
         return Ok(Variant::null());
     }
     if l.vtype() == VarType::String && r.vtype() == VarType::String {
-        return Ok(Variant::from_string(format!("{}{}", as_string(l), as_string(r))));
+        return Ok(Variant::from_string(format!(
+            "{}{}",
+            as_string(l),
+            as_string(r)
+        )));
     }
     if l.vtype() == VarType::String || r.vtype() == VarType::String {
         return Ok(Variant::from_f64(num(l)? + num(r)?));
@@ -269,7 +298,11 @@ fn numeric(l: &Variant, r: &Variant, f: impl Fn(f64, f64) -> R) -> R {
 
 pub fn div(l: &Variant, r: &Variant) -> R {
     numeric(l, r, |a, b| {
-        if b == 0.0 { Err(ArithError::div_by_zero()) } else { Ok(Variant::from_f64(a / b)) }
+        if b == 0.0 {
+            Err(ArithError::div_by_zero())
+        } else {
+            Ok(Variant::from_f64(a / b))
+        }
     })
 }
 pub fn pow(l: &Variant, r: &Variant) -> R {
@@ -281,8 +314,16 @@ pub fn concat(l: &Variant, r: &Variant) -> R {
     if is_null(l) && is_null(r) {
         return Ok(Variant::null());
     }
-    let ls = if is_null(l) { String::new() } else { as_string(l) };
-    let rs = if is_null(r) { String::new() } else { as_string(r) };
+    let ls = if is_null(l) {
+        String::new()
+    } else {
+        as_string(l)
+    };
+    let rs = if is_null(r) {
+        String::new()
+    } else {
+        as_string(r)
+    };
     Ok(Variant::from_string(format!("{ls}{rs}")))
 }
 

@@ -5,10 +5,17 @@ use crate::{Variant, coerce::coerce_to, variant::VarType};
 /// arithmetic promotes to `Long`; `Long`/`LongLong` pairs stay in place unless they
 /// overflow. Used by the widening regime ([`oxvba_bundle::NumericMode::Widening`]); the
 /// *fixed* regime is handled in the VM with an Overflow error instead of widening.
-fn widen_double(lhs: &Variant, rhs: &Variant, f: impl Fn(f64, f64) -> f64) -> Result<Variant, String> {
+fn widen_double(
+    lhs: &Variant,
+    rhs: &Variant,
+    f: impl Fn(f64, f64) -> f64,
+) -> Result<Variant, String> {
     let l = coerce_to(lhs, VarType::Double)?;
     let r = coerce_to(rhs, VarType::Double)?;
-    Ok(Variant::from_f64(f(l.as_f64().unwrap_or(0.0), r.as_f64().unwrap_or(0.0))))
+    Ok(Variant::from_f64(f(
+        l.as_f64().unwrap_or(0.0),
+        r.as_f64().unwrap_or(0.0),
+    )))
 }
 
 fn i32_or_double(v: i64) -> Variant {
@@ -28,14 +35,16 @@ fn i64_or_double(v: Option<i64>, lossy: impl Fn() -> f64) -> Variant {
 
 pub fn add(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
     match (lhs.vtype(), rhs.vtype()) {
-        (VarType::Integer, VarType::Integer) => {
-            Ok(Variant::from_i32(i32::from(lhs.as_i16().unwrap_or(0)) + i32::from(rhs.as_i16().unwrap_or(0))))
-        }
-        (VarType::Long, VarType::Long) => {
-            Ok(i32_or_double(i64::from(lhs.as_i32().unwrap_or(0)) + i64::from(rhs.as_i32().unwrap_or(0))))
-        }
+        (VarType::Integer, VarType::Integer) => Ok(Variant::from_i32(
+            i32::from(lhs.as_i16().unwrap_or(0)) + i32::from(rhs.as_i16().unwrap_or(0)),
+        )),
+        (VarType::Long, VarType::Long) => Ok(i32_or_double(
+            i64::from(lhs.as_i32().unwrap_or(0)) + i64::from(rhs.as_i32().unwrap_or(0)),
+        )),
         (VarType::LongLong, VarType::LongLong) => Ok(i64_or_double(
-            lhs.as_i64().unwrap_or(0).checked_add(rhs.as_i64().unwrap_or(0)),
+            lhs.as_i64()
+                .unwrap_or(0)
+                .checked_add(rhs.as_i64().unwrap_or(0)),
             || lhs.as_i64().unwrap_or(0) as f64 + rhs.as_i64().unwrap_or(0) as f64,
         )),
         _ => widen_double(lhs, rhs, |a, b| a + b),
@@ -44,14 +53,16 @@ pub fn add(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
 
 pub fn sub(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
     match (lhs.vtype(), rhs.vtype()) {
-        (VarType::Integer, VarType::Integer) => {
-            Ok(Variant::from_i32(i32::from(lhs.as_i16().unwrap_or(0)) - i32::from(rhs.as_i16().unwrap_or(0))))
-        }
-        (VarType::Long, VarType::Long) => {
-            Ok(i32_or_double(i64::from(lhs.as_i32().unwrap_or(0)) - i64::from(rhs.as_i32().unwrap_or(0))))
-        }
+        (VarType::Integer, VarType::Integer) => Ok(Variant::from_i32(
+            i32::from(lhs.as_i16().unwrap_or(0)) - i32::from(rhs.as_i16().unwrap_or(0)),
+        )),
+        (VarType::Long, VarType::Long) => Ok(i32_or_double(
+            i64::from(lhs.as_i32().unwrap_or(0)) - i64::from(rhs.as_i32().unwrap_or(0)),
+        )),
         (VarType::LongLong, VarType::LongLong) => Ok(i64_or_double(
-            lhs.as_i64().unwrap_or(0).checked_sub(rhs.as_i64().unwrap_or(0)),
+            lhs.as_i64()
+                .unwrap_or(0)
+                .checked_sub(rhs.as_i64().unwrap_or(0)),
             || lhs.as_i64().unwrap_or(0) as f64 - rhs.as_i64().unwrap_or(0) as f64,
         )),
         _ => widen_double(lhs, rhs, |a, b| a - b),
@@ -60,14 +71,16 @@ pub fn sub(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
 
 pub fn mul(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
     match (lhs.vtype(), rhs.vtype()) {
-        (VarType::Integer, VarType::Integer) => {
-            Ok(i32_or_double(i64::from(lhs.as_i16().unwrap_or(0)) * i64::from(rhs.as_i16().unwrap_or(0))))
-        }
-        (VarType::Long, VarType::Long) => {
-            Ok(i32_or_double(i64::from(lhs.as_i32().unwrap_or(0)) * i64::from(rhs.as_i32().unwrap_or(0))))
-        }
+        (VarType::Integer, VarType::Integer) => Ok(i32_or_double(
+            i64::from(lhs.as_i16().unwrap_or(0)) * i64::from(rhs.as_i16().unwrap_or(0)),
+        )),
+        (VarType::Long, VarType::Long) => Ok(i32_or_double(
+            i64::from(lhs.as_i32().unwrap_or(0)) * i64::from(rhs.as_i32().unwrap_or(0)),
+        )),
         (VarType::LongLong, VarType::LongLong) => Ok(i64_or_double(
-            lhs.as_i64().unwrap_or(0).checked_mul(rhs.as_i64().unwrap_or(0)),
+            lhs.as_i64()
+                .unwrap_or(0)
+                .checked_mul(rhs.as_i64().unwrap_or(0)),
             || lhs.as_i64().unwrap_or(0) as f64 * rhs.as_i64().unwrap_or(0) as f64,
         )),
         _ => widen_double(lhs, rhs, |a, b| a * b),
@@ -78,9 +91,9 @@ pub fn neg(v: &Variant) -> Result<Variant, String> {
     match v.vtype() {
         VarType::Integer => Ok(Variant::from_i32(-i32::from(v.as_i16().unwrap_or(0)))),
         VarType::Long => Ok(i32_or_double(-i64::from(v.as_i32().unwrap_or(0)))),
-        VarType::LongLong => {
-            Ok(i64_or_double(v.as_i64().unwrap_or(0).checked_neg(), || -(v.as_i64().unwrap_or(0) as f64)))
-        }
+        VarType::LongLong => Ok(i64_or_double(v.as_i64().unwrap_or(0).checked_neg(), || {
+            -(v.as_i64().unwrap_or(0) as f64)
+        })),
         _ => {
             let d = coerce_to(v, VarType::Double)?;
             Ok(Variant::from_f64(-d.as_f64().unwrap_or(0.0)))

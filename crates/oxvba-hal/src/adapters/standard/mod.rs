@@ -1900,7 +1900,10 @@ mod tests {
         use crate::traits::FileSystemHal;
         let host = StandardHostServices::new(
             HalProfileId::Windows,
-            HostPolicy { allow_filesystem_mutation: true, ..HostPolicy::default() },
+            HostPolicy {
+                allow_filesystem_mutation: true,
+                ..HostPolicy::default()
+            },
         );
         // Open a Random-mode file (mode 4) on an in-memory handle.
         let handle =
@@ -1932,7 +1935,10 @@ mod tests {
         use crate::traits::FileSystemHal;
         let host = StandardHostServices::new(
             HalProfileId::Windows,
-            HostPolicy { allow_filesystem_mutation: true, ..HostPolicy::default() },
+            HostPolicy {
+                allow_filesystem_mutation: true,
+                ..HostPolicy::default()
+            },
         );
         // Open Random (mode 4) with Len = 8; each Long (4 bytes) occupies an 8-byte
         // slot, so record 2 starts at byte offset 8.
@@ -1969,15 +1975,14 @@ mod tests {
         )
         .expect("get rec 2");
         assert_eq!(r2.as_i32(), Some(0x2222_2222));
-        let r1 =
-            FileSystemHal::get_record_variant(
-                &host,
-                handle,
-                Variant::from_i32(1),
-                long_code,
-                Variant::from_i32(0),
-            )
-            .expect("get rec 1");
+        let r1 = FileSystemHal::get_record_variant(
+            &host,
+            handle,
+            Variant::from_i32(1),
+            long_code,
+            Variant::from_i32(0),
+        )
+        .expect("get rec 1");
         assert_eq!(r1.as_i32(), Some(0x1111_1111));
     }
 
@@ -1986,7 +1991,10 @@ mod tests {
         use crate::traits::FileSystemHal;
         let host = StandardHostServices::new(
             HalProfileId::Windows,
-            HostPolicy { allow_filesystem_mutation: true, ..HostPolicy::default() },
+            HostPolicy {
+                allow_filesystem_mutation: true,
+                ..HostPolicy::default()
+            },
         );
         let handle =
             FileSystemHal::open_variant(&host, Variant::from_i32(902), Variant::from_i32(4))

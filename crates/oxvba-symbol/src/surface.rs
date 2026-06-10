@@ -21,8 +21,8 @@
 
 use std::collections::HashMap;
 
-use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::ProjectMemberKind;
+use oxvba_bundle::coreir::CoreConst;
 use oxvba_com::{TypeLibMemberInvokeKind, TypeLibParamType};
 
 use crate::manifest::{Instancing, ModuleKind, ModuleUnit};
@@ -224,25 +224,51 @@ pub fn synthesize_export_surface(
             match member.kind {
                 SymbolKind::Procedure | SymbolKind::Function => {
                     let dispid = take_dispid(member.is_default, &mut next_dispid);
-                    members.push(method_member(member, dispid, is_class, &mut next_vtable, symbols, signatures));
+                    members.push(method_member(
+                        member,
+                        dispid,
+                        is_class,
+                        &mut next_vtable,
+                        symbols,
+                        signatures,
+                    ));
                 }
                 SymbolKind::Property => {
                     let dispid = take_dispid(member.is_default, &mut next_dispid);
-                    property_members(member, dispid, is_class, &mut next_vtable, symbols, signatures, &mut members);
+                    property_members(
+                        member,
+                        dispid,
+                        is_class,
+                        &mut next_vtable,
+                        symbols,
+                        signatures,
+                        &mut members,
+                    );
                 }
                 // A public field surfaces as a read/write property pair. A
                 // `WithEventsField` is Private-only in VBA (no `Public WithEvents`)
                 // and is not an exportable accessor, so it never reaches the surface.
                 SymbolKind::Field => {
                     let dispid = take_dispid(member.is_default, &mut next_dispid);
-                    field_members(member, dispid, is_class, &mut next_vtable, symbols, &mut members);
+                    field_members(
+                        member,
+                        dispid,
+                        is_class,
+                        &mut next_vtable,
+                        symbols,
+                        &mut members,
+                    );
                 }
                 _ => {}
             }
         }
 
         // A coclass publishes the interfaces it implements; a hidden module has none.
-        let implements = if is_class { scan.implements.clone() } else { Vec::new() };
+        let implements = if is_class {
+            scan.implements.clone()
+        } else {
+            Vec::new()
+        };
         types.push(SurfaceType {
             name: scan.module_name.clone(),
             kind,
@@ -257,7 +283,12 @@ pub fn synthesize_export_surface(
         collect_consts(scan, symbols, const_values, &mut consts);
     }
 
-    ProjectExportSurface { project_name: project_name.to_string(), types, consts, interfaces }
+    ProjectExportSurface {
+        project_name: project_name.to_string(),
+        types,
+        consts,
+        interfaces,
+    }
 }
 
 /// `Public Enum` members + `Public Const`s of a (non-private) module, each with its
@@ -275,7 +306,10 @@ fn collect_consts(
         if matches!(member.kind, SymbolKind::Const | SymbolKind::EnumMember) {
             // A const that fails to fold publishes `Empty` (a referrer that reads a
             // missing value sees Empty rather than a binding failure).
-            let value = const_values.get(&member.symbol).cloned().unwrap_or(CoreConst::Empty);
+            let value = const_values
+                .get(&member.symbol)
+                .cloned()
+                .unwrap_or(CoreConst::Empty);
             out.push(SurfaceConst {
                 name: member_name(symbols, member),
                 symbol: member.symbol,
@@ -316,7 +350,9 @@ fn method_member(
 ) -> SurfaceMember {
     let sig = member_signature(symbols, signatures, member.symbol);
     let (names, types, optional) = sig.map(param_lists).unwrap_or_default();
-    let return_type = sig.and_then(|s| s.return_type.as_ref()).map(|t| param_type(t, false));
+    let return_type = sig
+        .and_then(|s| s.return_type.as_ref())
+        .map(|t| param_type(t, false));
     SurfaceMember {
         name: member_name(symbols, member),
         dispid,
@@ -348,15 +384,29 @@ fn property_members(
     };
     // Each present accessor is a member sharing the property's dispid.
     let accessors = [
-        (group.get, TypeLibMemberInvokeKind::PropertyGet, ProjectMemberKind::PropertyGet),
-        (group.let_, TypeLibMemberInvokeKind::PropertyPut, ProjectMemberKind::PropertyLet),
-        (group.set, TypeLibMemberInvokeKind::PropertyPutRef, ProjectMemberKind::PropertySet),
+        (
+            group.get,
+            TypeLibMemberInvokeKind::PropertyGet,
+            ProjectMemberKind::PropertyGet,
+        ),
+        (
+            group.let_,
+            TypeLibMemberInvokeKind::PropertyPut,
+            ProjectMemberKind::PropertyLet,
+        ),
+        (
+            group.set,
+            TypeLibMemberInvokeKind::PropertyPutRef,
+            ProjectMemberKind::PropertySet,
+        ),
     ];
     for (sig_id, invoke_kind, member_kind) in accessors {
         let Some(sig_id) = sig_id else { continue };
         let sig = signatures.get(sig_id);
         let (names, types, optional) = sig.map(param_lists).unwrap_or_default();
-        let return_type = sig.and_then(|s| s.return_type.as_ref()).map(|t| param_type(t, false));
+        let return_type = sig
+            .and_then(|s| s.return_type.as_ref())
+            .map(|t| param_type(t, false));
         out.push(SurfaceMember {
             name: name.clone(),
             dispid,
@@ -406,9 +456,15 @@ fn field_members(
     });
     // Write accessor — objects use Set (PutRef), scalars use Let (Put).
     let (invoke_kind, member_kind) = if is_object {
-        (TypeLibMemberInvokeKind::PropertyPutRef, ProjectMemberKind::PropertySet)
+        (
+            TypeLibMemberInvokeKind::PropertyPutRef,
+            ProjectMemberKind::PropertySet,
+        )
     } else {
-        (TypeLibMemberInvokeKind::PropertyPut, ProjectMemberKind::PropertyLet)
+        (
+            TypeLibMemberInvokeKind::PropertyPut,
+            ProjectMemberKind::PropertyLet,
+        )
     };
     out.push(SurfaceMember {
         name,
@@ -543,14 +599,24 @@ mod tests {
     fn proc_mod(name: &str, src: &str, private_module: bool) -> ModuleUnit {
         let mut attrs = ModuleAttributes::named(name);
         attrs.option_private_module = private_module;
-        ModuleUnit { module_name: name.into(), module_kind: ModuleKind::Procedural, attributes: attrs, source: src.into() }
+        ModuleUnit {
+            module_name: name.into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: attrs,
+            source: src.into(),
+        }
     }
 
     fn class_mod(name: &str, src: &str, exposed: bool, creatable: bool) -> ModuleUnit {
         let mut attrs = ModuleAttributes::named(name);
         attrs.vb_exposed = exposed;
         attrs.vb_creatable = creatable;
-        ModuleUnit { module_name: name.into(), module_kind: ModuleKind::Class, attributes: attrs, source: src.into() }
+        ModuleUnit {
+            module_name: name.into(),
+            module_kind: ModuleKind::Class,
+            attributes: attrs,
+            source: src.into(),
+        }
     }
 
     fn synth(modules: Vec<ModuleUnit>) -> ProjectExportSurface {
@@ -564,15 +630,29 @@ mod tests {
         let mut parses = Vec::new();
         for m in &modules {
             let parse = oxvba_syntax::parse(&m.source);
-            assert!(parse.errors().is_empty(), "parse errors in {}: {:?}", m.module_name, parse.errors());
-            let scan =
-                crate::scanner::scan_module(&mut symbols, &mut signatures, &mut next, m, parse.syntax(), project)
-                    .unwrap();
+            assert!(
+                parse.errors().is_empty(),
+                "parse errors in {}: {:?}",
+                m.module_name,
+                parse.errors()
+            );
+            let scan = crate::scanner::scan_module(
+                &mut symbols,
+                &mut signatures,
+                &mut next,
+                m,
+                parse.syntax(),
+                project,
+            )
+            .unwrap();
             scans.push(scan);
             parses.push(parse);
         }
-        let roots: Vec<_> =
-            scans.iter().zip(parses.iter()).map(|(s, p)| (s.module_scope, p.syntax())).collect();
+        let roots: Vec<_> = scans
+            .iter()
+            .zip(parses.iter())
+            .map(|(s, p)| (s.module_scope, p.syntax()))
+            .collect();
         let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
         synthesize_export_surface("P", &modules, &scans, &symbols, &signatures, &const_values)
     }
@@ -598,19 +678,28 @@ mod tests {
 
         let lib = find_type(&s, "Lib").expect("Lib module in surface");
         assert!(matches!(lib.kind, SurfaceTypeKind::Module));
-        assert!(lib.global_namespace, "standard module members resolve unqualified");
+        assert!(
+            lib.global_namespace,
+            "standard module members resolve unqualified"
+        );
 
         // Public procs are members; the Private one is excluded.
         let add = member(lib, "Add").expect("Add exposed");
         let log = member(lib, "Log").expect("Log exposed");
-        assert!(member(lib, "Secret").is_none(), "Private members do not cross the boundary");
+        assert!(
+            member(lib, "Secret").is_none(),
+            "Private members do not cross the boundary"
+        );
 
         // Dispids are assigned sequentially (no default member → starts at 1).
         assert_eq!(add.dispid, 1);
         assert_eq!(log.dispid, 2);
         assert_eq!(add.member_kind, ProjectMemberKind::Method);
         // VBA params default to ByRef → ByRef typelib param types.
-        assert_eq!(add.parameter_types, vec![TypeLibParamType::ByRefLong, TypeLibParamType::ByRefLong]);
+        assert_eq!(
+            add.parameter_types,
+            vec![TypeLibParamType::ByRefLong, TypeLibParamType::ByRefLong]
+        );
         assert_eq!(add.return_type, Some(TypeLibParamType::Long));
         // A hidden module is not a vtable interface.
         assert_eq!(add.vtable_slot, None);
@@ -633,11 +722,21 @@ mod tests {
             SurfaceTypeKind::Coclass { creatable, .. } => assert!(*creatable),
             _ => panic!("Widget should be a coclass"),
         }
-        assert!(!widget.global_namespace, "a plain class is not global-namespace");
+        assert!(
+            !widget.global_namespace,
+            "a plain class is not global-namespace"
+        );
         let get = member(widget, "GetValue").expect("GetValue exposed");
-        assert_eq!(get.vtable_slot, Some(7), "class members get a dual-interface vtable slot");
+        assert_eq!(
+            get.vtable_slot,
+            Some(7),
+            "class members get a dual-interface vtable slot"
+        );
         // Friend members do not cross the project boundary.
-        assert!(member(widget, "Internal").is_none(), "Friend is excluded cross-project");
+        assert!(
+            member(widget, "Internal").is_none(),
+            "Friend is excluded cross-project"
+        );
     }
 
     #[test]
@@ -646,8 +745,14 @@ mod tests {
             class_mod("Hidden", "Public Sub H()\nEnd Sub\n", false, false),
             proc_mod("Internals", "Public Sub I()\nEnd Sub\n", true),
         ]);
-        assert!(find_type(&s, "Hidden").is_none(), "a non-exposed class is project-private");
-        assert!(find_type(&s, "Internals").is_none(), "Option Private Module is project-private");
+        assert!(
+            find_type(&s, "Hidden").is_none(),
+            "a non-exposed class is project-private"
+        );
+        assert!(
+            find_type(&s, "Internals").is_none(),
+            "Option Private Module is project-private"
+        );
     }
 
     #[test]
@@ -659,9 +764,17 @@ mod tests {
             false,
         )]);
         assert!(s.consts.iter().any(|c| c.name.eq_ignore_ascii_case("Red")));
-        assert!(s.consts.iter().any(|c| c.name.eq_ignore_ascii_case("Green")));
+        assert!(
+            s.consts
+                .iter()
+                .any(|c| c.name.eq_ignore_ascii_case("Green"))
+        );
         // Members of a Private enum do not cross the boundary.
-        assert!(!s.consts.iter().any(|c| c.name.eq_ignore_ascii_case("Hidden")));
+        assert!(
+            !s.consts
+                .iter()
+                .any(|c| c.name.eq_ignore_ascii_case("Hidden"))
+        );
     }
 
     #[test]
@@ -689,31 +802,69 @@ mod tests {
         ]);
 
         // Const + enum-member values are published (auto-increment + reset).
-        let val = |name: &str| s.consts.iter().find(|c| c.name.eq_ignore_ascii_case(name)).map(|c| c.value.clone());
+        let val = |name: &str| {
+            s.consts
+                .iter()
+                .find(|c| c.name.eq_ignore_ascii_case(name))
+                .map(|c| c.value.clone())
+        };
         assert_eq!(val("KMax"), Some(CoreConst::I32(10)));
         assert_eq!(val("Red"), Some(CoreConst::I32(1)));
         assert_eq!(val("Green"), Some(CoreConst::I32(2)), "auto-increment");
-        assert_eq!(val("Blue"), Some(CoreConst::I32(10)), "explicit value resets");
-        assert_eq!(val("Indigo"), Some(CoreConst::I32(11)), "resumes from reset");
+        assert_eq!(
+            val("Blue"),
+            Some(CoreConst::I32(10)),
+            "explicit value resets"
+        );
+        assert_eq!(
+            val("Indigo"),
+            Some(CoreConst::I32(11)),
+            "resumes from reset"
+        );
 
         // An enum member carries its enum's name; a plain Const does not.
-        let red = s.consts.iter().find(|c| c.name.eq_ignore_ascii_case("Red")).unwrap();
+        let red = s
+            .consts
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case("Red"))
+            .unwrap();
         assert_eq!(red.enum_name.as_deref(), Some("Color"));
-        let kmax = s.consts.iter().find(|c| c.name.eq_ignore_ascii_case("KMax")).unwrap();
+        let kmax = s
+            .consts
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case("KMax"))
+            .unwrap();
         assert_eq!(kmax.enum_name, None);
 
         // Coclass events get sequential per-class ids in source order.
         let clock = find_type(&s, "Clock").unwrap();
-        let tick = clock.events.iter().find(|e| e.name.eq_ignore_ascii_case("Tick")).unwrap();
-        let done = clock.events.iter().find(|e| e.name.eq_ignore_ascii_case("Done")).unwrap();
+        let tick = clock
+            .events
+            .iter()
+            .find(|e| e.name.eq_ignore_ascii_case("Tick"))
+            .unwrap();
+        let done = clock
+            .events
+            .iter()
+            .find(|e| e.name.eq_ignore_ascii_case("Done"))
+            .unwrap();
         assert_eq!(tick.event_id, 0);
         assert_eq!(done.event_id, 1);
 
         // The implementing coclass publishes its interface; the project interface
         // set names the interface type.
         let circle = find_type(&s, "Circle").unwrap();
-        assert!(circle.implements.iter().any(|i| i.eq_ignore_ascii_case("IShape")));
-        assert!(s.interfaces.iter().any(|i| i.eq_ignore_ascii_case("IShape")));
+        assert!(
+            circle
+                .implements
+                .iter()
+                .any(|i| i.eq_ignore_ascii_case("IShape"))
+        );
+        assert!(
+            s.interfaces
+                .iter()
+                .any(|i| i.eq_ignore_ascii_case("IShape"))
+        );
         // A non-implementing class carries no implements.
         assert!(clock.implements.is_empty());
     }
@@ -728,12 +879,26 @@ mod tests {
             true,
         )]);
         let widget = find_type(&s, "Widget").unwrap();
-        let accessors: Vec<&SurfaceMember> =
-            widget.members.iter().filter(|m| m.name.eq_ignore_ascii_case("Name")).collect();
+        let accessors: Vec<&SurfaceMember> = widget
+            .members
+            .iter()
+            .filter(|m| m.name.eq_ignore_ascii_case("Name"))
+            .collect();
         assert_eq!(accessors.len(), 2, "Get + Let are two members");
         let dispid = accessors[0].dispid;
-        assert!(accessors.iter().all(|m| m.dispid == dispid), "accessors share one dispid");
-        assert!(accessors.iter().any(|m| m.member_kind == ProjectMemberKind::PropertyGet));
-        assert!(accessors.iter().any(|m| m.member_kind == ProjectMemberKind::PropertyLet));
+        assert!(
+            accessors.iter().all(|m| m.dispid == dispid),
+            "accessors share one dispid"
+        );
+        assert!(
+            accessors
+                .iter()
+                .any(|m| m.member_kind == ProjectMemberKind::PropertyGet)
+        );
+        assert!(
+            accessors
+                .iter()
+                .any(|m| m.member_kind == ProjectMemberKind::PropertyLet)
+        );
     }
 }

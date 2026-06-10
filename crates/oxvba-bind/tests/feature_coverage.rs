@@ -54,10 +54,17 @@ fn run_result(source: &str) -> Result<Vec<Variant>, String> {
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
     let vm = oxvba_vm2::run(&bundle, &host)
         .map_err(|e| format!("runtime error: {} {}", e.code, e.message))?;
-    let entry = program.entry.ok_or_else(|| "no entry procedure".to_string())?;
-    let main = program.procs.get(entry.0).ok_or_else(|| "entry out of range".to_string())?;
+    let entry = program
+        .entry
+        .ok_or_else(|| "no entry procedure".to_string())?;
+    let main = program
+        .procs
+        .get(entry.0)
+        .ok_or_else(|| "entry out of range".to_string())?;
     let count = bundle.global_count + main.locals.len();
-    Ok((0..count).map(|i| vm.slot(i).cloned().unwrap_or_else(Variant::empty)).collect())
+    Ok((0..count)
+        .map(|i| vm.slot(i).cloned().unwrap_or_else(Variant::empty))
+        .collect())
 }
 
 /// Run a snippet expecting success and return the user-visible snapshot.
@@ -69,13 +76,11 @@ fn run(source: &str) -> Vec<Variant> {
 fn datevalue_month_name_and_cdate_numeric() {
     // `DateValue` parses the `d mmm yyyy` text form; `CDate` of a numeric is the date
     // serial directly. Both blocked SQLiteForExcel's TestBinding/TestDates.
-    let snap = run(
-        "Public a As Long\nPublic b As Boolean\n\
+    let snap = run("Public a As Long\nPublic b As Boolean\n\
          Sub Main()\n\
          a = DateValue(\"1 Jan 2000\") - DateSerial(2000, 1, 1)\n\
          b = (CDate(36526) = DateSerial(2000, 1, 1))\n\
-         End Sub",
-    );
+         End Sub");
     assert_eq!(snap[0], Variant::from_i32(0)); // DateValue("1 Jan 2000") == DateSerial(2000,1,1)
     assert_eq!(snap[1], Variant::from_bool(true)); // CDate(36526) == that serial
 }
@@ -85,15 +90,13 @@ fn array_return_function_is_an_array_copy() {
     // `Function F() As Byte()` returns an array; the return type must be `Array(Byte)`
     // so `F = arr` (and the caller's `x = F()`) is a whole-array copy, not a scalar
     // coercion. This blocked SQLiteForExcel's `SQLite3ColumnBlob`.
-    let snap = run(
-        "Public r As Long\n\
+    let snap = run("Public r As Long\n\
          Sub Main()\n\
          Dim x() As Byte\nx = MakeBytes()\nr = x(1)\n\
          End Sub\n\
          Function MakeBytes() As Byte()\n\
          Dim t(2) As Byte\nt(0) = 10\nt(1) = 20\nt(2) = 30\nMakeBytes = t\n\
-         End Function",
-    );
+         End Function");
     assert_eq!(snap[0], Variant::from_i32(20));
 }
 
@@ -126,12 +129,10 @@ fn longptr_arithmetic_widens_to_64_bit_not_long() {
     // `LongPtr` is 64-bit on the Win64 runtime target, so `p + p` for p just under
     // 2^31 must compute in 64 bits (4_294_967_294). If `LongPtr` ranked with `Long`,
     // the sum would coerce-store into a 32-bit Long temp and overflow (error 6).
-    let snap = run(
-        "Public r As LongLong\n\
+    let snap = run("Public r As LongLong\n\
          Sub Main()\n\
          Dim p As LongPtr\np = 2147483647\nr = p + p\n\
-         End Sub",
-    );
+         End Sub");
     assert_eq!(snap[0], Variant::from_i64(4_294_967_294));
 }
 
@@ -140,16 +141,14 @@ fn ubound_of_byref_array_param() {
     // `UBound`/`LBound` of a ByRef array parameter (the SQLiteForExcel
     // `SQLite3BindBlob(ByRef Value() As Byte)` shape) must read the array's bounds,
     // not coerce the array.
-    let snap = run(
-        "Public r As Long\n\
+    let snap = run("Public r As Long\n\
          Sub Main()\n\
          Dim b(2) As Byte\nb(0) = 90\n\
          r = BlobLen(b)\n\
          End Sub\n\
          Function BlobLen(ByRef Value() As Byte) As Long\n\
          BlobLen = UBound(Value) - LBound(Value) + 1\n\
-         End Function\n",
-    );
+         End Function\n");
     assert_eq!(snap[0], Variant::from_i32(3));
 }
 
@@ -159,14 +158,12 @@ fn dynamic_array_whole_assignment_is_a_copy_not_a_scalar_coercion() {
     // declarator must type `dst` as `Array(Byte)`, not scalar `Byte` — otherwise the
     // assignment scalar-coerces the array and fails ("ArrayVariant to …"). (This
     // blocked SQLiteForExcel's `StringToUtf8Bytes`.)
-    let snap = run(
-        "Public r As Long\n\
+    let snap = run("Public r As Long\n\
          Sub Main()\n\
          Dim src(2) As Byte\nsrc(0) = 10\nsrc(1) = 20\nsrc(2) = 30\n\
          Dim dst() As Byte\ndst = src\n\
          r = dst(1)\n\
-         End Sub",
-    );
+         End Sub");
     assert_eq!(snap[0], Variant::from_i32(20));
 }
 
@@ -183,8 +180,7 @@ fn err_lastdllerror_binds_and_defaults_to_zero() {
 fn numeric_conversion_intrinsics_with_bankers_rounding() {
     // The `Cxxx` conversions coerce to the named type; integer targets use VBA
     // banker's rounding (half-to-even). Each variable holds its declared type.
-    let snap = run(
-        "Sub Main()\n\
+    let snap = run("Sub Main()\n\
          Dim a As Double\nDim b As Long\nDim c As Integer\nDim d As Byte\n\
          Dim e As Boolean\nDim f As Single\nDim g As LongLong\nDim h As Currency\n\
          a = CDbl(\"3.5\")\n\
@@ -195,8 +191,7 @@ fn numeric_conversion_intrinsics_with_bankers_rounding() {
          f = CSng(1.25)\n\
          g = CLngLng(2.5)\n\
          h = CCur(1.5)\n\
-         End Sub",
-    );
+         End Sub");
     assert_eq!(
         snap,
         vec![
@@ -216,7 +211,10 @@ fn numeric_conversion_intrinsics_with_bankers_rounding() {
 fn conversion_intrinsic_overflow_is_error_6() {
     let err = run_result("Sub Main()\nDim x As Integer\nx = CInt(100000)\nEnd Sub")
         .expect_err("CInt overflow should be a runtime error");
-    assert!(err.contains("does not fit in Integer"), "unexpected diagnostic: {err}");
+    assert!(
+        err.contains("does not fit in Integer"),
+        "unexpected diagnostic: {err}"
+    );
 }
 
 #[test]
@@ -471,7 +469,8 @@ fn string_concat_and_len() {
     );
 }
 
-#[test]fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_string_boolean_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nCall Fill(s, b)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, Optional ByVal text As String = \"ready\", Optional ByVal flag As Boolean = True)\ntarget = text\nflagTarget = flag\nEnd Sub",
     );
@@ -484,7 +483,8 @@ fn string_concat_and_len() {
     );
 }
 
-#[test]fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_string_boolean_module_constant_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const CText = \"ready\"\nConst CFlag = True\nSub Main()\nDim s As String\nDim b As Boolean\nCall Fill(s, b)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, Optional ByVal text As String = CText, Optional ByVal flag As Boolean = CFlag)\ntarget = text\nflagTarget = flag\nEnd Sub",
     );
@@ -497,35 +497,40 @@ fn string_concat_and_len() {
     );
 }
 
-#[test]fn optional_string_concat_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_string_concat_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"re\"\nSub Main()\nDim s As String\nCall Fill(s)\nEnd Sub\nSub Fill(ByRef target As String, Optional ByVal text As String = Prefix & \"ady\")\ntarget = text\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_string(BStr::from("ready"))]);
 }
 
-#[test]fn optional_string_scalar_concat_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_string_scalar_concat_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"v\"\nConst CNumber = 7\nConst CFlag = True\nSub Main()\nDim s As String\nCall Fill(s)\nEnd Sub\nSub Fill(ByRef target As String, Optional ByVal text As String = Prefix & CNumber & CFlag)\ntarget = text\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_string(BStr::from("v7True"))]);
 }
 
-#[test]fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Enabled = True\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Enabled = Not False And 2 > 1)\ntarget = flag\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }
 
-#[test]fn optional_boolean_like_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_boolean_like_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"he\"\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Prefix & \"llo\" Like \"hello\")\ntarget = flag\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }
 
-#[test]fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nDim n As Long\nCall Fill(s, b, n)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, ByRef numberTarget As Long, Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal value As Long)\ntarget = text\nflagTarget = flag\nnumberTarget = value\nEnd Sub",
     );
@@ -539,14 +544,16 @@ fn string_concat_and_len() {
     );
 }
 
-#[test]fn optional_longlong_module_constant_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_longlong_module_constant_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Big As LongLong = 5000000000\nSub Main()\nDim n As LongLong\nCall Fill(n)\nEnd Sub\nSub Fill(ByRef target As LongLong, Optional ByVal value As LongLong = Big + 7)\ntarget = value\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_i64(5_000_000_007)]);
 }
 
-#[test]fn optional_date_currency_defaults_are_bound_for_omitted_args() {
+#[test]
+fn optional_date_currency_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim amount As Variant\nDim stamp As Variant\nDim literalStamp As Variant\nDim numericStamp As Variant\nDim blankAmount As Variant\nDim blankStamp As Variant\nCall Fill(amount, stamp, literalStamp, numericStamp, blankAmount, blankStamp)\nEnd Sub\nSub Fill(ByRef amountTarget As Variant, ByRef stampTarget As Variant, ByRef literalStampTarget As Variant, ByRef numericStampTarget As Variant, ByRef blankAmountTarget As Variant, ByRef blankStampTarget As Variant, Optional ByVal amount As Currency = 1.25@ * 2@ - 1.0@, Optional ByVal stamp As Date = (2.0 + 3.0) / 2.0, Optional ByVal literalStamp As Date = #2026-02-28#, Optional ByVal numericStamp As Date = #2/28/2026#, Optional ByVal blankAmount As Currency, Optional ByVal blankStamp As Date)\namountTarget = amount\nstampTarget = stamp\nliteralStampTarget = literalStamp\nnumericStampTarget = numericStamp\nblankAmountTarget = blankAmount\nblankStampTarget = blankStamp\nEnd Sub",
     );
@@ -571,14 +578,16 @@ fn indexed_property_get_executes_through_package_vm() {
     assert_eq!(snap, vec![Variant::from_i32(7)]);
 }
 
-#[test]fn indexed_property_let_executes_through_package_vm() {
+#[test]
+fn indexed_property_let_executes_through_package_vm() {
     let snap = run(
         "Sub Main()\nDim value As Long\nItem(value) = 3\nEnd Sub\nProperty Let Item(ByRef target As Long, ByVal newValue As Long)\ntarget = newValue + 4\nEnd Property",
     );
     assert_eq!(snap, vec![Variant::from_i32(7)]);
 }
 
-#[test]fn named_indexed_property_let_executes_through_package_vm() {
+#[test]
+fn named_indexed_property_let_executes_through_package_vm() {
     let snap = run(
         "Sub Main()\nDim value As Long\nItem(target := value) = 3\nEnd Sub\nProperty Let Item(ByRef target As Long, ByVal newValue As Long)\ntarget = newValue + 4\nEnd Property",
     );
@@ -624,7 +633,10 @@ fn fixed_array_dim_in_loop_is_hoisted() {
     let snap = run(
         "Sub Main()\nDim total As Long\nDim i As Long\nFor i = 1 To 3\nDim a(1 To 2) As Long\na(1) = a(1) + 1\nNext i\ntotal = a(1)\nEnd Sub",
     );
-    assert!(snap.contains(&Variant::from_i32(3)), "expected accumulated a(1)=3 in {snap:?}");
+    assert!(
+        snap.contains(&Variant::from_i32(3)),
+        "expected accumulated a(1)=3 in {snap:?}"
+    );
 }
 
 #[test]
@@ -634,7 +646,10 @@ fn module_level_fixed_array_global_is_allocated() {
     let snap = run(
         "Dim g(1 To 3) As Long\nSub Main()\ng(1) = 10\ng(2) = 20\nDim total As Long\ntotal = g(1) + g(2)\nEnd Sub",
     );
-    assert!(snap.contains(&Variant::from_i32(30)), "expected g(1)+g(2)=30 in {snap:?}");
+    assert!(
+        snap.contains(&Variant::from_i32(30)),
+        "expected g(1)+g(2)=30 in {snap:?}"
+    );
 }
 
 #[test]
@@ -806,21 +821,27 @@ fn longlong_multiplication_is_exact() {
     // 64-bit integer arithmetic is computed in i64, not through f64 — so a product
     // beyond 2^53 keeps every bit (the Double-biased VM ops would have lost the low
     // digits). 1000000001^2 = 1000000002000000001 (< i64::MAX), exactly.
-    let snap = run(
-        "Sub Main()\nDim a As LongLong\nDim b As LongLong\na = 1000000001\nb = a * a\nEnd Sub",
+    let snap =
+        run("Sub Main()\nDim a As LongLong\nDim b As LongLong\na = 1000000001\nb = a * a\nEnd Sub");
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i64(1_000_000_001),
+            Variant::from_i64(1_000_000_002_000_000_001)
+        ]
     );
-    assert_eq!(snap, vec![Variant::from_i64(1_000_000_001), Variant::from_i64(1_000_000_002_000_000_001)]);
 }
 
 #[test]
 fn longlong_multiplication_overflow_raises_error_6() {
     // A LongLong product that leaves i64's range is Overflow (error 6), not a silent
     // widen — fixed-typed 64-bit arithmetic is checked.
-    let err = run_result(
-        "Sub Main()\nDim a As LongLong\na = 4000000000\na = a * a\nEnd Sub",
-    )
-    .expect_err("expected LongLong overflow");
-    assert!(err.contains("runtime error: 6"), "expected overflow error 6, got: {err}");
+    let err = run_result("Sub Main()\nDim a As LongLong\na = 4000000000\na = a * a\nEnd Sub")
+        .expect_err("expected LongLong overflow");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got: {err}"
+    );
 }
 
 #[test]
@@ -909,9 +930,8 @@ fn strptr_of_string_literal_yields_nonzero_pointer() {
 
 #[test]
 fn conditional_compilation_selects_win64_branch() {
-    let snap = run(
-        "Sub Main()\nDim x As Long\n#If Win64 Then\nx = 64\n#Else\nx = 32\n#End If\nEnd Sub",
-    );
+    let snap =
+        run("Sub Main()\nDim x As Long\n#If Win64 Then\nx = 64\n#Else\nx = 32\n#End If\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_i32(64)]);
 }
 

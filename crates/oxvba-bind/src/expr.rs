@@ -19,7 +19,11 @@ pub(crate) fn builtin(b: BuiltinType) -> VarTypeRef {
 }
 
 pub(crate) fn value_bound(value: CoreValue, ty: VarTypeRef) -> Bound {
-    Bound { value, ty, place: None }
+    Bound {
+        value,
+        ty,
+        place: None,
+    }
 }
 
 impl<'a> ProcLower<'a> {
@@ -28,7 +32,9 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::LiteralExpr => self.bind_literal(node),
             SyntaxKind::IdentExpr => self.bind_ident(node),
             SyntaxKind::ParenExpr => {
-                let inner = node.paren_inner().ok_or_else(|| BindError::Malformed("empty ()".into()))?;
+                let inner = node
+                    .paren_inner()
+                    .ok_or_else(|| BindError::Malformed("empty ()".into()))?;
                 self.bind_expr(inner)
             }
             SyntaxKind::UnaryExpr => self.bind_unary(node),
@@ -58,7 +64,10 @@ impl<'a> ProcLower<'a> {
                 CoreConst::F64(parse_float(tok.text)?.to_bits()),
                 builtin(BuiltinType::Double),
             ),
-            SyntaxKind::StringLiteral => (CoreConst::Str(unquote(tok.text)), builtin(BuiltinType::String)),
+            SyntaxKind::StringLiteral => (
+                CoreConst::Str(unquote(tok.text)),
+                builtin(BuiltinType::String),
+            ),
             SyntaxKind::KwTrue => (CoreConst::Bool(true), builtin(BuiltinType::Boolean)),
             SyntaxKind::KwFalse => (CoreConst::Bool(false), builtin(BuiltinType::Boolean)),
             SyntaxKind::KwEmpty => (CoreConst::Empty, VarTypeRef::Variant),
@@ -67,7 +76,9 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::DateLiteral => (
                 CoreConst::Date(
                     oxvba_symbol::const_eval::date::parse_date_literal_serial_bits(tok.text)
-                        .ok_or_else(|| BindError::Malformed(format!("date literal `{}`", tok.text)))?,
+                        .ok_or_else(|| {
+                            BindError::Malformed(format!("date literal `{}`", tok.text))
+                        })?,
                 ),
                 builtin(BuiltinType::Date),
             ),
@@ -95,7 +106,11 @@ impl<'a> ProcLower<'a> {
                 CoreValue::Load(p) => Some(p.clone()),
                 _ => None,
             };
-            return Ok(Bound { value: me, ty, place });
+            return Ok(Bound {
+                value: me,
+                ty,
+                place,
+            });
         }
         // Reading the function's own name yields the result pseudo-variable.
         if let Some(rl) = self.return_target(name) {
@@ -126,9 +141,10 @@ impl<'a> ProcLower<'a> {
         // An active-project `Const`/`Enum` member: its value is folded once in the
         // symbol layer (the published type system's single source of truth).
         if let Some(sym) = binding.symbol
-            && let Some(c) = self.g.env.const_value(sym) {
-                return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
-            }
+            && let Some(c) = self.g.env.const_value(sym)
+        {
+            return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
+        }
         // A `Const`/`Enum` member that did not fold is unresolvable (e.g. a circular
         // `Const` dependency) — a hard error, as in VBA. (Folding is non-fatal in the
         // symbol layer so one bad const can't abort a whole closure's binding; the
@@ -137,15 +153,23 @@ impl<'a> ProcLower<'a> {
             && matches!(
                 self.g.env.symbols.symbol(sym).map(|s| s.kind),
                 Some(SymbolKind::Const | SymbolKind::EnumMember)
-            ) {
-                return Err(BindError::Unsupported(format!("`{name}` is not a resolvable constant")));
-            }
+            )
+        {
+            return Err(BindError::Unsupported(format!(
+                "`{name}` is not a resolvable constant"
+            )));
+        }
         // A plain variable read.
         if let DispatchRoute::Value = binding.route
             && let Some(sym) = binding.symbol
-                && let Some((place, ty)) = self.place_for_symbol(sym) {
-                    return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
-                }
+            && let Some((place, ty)) = self.place_for_symbol(sym)
+        {
+            return Ok(Bound {
+                value: CoreValue::Load(place.clone()),
+                ty,
+                place: Some(place),
+            });
+        }
         // A `VB_PredeclaredId` class name (which resolves as a class type/module, not
         // a plain value) → its global singleton instance.
         if let Some(bound) = self.bind_predeclared_instance(name)? {
@@ -173,7 +197,9 @@ impl<'a> ProcLower<'a> {
         if let Some((unit, class)) = self.g.env.resolve_extern_predeclared(name) {
             let import = self.g.intern_import(BundleImport {
                 unit,
-                token: ExportToken::Class { name: class.clone() },
+                token: ExportToken::Class {
+                    name: class.clone(),
+                },
             });
             return Ok(Some(value_bound(
                 CoreValue::PredeclaredExtern { import },
@@ -247,10 +273,12 @@ impl<'a> ProcLower<'a> {
         let op = core_binop(op_tok.kind)
             .ok_or_else(|| BindError::Unsupported(format!("operator {:?}", op_tok.kind)))?;
         let lhs = self.bind_expr(
-            node.binary_lhs().ok_or_else(|| BindError::Malformed("binary lhs".into()))?,
+            node.binary_lhs()
+                .ok_or_else(|| BindError::Malformed("binary lhs".into()))?,
         )?;
         let rhs = self.bind_expr(
-            node.binary_rhs().ok_or_else(|| BindError::Malformed("binary rhs".into()))?,
+            node.binary_rhs()
+                .ok_or_else(|| BindError::Malformed("binary rhs".into()))?,
         )?;
         // `\` and `Mod` always yield an integer (`LongLong` when either side is 64-bit,
         // else `Long`); the VM rounds the operands. Every other op's result type comes
@@ -286,10 +314,11 @@ impl<'a> ProcLower<'a> {
         // indexing the result pseudo-variable, so `f(i)` is always a call).
         if base.kind() == SyntaxKind::IdentExpr
             && let Some(tok) = base.ident_name_token()
-                && let Some(binding) = self.resolve(tok.text)
-                    && !matches!(binding.route, DispatchRoute::Value) {
-                        return self.bind_call_route(tok.text, &binding, node.index_arg_list());
-                    }
+            && let Some(binding) = self.resolve(tok.text)
+            && !matches!(binding.route, DispatchRoute::Value)
+        {
+            return self.bind_call_route(tok.text, &binding, node.index_arg_list());
+        }
         // `obj.Member(args)` — a method/property call, or an index into a member
         // array. The member binder decides by resolving the member.
         if base.kind() == SyntaxKind::MemberExpr {
@@ -297,7 +326,11 @@ impl<'a> ProcLower<'a> {
         }
         // An array element read.
         let (place, ty) = self.bind_place(node)?;
-        Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) })
+        Ok(Bound {
+            value: CoreValue::Load(place.clone()),
+            ty,
+            place: Some(place),
+        })
     }
 
     fn bind_new(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {
@@ -306,7 +339,10 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("New without a type".into()))?;
         let folded = oxvba_symbol::model::fold_identifier(&name);
         if let Some(&class_id) = self.g.ids.class_of.get(&folded) {
-            return Ok(value_bound(CoreValue::New(class_id), VarTypeRef::Object(name)));
+            return Ok(value_bound(
+                CoreValue::New(class_id),
+                VarTypeRef::Object(name),
+            ));
         }
         // A creatable coclass published by a *referenced project*: instantiate it in
         // that project's bundle via a cross-bundle `NewExtern` (the new instance
@@ -316,9 +352,14 @@ impl<'a> ProcLower<'a> {
         if let Some((unit, class)) = self.g.env.resolve_extern_coclass(&name) {
             let import = self.g.intern_import(oxvba_bundle::BundleImport {
                 unit,
-                token: oxvba_bundle::ExportToken::Class { name: class.clone() },
+                token: oxvba_bundle::ExportToken::Class {
+                    name: class.clone(),
+                },
             });
-            return Ok(value_bound(CoreValue::NewExtern { import }, VarTypeRef::Object(class)));
+            return Ok(value_bound(
+                CoreValue::NewExtern { import },
+                VarTypeRef::Object(class),
+            ));
         }
         // A creatable COM coclass (from a referenced typelib) instantiates via the
         // same activation path as `CreateObject("<ProgID>")`; the result is typed
@@ -335,7 +376,9 @@ impl<'a> ProcLower<'a> {
                 VarTypeRef::Object(name),
             ));
         }
-        Err(BindError::Unsupported(format!("New {name} (only project classes are creatable)")))
+        Err(BindError::Unsupported(format!(
+            "New {name} (only project classes are creatable)"
+        )))
     }
 
     /// `AddressOf proc` — resolve the operand to a standard-module procedure and
@@ -351,7 +394,9 @@ impl<'a> ProcLower<'a> {
             _ => None,
         }
         .ok_or_else(|| BindError::Unsupported("AddressOf requires a procedure name".into()))?;
-        let binding = self.resolve(name).ok_or_else(|| self.unresolved(name, "AddressOf operand"))?;
+        let binding = self
+            .resolve(name)
+            .ok_or_else(|| self.unresolved(name, "AddressOf operand"))?;
         let proc = binding
             .symbol
             .and_then(|s| self.g.ids.proc_of.get(&s).copied())
@@ -363,7 +408,10 @@ impl<'a> ProcLower<'a> {
                 "AddressOf of class member `{name}` is not allowed"
             )));
         }
-        Ok(value_bound(CoreValue::AddressOf(proc), builtin(BuiltinType::Long)))
+        Ok(value_bound(
+            CoreValue::AddressOf(proc),
+            builtin(BuiltinType::Long),
+        ))
     }
 }
 

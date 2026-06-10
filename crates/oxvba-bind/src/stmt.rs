@@ -3,7 +3,7 @@
 //! error-state, `ReDim`/`Erase`, and the file-I/O statements (→ native calls).
 
 use oxvba_bundle::coreir::{
-    CaseClause, CoreArg, CoreBinOp, CoreBound, CoreCaseBlock, CoreCallee, CoreConst, CoreIfArm,
+    CaseClause, CoreArg, CoreBinOp, CoreBound, CoreCallee, CoreCaseBlock, CoreConst, CoreIfArm,
     CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
@@ -13,10 +13,10 @@ use oxvba_symbol::model::fold_identifier;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
+use crate::ProcLower;
 use crate::error::BindError;
 use crate::expr::comparison_binop;
 use crate::types;
-use crate::ProcLower;
 
 impl<'a> ProcLower<'a> {
     pub(crate) fn bind_block(&mut self, block: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -55,8 +55,8 @@ impl<'a> ProcLower<'a> {
             ReDimStmt => self.bind_redim(node),
             EraseStmt => self.bind_erase(node),
             OpenStmt => self.bind_open(node),
-            CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | SeekStmt | WidthStmt
-            | NameStmt | LockStmt => self.bind_file_io(node),
+            CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | SeekStmt
+            | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
             // `Get #n, [rec], var` reads into the target, so it lowers as an
             // assignment of the read value, not a discarded call.
             GetStmt => self.bind_get(node),
@@ -130,13 +130,22 @@ impl<'a> ProcLower<'a> {
                 if self.return_target(name).is_some() {
                     return Ok(None);
                 }
-                let Some(binding) = self.resolve(name) else { return Ok(None) };
+                let Some(binding) = self.resolve(name) else {
+                    return Ok(None);
+                };
                 if !is_property_route(&binding.route) {
                     return Ok(None);
                 }
                 // A bare property name is an implicit `Me.Prop` (class member).
-                let Some(recv) = self.me_value() else { return Ok(None) };
-                let call = self.late_member_call(name, kind, recv, vec![CoreArg::ByVal(val.value.clone())]);
+                let Some(recv) = self.me_value() else {
+                    return Ok(None);
+                };
+                let call = self.late_member_call(
+                    name,
+                    kind,
+                    recv,
+                    vec![CoreArg::ByVal(val.value.clone())],
+                );
                 Ok(Some(vec![CoreStmt::Eval(call)]))
             }
             SyntaxKind::MemberExpr => {
@@ -148,7 +157,12 @@ impl<'a> ProcLower<'a> {
                 // `Interface_Property` accessor on the implementing class.
                 let dispatch = self.interface_dispatch_name(&recv.ty, member);
                 let setter = |this: &Self, recv_value| {
-                    let call = this.late_member_call(&dispatch, kind, recv_value, vec![CoreArg::ByVal(val.value.clone())]);
+                    let call = this.late_member_call(
+                        &dispatch,
+                        kind,
+                        recv_value,
+                        vec![CoreArg::ByVal(val.value.clone())],
+                    );
                     Ok(Some(vec![CoreStmt::Eval(call)]))
                 };
                 match self.resolve_member(&recv.ty, member, Some(kind)) {
@@ -172,25 +186,27 @@ impl<'a> ProcLower<'a> {
         // `Err.Raise` / `Err.Clear` are error-state statements, not value calls.
         if callee.kind() == SyntaxKind::MemberExpr
             && let Some(recv) = callee.member_receiver()
-                && self.is_err_receiver(recv) {
-                    let member = callee
-                        .member_name_token()
-                        .ok_or_else(|| BindError::Malformed("Err member".into()))?
-                        .text;
-                    return self.bind_err_statement(member, arglist);
-                }
+            && self.is_err_receiver(recv)
+        {
+            let member = callee
+                .member_name_token()
+                .ok_or_else(|| BindError::Malformed("Err member".into()))?
+                .text;
+            return self.bind_err_statement(member, arglist);
+        }
         // `Debug.Print` / `Debug.Assert` are diagnostics statements; `Debug` is a
         // predeclared object that is not a value (so it cannot bind as a receiver
         // through the general member-call path).
         if callee.kind() == SyntaxKind::MemberExpr
             && let Some(recv) = callee.member_receiver()
-                && self.is_debug_receiver(recv) {
-                    let member = callee
-                        .member_name_token()
-                        .ok_or_else(|| BindError::Malformed("Debug member".into()))?
-                        .text;
-                    return self.bind_debug_statement(member, arglist);
-                }
+            && self.is_debug_receiver(recv)
+        {
+            let member = callee
+                .member_name_token()
+                .ok_or_else(|| BindError::Malformed("Debug member".into()))?
+                .text;
+            return self.bind_debug_statement(member, arglist);
+        }
         let bound = self.bind_call_from_callee(callee, arglist)?;
         Ok(vec![CoreStmt::Eval(bound.value)])
     }
@@ -234,13 +250,19 @@ impl<'a> ProcLower<'a> {
         let source = self
             .me_value()
             .ok_or_else(|| BindError::Malformed("RaiseEvent outside a class module".into()))?;
-        let binding = self.resolve(name).ok_or_else(|| self.unresolved(name, "event"))?;
+        let binding = self
+            .resolve(name)
+            .ok_or_else(|| self.unresolved(name, "event"))?;
         let event = binding
             .symbol
             .and_then(|s| self.g.ids.event_index_of.get(&s).copied())
             .ok_or_else(|| self.unresolved(name, "event index"))?;
         let args = self.bind_args(node.raise_event_arg_list(), None)?;
-        Ok(vec![CoreStmt::RaiseEvent { source, event, args }])
+        Ok(vec![CoreStmt::RaiseEvent {
+            source,
+            event,
+            args,
+        }])
     }
 
     fn bind_err_statement(
@@ -264,11 +286,17 @@ impl<'a> ProcLower<'a> {
         let mut arms = Vec::new();
         let cond = self.bind_required(node.condition_expr(), "If condition")?;
         let body = self.bind_opt_block(node.if_then_block())?;
-        arms.push(CoreIfArm { condition: cond, body });
+        arms.push(CoreIfArm {
+            condition: cond,
+            body,
+        });
         for elif in node.if_elseif_clauses() {
             let c = self.bind_required(elif.condition_expr(), "ElseIf condition")?;
             let b = self.bind_opt_block(elif.body_block())?;
-            arms.push(CoreIfArm { condition: c, body: b });
+            arms.push(CoreIfArm {
+                condition: c,
+                body: b,
+            });
         }
         let else_body = match node.if_else_clause() {
             Some(ec) => self.bind_opt_block(ec.body_block())?,
@@ -297,7 +325,13 @@ impl<'a> ProcLower<'a> {
                 Some(s) => Some(self.bind_expr(s)?.value),
                 None => None,
             };
-            Ok(vec![CoreStmt::ForRange { var, start, end, step, body }])
+            Ok(vec![CoreStmt::ForRange {
+                var,
+                start,
+                end,
+                step,
+                body,
+            }])
         }
     }
 
@@ -305,10 +339,20 @@ impl<'a> ProcLower<'a> {
         let body = self.bind_opt_block(node.body_block())?;
         if let Some(pre) = node.do_pre_cond() {
             let condition = self.bind_expr(pre)?.value;
-            Ok(vec![CoreStmt::DoLoop { condition, until: node.do_pre_is_until(), post_check: false, body }])
+            Ok(vec![CoreStmt::DoLoop {
+                condition,
+                until: node.do_pre_is_until(),
+                post_check: false,
+                body,
+            }])
         } else if let Some(post) = node.do_post_cond() {
             let condition = self.bind_expr(post)?.value;
-            Ok(vec![CoreStmt::DoLoop { condition, until: node.do_post_is_until(), post_check: true, body }])
+            Ok(vec![CoreStmt::DoLoop {
+                condition,
+                until: node.do_post_is_until(),
+                post_check: true,
+                body,
+            }])
         } else {
             // `Do … Loop` — unconditional; loop while True until an `Exit Do`.
             Ok(vec![CoreStmt::DoLoop {
@@ -323,7 +367,12 @@ impl<'a> ProcLower<'a> {
     fn bind_while(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let condition = self.bind_required(node.condition_expr(), "While condition")?;
         let body = self.bind_opt_block(node.body_block())?;
-        Ok(vec![CoreStmt::DoLoop { condition, until: false, post_check: false, body }])
+        Ok(vec![CoreStmt::DoLoop {
+            condition,
+            until: false,
+            post_check: false,
+            body,
+        }])
     }
 
     fn bind_select(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -348,14 +397,21 @@ impl<'a> ProcLower<'a> {
                     CaseSpec::Is { op, value } => {
                         let cop = comparison_binop(op)
                             .ok_or_else(|| BindError::Unsupported("Case Is operator".into()))?;
-                        clauses.push(CaseClause::Is { op: cop, value: self.bind_expr(value)?.value });
+                        clauses.push(CaseClause::Is {
+                            op: cop,
+                            value: self.bind_expr(value)?.value,
+                        });
                     }
                     CaseSpec::Else => {}
                 }
             }
             cases.push(CoreCaseBlock { clauses, body });
         }
-        Ok(vec![CoreStmt::Select { selector, cases, case_else }])
+        Ok(vec![CoreStmt::Select {
+            selector,
+            cases,
+            case_else,
+        }])
     }
 
     fn bind_with(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -370,7 +426,9 @@ impl<'a> ProcLower<'a> {
         let kind = node.child_tokens().into_iter().find_map(|t| match t.kind {
             SyntaxKind::KwFor => Some(ExitKind::For),
             SyntaxKind::KwDo => Some(ExitKind::Do),
-            SyntaxKind::KwSub | SyntaxKind::KwFunction | SyntaxKind::KwProperty => Some(ExitKind::Proc),
+            SyntaxKind::KwSub | SyntaxKind::KwFunction | SyntaxKind::KwProperty => {
+                Some(ExitKind::Proc)
+            }
             _ => None,
         });
         kind.map(|k| vec![CoreStmt::Exit(k)])
@@ -389,7 +447,9 @@ impl<'a> ProcLower<'a> {
             if name == "0" {
                 return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGoto0)]);
             }
-            return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGotoLabel(self.label_id(name)))]);
+            return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGotoLabel(
+                self.label_id(name),
+            ))]);
         }
         if toks.iter().any(|t| t.text == "0") {
             return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGoto0)]);
@@ -398,12 +458,18 @@ impl<'a> ProcLower<'a> {
     }
 
     fn bind_resume(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        if node.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwNext) {
+        if node
+            .child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwNext)
+        {
             return Ok(vec![CoreStmt::Error(ErrorOp::ResumeNext)]);
         }
         if let Some(lref) = node.label_ref() {
             let name = lref.first_significant_token().map(|t| t.text).unwrap_or("");
-            return Ok(vec![CoreStmt::Error(ErrorOp::ResumeLabel(self.label_id(name)))]);
+            return Ok(vec![CoreStmt::Error(ErrorOp::ResumeLabel(
+                self.label_id(name),
+            ))]);
         }
         Ok(vec![CoreStmt::Error(ErrorOp::Resume)])
     }
@@ -415,18 +481,25 @@ impl<'a> ProcLower<'a> {
         // (`Ident`/`Me` separated by `.`/`!`) followed by the `ArrayBounds` node —
         // so we accumulate the path segments for the current target and rebuild a
         // simple-name or member-array place from them.
-        let preserve = node.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwPreserve);
+        let preserve = node
+            .child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwPreserve);
         let mut out = Vec::new();
         let mut segments: Vec<&str> = Vec::new();
         for el in node.children() {
             match el {
                 SyntaxElement::Token(t)
-                    if matches!(t.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::KwMe) =>
+                    if matches!(
+                        t.kind,
+                        SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::KwMe
+                    ) =>
                 {
                     segments.push(t.text);
                 }
                 // `.`/`!` are path separators — keep accumulating segments.
-                SyntaxElement::Token(t) if matches!(t.kind, SyntaxKind::Dot | SyntaxKind::Bang) => {}
+                SyntaxElement::Token(t) if matches!(t.kind, SyntaxKind::Dot | SyntaxKind::Bang) => {
+                }
                 SyntaxElement::Node(n) if n.kind() == SyntaxKind::ArrayBounds => {
                     out.push(self.redim_one(&segments, n, preserve)?);
                     segments.clear();
@@ -452,10 +525,14 @@ impl<'a> ProcLower<'a> {
                 // Only Local/Global/Field places are valid array storage — a
                 // WithEvents member is not re-dimmable.
                 if matches!(place, CorePlace::WithEvents { .. }) {
-                    return Err(BindError::Unsupported("ReDim of a WithEvents member".into()));
+                    return Err(BindError::Unsupported(
+                        "ReDim of a WithEvents member".into(),
+                    ));
                 }
                 let element_type = match &ty {
-                    oxvba_symbol::signature::VarTypeRef::Array(inner) => types::array_element_of(inner),
+                    oxvba_symbol::signature::VarTypeRef::Array(inner) => {
+                        types::array_element_of(inner)
+                    }
                     _ => oxvba_bundle::ArrayElementType::Variant,
                 };
                 Ok((place, element_type))
@@ -472,7 +549,9 @@ impl<'a> ProcLower<'a> {
         segments: &[&str],
     ) -> Result<(CorePlace, oxvba_symbol::signature::VarTypeRef), BindError> {
         use oxvba_symbol::signature::VarTypeRef;
-        let (first, rest) = segments.split_first().expect("dotted path has >= 2 segments");
+        let (first, rest) = segments
+            .split_first()
+            .expect("dotted path has >= 2 segments");
         // Leading receiver: `Me`, or a resolved local/global/field variable.
         let (mut recv, mut ty): (CoreValue, VarTypeRef) = if fold_identifier(first) == "me" {
             let me = self
@@ -486,11 +565,15 @@ impl<'a> ProcLower<'a> {
                 .unwrap_or(VarTypeRef::Variant);
             (me, class_ty)
         } else {
-            let binding = self.resolve(first).ok_or_else(|| self.unresolved(first, "ReDim receiver"))?;
+            let binding = self
+                .resolve(first)
+                .ok_or_else(|| self.unresolved(first, "ReDim receiver"))?;
             let (place, ty) = binding
                 .symbol
                 .and_then(|s| self.place_for_symbol(s))
-                .ok_or_else(|| BindError::InvalidAssignment(format!("`{first}` is not a variable")))?;
+                .ok_or_else(|| {
+                    BindError::InvalidAssignment(format!("`{first}` is not a variable"))
+                })?;
             (CoreValue::Load(place), ty)
         };
         let mut place = CorePlace::Local(LocalId(0)); // overwritten on the first segment below
@@ -500,14 +583,18 @@ impl<'a> ProcLower<'a> {
                 .ok_or_else(|| self.unresolved(seg, "ReDim member"))?;
             match &mb.route {
                 DispatchRoute::Value => {
-                    let sym = mb.symbol.ok_or_else(|| self.unresolved(seg, "ReDim member field"))?;
+                    let sym = mb
+                        .symbol
+                        .ok_or_else(|| self.unresolved(seg, "ReDim member field"))?;
                     let (p, t) = self.member_place(recv.clone(), sym)?;
                     place = p;
                     ty = t;
                     recv = CoreValue::Load(place.clone());
                 }
                 other => {
-                    return Err(BindError::Unsupported(format!("ReDim of `.{seg}` ({other:?})")));
+                    return Err(BindError::Unsupported(format!(
+                        "ReDim of `.{seg}` ({other:?})"
+                    )));
                 }
             }
         }
@@ -522,12 +609,20 @@ impl<'a> ProcLower<'a> {
     ) -> Result<CoreStmt, BindError> {
         let (array, element_type) = self.redim_target(segments)?;
         let bounds = self.bind_array_bounds(bounds_node)?;
-        Ok(CoreStmt::ReDim { array, bounds, element_type, preserve })
+        Ok(CoreStmt::ReDim {
+            array,
+            bounds,
+            element_type,
+            preserve,
+        })
     }
 
     /// Lower an `ArrayBounds` node to `CoreBound`s (each `lower To upper`, or `0 To
     /// upper` for a single bound). The lower bound must be a constant.
-    fn bind_array_bounds(&mut self, bounds_node: SyntaxNode<'_>) -> Result<Vec<CoreBound>, BindError> {
+    fn bind_array_bounds(
+        &mut self,
+        bounds_node: SyntaxNode<'_>,
+    ) -> Result<Vec<CoreBound>, BindError> {
         let mut bounds = Vec::new();
         for b in bounds_node.children_of(SyntaxKind::Bound) {
             let exprs = b.expr_children();
@@ -579,13 +674,20 @@ impl<'a> ProcLower<'a> {
     pub(crate) fn bind_dim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let mut out = Vec::new();
         for declarator in node.declarators() {
-            let Some(name) = declarator.declarator_name() else { continue };
+            let Some(name) = declarator.declarator_name() else {
+                continue;
+            };
             // A fixed-size array allocates via ReDim.
             if let Some(bounds_node) = declarator.array_bounds() {
                 if !bounds_node.children_of(SyntaxKind::Bound).is_empty() {
                     let (array, element_type) = self.redim_target(&[name.text])?;
                     let bounds = self.bind_array_bounds(bounds_node)?;
-                    out.push(CoreStmt::ReDim { array, bounds, element_type, preserve: false });
+                    out.push(CoreStmt::ReDim {
+                        array,
+                        bounds,
+                        element_type,
+                        preserve: false,
+                    });
                 }
                 continue; // a dynamic `Dim a()` stays unallocated.
             }
@@ -600,15 +702,21 @@ impl<'a> ProcLower<'a> {
     /// `Some(record allocation)` if `name` is a UDT-typed variable: a fresh record (a
     /// `SafeArray` of the type's fields, default-initialized) stored into its slot.
     fn udt_record_init(&mut self, name: &str) -> Result<Option<CoreStmt>, BindError> {
-        let Some(sym) = self.resolve(name).and_then(|b| b.symbol) else { return Ok(None) };
+        let Some(sym) = self.resolve(name).and_then(|b| b.symbol) else {
+            return Ok(None);
+        };
         let oxvba_symbol::signature::VarTypeRef::Udt(udt) = self.symbol_type(sym) else {
             return Ok(None);
         };
-        let Some(field_count) = self.g.env.udt_field_count(&udt) else { return Ok(None) };
+        let Some(field_count) = self.g.env.udt_field_count(&udt) else {
+            return Ok(None);
+        };
         let place = self.place_by_name(name)?;
         Ok(Some(CoreStmt::Assign {
             place,
-            value: CoreValue::NewRecord { fields: field_count },
+            value: CoreValue::NewRecord {
+                fields: field_count,
+            },
             intent: AssignmentIntent::Let,
             target_kind: oxvba_bundle::AssignmentTargetKind::Scalar,
             target_name: name.to_string(),
@@ -624,7 +732,10 @@ impl<'a> ProcLower<'a> {
                 oxvba_symbol::signature::VarTypeRef::Array(inner) => types::array_element_of(inner),
                 _ => oxvba_bundle::ArrayElementType::Variant,
             };
-            out.push(CoreStmt::Erase { array, element_type });
+            out.push(CoreStmt::Erase {
+                array,
+                element_type,
+            });
         }
         Ok(out)
     }
@@ -645,7 +756,11 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::NameStmt => NativeImplId::FileRename,
             // `Lock` and `Unlock` share `LockStmt`; the `Lock` keyword distinguishes.
             SyntaxKind::LockStmt => {
-                if node.child_tokens().iter().any(|t| t.kind == SyntaxKind::KwLock) {
+                if node
+                    .child_tokens()
+                    .iter()
+                    .any(|t| t.kind == SyntaxKind::KwLock)
+                {
                     NativeImplId::FileLock
                 } else {
                     NativeImplId::FileUnlock
@@ -655,9 +770,10 @@ impl<'a> ProcLower<'a> {
         };
         let mut args = Vec::new();
         if let Some(fnum) = node.file_number()
-            && let Some(ch) = fnum.first_expr_child() {
-                args.push(CoreArg::ByVal(self.bind_expr(ch)?.value));
-            }
+            && let Some(ch) = fnum.first_expr_child()
+        {
+            args.push(CoreArg::ByVal(self.bind_expr(ch)?.value));
+        }
         // Print/Write data is nested in a PrintItemList of PrintItems, not direct
         // expr children; descend so the values aren't dropped. Other file
         // statements (Input/Line Input) carry their lvalue targets directly.
@@ -672,7 +788,10 @@ impl<'a> ProcLower<'a> {
                 args.push(CoreArg::ByVal(self.bind_expr(e)?.value));
             }
         }
-        Ok(vec![CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Native(id), args })])
+        Ok(vec![CoreStmt::Eval(CoreValue::Call {
+            callee: CoreCallee::Native(id),
+            args,
+        })])
     }
 
     /// `Open path For <mode> As #n [Len = reclen]` lowers to
@@ -782,8 +901,15 @@ impl<'a> ProcLower<'a> {
             CoreArg::ByVal(type_code),
             CoreArg::ByVal(str_len),
         ];
-        let read = CoreValue::Call { callee: CoreCallee::Native(NativeImplId::FileGetInto), args };
-        let value = types::coerce(read, &oxvba_symbol::signature::VarTypeRef::Variant, &target_ty);
+        let read = CoreValue::Call {
+            callee: CoreCallee::Native(NativeImplId::FileGetInto),
+            args,
+        };
+        let value = types::coerce(
+            read,
+            &oxvba_symbol::signature::VarTypeRef::Variant,
+            &target_ty,
+        );
         Ok(vec![CoreStmt::Assign {
             place,
             value,
@@ -811,7 +937,10 @@ impl<'a> ProcLower<'a> {
             None => CoreValue::Const(CoreConst::Empty),
         };
         let value = self.bind_expr(*value_node)?;
-        let fixed = i32::from(matches!(value.ty, oxvba_symbol::signature::VarTypeRef::FixedString(_)));
+        let fixed = i32::from(matches!(
+            value.ty,
+            oxvba_symbol::signature::VarTypeRef::FixedString(_)
+        ));
         let args = vec![
             CoreArg::ByVal(handle),
             CoreArg::ByVal(rec),
@@ -849,7 +978,6 @@ fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
 }
 
 impl<'a> ProcLower<'a> {
-
     fn bind_required(
         &mut self,
         node: Option<SyntaxNode<'_>>,
@@ -877,7 +1005,10 @@ impl<'a> ProcLower<'a> {
         }
     }
 
-    fn label_ref_id(&mut self, node: SyntaxNode<'_>) -> Result<oxvba_bundle::coreir::LabelId, BindError> {
+    fn label_ref_id(
+        &mut self,
+        node: SyntaxNode<'_>,
+    ) -> Result<oxvba_bundle::coreir::LabelId, BindError> {
         let lref = node
             .label_ref()
             .ok_or_else(|| BindError::Malformed("label reference".into()))?;
@@ -905,9 +1036,10 @@ impl<'a> ProcLower<'a> {
 
     fn array_element_for_name(&self, name: &str) -> oxvba_bundle::ArrayElementType {
         if let Some(sym) = self.resolve(name).and_then(|b| b.symbol)
-            && let oxvba_symbol::signature::VarTypeRef::Array(inner) = self.symbol_type(sym) {
-                return types::array_element_of(&inner);
-            }
+            && let oxvba_symbol::signature::VarTypeRef::Array(inner) = self.symbol_type(sym)
+        {
+            return types::array_element_of(&inner);
+        }
         oxvba_bundle::ArrayElementType::Variant
     }
 
@@ -949,8 +1081,9 @@ impl<'a> ProcLower<'a> {
             _ => return Err(BindError::Malformed("Err.Raise number".into())),
         };
         let value = self.bind_expr(expr)?.value;
-        self.fold_const_i32(&value)
-            .ok_or_else(|| BindError::Unsupported("Err.Raise requires a constant error number".into()))
+        self.fold_const_i32(&value).ok_or_else(|| {
+            BindError::Unsupported("Err.Raise requires a constant error number".into())
+        })
     }
 }
 

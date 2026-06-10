@@ -19,7 +19,12 @@ fn single(local_count: usize, body: Vec<CoreStmt>) -> CoreProgram {
         name: "Main".into(),
         kind: ProcedureKind::Sub,
         params: Vec::new(),
-        locals: (0..local_count).map(|i| CoreLocal { name: format!("v{i}"), array_element: None }).collect(),
+        locals: (0..local_count)
+            .map(|i| CoreLocal {
+                name: format!("v{i}"),
+                array_element: None,
+            })
+            .collect(),
         return_local: None,
         body,
     };
@@ -54,7 +59,10 @@ fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
     }
 }
 fn coerce(value: CoreValue, target: NumericCoerceTarget) -> CoreValue {
-    CoreValue::Coerce { value: Box::new(value), to: CoerceTarget::Numeric(target) }
+    CoreValue::Coerce {
+        value: Box::new(value),
+        to: CoerceTarget::Numeric(target),
+    }
 }
 fn set(slot: usize, value: CoreValue) -> CoreStmt {
     CoreStmt::Assign {
@@ -89,37 +97,67 @@ fn first_local_num(program: &CoreProgram) -> Option<f64> {
 #[test]
 fn xor_integers() {
     // 6 Xor 3 = 0b110 ^ 0b011 = 0b101 = 5
-    assert_eq!(first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Xor, ci(6), ci(3)))])), Some(5.0));
+    assert_eq!(
+        first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Xor, ci(6), ci(3)))])),
+        Some(5.0)
+    );
 }
 
 #[test]
 fn xor_booleans() {
     // True Xor False = True (-1)
-    assert_eq!(first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Xor, cb(true), cb(false)))])), Some(-1.0));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, bin(CoreBinOp::Xor, cb(true), cb(false)))]
+        )),
+        Some(-1.0)
+    );
 }
 
 #[test]
 fn eqv_equal_operands_is_all_ones() {
     // 5 Eqv 5 = Not(5 Xor 5) = Not(0) = -1
-    assert_eq!(first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Eqv, ci(5), ci(5)))])), Some(-1.0));
+    assert_eq!(
+        first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Eqv, ci(5), ci(5)))])),
+        Some(-1.0)
+    );
 }
 
 #[test]
 fn eqv_booleans() {
     // True Eqv False = False (0)
-    assert_eq!(first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Eqv, cb(true), cb(false)))])), Some(0.0));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, bin(CoreBinOp::Eqv, cb(true), cb(false)))]
+        )),
+        Some(0.0)
+    );
 }
 
 #[test]
 fn imp_true_implies_false_is_false() {
     // True Imp False = (Not True) Or False = False (0)
-    assert_eq!(first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Imp, cb(true), cb(false)))])), Some(0.0));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, bin(CoreBinOp::Imp, cb(true), cb(false)))]
+        )),
+        Some(0.0)
+    );
 }
 
 #[test]
 fn imp_false_antecedent_is_true() {
     // False Imp False = (Not False) Or False = True (-1)
-    assert_eq!(first_local_num(&single(1, vec![set(0, bin(CoreBinOp::Imp, cb(false), cb(false)))])), Some(-1.0));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, bin(CoreBinOp::Imp, cb(false), cb(false)))]
+        )),
+        Some(-1.0)
+    );
 }
 
 // ── Narrowing coercions: Single / Currency / Date ────────────────────────────
@@ -127,17 +165,35 @@ fn imp_false_antecedent_is_true() {
 #[test]
 fn coerce_single() {
     // CSng(2.5) → Single 2.5
-    assert_eq!(first_local_num(&single(1, vec![set(0, coerce(cf(2.5), NumericCoerceTarget::Single))])), Some(2.5));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, coerce(cf(2.5), NumericCoerceTarget::Single))]
+        )),
+        Some(2.5)
+    );
 }
 
 #[test]
 fn coerce_currency() {
     // CCur(1.5) → Currency (scaled 15000) → 1.5
-    assert_eq!(first_local_num(&single(1, vec![set(0, coerce(cf(1.5), NumericCoerceTarget::Currency))])), Some(1.5));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, coerce(cf(1.5), NumericCoerceTarget::Currency))]
+        )),
+        Some(1.5)
+    );
 }
 
 #[test]
 fn coerce_date() {
     // CDate(40000.0) → Date serial 40000.0
-    assert_eq!(first_local_num(&single(1, vec![set(0, coerce(cf(40000.0), NumericCoerceTarget::Date))])), Some(40000.0));
+    assert_eq!(
+        first_local_num(&single(
+            1,
+            vec![set(0, coerce(cf(40000.0), NumericCoerceTarget::Date))]
+        )),
+        Some(40000.0)
+    );
 }

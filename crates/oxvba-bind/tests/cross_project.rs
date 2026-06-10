@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 
 use oxvba_bind::bind_projects;
-use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_hal::HostPolicy;
+use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_symbol::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference,
     ReferencedProjectManifest, SymbolProjectManifest,
@@ -73,7 +73,9 @@ fn project(
 ) -> SymbolProjectManifest {
     let references = refs
         .iter()
-        .map(|r| ProjectReference::Project { referenced_project_name: r.project_name.clone() })
+        .map(|r| ProjectReference::Project {
+            referenced_project_name: r.project_name.clone(),
+        })
         .collect();
     SymbolProjectManifest {
         project_name: name.into(),
@@ -89,7 +91,10 @@ fn project(
 /// bundle, link them (entry last), run, and return the entry bundle's global 0.
 fn link_run_global0_i32(closure_leaf_first: &[SymbolProjectManifest]) -> Option<i32> {
     let programs = bind_projects(closure_leaf_first, &NullTypeLibs).expect("bind_projects");
-    let bundles: Vec<_> = programs.iter().map(|p| oxvba_bundle::linearize(p).expect("linearize")).collect();
+    let bundles: Vec<_> = programs
+        .iter()
+        .map(|p| oxvba_bundle::linearize(p).expect("linearize"))
+        .collect();
     let refs: Vec<&_> = bundles.iter().collect();
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
     let mut vm = oxvba_vm2::Vm::link(&refs, &host).expect("link");
@@ -222,10 +227,13 @@ fn cross_bundle_call_arg_reads_callers_global() {
              \x20   r = Echo(seed) + 1\n\
              End Sub\n",
         )],
-        vec![referenced("Lib", vec![proc_module(
-            "LibMod",
-            "Public Function Echo(ByVal n As Long) As Long\nEcho = n\nEnd Function\n",
-        )])],
+        vec![referenced(
+            "Lib",
+            vec![proc_module(
+                "LibMod",
+                "Public Function Echo(ByVal n As Long) As Long\nEcho = n\nEnd Function\n",
+            )],
+        )],
     );
     // r (App global 0) = Echo(seed=41) + 1 = 42.
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
@@ -263,11 +271,17 @@ fn referenced_module_variable_is_not_cross_project_bindable() {
     let lib = project("Lib", vec![lib_mod()], vec![]);
     let app = project(
         "App",
-        vec![proc_module("Main", "Public r As Long\nSub Main()\nr = gConfig\nEnd Sub\n")],
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = gConfig\nEnd Sub\n",
+        )],
         vec![referenced("Lib", vec![lib_mod()])],
     );
     let result = bind_projects(&[lib, app], &NullTypeLibs);
-    assert!(result.is_err(), "a referenced module variable must not resolve cross-project");
+    assert!(
+        result.is_err(),
+        "a referenced module variable must not resolve cross-project"
+    );
 }
 
 #[test]
@@ -282,7 +296,10 @@ fn module_qualified_call_resolves_when_qualifier_also_names_a_sub() {
         "App",
         vec![
             proc_module("Shim", "Public Sub Main()\n    Call Main.Main\nEnd Sub\n"),
-            proc_module("Main", "Public r As Long\nPublic Sub Main()\n    r = 7\nEnd Sub\n"),
+            proc_module(
+                "Main",
+                "Public r As Long\nPublic Sub Main()\n    r = 7\nEnd Sub\n",
+            ),
         ],
         vec![],
     );
@@ -523,14 +540,27 @@ fn multi_level_chain_a_b_c() {
     // A → B → C: A calls a B function that itself calls a C function. Each project
     // is bound from its own manifest (carrying its transitive reference source); the
     // transitive imports compose at link time.
-    let c = || referenced("C", vec![proc_module("CMod", "Public Function CVal() As Long\nCVal = 100\nEnd Function\n")]);
-    let b_modules =
-        vec![proc_module("BMod", "Public Function BVal() As Long\nBVal = CVal() + 1\nEnd Function\n")];
+    let c = || {
+        referenced(
+            "C",
+            vec![proc_module(
+                "CMod",
+                "Public Function CVal() As Long\nCVal = 100\nEnd Function\n",
+            )],
+        )
+    };
+    let b_modules = vec![proc_module(
+        "BMod",
+        "Public Function BVal() As Long\nBVal = CVal() + 1\nEnd Function\n",
+    )];
     let c_proj = project("C", c().modules, vec![]);
     let b_proj = project("B", b_modules.clone(), vec![c()]);
     let a_proj = project(
         "A",
-        vec![proc_module("Main", "Public r As Long\nSub Main()\nr = BVal()\nEnd Sub\n")],
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = BVal()\nEnd Sub\n",
+        )],
         vec![referenced("B", b_modules)],
     );
     // r = B.BVal() = C.CVal() + 1 = 101, computed across three bundles.
@@ -541,19 +571,37 @@ fn multi_level_chain_a_b_c() {
 fn diamond_a_b_d_a_c_d_links_d_once() {
     // A → B → D and A → C → D: D is referenced via two paths. `Vm::link` resolves
     // both B's and C's import of D to the single loaded D bundle (D links once).
-    let d = || referenced("D", vec![proc_module("DMod", "Public Function DVal() As Long\nDVal = 50\nEnd Function\n")]);
-    let b_modules =
-        vec![proc_module("BMod", "Public Function BFromD() As Long\nBFromD = DVal()\nEnd Function\n")];
-    let c_modules =
-        vec![proc_module("CMod", "Public Function CFromD() As Long\nCFromD = DVal()\nEnd Function\n")];
+    let d = || {
+        referenced(
+            "D",
+            vec![proc_module(
+                "DMod",
+                "Public Function DVal() As Long\nDVal = 50\nEnd Function\n",
+            )],
+        )
+    };
+    let b_modules = vec![proc_module(
+        "BMod",
+        "Public Function BFromD() As Long\nBFromD = DVal()\nEnd Function\n",
+    )];
+    let c_modules = vec![proc_module(
+        "CMod",
+        "Public Function CFromD() As Long\nCFromD = DVal()\nEnd Function\n",
+    )];
     let d_proj = project("D", d().modules, vec![]);
     let b_proj = project("B", b_modules.clone(), vec![d()]);
     let c_proj = project("C", c_modules.clone(), vec![d()]);
     let a_proj = project(
         "A",
-        vec![proc_module("Main", "Public r As Long\nSub Main()\nr = BFromD() + CFromD()\nEnd Sub\n")],
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = BFromD() + CFromD()\nEnd Sub\n",
+        )],
         vec![referenced("B", b_modules), referenced("C", c_modules)],
     );
     // r = D.DVal() + D.DVal() = 100; both paths resolve to the one D bundle.
-    assert_eq!(link_run_global0_i32(&[d_proj, b_proj, c_proj, a_proj]), Some(100));
+    assert_eq!(
+        link_run_global0_i32(&[d_proj, b_proj, c_proj, a_proj]),
+        Some(100)
+    );
 }

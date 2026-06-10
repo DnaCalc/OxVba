@@ -29,8 +29,10 @@ pub fn fold_const_values(
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
 ) -> HashMap<SymbolId, CoreConst> {
     // The string comparison/`Like` regime is the declaring module's `Option Compare`.
-    let module_modes: HashMap<ScopeId, StringCompareMode> =
-        module_roots.iter().map(|(scope, root)| (*scope, module_compare_mode(*root))).collect();
+    let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
+        .iter()
+        .map(|(scope, root)| (*scope, module_compare_mode(*root)))
+        .collect();
     // 1) Collect plain `Const` declarators (module- and proc-level).
     let mut pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)> = Vec::new();
     let mut const_syms: HashSet<SymbolId> = HashSet::new();
@@ -41,7 +43,10 @@ pub fn fold_const_values(
     let mut values = resolve_const_worklist(symbols, pending, &const_syms, &module_modes);
     // 3) Fold `Enum` members (sequential auto-increment, reading earlier values).
     for (module_scope, root) in module_roots {
-        let mode = module_modes.get(module_scope).copied().unwrap_or(StringCompareMode::Binary);
+        let mode = module_modes
+            .get(module_scope)
+            .copied()
+            .unwrap_or(StringCompareMode::Binary);
         fold_enums(symbols, *module_scope, *root, &mut values, mode);
     }
     values
@@ -57,8 +62,9 @@ fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
         }
         let toks = node.child_tokens();
         let is_compare = toks.iter().any(|t| t.kind == SyntaxKind::KwCompare);
-        let is_text =
-            toks.iter().any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Text"));
+        let is_text = toks
+            .iter()
+            .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Text"));
         if is_compare && is_text {
             return StringCompareMode::Text;
         }
@@ -78,7 +84,11 @@ fn mode_for_scope(
         if let Some(m) = module_modes.get(&s) {
             return *m;
         }
-        cur = symbols.scopes().iter().find(|sc| sc.id == s).and_then(|sc| sc.parent);
+        cur = symbols
+            .scopes()
+            .iter()
+            .find(|sc| sc.id == s)
+            .and_then(|sc| sc.parent);
     }
     StringCompareMode::Binary
 }
@@ -94,8 +104,10 @@ pub fn fold_optional_defaults(
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     values: &HashMap<SymbolId, CoreConst>,
 ) -> HashMap<(SymbolId, usize), CoreConst> {
-    let module_modes: HashMap<ScopeId, StringCompareMode> =
-        module_roots.iter().map(|(scope, root)| (*scope, module_compare_mode(*root))).collect();
+    let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
+        .iter()
+        .map(|(scope, root)| (*scope, module_compare_mode(*root)))
+        .collect();
     let mut out = HashMap::new();
     for (module_scope, root) in module_roots {
         let mode = mode_for_scope(symbols, *module_scope, &module_modes);
@@ -122,7 +134,8 @@ fn collect_proc_defaults(
     {
         for (i, param) in param_list.params().iter().enumerate() {
             if let Some(def) = param.param_default().and_then(|d| d.first_expr_child())
-                && let ConstEval::Value(c) = eval_const_expr(symbols, module_scope, def, values, mode)
+                && let ConstEval::Value(c) =
+                    eval_const_expr(symbols, module_scope, def, values, mode)
             {
                 out.insert((proc_sym, i), c);
             }
@@ -145,8 +158,12 @@ fn collect_consts<'a>(
 ) {
     if node.kind() == SyntaxKind::ConstStmt {
         for declarator in node.declarators() {
-            let Some(name) = declarator.declarator_name() else { continue };
-            let Some(init) = declarator.first_expr_child() else { continue };
+            let Some(name) = declarator.declarator_name() else {
+                continue;
+            };
+            let Some(init) = declarator.first_expr_child() else {
+                continue;
+            };
             if let Ok(Some(sym)) = symbols.find_in_scope(scope, SymbolNamespace::Local, name.text) {
                 const_syms.insert(sym);
                 pending.push((scope, sym, init));
@@ -191,7 +208,9 @@ fn fold_enums(
     if node.kind() == SyntaxKind::EnumBlock {
         let mut next = 0i32;
         for member in node.enum_members() {
-            let Some(name_tok) = member.declarator_name() else { continue };
+            let Some(name_tok) = member.declarator_name() else {
+                continue;
+            };
             let Ok(Some(sym)) =
                 symbols.find_in_scope(module_scope, SymbolNamespace::Local, name_tok.text)
             else {
@@ -311,7 +330,9 @@ fn eval_inner(
             None => ConstEval::Unresolvable,
         },
         SyntaxKind::UnaryExpr => {
-            let Some(operand) = node.unary_operand() else { return ConstEval::Unresolvable };
+            let Some(operand) = node.unary_operand() else {
+                return ConstEval::Unresolvable;
+            };
             let inner = match eval_inner(symbols, scope, operand, values, const_syms, mode) {
                 ConstEval::Value(c) => c,
                 other => return other,
@@ -324,7 +345,9 @@ fn eval_inner(
             }
         }
         SyntaxKind::IdentExpr => {
-            let Some(tok) = node.ident_name_token() else { return ConstEval::Unresolvable };
+            let Some(tok) = node.ident_name_token() else {
+                return ConstEval::Unresolvable;
+            };
             // A project const in scope; else a `vb*` library constant.
             if let Ok(Some(sym)) =
                 symbols.resolve_in_scope_chain(scope, SymbolNamespace::Local, tok.text)
@@ -347,13 +370,17 @@ fn eval_inner(
             else {
                 return ConstEval::Unresolvable;
             };
-            let Some(op) = core_binop(op_tok.kind) else { return ConstEval::Unresolvable };
+            let Some(op) = core_binop(op_tok.kind) else {
+                return ConstEval::Unresolvable;
+            };
             match (
                 eval_inner(symbols, scope, lhs_n, values, const_syms, mode),
                 eval_inner(symbols, scope, rhs_n, values, const_syms, mode),
             ) {
                 (ConstEval::Pending, _) | (_, ConstEval::Pending) => ConstEval::Pending,
-                (ConstEval::Value(l), ConstEval::Value(r)) => opt(fold_const_binary(op, &l, &r, mode)),
+                (ConstEval::Value(l), ConstEval::Value(r)) => {
+                    opt(fold_const_binary(op, &l, &r, mode))
+                }
                 _ => ConstEval::Unresolvable,
             }
         }
@@ -381,7 +408,9 @@ pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
                 SyntaxKind::StringLiteral => Some(CoreConst::Str(unquote(tok.text))),
                 SyntaxKind::KwTrue => Some(CoreConst::Bool(true)),
                 SyntaxKind::KwFalse => Some(CoreConst::Bool(false)),
-                SyntaxKind::DateLiteral => date::parse_date_literal_serial_bits(tok.text).map(CoreConst::Date),
+                SyntaxKind::DateLiteral => {
+                    date::parse_date_literal_serial_bits(tok.text).map(CoreConst::Date)
+                }
                 _ => None,
             }
         }
@@ -401,7 +430,11 @@ pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
 fn parse_int(text: &str) -> Option<CoreConst> {
     let digits = text.trim_end_matches(['&', '%', '@', '!', '#', '$', '^']);
     let n: i64 = digits.parse().ok()?;
-    Some(if i32::try_from(n).is_ok() { CoreConst::I32(n as i32) } else { CoreConst::I64(n) })
+    Some(if i32::try_from(n).is_ok() {
+        CoreConst::I32(n as i32)
+    } else {
+        CoreConst::I64(n)
+    })
 }
 
 fn parse_radix(text: &str, radix: u32) -> Option<CoreConst> {
@@ -410,7 +443,11 @@ fn parse_radix(text: &str, radix: u32) -> Option<CoreConst> {
         .trim_start_matches(['h', 'H', 'o', 'O'])
         .trim_end_matches(['&', '%', '^']);
     let n = i64::from_str_radix(body, radix).ok()?;
-    Some(if i32::try_from(n).is_ok() { CoreConst::I32(n as i32) } else { CoreConst::I64(n) })
+    Some(if i32::try_from(n).is_ok() {
+        CoreConst::I32(n as i32)
+    } else {
+        CoreConst::I64(n)
+    })
 }
 
 fn parse_float(text: &str) -> Option<f64> {
@@ -480,7 +517,13 @@ fn const_to_string(c: &CoreConst) -> Option<String> {
         CoreConst::Str(s) => s.clone(),
         CoreConst::I32(n) => n.to_string(),
         CoreConst::I64(n) => n.to_string(),
-        CoreConst::Bool(b) => if *b { "True".into() } else { "False".into() },
+        CoreConst::Bool(b) => {
+            if *b {
+                "True".into()
+            } else {
+                "False".into()
+            }
+        }
         CoreConst::F64(bits) => f64::from_bits(*bits).to_string(),
         _ => return None,
     })
@@ -494,7 +537,9 @@ pub(crate) fn fold_const_binary(
 ) -> Option<CoreConst> {
     use CoreBinOp::*;
     if matches!(op, Concat) {
-        return Some(CoreConst::Str(const_to_string(lhs)? + &const_to_string(rhs)?));
+        return Some(CoreConst::Str(
+            const_to_string(lhs)? + &const_to_string(rhs)?,
+        ));
     }
     // String relational / `Like`: when both operands are strings, compare them under
     // the module's `Option Compare` (Text → case-insensitive) rather than numerically.
@@ -505,10 +550,22 @@ pub(crate) fn fold_const_binary(
     }
     let (l, r) = (const_num(lhs)?, const_num(rhs)?);
     let both_int = matches!((&l, &r), (ConstNum::Int(_), ConstNum::Int(_)));
-    let li = match &l { ConstNum::Int(v) => *v, ConstNum::Float(v) => v.round() as i64 };
-    let ri = match &r { ConstNum::Int(v) => *v, ConstNum::Float(v) => v.round() as i64 };
-    let lf = match &l { ConstNum::Int(v) => *v as f64, ConstNum::Float(v) => *v };
-    let rf = match &r { ConstNum::Int(v) => *v as f64, ConstNum::Float(v) => *v };
+    let li = match &l {
+        ConstNum::Int(v) => *v,
+        ConstNum::Float(v) => v.round() as i64,
+    };
+    let ri = match &r {
+        ConstNum::Int(v) => *v,
+        ConstNum::Float(v) => v.round() as i64,
+    };
+    let lf = match &l {
+        ConstNum::Int(v) => *v as f64,
+        ConstNum::Float(v) => *v,
+    };
+    let rf = match &r {
+        ConstNum::Int(v) => *v as f64,
+        ConstNum::Float(v) => *v,
+    };
     let bool_const = |b: bool| CoreConst::Bool(b);
     Some(match op {
         Add if both_int => int_const(li.checked_add(ri)?),
@@ -557,7 +614,10 @@ fn fold_string_relational(
         Le => l <= r,
         Gt => l > r,
         Ge => l >= r,
-        Like => like_match(&l.chars().collect::<Vec<_>>(), &r.chars().collect::<Vec<_>>()),
+        Like => like_match(
+            &l.chars().collect::<Vec<_>>(),
+            &r.chars().collect::<Vec<_>>(),
+        ),
         _ => return None,
     })
 }
@@ -573,9 +633,14 @@ fn like_match(s: &[char], p: &[char]) -> bool {
         Some('[') => match p.iter().position(|&c| c == ']') {
             Some(end) => {
                 let set = &p[1..end];
-                let (negate, set) =
-                    if set.first() == Some(&'!') { (true, &set[1..]) } else { (false, set) };
-                !s.is_empty() && (set.contains(&s[0]) != negate) && like_match(&s[1..], &p[end + 1..])
+                let (negate, set) = if set.first() == Some(&'!') {
+                    (true, &set[1..])
+                } else {
+                    (false, set)
+                };
+                !s.is_empty()
+                    && (set.contains(&s[0]) != negate)
+                    && like_match(&s[1..], &p[end + 1..])
             }
             None => !s.is_empty() && s[0] == '[' && like_match(&s[1..], &p[1..]),
         },

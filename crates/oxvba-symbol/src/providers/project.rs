@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use oxvba_bundle::ProjectMemberKind;
 
 use crate::binding::{Binding, DispatchRoute};
-use crate::model::{fold_identifier, SymbolId, SymbolKind};
+use crate::model::{SymbolId, SymbolKind, fold_identifier};
 use crate::provider::Provider;
 use crate::scanner::ModuleScan;
 use crate::signature::VarTypeRef;
@@ -30,19 +30,36 @@ pub struct ProjectProvider {
 }
 
 impl ProjectProvider {
-    pub fn build(_symbols: &crate::model::SymbolTable, active: &[ModuleScan], referenced: &[ModuleScan]) -> Self {
+    pub fn build(
+        _symbols: &crate::model::SymbolTable,
+        active: &[ModuleScan],
+        referenced: &[ModuleScan],
+    ) -> Self {
         let mut provider = ProjectProvider::default();
         for scan in active.iter().chain(referenced.iter()) {
             let module_key = fold_identifier(&scan.module_name);
             let module_entry = provider.modules.entry(module_key.clone()).or_default();
             for member in &scan.members {
-                let entry = MemberEntry { symbol: member.symbol, kind: member.kind };
-                module_entry.entry(member.name_folded.clone()).or_default().push(entry);
+                let entry = MemberEntry {
+                    symbol: member.symbol,
+                    kind: member.kind,
+                };
+                module_entry
+                    .entry(member.name_folded.clone())
+                    .or_default()
+                    .push(entry);
                 if is_public_member(member.kind) {
-                    provider.public.entry(member.name_folded.clone()).or_default().push(entry);
+                    provider
+                        .public
+                        .entry(member.name_folded.clone())
+                        .or_default()
+                        .push(entry);
                 }
                 if member.is_default {
-                    provider.default_members.entry(module_key.clone()).or_insert(entry);
+                    provider
+                        .default_members
+                        .entry(module_key.clone())
+                        .or_insert(entry);
                 }
             }
         }
@@ -118,10 +135,14 @@ fn is_public_member(kind: SymbolKind) -> bool {
 fn binding_for(entry: MemberEntry) -> Binding {
     let route = match entry.kind {
         SymbolKind::Procedure | SymbolKind::Function | SymbolKind::Event => {
-            DispatchRoute::ProjectMember { kind: ProjectMemberKind::Method }
+            DispatchRoute::ProjectMember {
+                kind: ProjectMemberKind::Method,
+            }
         }
         // Default (read) accessor; the binder picks Let/Set from the group.
-        SymbolKind::Property => DispatchRoute::ProjectMember { kind: ProjectMemberKind::PropertyGet },
+        SymbolKind::Property => DispatchRoute::ProjectMember {
+            kind: ProjectMemberKind::PropertyGet,
+        },
         _ => DispatchRoute::Value,
     };
     Binding::new(Some(entry.symbol), route)

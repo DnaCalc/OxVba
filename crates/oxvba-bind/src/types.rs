@@ -114,7 +114,9 @@ fn numeric_target(b: BuiltinType) -> Option<NumericCoerceTarget> {
 /// `Boolean`/`String`/`Date`/`Variant` results map to `Widening` (non-arithmetic or
 /// already-widest), as does `Double`.
 pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
-    let VarTypeRef::Builtin(b) = ty else { return NumericMode::Widening };
+    let VarTypeRef::Builtin(b) = ty else {
+        return NumericMode::Widening;
+    };
     match b {
         BuiltinType::Double | BuiltinType::Boolean | BuiltinType::Date | BuiltinType::String => {
             NumericMode::Widening
@@ -131,13 +133,18 @@ pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
 /// `String`/`Object`/`Variant`/array targets (their store needs no narrowing). Skips
 /// re-wrapping a value already coerced to the same target.
 pub fn coerce_store(value: CoreValue, to: &VarTypeRef) -> CoreValue {
-    let Some(target) = coerce_target(to) else { return value };
+    let Some(target) = coerce_target(to) else {
+        return value;
+    };
     if let CoreValue::Coerce { to: existing, .. } = &value
         && *existing == target
     {
         return value;
     }
-    CoreValue::Coerce { value: Box::new(value), to: target }
+    CoreValue::Coerce {
+        value: Box::new(value),
+        to: target,
+    }
 }
 
 /// Coerce `value` (of type `from`) to type `to`, wrapping in a `Coerce` node only
@@ -154,13 +161,19 @@ pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue
         return value;
     }
     match coerce_target(to) {
-        Some(target) => CoreValue::Coerce { value: Box::new(value), to: target },
+        Some(target) => CoreValue::Coerce {
+            value: Box::new(value),
+            to: target,
+        },
         None => value,
     }
 }
 
 pub fn is_longlong(ty: &VarTypeRef) -> bool {
-    matches!(ty, VarTypeRef::Builtin(BuiltinType::LongLong | BuiltinType::LongPtr))
+    matches!(
+        ty,
+        VarTypeRef::Builtin(BuiltinType::LongLong | BuiltinType::LongPtr)
+    )
 }
 
 // ── Operator result lattice ─────────────────────────────────────────────────
@@ -262,7 +275,11 @@ mod tests {
     #[test]
     fn widening_picks_the_wider_type() {
         assert_eq!(
-            result_type(CoreBinOp::Add, &builtin(BuiltinType::Integer), &builtin(BuiltinType::Double)),
+            result_type(
+                CoreBinOp::Add,
+                &builtin(BuiltinType::Integer),
+                &builtin(BuiltinType::Double)
+            ),
             builtin(BuiltinType::Double)
         );
         assert_eq!(result_type(CoreBinOp::Mul, &long(), &long()), long());
@@ -270,7 +287,10 @@ mod tests {
 
     #[test]
     fn comparisons_and_concat_have_fixed_result() {
-        assert_eq!(result_type(CoreBinOp::Lt, &long(), &long()), builtin(BuiltinType::Boolean));
+        assert_eq!(
+            result_type(CoreBinOp::Lt, &long(), &long()),
+            builtin(BuiltinType::Boolean)
+        );
         assert_eq!(
             result_type(CoreBinOp::Concat, &long(), &builtin(BuiltinType::String)),
             builtin(BuiltinType::String)
@@ -279,14 +299,20 @@ mod tests {
 
     #[test]
     fn variant_operand_propagates() {
-        assert_eq!(result_type(CoreBinOp::Add, &VarTypeRef::Variant, &long()), VarTypeRef::Variant);
+        assert_eq!(
+            result_type(CoreBinOp::Add, &VarTypeRef::Variant, &long()),
+            VarTypeRef::Variant
+        );
     }
 
     #[test]
     fn coerce_skips_identity_and_wraps_narrowing() {
         let v = CoreValue::Const(oxvba_bundle::coreir::CoreConst::I32(5));
         // Long → Long: no node.
-        assert!(matches!(coerce(v.clone(), &long(), &long()), CoreValue::Const(_)));
+        assert!(matches!(
+            coerce(v.clone(), &long(), &long()),
+            CoreValue::Const(_)
+        ));
         // Long → Integer: a Coerce node.
         assert!(matches!(
             coerce(v, &long(), &builtin(BuiltinType::Integer)),

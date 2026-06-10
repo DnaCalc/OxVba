@@ -188,7 +188,10 @@ pub enum SymbolModelError {
     #[error("syntax parse failed: {0}")]
     Syntax(String),
     #[error("duplicate symbol `{name}` in {namespace:?} namespace")]
-    DuplicateSymbol { name: String, namespace: SymbolNamespace },
+    DuplicateSymbol {
+        name: String,
+        namespace: SymbolNamespace,
+    },
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -268,7 +271,12 @@ impl SymbolTable {
         self.scope(parent)?;
         let name = name.map(|name| self.intern_name(name));
         let id = ScopeId(self.scopes.len() as u32);
-        self.scopes.push(Scope { id, kind, parent: Some(parent), name });
+        self.scopes.push(Scope {
+            id,
+            kind,
+            parent: Some(parent),
+            name,
+        });
         Ok(id)
     }
 
@@ -289,7 +297,11 @@ impl SymbolTable {
     ) -> Result<SymbolId, SymbolModelError> {
         self.scope(scope)?;
         let name_id = self.intern_name(name);
-        let key = SymbolKey { scope, name: name_id, namespace };
+        let key = SymbolKey {
+            scope,
+            name: name_id,
+            namespace,
+        };
         if self.symbols_by_key.contains_key(&key) {
             let interned = self.name(name_id).expect("name was just interned");
             return Err(SymbolModelError::DuplicateSymbol {
@@ -353,7 +365,11 @@ impl SymbolTable {
         };
         Ok(self
             .symbols_by_key
-            .get(&SymbolKey { scope, name, namespace })
+            .get(&SymbolKey {
+                scope,
+                name,
+                namespace,
+            })
             .copied())
     }
 
@@ -372,7 +388,11 @@ impl SymbolTable {
             let scope = self.scope(scope_id)?;
             if let Some(symbol) = self
                 .symbols_by_key
-                .get(&SymbolKey { scope: scope_id, name, namespace })
+                .get(&SymbolKey {
+                    scope: scope_id,
+                    name,
+                    namespace,
+                })
                 .copied()
             {
                 return Ok(Some(symbol));

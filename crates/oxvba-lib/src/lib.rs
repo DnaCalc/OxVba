@@ -33,7 +33,10 @@ pub type LibResult<T> = Result<T, LibError>;
 
 impl LibError {
     pub fn new(code: i32, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
     /// Run-time error 13 — Type mismatch.
     pub fn type_mismatch(message: impl Into<String>) -> Self {
@@ -76,7 +79,9 @@ impl Default for LibContext {
     fn default() -> Self {
         // VBA's `Rnd` is deterministic until `Randomize`; the 24-bit LCG starts
         // from this fixed default seed.
-        Self { rng_state: 0x0005_0000 }
+        Self {
+            rng_state: 0x0005_0000,
+        }
     }
 }
 
@@ -147,10 +152,14 @@ pub(crate) fn as_usize(value: &Variant) -> LibResult<usize> {
 pub(crate) fn alloc_count(value: &Variant) -> LibResult<usize> {
     let v = as_i64(value)?;
     if v < 0 {
-        return Err(LibError::invalid_call(format!("negative allocation count {v}")));
+        return Err(LibError::invalid_call(format!(
+            "negative allocation count {v}"
+        )));
     }
     if v > i64::from(i32::MAX) {
-        return Err(LibError::overflow(format!("allocation count {v} exceeds Long range")));
+        return Err(LibError::overflow(format!(
+            "allocation count {v} exceeds Long range"
+        )));
     }
     Ok(v as usize)
 }

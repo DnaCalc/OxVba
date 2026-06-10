@@ -11,11 +11,11 @@ use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
-use oxvba_symbol::structural::StructuralIntrinsic;
 use oxvba_symbol::model::{
-    fold_identifier, LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolNamespace,
+    LibraryConstValue, PredeclaredObjectId, SymbolId, SymbolImpl, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
+use oxvba_symbol::structural::StructuralIntrinsic;
 use oxvba_syntax::red::ArgItem;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
@@ -47,7 +47,13 @@ impl<'a> ProcLower<'a> {
             // never reaches here (a coclass member needs a receiver — it arrives via
             // `bind_member_*`); reject it defensively.
             DispatchRoute::ExternMember {
-                unit, owner, member, kind, param_types, param_names, has_receiver,
+                unit,
+                owner,
+                member,
+                kind,
+                param_types,
+                param_names,
+                has_receiver,
             } => {
                 if *has_receiver {
                     return Err(BindError::Unsupported(format!(
@@ -64,14 +70,20 @@ impl<'a> ProcLower<'a> {
                 });
                 let args = self.bind_extern_proc_args(arglist, param_types, param_names)?;
                 Ok(value_bound(
-                    CoreValue::Call { callee: CoreCallee::ExternProc { import }, args },
+                    CoreValue::Call {
+                        callee: CoreCallee::ExternProc { import },
+                        args,
+                    },
                     VarTypeRef::Variant,
                 ))
             }
             DispatchRoute::Native(id) => {
                 let args = self.bind_args(arglist, None)?;
                 Ok(value_bound(
-                    CoreValue::Call { callee: CoreCallee::Native(*id), args },
+                    CoreValue::Call {
+                        callee: CoreCallee::Native(*id),
+                        args,
+                    },
                     VarTypeRef::Variant,
                 ))
             }
@@ -86,7 +98,10 @@ impl<'a> ProcLower<'a> {
                     self.bind_declare_args(arglist, &by_ref, &is_string)?;
                 Ok(value_bound(
                     CoreValue::Call {
-                        callee: CoreCallee::Declare { descriptor_id: *descriptor_id, ptr_writebacks },
+                        callee: CoreCallee::Declare {
+                            descriptor_id: *descriptor_id,
+                            ptr_writebacks,
+                        },
                         args,
                     },
                     VarTypeRef::Variant,
@@ -97,12 +112,17 @@ impl<'a> ProcLower<'a> {
                     Some(a) => self.bind_positional_values(a)?,
                     None => Vec::new(),
                 };
-                Ok(value_bound(CoreValue::ArrayLiteral(items), VarTypeRef::Variant))
+                Ok(value_bound(
+                    CoreValue::ArrayLiteral(items),
+                    VarTypeRef::Variant,
+                ))
             }
             // `IIf`/`Choose`/`Switch` are eager VBA library functions (every
             // argument is evaluated before the call) — lower them as native
             // calls, not as lazy/short-circuit forms.
-            DispatchRoute::SpecialForm(sf @ (SpecialForm::IIf | SpecialForm::Choose | SpecialForm::Switch)) => {
+            DispatchRoute::SpecialForm(
+                sf @ (SpecialForm::IIf | SpecialForm::Choose | SpecialForm::Switch),
+            ) => {
                 let id = match sf {
                     SpecialForm::IIf => NativeImplId::IIf,
                     SpecialForm::Choose => NativeImplId::Choose,
@@ -111,7 +131,10 @@ impl<'a> ProcLower<'a> {
                 };
                 let args = self.bind_args(arglist, None)?;
                 Ok(value_bound(
-                    CoreValue::Call { callee: CoreCallee::Native(id), args },
+                    CoreValue::Call {
+                        callee: CoreCallee::Native(id),
+                        args,
+                    },
                     VarTypeRef::Variant,
                 ))
             }
@@ -125,21 +148,26 @@ impl<'a> ProcLower<'a> {
                 };
                 let first = arglist
                     .and_then(|a| a.arg_items().into_iter().next())
-                    .ok_or_else(|| BindError::Malformed(format!("`{name}` requires an array argument")))?;
+                    .ok_or_else(|| {
+                        BindError::Malformed(format!("`{name}` requires an array argument"))
+                    })?;
                 let expr = match first {
                     ArgItem::Positional(e) => e,
                     _ => return Err(BindError::Malformed(format!("`{name}` array argument"))),
                 };
                 let (place, _) = self.bind_place(expr)?;
                 Ok(value_bound(
-                    CoreValue::Bound { which, array: Box::new(place) },
+                    CoreValue::Bound {
+                        which,
+                        array: Box::new(place),
+                    },
                     builtin(BuiltinType::Long),
                 ))
             }
             DispatchRoute::SpecialForm(SpecialForm::CallByName) => self.bind_callbyname(arglist),
-            DispatchRoute::ErrMember(_) => {
-                Err(BindError::Unsupported(format!("`{name}` Err member in value context")))
-            }
+            DispatchRoute::ErrMember(_) => Err(BindError::Unsupported(format!(
+                "`{name}` Err member in value context"
+            ))),
             // The pointer-helper intrinsics yield the address of their operand as a
             // `LongPtr`. The operand is bound as a **value** (so r-values like
             // `StrPtr("literal")` work, not just l-values); at run time the VM pins
@@ -155,18 +183,25 @@ impl<'a> ProcLower<'a> {
             ) => {
                 let first = arglist
                     .and_then(|a| a.arg_items().into_iter().next())
-                    .ok_or_else(|| BindError::Malformed(format!("`{name}` requires an argument")))?;
+                    .ok_or_else(|| {
+                        BindError::Malformed(format!("`{name}` requires an argument"))
+                    })?;
                 let expr = match first {
                     ArgItem::Positional(e) => e,
                     _ => return Err(BindError::Malformed(format!("`{name}` argument"))),
                 };
                 let (kind, value, _writeback) = self.pointer_operand(*s, expr)?;
                 Ok(value_bound(
-                    CoreValue::Ptr { kind, value: Box::new(value) },
+                    CoreValue::Ptr {
+                        kind,
+                        value: Box::new(value),
+                    },
                     builtin(BuiltinType::LongPtr),
                 ))
             }
-            other => Err(BindError::Unsupported(format!("call route {other:?} for `{name}`"))),
+            other => Err(BindError::Unsupported(format!(
+                "call route {other:?} for `{name}`"
+            ))),
         }
     }
 
@@ -195,7 +230,10 @@ impl<'a> ProcLower<'a> {
             .and_then(|s| s.return_type)
             .unwrap_or(VarTypeRef::Variant);
         Ok(value_bound(
-            CoreValue::Call { callee: CoreCallee::VbaProc { proc: proc_id }, args },
+            CoreValue::Call {
+                callee: CoreCallee::VbaProc { proc: proc_id },
+                args,
+            },
             ty,
         ))
     }
@@ -211,10 +249,12 @@ impl<'a> ProcLower<'a> {
     ) -> Result<CoreArg, BindError> {
         let by_ref = param.map(|p| p.mode == PassingMode::ByRef).unwrap_or(false);
         let forced_by_val = expr.kind() == SyntaxKind::ParenExpr;
-        if by_ref && !forced_by_val
-            && let Ok((place, _)) = self.bind_place(expr) {
-                return Ok(CoreArg::ByRef(place));
-            }
+        if by_ref
+            && !forced_by_val
+            && let Ok((place, _)) = self.bind_place(expr)
+        {
+            return Ok(CoreArg::ByRef(place));
+        }
         let bound = self.bind_expr(expr)?;
         let value = match param {
             Some(p) if p.mode == PassingMode::ByVal => types::coerce(bound.value, &bound.ty, &p.ty),
@@ -253,10 +293,15 @@ impl<'a> ProcLower<'a> {
             match item {
                 ArgItem::Omitted => args.push(CoreArg::Omitted),
                 ArgItem::Named { name, value } => {
-                    args.push(CoreArg::Named { name: name.text.to_string(), value: self.bind_expr(value)?.value });
+                    args.push(CoreArg::Named {
+                        name: name.text.to_string(),
+                        value: self.bind_expr(value)?.value,
+                    });
                 }
                 ArgItem::Positional(expr) => {
-                    args.push(self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?);
+                    args.push(
+                        self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?,
+                    );
                 }
             }
         }
@@ -292,9 +337,16 @@ impl<'a> ProcLower<'a> {
                     let by_ref = param_by_ref.get(i).copied().unwrap_or(false);
                     if let Some((intrinsic, operand)) = self.pointer_call(expr) {
                         let (kind, value, wb) = self.pointer_operand(intrinsic, operand)?;
-                        args.push(CoreArg::ByVal(CoreValue::Ptr { kind, value: Box::new(value) }));
+                        args.push(CoreArg::ByVal(CoreValue::Ptr {
+                            kind,
+                            value: Box::new(value),
+                        }));
                         if let Some((target, kind)) = wb {
-                            writebacks.push(PtrWriteback { arg_index: i, target, kind });
+                            writebacks.push(PtrWriteback {
+                                arg_index: i,
+                                target,
+                                kind,
+                            });
                         }
                     } else if !by_ref && param_is_string.get(i).copied().unwrap_or(false) {
                         args.push(self.bind_byval_string_arg(expr)?);
@@ -439,9 +491,14 @@ impl<'a> ProcLower<'a> {
             match item {
                 ArgItem::Omitted => args.push(CoreArg::Omitted),
                 ArgItem::Named { name, value } => {
-                    args.push(CoreArg::Named { name: name.text.to_string(), value: self.bind_expr(value)?.value });
+                    args.push(CoreArg::Named {
+                        name: name.text.to_string(),
+                        value: self.bind_expr(value)?.value,
+                    });
                 }
-                ArgItem::Positional(expr) => args.push(self.bind_extern_one(expr, param_types.get(i))?),
+                ArgItem::Positional(expr) => {
+                    args.push(self.bind_extern_one(expr, param_types.get(i))?)
+                }
             }
         }
         Ok(args)
@@ -470,23 +527,39 @@ impl<'a> ProcLower<'a> {
             match item {
                 ArgItem::Positional(expr) => {
                     let arg = self.bind_extern_one(expr, param_types.get(pos))?;
-                    if pos < n { slots[pos] = Some(arg) } else { extra.push(arg) }
+                    if pos < n {
+                        slots[pos] = Some(arg)
+                    } else {
+                        extra.push(arg)
+                    }
                     pos += 1;
                 }
                 ArgItem::Omitted => {
-                    if pos < n { slots[pos] = Some(CoreArg::Omitted) } else { extra.push(CoreArg::Omitted) }
+                    if pos < n {
+                        slots[pos] = Some(CoreArg::Omitted)
+                    } else {
+                        extra.push(CoreArg::Omitted)
+                    }
                     pos += 1;
                 }
                 ArgItem::Named { name, value } => {
                     let folded = fold_identifier(name.text);
-                    match param_names.iter().position(|p| fold_identifier(p) == folded) {
-                        Some(i) => slots[i] = Some(self.bind_extern_one(value, param_types.get(i))?),
+                    match param_names
+                        .iter()
+                        .position(|p| fold_identifier(p) == folded)
+                    {
+                        Some(i) => {
+                            slots[i] = Some(self.bind_extern_one(value, param_types.get(i))?)
+                        }
                         None => return Err(self.unresolved(name.text, "named argument")),
                     }
                 }
             }
         }
-        let mut args: Vec<CoreArg> = slots.into_iter().map(|s| s.unwrap_or(CoreArg::Omitted)).collect();
+        let mut args: Vec<CoreArg> = slots
+            .into_iter()
+            .map(|s| s.unwrap_or(CoreArg::Omitted))
+            .collect();
         args.extend(extra);
         Ok(args)
     }
@@ -508,7 +581,10 @@ impl<'a> ProcLower<'a> {
                 ArgItem::Omitted => args.push(CoreArg::Omitted),
                 ArgItem::Named { name, value } => {
                     let v = self.bind_expr(value)?.value;
-                    args.push(CoreArg::Named { name: name.text.to_string(), value: v });
+                    args.push(CoreArg::Named {
+                        name: name.text.to_string(),
+                        value: v,
+                    });
                 }
                 ArgItem::Positional(expr) => {
                     args.push(self.bind_one_arg(expr, signature.and_then(|s| s.params.get(i)))?);
@@ -529,12 +605,18 @@ impl<'a> ProcLower<'a> {
         kind: ProjectMemberKind,
         rhs: &CoreValue,
     ) -> Result<Option<Vec<CoreStmt>>, BindError> {
-        let Some(base) = target.index_base() else { return Ok(None) };
+        let Some(base) = target.index_base() else {
+            return Ok(None);
+        };
         if base.kind() != SyntaxKind::IdentExpr {
             return Ok(None); // a member-qualified indexed property is a place store path
         }
-        let Some(name) = base.ident_name_token().map(|t| t.text) else { return Ok(None) };
-        let Some(binding) = self.resolve(name) else { return Ok(None) };
+        let Some(name) = base.ident_name_token().map(|t| t.text) else {
+            return Ok(None);
+        };
+        let Some(binding) = self.resolve(name) else {
+            return Ok(None);
+        };
         if !matches!(
             binding.route,
             DispatchRoute::ProjectMember {
@@ -545,7 +627,9 @@ impl<'a> ProcLower<'a> {
         ) {
             return Ok(None); // not a property (e.g. an array → place store)
         }
-        let Some(sym) = binding.symbol else { return Ok(None) };
+        let Some(sym) = binding.symbol else {
+            return Ok(None);
+        };
         let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied() else {
             return Ok(None);
         };
@@ -611,7 +695,11 @@ impl<'a> ProcLower<'a> {
                 }
                 ArgItem::Named { name, value } => {
                     let folded = fold_identifier(name.text);
-                    match signature.params.iter().position(|p| fold_identifier(&p.name) == folded) {
+                    match signature
+                        .params
+                        .iter()
+                        .position(|p| fold_identifier(&p.name) == folded)
+                    {
                         Some(i) if variadic_index == Some(i) => {
                             return Err(BindError::Unsupported(
                                 "named argument to a ParamArray parameter".into(),
@@ -706,7 +794,10 @@ impl<'a> ProcLower<'a> {
             args.push(arg);
         }
         Ok(value_bound(
-            CoreValue::Call { callee: CoreCallee::DynamicByName, args },
+            CoreValue::Call {
+                callee: CoreCallee::DynamicByName,
+                args,
+            },
             VarTypeRef::Variant,
         ))
     }
@@ -725,7 +816,10 @@ impl<'a> ProcLower<'a> {
 
     /// The per-parameter by-ref flags of a `Declare` symbol (empty if unknown).
     fn declare_param_by_ref(&self, sym: Option<SymbolId>) -> Vec<bool> {
-        match sym.and_then(|s| self.g.env.symbols.symbol(s)).map(|s| &s.imp) {
+        match sym
+            .and_then(|s| self.g.env.symbols.symbol(s))
+            .map(|s| &s.imp)
+        {
             Some(SymbolImpl::Declare(d)) => d.param_by_ref.clone(),
             _ => Vec::new(),
         }
@@ -735,7 +829,10 @@ impl<'a> ProcLower<'a> {
     /// unknown) — String params marshal through an ANSI buffer that writes back
     /// even when declared `ByVal` (see [`Self::bind_byval_string_arg`]).
     fn declare_param_is_string(&self, sym: Option<SymbolId>) -> Vec<bool> {
-        match sym.and_then(|s| self.g.env.symbols.symbol(s)).map(|s| &s.imp) {
+        match sym
+            .and_then(|s| self.g.env.symbols.symbol(s))
+            .map(|s| &s.imp)
+        {
             Some(SymbolImpl::Declare(d)) => d
                 .param_types
                 .iter()
@@ -776,9 +873,10 @@ impl<'a> ProcLower<'a> {
         // `Err.Number` / `Err.Description` / `Err.Source` are error-state reads.
         if let Some(recv) = node.member_receiver()
             && self.is_err_receiver(recv)
-                && let Some((field, ty)) = err_field(member) {
-                    return Ok(value_bound(CoreValue::ErrField(field), ty));
-                }
+            && let Some((field, ty)) = err_field(member)
+        {
+            return Ok(value_bound(CoreValue::ErrField(field), ty));
+        }
         // `Module.Member` where `Module` is a standard module — a namespace qualifier,
         // not a value.
         if let Some(bound) = self.try_module_qualified(node, member, None)? {
@@ -786,7 +884,11 @@ impl<'a> ProcLower<'a> {
         }
         // A field read of a UDT value (`p.X`) — load the record's fixed-index element.
         if let Some((place, ty)) = self.udt_field_place(node)? {
-            return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
+            return Ok(Bound {
+                value: CoreValue::Load(place.clone()),
+                ty,
+                place: Some(place),
+            });
         }
         let recv = self.member_receiver_bound(node)?;
         self.bind_member_value(recv, member)
@@ -807,11 +909,15 @@ impl<'a> ProcLower<'a> {
         if node.member_has_leading_dot() {
             return Ok(None);
         }
-        let Some(recv) = node.member_receiver() else { return Ok(None) };
+        let Some(recv) = node.member_receiver() else {
+            return Ok(None);
+        };
         if recv.kind() != SyntaxKind::IdentExpr {
             return Ok(None);
         }
-        let Some(tok) = recv.ident_name_token() else { return Ok(None) };
+        let Some(tok) = recv.ident_name_token() else {
+            return Ok(None);
+        };
         if !self.is_module_qualifier(tok.text) {
             return Ok(None);
         }
@@ -835,18 +941,28 @@ impl<'a> ProcLower<'a> {
         arglist: Option<SyntaxNode<'_>>,
     ) -> Result<Bound, BindError> {
         if let DispatchRoute::ConstValue(c) = &binding.route {
-            return Ok(value_bound(CoreValue::Const(c.clone()), crate::expr::const_type(c)));
+            return Ok(value_bound(
+                CoreValue::Const(c.clone()),
+                crate::expr::const_type(c),
+            ));
         }
         if let Some(sym) = binding.symbol
             && let Some(c) = self.g.env.const_value(sym)
         {
-            return Ok(value_bound(CoreValue::Const(c.clone()), crate::expr::const_type(c)));
+            return Ok(value_bound(
+                CoreValue::Const(c.clone()),
+                crate::expr::const_type(c),
+            ));
         }
         if let DispatchRoute::Value = binding.route
             && let Some(sym) = binding.symbol
             && let Some((place, ty)) = self.place_for_symbol(sym)
         {
-            return Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) });
+            return Ok(Bound {
+                value: CoreValue::Load(place.clone()),
+                ty,
+                place: Some(place),
+            });
         }
         self.bind_call_route(name, binding, arglist)
     }
@@ -890,27 +1006,44 @@ impl<'a> ProcLower<'a> {
         match self.resolve_member(&recv.ty, member, None) {
             Some(binding) => match &binding.route {
                 DispatchRoute::Value => {
-                    let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member field"))?;
+                    let sym = binding
+                        .symbol
+                        .ok_or_else(|| self.unresolved(member, "member field"))?;
                     let (place, ty) = self.member_place(recv.value, sym)?;
-                    Ok(Bound { value: CoreValue::Load(place.clone()), ty, place: Some(place) })
+                    Ok(Bound {
+                        value: CoreValue::Load(place.clone()),
+                        ty,
+                        place: Some(place),
+                    })
                 }
                 DispatchRoute::ProjectMember { kind } => {
                     let kind = *kind;
                     let ty = self.member_return_type(binding.symbol, kind);
                     let dispatch = self.interface_dispatch_name(&recv.ty, member);
-                    Ok(value_bound(self.late_member_call(&dispatch, kind, recv.value, Vec::new()), ty))
+                    Ok(value_bound(
+                        self.late_member_call(&dispatch, kind, recv.value, Vec::new()),
+                        ty,
+                    ))
                 }
-                DispatchRoute::ComMember { dispid, member_kind, .. } => Ok(value_bound(
+                DispatchRoute::ComMember {
+                    dispid,
+                    member_kind,
+                    ..
+                } => Ok(value_bound(
                     self.early_com_call(*dispid, *member_kind, recv.value, Vec::new()),
                     VarTypeRef::Variant,
                 )),
                 // A referenced coclass member: dispatch by name on the receiver,
                 // whose `bundle_id` selects the class table in the object's bundle.
-                DispatchRoute::ExternMember { member: m, kind, .. } => Ok(value_bound(
+                DispatchRoute::ExternMember {
+                    member: m, kind, ..
+                } => Ok(value_bound(
                     self.late_member_call(m, *kind, recv.value, Vec::new()),
                     VarTypeRef::Variant,
                 )),
-                other => Err(BindError::Unsupported(format!(".{member} ({other:?} pending)"))),
+                other => Err(BindError::Unsupported(format!(
+                    ".{member} ({other:?} pending)"
+                ))),
             },
             // No declared member on an untyped/foreign receiver → late binding.
             None if self.is_late_bound_receiver(&recv.ty) => Ok(value_bound(
@@ -950,22 +1083,41 @@ impl<'a> ProcLower<'a> {
                         (Some(sig), Some(s)) => self.bind_proc_args(arglist, sig, s)?,
                         _ => self.bind_args(arglist, None)?,
                     };
-                    let ty = signature.and_then(|s| s.return_type).unwrap_or(VarTypeRef::Variant);
+                    let ty = signature
+                        .and_then(|s| s.return_type)
+                        .unwrap_or(VarTypeRef::Variant);
                     let dispatch = self.interface_dispatch_name(&recv.ty, member);
-                    Ok(value_bound(self.late_member_call(&dispatch, kind, recv.value, method_args), ty))
+                    Ok(value_bound(
+                        self.late_member_call(&dispatch, kind, recv.value, method_args),
+                        ty,
+                    ))
                 }
                 DispatchRoute::Value => {
                     // `recv.field(i)` — index into a member array.
-                    let sym = binding.symbol.ok_or_else(|| self.unresolved(member, "member array"))?;
+                    let sym = binding
+                        .symbol
+                        .ok_or_else(|| self.unresolved(member, "member array"))?;
                     let (field_place, _ty) = self.member_place(recv.value, sym)?;
                     let indices = match arglist {
                         Some(a) => self.bind_positional_values(a)?,
                         None => Vec::new(),
                     };
-                    let place = CorePlace::Index { array: Box::new(field_place), indices };
-                    Ok(Bound { value: CoreValue::Load(place.clone()), ty: VarTypeRef::Variant, place: Some(place) })
+                    let place = CorePlace::Index {
+                        array: Box::new(field_place),
+                        indices,
+                    };
+                    Ok(Bound {
+                        value: CoreValue::Load(place.clone()),
+                        ty: VarTypeRef::Variant,
+                        place: Some(place),
+                    })
                 }
-                DispatchRoute::ComMember { dispid, member_kind, param_by_ref, .. } => {
+                DispatchRoute::ComMember {
+                    dispid,
+                    member_kind,
+                    param_by_ref,
+                    ..
+                } => {
                     let (dispid, member_kind) = (*dispid, *member_kind);
                     // Emit ByRef for the typelib's [out]/[in,out] params.
                     let by_ref = param_by_ref.clone();
@@ -977,19 +1129,31 @@ impl<'a> ProcLower<'a> {
                 }
                 // A referenced coclass member call: coerce args to the published
                 // param types, dispatch by name in the object's bundle.
-                DispatchRoute::ExternMember { member: m, kind, param_types, .. } => {
+                DispatchRoute::ExternMember {
+                    member: m,
+                    kind,
+                    param_types,
+                    ..
+                } => {
                     let method_args = self.bind_extern_args(arglist, param_types)?;
                     Ok(value_bound(
                         self.late_member_call(m, *kind, recv.value, method_args),
                         VarTypeRef::Variant,
                     ))
                 }
-                other => Err(BindError::Unsupported(format!(".{member}(...) ({other:?} pending)"))),
+                other => Err(BindError::Unsupported(format!(
+                    ".{member}(...) ({other:?} pending)"
+                ))),
             },
             None if self.is_late_bound_receiver(&recv.ty) => {
                 let method_args = self.bind_args(arglist, None)?;
                 Ok(value_bound(
-                    self.late_member_call(member, ProjectMemberKind::Method, recv.value, method_args),
+                    self.late_member_call(
+                        member,
+                        ProjectMemberKind::Method,
+                        recv.value,
+                        method_args,
+                    ),
                     VarTypeRef::Variant,
                 ))
             }
@@ -1004,12 +1168,26 @@ impl<'a> ProcLower<'a> {
         sym: SymbolId,
     ) -> Result<(CorePlace, VarTypeRef), BindError> {
         if let Some(&field) = self.g.ids.field_token_of.get(&sym) {
-            return Ok((CorePlace::Field { object: Box::new(recv), field }, self.symbol_type(sym)));
+            return Ok((
+                CorePlace::Field {
+                    object: Box::new(recv),
+                    field,
+                },
+                self.symbol_type(sym),
+            ));
         }
         if let Some(&binding) = self.g.ids.withevents_binding_of.get(&sym) {
-            return Ok((CorePlace::WithEvents { owner: Box::new(recv), binding }, self.symbol_type(sym)));
+            return Ok((
+                CorePlace::WithEvents {
+                    owner: Box::new(recv),
+                    binding,
+                },
+                self.symbol_type(sym),
+            ));
         }
-        Err(BindError::Unsupported("member field without an instance token".into()))
+        Err(BindError::Unsupported(
+            "member field without an instance token".into(),
+        ))
     }
 
     /// The member name to dispatch through. When the static receiver type is a
@@ -1055,7 +1233,10 @@ impl<'a> ProcLower<'a> {
         let mut args = vec![CoreArg::ByVal(recv)];
         args.append(&mut method_args);
         CoreValue::Call {
-            callee: CoreCallee::LateDispatch { name: name.to_string(), kind: Some(kind) },
+            callee: CoreCallee::LateDispatch {
+                name: name.to_string(),
+                kind: Some(kind),
+            },
             args,
         }
     }
@@ -1070,7 +1251,13 @@ impl<'a> ProcLower<'a> {
     ) -> CoreValue {
         let mut args = vec![CoreArg::ByVal(recv)];
         args.append(&mut method_args);
-        CoreValue::Call { callee: CoreCallee::EarlyCom { dispid, kind: Some(kind) }, args }
+        CoreValue::Call {
+            callee: CoreCallee::EarlyCom {
+                dispid,
+                kind: Some(kind),
+            },
+            args,
+        }
     }
 
     /// True if a receiver should fall back to late binding when a member doesn't
@@ -1190,12 +1377,14 @@ fn pointer_kind(intrinsic: StructuralIntrinsic, ty: &VarTypeRef) -> PtrKind {
 
 fn library_const(value: &LibraryConstValue) -> Bound {
     match value {
-        LibraryConstValue::Str(s) => {
-            value_bound(CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(s.clone())), builtin(BuiltinType::String))
-        }
-        LibraryConstValue::Int(i) => {
-            value_bound(CoreValue::Const(oxvba_bundle::coreir::CoreConst::I32(*i)), builtin(BuiltinType::Long))
-        }
+        LibraryConstValue::Str(s) => value_bound(
+            CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(s.clone())),
+            builtin(BuiltinType::String),
+        ),
+        LibraryConstValue::Int(i) => value_bound(
+            CoreValue::Const(oxvba_bundle::coreir::CoreConst::I32(*i)),
+            builtin(BuiltinType::Long),
+        ),
     }
 }
 

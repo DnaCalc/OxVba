@@ -24,7 +24,7 @@ use oxvba_bundle::coreir::{
 use oxvba_bundle::{ProcedureKind, ProjectMemberKind, StringCompareMode};
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
-    fold_identifier, ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace,
+    ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::provider::ResolutionEnvironment;
 use oxvba_symbol::signature::{PassingMode, Signature, VarTypeRef};
@@ -132,9 +132,10 @@ impl IdAllocator {
                             SymbolImpl::DeclaredType(t) => types::array_element(t),
                             _ => None,
                         };
-                        alloc
-                            .globals
-                            .push(CoreGlobal { name: alloc_name(env, sym.name), array_element });
+                        alloc.globals.push(CoreGlobal {
+                            name: alloc_name(env, sym.name),
+                            array_element,
+                        });
                         alloc.global_of.insert(sym_id, gid);
                     }
                     _ => {}
@@ -232,7 +233,13 @@ impl IdAllocator {
                     iface,
                 )?;
             }
-            classes.push(CoreClass { name: display, initialize, terminate, methods, implements });
+            classes.push(CoreClass {
+                name: display,
+                initialize,
+                terminate,
+                methods,
+                implements,
+            });
         }
         alloc.classes = classes;
         alloc.class_of = class_of;
@@ -255,7 +262,11 @@ impl IdAllocator {
         let logical = match decl.proc_name_token() {
             // Strip brackets to match the scanner's `normalize_identifier_token`
             // (find_in_scope folds case internally); preserve original case.
-            Some(t) => t.text.trim_start_matches('[').trim_end_matches(']').to_string(),
+            Some(t) => t
+                .text
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_string(),
             None => return Ok(()),
         };
         let member_kind = match decl.kind() {
@@ -264,9 +275,15 @@ impl IdAllocator {
         };
         let kind = match (decl.kind(), member_kind) {
             (SyntaxKind::FunctionDecl, _) => ProcedureKind::Function,
-            (SyntaxKind::PropertyDecl, Some(ProjectMemberKind::PropertyGet)) => ProcedureKind::PropertyGet,
-            (SyntaxKind::PropertyDecl, Some(ProjectMemberKind::PropertyLet)) => ProcedureKind::PropertyLet,
-            (SyntaxKind::PropertyDecl, Some(ProjectMemberKind::PropertySet)) => ProcedureKind::PropertySet,
+            (SyntaxKind::PropertyDecl, Some(ProjectMemberKind::PropertyGet)) => {
+                ProcedureKind::PropertyGet
+            }
+            (SyntaxKind::PropertyDecl, Some(ProjectMemberKind::PropertyLet)) => {
+                ProcedureKind::PropertyLet
+            }
+            (SyntaxKind::PropertyDecl, Some(ProjectMemberKind::PropertySet)) => {
+                ProcedureKind::PropertySet
+            }
             _ => ProcedureKind::Sub,
         };
 
@@ -290,8 +307,14 @@ impl IdAllocator {
             .and_then(|s| s.return_type.clone())
             .unwrap_or(VarTypeRef::Variant);
         let is_class_member = class_name.is_some();
-        let (params, locals, return_local, local_of, me_local) =
-            build_frame(env, signature.as_ref(), proc_scope, kind, &logical, is_class_member);
+        let (params, locals, return_local, local_of, me_local) = build_frame(
+            env,
+            signature.as_ref(),
+            proc_scope,
+            kind,
+            &logical,
+            is_class_member,
+        );
 
         self.procs.push(ProcInfo {
             proc_id,
@@ -338,7 +361,13 @@ fn build_frame(
     kind: ProcedureKind,
     logical: &str,
     is_class_member: bool,
-) -> (Vec<CoreParam>, Vec<CoreLocal>, Option<LocalId>, HashMap<SymbolId, LocalId>, Option<LocalId>) {
+) -> (
+    Vec<CoreParam>,
+    Vec<CoreLocal>,
+    Option<LocalId>,
+    HashMap<SymbolId, LocalId>,
+    Option<LocalId>,
+) {
     let symbols = &env.symbols;
     let scope_syms = symbols.symbols_in_scope(proc_scope).unwrap_or_default();
     let mut params = Vec::new();
@@ -349,7 +378,11 @@ fn build_frame(
     // A class member receives `Me` as a synthetic first parameter, so it lands at
     // frame slot 0 — exactly where vm2's `run_proc_with_me` binds the receiver.
     let me_local = if is_class_member {
-        params.push(CoreParam { name: "Me".into(), by_ref: false, variadic: false });
+        params.push(CoreParam {
+            name: "Me".into(),
+            by_ref: false,
+            variadic: false,
+        });
         next += 1;
         Some(LocalId(0))
     } else {
@@ -366,8 +399,14 @@ fn build_frame(
             let variadic = sig_param.map(|p| p.param_array).unwrap_or(false);
             // A ParamArray is a fresh local array, never an alias — force ByVal.
             let by_ref = !variadic
-                && sig_param.map(|p| p.mode == PassingMode::ByRef).unwrap_or(true);
-            params.push(CoreParam { name: alloc_name(env, sym.name), by_ref, variadic });
+                && sig_param
+                    .map(|p| p.mode == PassingMode::ByRef)
+                    .unwrap_or(true);
+            params.push(CoreParam {
+                name: alloc_name(env, sym.name),
+                by_ref,
+                variadic,
+            });
             local_of.insert(sym_id, LocalId(next));
             next += 1;
             param_index += 1;
@@ -383,7 +422,10 @@ fn build_frame(
                 SymbolImpl::DeclaredType(t) => types::array_element(t),
                 _ => None,
             };
-            locals.push(CoreLocal { name: alloc_name(env, sym.name), array_element });
+            locals.push(CoreLocal {
+                name: alloc_name(env, sym.name),
+                array_element,
+            });
             local_of.insert(sym_id, LocalId(next));
             next += 1;
         }
@@ -392,7 +434,10 @@ fn build_frame(
     // The synthetic return local for a Function / Property Get.
     let return_local = if matches!(kind, ProcedureKind::Function | ProcedureKind::PropertyGet) {
         let id = LocalId(next);
-        locals.push(CoreLocal { name: logical.to_string(), array_element: None });
+        locals.push(CoreLocal {
+            name: logical.to_string(),
+            array_element: None,
+        });
         Some(id)
     } else {
         None
@@ -462,7 +507,9 @@ fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
         }
         let toks = node.child_tokens();
         let is_compare = toks.iter().any(|t| t.kind == SyntaxKind::KwCompare);
-        let is_text = toks.iter().any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Text"));
+        let is_text = toks
+            .iter()
+            .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Text"));
         if is_compare && is_text {
             return StringCompareMode::Text;
         }
@@ -502,11 +549,15 @@ fn validate_interface_members(
         return Ok(());
     };
     for sym_id in symbols.symbols_in_scope(iface_scope).unwrap_or_default() {
-        let Some(sym) = symbols.symbol(sym_id) else { continue };
+        let Some(sym) = symbols.symbol(sym_id) else {
+            continue;
+        };
         if sym.namespace != SymbolNamespace::Procedure {
             continue;
         }
-        let Some(member) = symbols.name(sym.name).map(|n| n.folded.clone()) else { continue };
+        let Some(member) = symbols.name(sym.name).map(|n| n.folded.clone()) else {
+            continue;
+        };
         if member == "class_initialize" || member == "class_terminate" {
             continue;
         }
@@ -526,8 +577,13 @@ fn validate_interface_members(
 fn class_name_for(manifest: &SymbolProjectManifest, module_name: &str) -> Option<String> {
     let folded = fold_identifier(module_name);
     manifest.modules.iter().find_map(|m| {
-        let name = if m.attributes.vb_name.is_empty() { &m.module_name } else { &m.attributes.vb_name };
-        (fold_identifier(name) == folded && m.module_kind == ModuleKind::Class).then(|| name.clone())
+        let name = if m.attributes.vb_name.is_empty() {
+            &m.module_name
+        } else {
+            &m.attributes.vb_name
+        };
+        (fold_identifier(name) == folded && m.module_kind == ModuleKind::Class)
+            .then(|| name.clone())
     })
 }
 
@@ -536,7 +592,11 @@ fn class_name_for(manifest: &SymbolProjectManifest, module_name: &str) -> Option
 fn predeclared_class(manifest: &SymbolProjectManifest, module_name: &str) -> bool {
     let folded = fold_identifier(module_name);
     manifest.modules.iter().any(|m| {
-        let name = if m.attributes.vb_name.is_empty() { &m.module_name } else { &m.attributes.vb_name };
+        let name = if m.attributes.vb_name.is_empty() {
+            &m.module_name
+        } else {
+            &m.attributes.vb_name
+        };
         fold_identifier(name) == folded
             && m.module_kind == ModuleKind::Class
             && m.attributes.vb_predeclared_id
@@ -652,7 +712,10 @@ mod tests {
         let alloc = IdAllocator::build(&env, &manifest).unwrap();
 
         // The class field is NOT a global; it gets a field token instead.
-        assert!(alloc.globals.is_empty(), "class fields must not become globals");
+        assert!(
+            alloc.globals.is_empty(),
+            "class fields must not become globals"
+        );
         assert_eq!(alloc.field_token_of.len(), 1);
         assert_eq!(*alloc.field_token_of.values().next().unwrap(), 0);
 

@@ -9,11 +9,11 @@ use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 use crate::manifest::ModuleUnit;
 use crate::model::{
-    fold_identifier, PropertyGroup, ScopeId, SourceProvenance, SourceSpan, SymbolId, SymbolImpl,
-    SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable, Visibility,
+    PropertyGroup, ScopeId, SourceProvenance, SourceSpan, SymbolId, SymbolImpl, SymbolKind,
+    SymbolModelError, SymbolNamespace, SymbolTable, Visibility, fold_identifier,
 };
-use crate::signature::SignatureId;
 use crate::providers::declare::{CallConv, DeclareSymbol};
+use crate::signature::SignatureId;
 use crate::signature::{
     BuiltinType, CallShape, DefaultValue, Param, PassingMode, Signature, SignatureTable, VarTypeRef,
 };
@@ -73,10 +73,17 @@ pub fn scan_module(
         SymbolNamespace::Module,
         SymbolKind::Module,
         &module_name,
-        SourceProvenance { module_name: Some(module_name.clone()), span: None },
+        SourceProvenance {
+            module_name: Some(module_name.clone()),
+            span: None,
+        },
         SymbolImpl::None,
     )?;
-    let module_scope = symbols.add_scope(crate::model::ScopeKind::Module, project_scope, Some(&module_name))?;
+    let module_scope = symbols.add_scope(
+        crate::model::ScopeKind::Module,
+        project_scope,
+        Some(&module_name),
+    )?;
 
     let mut scan = ModuleScan {
         module_name: module_name.clone(),
@@ -85,7 +92,13 @@ pub fn scan_module(
         members: Vec::new(),
         implements: Vec::new(),
     };
-    let mut ctx = ScanCtx { symbols, signatures, next_descriptor_id, scan: &mut scan, module_name: &module_name };
+    let mut ctx = ScanCtx {
+        symbols,
+        signatures,
+        next_descriptor_id,
+        scan: &mut scan,
+        module_name: &module_name,
+    };
     ctx.walk(module_scope, module_syntax, true)?;
     Ok(scan)
 }
@@ -99,7 +112,12 @@ struct ScanCtx<'a> {
 }
 
 impl ScanCtx<'_> {
-    fn walk(&mut self, scope: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
+    fn walk(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        module_level: bool,
+    ) -> Result<(), SymbolModelError> {
         match node.kind() {
             SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl => {
                 self.scan_procedure(scope, node, module_level)?;
@@ -111,8 +129,20 @@ impl ScanCtx<'_> {
             SyntaxKind::EventDecl => {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
-                    let sig = self.signatures.alloc(self.build_signature(node, CallShape::EventRaise));
-                    self.declare(scope, SymbolNamespace::Member, SymbolKind::Event, name, token, SymbolImpl::Signature(sig), module_level, decl_visibility(node, Visibility::Public), None)?;
+                    let sig = self
+                        .signatures
+                        .alloc(self.build_signature(node, CallShape::EventRaise));
+                    self.declare(
+                        scope,
+                        SymbolNamespace::Member,
+                        SymbolKind::Event,
+                        name,
+                        token,
+                        SymbolImpl::Signature(sig),
+                        module_level,
+                        decl_visibility(node, Visibility::Public),
+                        None,
+                    )?;
                 }
             }
             SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
@@ -126,11 +156,21 @@ impl ScanCtx<'_> {
                     } else {
                         SymbolKind::Type
                     };
-                    self.declare(scope, SymbolNamespace::Type, kind, name, token, SymbolImpl::None, module_level, vis, None)?;
+                    self.declare(
+                        scope,
+                        SymbolNamespace::Type,
+                        kind,
+                        name,
+                        token,
+                        SymbolImpl::None,
+                        module_level,
+                        vis,
+                        None,
+                    )?;
                 }
                 if node.kind() == SyntaxKind::EnumBlock {
-                    let enum_name =
-                        first_identifier_token(node).map(|t| normalize_identifier_token(t.text).to_string());
+                    let enum_name = first_identifier_token(node)
+                        .map(|t| normalize_identifier_token(t.text).to_string());
                     for member in node.enum_members() {
                         if let Some(token) = member.declarator_name() {
                             let name = normalize_identifier_token(token.text);
@@ -203,7 +243,12 @@ impl ScanCtx<'_> {
         Ok(())
     }
 
-    fn scan_procedure(&mut self, parent: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
+    fn scan_procedure(
+        &mut self,
+        parent: ScopeId,
+        node: SyntaxNode<'_>,
+        module_level: bool,
+    ) -> Result<(), SymbolModelError> {
         // Use the canonical proc-name extractor (shared with the binder) so the set
         // of procs the scanner gives a scope to is exactly the set the binder lowers.
         let Some(name_token) = node.proc_name_token() else {
@@ -213,7 +258,9 @@ impl ScanCtx<'_> {
         let is_default = is_default_member_node(node);
         // Sub/Function/Property default to Public; `Private`/`Friend` override.
         let visibility = decl_visibility(node, Visibility::Public);
-        let sig = self.signatures.alloc(self.build_signature(node, CallShape::Ordinary));
+        let sig = self
+            .signatures
+            .alloc(self.build_signature(node, CallShape::Ordinary));
 
         if node.kind() == SyntaxKind::PropertyDecl {
             // One logical member; merge this accessor into its property group.
@@ -221,7 +268,12 @@ impl ScanCtx<'_> {
             let existing = self
                 .symbols
                 .find_in_scope(parent, SymbolNamespace::Procedure, &logical)?
-                .filter(|id| matches!(self.symbols.symbol(*id).map(|s| s.kind), Some(SymbolKind::Property)));
+                .filter(|id| {
+                    matches!(
+                        self.symbols.symbol(*id).map(|s| s.kind),
+                        Some(SymbolKind::Property)
+                    )
+                });
             match existing {
                 Some(id) => {
                     let mut group = match &self.symbols.symbol(id).expect("symbol").imp {
@@ -288,8 +340,15 @@ impl ScanCtx<'_> {
     }
 
     /// Open a procedure scope, declare the parameters, and walk the body for locals.
-    fn scan_proc_body(&mut self, node: SyntaxNode<'_>, parent: ScopeId, scope_name: &str) -> Result<(), SymbolModelError> {
-        let proc_scope = self.symbols.add_scope(crate::model::ScopeKind::Procedure, parent, Some(scope_name))?;
+    fn scan_proc_body(
+        &mut self,
+        node: SyntaxNode<'_>,
+        parent: ScopeId,
+        scope_name: &str,
+    ) -> Result<(), SymbolModelError> {
+        let proc_scope =
+            self.symbols
+                .add_scope(crate::model::ScopeKind::Procedure, parent, Some(scope_name))?;
         if let Some(param_list) = node.param_list() {
             for param in param_list.params() {
                 if let Some(param_token) = parameter_name_token(param) {
@@ -311,7 +370,12 @@ impl ScanCtx<'_> {
         Ok(())
     }
 
-    fn scan_declare(&mut self, scope: ScopeId, node: SyntaxNode<'_>, module_level: bool) -> Result<(), SymbolModelError> {
+    fn scan_declare(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+        module_level: bool,
+    ) -> Result<(), SymbolModelError> {
         let tokens = node.child_tokens();
         let is_function = tokens.iter().any(|t| t.kind == SyntaxKind::KwFunction);
         let Some(name_token) = declare_name_token(node) else {
@@ -347,7 +411,9 @@ impl ScanCtx<'_> {
                 }
             }
         }
-        let return_type = node.return_type().map(|t| declare_param_type(&type_ref_node(t)));
+        let return_type = node
+            .return_type()
+            .map(|t| declare_param_type(&type_ref_node(t)));
 
         let descriptor_id = *self.next_descriptor_id;
         *self.next_descriptor_id += 1;
@@ -369,7 +435,11 @@ impl ScanCtx<'_> {
         self.declare(
             scope,
             SymbolNamespace::Procedure,
-            if is_function { SymbolKind::Function } else { SymbolKind::Procedure },
+            if is_function {
+                SymbolKind::Function
+            } else {
+                SymbolKind::Procedure
+            },
             &declared_name,
             name_token,
             SymbolImpl::Declare(declare),
@@ -431,7 +501,14 @@ impl ScanCtx<'_> {
         visibility: Visibility,
         enum_name: Option<&str>,
     ) -> Result<(), SymbolModelError> {
-        let symbol = self.symbols.declare_symbol(scope, namespace, kind, name, provenance(self.module_name, token), imp)?;
+        let symbol = self.symbols.declare_symbol(
+            scope,
+            namespace,
+            kind,
+            name,
+            provenance(self.module_name, token),
+            imp,
+        )?;
         if module_level {
             self.scan.members.push(ScannedMember {
                 name_folded: fold_identifier(name),
@@ -495,8 +572,7 @@ fn decl_visibility(node: SyntaxNode<'_>, default: Visibility) -> Visibility {
 fn is_default_member_node(node: SyntaxNode<'_>) -> bool {
     node.text().lines().any(|line| {
         let lower = line.to_ascii_lowercase();
-        lower.contains("vb_usermemid")
-            && lower.replace(' ', "").contains("=0")
+        lower.contains("vb_usermemid") && lower.replace(' ', "").contains("=0")
     })
 }
 
@@ -528,19 +604,31 @@ fn parse_default_literal(rhs: &str) -> Option<DefaultValue> {
     let token = body.split_whitespace().next().unwrap_or(body);
     if token.contains('.') || token.contains(['e', 'E']) && !token.starts_with('&') {
         let value: f64 = token.trim_end_matches(['!', '#', '@']).parse().ok()?;
-        return Some(DefaultValue::F64(if negate { -value } else { value }.to_bits()));
+        return Some(DefaultValue::F64(
+            if negate { -value } else { value }.to_bits(),
+        ));
     }
     let raw = parse_int_literal(token)?;
     let value = if negate { -raw } else { raw };
-    Some(i32::try_from(value).map(DefaultValue::I32).unwrap_or(DefaultValue::I64(value)))
+    Some(
+        i32::try_from(value)
+            .map(DefaultValue::I32)
+            .unwrap_or(DefaultValue::I64(value)),
+    )
 }
 
 fn parse_int_literal(text: &str) -> Option<i64> {
     let trimmed = text.trim_end_matches(['&', '!', '#', '@', '%']);
-    if let Some(hex) = trimmed.strip_prefix("&H").or_else(|| trimmed.strip_prefix("&h")) {
+    if let Some(hex) = trimmed
+        .strip_prefix("&H")
+        .or_else(|| trimmed.strip_prefix("&h"))
+    {
         return i64::from_str_radix(hex, 16).ok();
     }
-    if let Some(oct) = trimmed.strip_prefix("&O").or_else(|| trimmed.strip_prefix("&o")) {
+    if let Some(oct) = trimmed
+        .strip_prefix("&O")
+        .or_else(|| trimmed.strip_prefix("&o"))
+    {
         return i64::from_str_radix(oct, 8).ok();
     }
     trimmed.parse().ok()
@@ -551,7 +639,9 @@ fn is_identifier_like(kind: SyntaxKind) -> bool {
 }
 
 fn normalize_identifier_token(text: &str) -> &str {
-    text.strip_prefix('[').and_then(|v| v.strip_suffix(']')).unwrap_or(text)
+    text.strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(text)
 }
 
 fn first_identifier_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
@@ -603,7 +693,10 @@ fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
             SyntaxElement::Token(token)
                 if matches!(
                     token.kind,
-                    SyntaxKind::KwOptional | SyntaxKind::KwByVal | SyntaxKind::KwByRef | SyntaxKind::KwParamArray
+                    SyntaxKind::KwOptional
+                        | SyntaxKind::KwByVal
+                        | SyntaxKind::KwByRef
+                        | SyntaxKind::KwParamArray
                 ) =>
             {
                 after_modifier = true;
@@ -612,10 +705,14 @@ fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
                 in_type_ref = true;
                 after_modifier = false;
             }
-            SyntaxElement::Token(token) if !in_type_ref && after_modifier && is_identifier_like(token.kind) => {
+            SyntaxElement::Token(token)
+                if !in_type_ref && after_modifier && is_identifier_like(token.kind) =>
+            {
                 return Some(token);
             }
-            SyntaxElement::Node(child) if !in_type_ref && after_modifier && child.kind() == SyntaxKind::IdentExpr => {
+            SyntaxElement::Node(child)
+                if !in_type_ref && after_modifier && child.kind() == SyntaxKind::IdentExpr =>
+            {
                 return first_identifier_token_deep(child);
             }
             SyntaxElement::Node(child) if child.kind() == SyntaxKind::TypeRef => {
@@ -633,7 +730,9 @@ fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
 }
 
 fn parameter_has_modifier(node: SyntaxNode<'_>, keyword: SyntaxKind) -> bool {
-    node.child_tokens().iter().any(|token| token.kind == keyword)
+    node.child_tokens()
+        .iter()
+        .any(|token| token.kind == keyword)
 }
 
 fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
@@ -662,7 +761,10 @@ fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
 /// without it a `Dim x() As Byte` would be typed as a scalar `Byte` and a whole-array
 /// assignment would wrongly coerce the array to that scalar.
 fn declared_var_type(declarator: SyntaxNode<'_>) -> VarTypeRef {
-    let base = declarator.declared_type().map(type_ref_node).unwrap_or(VarTypeRef::Variant);
+    let base = declarator
+        .declared_type()
+        .map(type_ref_node)
+        .unwrap_or(VarTypeRef::Variant);
     let element = fixed_string_refine(base, declarator);
     if declarator.array_bounds().is_some() {
         return VarTypeRef::Array(Box::new(element));
@@ -711,7 +813,10 @@ fn collect_udt_fields_in(
             .into_iter()
             .filter_map(|f| {
                 let field = fold_identifier(normalize_identifier_token(f.declarator_name()?.text));
-                let ty = f.declared_type().map(type_ref_node).unwrap_or(VarTypeRef::Variant);
+                let ty = f
+                    .declared_type()
+                    .map(type_ref_node)
+                    .unwrap_or(VarTypeRef::Variant);
                 Some((field, ty))
             })
             .collect();
@@ -788,16 +893,27 @@ mod tests {
             source: source.into(),
         };
         let parse = oxvba_syntax::parse(source);
-        assert!(parse.errors().is_empty(), "parse errors: {:?}", parse.errors());
+        assert!(
+            parse.errors().is_empty(),
+            "parse errors: {:?}",
+            parse.errors()
+        );
         let mut symbols = SymbolTable::new();
         let mut signatures = SignatureTable::new();
         let mut next = 0u32;
         let project = symbols
             .add_scope(ScopeKind::Project, symbols.global_scope(), Some("P"))
             .unwrap();
-        scan_module(&mut symbols, &mut signatures, &mut next, &module, parse.syntax(), project)
-            .unwrap()
-            .members
+        scan_module(
+            &mut symbols,
+            &mut signatures,
+            &mut next,
+            &module,
+            parse.syntax(),
+            project,
+        )
+        .unwrap()
+        .members
     }
 
     fn vis_of(members: &[ScannedMember], name: &str) -> Visibility {

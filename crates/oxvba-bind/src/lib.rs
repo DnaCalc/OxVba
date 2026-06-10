@@ -20,9 +20,7 @@ pub use error::BindError;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use oxvba_bundle::coreir::{
-    CoreProc, CoreProgram, CorePlace, CoreValue, LabelId, LocalId,
-};
+use oxvba_bundle::coreir::{CorePlace, CoreProc, CoreProgram, CoreValue, LabelId, LocalId};
 use oxvba_bundle::{
     BundleExport, BundleImport, ComClassExport, EventRoute, ExportTarget, ExportToken,
     ExternalCallDescriptor,
@@ -31,12 +29,12 @@ use oxvba_runtime::DynLinkSymbol;
 use oxvba_symbol::binding::Binding;
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
-    fold_identifier, ScopeId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace,
+    ScopeId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_symbol::surface::{MemberOrigin, SurfaceType, SurfaceTypeKind};
-use oxvba_symbol::{build_resolution_environment, TypeLibResolver};
+use oxvba_symbol::{TypeLibResolver, build_resolution_environment};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::ids::{IdAllocator, ProcInfo};
@@ -54,11 +52,9 @@ struct ImportCollector {
 impl ImportCollector {
     /// Return the index of `import`, adding it if new (VBA-case-insensitive match).
     fn intern(&mut self, import: BundleImport) -> usize {
-        if let Some(i) = self
-            .imports
-            .iter()
-            .position(|e| e.unit.eq_ignore_ascii_case(&import.unit) && e.token.matches(&import.token))
-        {
+        if let Some(i) = self.imports.iter().position(|e| {
+            e.unit.eq_ignore_ascii_case(&import.unit) && e.token.matches(&import.token)
+        }) {
             return i;
         }
         self.imports.push(import);
@@ -116,7 +112,11 @@ fn bind_one(
     manifest: &SymbolProjectManifest,
 ) -> Result<CoreProgram, BindError> {
     let ids = IdAllocator::build(env, manifest)?;
-    let lower = Lower { env, ids: &ids, imports: RefCell::new(ImportCollector::default()) };
+    let lower = Lower {
+        env,
+        ids: &ids,
+        imports: RefCell::new(ImportCollector::default()),
+    };
 
     // Proc decl nodes in the same order `ids.procs` was built (ProcId order). The
     // two are produced by the identical filter; guard against any future drift so
@@ -187,7 +187,9 @@ fn build_exports(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<BundleEx
             SurfaceTypeKind::Coclass { .. } => {
                 if let Some(&class_id) = ids.class_of.get(&fold_identifier(&ty.name)) {
                     exports.push(BundleExport {
-                        token: ExportToken::Class { name: ty.name.clone() },
+                        token: ExportToken::Class {
+                            name: ty.name.clone(),
+                        },
                         target: ExportTarget::Class(class_id.0),
                     });
                 }
@@ -205,9 +207,10 @@ fn export_module_members(ids: &IdAllocator, ty: &SurfaceType, out: &mut Vec<Bund
     for m in &ty.members {
         let proc = match m.origin {
             MemberOrigin::Proc => ids.proc_of.get(&m.symbol).copied(),
-            MemberOrigin::PropertyAccessor | MemberOrigin::Field => {
-                ids.prop_accessor_of.get(&(m.symbol, m.member_kind)).copied()
-            }
+            MemberOrigin::PropertyAccessor | MemberOrigin::Field => ids
+                .prop_accessor_of
+                .get(&(m.symbol, m.member_kind))
+                .copied(),
         };
         if let Some(proc) = proc {
             out.push(BundleExport {
@@ -253,19 +256,30 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
         .collect();
     let mut routes = Vec::new();
     for (&field_sym, &binding) in &ids.withevents_binding_of {
-        let Some(field) = symbols.symbol(field_sym) else { continue };
+        let Some(field) = symbols.symbol(field_sym) else {
+            continue;
+        };
         let sink_scope = field.scope;
-        let Some(field_name) = symbols.name(field.name).map(|n| n.folded.clone()) else { continue };
+        let Some(field_name) = symbols.name(field.name).map(|n| n.folded.clone()) else {
+            continue;
+        };
         // The source class is the WithEvents field's declared object type — an
         // active class OR a referenced one (resolved through its export surface).
-        let SymbolImpl::DeclaredType(VarTypeRef::Object(source_name)) = &field.imp else { continue };
+        let SymbolImpl::DeclaredType(VarTypeRef::Object(source_name)) = &field.imp else {
+            continue;
+        };
         for (ev_name_folded, event) in source_events(env, ids, &module_scope_by_name, source_name) {
             let handler_name = format!("{field_name}_{ev_name_folded}");
             if let Ok(Some(handler_sym)) =
                 symbols.find_in_scope(sink_scope, SymbolNamespace::Procedure, &handler_name)
-                && let Some(&proc) = ids.proc_of.get(&handler_sym) {
-                    routes.push(EventRoute { binding, event, handler: proc.0 });
-                }
+                && let Some(&proc) = ids.proc_of.get(&handler_sym)
+            {
+                routes.push(EventRoute {
+                    binding,
+                    event,
+                    handler: proc.0,
+                });
+            }
         }
     }
     routes
@@ -288,12 +302,18 @@ fn source_events(
         let symbols = &env.symbols;
         let mut out = Vec::new();
         for ev_sym in symbols.symbols_in_scope(source_scope).unwrap_or_default() {
-            let Some(ev) = symbols.symbol(ev_sym) else { continue };
+            let Some(ev) = symbols.symbol(ev_sym) else {
+                continue;
+            };
             if ev.kind != SymbolKind::Event {
                 continue;
             }
-            let Some(&event) = ids.event_index_of.get(&ev_sym) else { continue };
-            let Some(ev_name) = symbols.name(ev.name).map(|n| n.folded.clone()) else { continue };
+            let Some(&event) = ids.event_index_of.get(&ev_sym) else {
+                continue;
+            };
+            let Some(ev_name) = symbols.name(ev.name).map(|n| n.folded.clone()) else {
+                continue;
+            };
             out.push((ev_name, event));
         }
         return out;
@@ -305,11 +325,22 @@ fn source_events(
         None => (None, fold_identifier(source_name)),
     };
     for surface in env.export_surfaces().iter().skip(1) {
-        if proj.as_deref().is_some_and(|p| fold_identifier(&surface.project_name) != p) {
+        if proj
+            .as_deref()
+            .is_some_and(|p| fold_identifier(&surface.project_name) != p)
+        {
             continue;
         }
-        if let Some(ty) = surface.types.iter().find(|t| fold_identifier(&t.name) == class) {
-            return ty.events.iter().map(|e| (fold_identifier(&e.name), e.event_id)).collect();
+        if let Some(ty) = surface
+            .types
+            .iter()
+            .find(|t| fold_identifier(&t.name) == class)
+        {
+            return ty
+                .events
+                .iter()
+                .map(|e| (fold_identifier(&e.name), e.event_id))
+                .collect();
         }
     }
     Vec::new()
@@ -330,7 +361,9 @@ fn source_events(
 fn build_external_calls(env: &ResolutionEnvironment) -> Vec<ExternalCallDescriptor> {
     let mut out: Vec<ExternalCallDescriptor> = Vec::new();
     for sym in env.symbols.symbols() {
-        let SymbolImpl::Declare(d) = &sym.imp else { continue };
+        let SymbolImpl::Declare(d) = &sym.imp else {
+            continue;
+        };
         let marshal_lane = if d.library.eq_ignore_ascii_case("host") {
             "m0-deterministic"
         } else {
@@ -453,7 +486,9 @@ impl<'a> ProcLower<'a> {
     /// The value of `Me` inside a class member — a `Load` of the implicit `Me`
     /// slot (synthetic parameter 0). `None` outside a class member.
     pub(crate) fn me_value(&self) -> Option<CoreValue> {
-        self.info.me_local.map(|l| CoreValue::Load(CorePlace::Local(l)))
+        self.info
+            .me_local
+            .map(|l| CoreValue::Load(CorePlace::Local(l)))
     }
 
     /// The declared type of a resolved symbol (Variant if it has no declared type).
@@ -477,11 +512,23 @@ impl<'a> ProcLower<'a> {
         }
         if let Some(&field) = self.g.ids.field_token_of.get(&sym) {
             let me = self.me_value()?;
-            return Some((CorePlace::Field { object: Box::new(me), field }, self.symbol_type(sym)));
+            return Some((
+                CorePlace::Field {
+                    object: Box::new(me),
+                    field,
+                },
+                self.symbol_type(sym),
+            ));
         }
         if let Some(&binding) = self.g.ids.withevents_binding_of.get(&sym) {
             let me = self.me_value()?;
-            return Some((CorePlace::WithEvents { owner: Box::new(me), binding }, self.symbol_type(sym)));
+            return Some((
+                CorePlace::WithEvents {
+                    owner: Box::new(me),
+                    binding,
+                },
+                self.symbol_type(sym),
+            ));
         }
         None
     }
@@ -511,6 +558,9 @@ impl<'a> ProcLower<'a> {
     }
 
     fn unresolved(&self, name: &str, context: &str) -> BindError {
-        BindError::Unresolved { name: name.to_string(), context: context.to_string() }
+        BindError::Unresolved {
+            name: name.to_string(),
+            context: context.to_string(),
+        }
     }
 }

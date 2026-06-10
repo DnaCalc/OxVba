@@ -43,7 +43,9 @@ pub fn free_file(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant
 }
 pub fn file_open(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     // args: path, packed mode ((file_number << 16) | mode_code), record length.
-    Ok(host.fs().open_with_record_len(req(args, 0)?, req(args, 1)?, arg_or_empty(args, 2))?)
+    Ok(host
+        .fs()
+        .open_with_record_len(req(args, 0)?, req(args, 1)?, arg_or_empty(args, 2))?)
 }
 pub fn file_close(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().close_variant(req(args, 0)?)?)
@@ -55,7 +57,9 @@ pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant
     Ok(host.fs().read_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }
 pub fn file_write(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().write_bytes_variant(req(args, 0)?, req(args, 1)?)?)
+    Ok(host
+        .fs()
+        .write_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }
 pub fn file_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().print_line_variant(req(args, 0)?, req(args, 1)?)?)
@@ -64,7 +68,9 @@ pub fn console_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Var
     Ok(host.console().print_line_variant(print_joined(args))?)
 }
 pub fn file_input(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().input_fields_variant(req(args, 0)?, req(args, 1)?)?)
+    Ok(host
+        .fs()
+        .input_fields_variant(req(args, 0)?, req(args, 1)?)?)
 }
 pub fn console_input(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.console().input_fields_variant(req(args, 0)?)?)
@@ -82,7 +88,9 @@ pub fn file_lof(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant>
     Ok(host.fs().lof_variant(req(args, 0)?)?)
 }
 pub fn file_seek(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().seek_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+    Ok(host
+        .fs()
+        .seek_variant(req(args, 0)?, arg_or_empty(args, 1))?)
 }
 pub fn file_loc(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().loc_variant(req(args, 0)?)?)
@@ -106,24 +114,34 @@ pub fn file_get_into(args: &[Variant], host: &dyn HostServices) -> LibResult<Var
     )?)
 }
 pub fn file_width(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().width_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+    Ok(host
+        .fs()
+        .width_variant(req(args, 0)?, arg_or_empty(args, 1))?)
 }
 pub fn file_rename(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().name_variant(req(args, 0)?, req(args, 1)?)?)
 }
 pub fn file_lock(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().lock_variant(req(args, 0)?, arg_or_empty(args, 1), arg_or_empty(args, 2))?)
+    Ok(host
+        .fs()
+        .lock_variant(req(args, 0)?, arg_or_empty(args, 1), arg_or_empty(args, 2))?)
 }
 pub fn file_unlock(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().unlock_variant(req(args, 0)?, arg_or_empty(args, 1), arg_or_empty(args, 2))?)
+    Ok(host
+        .fs()
+        .unlock_variant(req(args, 0)?, arg_or_empty(args, 1), arg_or_empty(args, 2))?)
 }
 
 // ── Interaction / process ──
 pub fn msg_box(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.ui().msg_box_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+    Ok(host
+        .ui()
+        .msg_box_variant(req(args, 0)?, arg_or_empty(args, 1))?)
 }
 pub fn input_box(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.ui().input_box_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+    Ok(host
+        .ui()
+        .input_box_variant(req(args, 0)?, arg_or_empty(args, 1))?)
 }
 pub fn beep(_host: &dyn HostServices) -> LibResult<Variant> {
     // FIDELITY: no HAL beep facet yet; a no-op until one is added.
@@ -133,7 +151,9 @@ pub fn do_events(host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.events().do_events_variant()?)
 }
 pub fn shell(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.process().shell_variant(req(args, 0)?, arg_or_empty(args, 1))?)
+    Ok(host
+        .process()
+        .shell_variant(req(args, 0)?, arg_or_empty(args, 1))?)
 }
 pub fn environ(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.process().environ_variant(req(args, 0)?)?)
@@ -168,7 +188,9 @@ fn to_i32_handle(value: &Variant, field: &str) -> LibResult<i32> {
         return i32::try_from(raw)
             .map_err(|_| LibError::type_mismatch(format!("{field} exceeds i32 handle range")));
     }
-    Err(LibError::type_mismatch(format!("{field} requires an integer handle")))
+    Err(LibError::type_mismatch(format!(
+        "{field} requires an integer handle"
+    )))
 }
 
 fn to_index(value: &Variant) -> LibResult<usize> {
@@ -202,10 +224,7 @@ pub fn com_event_callback_arg(args: &[Variant], host: &dyn HostServices) -> LibR
     let index = to_index(need(args, 1)?)?;
     Ok(host.com().event_callback_variant(callback, index)?)
 }
-pub fn com_release_event_callback(
-    args: &[Variant],
-    host: &dyn HostServices,
-) -> LibResult<Variant> {
+pub fn com_release_event_callback(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     let callback = ComCallbackToken::new(to_i32_handle(need(args, 0)?, "callback")?);
     Ok(host.com().release_event_callback_variant(callback)?)
 }

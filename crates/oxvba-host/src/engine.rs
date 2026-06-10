@@ -38,11 +38,17 @@ pub struct PhaseDiagnostic {
 
 impl PhaseDiagnostic {
     pub(crate) fn compile(message: impl Into<String>) -> Self {
-        Self { phase: DiagnosticPhase::CompileTime, message: message.into() }
+        Self {
+            phase: DiagnosticPhase::CompileTime,
+            message: message.into(),
+        }
     }
 
     pub(crate) fn runtime(message: impl Into<String>) -> Self {
-        Self { phase: DiagnosticPhase::Runtime, message: message.into() }
+        Self {
+            phase: DiagnosticPhase::Runtime,
+            message: message.into(),
+        }
     }
 
     pub fn phase(&self) -> DiagnosticPhase {
@@ -90,8 +96,10 @@ fn build_host_services(
     policy: HostPolicy,
     callbacks: Option<Arc<dyn HostCallbacks>>,
 ) -> Arc<dyn HostServices> {
-    let mut builder =
-        HostBuilder::new().profile(profile).runtime_class(runtime_class).policy(policy);
+    let mut builder = HostBuilder::new()
+        .profile(profile)
+        .runtime_class(runtime_class)
+        .policy(policy);
     if let Some(callbacks) = callbacks {
         builder = builder.callbacks(callbacks);
     }
@@ -119,8 +127,9 @@ impl Engine {
     /// Create an engine that replays from a recorded HAL journal.
     pub fn from_replay(config: HostConfig, journal: oxvba_hal::journal::HalJournal) -> Self {
         let policy = HostPolicy::deterministic_runtime();
-        let host_services: Arc<dyn HostServices> =
-            Arc::new(oxvba_hal::adapters::replay::ReplayHostServices::new(journal, policy));
+        let host_services: Arc<dyn HostServices> = Arc::new(
+            oxvba_hal::adapters::replay::ReplayHostServices::new(journal, policy),
+        );
         Self {
             config,
             runtime_profile: RuntimeProfileId::default_for_hal_profile(HalProfileId::Null),
@@ -132,8 +141,9 @@ impl Engine {
     pub fn set_hal_profile(&mut self, profile: HalProfileId) {
         let policy = self.host_services.policy().clone();
         self.runtime_profile = RuntimeProfileId::default_for_hal_profile(profile);
-        let runtime_class =
-            policy.runtime_class.unwrap_or(self.runtime_profile.runtime_class());
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
         self.host_services =
             build_host_services(profile, runtime_class, policy, self.host_callbacks.clone());
     }
@@ -170,8 +180,9 @@ impl Engine {
 
     pub fn set_host_policy(&mut self, policy: HostPolicy) {
         let profile = self.host_services.profile();
-        let runtime_class =
-            policy.runtime_class.unwrap_or(self.runtime_profile.runtime_class());
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
         self.host_services =
             build_host_services(profile, runtime_class, policy, self.host_callbacks.clone());
     }
@@ -179,8 +190,9 @@ impl Engine {
     pub fn set_host_callbacks(&mut self, callbacks: Option<Arc<dyn HostCallbacks>>) {
         self.host_callbacks = callbacks;
         let policy = self.host_services.policy().clone();
-        let runtime_class =
-            policy.runtime_class.unwrap_or(self.runtime_profile.runtime_class());
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
         self.host_services = build_host_services(
             self.host_services.profile(),
             runtime_class,

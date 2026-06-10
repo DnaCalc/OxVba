@@ -253,7 +253,12 @@ pub trait FileSystemHal: Send + Sync {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "lock_variant")
     }
     /// Unlock a byte range of an open file (VBA `Unlock #n [, range]`).
-    fn unlock_variant(&self, _handle: Variant, _start: Variant, _end: Variant) -> HalResult<Variant> {
+    fn unlock_variant(
+        &self,
+        _handle: Variant,
+        _start: Variant,
+        _end: Variant,
+    ) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "unlock_variant")
     }
 }

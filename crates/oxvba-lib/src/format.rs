@@ -22,14 +22,30 @@ use oxvba_runtime::{Variant, variant_to_vba_string};
 use crate::pure::{day_of_week, serial_to_ymd};
 
 const MONTHS: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June", "July", "August",
-    "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 const MONTHS_ABBR: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 const WEEKDAYS: [&str; 7] = [
-    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
 ];
 const WEEKDAYS_ABBR: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -51,11 +67,16 @@ pub fn apply(value: &Variant, mask: &str) -> String {
 }
 
 fn general_string(value: &Variant) -> String {
-    variant_to_vba_string(value).map(|b| b.as_str()).unwrap_or_default()
+    variant_to_vba_string(value)
+        .map(|b| b.as_str())
+        .unwrap_or_default()
 }
 
 fn num(value: &Variant) -> f64 {
-    coerce_to(value, VarType::Double).ok().and_then(|v| v.as_f64()).unwrap_or(0.0)
+    coerce_to(value, VarType::Double)
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0)
 }
 
 fn serial_of(value: &Variant) -> f64 {
@@ -126,7 +147,11 @@ fn format_numeric(value: &Variant, mask: &str) -> String {
         (sections[0], false)
     };
     let body = render_section(section, n.abs());
-    if force_minus { format!("-{body}") } else { body }
+    if force_minus {
+        format!("-{body}")
+    } else {
+        body
+    }
 }
 
 fn render_section(section: &str, mut value: f64) -> String {
@@ -176,7 +201,11 @@ fn render_section(section: &str, mut value: f64) -> String {
     while frac_s.len() > frac_forced && frac_s.ends_with('0') {
         frac_s.pop();
     }
-    let frac_out = if frac_s.is_empty() { String::new() } else { format!(".{frac_s}") };
+    let frac_out = if frac_s.is_empty() {
+        String::new()
+    } else {
+        format!(".{frac_s}")
+    };
 
     format!("{prefix}{int_s}{frac_out}{suffix}")
 }
@@ -199,7 +228,10 @@ fn try_scientific(chars: &[char], value: f64) -> Option<String> {
         return None;
     }
     let decimals = match chars.iter().position(|c| *c == '.') {
-        Some(d) if d < e => chars[d + 1..e].iter().filter(|c| matches!(c, '0' | '#')).count(),
+        Some(d) if d < e => chars[d + 1..e]
+            .iter()
+            .filter(|c| matches!(c, '0' | '#'))
+            .count(),
         _ => 0,
     };
     Some(scientific(value, decimals))
@@ -300,7 +332,12 @@ fn format_date(value: &Variant, mask: &str) -> String {
         } else if starts_ci(rest, "d") {
             (p.day.to_string(), 1, false, true)
         } else if starts_ci(rest, "hh") {
-            (format!("{:02}", hour_display(p.hour, use_12h)), 2, true, true)
+            (
+                format!("{:02}", hour_display(p.hour, use_12h)),
+                2,
+                true,
+                true,
+            )
         } else if starts_ci(rest, "h") {
             (hour_display(p.hour, use_12h).to_string(), 1, true, true)
         } else if starts_ci(rest, "nn") {
@@ -312,11 +349,26 @@ fn format_date(value: &Variant, mask: &str) -> String {
         } else if starts_ci(rest, "s") {
             (p.second.to_string(), 1, false, true)
         } else if starts_ci(rest, "am/pm") {
-            (if p.hour < 12 { "AM" } else { "PM" }.to_string(), 5, false, true)
+            (
+                if p.hour < 12 { "AM" } else { "PM" }.to_string(),
+                5,
+                false,
+                true,
+            )
         } else if starts_ci(rest, "ampm") {
-            (if p.hour < 12 { "AM" } else { "PM" }.to_string(), 4, false, true)
+            (
+                if p.hour < 12 { "AM" } else { "PM" }.to_string(),
+                4,
+                false,
+                true,
+            )
         } else if starts_ci(rest, "a/p") {
-            (if p.hour < 12 { "A" } else { "P" }.to_string(), 3, false, true)
+            (
+                if p.hour < 12 { "A" } else { "P" }.to_string(),
+                3,
+                false,
+                true,
+            )
         } else {
             (chars[i].to_string(), 1, false, false)
         };
@@ -347,7 +399,11 @@ fn hour_display(hour24: i64, use_12h: bool) -> i64 {
 
 fn starts_ci(rest: &[char], token: &str) -> bool {
     let t: Vec<char> = token.chars().collect();
-    rest.len() >= t.len() && rest[..t.len()].iter().zip(&t).all(|(a, b)| a.eq_ignore_ascii_case(b))
+    rest.len() >= t.len()
+        && rest[..t.len()]
+            .iter()
+            .zip(&t)
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 #[cfg(test)]

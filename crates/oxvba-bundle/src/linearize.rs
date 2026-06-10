@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use crate::coreir::*;
 use crate::isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 use crate::{
-    AssignmentIntent, AssignmentTargetKind, Bundle, ClassDescriptor, ClassMethod, ComMemberSelector,
-    NumericMode, ProcedureDescriptor, StringCompareMode,
+    AssignmentIntent, AssignmentTargetKind, Bundle, ClassDescriptor, ClassMethod,
+    ComMemberSelector, NumericMode, ProcedureDescriptor, StringCompareMode,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,7 +101,9 @@ impl<'p> Linearizer<'p> {
             for at in exits {
                 self.patch(at, epilogue);
             }
-            let return_slot = proc.return_local.map(|id| self.local_slot[id.0] - self.global_count);
+            let return_slot = proc
+                .return_local
+                .map(|id| self.local_slot[id.0] - self.global_count);
             self.ops.push(Op::Return);
             // GoSub trampoline (after the Return; reached only via `GoSubReturn`).
             self.emit_gosub_trampoline();
@@ -138,7 +140,11 @@ impl<'p> Linearizer<'p> {
                 methods: class
                     .methods
                     .iter()
-                    .map(|m| ClassMethod { name: m.name.clone(), kind: m.kind, proc: m.proc.0 })
+                    .map(|m| ClassMethod {
+                        name: m.name.clone(),
+                        kind: m.kind,
+                        proc: m.proc.0,
+                    })
                     .collect(),
                 implements: class.implements.clone(),
             })
@@ -240,12 +246,17 @@ impl<'p> Linearizer<'p> {
         if self.gosub_return_jumps.is_empty() && self.gosub_return_pcs.is_empty() {
             return;
         }
-        let Some(ret_slot) = self.gosub_ret_slot else { return };
+        let Some(ret_slot) = self.gosub_ret_slot else {
+            return;
+        };
         let trampoline = self.here();
         // For each GoSub site k: if ret_slot == k, jump to the recorded return pc.
         for (site, return_pc) in self.gosub_return_pcs.clone().into_iter().enumerate() {
             let key = self.new_temp();
-            self.emit(Op::LoadI32 { slot: key, value: site as i32 });
+            self.emit(Op::LoadI32 {
+                slot: key,
+                value: site as i32,
+            });
             let cond = self.new_temp();
             self.emit(Op::CmpEq {
                 dst: cond,
@@ -253,8 +264,13 @@ impl<'p> Linearizer<'p> {
                 rhs: key,
                 mode: StringCompareMode::Binary,
             });
-            let jz = self.emit(Op::JumpIfZero { cond_slot: cond, target_pc: 0 });
-            self.emit(Op::Jump { target_pc: return_pc });
+            let jz = self.emit(Op::JumpIfZero {
+                cond_slot: cond,
+                target_pc: 0,
+            });
+            self.emit(Op::Jump {
+                target_pc: return_pc,
+            });
             let next = self.here();
             self.patch(jz, next);
         }
@@ -271,7 +287,9 @@ impl<'p> Linearizer<'p> {
         match place {
             CorePlace::Local(id) => Ok(self.local_slot[id.0]),
             CorePlace::Global(id) => Ok(id.0),
-            other => Err(LinearizeError::Malformed(format!("expected a simple variable, got {other:?}"))),
+            other => Err(LinearizeError::Malformed(format!(
+                "expected a simple variable, got {other:?}"
+            ))),
         }
     }
 
@@ -306,27 +324,43 @@ impl<'p> Linearizer<'p> {
             CorePlace::Field { object, field } => {
                 let object = self.lower_value(object)?;
                 let dst = self.new_temp();
-                self.emit(Op::FieldGet { dst, object, field: *field });
+                self.emit(Op::FieldGet {
+                    dst,
+                    object,
+                    field: *field,
+                });
                 Ok(dst)
             }
             CorePlace::Index { array, indices } => {
                 let index_slots = self.lower_values(indices)?;
                 let (array_slot, _writeback) = self.array_target(array)?;
                 let dst = self.new_temp();
-                self.emit(Op::ArrayGet { dst, array: array_slot, indices: index_slots });
+                self.emit(Op::ArrayGet {
+                    dst,
+                    array: array_slot,
+                    indices: index_slots,
+                });
                 Ok(dst)
             }
             CorePlace::RecordField { base, index } => {
                 let (record, _writeback) = self.array_target(base)?;
                 let dst = self.new_temp();
-                self.emit(Op::RecordGet { dst, record, index: *index });
+                self.emit(Op::RecordGet {
+                    dst,
+                    record,
+                    index: *index,
+                });
                 Ok(dst)
             }
             CorePlace::WithEvents { owner, binding } => {
                 let owner = self.lower_value(owner)?;
                 let binding = self.binding_token_slot(*binding);
                 let dst = self.new_temp();
-                self.emit(Op::WithEventsGet { dst, owner, binding });
+                self.emit(Op::WithEventsGet {
+                    dst,
+                    owner,
+                    binding,
+                });
                 Ok(dst)
             }
         }
@@ -343,12 +377,20 @@ impl<'p> Linearizer<'p> {
             }
             CorePlace::Field { object, field } => {
                 let object = self.lower_value(object)?;
-                self.emit(Op::FieldSet { object, field: *field, src });
+                self.emit(Op::FieldSet {
+                    object,
+                    field: *field,
+                    src,
+                });
             }
             CorePlace::Index { array, indices } => {
                 let index_slots = self.lower_values(indices)?;
                 let (array_slot, writeback) = self.array_target(array)?;
-                self.emit(Op::ArraySet { array: array_slot, indices: index_slots, src });
+                self.emit(Op::ArraySet {
+                    array: array_slot,
+                    indices: index_slots,
+                    src,
+                });
                 if let Some(place) = writeback {
                     self.lower_place_store(&place, array_slot)?;
                 }
@@ -357,7 +399,11 @@ impl<'p> Linearizer<'p> {
                 // Update the field in the record slot, then store the (copy-on-write)
                 // record back through to its base place when held indirectly.
                 let (record, writeback) = self.array_target(base)?;
-                self.emit(Op::RecordSet { record, index: *index, src });
+                self.emit(Op::RecordSet {
+                    record,
+                    index: *index,
+                    src,
+                });
                 if let Some(place) = writeback {
                     self.lower_place_store(&place, record)?;
                 }
@@ -366,7 +412,12 @@ impl<'p> Linearizer<'p> {
                 let owner = self.lower_value(owner)?;
                 let binding = self.binding_token_slot(*binding);
                 let dst = self.new_temp();
-                self.emit(Op::WithEventsSet { dst, owner, binding, value: src });
+                self.emit(Op::WithEventsSet {
+                    dst,
+                    owner,
+                    binding,
+                    value: src,
+                });
             }
         }
         Ok(())
@@ -390,12 +441,22 @@ impl<'p> Linearizer<'p> {
                 let src = self.lower_value(expr)?;
                 let dst = self.new_temp();
                 self.emit(match op {
-                    CoreUnOp::Negate => Op::Neg { dst, src, mode: *num },
+                    CoreUnOp::Negate => Op::Neg {
+                        dst,
+                        src,
+                        mode: *num,
+                    },
                     CoreUnOp::Not => Op::Not { dst, src },
                 });
                 Ok(dst)
             }
-            CoreValue::Binary { op, lhs, rhs, mode, num } => {
+            CoreValue::Binary {
+                op,
+                lhs,
+                rhs,
+                mode,
+                num,
+            } => {
                 let l = self.lower_value(lhs)?;
                 let r = self.lower_value(rhs)?;
                 let dst = self.new_temp();
@@ -409,27 +470,42 @@ impl<'p> Linearizer<'p> {
             }
             CoreValue::New(class) => {
                 let dst = self.new_temp();
-                self.emit(Op::NewObject { dst, class: class.0 });
+                self.emit(Op::NewObject {
+                    dst,
+                    class: class.0,
+                });
                 Ok(dst)
             }
             CoreValue::NewRecord { fields } => {
                 let dst = self.new_temp();
-                self.emit(Op::NewRecord { dst, fields: *fields });
+                self.emit(Op::NewRecord {
+                    dst,
+                    fields: *fields,
+                });
                 Ok(dst)
             }
             CoreValue::NewExtern { import } => {
                 let dst = self.new_temp();
-                self.emit(Op::NewExtern { dst, import: *import });
+                self.emit(Op::NewExtern {
+                    dst,
+                    import: *import,
+                });
                 Ok(dst)
             }
             CoreValue::Predeclared { class } => {
                 let dst = self.new_temp();
-                self.emit(Op::PredeclaredInstance { dst, class: class.0 });
+                self.emit(Op::PredeclaredInstance {
+                    dst,
+                    class: class.0,
+                });
                 Ok(dst)
             }
             CoreValue::PredeclaredExtern { import } => {
                 let dst = self.new_temp();
-                self.emit(Op::PredeclaredInstanceExtern { dst, import: *import });
+                self.emit(Op::PredeclaredInstanceExtern {
+                    dst,
+                    import: *import,
+                });
                 Ok(dst)
             }
             CoreValue::Coerce { value, to } => {
@@ -439,13 +515,19 @@ impl<'p> Linearizer<'p> {
                     CoerceTarget::Numeric(target) => {
                         let dst = self.new_temp();
                         self.emit(Op::Copy { dst, src });
-                        self.emit(Op::CoerceNumeric { slot: dst, target: *target });
+                        self.emit(Op::CoerceNumeric {
+                            slot: dst,
+                            target: *target,
+                        });
                         Ok(dst)
                     }
                     CoerceTarget::FixedString(len) => {
                         let dst = self.new_temp();
                         self.emit(Op::Copy { dst, src });
-                        self.emit(Op::CoerceFixedString { slot: dst, len: *len });
+                        self.emit(Op::CoerceFixedString {
+                            slot: dst,
+                            len: *len,
+                        });
                         Ok(dst)
                     }
                 }
@@ -453,7 +535,11 @@ impl<'p> Linearizer<'p> {
             CoreValue::TypeOfIs { object, type_name } => {
                 let object_slot = self.lower_value(object)?;
                 let dst = self.new_temp();
-                self.emit(Op::TypeOfIs { dst, object_slot, type_name: type_name.clone() });
+                self.emit(Op::TypeOfIs {
+                    dst,
+                    object_slot,
+                    type_name: type_name.clone(),
+                });
                 Ok(dst)
             }
             CoreValue::Ptr { kind, value } => {
@@ -481,15 +567,24 @@ impl<'p> Linearizer<'p> {
             CoreValue::ArrayLiteral(values) => {
                 let value_slots = self.lower_values(values)?;
                 let dst = self.new_temp();
-                self.emit(Op::ArrayLiteral { dst, values: value_slots });
+                self.emit(Op::ArrayLiteral {
+                    dst,
+                    values: value_slots,
+                });
                 Ok(dst)
             }
             CoreValue::Bound { which, array } => {
                 let (array_slot, _writeback) = self.array_target(array)?;
                 let dst = self.new_temp();
                 self.emit(match which {
-                    BoundWhich::Lower => Op::LBound { dst, src: array_slot },
-                    BoundWhich::Upper => Op::UBound { dst, src: array_slot },
+                    BoundWhich::Lower => Op::LBound {
+                        dst,
+                        src: array_slot,
+                    },
+                    BoundWhich::Upper => Op::UBound {
+                        dst,
+                        src: array_slot,
+                    },
                 });
                 Ok(dst)
             }
@@ -511,20 +606,75 @@ impl<'p> Linearizer<'p> {
         num: NumericMode,
     ) {
         let op = match op {
-            CoreBinOp::Add => Op::Add { dst, lhs, rhs, mode: num },
-            CoreBinOp::Sub => Op::Sub { dst, lhs, rhs, mode: num },
-            CoreBinOp::Mul => Op::Mul { dst, lhs, rhs, mode: num },
+            CoreBinOp::Add => Op::Add {
+                dst,
+                lhs,
+                rhs,
+                mode: num,
+            },
+            CoreBinOp::Sub => Op::Sub {
+                dst,
+                lhs,
+                rhs,
+                mode: num,
+            },
+            CoreBinOp::Mul => Op::Mul {
+                dst,
+                lhs,
+                rhs,
+                mode: num,
+            },
             CoreBinOp::Div => Op::Div { dst, lhs, rhs },
-            CoreBinOp::IntDiv => Op::IntDiv { dst, lhs, rhs, mode: num },
-            CoreBinOp::Mod => Op::Mod { dst, lhs, rhs, mode: num },
+            CoreBinOp::IntDiv => Op::IntDiv {
+                dst,
+                lhs,
+                rhs,
+                mode: num,
+            },
+            CoreBinOp::Mod => Op::Mod {
+                dst,
+                lhs,
+                rhs,
+                mode: num,
+            },
             CoreBinOp::Pow => Op::Pow { dst, lhs, rhs },
             CoreBinOp::Concat => Op::Concat { dst, lhs, rhs },
-            CoreBinOp::Eq => Op::CmpEq { dst, lhs, rhs, mode },
-            CoreBinOp::Ne => Op::CmpNe { dst, lhs, rhs, mode },
-            CoreBinOp::Lt => Op::CmpLt { dst, lhs, rhs, mode },
-            CoreBinOp::Le => Op::CmpLe { dst, lhs, rhs, mode },
-            CoreBinOp::Gt => Op::CmpGt { dst, lhs, rhs, mode },
-            CoreBinOp::Ge => Op::CmpGe { dst, lhs, rhs, mode },
+            CoreBinOp::Eq => Op::CmpEq {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            },
+            CoreBinOp::Ne => Op::CmpNe {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            },
+            CoreBinOp::Lt => Op::CmpLt {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            },
+            CoreBinOp::Le => Op::CmpLe {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            },
+            CoreBinOp::Gt => Op::CmpGt {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            },
+            CoreBinOp::Ge => Op::CmpGe {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            },
             CoreBinOp::And => Op::And { dst, lhs, rhs },
             CoreBinOp::Or => Op::Or { dst, lhs, rhs },
             CoreBinOp::Xor => Op::Xor { dst, lhs, rhs },
@@ -597,7 +747,10 @@ impl<'p> Linearizer<'p> {
                 },
                 CoreArg::Omitted => out.push(CallArg::Omitted),
                 CoreArg::Named { name, value } => {
-                    out.push(CallArg::Named { name: name.clone(), slot: self.lower_value(value)? });
+                    out.push(CallArg::Named {
+                        name: name.clone(),
+                        slot: self.lower_value(value)?,
+                    });
                 }
             }
         }
@@ -616,19 +769,31 @@ impl<'p> Linearizer<'p> {
         match callee {
             CoreCallee::VbaProc { proc } => {
                 let (proc_args, writebacks) = self.build_proc_args(args)?;
-                self.emit(Op::CallProc { proc: proc.0, dst, args: proc_args });
+                self.emit(Op::CallProc {
+                    proc: proc.0,
+                    dst,
+                    args: proc_args,
+                });
                 self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::ExternProc { import } => {
                 // A cross-bundle call binds args exactly like a VbaProc; the linker
                 // resolves `import` to the target `(bundle, proc)` at load time.
                 let (proc_args, writebacks) = self.build_proc_args(args)?;
-                self.emit(Op::CallExtern { import: *import, dst, args: proc_args });
+                self.emit(Op::CallExtern {
+                    import: *import,
+                    dst,
+                    args: proc_args,
+                });
                 self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::Native(id) => {
                 let (args, writebacks) = self.build_call_args(args)?;
-                self.emit(Op::CallNative { dst, callee: NativeCallee::Builtin(*id), args });
+                self.emit(Op::CallNative {
+                    dst,
+                    callee: NativeCallee::Builtin(*id),
+                    args,
+                });
                 self.emit_arg_writebacks(writebacks)?;
             }
             CoreCallee::EarlyCom { dispid, kind } => {
@@ -657,7 +822,10 @@ impl<'p> Linearizer<'p> {
                 });
                 self.emit_arg_writebacks(writebacks)?;
             }
-            CoreCallee::Declare { descriptor_id, ptr_writebacks } => {
+            CoreCallee::Declare {
+                descriptor_id,
+                ptr_writebacks,
+            } => {
                 let (args, writebacks) = self.build_call_args(args)?;
                 // Resolve each pointer write-back target (a simple variable l-value)
                 // to its slot; the VM reads the pinned buffer back into it post-call.
@@ -673,7 +841,10 @@ impl<'p> Linearizer<'p> {
                     .collect::<Res<Vec<_>>>()?;
                 self.emit(Op::CallNative {
                     dst,
-                    callee: NativeCallee::Declare { descriptor_id: *descriptor_id, ptr_writebacks },
+                    callee: NativeCallee::Declare {
+                        descriptor_id: *descriptor_id,
+                        ptr_writebacks,
+                    },
                     args,
                 });
                 self.emit_arg_writebacks(writebacks)?;
@@ -689,7 +860,13 @@ impl<'p> Linearizer<'p> {
                 let name = self.lower_arg_value(name_arg)?;
                 let calltype = self.lower_arg_value(ct_arg)?;
                 let (call_args, writebacks) = self.build_call_args(rest)?;
-                self.emit(Op::CallByName { dst, object, name, calltype, args: call_args });
+                self.emit(Op::CallByName {
+                    dst,
+                    object,
+                    name,
+                    calltype,
+                    args: call_args,
+                });
                 self.emit_arg_writebacks(writebacks)?;
             }
         }
@@ -702,7 +879,9 @@ impl<'p> Linearizer<'p> {
         match arg {
             CoreArg::ByVal(v) => self.lower_value(v),
             CoreArg::ByRef(place) => self.lower_place_load(place),
-            other => Err(LinearizeError::Malformed(format!("expected a value operand, got {other:?}"))),
+            other => Err(LinearizeError::Malformed(format!(
+                "expected a value operand, got {other:?}"
+            ))),
         }
     }
 
@@ -718,7 +897,10 @@ impl<'p> Linearizer<'p> {
         let value = self.lower_value(condition)?;
         if until {
             let negated = self.new_temp();
-            self.emit(Op::Not { dst: negated, src: value });
+            self.emit(Op::Not {
+                dst: negated,
+                src: value,
+            });
             Ok(negated)
         } else {
             Ok(value)
@@ -729,9 +911,17 @@ impl<'p> Linearizer<'p> {
         let start = self.here();
         self.statement_starts.push(start);
         match stmt {
-            CoreStmt::Assign { place, value, intent, target_kind, target_name, target_type_name } => {
+            CoreStmt::Assign {
+                place,
+                value,
+                intent,
+                target_kind,
+                target_name,
+                target_type_name,
+            } => {
                 let src = self.lower_value(value)?;
-                if *intent == AssignmentIntent::Set || *target_kind == AssignmentTargetKind::Object {
+                if *intent == AssignmentIntent::Set || *target_kind == AssignmentTargetKind::Object
+                {
                     self.emit(Op::ValidateAssignment {
                         src,
                         intent: *intent,
@@ -752,7 +942,10 @@ impl<'p> Linearizer<'p> {
                 let mut end_jumps = Vec::new();
                 for arm in arms {
                     let cond = self.lower_value(&arm.condition)?;
-                    let jz = self.emit(Op::JumpIfZero { cond_slot: cond, target_pc: 0 });
+                    let jz = self.emit(Op::JumpIfZero {
+                        cond_slot: cond,
+                        target_pc: 0,
+                    });
                     self.lower_block(&arm.body)?;
                     end_jumps.push(self.emit(Op::Jump { target_pc: 0 }));
                     let next = self.here();
@@ -764,13 +957,21 @@ impl<'p> Linearizer<'p> {
                     self.patch(at, end);
                 }
             }
-            CoreStmt::DoLoop { condition, until, post_check, body } => {
+            CoreStmt::DoLoop {
+                condition,
+                until,
+                post_check,
+                body,
+            } => {
                 self.loop_exits.push((LoopKind::Do, Vec::new()));
                 if *post_check {
                     let top = self.here();
                     self.lower_block(body)?;
                     let cont = self.lower_loop_condition(condition, *until)?;
-                    let jz = self.emit(Op::JumpIfZero { cond_slot: cont, target_pc: 0 });
+                    let jz = self.emit(Op::JumpIfZero {
+                        cond_slot: cont,
+                        target_pc: 0,
+                    });
                     self.emit(Op::Jump { target_pc: top });
                     let after = self.here();
                     self.patch(jz, after);
@@ -778,7 +979,10 @@ impl<'p> Linearizer<'p> {
                 } else {
                     let top = self.here();
                     let cont = self.lower_loop_condition(condition, *until)?;
-                    let jz = self.emit(Op::JumpIfZero { cond_slot: cont, target_pc: 0 });
+                    let jz = self.emit(Op::JumpIfZero {
+                        cond_slot: cont,
+                        target_pc: 0,
+                    });
                     self.lower_block(body)?;
                     self.emit(Op::Jump { target_pc: top });
                     let after = self.here();
@@ -786,33 +990,64 @@ impl<'p> Linearizer<'p> {
                     self.close_loop(after);
                 }
             }
-            CoreStmt::ForRange { var, start, end, step, body } => {
+            CoreStmt::ForRange {
+                var,
+                start,
+                end,
+                step,
+                body,
+            } => {
                 let var_slot = self.simple_slot(var)?;
                 let start_slot = self.lower_value(start)?;
-                self.emit(Op::Copy { dst: var_slot, src: start_slot });
+                self.emit(Op::Copy {
+                    dst: var_slot,
+                    src: start_slot,
+                });
                 let limit = self.new_temp();
                 let end_slot = self.lower_value(end)?;
-                self.emit(Op::Copy { dst: limit, src: end_slot });
+                self.emit(Op::Copy {
+                    dst: limit,
+                    src: end_slot,
+                });
                 let step_slot = self.new_temp();
                 match step {
                     Some(expr) => {
                         let e = self.lower_value(expr)?;
-                        self.emit(Op::Copy { dst: step_slot, src: e });
+                        self.emit(Op::Copy {
+                            dst: step_slot,
+                            src: e,
+                        });
                     }
                     None => {
-                        self.emit(Op::LoadI32 { slot: step_slot, value: 1 });
+                        self.emit(Op::LoadI32 {
+                            slot: step_slot,
+                            value: 1,
+                        });
                     }
                 }
                 self.loop_exits.push((LoopKind::For, Vec::new()));
                 let top = self.here();
                 let cond = self.new_temp();
                 // FIDELITY: assumes a non-negative Step (the common case).
-                self.emit(Op::CmpLe { dst: cond, lhs: var_slot, rhs: limit, mode: StringCompareMode::Binary });
-                let jz = self.emit(Op::JumpIfZero { cond_slot: cond, target_pc: 0 });
+                self.emit(Op::CmpLe {
+                    dst: cond,
+                    lhs: var_slot,
+                    rhs: limit,
+                    mode: StringCompareMode::Binary,
+                });
+                let jz = self.emit(Op::JumpIfZero {
+                    cond_slot: cond,
+                    target_pc: 0,
+                });
                 self.lower_block(body)?;
                 // The loop-counter increment widens (the counter slot already holds the
                 // declared numeric type; typed-overflow of a `For` counter is out of scope).
-                self.emit(Op::Add { dst: var_slot, lhs: var_slot, rhs: step_slot, mode: NumericMode::Widening });
+                self.emit(Op::Add {
+                    dst: var_slot,
+                    lhs: var_slot,
+                    rhs: step_slot,
+                    mode: NumericMode::Widening,
+                });
                 self.emit(Op::Jump { target_pc: top });
                 let after = self.here();
                 self.patch(jz, after);
@@ -826,8 +1061,15 @@ impl<'p> Linearizer<'p> {
                 let top = self.here();
                 let item_tmp = self.new_temp();
                 let has = self.new_temp();
-                self.emit(Op::ForEachNext { iter, item: item_tmp, has_value: has });
-                let jz = self.emit(Op::JumpIfZero { cond_slot: has, target_pc: 0 });
+                self.emit(Op::ForEachNext {
+                    iter,
+                    item: item_tmp,
+                    has_value: has,
+                });
+                let jz = self.emit(Op::JumpIfZero {
+                    cond_slot: has,
+                    target_pc: 0,
+                });
                 self.lower_place_store(item, item_tmp)?;
                 self.lower_block(body)?;
                 self.emit(Op::Jump { target_pc: top });
@@ -859,7 +1101,10 @@ impl<'p> Linearizer<'p> {
             CoreStmt::GoSub(label) => {
                 let ret_slot = self.gosub_slot();
                 let site = self.gosub_return_pcs.len();
-                self.emit(Op::LoadI32 { slot: ret_slot, value: site as i32 });
+                self.emit(Op::LoadI32 {
+                    slot: ret_slot,
+                    value: site as i32,
+                });
                 let at = self.emit(Op::Jump { target_pc: 0 });
                 self.pending_label_patches.push((at, *label));
                 self.gosub_return_pcs.push(self.here());
@@ -897,14 +1142,32 @@ impl<'p> Linearizer<'p> {
                     self.emit(Op::RaiseError { code: *code });
                 }
             },
-            CoreStmt::ReDim { array, bounds, element_type, preserve } => {
-                let upper_bounds = bounds.iter().map(|b| self.lower_value(&b.upper)).collect::<Res<Vec<_>>>()?;
+            CoreStmt::ReDim {
+                array,
+                bounds,
+                element_type,
+                preserve,
+            } => {
+                let upper_bounds = bounds
+                    .iter()
+                    .map(|b| self.lower_value(&b.upper))
+                    .collect::<Res<Vec<_>>>()?;
                 let lower_bounds: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
                 let (array_slot, writeback) = self.array_target(array)?;
                 self.emit(if *preserve {
-                    Op::ArrayResizePreserve { dst: array_slot, upper_bounds, lower_bounds, element_type: *element_type }
+                    Op::ArrayResizePreserve {
+                        dst: array_slot,
+                        upper_bounds,
+                        lower_bounds,
+                        element_type: *element_type,
+                    }
                 } else {
-                    Op::ArrayResize { dst: array_slot, upper_bounds, lower_bounds, element_type: *element_type }
+                    Op::ArrayResize {
+                        dst: array_slot,
+                        upper_bounds,
+                        lower_bounds,
+                        element_type: *element_type,
+                    }
                 });
                 if let Some(place) = writeback {
                     self.lower_place_store(&place, array_slot)?;
@@ -915,20 +1178,35 @@ impl<'p> Linearizer<'p> {
                 self.emit(Op::LoadEmpty { slot: empty });
                 self.lower_place_store(array, empty)?;
             }
-            CoreStmt::RaiseEvent { source, event, args } => {
+            CoreStmt::RaiseEvent {
+                source,
+                event,
+                args,
+            } => {
                 let source_slot = self.lower_value(source)?;
                 let (event_args, writebacks) = self.build_proc_args(args)?;
-                self.emit(Op::RaiseEvent { source: source_slot, event: *event, args: event_args });
+                self.emit(Op::RaiseEvent {
+                    source: source_slot,
+                    event: *event,
+                    args: event_args,
+                });
                 for (place, tmp) in writebacks {
                     self.lower_place_store(&place, tmp)?;
                 }
             }
-            CoreStmt::Select { selector, cases, case_else } => {
+            CoreStmt::Select {
+                selector,
+                cases,
+                case_else,
+            } => {
                 let scrutinee = self.lower_value(selector)?;
                 let mut end_jumps = Vec::new();
                 for block in cases {
                     let matched = self.lower_case_match(scrutinee, &block.clauses)?;
-                    let jz = self.emit(Op::JumpIfZero { cond_slot: matched, target_pc: 0 });
+                    let jz = self.emit(Op::JumpIfZero {
+                        cond_slot: matched,
+                        target_pc: 0,
+                    });
                     self.lower_block(&block.body)?;
                     end_jumps.push(self.emit(Op::Jump { target_pc: 0 }));
                     let next = self.here();
@@ -952,18 +1230,37 @@ impl<'p> Linearizer<'p> {
                 CaseClause::Value(v) => {
                     let vs = self.lower_value(v)?;
                     let dst = self.new_temp();
-                    self.emit(Op::CmpEq { dst, lhs: scrutinee, rhs: vs, mode: m });
+                    self.emit(Op::CmpEq {
+                        dst,
+                        lhs: scrutinee,
+                        rhs: vs,
+                        mode: m,
+                    });
                     dst
                 }
                 CaseClause::Range { lo, hi } => {
                     let lo_s = self.lower_value(lo)?;
                     let ge = self.new_temp();
-                    self.emit(Op::CmpGe { dst: ge, lhs: scrutinee, rhs: lo_s, mode: m });
+                    self.emit(Op::CmpGe {
+                        dst: ge,
+                        lhs: scrutinee,
+                        rhs: lo_s,
+                        mode: m,
+                    });
                     let hi_s = self.lower_value(hi)?;
                     let le = self.new_temp();
-                    self.emit(Op::CmpLe { dst: le, lhs: scrutinee, rhs: hi_s, mode: m });
+                    self.emit(Op::CmpLe {
+                        dst: le,
+                        lhs: scrutinee,
+                        rhs: hi_s,
+                        mode: m,
+                    });
                     let both = self.new_temp();
-                    self.emit(Op::And { dst: both, lhs: ge, rhs: le });
+                    self.emit(Op::And {
+                        dst: both,
+                        lhs: ge,
+                        rhs: le,
+                    });
                     both
                 }
                 CaseClause::Is { op, value } => {
@@ -978,7 +1275,11 @@ impl<'p> Linearizer<'p> {
                 None => clause_bool,
                 Some(acc) => {
                     let dst = self.new_temp();
-                    self.emit(Op::Or { dst, lhs: acc, rhs: clause_bool });
+                    self.emit(Op::Or {
+                        dst,
+                        lhs: acc,
+                        rhs: clause_bool,
+                    });
                     dst
                 }
             });
@@ -1024,13 +1325,28 @@ fn const_to_load(slot: usize, c: &CoreConst) -> Op {
         CoreConst::Empty => Op::LoadEmpty { slot },
         CoreConst::Null => Op::LoadNull { slot },
         CoreConst::Nothing => Op::LoadEmpty { slot }, // null object; VM treats Empty/0 as Nothing for `Is`
-        CoreConst::Bool(value) => Op::LoadBool { slot, value: *value },
-        CoreConst::I32(value) => Op::LoadI32 { slot, value: *value },
-        CoreConst::I64(value) => Op::LoadI64 { slot, value: *value },
+        CoreConst::Bool(value) => Op::LoadBool {
+            slot,
+            value: *value,
+        },
+        CoreConst::I32(value) => Op::LoadI32 {
+            slot,
+            value: *value,
+        },
+        CoreConst::I64(value) => Op::LoadI64 {
+            slot,
+            value: *value,
+        },
         CoreConst::F64(bits) => Op::LoadF64 { slot, bits: *bits },
         CoreConst::F32(bits) => Op::LoadF32 { slot, bits: *bits },
-        CoreConst::Currency(scaled) => Op::LoadCurrency { slot, scaled: *scaled },
+        CoreConst::Currency(scaled) => Op::LoadCurrency {
+            slot,
+            scaled: *scaled,
+        },
         CoreConst::Date(bits) => Op::LoadDate { slot, bits: *bits },
-        CoreConst::Str(value) => Op::LoadString { slot, value: value.clone() },
+        CoreConst::Str(value) => Op::LoadString {
+            slot,
+            value: value.clone(),
+        },
     }
 }

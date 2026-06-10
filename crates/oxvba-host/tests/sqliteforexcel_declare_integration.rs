@@ -49,13 +49,17 @@ fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
 
 #[test]
 fn bounded_demo_completes_on_vm_via_native_sqlite() {
-    run_bounded_demo(false)
-        .expect("SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll");
+    run_bounded_demo(false).expect(
+        "SQLiteForExcel bounded demo should complete on the VM backend via native sqlite3.dll",
+    );
 }
 
 #[test]
 fn bounded_demo_rejects_jit_without_falling_back() {
     let err = run_bounded_demo(true)
         .expect_err("JIT execution is not implemented; it must not silently fall back to the VM");
-    assert!(err.contains("JIT execution"), "unexpected diagnostic: {err}");
+    assert!(
+        err.contains("JIT execution"),
+        "unexpected diagnostic: {err}"
+    );
 }

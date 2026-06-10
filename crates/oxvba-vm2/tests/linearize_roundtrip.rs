@@ -21,7 +21,10 @@ use oxvba_hal::adapters::null::NullHostServices;
 // ── Builders ───────────────────────────────────────────────────────────────
 
 fn local(name: &str) -> CoreLocal {
-    CoreLocal { name: name.into(), array_element: None }
+    CoreLocal {
+        name: name.into(),
+        array_element: None,
+    }
 }
 
 fn main_proc(local_count: usize, body: Vec<CoreStmt>) -> CoreProc {
@@ -109,7 +112,13 @@ fn first_local_string(program: &CoreProgram) -> Option<String> {
 #[test]
 fn arithmetic_precedence() {
     // v0 = 1 + 2 * 3
-    let p = single(1, vec![set(0, bin(CoreBinOp::Add, ci(1), bin(CoreBinOp::Mul, ci(2), ci(3))))]);
+    let p = single(
+        1,
+        vec![set(
+            0,
+            bin(CoreBinOp::Add, ci(1), bin(CoreBinOp::Mul, ci(2), ci(3))),
+        )],
+    );
     assert_eq!(first_local_f64(&p), Some(7.0));
 }
 
@@ -188,7 +197,10 @@ fn for_range_with_exit_for() {
                 step: None,
                 body: vec![
                     CoreStmt::If {
-                        arms: vec![arm(bin(CoreBinOp::Gt, load(1), ci(5)), vec![CoreStmt::Exit(ExitKind::For)])],
+                        arms: vec![arm(
+                            bin(CoreBinOp::Gt, load(1), ci(5)),
+                            vec![CoreStmt::Exit(ExitKind::For)],
+                        )],
                         else_body: Vec::new(),
                     },
                     set(0, bin(CoreBinOp::Add, load(0), load(1))),
@@ -227,13 +239,19 @@ fn select_case_value_list_and_is() {
             CoreStmt::Select {
                 selector: load(1),
                 cases: vec![
-                    CoreCaseBlock { clauses: vec![CaseClause::Value(ci(1))], body: vec![set(0, ci(10))] },
+                    CoreCaseBlock {
+                        clauses: vec![CaseClause::Value(ci(1))],
+                        body: vec![set(0, ci(10))],
+                    },
                     CoreCaseBlock {
                         clauses: vec![CaseClause::Value(ci(2)), CaseClause::Value(ci(3))],
                         body: vec![set(0, ci(20))],
                     },
                     CoreCaseBlock {
-                        clauses: vec![CaseClause::Is { op: CoreBinOp::Gt, value: ci(5) }],
+                        clauses: vec![CaseClause::Is {
+                            op: CoreBinOp::Gt,
+                            value: ci(5),
+                        }],
                         body: vec![set(0, ci(30))],
                     },
                 ],
@@ -250,7 +268,11 @@ fn call_proc_by_ref_mutates_caller() {
     let inc = CoreProc {
         name: "Inc".into(),
         kind: ProcedureKind::Sub,
-        params: vec![CoreParam { name: "n".into(), by_ref: true, variadic: false }],
+        params: vec![CoreParam {
+            name: "n".into(),
+            by_ref: true,
+            variadic: false,
+        }],
         locals: vec![local("n")],
         return_local: None,
         body: vec![set(0, bin(CoreBinOp::Add, load(0), ci(100)))],
@@ -297,7 +319,10 @@ fn redim_array_set_get_roundtrip() {
         vec![
             CoreStmt::ReDim {
                 array: CorePlace::Local(LocalId(1)),
-                bounds: vec![CoreBound { upper: ci(2), lower: 0 }],
+                bounds: vec![CoreBound {
+                    upper: ci(2),
+                    lower: 0,
+                }],
                 element_type: ArrayElementType::Variant,
                 preserve: false,
             },
@@ -339,7 +364,10 @@ fn goto_backward_jump() {
             CoreStmt::Label(LabelId(0)),
             set(0, bin(CoreBinOp::Add, load(0), ci(1))),
             CoreStmt::If {
-                arms: vec![arm(bin(CoreBinOp::Lt, load(0), ci(3)), vec![CoreStmt::Goto(LabelId(0))])],
+                arms: vec![arm(
+                    bin(CoreBinOp::Lt, load(0), ci(3)),
+                    vec![CoreStmt::Goto(LabelId(0))],
+                )],
                 else_body: Vec::new(),
             },
         ],

@@ -37,11 +37,22 @@ fn lib_program() -> CoreProgram {
         name: "Add".into(),
         kind: ProcedureKind::Function,
         params: vec![
-            CoreParam { name: "a".into(), by_ref: false, variadic: false },
-            CoreParam { name: "b".into(), by_ref: false, variadic: false },
+            CoreParam {
+                name: "a".into(),
+                by_ref: false,
+                variadic: false,
+            },
+            CoreParam {
+                name: "b".into(),
+                by_ref: false,
+                variadic: false,
+            },
         ],
         // params occupy slots 0,1; the synthetic return local is slot 2.
-        locals: vec![CoreLocal { name: "Add".into(), array_element: None }],
+        locals: vec![CoreLocal {
+            name: "Add".into(),
+            array_element: None,
+        }],
         return_local: Some(LocalId(2)),
         body: vec![assign(
             CorePlace::Local(LocalId(2)),
@@ -58,7 +69,10 @@ fn lib_program() -> CoreProgram {
     CoreProgram {
         procs: vec![add],
         unit_name: "Lib".into(),
-        exports: vec![BundleExport { token: add_token(), target: ExportTarget::Proc(0) }],
+        exports: vec![BundleExport {
+            token: add_token(),
+            target: ExportTarget::Proc(0),
+        }],
         ..Default::default()
     }
 }
@@ -84,9 +98,15 @@ fn app_program() -> CoreProgram {
         )],
     };
     CoreProgram {
-        globals: vec![CoreGlobal { name: "result".into(), array_element: None }],
+        globals: vec![CoreGlobal {
+            name: "result".into(),
+            array_element: None,
+        }],
         procs: vec![main],
-        imports: vec![BundleImport { unit: "Lib".into(), token: add_token() }],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: add_token(),
+        }],
         unit_name: "App".into(),
         entry: Some(ProcId(0)),
         ..Default::default()
@@ -152,11 +172,18 @@ fn error_app_program() -> CoreProgram {
                 "result",
             ),
             // Resumed-to statement — must execute in App's bundle.
-            assign(CorePlace::Global(GlobalId(0)), CoreValue::Const(CoreConst::I32(42)), "result"),
+            assign(
+                CorePlace::Global(GlobalId(0)),
+                CoreValue::Const(CoreConst::I32(42)),
+                "result",
+            ),
         ],
     };
     CoreProgram {
-        globals: vec![CoreGlobal { name: "result".into(), array_element: None }],
+        globals: vec![CoreGlobal {
+            name: "result".into(),
+            array_element: None,
+        }],
         procs: vec![main],
         imports: vec![BundleImport {
             unit: "Lib".into(),
@@ -191,7 +218,11 @@ fn link_rejects_an_unresolved_reference() {
     let app = linearize(&app_program()).expect("linearize app");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
     match oxvba_vm2::Vm::link(&[&app], &host) {
-        Err(e) => assert!(e.message.contains("Lib"), "error names the missing unit: {}", e.message),
+        Err(e) => assert!(
+            e.message.contains("Lib"),
+            "error names the missing unit: {}",
+            e.message
+        ),
         Ok(_) => panic!("a missing referenced unit must not link"),
     }
 }

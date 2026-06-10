@@ -6,8 +6,8 @@ use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::error::BindError;
 use crate::ProcLower;
+use crate::error::BindError;
 
 impl<'a> ProcLower<'a> {
     pub(crate) fn bind_place(
@@ -39,7 +39,10 @@ impl<'a> ProcLower<'a> {
                     .ok_or_else(|| BindError::Malformed("index base".into()))?;
                 let (base_place, _ty) = self.bind_place(base)?;
                 let indices = self.bind_index_values(node)?;
-                let place = CorePlace::Index { array: Box::new(base_place), indices };
+                let place = CorePlace::Index {
+                    array: Box::new(base_place),
+                    indices,
+                };
                 // The element type isn't tracked through the array yet → Variant.
                 Ok((place, VarTypeRef::Variant))
             }
@@ -76,7 +79,9 @@ impl<'a> ProcLower<'a> {
                     ))),
                 }
             }
-            other => Err(BindError::InvalidAssignment(format!("{other:?} is not an l-value"))),
+            other => Err(BindError::InvalidAssignment(format!(
+                "{other:?} is not an l-value"
+            ))),
         }
     }
 
@@ -88,17 +93,27 @@ impl<'a> ProcLower<'a> {
         &mut self,
         node: SyntaxNode<'_>,
     ) -> Result<Option<(CorePlace, VarTypeRef)>, BindError> {
-        let Some(member) = node.member_name_token().map(|t| t.text) else { return Ok(None) };
-        let Some(recv_node) = node.member_receiver() else { return Ok(None) };
+        let Some(member) = node.member_name_token().map(|t| t.text) else {
+            return Ok(None);
+        };
+        let Some(recv_node) = node.member_receiver() else {
+            return Ok(None);
+        };
         let Ok((base_place, VarTypeRef::Udt(udt))) = self.bind_place(recv_node) else {
             return Ok(None);
         };
-        let Some((index, field_ty)) =
-            self.g.env.udt_field(&udt, member).map(|(i, t)| (i, t.clone()))
+        let Some((index, field_ty)) = self
+            .g
+            .env
+            .udt_field(&udt, member)
+            .map(|(i, t)| (i, t.clone()))
         else {
             return Ok(None);
         };
-        let place = CorePlace::RecordField { base: Box::new(base_place), index };
+        let place = CorePlace::RecordField {
+            base: Box::new(base_place),
+            index,
+        };
         Ok(Some((place, self.g.resolve_udt_type(field_ty))))
     }
 
@@ -122,8 +137,12 @@ impl<'a> ProcLower<'a> {
         let mut values = Vec::new();
         for item in arglist.arg_items() {
             match item {
-                oxvba_syntax::red::ArgItem::Positional(expr) => values.push(self.bind_expr(expr)?.value),
-                oxvba_syntax::red::ArgItem::Named { value, .. } => values.push(self.bind_expr(value)?.value),
+                oxvba_syntax::red::ArgItem::Positional(expr) => {
+                    values.push(self.bind_expr(expr)?.value)
+                }
+                oxvba_syntax::red::ArgItem::Named { value, .. } => {
+                    values.push(self.bind_expr(value)?.value)
+                }
                 oxvba_syntax::red::ArgItem::Omitted => {
                     return Err(BindError::Malformed("omitted index/element".into()));
                 }
@@ -131,5 +150,4 @@ impl<'a> ProcLower<'a> {
         }
         Ok(values)
     }
-
 }

@@ -100,7 +100,14 @@ mod windows_codec {
             return String::new();
         }
         let needed = unsafe {
-            MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), bytes.len() as i32, std::ptr::null_mut(), 0)
+            MultiByteToWideChar(
+                CP_ACP,
+                0,
+                bytes.as_ptr(),
+                bytes.len() as i32,
+                std::ptr::null_mut(),
+                0,
+            )
         };
         if needed <= 0 {
             return String::from_utf8_lossy(bytes).into_owned();
@@ -150,7 +157,13 @@ mod cp1252 {
     pub fn decode(bytes: &[u8]) -> String {
         bytes
             .iter()
-            .map(|&b| if b < 0x80 || b >= 0xA0 { b as char } else { HIGH[(b - 0x80) as usize] })
+            .map(|&b| {
+                if b < 0x80 || b >= 0xA0 {
+                    b as char
+                } else {
+                    HIGH[(b - 0x80) as usize]
+                }
+            })
             .collect()
     }
 }

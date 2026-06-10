@@ -758,7 +758,13 @@ impl ObjectRef {
         has_terminate: bool,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
-        Self::from_compat_object(instance_id, route_key, bundle_id, has_terminate, class_descriptor)
+        Self::from_compat_object(
+            instance_id,
+            route_key,
+            bundle_id,
+            has_terminate,
+            class_descriptor,
+        )
     }
 
     fn from_compat_object(

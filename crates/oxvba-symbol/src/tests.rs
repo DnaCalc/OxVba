@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::ProjectMemberKind;
+use oxvba_bundle::coreir::CoreConst;
 use oxvba_com::{
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
     TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
@@ -12,11 +12,11 @@ use oxvba_com::{
 
 use crate::binding::DispatchRoute;
 use crate::manifest::{
-    ModuleAttributes, ModuleKind, ProjectKind, SymbolProjectManifest, ModuleUnit,
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
 };
 use crate::model::{ScopeKind, SymbolImpl, SymbolKind, SymbolNamespace, SymbolTable};
 use crate::predeclared::predeclared_object;
-use crate::provider::{build_resolution_environment, Provider, ResolutionContext, TypeLibResolver};
+use crate::provider::{Provider, ResolutionContext, TypeLibResolver, build_resolution_environment};
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::vba_library::VbaLibraryProvider;
 use crate::signature::{BuiltinType, DefaultValue, VarTypeRef};
@@ -76,17 +76,37 @@ fn environment_retains_active_module_csts_parsed_once() {
 #[test]
 fn table_resolves_nearest_scope_first() {
     let mut table = SymbolTable::new();
-    let module = table.add_scope(ScopeKind::Module, table.global_scope(), Some("Mod1")).unwrap();
-    let proc = table.add_scope(ScopeKind::Procedure, module, Some("Foo")).unwrap();
+    let module = table
+        .add_scope(ScopeKind::Module, table.global_scope(), Some("Mod1"))
+        .unwrap();
+    let proc = table
+        .add_scope(ScopeKind::Procedure, module, Some("Foo"))
+        .unwrap();
     table
-        .declare_symbol(module, SymbolNamespace::Local, SymbolKind::Field, "x", Default::default(), SymbolImpl::None)
+        .declare_symbol(
+            module,
+            SymbolNamespace::Local,
+            SymbolKind::Field,
+            "x",
+            Default::default(),
+            SymbolImpl::None,
+        )
         .unwrap();
     let local = table
-        .declare_symbol(proc, SymbolNamespace::Local, SymbolKind::Local, "x", Default::default(), SymbolImpl::None)
+        .declare_symbol(
+            proc,
+            SymbolNamespace::Local,
+            SymbolKind::Local,
+            "x",
+            Default::default(),
+            SymbolImpl::None,
+        )
         .unwrap();
     // From the procedure scope, the local shadows the module-level field.
     assert_eq!(
-        table.resolve_in_scope_chain(proc, SymbolNamespace::Local, "x").unwrap(),
+        table
+            .resolve_in_scope_chain(proc, SymbolNamespace::Local, "x")
+            .unwrap(),
         Some(local)
     );
 }
@@ -94,16 +114,42 @@ fn table_resolves_nearest_scope_first() {
 #[test]
 fn table_keeps_namespaces_distinct() {
     let mut table = SymbolTable::new();
-    let module = table.add_scope(ScopeKind::Module, table.global_scope(), Some("Mod1")).unwrap();
+    let module = table
+        .add_scope(ScopeKind::Module, table.global_scope(), Some("Mod1"))
+        .unwrap();
     let as_module = table
-        .declare_symbol(module, SymbolNamespace::Module, SymbolKind::Module, "Same", Default::default(), SymbolImpl::None)
+        .declare_symbol(
+            module,
+            SymbolNamespace::Module,
+            SymbolKind::Module,
+            "Same",
+            Default::default(),
+            SymbolImpl::None,
+        )
         .unwrap();
     let as_proc = table
-        .declare_symbol(module, SymbolNamespace::Procedure, SymbolKind::Procedure, "Same", Default::default(), SymbolImpl::None)
+        .declare_symbol(
+            module,
+            SymbolNamespace::Procedure,
+            SymbolKind::Procedure,
+            "Same",
+            Default::default(),
+            SymbolImpl::None,
+        )
         .unwrap();
     assert_ne!(as_module, as_proc);
-    assert_eq!(table.find_in_scope(module, SymbolNamespace::Module, "Same").unwrap(), Some(as_module));
-    assert_eq!(table.find_in_scope(module, SymbolNamespace::Procedure, "Same").unwrap(), Some(as_proc));
+    assert_eq!(
+        table
+            .find_in_scope(module, SymbolNamespace::Module, "Same")
+            .unwrap(),
+        Some(as_module)
+    );
+    assert_eq!(
+        table
+            .find_in_scope(module, SymbolNamespace::Procedure, "Same")
+            .unwrap(),
+        Some(as_proc)
+    );
 }
 
 // ── VBA library provider ─────────────────────────────────────────────────────
@@ -111,11 +157,19 @@ fn table_keeps_namespaces_distinct() {
 #[test]
 fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     let p = VbaLibraryProvider;
-    assert!(matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::LibraryConst(_))));
+    assert!(
+        matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::LibraryConst(_)))
+    );
     assert!(matches!(p.resolve("Len"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
-    assert!(matches!(p.resolve("VarPtr"), Some(b) if matches!(b.route, DispatchRoute::Structural(_))));
-    assert!(matches!(p.resolve("Array"), Some(b) if matches!(b.route, DispatchRoute::SpecialForm(_))));
-    assert!(matches!(p.resolve("Debug"), Some(b) if matches!(b.route, DispatchRoute::PredeclaredObject(_))));
+    assert!(
+        matches!(p.resolve("VarPtr"), Some(b) if matches!(b.route, DispatchRoute::Structural(_)))
+    );
+    assert!(
+        matches!(p.resolve("Array"), Some(b) if matches!(b.route, DispatchRoute::SpecialForm(_)))
+    );
+    assert!(
+        matches!(p.resolve("Debug"), Some(b) if matches!(b.route, DispatchRoute::PredeclaredObject(_)))
+    );
 }
 
 #[test]
@@ -166,7 +220,9 @@ fn referenced_project_resolves_through_its_export_surface() {
         project_name: "App".into(),
         project_kind: ProjectKind::Source,
         modules: vec![module("Main", "Sub Main()\nEnd Sub\n")],
-        references: vec![ProjectReference::Project { referenced_project_name: "Lib".into() }],
+        references: vec![ProjectReference::Project {
+            referenced_project_name: "Lib".into(),
+        }],
         reference_projects: vec![lib],
         conditional_constants: BTreeMap::new(),
     };
@@ -176,7 +232,9 @@ fn referenced_project_resolves_through_its_export_surface() {
 
     // A referenced standard-module Public function resolves UNQUALIFIED, as a
     // cross-bundle extern with no receiver (an import-backed `ExternProc` call).
-    let add = env.resolve(&ctx, "Add").expect("referenced Add resolves unqualified");
+    let add = env
+        .resolve(&ctx, "Add")
+        .expect("referenced Add resolves unqualified");
     assert!(matches!(
         add.route,
         DispatchRoute::ExternMember { has_receiver: false, ref unit, .. } if unit == "Lib"
@@ -186,8 +244,13 @@ fn referenced_project_resolves_through_its_export_surface() {
     assert!(env.resolve_qualified(&["Lib", "LibMod", "Add"]).is_some());
 
     // A referenced Public Enum member resolves to its published literal value.
-    let red = env.resolve(&ctx, "Red").expect("referenced enum member resolves");
-    assert!(matches!(red.route, DispatchRoute::ConstValue(CoreConst::I32(1))));
+    let red = env
+        .resolve(&ctx, "Red")
+        .expect("referenced enum member resolves");
+    assert!(matches!(
+        red.route,
+        DispatchRoute::ConstValue(CoreConst::I32(1))
+    ));
 
     // A referenced Private member does NOT cross the boundary.
     assert!(env.resolve(&ctx, "Secret").is_none());
@@ -195,7 +258,9 @@ fn referenced_project_resolves_through_its_export_surface() {
     // A referenced exposed class member resolves on a typed receiver as a
     // cross-bundle extern WITH a receiver (dispatched by name in the object's bundle).
     let recv = VarTypeRef::Object("Widget".into());
-    let gv = env.resolve_member(&recv, "GetValue", None).expect("Widget.GetValue resolves");
+    let gv = env
+        .resolve_member(&recv, "GetValue", None)
+        .expect("Widget.GetValue resolves");
     assert!(matches!(
         gv.route,
         DispatchRoute::ExternMember { has_receiver: true, ref member, .. } if member == "GetValue"
@@ -212,7 +277,11 @@ fn referenced_project_resolves_through_its_export_surface() {
     );
 
     // The active project keeps its own surface available to the binder.
-    assert_eq!(env.export_surfaces().len(), 2, "active + one referenced surface");
+    assert_eq!(
+        env.export_surfaces().len(),
+        2,
+        "active + one referenced surface"
+    );
 }
 
 #[test]
@@ -297,9 +366,18 @@ fn widget_blob() -> TypeLibMetadataBlob {
 fn com_member_resolves_for_typed_receiver_with_both_dispid_and_name() {
     let provider = ComTypeLibProvider::new(widget_blob());
     let typed = VarTypeRef::Object("Widget".into());
-    let binding = provider.resolve_member(&typed, "DoThing", None).expect("typed member");
+    let binding = provider
+        .resolve_member(&typed, "DoThing", None)
+        .expect("typed member");
     match binding.route {
-        DispatchRoute::ComMember { member_name, dispid, vtable_slot, member_kind, param_by_ref, .. } => {
+        DispatchRoute::ComMember {
+            member_name,
+            dispid,
+            vtable_slot,
+            member_kind,
+            param_by_ref,
+            ..
+        } => {
             assert_eq!(member_name, "DoThing"); // late path uses the name
             assert_eq!(dispid, 5); // early path uses the dispid
             assert_eq!(vtable_slot, Some(7));
@@ -315,8 +393,14 @@ fn com_member_resolves_for_typed_receiver_with_both_dispid_and_name() {
 fn coclass_resolves_to_activation_prog_id() {
     // `New <coclass>` consults this hook to obtain the ProgID for activation.
     let provider = ComTypeLibProvider::new(widget_blob());
-    assert_eq!(provider.resolve_coclass("Widget").as_deref(), Some("Widget.Thing"));
-    assert_eq!(provider.resolve_coclass("Widget.Thing").as_deref(), Some("Widget.Thing"));
+    assert_eq!(
+        provider.resolve_coclass("Widget").as_deref(),
+        Some("Widget.Thing")
+    );
+    assert_eq!(
+        provider.resolve_coclass("Widget.Thing").as_deref(),
+        Some("Widget.Thing")
+    );
     assert_eq!(provider.resolve_coclass("Nope"), None);
 }
 
@@ -325,15 +409,28 @@ fn com_member_does_not_resolve_for_untyped_receiver() {
     // An `Object`/`Variant` receiver has no typelib to consult — the binder emits
     // a late dispatch by name; the provider correctly declines.
     let provider = ComTypeLibProvider::new(widget_blob());
-    assert!(provider.resolve_member(&VarTypeRef::Variant, "DoThing", None).is_none());
+    assert!(
+        provider
+            .resolve_member(&VarTypeRef::Variant, "DoThing", None)
+            .is_none()
+    );
 }
 
 #[test]
 fn com_event_resolves_for_with_events_source_type() {
     let provider = ComTypeLibProvider::new(widget_blob());
     let typed = VarTypeRef::Object("Widget".into());
-    match provider.resolve_member(&typed, "Changed", None).expect("event").route {
-        DispatchRoute::ComEvent { token, callback_arity, dispatch_path, .. } => {
+    match provider
+        .resolve_member(&typed, "Changed", None)
+        .expect("event")
+        .route
+    {
+        DispatchRoute::ComEvent {
+            token,
+            callback_arity,
+            dispatch_path,
+            ..
+        } => {
             assert_eq!(token, 9);
             assert_eq!(callback_arity, 1);
             assert_eq!(dispatch_path, TypeLibEventDispatchPath::SourceInterface);
@@ -350,7 +447,10 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         "Proj",
         vec![
             module("Main", "Sub Run()\r\nEnd Sub\r\n"),
-            module("Module1", "Public Function Value() As Long\r\nEnd Function\r\n"),
+            module(
+                "Module1",
+                "Public Function Value() As Long\r\nEnd Function\r\n",
+            ),
         ],
     );
     let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
@@ -368,7 +468,10 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         Some(b) if matches!(b.route, DispatchRoute::ProjectMember { .. })
     ));
     // Project-qualified `Proj.Module1.Value`.
-    assert!(env.resolve_qualified(&["Proj", "Module1", "Value"]).is_some());
+    assert!(
+        env.resolve_qualified(&["Proj", "Module1", "Value"])
+            .is_some()
+    );
 
     // Library + intrinsic still resolve through the same source-agnostic path.
     assert!(matches!(
@@ -390,7 +493,10 @@ fn environment_extracts_declare_statements() {
     let ctx = ResolutionContext::at(scope);
     let binding = env.resolve(&ctx, "GetTickCount").expect("declare resolves");
     assert!(matches!(binding.route, DispatchRoute::Declare { .. }));
-    let symbol = env.symbols.symbol(binding.symbol.expect("symbol id")).expect("symbol");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
     match &symbol.imp {
         SymbolImpl::Declare(declare) => {
             assert_eq!(declare.declared_name, "GetTickCount");
@@ -405,10 +511,16 @@ fn environment_extracts_declare_statements() {
 fn com_resolves_default_member() {
     let provider = ComTypeLibProvider::new(widget_blob());
     let typed = VarTypeRef::Object("Widget".into());
-    let binding = provider.resolve_default_member(&typed).expect("default member");
+    let binding = provider
+        .resolve_default_member(&typed)
+        .expect("default member");
     assert!(binding.is_default);
     match binding.route {
-        DispatchRoute::ComMember { member_name, is_default_member, .. } => {
+        DispatchRoute::ComMember {
+            member_name,
+            is_default_member,
+            ..
+        } => {
             assert_eq!(member_name, "Item");
             assert!(is_default_member);
         }
@@ -425,8 +537,13 @@ fn property_get_and_let_merge_into_one_group() {
     let m = manifest("Proj", vec![module("Mod1", src)]);
     let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
     let scope = env.module_scope("Mod1").expect("module scope");
-    let binding = env.resolve(&ResolutionContext::at(scope), "Foo").expect("property resolves");
-    let symbol = env.symbols.symbol(binding.symbol.expect("symbol id")).expect("symbol");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "Foo")
+        .expect("property resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
     assert_eq!(symbol.kind, SymbolKind::Property);
     match &symbol.imp {
         SymbolImpl::Property(group) => {
@@ -444,8 +561,13 @@ fn optional_parameter_default_is_parsed() {
     let m = manifest("Proj", vec![module("Mod1", src)]);
     let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
     let scope = env.module_scope("Mod1").expect("module scope");
-    let binding = env.resolve(&ResolutionContext::at(scope), "S").expect("sub resolves");
-    let symbol = env.symbols.symbol(binding.symbol.expect("symbol id")).expect("symbol");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("sub resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
     let SymbolImpl::Signature(sig_id) = symbol.imp else {
         panic!("expected a signature");
     };
@@ -458,14 +580,22 @@ fn optional_parameter_default_is_parsed() {
 #[test]
 fn scanner_reads_per_declarator_types_from_structured_cst() {
     // Each declarator carries its own type (the old flat-token walker couldn't).
-    let m = manifest("Proj", vec![module("Mod1", "Public a As Long, b As String\r\n")]);
+    let m = manifest(
+        "Proj",
+        vec![module("Mod1", "Public a As Long, b As String\r\n")],
+    );
     let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
     let scope = env.module_scope("Mod1").expect("module scope");
     let ctx = ResolutionContext::at(scope);
 
     let type_of = |name: &str| {
         let binding = env.resolve(&ctx, name).expect("resolves");
-        match &env.symbols.symbol(binding.symbol.expect("symbol")).expect("symbol").imp {
+        match &env
+            .symbols
+            .symbol(binding.symbol.expect("symbol"))
+            .expect("symbol")
+            .imp
+        {
             SymbolImpl::DeclaredType(ty) => ty.clone(),
             other => panic!("expected declared type, got {other:?}"),
         }

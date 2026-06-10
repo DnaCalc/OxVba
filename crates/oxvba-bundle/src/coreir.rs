@@ -133,14 +133,26 @@ pub enum CorePlace {
     Local(LocalId),
     Global(GlobalId),
     /// Instance field access (`obj.field`); `field` is the resolved field token.
-    Field { object: Box<CoreValue>, field: i32 },
+    Field {
+        object: Box<CoreValue>,
+        field: i32,
+    },
     /// Array element (`array(i, j, …)`).
-    Index { array: Box<CorePlace>, indices: Vec<CoreValue> },
+    Index {
+        array: Box<CorePlace>,
+        indices: Vec<CoreValue>,
+    },
     /// A UDT field at a fixed index into `base`'s record (`p.X`). A value aggregate
     /// (backed by a record at run time), so the field is a positional slot.
-    RecordField { base: Box<CorePlace>, index: usize },
+    RecordField {
+        base: Box<CorePlace>,
+        index: usize,
+    },
     /// A `WithEvents` sink field: read → `WithEventsGet`, assign → `WithEventsSet`.
-    WithEvents { owner: Box<CoreValue>, binding: i32 },
+    WithEvents {
+        owner: Box<CoreValue>,
+        binding: i32,
+    },
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -264,7 +276,11 @@ pub enum CoreValue {
     Load(CorePlace),
     // `num` is the arithmetic numeric regime (the operands' promoted fixed type or
     // `Widening`); it drives `Negate`/arithmetic ops and is `Widening` otherwise.
-    Unary { op: CoreUnOp, expr: Box<CoreValue>, num: NumericMode },
+    Unary {
+        op: CoreUnOp,
+        expr: Box<CoreValue>,
+        num: NumericMode,
+    },
     // `mode` is the string-comparison mode (comparison ops); `num` is the arithmetic
     // numeric regime (arithmetic ops). Each op uses one.
     Binary {
@@ -275,21 +291,38 @@ pub enum CoreValue {
         num: NumericMode,
     },
     /// The one call node — project proc, library, COM, or `Declare`.
-    Call { callee: CoreCallee, args: Vec<CoreArg> },
+    Call {
+        callee: CoreCallee,
+        args: Vec<CoreArg>,
+    },
     /// `New <Class>` — allocate a project instance and run `Class_Initialize`.
     New(ClassId),
     /// Allocate a default-initialized UDT record of `fields` fields (a value aggregate).
-    NewRecord { fields: usize },
-    Coerce { value: Box<CoreValue>, to: CoerceTarget },
-    TypeOfIs { object: Box<CoreValue>, type_name: String },
+    NewRecord {
+        fields: usize,
+    },
+    Coerce {
+        value: Box<CoreValue>,
+        to: CoerceTarget,
+    },
+    TypeOfIs {
+        object: Box<CoreValue>,
+        type_name: String,
+    },
     /// A pointer-helper (`VarPtr`/`StrPtr`/`ObjPtr`) over its operand **value**: the
     /// VM pins the value in the pointer registry and yields its address. The operand
     /// is a value (not a place) so r-values like `StrPtr("literal")` work; write-back
     /// into an l-value operand is recorded separately on the `Declare` call.
-    Ptr { kind: PtrKind, value: Box<CoreValue> },
+    Ptr {
+        kind: PtrKind,
+        value: Box<CoreValue>,
+    },
     ErrField(ErrField),
     ArrayLiteral(Vec<CoreValue>),
-    Bound { which: BoundWhich, array: Box<CorePlace> },
+    Bound {
+        which: BoundWhich,
+        array: Box<CorePlace>,
+    },
     /// `AddressOf proc` — a reference to a project procedure. Materializes the
     /// procedure index; calling through it (in-VM or via a real OS callback) is the
     /// native-runtime epic's concern.
@@ -297,17 +330,23 @@ pub enum CoreValue {
     /// `New <referenced class>` — allocate an instance of a class in another bundle.
     /// `import` indexes [`CoreProgram::imports`] (a `Class` token); the instance
     /// carries the target bundle's id for cross-bundle method dispatch.
-    NewExtern { import: usize },
+    NewExtern {
+        import: usize,
+    },
     /// A `VB_PredeclaredId` class referenced by its name → its global singleton
     /// instance (created lazily on first access, then persisting for the run).
     /// Distinct from `New`, which always allocates a fresh instance. This form is a
     /// class of the **active** project (same bundle).
-    Predeclared { class: ClassId },
+    Predeclared {
+        class: ClassId,
+    },
     /// A `VB_PredeclaredId` class published by a *referenced project* → its singleton
     /// in that project's bundle. `import` indexes [`CoreProgram::imports`] (a `Class`
     /// token); the returned instance carries the owning bundle's id for cross-bundle
     /// member dispatch (exactly like [`CoreValue::NewExtern`], but a shared singleton).
-    PredeclaredExtern { import: usize },
+    PredeclaredExtern {
+        import: usize,
+    },
 }
 
 /// The resolved target of a [`CoreValue::Call`].
@@ -318,13 +357,22 @@ pub enum CoreCallee {
     /// A base-library / `Declare` / host primitive native body.
     Native(NativeImplId),
     /// Early-bound COM dispatch (typed receiver). The receiver is `args[0]`.
-    EarlyCom { dispid: i32, kind: Option<ProjectMemberKind> },
+    EarlyCom {
+        dispid: i32,
+        kind: Option<ProjectMemberKind>,
+    },
     /// Late-bound COM dispatch (`Object`/`Variant` receiver, by name).
-    LateDispatch { name: String, kind: Option<ProjectMemberKind> },
+    LateDispatch {
+        name: String,
+        kind: Option<ProjectMemberKind>,
+    },
     /// A `Declare Lib` external call (descriptor in `CoreProgram::external_calls`).
     /// `ptr_writebacks` carries the pointer-helper arguments whose pinned buffer is
     /// read back into a source l-value after the call (see [`PtrWriteback`]).
-    Declare { descriptor_id: u32, ptr_writebacks: Vec<PtrWriteback> },
+    Declare {
+        descriptor_id: u32,
+        ptr_writebacks: Vec<PtrWriteback>,
+    },
     /// `CallByName(obj, name, calltype, args…)` — dispatch by a *runtime* member
     /// name through the same machinery as `LateDispatch`. The operands are carried
     /// in `args`: `[0]` = object, `[1]` = name string, `[2]` = calltype
@@ -344,7 +392,10 @@ pub enum CoreArg {
     ByRef(CorePlace),
     Omitted,
     /// A `name := value` argument (late-bound / COM dispatch).
-    Named { name: String, value: CoreValue },
+    Named {
+        name: String,
+        value: CoreValue,
+    },
 }
 
 // ── Statements ────────────────────────────────────────────────────────────────
@@ -358,9 +409,15 @@ pub struct CoreBound {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CaseClause {
     Value(CoreValue),
-    Range { lo: CoreValue, hi: CoreValue },
+    Range {
+        lo: CoreValue,
+        hi: CoreValue,
+    },
     /// `Case Is <op> value`; `op` is a comparison [`CoreBinOp`].
-    Is { op: CoreBinOp, value: CoreValue },
+    Is {
+        op: CoreBinOp,
+        value: CoreValue,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,9 +466,17 @@ pub enum CoreStmt {
     /// file/console/`Debug` I/O statements desugar to `Eval(Call(Native(..)))`.
     Eval(CoreValue),
     /// `If` / `ElseIf` chain (`arms[0]` is the `If`); `else_body` may be empty.
-    If { arms: Vec<CoreIfArm>, else_body: Vec<CoreStmt> },
+    If {
+        arms: Vec<CoreIfArm>,
+        else_body: Vec<CoreStmt>,
+    },
     /// `Do While/Until … Loop` (pre-check) or `Do … Loop While/Until` (post-check).
-    DoLoop { condition: CoreValue, until: bool, post_check: bool, body: Vec<CoreStmt> },
+    DoLoop {
+        condition: CoreValue,
+        until: bool,
+        post_check: bool,
+        body: Vec<CoreStmt>,
+    },
     /// `For var = start To end [Step step]`.
     ForRange {
         var: CorePlace,
@@ -421,7 +486,11 @@ pub enum CoreStmt {
         body: Vec<CoreStmt>,
     },
     /// `For Each item In source`.
-    ForEach { item: CorePlace, source: CoreValue, body: Vec<CoreStmt> },
+    ForEach {
+        item: CorePlace,
+        source: CoreValue,
+        body: Vec<CoreStmt>,
+    },
     Exit(ExitKind),
     Label(LabelId),
     Goto(LabelId),
@@ -430,8 +499,24 @@ pub enum CoreStmt {
     GoSubReturn,
     Error(ErrorOp),
     /// `ReDim`/`ReDim Preserve`.
-    ReDim { array: CorePlace, bounds: Vec<CoreBound>, element_type: ArrayElementType, preserve: bool },
-    Erase { array: CorePlace, element_type: ArrayElementType },
-    RaiseEvent { source: CoreValue, event: i32, args: Vec<CoreArg> },
-    Select { selector: CoreValue, cases: Vec<CoreCaseBlock>, case_else: Vec<CoreStmt> },
+    ReDim {
+        array: CorePlace,
+        bounds: Vec<CoreBound>,
+        element_type: ArrayElementType,
+        preserve: bool,
+    },
+    Erase {
+        array: CorePlace,
+        element_type: ArrayElementType,
+    },
+    RaiseEvent {
+        source: CoreValue,
+        event: i32,
+        args: Vec<CoreArg>,
+    },
+    Select {
+        selector: CoreValue,
+        cases: Vec<CoreCaseBlock>,
+        case_else: Vec<CoreStmt>,
+    },
 }

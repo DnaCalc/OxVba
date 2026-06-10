@@ -773,7 +773,10 @@ pub fn free_pins(addrs: &[i64]) {
 /// Number of pinned cells currently live in the registry. Diagnostic — used by
 /// tests to assert that pointer-helper pins do not accumulate across a loop.
 pub fn live_pin_count() -> usize {
-    registry().lock().map(|guard| guard.entries.len()).unwrap_or(0)
+    registry()
+        .lock()
+        .map(|guard| guard.entries.len())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use oxvba_bind::bind_program;
 use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreProgram, CoreStmt, CoreValue};
 use oxvba_bundle::native::NativeImplId;
-use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_hal::HostPolicy;
+use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_symbol::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference, SymbolProjectManifest,
 };
@@ -70,7 +70,10 @@ fn main_sub(body: &str) -> String {
 
 #[test]
 fn arithmetic_precedence() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 1 + 2 * 3\n")), Some(7.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r As Long\n    r = 1 + 2 * 3\n")),
+        Some(7.0)
+    );
 }
 
 fn run_main_local0_string(source: &str) -> Option<String> {
@@ -101,23 +104,38 @@ fn fixed_length_string_truncates_on_assignment() {
 #[test]
 fn date_literal_assigns_serial() {
     // 2020-01-01 is OLE automation serial 43831.
-    assert_eq!(run_main_local0(&main_sub("    Dim d As Date\n    d = #1/1/2020#\n")), Some(43831.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim d As Date\n    d = #1/1/2020#\n")),
+        Some(43831.0)
+    );
 }
 
 #[test]
 fn iif_selects_branch() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = IIf(2 > 1, 10, 20)\n")), Some(10.0));
-    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = IIf(1 > 2, 10, 20)\n")), Some(20.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r\n    r = IIf(2 > 1, 10, 20)\n")),
+        Some(10.0)
+    );
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r\n    r = IIf(1 > 2, 10, 20)\n")),
+        Some(20.0)
+    );
 }
 
 #[test]
 fn choose_is_one_based() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = Choose(2, 100, 200, 300)\n")), Some(200.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r\n    r = Choose(2, 100, 200, 300)\n")),
+        Some(200.0)
+    );
 }
 
 #[test]
 fn switch_returns_first_true() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r\n    r = Switch(False, 1, True, 42)\n")), Some(42.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r\n    r = Switch(False, 1, True, 42)\n")),
+        Some(42.0)
+    );
 }
 
 #[test]
@@ -164,18 +182,27 @@ fn module_qualified_const_and_variable() {
 
 #[test]
 fn integer_division() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")), Some(3.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")),
+        Some(3.0)
+    );
 }
 
 #[test]
 fn xor_operator() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = 6 Xor 3\n")), Some(5.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r As Long\n    r = 6 Xor 3\n")),
+        Some(5.0)
+    );
 }
 
 #[test]
 fn currency_coercion_on_assignment() {
     // 2.5 assigned to a Currency local narrows via the new Currency coercion target.
-    assert_eq!(run_main_local0(&main_sub("    Dim r As Currency\n    r = 2.5\n")), Some(2.5));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r As Currency\n    r = 2.5\n")),
+        Some(2.5)
+    );
 }
 
 // ── Control flow ─────────────────────────────────────────────────────────────
@@ -226,7 +253,10 @@ fn project_function_returns_value() {
 
 #[test]
 fn native_len() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = Len(\"hello\")\n")), Some(5.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r As Long\n    r = Len(\"hello\")\n")),
+        Some(5.0)
+    );
 }
 
 // ── Arrays / error-state ─────────────────────────────────────────────────────
@@ -295,9 +325,10 @@ fn declare_byval_string_lvalue_binds_byref_for_ansi_writeback() {
         .body
         .iter()
         .find_map(|stmt| match stmt {
-            CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Declare { .. }, args }) => {
-                Some(args.clone())
-            }
+            CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::Declare { .. },
+                args,
+            }) => Some(args.clone()),
             _ => None,
         })
         .expect("the Declare call should lower in Main's body");
@@ -354,7 +385,10 @@ fn random_file_put_get_round_trips_through_vm() {
         })
         .build();
     let vm = oxvba_vm2::run(&bundle, host.as_ref()).expect("run");
-    assert_eq!(vm.slot(bundle.global_count).and_then(|v| v.as_i32()), Some(222));
+    assert_eq!(
+        vm.slot(bundle.global_count).and_then(|v| v.as_i32()),
+        Some(222)
+    );
 }
 
 /// Run a single-module source on the standard (in-memory) host; read `Main`'s
@@ -400,7 +434,11 @@ fn binary_variable_string_reads_current_length() {
 fn addressof_binds_to_proc_ref() {
     let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";
     let program = bind(src);
-    let main = program.procs.iter().find(|p| p.name.eq_ignore_ascii_case("Main")).unwrap();
+    let main = program
+        .procs
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case("Main"))
+        .unwrap();
     // The proc-ref is stored into a `Long`, so the store coerces it to `Long`
     // (a no-op for an integer pointer); look through that `Coerce` wrapper.
     fn is_addressof(v: &CoreValue) -> bool {
@@ -411,7 +449,9 @@ fn addressof_binds_to_proc_ref() {
         }
     }
     assert!(
-        main.body.iter().any(|s| matches!(s, CoreStmt::Assign { value, .. } if is_addressof(value)))
+        main.body
+            .iter()
+            .any(|s| matches!(s, CoreStmt::Assign { value, .. } if is_addressof(value)))
     );
 }
 
@@ -436,13 +476,15 @@ fn ubound_lbound_of_local_array() {
 
 #[test]
 fn redim_array_set_get() {
-    let body = "    Dim r As Long\n    Dim v1\n    ReDim v1(0 To 2)\n    v1(1) = 77\n    r = v1(1)\n";
+    let body =
+        "    Dim r As Long\n    Dim v1\n    ReDim v1(0 To 2)\n    v1(1) = 77\n    r = v1(1)\n";
     assert_eq!(run_main_local0(&main_sub(body)), Some(77.0));
 }
 
 #[test]
 fn on_error_resume_next_err_number() {
-    let body = "    Dim r As Long\n    On Error Resume Next\n    Err.Raise 11\n    r = Err.Number\n";
+    let body =
+        "    Dim r As Long\n    On Error Resume Next\n    Err.Raise 11\n    r = Err.Number\n";
     assert_eq!(run_main_local0(&main_sub(body)), Some(11.0));
 }
 
@@ -483,7 +525,10 @@ fn parenthesized_argument_forces_by_val() {
 
 #[test]
 fn hex_literal() {
-    assert_eq!(run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")), Some(31.0));
+    assert_eq!(
+        run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")),
+        Some(31.0)
+    );
 }
 
 // ── Long tail ────────────────────────────────────────────────────────────────
@@ -533,8 +578,11 @@ fn class_manifest(main_src: &str, class_name: &str, class_src: &str) -> SymbolPr
 
 /// Bind + linearize + run a class project; read `Main`'s first local as a number.
 fn run_class_main_local0(main_src: &str, class_name: &str, class_src: &str) -> Option<f64> {
-    let program = bind_program(&class_manifest(main_src, class_name, class_src), &NullTypeLibs)
-        .expect("bind_program");
+    let program = bind_program(
+        &class_manifest(main_src, class_name, class_src),
+        &NullTypeLibs,
+    )
+    .expect("bind_program");
     let bundle = oxvba_bundle::linearize(&program).expect("linearize");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
     let vm = oxvba_vm2::run(&bundle, &host).expect("run");
@@ -906,7 +954,9 @@ fn declare_lib_emits_external_call_descriptor() {
                Sub Main()\n    Dim r As Long\n    r = GetTickCount()\nEnd Sub\n";
     let program = bind(src);
     assert!(
-        top_level_callees(&program).iter().any(|c| matches!(c, CoreCallee::Declare { .. })),
+        top_level_callees(&program)
+            .iter()
+            .any(|c| matches!(c, CoreCallee::Declare { .. })),
         "expected a Declare callee"
     );
     let desc = program
@@ -930,7 +980,10 @@ fn declare_byref_arg_emits_byref() {
         .iter()
         .flat_map(|p| &p.body)
         .find_map(|s| match s {
-            CoreStmt::Eval(CoreValue::Call { callee: CoreCallee::Declare { .. }, args }) => Some(args),
+            CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::Declare { .. },
+                args,
+            }) => Some(args),
             _ => None,
         })
         .expect("a Declare call");
@@ -956,7 +1009,10 @@ fn file_io_lowers_to_native_calls() {
 }
 
 fn contains_native(program: &CoreProgram, id: NativeImplId) -> bool {
-    program.procs.iter().any(|p| p.body.iter().any(|s| stmt_has_native(s, id)))
+    program
+        .procs
+        .iter()
+        .any(|p| p.body.iter().any(|s| stmt_has_native(s, id)))
 }
 
 fn stmt_has_native(stmt: &CoreStmt, id: NativeImplId) -> bool {
