@@ -176,6 +176,11 @@ impl ComHal for StandardHostServices {
                 ));
             }
             self.ensure_thread_com_apartment("bind_native_dispatch_object")?;
+            // SAFETY: this unsafe fn's trait contract (ComHal::
+            // bind_native_dispatch_object_variant) obliges our caller to pass null or
+            // an `IDispatch` pointer carrying one retained reference it owns; the
+            // bridge takes ownership of that reference on success or failure, and
+            // `ensure_thread_com_apartment` above initialized COM on this thread.
             let object = unsafe {
                 self.com_bridge
                     .bind_host_dispatch_object(prog_id, dispatch.cast::<RawIDispatch>())
@@ -219,6 +224,10 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("release_object")?;
         #[cfg(target_os = "windows")]
         {
+            // SAFETY: `ensure_thread_com_apartment` succeeded above, satisfying
+            // release_object's contract that this thread is COM-initialized for the
+            // native connection-point transport teardown the release path performs;
+            // the bindings map owns the one retained dispatch reference being dropped.
             let released =
                 unsafe { self.com_bridge.release_object(object.clone()) }.map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "release_object", message)
@@ -468,6 +477,11 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("subscribe_event")?;
         #[cfg(target_os = "windows")]
         {
+            // SAFETY: `ensure_thread_com_apartment` succeeded above, so this thread is
+            // COM-initialized as subscribe_event requires; the bridge resolves `object`
+            // against its own bindings map (erroring on stale tokens), so any native
+            // connection-point Advise runs on a dispatch reference that map still
+            // retains for the duration of the call.
             let (subscription, transport, expected_arity) =
                 unsafe { self.com_bridge.subscribe_event(object.clone(), event) }.map_err(
                     |message| {
@@ -514,6 +528,10 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("unsubscribe_event")?;
         #[cfg(target_os = "windows")]
         {
+            // SAFETY: `ensure_thread_com_apartment` succeeded above, so this thread is
+            // COM-initialized as unsubscribe_event requires; the bridge resolves
+            // `subscription` in its own subscription table (erroring on stale tokens),
+            // so the Unadvise teardown only touches a transport the bridge still owns.
             unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
             })?;

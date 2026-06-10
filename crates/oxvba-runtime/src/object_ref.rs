@@ -559,10 +559,16 @@ unsafe extern "C" fn compat_query_interface(
     if ppv.is_null() {
         return RUNTIME_E_NOINTERFACE;
     }
+    // SAFETY: per the QueryInterface ABI, `ppv` (checked non-null above) points to a writable
+    // out-slot owned by the caller for the duration of this call.
     unsafe {
         *ppv = core::ptr::null_mut();
     }
     let owner = compat_owner_from_this(this);
+    // SAFETY: this vtable entry is only installed via `COMPAT_OBJECT_VTBL`, which is only
+    // attached to `CompatObjectBase` boxes minted by `from_compat_object` (`#[repr(C)]` with
+    // `unknown` as the first field), so `owner` is that live box; the caller's outstanding COM
+    // reference keeps it alive across the call.
     let supports_iid = unsafe {
         (*owner)
             .class_descriptor
@@ -573,9 +579,13 @@ unsafe extern "C" fn compat_query_interface(
     if !supports_iid {
         return RUNTIME_E_NOINTERFACE;
     }
+    // SAFETY: same caller-owned writable out-slot as above (QueryInterface ABI, non-null checked).
     unsafe {
         *ppv = this;
     }
+    // SAFETY: `this` was validated above as a live `CompatObjectBase`, which is exactly
+    // `compat_add_ref`'s requirement; the reference taken here is owned by the `*ppv` we
+    // just handed to the caller.
     unsafe { compat_add_ref(this) };
     RUNTIME_S_OK
 }
@@ -614,6 +624,11 @@ pub fn retained_parked_termination_object(instance_id: i32) -> Option<ObjectRef>
     TERMINATIONS.with(|q| {
         let q = q.borrow();
         let owner = *q.parked.get(&instance_id)?;
+        // SAFETY: `owner` came from the `parked` map, which owns the box that `compat_release`
+        // parked instead of freeing — it stays allocated until `finish_pending_termination` or
+        // `reset_pending_terminations` removes it — so this is a live `CompatObjectBase`.
+        // `compat_add_ref` retains it for the returned `ObjectRef`, and the `unknown` field
+        // pointer projected from the non-null box pointer cannot be null.
         unsafe {
             (*owner).running_termination.set(true);
             compat_add_ref((&mut (*owner).unknown as *mut RawRuntimeIUnknown).cast());
@@ -634,6 +649,11 @@ pub fn finish_pending_termination(instance_id: i32) -> bool {
     let Some(owner) = owner else {
         return false;
     };
+    // SAFETY: `owner` was just removed from the `parked` map, transferring the queue's sole
+    // ownership of the box `compat_release` parked (the pointer originally came from
+    // `Box::into_raw` in `from_compat_object`). If `Class_Terminate` resurrected the object
+    // (refcount > 0) we un-park it and leave it to the outstanding references; otherwise nothing
+    // else can reach it, and removal from the map guarantees `Box::from_raw` frees it exactly once.
     unsafe {
         (*owner).running_termination.set(false);
         (*owner).terminated.set(true);
@@ -653,6 +673,10 @@ pub fn reset_pending_terminations() {
         let mut q = q.borrow_mut();
         q.pending.clear();
         for (_, owner) in std::mem::take(&mut q.parked) {
+            // SAFETY: `std::mem::take` moved each parked entry out of the queue, transferring its
+            // sole ownership of the box `compat_release` parked (pointer from `Box::into_raw` in
+            // `from_compat_object`). Resurrected boxes (refcount > 0) are un-parked and left to
+            // their outstanding references; the rest are unreachable and freed exactly once here.
             unsafe {
                 (*owner).running_termination.set(false);
                 (*owner).terminated.set(true);
@@ -669,23 +693,36 @@ pub fn reset_pending_terminations() {
 
 unsafe extern "C" fn compat_add_ref(this: *mut c_void) -> u32 {
     let owner = compat_owner_from_this(this);
+    // SAFETY: this vtable entry only exists on `CompatObjectBase` boxes (`COMPAT_OBJECT_VTBL` is
+    // installed solely by `from_compat_object`; `#[repr(C)]` puts `unknown` first), and the
+    // caller holds a reference that keeps the box alive across the call; `ref_count` is atomic.
     unsafe { (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1 }
 }
 
 unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
     let owner = compat_owner_from_this(this);
+    // SAFETY: as in `compat_add_ref`, `this` is a live `CompatObjectBase` kept alive by the
+    // reference the caller is releasing right now.
     let previous = unsafe { (*owner).ref_count.fetch_sub(1, Ordering::AcqRel) };
     let remaining = previous.saturating_sub(1);
     if remaining == 0 {
         // For a class with a `Class_Terminate`, the last release schedules per-instance
         // teardown for the VM to run at the next statement boundary (VBA timing). The box is
         // parked, not freed, so teardown runs against the original field-owning object.
+        // SAFETY: even at refcount 0 the box is still allocated — this call alone decides below
+        // whether to park or free it — so `owner` stays valid throughout this function.
         let identity = unsafe { (*owner).identity };
         let should_park = identity.terminates_on_release
+            // SAFETY: same still-allocated box as above; the `Cell` accesses are single-threaded
+            // (`ObjectRef` is neither `Send` nor `Sync`, so these vtable fns only run on the
+            // owning VM thread, matching the thread-local termination queue).
             && unsafe { !(*owner).terminated.get() && !(*owner).running_termination.get() };
         if should_park {
             TERMINATIONS.with(|q| {
                 let mut q = q.borrow_mut();
+                // SAFETY: the box is still allocated (nothing frees it before this point in the
+                // function) and the `Cell` flip is single-threaded as noted above; setting the
+                // flag before inserting hands the queue ownership of the box exactly once.
                 if !unsafe { (*owner).parked_for_termination.replace(true) } {
                     q.pending.push((
                         identity.compat_identity,
@@ -697,9 +734,17 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
             });
             return remaining;
         }
+        // SAFETY: same still-allocated box; if the flag is set, the termination queue owns the
+        // box and will free it (`finish_pending_termination`/`reset_pending_terminations`), so
+        // this path must only read the flag and return without freeing.
         if unsafe { (*owner).parked_for_termination.get() } {
             return remaining;
         }
+        // SAFETY: refcount reached 0 and the box is neither park-eligible nor parked, so this
+        // call released the final reference to the allocation minted by `Box::into_raw` in
+        // `from_compat_object` and nothing else can reach it. Clearing `fields` first releases
+        // child Variants (which may enqueue cascaded terminations, never touching this box),
+        // then `Box::from_raw` reclaims the allocation exactly once.
         unsafe {
             (*owner).fields.borrow_mut().clear();
             drop(Box::from_raw(owner));
@@ -709,10 +754,16 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
 }
 
 fn compat_field_get(owner: *mut CompatObjectBase, token: i32) -> Option<Variant> {
+    // SAFETY: the only caller (`ObjectRef::project_field_get`) guards with
+    // `is_project_instance()` (a vtbl-identity check), so `owner` is a live `CompatObjectBase`
+    // kept alive by that caller's retained `ObjectRef` for the duration of the borrow.
     unsafe { (*owner).fields.borrow().get(&token).cloned() }
 }
 
 fn compat_field_set(owner: *mut CompatObjectBase, token: i32, value: Variant) {
+    // SAFETY: as in `compat_field_get`, the sole caller (`ObjectRef::project_field_set`)
+    // verified via `is_project_instance()` that `owner` is a live `CompatObjectBase` kept
+    // alive by the caller's retained `ObjectRef`.
     unsafe {
         if matches!(value.vtype(), crate::VarType::Empty) {
             (*owner).fields.borrow_mut().remove(&token);
@@ -797,6 +848,9 @@ impl ObjectRef {
             terminated: Cell::new(false),
         });
         let raw = Box::into_raw(boxed);
+        // SAFETY: `raw` came from `Box::into_raw` of the freshly allocated `CompatObjectBase`
+        // above, so projecting a pointer to its first field (`unknown`) is in-bounds and
+        // non-null; the box stays alive until the refcount started at 1 here drains to zero.
         let unknown = unsafe { &mut (*raw).unknown as *mut RawRuntimeIUnknown };
         Self(NonNull::new(unknown).expect("compat object unknown pointer must be non-null"))
     }
@@ -807,6 +861,13 @@ impl ObjectRef {
 
     pub fn compat_identity(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: ASSUMPTION — `self.0` must point at a `CompatObjectBase` (the documented
+        // precondition on `is_compat_object`). Today that holds for every `ObjectRef`: the safe
+        // constructors mint such boxes, and the unsafe raw constructors are only used to
+        // round-trip pointers previously produced by `raw_iunknown()` on them (Variant wire
+        // bytes, SAFEARRAY object slots). But `Debug`/`Display` reach here without an
+        // `is_compat_object` guard, so wrapping a genuinely foreign COM interface in the future
+        // would make this read out of bounds.
         unsafe { (*owner).identity.compat_identity }
     }
 
@@ -818,6 +879,9 @@ impl ObjectRef {
     /// Only valid for compat (project-class) objects, like `compat_identity`/`class_descriptor`.
     pub fn route_key(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: documented contract (doc above and `is_compat_object`): callers only invoke
+        // this on compat objects, so `owner` is the live `CompatObjectBase` (`#[repr(C)]`,
+        // `unknown` first) kept alive by this `ObjectRef`'s retained reference.
         unsafe { (*owner).identity.route_key }
     }
 
@@ -826,6 +890,8 @@ impl ObjectRef {
     /// single-bundle runs.
     pub fn bundle_id(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: documented contract as for `route_key`: only called on compat objects, so
+        // `owner` is the live `CompatObjectBase` kept alive by this `ObjectRef`'s reference.
         unsafe { (*owner).identity.bundle_id }
     }
 
@@ -844,6 +910,10 @@ impl ObjectRef {
     /// `compat_identity`/`route_key`/`class_descriptor`/`terminates_on_release` are only valid
     /// when this returns true.
     pub fn is_compat_object(&self) -> bool {
+        // SAFETY: every COM-shaped object's first pointer-sized field is its vtbl (see doc
+        // above), so this read is valid for compat boxes and foreign IUnknowns alike; `self.0`
+        // is non-null and the object is alive because this `ObjectRef` holds a retained
+        // reference to it.
         let vtbl = unsafe { (*self.0.as_ptr()).vtbl };
         std::ptr::eq(vtbl, &COMPAT_OBJECT_VTBL)
     }
@@ -855,16 +925,23 @@ impl ObjectRef {
             return false;
         }
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: guarded by the `is_compat_object()` check above (vtbl identity), so `owner` is
+        // the live `CompatObjectBase` kept alive by this `ObjectRef`'s retained reference.
         unsafe { (*owner).identity.terminates_on_release }
     }
 
     pub fn class_descriptor(&self) -> &'static RuntimeClassDescriptor {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: documented contract (`is_compat_object`): only valid on compat objects, so
+        // `owner` is the live `CompatObjectBase` kept alive by this `ObjectRef`'s retained
+        // reference; the descriptor read out of it is `&'static`.
         unsafe { (*owner).class_descriptor }
     }
 
     pub fn object_identity(&self) -> RuntimeObjectIdentity {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: documented contract as for `class_descriptor`: only called on compat objects,
+        // so `owner` is the live `CompatObjectBase` kept alive by this `ObjectRef`'s reference.
         unsafe { (*owner).identity }
     }
 
@@ -946,6 +1023,9 @@ impl ObjectRef {
     /// function will retain it for the returned `ObjectRef`.
     pub unsafe fn from_raw_iunknown_addref(raw: *mut RawRuntimeIUnknown) -> Option<Self> {
         let raw = NonNull::new(raw)?;
+        // SAFETY: this fn's caller contract guarantees `raw` (non-null here) points to a valid
+        // IUnknown whose first field is its vtbl and whose `add_ref` may be invoked; the
+        // reference taken here is owned by the returned `ObjectRef` and balanced in `Drop`.
         unsafe {
             let vtbl = (*raw.as_ptr()).vtbl;
             ((*vtbl).add_ref)(raw.as_ptr().cast());
@@ -955,12 +1035,18 @@ impl ObjectRef {
 
     pub fn strong_count_for_test(&self) -> u32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: documented compat-object contract as for `class_descriptor`; the box is alive
+        // because this `ObjectRef` holds a retained reference, and `ref_count` is atomic.
         unsafe { (*owner).ref_count.load(Ordering::Acquire) }
     }
 }
 
 impl Clone for ObjectRef {
     fn clone(&self) -> Self {
+        // SAFETY: this `ObjectRef` owns a retained reference (every constructor either starts
+        // the count at 1, AddRefs, or takes ownership of an existing reference), so `self.0`
+        // points at a live IUnknown; reading its vtbl and calling `add_ref` retains one more
+        // reference, which the clone owns.
         unsafe {
             let vtbl = (*self.0.as_ptr()).vtbl;
             ((*vtbl).add_ref)(self.0.as_ptr().cast());
@@ -971,6 +1057,9 @@ impl Clone for ObjectRef {
 
 impl Drop for ObjectRef {
     fn drop(&mut self) {
+        // SAFETY: releases the one reference this `ObjectRef` owns; the object is live up to
+        // this call precisely because that reference exists, and the pointer is never touched
+        // afterwards even if `release` frees the box.
         unsafe {
             let vtbl = (*self.0.as_ptr()).vtbl;
             ((*vtbl).release)(self.0.as_ptr().cast());
@@ -1008,6 +1097,8 @@ impl Hash for ObjectRef {
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production vtable paths above.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
         ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN,

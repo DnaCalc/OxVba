@@ -66,6 +66,12 @@ impl Drop for WindowsComClientState {
             if let WindowsComSubscriptionTransport::NativeConnectionPoint(native) =
                 subscription.transport
             {
+                // SAFETY: every transport still present in `subscriptions` was produced by
+                // `advise_event_subscription` and has not been released: unsubscribe and
+                // release_object always remove a subscription from this map before
+                // releasing its transport (W1-com-004), so this Drop owns the one final
+                // Unadvise/Release. The result is ignored because guest teardown must
+                // never abort the host.
                 unsafe {
                     let _ = unadvise_connection_point(native);
                 }
@@ -77,12 +83,20 @@ impl Drop for WindowsComClientState {
         self.host_objects_by_prog_id.clear();
         for binding in self.bindings.values_mut() {
             if binding.native_dispatch != 0 {
+                // SAFETY: the bindings map owns exactly one retained `IDispatch` reference
+                // per native binding, established when the binding was created; the
+                // non-zero check guarantees the reference exists and zeroing the field
+                // right after ensures it is released exactly once.
                 unsafe {
                     release_dispatch(binding.native_dispatch as *mut RawIDispatch);
                 }
                 binding.native_dispatch = 0;
             }
             if binding.native_unknown != 0 {
+                // SAFETY: the bindings map owns exactly one retained `IUnknown` identity
+                // reference per binding, obtained via `query_unknown_from_dispatch` at bind
+                // time; the non-zero check guarantees the reference exists and zeroing the
+                // field right after ensures it is released exactly once.
                 unsafe {
                     release_unknown(binding.native_unknown as *mut core::ffi::c_void);
                 }
@@ -329,9 +343,15 @@ pub unsafe fn bind_native_dispatch_result(
     if dispatch.is_null() {
         return ObjectRef::from_compat_identity(0);
     }
+    // SAFETY: `dispatch` was checked non-null above, and per this function's `# Safety`
+    // the caller transferred one retained reference to us, so it is a live `IDispatch`
+    // whose `IUnknown` vtable can be queried.
     let unknown = match unsafe { query_unknown_from_dispatch(dispatch) } {
         Ok(unknown) => unknown,
         Err(_) => {
+            // SAFETY: QueryInterface failed so no IUnknown reference was retained; we own
+            // the caller's single retained `IDispatch` reference (non-null, checked above)
+            // and release it exactly once before returning Nothing.
             unsafe {
                 release_dispatch(dispatch);
             }
@@ -343,6 +363,11 @@ pub unsafe fn bind_native_dispatch_result(
         .iter_mut()
         .find(|(_, binding)| binding.native_unknown == unknown as usize)
     {
+        // SAFETY: an existing binding already owns retained dispatch/unknown references for
+        // this COM identity, so the caller's incoming `IDispatch` reference (ours per this
+        // function's `# Safety`) and the `IUnknown` reference just AddRef'd by
+        // `query_unknown_from_dispatch` are surplus duplicates; each is released exactly
+        // once here.
         unsafe {
             release_dispatch(dispatch);
             release_unknown(unknown.cast());
@@ -374,11 +399,18 @@ pub fn release_object_binding(
         ));
     };
     if binding.native_dispatch != 0 {
+        // SAFETY: `release_object_state` just removed this binding from the map, so this
+        // frame is the exclusive owner of the map's single retained `IDispatch` reference
+        // (established at bind time); the non-zero check guarantees the reference exists
+        // and the binding is dropped after, so it is released exactly once.
         unsafe {
             release_dispatch(binding.native_dispatch as *mut RawIDispatch);
         }
     }
     if binding.native_unknown != 0 {
+        // SAFETY: same exclusivity as the dispatch release above — the binding was removed
+        // from the map, so this frame owns the single retained `IUnknown` identity
+        // reference obtained at bind time, released exactly once here.
         unsafe {
             release_unknown(binding.native_unknown as *mut core::ffi::c_void);
         }
@@ -606,6 +638,9 @@ pub unsafe fn resolve_member_dispid_cached(
     if let Some(dispid) = binding.member_dispids.get(&member).copied() {
         return Ok(Some((dispid, spec)));
     }
+    // SAFETY: forwarded caller contract — this function's `# Safety` requires `dispatch` to
+    // be a valid live `IDispatch` for the duration of the lookup, which is exactly what
+    // `get_dispid_by_name` requires.
     let dispid = unsafe { get_dispid_by_name(dispatch, &spec.name) }?;
     cache_member_dispid(state, object, member, dispid);
     Ok(Some((dispid, spec)))
@@ -636,6 +671,11 @@ pub unsafe fn resolve_event_subscription_transport(
         }
         return Ok(WindowsComSubscriptionTransport::Projection);
     };
+    // SAFETY: `dispatch` is live per this function's `# Safety` contract; `spec` and
+    // `connection_point_iid` come from this binding's own `event_specs`, so they describe
+    // the event interface implemented by that object; and the sink holds `com_state` only
+    // weakly (W1-com-008), so the shared-state-outlives-transport requirement is met by the
+    // bridge that owns the strong Arc.
     let advised = unsafe {
         advise_event_subscription(
             dispatch,
@@ -737,6 +777,9 @@ pub unsafe fn bind_native_runtime_object_result_shared(
     dispatch: *mut RawIDispatch,
     prog_id_hint: &str,
 ) -> Result<ObjectRef, String> {
+    // SAFETY: forwarded caller contract — this function's `# Safety` requires `dispatch` to
+    // be null or carry one retained `IDispatch` reference owned by the caller, the exact
+    // precondition of the shared binding path (which takes ownership of that reference).
     let handle = unsafe { bind_native_dispatch_result_shared(com_state, dispatch, prog_id_hint) }?;
     if handle.raw() == 0 {
         return Ok(handle);
@@ -790,6 +833,13 @@ pub unsafe fn subscribe_event_shared(
         let subscription = state.allocate_subscription();
         (binding, expected_arity, subscription)
     };
+    // SAFETY: the state lock is deliberately dropped here because Advise can re-enter; the
+    // dispatch pointer stays live across this unlocked window because the bindings map owns
+    // one retained `IDispatch` reference for the handle and bindings are only released from
+    // the VM thread that is currently inside this subscribe (cross-thread state access is
+    // limited to event sinks, which only queue callback payloads). A zero
+    // `native_dispatch` is fine: the callee returns the projection transport before
+    // touching the pointer. The COM apartment is supplied by this function's `# Safety`.
     let transport = unsafe {
         resolve_event_subscription_transport(
             &binding,
@@ -806,6 +856,10 @@ pub unsafe fn subscribe_event_shared(
         .contains_key(&ComObjectToken::new(object.raw()))
     {
         if let WindowsComSubscriptionTransport::NativeConnectionPoint(native) = transport {
+            // SAFETY: this transport was just produced by the advise above and was never
+            // inserted into the subscriptions map (the binding vanished mid-subscribe), so
+            // this rollback path is the sole owner of its one final Unadvise/Release; the
+            // COM apartment is supplied by this function's `# Safety` contract.
             unsafe {
                 let _ = release_subscription_transport(
                     WindowsComSubscriptionTransport::NativeConnectionPoint(native),
@@ -849,6 +903,10 @@ pub unsafe fn unsubscribe_event_shared(
         let _ = remove_subscription_callbacks(&mut state, subscription)?;
         transport
     };
+    // SAFETY: the transport was resolved and removed from the subscriptions map under one
+    // lock above, so no other path (release_object, state Drop) can release it again
+    // (W1-com-004); this call therefore owns the one final Unadvise/Release, and the COM
+    // apartment is supplied by this function's `# Safety` contract.
     unsafe { release_subscription_transport(transport) }
 }
 
@@ -892,6 +950,8 @@ pub fn queue_projection_event_callbacks_shared(
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production binding paths.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
         WindowsComClientState, WindowsComSubscriptionTransport,

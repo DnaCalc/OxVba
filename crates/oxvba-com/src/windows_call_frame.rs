@@ -51,6 +51,8 @@ pub unsafe fn disp_params_to_runtime_call_frame(
             "IDispatch::Invoke received null DISPPARAMS",
         ));
     }
+    // SAFETY: `params` was null-checked above; this unsafe fn's contract
+    // guarantees it points to a valid DISPPARAMS for the duration of the call.
     let params = unsafe { &*params };
     let arg_count = params.cArgs as usize;
     let named_count = params.cNamedArgs as usize;
@@ -77,6 +79,9 @@ pub unsafe fn disp_params_to_runtime_call_frame(
     let named_dispids = if named_count == 0 {
         &[][..]
     } else {
+        // SAFETY: `named_count > 0` and `rgdispidNamedArgs` was null-checked
+        // above; this unsafe fn's contract guarantees the array is valid for
+        // `cNamedArgs` elements while `params` is borrowed.
         unsafe { std::slice::from_raw_parts(params.rgdispidNamedArgs, named_count) }
     };
     let property_put_com_index = named_dispids
@@ -86,6 +91,9 @@ pub unsafe fn disp_params_to_runtime_call_frame(
 
     for com_index in (0..arg_count).rev() {
         let logical_index = arg_count - 1 - com_index;
+        // SAFETY: `com_index < arg_count`, `rgvarg` was null-checked above for
+        // `arg_count > 0`, and this unsafe fn's contract guarantees the array
+        // is valid for `cArgs` VARIANT elements.
         let variant = unsafe { &*params.rgvarg.add(com_index) };
         let argument = variant_to_runtime_call_argument(variant, logical_index)
             .map_err(|err| err.with_logical_arg_index(logical_index))?;
@@ -119,6 +127,10 @@ where
 {
     let value = result.value.clone().unwrap_or_else(Variant::empty);
     let com_value = ComValue::from_variant(&value)?;
+    // SAFETY: this unsafe fn's contract guarantees `variant` is a valid
+    // writable VARIANT and that `resolve_object` returns live IDispatch
+    // pointers which `add_ref_dispatch` retains before the variant assumes
+    // ownership of them.
     unsafe { set_variant_from_com_value(variant, &com_value, resolve_object, add_ref_dispatch) }
 }
 
@@ -135,6 +147,9 @@ pub unsafe fn apply_runtime_call_writebacks_to_disp_params(
     if params.is_null() {
         return Ok(());
     }
+    // SAFETY: `params` was null-checked above (null returns Ok); this unsafe
+    // fn's contract guarantees a non-null pointer designates a valid mutable
+    // DISPPARAMS.
     let params = unsafe { &mut *params };
     let arg_count = params.cArgs as usize;
     for writeback in &result.writebacks {
@@ -146,7 +161,15 @@ pub unsafe fn apply_runtime_call_writebacks_to_disp_params(
             ))
             .with_logical_arg_index(logical_index));
         };
+        // SAFETY: `logical_arg_index_to_com_arg_index` returned Some, so
+        // `com_index < arg_count`; this unsafe fn's contract guarantees
+        // `rgvarg` is a writable array valid for `cArgs` VARIANT elements
+        // when writebacks are present.
         let target = unsafe { &mut *params.rgvarg.add(com_index as usize) };
+        // SAFETY: `target` is a live VARIANT in the COM caller's rgvarg array,
+        // so its vt discriminant is initialized; per the COM ByRef convention
+        // any VT_BYREF|VT_I4 payload points to an i32 the original caller
+        // keeps writable for the duration of Invoke.
         unsafe { writeback_variant_value(target, writeback) }.map_err(|message| {
             ComCallFrameMarshalError {
                 message,
@@ -181,11 +204,18 @@ pub unsafe fn runtime_call_error_to_excepinfo(
         && let Some(logical_index) = error.argument_index
         && let Some(com_index) = logical_arg_index_to_com_arg_index(logical_index, arg_count)
     {
+        // SAFETY: `arg_err` was checked non-null in the enclosing condition,
+        // and this unsafe fn's contract guarantees non-null pointers are valid
+        // for writes.
         unsafe {
             *arg_err = com_index;
         }
     }
     if !excep_info.is_null() {
+        // SAFETY: `excep_info` was checked non-null and this unsafe fn's
+        // contract guarantees it is valid for writes; ownership of the freshly
+        // allocated BSTRs transfers to the COM caller per EXCEPINFO rules (see
+        // this fn's safety doc).
         unsafe {
             (*excep_info).bstrSource = alloc_bstr("OxVBA Runtime");
             (*excep_info).bstrDescription = alloc_bstr(&error.message);
@@ -211,7 +241,13 @@ fn variant_to_runtime_call_argument(
     variant: &VARIANT,
     logical_index: usize,
 ) -> Result<RuntimeCallArgument, ComCallFrameMarshalError> {
+    // SAFETY: `variant` comes from the caller-validated DISPPARAMS array (see
+    // `disp_params_to_runtime_call_frame`), so its vt discriminant is
+    // initialized; reading the u16 tag of an initialized VARIANT is sound.
     let by_ref = unsafe { variant.Anonymous.Anonymous.vt & VT_BYREF != 0 };
+    // SAFETY: the COM caller keeps this VARIANT — and any nested BSTR /
+    // SAFEARRAY / interface payloads it owns until VariantClear — alive for
+    // the duration of Invoke, satisfying `variant_to_com_value`'s contract.
     let value = unsafe { variant_to_com_value(variant) }
         .and_then(|value| value.to_variant())
         .map_err(|message| {
@@ -230,6 +266,8 @@ fn variant_to_runtime_call_argument(
 }
 
 fn runtime_value_type_from_variant(variant: &VARIANT) -> RuntimeValueType {
+    // SAFETY: `variant` comes from the caller-validated DISPPARAMS array, so
+    // its vt discriminant is initialized; reading the u16 tag is sound.
     let vt = unsafe { variant.Anonymous.Anonymous.vt & !VT_BYREF };
     match vt {
         VT_I4 => RuntimeValueType::Long,
@@ -242,6 +280,8 @@ unsafe fn writeback_variant_value(
     target: &mut VARIANT,
     writeback: &RuntimeByRefWriteback,
 ) -> Result<(), String> {
+    // SAFETY: `target` is a live VARIANT from the COM caller's rgvarg array,
+    // so its vt discriminant is initialized; reading the u16 tag is sound.
     let vt = unsafe { target.Anonymous.Anonymous.vt };
     if vt != (VT_BYREF | VT_I4) {
         return Err(format!(
@@ -251,10 +291,15 @@ unsafe fn writeback_variant_value(
     let Some(value) = writeback.value.as_i32() else {
         return Err("VT_BYREF|VT_I4 writeback requires Long Variant value".to_string());
     };
+    // SAFETY: `vt` was verified to be exactly VT_BYREF|VT_I4 above, so `plVal`
+    // is the active member of the initialized payload union.
     let ptr = unsafe { target.Anonymous.Anonymous.Anonymous.plVal };
     if ptr.is_null() {
         return Err("VT_BYREF|VT_I4 writeback target was null".to_string());
     }
+    // SAFETY: `ptr` was null-checked above; per the COM ByRef convention a
+    // VT_BYREF|VT_I4 payload points to an i32 the original caller keeps
+    // writable for the duration of Invoke.
     unsafe {
         *ptr = value;
     }
@@ -263,10 +308,15 @@ unsafe fn writeback_variant_value(
 
 unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
     let wide: Vec<u16> = text.encode_utf16().collect();
+    // SAFETY: `wide` is a live Vec for this call, so the pointer/length pair
+    // is valid; SysAllocStringLen copies exactly `len` UTF-16 units into a
+    // fresh BSTR (length-prefixed, so embedded NULs are legal).
     unsafe { SysAllocStringLen(wide.as_ptr(), wide.len() as u32) }
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production marshalling paths above.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::*;
     use crate::windows_client::COM_DISP_E_TYPEMISMATCH;

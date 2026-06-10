@@ -147,6 +147,9 @@ impl WindowsComBridge {
         member_name: &str,
         args: &[ComInvokeArg],
     ) -> Result<Vec<i32>, String> {
+        // SAFETY: forwarded caller contract — this method's `# Safety` requires `dispatch`
+        // to be a valid live `IDispatch` for the duration of the lookup, which is exactly
+        // what the free function requires.
         unsafe { resolve_named_argument_dispids(dispatch, member_name, args) }
     }
 
@@ -201,6 +204,10 @@ impl WindowsComBridge {
         let metadata = match self.load_typelib_metadata_for_prog_id_name(prog_id_name) {
             Ok(metadata) => metadata,
             Err(message) => {
+                // SAFETY: per this method's `# Safety` we took ownership of the caller's one
+                // retained `IDispatch` reference, `dispatch` was checked non-null above, and
+                // this error return is the sole exit on this path, so the reference is
+                // released exactly once.
                 unsafe {
                     crate::release_dispatch(dispatch);
                 }
@@ -212,11 +219,17 @@ impl WindowsComBridge {
             dispatch as usize,
             metadata.as_ref(),
         );
+        // SAFETY: `dispatch` was checked non-null above and per this method's `# Safety`
+        // carries one retained reference owned by us, so it is a live `IDispatch` whose
+        // `IUnknown` vtable can be queried.
         match unsafe { query_unknown_from_dispatch(dispatch) } {
             Ok(unknown) => {
                 binding.native_unknown = unknown as usize;
             }
             Err(message) => {
+                // SAFETY: QueryInterface failed, so no IUnknown reference was retained; we
+                // still own the caller's single retained `IDispatch` reference (non-null,
+                // checked above) and release it exactly once before erroring out.
                 unsafe {
                     crate::release_dispatch(dispatch);
                 }
@@ -266,6 +279,11 @@ impl WindowsComBridge {
     ) -> Result<ReleasedWindowsComObject, String> {
         let released = release_object_binding_shared(&self.state, object)?;
         for transport in released.transports.iter().copied() {
+            // SAFETY: release_object_binding_shared just removed these transports from the
+            // subscriptions map, and unsubscribe always removes a transport from the map
+            // before releasing it (W1-com-004), so each transport here is the sole owner of
+            // one final Unadvise/Release; the COM apartment is supplied by this method's
+            // `# Safety` contract.
             unsafe { release_subscription_transport(transport) }?;
         }
         Ok(released)
@@ -286,6 +304,9 @@ impl WindowsComBridge {
         ),
         String,
     > {
+        // SAFETY: forwarded caller contract — this method's `# Safety` requires a
+        // COM-initialized thread and a live object/event binding owned by this bridge,
+        // which is what the shared subscribe path requires.
         unsafe { subscribe_event_shared(&self.state, object, event) }
     }
 
@@ -296,6 +317,9 @@ impl WindowsComBridge {
         &self,
         subscription: ComSubscriptionToken,
     ) -> Result<(), String> {
+        // SAFETY: forwarded caller contract — this method's `# Safety` requires a
+        // COM-initialized thread and a subscription token whose native transport is still
+        // owned by this bridge, matching the shared unsubscribe path's requirements.
         unsafe { unsubscribe_event_shared(&self.state, subscription) }
     }
 
@@ -339,6 +363,9 @@ impl WindowsComBridge {
         dispatch: *mut RawIDispatch,
         prog_id_hint: &str,
     ) -> Result<ObjectRef, String> {
+        // SAFETY: forwarded caller contract — this method's `# Safety` requires `dispatch`
+        // to be null or carry one retained `IDispatch` reference owned by the caller, the
+        // exact precondition of the shared binding path (which takes ownership).
         unsafe { bind_native_dispatch_result_shared(&self.state, dispatch, prog_id_hint) }
     }
 
@@ -374,6 +401,11 @@ impl WindowsComBridge {
                     if member == crate::TEST_DISPID_ECHO_VARIANT {
                         return Ok(None);
                     }
+                    // SAFETY: the prog-id guard above admits only the in-process
+                    // `OxVba.TestDispatch` fixture, the exact object whose vtable layout
+                    // `raw_oxvba_test_dispatch_vtable_invoke` is written against, and the
+                    // bindings map owns one retained dispatch reference that keeps the
+                    // object alive for the duration of this call.
                     unsafe {
                         crate::raw_oxvba_test_dispatch_vtable_invoke(
                             dispatch,
@@ -391,6 +423,12 @@ impl WindowsComBridge {
         let mut known_member_spec = |binding: &ComBinding, token: ComMemberToken| {
             self.known_member_spec_for_prog_id_name(&binding.prog_id_name, token)
         };
+        // SAFETY: any dispatch pointer the callee resolves comes from the bindings map,
+        // which owns one retained `IDispatch` reference per native binding (W1-com-009)
+        // established at bind time; bindings are only released from the VM thread that is
+        // currently inside this call (cross-thread state access is limited to event sinks,
+        // which only queue callback payloads), so the pointer stays live across the invoke,
+        // and the vtable fast path above is guarded to the in-process test dispatch.
         let early = unsafe {
             execute_bound_variant_with_shared_state(
                 &self.state,
@@ -505,9 +543,17 @@ impl WindowsComBridge {
         }
         let dispatch = binding.native_dispatch as *mut RawIDispatch;
         let invoke_result = {
+            // SAFETY: ASSUMPTION — `binding.native_dispatch` is non-zero on this late-bound
+            // name path (the bindings map owns one retained `IDispatch` reference per
+            // native binding, keeping the pointer live for this lookup); a projection-only
+            // binding (native_dispatch == 0) whose member name misses the typelib path
+            // above would pass a null dispatch into GetIDsOfNames, which does not
+            // null-check.
             let dispid = unsafe { crate::get_dispid_by_name(dispatch, member_name) }
                 .map_err(WindowsComBridgeDispatchError::Message)?;
             let named_arg_dispids = if args.iter().any(|arg| arg.name.is_some()) {
+                // SAFETY: `dispatch` is the same live pointer GetIDsOfNames just succeeded
+                // on; the bindings map's retained reference keeps it alive for this lookup.
                 unsafe {
                     self.resolve_named_argument_dispids(dispatch, member_name, args.as_slice())
                 }
@@ -520,6 +566,9 @@ impl WindowsComBridge {
                     let value_arg_count = args.len().saturating_sub(1);
                     let mut put_named_arg_dispids =
                         if args[..value_arg_count].iter().any(|arg| arg.name.is_some()) {
+                            // SAFETY: `dispatch` is the same live pointer GetIDsOfNames
+                            // succeeded on above; the bindings map's retained reference
+                            // keeps it alive for this lookup.
                             unsafe {
                                 self.resolve_named_argument_dispids(
                                     dispatch,
@@ -542,6 +591,11 @@ impl WindowsComBridge {
                             "property-put",
                         ),
                     };
+                    // SAFETY: `dispatch` is live across this invoke because the bindings
+                    // map owns one retained `IDispatch` reference for the binding and
+                    // bindings are only released from the VM thread currently inside this
+                    // call; `dispid` and the named-arg DISPIDs were resolved from that same
+                    // dispatch above.
                     return unsafe {
                         invoke_dispatch_variant_with_shared_state(
                             dispatch.cast(),
@@ -564,6 +618,10 @@ impl WindowsComBridge {
             // Automation clients. Some servers, including Excel for parameterized properties
             // such as Range("A1"), reject the combined flag but accept a property-get invoke.
             // If the retry fails, keep the original combined failure as the diagnostic.
+            // SAFETY: `dispatch` is live across this invoke because the bindings map owns
+            // one retained `IDispatch` reference for the binding and bindings are only
+            // released from the VM thread currently inside this call; `dispid` and the
+            // named-arg DISPIDs were resolved from that same dispatch above.
             let combined = unsafe {
                 invoke_dispatch_variant_with_shared_state(
                     dispatch.cast(),
@@ -579,6 +637,9 @@ impl WindowsComBridge {
             };
             match combined {
                 Ok(value) => Ok(value),
+                // SAFETY: same invariant as the combined invoke directly above — the
+                // bindings map's retained `IDispatch` reference keeps `dispatch` live for
+                // this property-get retry on the same dispid/args.
                 Err(combined_failure) => unsafe {
                     invoke_dispatch_variant_with_shared_state(
                         dispatch.cast(),

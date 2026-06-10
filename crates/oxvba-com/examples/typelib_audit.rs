@@ -51,6 +51,9 @@ fn main() -> Result<(), String> {
 
         let ptlib = load_identity(&identity)?;
         let audit = audit_typelib_shapes(ptlib)?;
+        // SAFETY: `ptlib` is the live ITypeLib* reference returned by load_identity
+        // (the loader module's registry/path helpers); audit_typelib_shapes only
+        // borrows it, and this is its single owning Release.
         unsafe { release_typelib(ptlib) };
         for row in audit.csv_rows(&identity.reference_name) {
             println!("{row}");

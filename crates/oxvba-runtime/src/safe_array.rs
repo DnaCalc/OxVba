@@ -201,7 +201,21 @@ impl SafeArrayElementKind {
 #[repr(transparent)]
 pub struct SafeArray(NonNull<RawSafeArray>);
 
+// SAFETY: ASSUMPTION — `SafeArray` exclusively owns its descriptor and payload
+// allocations (created in `alloc_header`/`alloc_payload_from_variants`, freed
+// only in `Drop`), and scalar/BStr elements are plain data or independently
+// owned allocations, so those move freely between threads. Object
+// (VT_DISPATCH/VT_UNKNOWN) elements hold a retained reference whose
+// AddRef/Release counter is an `AtomicU32`, but the FINAL release parks the
+// object in a `thread_local!` termination queue and touches `Cell` state
+// (`compat_release` in object_ref.rs), so soundness additionally requires that
+// arrays holding object elements are dropped on the VM thread that manages
+// those objects' lifecycle.
 unsafe impl Send for SafeArray {}
+// SAFETY: no `&self` method mutates the descriptor or payload (this module has
+// no interior mutability; `c_locks` is never toggled after construction), so
+// shared access performs only reads plus atomic AddRefs when object elements
+// are cloned out — data-race-free.
 unsafe impl Sync for SafeArray {}
 
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
@@ -209,10 +223,18 @@ fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
 }
 
 unsafe fn free_raw_bstr(ptr: *mut u16) {
+    // SAFETY: the caller transfers ownership of `ptr` (null or the raw BSTR a
+    // SAFEARRAY slot owned, written there by `encode_element_variant`), which
+    // is exactly `BStr::from_raw_bstr`'s contract; dropping the wrapper frees
+    // the allocation exactly once.
     let _ = unsafe { BStr::from_raw_bstr(ptr) };
 }
 
 unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
+    // SAFETY: the caller passes a live raw BSTR whose ownership stays with the
+    // SAFEARRAY slot; the wrapper adopts it only long enough to deep-copy the
+    // UTF-16 payload and is `mem::forget`-ten below, so the slot's allocation
+    // is never freed here.
     let text = unsafe { BStr::from_raw_bstr(ptr) };
     let cloned = text.clone();
     core::mem::forget(text);
@@ -273,6 +295,11 @@ fn bounds_total_len(bounds: &[SafeArrayBound]) -> Result<usize, String> {
 }
 
 fn header_prefix_ptr(header: *const RawSafeArray) -> *const RawSafeArrayOwnerPrefix {
+    // SAFETY: every descriptor reaching this helper was allocated by
+    // `alloc_header` with `owner_layout`, which places a
+    // `RawSafeArrayOwnerPrefix` immediately before the `RawSafeArray` inside
+    // the same allocation (callers adopting raw pointers promise OxVba
+    // provenance per the `from_raw_*` contracts), so the `sub` stays in-bounds.
     unsafe {
         header
             .cast::<u8>()
@@ -285,6 +312,10 @@ unsafe fn validated_header_prefix(
     header: *const RawSafeArray,
 ) -> Option<*const RawSafeArrayOwnerPrefix> {
     let prefix = header_prefix_ptr(header);
+    // SAFETY: callers guarantee `header` points at a live OxVba descriptor
+    // allocated by `alloc_header`, whose owner allocation initializes the
+    // prefix before the header pointer is published, so this read is in-bounds
+    // and initialized for the duration of the borrow.
     let prefix_ref = unsafe { &*prefix };
     if prefix_ref.magic == OXVBA_SAFEARRAY_OWNER_MAGIC
         && prefix_ref.version == OXVBA_SAFEARRAY_OWNER_VERSION
@@ -332,44 +363,75 @@ unsafe fn decode_element_variant(
     payload: *const u8,
     index: usize,
 ) -> Result<Variant, String> {
+    // SAFETY: the caller guarantees `payload` is the live element buffer built
+    // by `alloc_payload_from_variants` for this same `kind`, holding more than
+    // `index` fully initialized elements, so the offset stays inside that
+    // allocation and `ptr` is aligned for the element type matched below.
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     Ok(match kind {
+        // SAFETY: kind == Variant, so this slot was initialized as a `Variant`
+        // at encode time; it is only borrowed here long enough to clone.
         SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }.clone(),
+        // SAFETY: kind == I1, so encode initialized this slot as an i8.
         SafeArrayElementKind::I1 => Variant::from_i16(i16::from(unsafe { *ptr.cast::<i8>() })),
+        // SAFETY: kind == Ui1, so encode initialized this slot as a u8.
         SafeArrayElementKind::Ui1 => Variant::from_u8(unsafe { *ptr.cast::<u8>() }),
+        // SAFETY: kind == I2, so encode initialized this slot as an i16.
         SafeArrayElementKind::I2 => Variant::from_i16(unsafe { *ptr.cast::<i16>() }),
+        // SAFETY: kind == Ui2, so encode initialized this slot as a u16.
         SafeArrayElementKind::Ui2 => Variant::from_i32(i32::from(unsafe { *ptr.cast::<u16>() })),
         SafeArrayElementKind::I4 | SafeArrayElementKind::Int => {
+            // SAFETY: kind == I4/Int, so encode initialized this slot as an i32.
             Variant::from_i32(unsafe { *ptr.cast::<i32>() })
         }
         SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => {
+            // SAFETY: kind == Ui4/UInt, so encode initialized this slot as a u32.
             Variant::from_i64(i64::from(unsafe { *ptr.cast::<u32>() }))
         }
+        // SAFETY: kind == I8, so encode initialized this slot as an i64.
         SafeArrayElementKind::I8 => Variant::from_i64(unsafe { *ptr.cast::<i64>() }),
         SafeArrayElementKind::Ui8 => {
+            // SAFETY: kind == Ui8, so encode initialized this slot as a u64.
             let value = unsafe { *ptr.cast::<u64>() };
             Variant::from_i64(i64::try_from(value).map_err(|_| {
                 format!("VT_UI8 SAFEARRAY element {value} exceeds i64 carrier range")
             })?)
         }
+        // SAFETY: kind == R4, so encode initialized this slot as an f32.
         SafeArrayElementKind::R4 => Variant::from_f32(unsafe { *ptr.cast::<f32>() }),
+        // SAFETY: kind == R8, so encode initialized this slot as an f64.
         SafeArrayElementKind::R8 => Variant::from_f64(unsafe { *ptr.cast::<f64>() }),
         SafeArrayElementKind::Currency => {
+            // SAFETY: kind == Currency, so encode initialized this slot as the
+            // scaled-i64 currency carrier.
             Variant::from_currency_scaled_i64(unsafe { *ptr.cast::<i64>() })
         }
+        // SAFETY: kind == Date, so encode initialized this slot as an f64 date serial.
         SafeArrayElementKind::Date => Variant::from_date_f64(unsafe { *ptr.cast::<f64>() }),
+        // SAFETY: kind == Bool, so encode initialized this slot as a VARIANT_BOOL i16.
         SafeArrayElementKind::Bool => Variant::from_bool(unsafe { *ptr.cast::<i16>() } != 0),
         SafeArrayElementKind::BStr => {
+            // SAFETY: kind == BStr, so this slot holds the raw BSTR pointer the
+            // array owns (written at encode time); `raw_bstr_to_bstr` borrows it
+            // only long enough to deep-copy, leaving ownership in the slot.
             Variant::from_string(unsafe { raw_bstr_to_bstr(*ptr.cast::<*mut u16>()) })
         }
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => {
+            // SAFETY: kind == Dispatch/Unknown, so encode stored the 8
+            // little-endian pointer bytes of a retained runtime IUnknown here.
             let raw = bytes_to_raw_iunknown(unsafe { *ptr.cast::<[u8; 8]>() });
+            // SAFETY: `raw` is null or the runtime IUnknown the array still
+            // holds its own retained reference on, so it is live here;
+            // `from_raw_iunknown_addref` takes an additional independent
+            // reference per its contract.
             let Some(object) = (unsafe { ObjectRef::from_raw_iunknown_addref(raw) }) else {
                 return Err("SAFEARRAY object element carried null IUnknown pointer".to_string());
             };
             Variant::from_object_ref(object)
         }
         SafeArrayElementKind::Decimal => {
+            // SAFETY: kind == Decimal, so encode initialized this slot as a
+            // plain-data RawDecimalArrayElement.
             Variant::from_decimal96(unsafe { *ptr.cast::<RawDecimalArrayElement>() }.to_decimal96())
         }
     })
@@ -381,19 +443,29 @@ unsafe fn encode_element_variant(
     index: usize,
     value: &Variant,
 ) -> Result<(), String> {
+    // SAFETY: the caller guarantees `payload` is an allocation laid out by
+    // `payload_layout(kind, len)` with `index < len`, so the offset stays
+    // in-bounds and `ptr` is aligned for `kind`'s element type.
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     if kind == SafeArrayElementKind::Variant {
+        // SAFETY: kind == Variant, so the in-bounds slot computed above has
+        // `Variant` size/alignment; the slot is written exactly once into the
+        // fresh zeroed buffer, so `write` correctly skips dropping old contents.
         unsafe { ptr.cast::<Variant>().write(value.clone()) };
         return Ok(());
     }
     match kind {
         SafeArrayElementKind::Variant => unreachable!("handled above"),
+        // SAFETY: kind == I1 sized/aligned the slot for i8; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::I1 => unsafe {
             ptr.cast::<i8>()
                 .write(i8::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_I1 SAFEARRAY element")
                 })?);
         },
+        // SAFETY: kind == Ui1 sized/aligned the slot for u8; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::Ui1 => unsafe {
             ptr.cast::<u8>().write(
                 u8::try_from(variant_i64(value)?).map_err(|_| {
@@ -401,12 +473,16 @@ unsafe fn encode_element_variant(
                 })?,
             );
         },
+        // SAFETY: kind == I2 sized/aligned the slot for i16; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::I2 => unsafe {
             ptr.cast::<i16>()
                 .write(i16::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_I2 SAFEARRAY element")
                 })?);
         },
+        // SAFETY: kind == Ui2 sized/aligned the slot for u16; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::Ui2 => unsafe {
             ptr.cast::<u16>().write(
                 u16::try_from(variant_i64(value)?).map_err(|_| {
@@ -414,12 +490,16 @@ unsafe fn encode_element_variant(
                 })?,
             );
         },
+        // SAFETY: kind == I4/Int sized/aligned the slot for i32; plain-data
+        // write, exactly once into the zeroed buffer.
         SafeArrayElementKind::I4 | SafeArrayElementKind::Int => unsafe {
             ptr.cast::<i32>()
                 .write(i32::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_I4 SAFEARRAY element")
                 })?);
         },
+        // SAFETY: kind == Ui4/UInt sized/aligned the slot for u32; plain-data
+        // write, exactly once into the zeroed buffer.
         SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => unsafe {
             ptr.cast::<u32>().write(
                 u32::try_from(variant_i64(value)?).map_err(|_| {
@@ -427,9 +507,13 @@ unsafe fn encode_element_variant(
                 })?,
             );
         },
+        // SAFETY: kind == I8 sized/aligned the slot for i64; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::I8 => unsafe {
             ptr.cast::<i64>().write(variant_i64(value)?);
         },
+        // SAFETY: kind == Ui8 sized/aligned the slot for u64; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::Ui8 => unsafe {
             ptr.cast::<u64>().write(
                 u64::try_from(variant_i64(value)?).map_err(|_| {
@@ -437,12 +521,18 @@ unsafe fn encode_element_variant(
                 })?,
             );
         },
+        // SAFETY: kind == R4 sized/aligned the slot for f32; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::R4 => unsafe {
             ptr.cast::<f32>().write(variant_f64(value)? as f32);
         },
+        // SAFETY: kind == R8 sized/aligned the slot for f64; plain-data write,
+        // exactly once into the zeroed buffer.
         SafeArrayElementKind::R8 => unsafe {
             ptr.cast::<f64>().write(variant_f64(value)?);
         },
+        // SAFETY: kind == Currency sized/aligned the slot for the scaled-i64
+        // currency carrier; plain-data write, exactly once into the zeroed buffer.
         SafeArrayElementKind::Currency => unsafe {
             ptr.cast::<i64>().write(
                 value
@@ -450,6 +540,8 @@ unsafe fn encode_element_variant(
                     .ok_or_else(|| format!("expected Currency SAFEARRAY element, got {value:?}"))?,
             );
         },
+        // SAFETY: kind == Date sized/aligned the slot for the f64 date serial;
+        // plain-data write, exactly once into the zeroed buffer.
         SafeArrayElementKind::Date => unsafe {
             ptr.cast::<f64>().write(
                 value
@@ -458,6 +550,8 @@ unsafe fn encode_element_variant(
                     .ok_or_else(|| format!("expected Date SAFEARRAY element, got {value:?}"))?,
             );
         },
+        // SAFETY: kind == Bool sized/aligned the slot for the VARIANT_BOOL i16;
+        // plain-data write, exactly once into the zeroed buffer.
         SafeArrayElementKind::Bool => unsafe {
             ptr.cast::<i16>().write(
                 if value
@@ -470,6 +564,9 @@ unsafe fn encode_element_variant(
                 },
             );
         },
+        // SAFETY: kind == BStr sized/aligned the slot for a pointer; ownership
+        // of the freshly allocated raw BSTR transfers into the slot, to be
+        // freed exactly once by `drop_element`.
         SafeArrayElementKind::BStr => unsafe {
             ptr.cast::<*mut u16>().write(alloc_raw_bstr_from_bstr(
                 &value
@@ -477,6 +574,10 @@ unsafe fn encode_element_variant(
                     .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?,
             )?);
         },
+        // SAFETY: kind == Dispatch/Unknown sized/aligned the slot for the
+        // 8 pointer bytes; `mem::forget` transfers the ObjectRef's retained
+        // reference into the slot, so the array owns exactly one IUnknown
+        // reference, released by `drop_element`.
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => unsafe {
             let object = value
                 .as_object_ref()
@@ -485,6 +586,8 @@ unsafe fn encode_element_variant(
             core::mem::forget(object);
             ptr.cast::<[u8; 8]>().write(raw_iunknown_ptr_to_bytes(raw));
         },
+        // SAFETY: kind == Decimal sized/aligned the slot for the plain-data
+        // RawDecimalArrayElement; written exactly once into the zeroed buffer.
         SafeArrayElementKind::Decimal => unsafe {
             ptr.cast::<RawDecimalArrayElement>()
                 .write(RawDecimalArrayElement::from_decimal96(
@@ -498,10 +601,22 @@ unsafe fn encode_element_variant(
 }
 
 unsafe fn drop_element(kind: SafeArrayElementKind, payload: *mut u8, index: usize) {
+    // SAFETY: the caller guarantees `payload` holds more than `index`
+    // initialized elements of `kind` and visits each index at most once, so
+    // the offset is in-bounds and the slot still owns its resource.
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     match kind {
+        // SAFETY: kind == Variant, so the slot holds an initialized, not yet
+        // dropped `Variant` (callers drop each index exactly once).
         SafeArrayElementKind::Variant => unsafe { core::ptr::drop_in_place(ptr.cast::<Variant>()) },
+        // SAFETY: kind == BStr, so the slot holds the array-owned raw BSTR
+        // pointer written at encode time; ownership transfers to
+        // `free_raw_bstr`, which frees it exactly once.
         SafeArrayElementKind::BStr => unsafe { free_raw_bstr(*ptr.cast::<*mut u16>()) },
+        // SAFETY: kind == Dispatch/Unknown, so the slot holds the pointer bytes
+        // of the array's single retained IUnknown reference (taken at encode
+        // time); `from_raw_iunknown_owned` adopts and releases exactly that
+        // reference, per its ownership-transfer contract.
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => unsafe {
             let raw = bytes_to_raw_iunknown(*ptr.cast::<[u8; 8]>());
             if let Some(object) = ObjectRef::from_raw_iunknown_owned(raw) {
@@ -519,10 +634,16 @@ unsafe fn free_payload(kind: SafeArrayElementKind, payload: *mut core::ffi::c_vo
     let raw = payload.cast::<u8>();
     let mut index = 0usize;
     while index < count {
+        // SAFETY: `payload` was checked non-null above and the caller passes
+        // the same `kind`/`count` the buffer was built with, so every
+        // `index < count` names an initialized element, dropped exactly once here.
         unsafe { drop_element(kind, raw, index) };
         index += 1;
     }
     if let Ok(layout) = payload_layout(kind, count) {
+        // SAFETY: `raw` was returned by `alloc_zeroed` with this same
+        // `payload_layout(kind, count)`; all elements were dropped above and
+        // nothing reads the buffer after this point.
         unsafe { std::alloc::dealloc(raw, layout) };
     }
 }
@@ -535,20 +656,32 @@ fn alloc_payload_from_variants(
         return Ok(core::ptr::null_mut());
     }
     let layout = payload_layout(kind, values.len())?;
+    // SAFETY: `layout` has non-zero size (`payload_layout` clamps the size to
+    // at least 1 byte), satisfying `alloc_zeroed`; the null failure case is
+    // handled immediately below.
     let raw = unsafe { std::alloc::alloc_zeroed(layout) };
     if raw.is_null() {
         return Err("failed to allocate SAFEARRAY payload".to_string());
     }
     let mut initialized = 0usize;
     while initialized < values.len() {
-        if let Err(err) =
-            unsafe { encode_element_variant(kind, raw, initialized, &values[initialized]) }
-        {
+        // SAFETY: `raw` is a live zeroed allocation laid out by
+        // `payload_layout(kind, values.len())` and `initialized < values.len()`,
+        // so the target slot is in-bounds, aligned, and written exactly once.
+        let encoded =
+            unsafe { encode_element_variant(kind, raw, initialized, &values[initialized]) };
+        if let Err(err) = encoded {
             let mut index = 0usize;
             while index < initialized {
+                // SAFETY: indices below `initialized` were successfully
+                // encoded, so each slot holds an initialized element dropped
+                // exactly once on this error path.
                 unsafe { drop_element(kind, raw, index) };
                 index += 1;
             }
+            // SAFETY: `raw` came from `alloc_zeroed` with this same `layout`,
+            // the initialized prefix was dropped above, and the pointer never
+            // escaped this function, so this is the sole deallocation.
             unsafe { std::alloc::dealloc(raw, layout) };
             return Err(err);
         }
@@ -564,10 +697,21 @@ fn alloc_header(
     pv_data: *mut core::ffi::c_void,
 ) -> Result<NonNull<RawSafeArray>, String> {
     let layout = owner_layout(bounds.len())?;
+    // SAFETY: `layout` has non-zero size (owner prefix plus at least the
+    // RawSafeArray header), satisfying `alloc_zeroed`; allocation failure is
+    // handled by the NonNull check below.
     let raw_owner = unsafe { std::alloc::alloc_zeroed(layout) };
     let Some(raw_owner) = NonNull::new(raw_owner) else {
         return Err("failed to allocate SAFEARRAY header".to_string());
     };
+    // SAFETY: `raw_owner` is a fresh zeroed allocation of
+    // `owner_layout(bounds.len())`: a RawSafeArrayOwnerPrefix followed by a
+    // RawSafeArray header with `bounds.len()` bounds entries (one inline plus
+    // `bounds.len() - 1` trailing). All writes below stay inside that
+    // allocation, the 8-byte prefix offset keeps the header aligned, `bounds`
+    // provides exactly `bounds.len()` entries for the non-overlapping copy
+    // into the fresh allocation, and the header pointer offsets a NonNull base
+    // by a constant within the allocation — justifying `new_unchecked`.
     unsafe {
         raw_owner
             .cast::<RawSafeArrayOwnerPrefix>()
@@ -626,6 +770,10 @@ impl SafeArray {
         let header = match alloc_header(&bounds, element_vt, kind.element_size(), pv_data) {
             Ok(header) => header,
             Err(err) => {
+                // SAFETY: `pv_data` is null (shape-only) or the payload just
+                // built by `alloc_payload_from_variants` with this `kind` and
+                // exactly `expected_len` initialized elements; it never escaped,
+                // so this is its sole release.
                 unsafe { free_payload(kind, pv_data, expected_len) };
                 return Err(err);
             }
@@ -687,16 +835,26 @@ impl SafeArray {
     }
 
     pub fn dimensions(&self) -> u8 {
+        // SAFETY: `self.0` is the descriptor `alloc_header` produced and this
+        // value owns until `Drop`, so reading its `c_dims` field is valid.
         unsafe { (*self.0.as_ptr()).c_dims as u8 }
     }
 
     pub fn element_vartype(&self) -> u16 {
+        // SAFETY: `self.0` was produced by `alloc_header` (the only
+        // construction path), which placed and initialized the owner prefix
+        // immediately before the header in the same allocation, exactly what
+        // `validated_header_prefix` requires of its caller.
         let prefix = unsafe { validated_header_prefix(self.0.as_ptr()) }
             .expect("SAFEARRAY descriptor is not owned by OxVba");
+        // SAFETY: `prefix` was just validated against this value's live owner
+        // allocation, so reading `element_vt` is in-bounds and initialized.
         unsafe { (*prefix).element_vt }
     }
 
     pub fn feature_flags(&self) -> u16 {
+        // SAFETY: `self.0` is this value's live descriptor (allocated by
+        // `alloc_header`, freed only in `Drop`), so reading `f_features` is valid.
         unsafe { (*self.0.as_ptr()).f_features }
     }
 
@@ -710,8 +868,15 @@ impl SafeArray {
         if dims == 0 {
             return Vec::new();
         }
+        // SAFETY: `self.0` is this value's live descriptor; `addr_of!` only
+        // computes the address of its `rgsabound` field without reading past
+        // the header.
         let ptr =
             unsafe { core::ptr::addr_of!((*self.0.as_ptr()).rgsabound).cast::<SafeArrayBound>() };
+        // SAFETY: `alloc_header` allocated and initialized `c_dims` contiguous
+        // SafeArrayBound entries starting at `rgsabound` (declared-dimension
+        // order), and `dims` was read from this same descriptor, so the slice
+        // is in-bounds and initialized for the duration of this borrow.
         unsafe { core::slice::from_raw_parts(ptr, dims) }.to_vec()
     }
 
@@ -741,6 +906,8 @@ impl SafeArray {
     }
 
     pub fn variant_elements(&self) -> Option<Vec<Variant>> {
+        // SAFETY: `self.0` is this value's live descriptor, so reading
+        // `pv_data` is valid; the null (shape-only) case is handled just below.
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
             return None;
@@ -749,6 +916,9 @@ impl SafeArray {
         let mut values = Vec::with_capacity(self.len());
         let mut index = 0usize;
         while index < self.len() {
+            // SAFETY: `data` is the non-null payload built by
+            // `alloc_payload_from_variants` for exactly `self.len()` initialized
+            // elements of this descriptor's `kind`, and `index < self.len()`.
             values.push(
                 unsafe { decode_element_variant(kind, data, index) }
                     .expect("SAFEARRAY intrinsic payload should decode into Variant"),
@@ -788,6 +958,10 @@ impl SafeArray {
     /// local owner prefix provenance marker is absent.
     pub unsafe fn from_raw_safearray_owned(raw: *mut core::ffi::c_void) -> Option<Self> {
         let header = NonNull::new(raw.cast::<RawSafeArray>())?;
+        // SAFETY: this function's contract requires `raw` to be a descriptor
+        // produced by this runtime, so an owner prefix precedes the header in
+        // the same allocation; the magic/version check then rejects anything
+        // that lost OxVba provenance before ownership is adopted.
         unsafe { validated_header_prefix(header.as_ptr()) }?;
         Some(Self(header))
     }
@@ -800,6 +974,10 @@ impl SafeArray {
     /// independent descriptor/payload storage; ownership of `raw` is unchanged.
     pub unsafe fn clone_from_raw_safearray(raw: *mut core::ffi::c_void) -> Option<Self> {
         let header = NonNull::new(raw.cast::<RawSafeArray>())?;
+        // SAFETY: this function's contract requires `raw` to point at a live
+        // OxVba-owned descriptor, so the owner prefix preceding the header is
+        // present, initialized, and readable; the temporary `Self` wrapper
+        // below is forgotten, leaving ownership of `raw` untouched.
         unsafe { validated_header_prefix(header.as_ptr()) }?;
         let borrowed = Self(header);
         let cloned = borrowed.clone();
@@ -826,15 +1004,29 @@ impl Drop for SafeArray {
     fn drop(&mut self) {
         let len = self.len();
         let kind = self.element_kind();
+        // SAFETY: `self.0` is the live descriptor this value owns; reading
+        // `pv_data` is valid until the deallocation below.
         let data = unsafe { (*self.0.as_ptr()).pv_data };
+        // SAFETY: `data` is null or the payload built by
+        // `alloc_payload_from_variants` with this descriptor's `kind` and
+        // exactly `len` initialized elements; `drop` runs at most once, so the
+        // elements and the buffer are released exactly once.
         unsafe { free_payload(kind, data, len) };
         if let Ok(layout) = owner_layout(self.dimensions() as usize) {
+            // SAFETY: `alloc_header` placed the descriptor exactly
+            // `size_of::<RawSafeArrayOwnerPrefix>()` bytes into the owner
+            // allocation, so this `sub` recovers the allocation's base pointer
+            // without leaving the allocation.
             let owner = unsafe {
                 self.0
                     .as_ptr()
                     .cast::<u8>()
                     .sub(core::mem::size_of::<RawSafeArrayOwnerPrefix>())
             };
+            // SAFETY: `owner` is the pointer `alloc_zeroed` returned in
+            // `alloc_header`, and `owner_layout(self.dimensions())` recomputes
+            // the layout used there (`c_dims` was written from `bounds.len()`);
+            // nothing touches the allocation after this point.
             unsafe { std::alloc::dealloc(owner, layout) };
         }
     }
@@ -904,6 +1096,8 @@ pub fn marshal_dispatch_argument(value: i32) -> i32 {
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production raw-pointer paths.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
         ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,

@@ -37,6 +37,8 @@ pub fn ansi_decode(bytes: &[u8]) -> String {
 mod windows_codec {
     const CP_ACP: u32 = 0;
 
+    // SAFETY: these declarations transcribe the documented Win32 ABI signatures of
+    // kernel32's WideCharToMultiByte/MultiByteToWideChar exactly.
     unsafe extern "system" {
         fn WideCharToMultiByte(
             code_page: u32,
@@ -63,6 +65,9 @@ mod windows_codec {
             return Vec::new();
         }
         let wide: Vec<u16> = text.encode_utf16().collect();
+        // SAFETY: `wide` is valid for `wide.len()` UTF-16 units for the duration of
+        // the call, and a null output buffer with length 0 is the documented
+        // size-query mode of WideCharToMultiByte (nothing is written).
         let needed = unsafe {
             WideCharToMultiByte(
                 CP_ACP,
@@ -79,6 +84,9 @@ mod windows_codec {
             return text.as_bytes().to_vec();
         }
         let mut out = vec![0u8; needed as usize];
+        // SAFETY: `wide` is valid for `wide.len()` UTF-16 units and `out` was
+        // allocated just above with exactly `needed` bytes, so the output window the
+        // converter may write is in bounds.
         let written = unsafe {
             WideCharToMultiByte(
                 CP_ACP,
@@ -99,6 +107,9 @@ mod windows_codec {
         if bytes.is_empty() {
             return String::new();
         }
+        // SAFETY: `bytes` is valid for `bytes.len()` bytes for the duration of the
+        // call, and a null output buffer with length 0 is the documented size-query
+        // mode of MultiByteToWideChar (nothing is written).
         let needed = unsafe {
             MultiByteToWideChar(
                 CP_ACP,
@@ -113,6 +124,10 @@ mod windows_codec {
             return String::from_utf8_lossy(bytes).into_owned();
         }
         let mut wide = vec![0u16; needed as usize];
+        // SAFETY: `bytes` is valid for `bytes.len()` bytes and `wide` was allocated
+        // just above with exactly `needed` u16 slots, so the output window is in
+        // bounds; the API writes at most `needed` units, keeping the
+        // `[..written]` slice below in bounds too.
         let written = unsafe {
             MultiByteToWideChar(
                 CP_ACP,

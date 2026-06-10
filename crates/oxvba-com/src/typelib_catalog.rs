@@ -148,6 +148,9 @@ fn try_live_typelib_metadata(identity: &TypeLibResolvedIdentity) -> Option<TypeL
         .ok()?;
         let blob =
             windows_typelib_loader::build_metadata_blob_from_typelib(ptlib, identity.clone()).ok();
+        // SAFETY: `ptlib` is the live ITypeLib* reference handed to this caller by
+        // load_typelib_from_registry above; build_metadata_blob_from_typelib only
+        // borrows it, and this is its single owning Release on this path.
         unsafe { windows_typelib_loader::release_typelib(ptlib) };
         return blob;
     }
@@ -155,6 +158,9 @@ fn try_live_typelib_metadata(identity: &TypeLibResolvedIdentity) -> Option<TypeL
     let ptlib = windows_typelib_loader::load_typelib_from_path(&identity.importlib).ok()?;
     let blob =
         windows_typelib_loader::build_metadata_blob_from_typelib(ptlib, identity.clone()).ok();
+    // SAFETY: `ptlib` is the live ITypeLib* reference handed to this caller by
+    // load_typelib_from_path above; build_metadata_blob_from_typelib only borrows
+    // it, and this is its single owning Release on this path.
     unsafe { windows_typelib_loader::release_typelib(ptlib) };
     blob
 }

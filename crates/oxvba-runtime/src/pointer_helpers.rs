@@ -67,12 +67,22 @@ impl OwnedBstr {
 }
 
 #[cfg(target_os = "windows")]
+// SAFETY: `OwnedBstr` exclusively owns its BSTR (a fresh `clone_raw_bstr`
+// allocation; `into_raw` forgets `self` before transferring ownership). A BSTR
+// is a plain OLE-heap allocation with no thread affinity, and `SysFreeString`
+// may be called from any thread, so moving the sole owner across threads (as
+// the global `Mutex<PointerRegistry>` requires) is sound.
 unsafe impl Send for OwnedBstr {}
 
 #[cfg(target_os = "windows")]
 impl Drop for OwnedBstr {
     fn drop(&mut self) {
         if !self.0.is_null() {
+            // SAFETY: `self.0` was checked non-null above and is a live BSTR
+            // allocated by `clone_raw_bstr`; this wrapper is its only owner
+            // (`into_raw` forgets `self` before handing the pointer away, so
+            // a transferred BSTR never reaches this Drop), making this the
+            // single free of the allocation.
             unsafe { SysFreeString(self.0) };
         }
     }
@@ -102,6 +112,15 @@ impl OwnedBstrCell {
 impl Drop for OwnedBstrCell {
     fn drop(&mut self) {
         if !(*self.cell).is_null() {
+            // SAFETY: `*self.cell` was checked non-null above. The cell owns
+            // whichever BSTR pointer it currently holds: either our original
+            // `clone_raw_bstr` allocation, or the replacement a native call
+            // wrote through the VarPtr(String) cell (ownership transfers with
+            // the LPBSTR write per the BSTR out-param convention). Per
+            // docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md the consuming
+            // native call has completed before the pin is dropped, so no
+            // native code still uses the pointer; nulling the cell afterwards
+            // makes the free unrepeatable.
             unsafe { SysFreeString(*self.cell) };
             *self.cell = std::ptr::null_mut();
         }
@@ -109,6 +128,11 @@ impl Drop for OwnedBstrCell {
 }
 
 #[cfg(target_os = "windows")]
+// SAFETY: The `Box<BSTR>` cell and the BSTR allocation it points to are owned
+// exclusively by this wrapper; BSTRs are thread-agnostic OLE-heap allocations
+// and `SysFreeString` is callable from any thread, so transferring the sole
+// owner across threads (required by the global `Mutex<PointerRegistry>`) is
+// sound.
 unsafe impl Send for OwnedBstrCell {}
 
 #[cfg(target_os = "windows")]
@@ -127,7 +151,14 @@ impl std::fmt::Debug for OwnedVariant {
 #[cfg(target_os = "windows")]
 impl OwnedVariant {
     fn from_variant(value: &Variant) -> Result<Self, String> {
+        // SAFETY: The all-zero bit pattern is a valid VARIANT — vt == VT_EMPTY
+        // with no owned payload, the same state `VariantInit` produces; every
+        // union field (integers, raw pointers) admits the zero bit pattern.
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        // SAFETY: `&mut variant` points to a writable VARIANT local that was
+        // just zeroed to VT_EMPTY, so the callee overwrites no pre-owned
+        // payload; it stores only payloads matching the vt it sets, which
+        // `OwnedVariant`'s Drop later releases via VariantClear.
         unsafe { set_windows_variant_from_variant(&mut variant, value)? };
         Ok(Self(variant))
     }
@@ -138,6 +169,17 @@ impl OwnedVariant {
 }
 
 #[cfg(target_os = "windows")]
+// SAFETY: ASSUMPTION — the VARIANT struct itself is plain data, and the BSTR /
+// SAFEARRAY payloads `set_windows_variant_from_variant` writes are fresh,
+// exclusively owned, thread-agnostic OLE-heap allocations; the punkVal payload
+// is one retained `ObjectRef` reference whose runtime refcount is atomic
+// (object_ref.rs `ref_count: AtomicU32`), so retain/release of runtime objects
+// is thread-safe. What must additionally hold for foreign (CreateObject) COM
+// payloads, which may be apartment-affine: the pin is created and dropped
+// (VariantClear → Release) on the same VM thread within one statement, per
+// docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md — Send is demanded only
+// because the registry lives behind a process-global Mutex, not because
+// entries actually migrate threads.
 unsafe impl Send for OwnedVariant {}
 
 #[cfg(target_os = "windows")]
@@ -373,6 +415,13 @@ unsafe fn set_windows_variant_from_variant(
 #[cfg(target_os = "windows")]
 impl Drop for OwnedVariant {
     fn drop(&mut self) {
+        // SAFETY: `self.0` was fully initialized by `from_variant` (zeroed to
+        // VT_EMPTY, then populated by `set_windows_variant_from_variant`). The
+        // VARIANT owns its BSTR/SAFEARRAY/IUnknown payload until VariantClear,
+        // and this cell is that payload's sole owner (the registry holds the
+        // entry until `free_pins` removes it, after the consuming native call
+        // per docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md), so this releases
+        // the payload exactly once; VariantClear on VT_EMPTY is a no-op.
         unsafe {
             let _ = VariantClear(&mut self.0);
         }
@@ -442,7 +491,19 @@ impl PointerRegistry {
         match entry {
             #[cfg(target_os = "windows")]
             PointerEntry::Bstr(value) => {
+                // SAFETY: Registry entries are keyed by the address `as_ptr()`
+                // returned at insert, which for `Bstr` is `value.0` itself;
+                // `pointer == 0` returned early above, so `value.0` is
+                // non-null. The entry owns the BSTR and nothing frees it
+                // before `free_pins` removes the entry (the registry guard is
+                // held for this whole borrow), so SysStringLen reads a live
+                // allocation's 4-byte byte-length prefix at ptr-4.
                 let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(value.0) } as usize;
+                // SAFETY: Same live, non-null, exclusively owned BSTR as
+                // above; `len` is the UTF-16 unit count derived from the
+                // length prefix, so `value.0 .. value.0 + len` lies inside the
+                // allocation and is readable. Embedded NULs are legal — the
+                // length comes from the prefix, not from NUL scanning.
                 let slice = unsafe { std::slice::from_raw_parts(value.0, len) };
                 Ok(Variant::from_string(BStr::from_utf16_lossy(slice)))
             }
@@ -451,8 +512,22 @@ impl PointerRegistry {
                 if (*value.cell).is_null() {
                     return Ok(Variant::from_string(BStr::empty()));
                 }
+                // SAFETY: `*value.cell` was checked non-null just above. The
+                // cell holds either our original allocation or the BSTR a
+                // native call wrote through the VarPtr(String) cell, whose
+                // ownership transferred to the cell with that write; per
+                // docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md the pin (and
+                // thus the BSTR) stays live until `free_pins` runs after this
+                // read-back, so SysStringLen reads a live allocation's 4-byte
+                // byte-length prefix at ptr-4.
                 let len =
                     unsafe { windows_sys::Win32::Foundation::SysStringLen(*value.cell) } as usize;
+                // SAFETY: Same live, non-null BSTR as above; `len` is the
+                // UTF-16 unit count from the length prefix, so the first `len`
+                // units are within the allocation and readable. Embedded NULs
+                // are legal because the length is prefix-derived, not
+                // NUL-scanned; the registry guard held by the caller keeps the
+                // entry alive for the duration of this borrow.
                 let slice = unsafe { std::slice::from_raw_parts(*value.cell, len) };
                 Ok(Variant::from_string(BStr::from_utf16_lossy(slice)))
             }
@@ -780,6 +855,8 @@ pub fn live_pin_count() -> usize {
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production pointer-helper paths.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
         free_pins, lookup_pointer, register_byte_buffer, register_object_variant_pointer,

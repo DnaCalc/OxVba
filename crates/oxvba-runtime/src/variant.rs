@@ -117,6 +117,9 @@ impl VariantCore {
     }
 
     pub fn data_bytes(&self) -> [u8; 8] {
+        // SAFETY: every `VariantData` in the workspace is constructed through its full
+        // 8-byte `bytes` field (`from_bytes`, `from_wire_bytes`, `from_decimal96`), so all
+        // 8 bytes are initialized, and any bit pattern is a valid `[u8; 8]`.
         unsafe { self.data.bytes }
     }
 
@@ -184,6 +187,9 @@ fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
 }
 
 unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
+    // SAFETY: per this fn's contract, `ptr` is null or a live BSTR; the wrapper exists
+    // only to borrow it for the deep clone below and is then forgotten, so ownership
+    // never actually leaves the caller.
     let text = unsafe { BStr::from_raw_bstr(ptr) };
     let cloned = text.clone();
     core::mem::forget(text);
@@ -241,6 +247,10 @@ impl Variant {
         match core.vtype {
             VarType::String => {
                 let ptr = bytes_to_raw_bstr(core.data_bytes());
+                // SAFETY: ASSUMPTION — wire bytes with vtype String must carry a BSTR
+                // pointer written by `to_wire_bytes` from a Variant still alive in this
+                // process; `from_wire_bytes` is a safe fn, so nothing enforces that the
+                // pointee is live before this deep clone reads it.
                 let text = unsafe { raw_bstr_to_bstr(ptr) };
                 let cloned = text.raw_bstr();
                 core::mem::forget(text);
@@ -251,6 +261,11 @@ impl Variant {
             }
             VarType::Object => {
                 let ptr = bytes_to_raw_iunknown(core.data_bytes());
+                // SAFETY: ASSUMPTION — wire bytes with vtype Object must carry a runtime
+                // IUnknown pointer to an object still retained elsewhere in this process
+                // (e.g. by the source Variant of `to_wire_bytes`); the AddRef taken here
+                // is only sound while that object is alive, and `from_wire_bytes` being a
+                // safe fn leaves this to caller convention.
                 let object = unsafe { ObjectRef::from_raw_iunknown_addref(ptr) };
                 Ok(match object {
                     Some(value) => Self::from_object_ref(value),
@@ -259,6 +274,11 @@ impl Variant {
             }
             VarType::ArrayVariant => {
                 let ptr = bytes_to_raw_safearray(core.data_bytes());
+                // SAFETY: ASSUMPTION — wire bytes with vtype ArrayVariant must carry a
+                // pointer to a live OxVba-owned SAFEARRAY descriptor (the source Variant
+                // of `to_wire_bytes` kept alive); `clone_from_raw_safearray` validates the
+                // owner-prefix provenance marker, but reading that marker already requires
+                // the pointee to be live, which a safe `from_wire_bytes` cannot enforce.
                 let Some(array) = (unsafe { SafeArray::clone_from_raw_safearray(ptr) }) else {
                     return Ok(Self::from_core(VariantCore::from_bytes(
                         VarType::ArrayVariant,
@@ -515,6 +535,9 @@ impl Variant {
         if self.vtype() != VarType::String {
             return None;
         }
+        // SAFETY: vtype was checked to be String above, so the payload is null or the BSTR
+        // pointer this Variant owns until drop (a VARIANT owns its BSTR payload until
+        // cleared); `raw_bstr_to_bstr` deep-clones without taking that ownership.
         Some(unsafe { raw_bstr_to_bstr(bytes_to_raw_bstr(self.data_bytes())) })
     }
 
@@ -535,6 +558,10 @@ impl Variant {
         if self.vtype() != VarType::Object {
             return None;
         }
+        // SAFETY: vtype was checked to be Object above, so the payload is null or the
+        // IUnknown pointer on which this Variant holds one retained reference until drop,
+        // keeping the object alive for the AddRef taken here on behalf of the returned
+        // ObjectRef.
         unsafe { ObjectRef::from_raw_iunknown_addref(bytes_to_raw_iunknown(self.data_bytes())) }
     }
 
@@ -551,6 +578,10 @@ impl Variant {
         if self.vtype() != VarType::ArrayVariant {
             return None;
         }
+        // SAFETY: vtype was checked to be ArrayVariant above, so the payload is null or
+        // the OxVba SAFEARRAY descriptor this Variant owns until drop (set by
+        // `from_safearray`/clone); `clone_from_raw_safearray` verifies the provenance
+        // prefix and deep-clones, leaving ownership with this Variant.
         unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
     }
 }
@@ -559,6 +590,9 @@ impl Clone for Variant {
     fn clone(&self) -> Self {
         match self.vtype() {
             VarType::String => {
+                // SAFETY: this arm is reached only when vtype is String, so the payload is
+                // null or the live BSTR this Variant owns until drop; `raw_bstr_to_bstr`
+                // deep-clones it without disturbing that ownership.
                 let cloned = unsafe { raw_bstr_to_bstr(bytes_to_raw_bstr(self.data_bytes())) };
                 let raw = cloned.raw_bstr();
                 core::mem::forget(cloned);
@@ -583,12 +617,20 @@ impl Clone for Variant {
 impl Drop for Variant {
     fn drop(&mut self) {
         match self.vtype() {
+            // SAFETY: a String Variant owns its BSTR payload until drop (VARIANT owns its
+            // BSTR until cleared), so reconstituting the `BStr` here takes that ownership
+            // and its drop frees the allocation exactly once.
             VarType::String => unsafe {
                 let _ = BStr::from_raw_bstr(bytes_to_raw_bstr(self.data_bytes()));
             },
             VarType::Object => {
                 let raw = bytes_to_raw_iunknown(self.data_bytes());
                 if !raw.is_null() {
+                    // SAFETY: `raw` was checked non-null above and an Object Variant holds
+                    // exactly one retained reference taken at construction
+                    // (`from_object_ref` / `from_raw_iunknown_addref`), so the object is
+                    // still alive — every COM object's first field is its vtbl — and this
+                    // release balances that AddRef.
                     unsafe {
                         let vtbl = (*raw).vtbl;
                         ((*vtbl).release)(raw.cast());
@@ -597,6 +639,10 @@ impl Drop for Variant {
             }
             VarType::ArrayVariant => {
                 let raw = bytes_to_raw_safearray(self.data_bytes());
+                // SAFETY: an ArrayVariant payload was produced by moving an OxVba
+                // SafeArray into this Variant (`from_safearray`/clone), satisfying
+                // `from_raw_safearray_owned`'s provenance contract; ownership transfers
+                // back here, so the descriptor is freed exactly once.
                 if let Some(array) = unsafe { SafeArray::from_raw_safearray_owned(raw) } {
                     drop(array);
                 }

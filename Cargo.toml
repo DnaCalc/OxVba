@@ -35,9 +35,11 @@ unsafe_op_in_unsafe_fn = "deny"
 [workspace.lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
-# Ratchet: flipped to "deny" when the unsafe-FFI review wave closes, after
-# every production unsafe block has a `// SAFETY:` comment.
-undocumented_unsafe_blocks = "allow"
+# Wave-1 exit ratchet (flipped 2026-06-10): every unsafe block carries a
+# `// SAFETY:` comment stating the invariant that makes it sound; sites where
+# the invariant could not be fully established are marked
+# `SAFETY: ASSUMPTION —` for the next review pass.
+undocumented_unsafe_blocks = "deny"
 # Ratchet: flipped to "warn" at review-campaign end, after production
 # unwrap sites are classified (kept invariants become expect/INVARIANT).
 unwrap_used = "allow"

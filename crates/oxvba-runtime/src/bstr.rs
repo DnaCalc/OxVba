@@ -89,6 +89,9 @@ impl BStr {
     }
 
     pub fn clone_raw_bstr(&self) -> Result<*mut u16, String> {
+        // SAFETY: `self.raw_bstr()` is either null (the helper returns null for null) or
+        // the live BSTR allocation this `BStr` owns until drop, which is exactly the
+        // contract `clone_raw_bstr` requires.
         unsafe { clone_raw_bstr(self.raw_bstr()) }
     }
 
@@ -113,10 +116,16 @@ impl BStr {
     }
 
     pub fn utf16_len(&self) -> usize {
+        // SAFETY: `self.raw_bstr()` is either null (the helper returns 0 for null) or the
+        // live BSTR this `BStr` owns until drop, so its byte-length prefix at ptr-4
+        // (SysStringLen on Windows) is readable.
         unsafe { raw_bstr_len_units(self.raw_bstr()) }
     }
 
     pub fn byte_len(&self) -> u32 {
+        // SAFETY: `self.raw_bstr()` is either null (the helper returns 0 for null) or the
+        // live BSTR this `BStr` owns until drop, so its byte-length prefix at ptr-4
+        // (SysStringLen on Windows) is readable.
         unsafe { raw_bstr_len_bytes(self.raw_bstr()) }
     }
 
@@ -125,6 +134,10 @@ impl BStr {
         if raw.is_null() {
             return &[];
         }
+        // SAFETY: `raw` was checked non-null above and is the BSTR allocation this `BStr`
+        // owns; the length prefix records exactly the allocated payload unit count, and the
+        // payload is neither freed nor mutated while the `&self` borrow (and thus the
+        // returned slice) is live.
         unsafe { core::slice::from_raw_parts(raw.cast_const(), raw_bstr_len_units(raw)) }
     }
 
@@ -148,7 +161,13 @@ impl BStr {
     }
 }
 
+// SAFETY: `BStr` uniquely owns its allocation (clones are deep copies; the raw pointer
+// is never shared outside the owner), and both SysAllocStringLen/SysFreeString and the
+// global allocator are thread-safe, so moving the sole owner to another thread is sound.
 unsafe impl Send for BStr {}
+// SAFETY: `BStr` has no interior mutability — the payload and its length prefix are
+// written once at allocation and only read afterwards — so concurrent `&BStr` access
+// performs only reads of immutable memory.
 unsafe impl Sync for BStr {}
 
 impl Clone for BStr {
@@ -156,6 +175,9 @@ impl Clone for BStr {
         let raw = self
             .clone_raw_bstr()
             .expect("cloning BSTR payload should succeed");
+        // SAFETY: `raw` is a fresh allocation just returned by `clone_raw_bstr` that nothing
+        // else references, so transferring its ownership to the new `BStr` satisfies
+        // `from_raw_bstr`'s contract.
         unsafe { Self::from_raw_bstr(raw) }
     }
 }
@@ -163,6 +185,10 @@ impl Clone for BStr {
 impl Drop for BStr {
     fn drop(&mut self) {
         if let Some(raw) = self.raw.take() {
+            // SAFETY: `raw` came out of `self.raw`, which always holds a live BSTR this
+            // `BStr` exclusively owns (allocated here or transferred in via
+            // `from_raw_bstr`'s ownership contract); `take()` clears the field first, so
+            // the allocation is freed exactly once.
             unsafe { free_raw_bstr(raw.as_ptr()) };
         }
     }
@@ -219,6 +245,9 @@ fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
     {
         let len = u32::try_from(units.len())
             .map_err(|_| "BSTR payload length should fit in u32 code-unit count".to_string())?;
+        // SAFETY: `units` is a live slice and `len` was checked above to equal
+        // `units.len()`, so SysAllocStringLen reads exactly `len` in-bounds UTF-16 units
+        // when copying them into the new OS-owned BSTR.
         let raw = unsafe { SysAllocStringLen(units.as_ptr(), len) };
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
@@ -233,10 +262,16 @@ fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
             .and_then(|len| u32::try_from(len).ok())
             .ok_or_else(|| "BSTR payload length should fit in u32 byte count".to_string())?;
         let layout = raw_bstr_layout(units.len())?;
+        // SAFETY: `layout` from `raw_bstr_layout` always has non-zero size (the 4-byte
+        // length prefix plus at least the terminating NUL unit), as `alloc` requires.
         let raw = unsafe { std::alloc::alloc(layout) };
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
         }
+        // SAFETY: `raw` was checked non-null above and `layout` sized it for the prefix
+        // plus (units.len() + 1) UTF-16 units, so the prefix write, the payload copy, and
+        // the trailing NUL write all stay in bounds; the copy cannot overlap because `raw`
+        // is a fresh allocation, and the u32-aligned base satisfies both u32 and u16 stores.
         unsafe {
             raw.cast::<u32>().write(len_bytes);
             let payload = raw.add(BSTR_PREFIX_BYTES).cast::<u16>();
@@ -253,16 +288,27 @@ unsafe fn raw_bstr_len_bytes(ptr: *mut u16) -> u32 {
     }
     #[cfg(target_os = "windows")]
     {
+        // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at
+        // a live BSTR, so SysStringLen may read its 4-byte byte-length prefix at ptr-4.
         unsafe { SysStringLen(ptr) }.saturating_mul(BSTR_UNIT_BYTES as u32)
     }
     #[cfg(not(target_os = "windows"))]
     {
+        // SAFETY: per this fn's contract, the non-null `ptr` is the payload pointer of a
+        // live allocation from `alloc_raw_bstr_from_units`, whose base sits
+        // BSTR_PREFIX_BYTES before the payload, so the subtraction stays inside that
+        // allocation.
         let prefix = unsafe { ptr.cast::<u8>().sub(BSTR_PREFIX_BYTES).cast::<u32>() };
+        // SAFETY: the prefix u32 was initialized with the payload byte length at
+        // allocation time, and `prefix` is u32-aligned because the allocation base is
+        // align_of::<u32>()-aligned.
         unsafe { *prefix }
     }
 }
 
 unsafe fn raw_bstr_len_units(ptr: *mut u16) -> usize {
+    // SAFETY: forwards this fn's own contract — `ptr` is null or points at a live BSTR —
+    // unchanged to `raw_bstr_len_bytes`.
     usize::try_from(unsafe { raw_bstr_len_bytes(ptr) } / BSTR_UNIT_BYTES as u32).unwrap_or(0)
 }
 
@@ -270,7 +316,12 @@ unsafe fn clone_raw_bstr(ptr: *mut u16) -> Result<*mut u16, String> {
     if ptr.is_null() {
         return Ok(core::ptr::null_mut());
     }
+    // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at a
+    // live BSTR whose length prefix is readable.
     let len = unsafe { raw_bstr_len_units(ptr) };
+    // SAFETY: the length prefix records exactly the allocated payload unit count, so `len`
+    // units starting at `ptr` are initialized and stay live for the duration of this call
+    // (the caller still owns the source BSTR).
     let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
     alloc_raw_bstr_from_units(slice)
 }
@@ -281,19 +332,31 @@ unsafe fn free_raw_bstr(ptr: *mut u16) {
     }
     #[cfg(target_os = "windows")]
     {
+        // SAFETY: `ptr` was checked non-null above and, per this fn's contract, the caller
+        // transfers ownership of a live Sys-allocated BSTR, so it is freed exactly once.
         unsafe { SysFreeString(ptr) };
     }
     #[cfg(not(target_os = "windows"))]
     {
+        // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at
+        // a live BSTR payload, so its length prefix is readable.
         let len = unsafe { raw_bstr_len_units(ptr) };
         if let Ok(layout) = raw_bstr_layout(len) {
+            // SAFETY: allocations from `alloc_raw_bstr_from_units` begin
+            // BSTR_PREFIX_BYTES before the payload pointer, so the subtraction lands on
+            // the allocation base.
             let raw = unsafe { ptr.cast::<u8>().sub(BSTR_PREFIX_BYTES) };
+            // SAFETY: `layout` recomputed from the stored unit count is identical to the
+            // layout used at allocation, and the caller transferred ownership, so the
+            // original block is deallocated exactly once.
             unsafe { std::alloc::dealloc(raw, layout) };
         }
     }
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production BSTR prefix-layout paths.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{BStr, OwnedBStrCore};
 

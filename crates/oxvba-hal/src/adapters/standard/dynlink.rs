@@ -622,9 +622,17 @@ fn variant_from_ansi_c_str(ptr: *const u8) -> Variant {
     }
     const CAP: usize = 1 << 20;
     let mut len = 0usize;
+    // SAFETY: `ptr` was checked non-null above and, under the Declare ByRef-String
+    // contract (the only caller passes the LPSTR the native callee left in the ByRef
+    // cell), points at a NUL-terminated system-codepage ANSI string; each byte read
+    // at `ptr.add(len)` is inside that string because the scan stops at the
+    // terminator, and CAP bounds the walk if the callee broke the contract.
     while len < CAP && unsafe { *ptr.add(len) } != 0 {
         len += 1;
     }
+    // SAFETY: every byte in `[ptr, ptr + len)` was just read by the terminator scan
+    // above (len < CAP), so the range is initialized, readable memory owned by the
+    // native callee's string for the duration of this borrow.
     variant_from_ansi_bytes(unsafe { std::slice::from_raw_parts(ptr, len) })
 }
 
@@ -899,9 +907,21 @@ fn unmarshal_ffi_to_variant(raw: i64, return_type: Option<&str>) -> Variant {
                 if bstr.is_null() {
                     Variant::from_string(oxvba_runtime::bstr::BStr::empty())
                 } else {
+                    // SAFETY: `bstr` was checked non-null above and, under the
+                    // `Declare … As String` return contract, is a real BSTR the DLL
+                    // allocated via SysAllocStringByteLen, so the 4-byte byte-length
+                    // prefix SysStringByteLen reads at ptr-4 exists.
                     let byte_len = unsafe { SysStringByteLen(bstr) } as usize;
+                    // SAFETY: a BSTR's allocation holds exactly `byte_len` payload
+                    // bytes after the length prefix (embedded NULs legal — the prefix,
+                    // not a terminator, bounds the data), and the BSTR stays live
+                    // until the SysFreeString below, outliving this borrow.
                     let bytes = unsafe { std::slice::from_raw_parts(bstr.cast::<u8>(), byte_len) };
                     let value = variant_from_ansi_bytes(bytes);
+                    // SAFETY: ownership of the returned BSTR transferred to us (the
+                    // caller frees under the As-String return contract); `bytes` was
+                    // fully copied into `value` above, so this is the single release
+                    // of a still-live allocation with no readers left.
                     unsafe { SysFreeString(bstr) };
                     value
                 }

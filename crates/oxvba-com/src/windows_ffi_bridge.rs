@@ -163,6 +163,9 @@ struct DllCache {
 static DLL_CACHE: Mutex<Option<DllCache>> = Mutex::new(None);
 
 #[cfg(target_os = "windows")]
+// SAFETY: these declarations transcribe the documented Win32 ABI signatures of the
+// kernel32 exports (LoadLibraryW/GetModuleHandleW/GetProcAddress and the
+// WideCharToMultiByte/MultiByteToWideChar code-page converters) exactly.
 unsafe extern "system" {
     fn LoadLibraryW(lp_lib_file_name: *const u16) -> *mut c_void;
     fn GetModuleHandleW(lp_module_name: *const u16) -> *mut c_void;
@@ -210,6 +213,9 @@ pub fn load_library(library: &str) -> Result<usize, String> {
 
     for candidate in windows_library_candidates(library) {
         let wide: Vec<u16> = candidate.encode_utf16().chain(std::iter::once(0)).collect();
+        // SAFETY: `wide` is a NUL-terminated UTF-16 buffer built just above and alive
+        // across the call; GetModuleHandleW only reads it and returns null on failure
+        // (checked below).
         let existing = unsafe { GetModuleHandleW(wide.as_ptr()) };
         if !existing.is_null() {
             let handle_val = existing as usize;
@@ -220,6 +226,9 @@ pub fn load_library(library: &str) -> Result<usize, String> {
 
     for candidate in windows_library_candidates(library) {
         let wide: Vec<u16> = candidate.encode_utf16().chain(std::iter::once(0)).collect();
+        // SAFETY: `wide` is a NUL-terminated UTF-16 buffer built just above and alive
+        // across the call; LoadLibraryW only reads it and returns null on failure
+        // (checked below).
         let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
         if !handle.is_null() {
             let handle_val = handle as usize;
@@ -250,6 +259,9 @@ pub fn ansi_c_string(text: &str) -> Vec<u8> {
     }
 
     let wide: Vec<u16> = text.encode_utf16().collect();
+    // SAFETY: `wide` is valid for `wide.len()` UTF-16 units for the duration of the
+    // call, and a null output buffer with length 0 is the documented size-query mode
+    // of WideCharToMultiByte (nothing is written).
     let required = unsafe {
         WideCharToMultiByte(
             CP_ACP,
@@ -269,6 +281,9 @@ pub fn ansi_c_string(text: &str) -> Vec<u8> {
     }
 
     let mut bytes = vec![0u8; required as usize + 1];
+    // SAFETY: `wide` is valid for `wide.len()` UTF-16 units and `bytes` was allocated
+    // just above with `required + 1` bytes, so the `required`-byte output window the
+    // converter may write is in bounds.
     let written = unsafe {
         WideCharToMultiByte(
             CP_ACP,
@@ -301,6 +316,9 @@ pub fn utf16_from_ansi(bytes: &[u8]) -> Vec<u16> {
         return Vec::new();
     }
     let len = i32::try_from(bytes.len()).unwrap_or(i32::MAX);
+    // SAFETY: `bytes` is valid for `len` bytes (`len` is clamped to at most
+    // `bytes.len()`), and a null output buffer with length 0 is the documented
+    // size-query mode of MultiByteToWideChar (nothing is written).
     let required =
         unsafe { MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
     if required <= 0 {
@@ -309,6 +327,9 @@ pub fn utf16_from_ansi(bytes: &[u8]) -> Vec<u16> {
         return bytes.iter().map(|b| u16::from(*b)).collect();
     }
     let mut units = vec![0u16; required as usize];
+    // SAFETY: `bytes` is valid for `len` bytes and `units` was allocated just above
+    // with exactly `required` u16 slots, so the output window passed to the converter
+    // is in bounds.
     let written = unsafe {
         MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, units.as_mut_ptr(), required)
     };
@@ -323,6 +344,9 @@ pub fn utf16_from_ansi(bytes: &[u8]) -> Vec<u16> {
 #[cfg(target_os = "windows")]
 pub fn get_proc_address(module: usize, name: &str) -> Result<usize, String> {
     let name_bytes: Vec<u8> = name.bytes().chain(std::iter::once(0)).collect();
+    // SAFETY: callers obtain `module` from load_library, whose cache never frees
+    // modules, so the HMODULE stays live for the process lifetime; `name_bytes` is a
+    // NUL-terminated buffer alive across the call that GetProcAddress only reads.
     let addr = unsafe { GetProcAddress(module as *mut c_void, name_bytes.as_ptr()) };
     if addr.is_null() {
         return Err(format!(
@@ -336,6 +360,10 @@ pub fn get_proc_address(module: usize, name: &str) -> Result<usize, String> {
 /// Resolves a function by ordinal from a loaded module.
 #[cfg(target_os = "windows")]
 pub fn get_proc_address_ordinal(module: usize, ordinal: u16) -> Result<usize, String> {
+    // SAFETY: callers obtain `module` from load_library, whose cache never frees
+    // modules, so the HMODULE stays live; a u16 ordinal zero-extended into the
+    // pointer's low word (high bits zero) is the documented GetProcAddress
+    // by-ordinal lookup form, so no string is dereferenced.
     let addr = unsafe { GetProcAddress(module as *mut c_void, ordinal as usize as *const u8) };
     if addr.is_null() {
         return Err(format!(
@@ -364,6 +392,14 @@ pub fn invoke_stdcall(
 
     #[cfg(target_arch = "x86_64")]
     {
+        // SAFETY: `proc_addr` is an export resolved by get_proc_address from a module
+        // load_library keeps loaded; libffi builds the Win64 CIF from each argument's
+        // actual type, and every pointer-bearing argument (AnsiString/String buffers
+        // borrowed from `args`, Pointer pins per
+        // docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md) stays alive until this
+        // consuming native call returns. That the Declare signature matches the
+        // export's true ABI is the guest's contract, exactly as in VBA 7.1
+        // (HAL_DECLARE_ABI_SPEC_V1).
         let result = unsafe { invoke_stdcall_x64(proc_addr, args, return_type) };
         Ok(result)
     }
@@ -389,6 +425,13 @@ pub fn invoke_stdcall(
                 FfiArg::Pointer(v) => raw_args.push(*v as i64),
             }
         }
+        // SAFETY: raw_invoke_shape_error rejected (above) every shape the i64
+        // register dispatch cannot express (float lanes, arity > 6); `proc_addr` is
+        // an export resolved by get_proc_address from a module load_library keeps
+        // loaded, and all pointer-bearing arguments (string buffers in `args`, helper
+        // pins per docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md) outlive the call.
+        // The Declare signature matching the export's true ABI is the guest's
+        // contract, exactly as in VBA 7.1 (HAL_DECLARE_ABI_SPEC_V1).
         let result = unsafe { invoke_stdcall_raw(proc_addr, &raw_args, return_type) };
         Ok(result)
     }
@@ -551,10 +594,15 @@ fn translate_library_name(library: &str) -> String {
 /// Returns the last dlopen/dlsym error as a String, or a generic message.
 #[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 fn dlerror_string() -> String {
+    // SAFETY: dlerror takes no arguments and returns either null or a pointer to the
+    // thread's pending NUL-terminated error string; calling it is always sound.
     let err = unsafe { libc::dlerror() };
     if err.is_null() {
         "unknown dl error".to_string()
     } else {
+        // SAFETY: `err` was checked non-null above, and dlerror's string stays valid
+        // until the next dl* call on this thread; it is copied out immediately below
+        // (`into_owned`) before any further dl* call can occur.
         let cstr = unsafe { std::ffi::CStr::from_ptr(err) };
         cstr.to_string_lossy().into_owned()
     }
@@ -584,10 +632,14 @@ pub fn load_library(library: &str) -> Result<usize, String> {
         .map_err(|_| format!("library name `{}` contains null byte", library))?;
 
     // Clear any prior error
+    // SAFETY: dlerror takes no arguments and only reads/clears the thread's pending
+    // dl error state; calling it is always sound.
     unsafe {
         libc::dlerror();
     }
 
+    // SAFETY: `c_name` is a live NUL-terminated CString that outlives the call;
+    // dlopen only reads it and returns null on failure (checked below).
     let handle = unsafe { libc::dlopen(c_name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
     if handle.is_null() {
         let err = dlerror_string();
@@ -615,10 +667,15 @@ pub fn get_proc_address(module: usize, name: &str) -> Result<usize, String> {
         .map_err(|_| format!("symbol name `{}` contains null byte", name))?;
 
     // Clear any prior error
+    // SAFETY: dlerror takes no arguments and only reads/clears the thread's pending
+    // dl error state; calling it is always sound.
     unsafe {
         libc::dlerror();
     }
 
+    // SAFETY: callers obtain `module` from load_library, whose cache never
+    // dlclose's handles, so the dlopen handle stays live; `c_name` is a live
+    // NUL-terminated CString that dlsym only reads.
     let addr = unsafe { libc::dlsym(module as *mut c_void, c_name.as_ptr()) };
     if addr.is_null() {
         let err = dlerror_string();
@@ -682,6 +739,13 @@ pub fn invoke_stdcall(
         }
     }
 
+    // SAFETY: raw_invoke_shape_error rejected (above) every shape the i64 register
+    // dispatch cannot express (float lanes, arity > 6); `proc_addr` is a symbol
+    // resolved by get_proc_address from a handle load_library keeps open, and all
+    // pointer-bearing arguments (string buffers in `args`, helper pins per
+    // docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md) outlive the call. The Declare
+    // signature matching the symbol's true C ABI is the guest's contract, exactly as
+    // in VBA 7.1 (HAL_DECLARE_ABI_SPEC_V1).
     let result = unsafe { invoke_c_abi_raw(proc_addr, &raw_args, return_type) };
     Ok(result)
 }

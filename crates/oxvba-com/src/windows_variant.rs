@@ -1716,6 +1716,10 @@ where
 }
 
 #[cfg(all(test, target_os = "windows"))]
+// Test-support code exercising the documented production marshalling paths above
+// (variant_to_com_value / set_variant_from_com_value / take_variant_result_value)
+// against OS-built VARIANT/SAFEARRAY fixtures.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
         VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,

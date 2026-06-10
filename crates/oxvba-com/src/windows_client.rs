@@ -224,6 +224,9 @@ pub fn activate_dispatch_by_prog_id(prog_id: &str) -> Result<*mut RawIDispatch, 
         data3: 0,
         data4: [0; 8],
     };
+    // SAFETY: `wide` is a NUL-terminated UTF-16 buffer built just above and alive
+    // across the call, and `&mut clsid` is a live out-slot for one GUID that
+    // CLSIDFromProgID writes on success.
     let hr = unsafe { CLSIDFromProgID(wide.as_ptr(), &mut clsid) };
     if hr < 0 {
         return Err(format!(
@@ -233,6 +236,12 @@ pub fn activate_dispatch_by_prog_id(prog_id: &str) -> Result<*mut RawIDispatch, 
     }
 
     let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    // SAFETY: `clsid` was populated by the successful CLSIDFromProgID call above,
+    // `IID_IDISPATCH` is a 'static GUID, and `&mut dispatch_ptr` is a live out-slot.
+    // An uninitialized COM apartment is not UB here: CoCreateInstance then fails
+    // with an HRESULT (e.g. CO_E_NOTINITIALIZED), which the hr/null checks below
+    // turn into an Err. On success the returned IDispatch reference is owned by the
+    // caller (one Release is owed).
     let hr = unsafe {
         CoCreateInstance(
             &clsid,

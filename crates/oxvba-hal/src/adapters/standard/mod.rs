@@ -948,6 +948,9 @@ impl StandardHostServices {
         let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
         let style_flags = if style == 0 { MB_OK } else { style as u32 };
+        // SAFETY: `text_w` and `title_w` are NUL-terminated UTF-16 buffers built just
+        // above and kept alive in locals across this blocking call; a null HWND is the
+        // documented "no owner window" form of MessageBoxW.
         let result = unsafe {
             MessageBoxW(
                 std::ptr::null_mut(),
@@ -1393,6 +1396,9 @@ fn parse_arg_err(message: &str) -> Option<u32> {
 }
 
 #[cfg(test)]
+// Test-support code exercising the documented production COM/VARIANT paths; the
+// production-side invariants are stated at the production unsafe sites.
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use std::{
         collections::VecDeque,
@@ -5100,6 +5106,8 @@ impl StandardHostServices {
         op: &'static str,
     ) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
+        // SAFETY: test-support forwarder — the caller passes a live fixture
+        // `IDispatch` pointer, satisfying the bridge method's caller contract.
         let handle = unsafe {
             self.com_bridge
                 .bind_native_dispatch_result(dispatch, prog_id_hint)

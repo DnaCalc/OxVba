@@ -1,2 +1,6 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+# A `// SAFETY:` comment above the enclosing statement/attribute counts
+# (e.g. above `if let Err(e) = unsafe { ... }`).
+accept-comment-above-statement = true
+accept-comment-above-attributes = true

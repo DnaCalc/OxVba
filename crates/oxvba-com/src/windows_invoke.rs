@@ -1415,6 +1415,11 @@ pub unsafe fn invoke_member_spec_variant_with_shared_state(
         &mut |dispatch: *mut core::ffi::c_void| {
             crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
         },
+        // SAFETY: take_variant_result_variant hands this callback a pointer
+        // that is null or carries the one reference retained via
+        // add_ref_dispatch before the result VARIANT was cleared; ownership of
+        // that reference transfers to the bindings map, satisfying
+        // bind_native_runtime_object_result_shared's contract.
         &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
             crate::windows_runtime_state::bind_native_runtime_object_result_shared(
                 com_state,
@@ -1455,6 +1460,11 @@ pub unsafe fn invoke_direct_dispid_variant_with_shared_state(
         &mut |dispatch: *mut core::ffi::c_void| {
             crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
         },
+        // SAFETY: take_variant_result_variant hands this callback a pointer
+        // that is null or carries the one reference retained via
+        // add_ref_dispatch before the result VARIANT was cleared; ownership of
+        // that reference transfers to the bindings map, satisfying
+        // bind_native_runtime_object_result_shared's contract.
         &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
             crate::windows_runtime_state::bind_native_runtime_object_result_shared(
                 com_state,
@@ -1536,7 +1546,14 @@ where
     )?;
     match plan {
         crate::UnboundRuntimeInvokePlan::MemberSpec(spec) => {
+            // SAFETY: this unsafe fn's contract requires `dispatch` to be a
+            // live IDispatch for the duration of the call; the in-module
+            // caller passes the pointer recovered from a live binding entry,
+            // which the bindings map keeps retained.
             let dispid = unsafe { crate::get_dispid_by_name(dispatch, &spec.name) }?;
+            // SAFETY: same live, bindings-map-retained `dispatch` as the
+            // dispid lookup above; the shared-state helper installs callbacks
+            // that uphold COM retention rules for arguments and results.
             unsafe {
                 invoke_member_spec_variant_with_shared_state(
                     dispatch.cast(),
@@ -1549,6 +1566,10 @@ where
             }
             .map_err(|failure| render_invoke_fault_message(&failure))
         }
+        // SAFETY: this unsafe fn's contract requires `dispatch` to be a live
+        // IDispatch (the in-module caller passes the bindings-map-retained
+        // pointer); the shared-state helper installs callbacks that uphold COM
+        // retention rules for arguments and results.
         crate::UnboundRuntimeInvokePlan::DirectGetOrCall { dispid } => unsafe {
             // Invoke kind is unknown for this trusted dispid, so let the server choose
             // between a method call and a property read. DAO/Jet strictly reject a method
@@ -1607,6 +1628,9 @@ where
         let mut state = com_state.lock().map_err(|_| {
             "COM-E-STATE-LOCK-POISONED: dispatch_invoke state lock poisoned".to_string()
         })?;
+        // SAFETY: `dispatch` was recovered from a live bindings-map entry
+        // (checked non-zero above); the bindings map owns one retained
+        // IDispatch reference, keeping the pointer live for this lookup.
         unsafe {
             crate::resolve_member_dispid_cached(
                 &mut state,
@@ -1620,6 +1644,10 @@ where
     };
     let mut invoke_member_spec =
         |dispid: i32, spec: &crate::ComMemberSpec, invoke_args: &[ComInvokeArg], prog_id: &str| {
+            // SAFETY: `dispatch` was recovered from a live bindings-map entry
+            // whose retained IDispatch reference outlives this call (the
+            // invoking runtime holds the object); the shared-state helper
+            // installs callbacks that uphold COM retention rules.
             unsafe {
                 invoke_member_spec_variant_with_shared_state(
                     dispatch.cast(),
@@ -1637,6 +1665,10 @@ where
                                     requires_argument: bool,
                                     invoke_args: &[ComInvokeArg],
                                     prog_id: &str| {
+        // SAFETY: `dispatch` was recovered from a live bindings-map entry
+        // whose retained IDispatch reference outlives this call (the invoking
+        // runtime holds the object); the shared-state helper installs
+        // callbacks that uphold COM retention rules.
         unsafe {
             invoke_direct_dispid_variant_with_shared_state(
                 dispatch.cast(),
@@ -1650,6 +1682,9 @@ where
         }
         .map_err(|failure| render_invoke_fault_message(&failure))
     };
+    // SAFETY: `dispatch` was recovered from a live bindings-map entry whose
+    // retained IDispatch reference outlives this call (the invoking runtime
+    // holds the object), as required by the callee's contract.
     let mut invoke_bound_dispatch = |member: i32, invoke_args: &[ComInvokeArg], prog_id: &str| unsafe {
         invoke_bound_dispatch_variant_with_shared_state(
             dispatch,

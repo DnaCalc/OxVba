@@ -315,6 +315,8 @@ struct ITypeInfoVtbl {
 // ── FFI declarations ──
 
 #[cfg(target_os = "windows")]
+// SAFETY: signatures transcribed from oleauto.h (oleaut32 exports) with the stdcall
+// `system` ABI; each call site documents the argument invariants it upholds.
 unsafe extern "system" {
     fn LoadRegTypeLib(
         rguid: *const windows_sys::core::GUID,
@@ -340,6 +342,12 @@ unsafe fn bstr_to_string(bstr: *mut u16) -> Option<String> {
     if bstr.is_null() {
         return None;
     }
+    // SAFETY: `bstr` was checked non-null above and the caller passes a live BSTR.
+    // BSTR layout guarantees a UTF-16 NUL terminator at index SysStringLen (the
+    // 4-byte byte-length prefix sits at ptr-4), so the NUL scan terminates inside
+    // the allocation and `from_raw_parts(bstr, len)` covers only in-bounds,
+    // initialized units. Embedded NULs are legal in BSTRs and merely truncate the
+    // converted text — a fidelity limit, not a memory-safety hazard.
     unsafe {
         let mut len = 0usize;
         while *bstr.add(len) != 0 {
@@ -352,6 +360,10 @@ unsafe fn bstr_to_string(bstr: *mut u16) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 unsafe fn bstr_to_string_and_free(bstr: *mut u16) -> Option<String> {
+    // SAFETY: the caller transfers ownership of `bstr` (a live BSTR or null).
+    // `bstr_to_string` only reads it under that same precondition, and
+    // SysFreeString is called at most once on a non-null pointer, returning the
+    // allocation to the OS BSTR allocator; the pointer is not used afterward.
     unsafe {
         let result = bstr_to_string(bstr);
         if !bstr.is_null() {
@@ -385,6 +397,8 @@ fn guid_to_string(guid: &windows_sys::core::GUID) -> String {
 fn reg_query_default_string(subkey: &str) -> Result<String, String> {
     let wide_subkey: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
     let mut key: HKEY = std::ptr::null_mut();
+    // SAFETY: `wide_subkey` is a live NUL-terminated UTF-16 buffer and `key` a live
+    // out-slot; RegOpenKeyExW only writes the opened HKEY through `key` on success.
     let open_status = unsafe {
         RegOpenKeyExW(
             HKEY_CLASSES_ROOT,
@@ -400,6 +414,14 @@ fn reg_query_default_string(subkey: &str) -> Result<String, String> {
         ));
     }
 
+    // SAFETY: ASSUMPTION — `key` was opened successfully above (open_status == 0),
+    // so it is a valid HKEY until the RegCloseKey below, and the first
+    // RegQueryValueExW call only sizes the value (null data pointer). The second
+    // call declares the in/out `bytes` as the buffer capacity while `buffer`
+    // actually holds `(bytes / 2) * 2` bytes; this is sound only if the REG_SZ
+    // value's byte length is even (true for well-formed UTF-16 registry strings —
+    // an odd-length value would overstate the capacity by one byte). The API never
+    // writes past the declared capacity (ERROR_MORE_DATA instead).
     let result = unsafe {
         let mut value_type = 0u32;
         let mut bytes = 0u32;
@@ -444,6 +466,8 @@ fn reg_query_default_string(subkey: &str) -> Result<String, String> {
         }
     };
 
+    // SAFETY: `key` was opened successfully above (early return otherwise) and the
+    // queries are finished; this closes it exactly once.
     unsafe {
         RegCloseKey(key);
     }
@@ -499,6 +523,8 @@ fn split_prog_id_name(prog_id_name: &str) -> Result<(String, Option<String>), St
 fn reg_enum_subkeys(subkey: &str) -> Result<Vec<String>, String> {
     let wide_subkey: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
     let mut key: HKEY = null_mut();
+    // SAFETY: `wide_subkey` is a live NUL-terminated UTF-16 buffer and `key` a live
+    // out-slot; RegOpenKeyExW only writes the opened HKEY through `key` on success.
     let open_status = unsafe {
         RegOpenKeyExW(
             HKEY_CLASSES_ROOT,
@@ -519,6 +545,10 @@ fn reg_enum_subkeys(subkey: &str) -> Result<Vec<String>, String> {
     loop {
         let mut buffer = vec![0u16; 512];
         let mut len = (buffer.len() - 1) as u32;
+        // SAFETY: `key` is a valid open HKEY (open_status == 0 above); `buffer` and
+        // `len` are live locals with `len` set to one less than the buffer
+        // capacity, so RegEnumKeyExW cannot write past the allocation and always
+        // has room for the terminating NUL.
         let status = unsafe {
             RegEnumKeyExW(
                 key,
@@ -535,6 +565,8 @@ fn reg_enum_subkeys(subkey: &str) -> Result<Vec<String>, String> {
             break;
         }
         if status != 0 {
+            // SAFETY: `key` was opened successfully above; this early-exit path
+            // closes it exactly once and does not use it afterward.
             unsafe { RegCloseKey(key) };
             return Err(format!(
                 "RegEnumKeyExW failed for `HKCR\\{subkey}` at index {index} with status 0x{status:08X}"
@@ -544,6 +576,8 @@ fn reg_enum_subkeys(subkey: &str) -> Result<Vec<String>, String> {
         index += 1;
     }
 
+    // SAFETY: `key` was opened successfully above and enumeration is finished;
+    // this closes it exactly once.
     unsafe { RegCloseKey(key) };
     Ok(names)
 }
@@ -922,12 +956,21 @@ unsafe fn audit_typedesc(
 #[cfg(target_os = "windows")]
 pub fn audit_typelib_shapes(ptlib: *mut c_void) -> Result<TypeLibShapeAudit, String> {
     let mut audit = TypeLibShapeAudit::default();
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
     audit.type_count = count;
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK {
             continue;
@@ -935,10 +978,22 @@ pub fn audit_typelib_shapes(ptlib: *mut c_void) -> Result<TypeLibShapeAudit, Str
         increment_count(&mut audit.typekind_counts, typekind_label(typekind));
 
         let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; on S_OK the OS stores a
+        // retained ITypeInfo* into the live `ptinfo` slot, and this loop iteration
+        // releases that reference after use.
         let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
         if hr != COM_S_OK || ptinfo.is_null() {
             continue;
         }
+        // SAFETY: `ptinfo` was checked S_OK and non-null above, so it is a live
+        // ITypeInfo whose first field is its vtable (ITypeInfoVtbl prefix per
+        // oaidl.h). GetTypeAttr/GetFuncDesc hand out COM-owned descriptors that
+        // stay valid until the matching ReleaseTypeAttr/ReleaseFuncDesc calls
+        // below, and both are S_OK/null-checked before being dereferenced.
+        // `lprgelemdescparam` holds `cParams` ELEMDESCs per the FUNCDESC contract,
+        // with `cparams` clamped non-negative before indexing (W1-hal-002); the
+        // FUNCDESC field layout itself is pinned by the static asserts above the
+        // struct. The trailing Release balances GetTypeInfo's retained reference.
         unsafe {
             let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
             let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
@@ -993,6 +1048,10 @@ pub fn load_typelib_from_registry(
     lcid: u32,
 ) -> Result<*mut c_void, String> {
     let mut ptlib: *mut c_void = std::ptr::null_mut();
+    // SAFETY: FFI into oleaut32. `libid` is a live reference for the duration of
+    // the call and `ptlib` a live out-slot; on success LoadRegTypeLib writes one
+    // retained ITypeLib* that the caller owns and must release via
+    // `release_typelib`.
     let hr = unsafe { LoadRegTypeLib(libid, major, minor, lcid, &mut ptlib) };
     if hr != COM_S_OK || ptlib.is_null() {
         return Err(format!(
@@ -1012,6 +1071,9 @@ pub fn load_typelib_from_registry(
 pub fn load_typelib_from_path(path: &str) -> Result<*mut c_void, String> {
     let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     let mut ptlib: *mut c_void = std::ptr::null_mut();
+    // SAFETY: FFI into oleaut32. `wide` is a live NUL-terminated UTF-16 path and
+    // `ptlib` a live out-slot; on success LoadTypeLibEx writes one retained
+    // ITypeLib* that the caller owns and must release via `release_typelib`.
     let hr = unsafe {
         LoadTypeLibEx(wide.as_ptr(), 2 /* REGKIND_NONE */, &mut ptlib)
     };
@@ -1038,7 +1100,13 @@ pub fn resolve_typelib_identity_from_registry(
         let lcid = request.lcid_hint.unwrap_or(0);
 
         let ptlib = load_typelib_from_registry(&guid, major, minor, lcid)?;
+        // SAFETY: `ptlib` was loaded and null-checked by the load helper just
+        // above and is not released until the block below, so
+        // `extract_typelib_identity` operates on a live ITypeLib throughout.
         let identity = unsafe { extract_typelib_identity(ptlib, request)? };
+        // SAFETY: `ptlib` is the live ITypeLib returned by the load helper above;
+        // this Release balances the load's retained reference and the pointer is
+        // not used afterward.
         unsafe {
             let vtbl = *(ptlib as *const *const ITypeLibVtbl);
             ((*vtbl).release)(ptlib);
@@ -1049,7 +1117,13 @@ pub fn resolve_typelib_identity_from_registry(
     // Try loading via importlib path hint
     if let Some(ref importlib) = request.importlib_hint {
         let ptlib = load_typelib_from_path(importlib)?;
+        // SAFETY: `ptlib` was loaded and null-checked by the load helper just
+        // above and is not released until the block below, so
+        // `extract_typelib_identity` operates on a live ITypeLib throughout.
         let identity = unsafe { extract_typelib_identity(ptlib, request)? };
+        // SAFETY: `ptlib` is the live ITypeLib returned by the load helper above;
+        // this Release balances the load's retained reference and the pointer is
+        // not used afterward.
         unsafe {
             let vtbl = *(ptlib as *const *const ITypeLibVtbl);
             ((*vtbl).release)(ptlib);
@@ -1077,6 +1151,9 @@ pub fn resolve_typelib_identity_from_prog_id(
         data3: 0,
         data4: [0; 8],
     };
+    // SAFETY: `wide_prog_id` is a live NUL-terminated UTF-16 buffer and `clsid` a
+    // live local; CLSIDFromProgID only reads the string and writes the GUID
+    // through the out pointer.
     let hr = unsafe { CLSIDFromProgID(wide_prog_id.as_ptr(), &mut clsid) };
     if hr < 0 {
         return Err(format!(
@@ -1241,11 +1318,20 @@ unsafe fn extract_typelib_identity(
 #[cfg(target_os = "windows")]
 pub fn enumerate_typelib_members(ptlib: *mut c_void) -> Result<Vec<TypeLibMemberMetadata>, String> {
     let mut members = Vec::new();
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK {
             continue;
@@ -1256,12 +1342,22 @@ pub fn enumerate_typelib_members(ptlib: *mut c_void) -> Result<Vec<TypeLibMember
         }
 
         let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; on S_OK the OS stores a
+        // retained ITypeInfo* into the live `ptinfo` slot, and this loop iteration
+        // releases that reference after use.
         let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
         if hr != COM_S_OK || ptinfo.is_null() {
             continue;
         }
 
+        // SAFETY: `ptinfo` was checked S_OK and non-null above, so it is the live
+        // ITypeInfo that `extract_members_from_typeinfo` requires; it stays alive
+        // until the release block below.
         let result = unsafe { extract_members_from_typeinfo(ptinfo) };
+        // SAFETY: `ptinfo` was obtained S_OK/non-null from GetTypeInfo above and is
+        // still live; its first field is its vtable (ITypeInfoVtbl prefix per
+        // oaidl.h). This Release balances GetTypeInfo's retained reference and the
+        // pointer is not used afterward.
         unsafe {
             let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
             ((*ti_vtbl).release)(ptinfo);
@@ -1278,29 +1374,51 @@ pub fn enumerate_typelib_members_for_coclass(
     ptlib: *mut c_void,
     coclass_name: &str,
 ) -> Result<Vec<TypeLibMemberMetadata>, String> {
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK || typekind != TKIND_COCLASS {
             continue;
         }
 
         let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; on S_OK the OS stores a
+        // retained ITypeInfo* into the live `ptinfo` slot, and this loop iteration
+        // releases that reference after use.
         let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
         if hr != COM_S_OK || ptinfo.is_null() {
             continue;
         }
 
+        // SAFETY: `ptinfo` was checked S_OK and non-null above; `typeinfo_name`
+        // only performs vtable calls on that live ITypeInfo and frees the BSTR it
+        // receives.
         let is_match = unsafe { typeinfo_name(ptinfo) }
             .is_some_and(|name| name.eq_ignore_ascii_case(coclass_name));
         let result = if is_match {
+            // SAFETY: `ptinfo` is the live coclass ITypeInfo checked S_OK/non-null
+            // above; the callee only performs vtable calls on it and releases
+            // every descriptor and referenced ITypeInfo it acquires.
             unsafe { extract_members_from_coclass_default_interface(ptinfo) }
         } else {
             Ok(Vec::new())
         };
+        // SAFETY: `ptinfo` was obtained S_OK/non-null from GetTypeInfo above and is
+        // still live; its first field is its vtable (ITypeInfoVtbl prefix per
+        // oaidl.h). This Release balances GetTypeInfo's retained reference and the
+        // pointer is not used afterward.
         unsafe {
             let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
             ((*ti_vtbl).release)(ptinfo);
@@ -1324,29 +1442,50 @@ pub fn enumerate_typelib_members_for_interface(
     ptlib: *mut c_void,
     interface_name: &str,
 ) -> Result<Vec<TypeLibMemberMetadata>, String> {
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK || (typekind != TKIND_DISPATCH && typekind != TKIND_INTERFACE) {
             continue;
         }
 
         let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; on S_OK the OS stores a
+        // retained ITypeInfo* into the live `ptinfo` slot, and this loop iteration
+        // releases that reference after use.
         let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
         if hr != COM_S_OK || ptinfo.is_null() {
             continue;
         }
 
+        // SAFETY: `ptinfo` was checked S_OK and non-null above; `typeinfo_name`
+        // only performs vtable calls on that live ITypeInfo and frees the BSTR it
+        // receives.
         let is_match = unsafe { typeinfo_name(ptinfo) }
             .is_some_and(|name| name.eq_ignore_ascii_case(interface_name));
         let result = if is_match {
+            // SAFETY: `ptinfo` is the live ITypeInfo checked S_OK/non-null above;
+            // it stays alive until the release block below.
             unsafe { extract_members_from_typeinfo(ptinfo) }
         } else {
             Ok(Vec::new())
         };
+        // SAFETY: `ptinfo` was obtained S_OK/non-null from GetTypeInfo above and is
+        // still live; its first field is its vtable (ITypeInfoVtbl prefix per
+        // oaidl.h). This Release balances GetTypeInfo's retained reference and the
+        // pointer is not used afterward.
         unsafe {
             let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
             ((*ti_vtbl).release)(ptinfo);
@@ -1571,23 +1710,42 @@ unsafe fn extract_members_from_coclass_default_interface(
 #[cfg(target_os = "windows")]
 pub fn enumerate_typelib_events(ptlib: *mut c_void) -> Result<Vec<TypeLibEventMetadata>, String> {
     let mut events = Vec::new();
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK || typekind != TKIND_COCLASS {
             continue;
         }
 
         let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; on S_OK the OS stores a
+        // retained ITypeInfo* into the live `ptinfo` slot, and this loop iteration
+        // releases that reference after use.
         let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
         if hr != COM_S_OK || ptinfo.is_null() {
             continue;
         }
 
+        // SAFETY: `ptinfo` was checked S_OK and non-null above, so it is the live
+        // coclass ITypeInfo that `extract_events_from_coclass` requires; it stays
+        // alive until the release block below.
         let result = unsafe { extract_events_from_coclass(ptinfo) };
+        // SAFETY: `ptinfo` was obtained S_OK/non-null from GetTypeInfo above and is
+        // still live; its first field is its vtable (ITypeInfoVtbl prefix per
+        // oaidl.h). This Release balances GetTypeInfo's retained reference and the
+        // pointer is not used afterward.
         unsafe {
             let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
             ((*ti_vtbl).release)(ptinfo);
@@ -1604,29 +1762,50 @@ pub fn enumerate_typelib_events_for_coclass(
     ptlib: *mut c_void,
     coclass_name: &str,
 ) -> Result<Vec<TypeLibEventMetadata>, String> {
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK || typekind != TKIND_COCLASS {
             continue;
         }
 
         let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; on S_OK the OS stores a
+        // retained ITypeInfo* into the live `ptinfo` slot, and this loop iteration
+        // releases that reference after use.
         let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
         if hr != COM_S_OK || ptinfo.is_null() {
             continue;
         }
 
+        // SAFETY: `ptinfo` was checked S_OK and non-null above; `typeinfo_name`
+        // only performs vtable calls on that live ITypeInfo and frees the BSTR it
+        // receives.
         let is_match = unsafe { typeinfo_name(ptinfo) }
             .is_some_and(|name| name.eq_ignore_ascii_case(coclass_name));
         let result = if is_match {
+            // SAFETY: `ptinfo` is the live coclass ITypeInfo checked S_OK/non-null
+            // above; it stays alive until the release block below.
             unsafe { extract_events_from_coclass(ptinfo) }
         } else {
             Ok(Vec::new())
         };
+        // SAFETY: `ptinfo` was obtained S_OK/non-null from GetTypeInfo above and is
+        // still live; its first field is its vtable (ITypeInfoVtbl prefix per
+        // oaidl.h). This Release balances GetTypeInfo's retained reference and the
+        // pointer is not used afterward.
         unsafe {
             let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
             ((*ti_vtbl).release)(ptinfo);
@@ -1715,11 +1894,20 @@ unsafe fn extract_events_from_coclass(
 /// Extracts the ProgID for a CoClass from the typelib (for As New support).
 #[cfg(target_os = "windows")]
 pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK || typekind != TKIND_COCLASS {
             continue;
@@ -1727,6 +1915,9 @@ pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
 
         // Get the CoClass name — this is often the ProgID (e.g., "Dictionary" for Scripting.Dictionary)
         let mut name_bstr: *mut u16 = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib with a valid type index
+        // (`i < count`); `name_bstr` is a live out-slot. On S_OK the OS allocates a
+        // BSTR that we then own and free via `bstr_to_string_and_free`.
         let hr = unsafe {
             ((*vtbl).get_documentation)(
                 ptlib,
@@ -1738,9 +1929,14 @@ pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
             )
         };
         if hr == COM_S_OK {
+            // SAFETY: GetDocumentation returned S_OK, so `name_bstr` is either
+            // null or a BSTR we now own; the helper frees it exactly once.
             let name = unsafe { bstr_to_string_and_free(name_bstr) };
             // Get the library name for constructing the full ProgID
             let mut lib_name_bstr: *mut u16 = std::ptr::null_mut();
+            // SAFETY: vtable call on the live ITypeLib; index -1 is MEMBERID_NIL
+            // (library-level documentation) and `lib_name_bstr` is a live out-slot
+            // whose BSTR, if any, is freed just below.
             let _ = unsafe {
                 ((*vtbl).get_documentation)(
                     ptlib,
@@ -1751,6 +1947,8 @@ pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
                     std::ptr::null_mut(),
                 )
             };
+            // SAFETY: `lib_name_bstr` is either null or a BSTR we own from the
+            // GetDocumentation call above; the helper frees it exactly once.
             let lib_name = unsafe { bstr_to_string_and_free(lib_name_bstr) };
             if let (Some(lib), Some(cls)) = (lib_name, name) {
                 return Some(format!("{}.{}", lib, cls));
@@ -1762,17 +1960,29 @@ pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 pub fn extract_coclass_prog_id_for_name(ptlib: *mut c_void, coclass_name: &str) -> Option<String> {
+    // SAFETY: callers obtain `ptlib` from `load_typelib_from_registry`/
+    // `load_typelib_from_path` and release it via `release_typelib` only after this
+    // call returns, so it is a live ITypeLib*; COM guarantees an interface
+    // pointer's first pointer-sized field is its vtable pointer, and ITypeLibVtbl
+    // mirrors the oaidl.h vtable prefix.
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    // SAFETY: `vtbl` was read from the live ITypeLib just above; GetTypeInfoCount
+    // is a plain vtable call on that same interface pointer with no out-params.
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
     for i in 0..count {
         let mut typekind: u32 = 0;
+        // SAFETY: vtable call on the live ITypeLib; `typekind` is a live local
+        // out-slot that the OS writes before returning.
         let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
         if hr != COM_S_OK || typekind != TKIND_COCLASS {
             continue;
         }
 
         let mut name_bstr: *mut u16 = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib with a valid type index
+        // (`i < count`); `name_bstr` is a live out-slot. On S_OK the OS allocates a
+        // BSTR that we then own and free via `bstr_to_string_and_free`.
         let hr = unsafe {
             ((*vtbl).get_documentation)(
                 ptlib,
@@ -1787,6 +1997,8 @@ pub fn extract_coclass_prog_id_for_name(ptlib: *mut c_void, coclass_name: &str) 
             continue;
         }
 
+        // SAFETY: GetDocumentation returned S_OK, so `name_bstr` is either null or
+        // a BSTR we now own; the helper frees it exactly once.
         let Some(name) = (unsafe { bstr_to_string_and_free(name_bstr) }) else {
             continue;
         };
@@ -1795,6 +2007,9 @@ pub fn extract_coclass_prog_id_for_name(ptlib: *mut c_void, coclass_name: &str) 
         }
 
         let mut lib_name_bstr: *mut u16 = std::ptr::null_mut();
+        // SAFETY: vtable call on the live ITypeLib; index -1 is MEMBERID_NIL
+        // (library-level documentation) and `lib_name_bstr` is a live out-slot
+        // whose BSTR, if any, is freed just below.
         let _ = unsafe {
             ((*vtbl).get_documentation)(
                 ptlib,
@@ -1805,6 +2020,8 @@ pub fn extract_coclass_prog_id_for_name(ptlib: *mut c_void, coclass_name: &str) 
                 std::ptr::null_mut(),
             )
         };
+        // SAFETY: `lib_name_bstr` is either null or a BSTR we own from the
+        // GetDocumentation call above; the helper frees it exactly once.
         let lib_name = unsafe { bstr_to_string_and_free(lib_name_bstr) };
         if let Some(lib) = lib_name {
             return Some(format!("{}.{}", lib, name));
@@ -1956,6 +2173,8 @@ mod tests {
             // Look for Dictionary.Add
             let has_add = members.iter().any(|m| m.name == "Add");
             assert!(has_add, "scrrun should have Add member");
+            // SAFETY: `ptlib` came from `load_typelib_from_registry` above and is
+            // released exactly once here, satisfying `release_typelib`'s contract.
             unsafe { release_typelib(ptlib) };
         }
         // It's OK if this fails on systems without scrrun registered

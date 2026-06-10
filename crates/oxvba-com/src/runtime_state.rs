@@ -267,7 +267,16 @@ impl ComEventCallbackValue {
 // via sink release; the residual exposure is a host that hands its last
 // strong `Arc<Mutex<WindowsComClientState>>` to another thread itself. A
 // process-global termination queue would close that for good.
+// SAFETY: the wrapped VARIANT owns or atomically addrefs every BSTR, SAFEARRAY,
+// and IUnknown payload it carries (deep clones, atomic refcounts — see the block
+// comment above), so moving the value to another thread transfers sole ownership
+// of memory that is valid there; the W1-com-007 foreign-thread-drop residual is
+// documented above and mitigated since W1-com-008 by sinks holding the client
+// state weakly.
 unsafe impl Send for ComEventCallbackValue {}
+// SAFETY: same ownership argument as the Send impl above; shared references only
+// expose read access to the owned VARIANT (`variant()`/`to_com_value` never
+// mutate), so concurrent shared reads cannot race.
 unsafe impl Sync for ComEventCallbackValue {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
