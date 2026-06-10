@@ -97,6 +97,9 @@ pub fn library_constant(name: &str) -> Option<LibraryConstValue> {
         "vblet" => Int(4),
         "vbset" => Int(8),
         "vbnullchar" => Str("\0".into()),
+        // An empty string at the VBA level (compares/assigns as ""); the
+        // null-pointer distinction only matters at the `Declare` boundary.
+        "vbnullstring" => Str("".into()),
         "vbback" => Str("\u{0008}".into()),
         "vbformfeed" => Str("\u{000C}".into()),
         "vbverticaltab" => Str("\u{000B}".into()),

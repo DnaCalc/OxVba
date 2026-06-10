@@ -179,6 +179,21 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Enter a procedure body after its header (modifiers, keyword, name,
+    /// params, return type). A single-line procedure puts its whole body and
+    /// `End <kw>` after a `:` on the same physical line
+    /// (`Property Get X() As Long: X = m_X: End Property`); consume that
+    /// separator so the body block parses the inline statements (which stop at
+    /// `End`). Otherwise consume the rest of the header line as usual.
+    fn enter_proc_body(&mut self) {
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Colon) {
+            self.bump();
+        } else {
+            self.eat_to_eol();
+        }
+    }
+
     fn eat_to_statement_end(&mut self) {
         while !self.at_eof()
             && !self.at(SyntaxKind::Newline)
@@ -671,6 +686,14 @@ impl<'a> Parser<'a> {
             self.bump(); // :=
             self.eat_expr_whitespace();
         }
+        // Call-site passing-mode override: `ByVal expr` / `ByRef expr` (the
+        // CopyMemory/API idiom forcing a value or reference at the call). The
+        // keyword is kept as a leading token of the argument segment; the
+        // binder honoring it is tracked separately.
+        if self.at(SyntaxKind::KwByVal) || self.at(SyntaxKind::KwByRef) {
+            self.bump();
+            self.eat_expr_whitespace();
+        }
         self.parse_expr_bp(0);
         self.eat_expr_whitespace();
         if allow_to && self.at(SyntaxKind::KwTo) {
@@ -932,8 +955,8 @@ impl<'a> Parser<'a> {
             self.parse_param_list();
         }
 
-        // Consume to end of line
-        self.eat_to_eol();
+        // Header → body (inline `: … : End Sub`, or the rest of the line)
+        self.enter_proc_body();
 
         // Body
         self.parse_block(&[SyntaxKind::KwEnd]);
@@ -998,7 +1021,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.eat_to_eol();
+        // Header → body (inline `: … : End Function`, or the rest of the line)
+        self.enter_proc_body();
 
         // Body
         self.parse_block(&[SyntaxKind::KwEnd]);
@@ -1062,7 +1086,8 @@ impl<'a> Parser<'a> {
             self.parse_type_ref();
         }
 
-        self.eat_to_eol();
+        // Header → body (inline `: … : End Property`, or the rest of the line)
+        self.enter_proc_body();
 
         // Body
         self.parse_block(&[SyntaxKind::KwEnd]);

@@ -340,6 +340,34 @@ fn scalar_boolean_like_const_expression_executes() {
 }
 
 #[test]
+fn single_line_function_body_executes() {
+    // A whole `Function … : body : End Function` on one physical line (the
+    // colon-separated single-line proc idiom, used heavily for trivial
+    // accessors) parses and runs.
+    let snap = run("Sub Main()\nDim r As Long\nr = Doubled(21)\nEnd Sub\n\
+         Public Function Doubled(ByVal n As Long) As Long: Doubled = n * 2: End Function");
+    assert!(
+        snap.contains(&Variant::from_i32(42)),
+        "expected single-line function result 42 in {snap:?}"
+    );
+}
+
+#[test]
+fn byval_call_argument_modifier_parses_and_runs() {
+    // `ByVal expr` / `ByRef expr` as a call-site passing-mode override (the
+    // CopyMemory/API idiom) parses and binds; here it matches the parameter's
+    // own ByVal, so the call runs and returns the value unchanged.
+    let snap = run(
+        "Sub Main()\nDim r As Long\nDim x As Long\nx = 9\nr = Echo(ByVal x)\nEnd Sub\n\
+         Public Function Echo(ByVal n As Long) As Long\nEcho = n\nEnd Function",
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(9)),
+        "expected ByVal call-arg result 9 in {snap:?}"
+    );
+}
+
+#[test]
 fn replace_honors_start_count_and_compare() {
     // start drops the prefix before it; count limits replacements; compare=1
     // matches case-insensitively.
