@@ -1369,7 +1369,10 @@ unsafe fn extract_members_from_typeinfo(
         let fd = &*pfuncdesc;
         let memid = fd.memid;
         let invkind = fd.invkind;
-        let cparams = fd.cparams as u32;
+        // Clamp like the audit path: `cParams` is i16 in COM-owned memory, and a
+        // corrupt typelib reporting a negative count would sign-extend into a
+        // multi-billion ELEMDESC walk / allocation (W1-hal-002).
+        let cparams = fd.cparams.max(0) as u32;
 
         // Get function name and parameter names
         let max_names = cparams + 1;
