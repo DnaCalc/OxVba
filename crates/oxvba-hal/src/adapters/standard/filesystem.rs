@@ -1266,6 +1266,96 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::empty())
     }
 
+    fn cur_dir_variant(&self, _drive: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "curdir"));
+        }
+        // A read of process state; the deterministic lane reports the empty
+        // string rather than leaking the real working directory.
+        if self.native_fs_enabled() {
+            let dir = std::env::current_dir().map_err(|err| {
+                HalError::adapter_fault(self.profile, capability, "curdir", err.to_string())
+            })?;
+            Ok(Variant::from_string(BStr::from(
+                dir.to_string_lossy().as_ref(),
+            )))
+        } else {
+            Ok(Variant::from_string(BStr::empty()))
+        }
+    }
+
+    fn ch_dir_variant(&self, path: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "chdir"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "chdir"));
+        }
+        if self.native_fs_enabled() {
+            let dir = self.variant_to_path(&path, capability, "chdir", "path")?;
+            std::env::set_current_dir(&dir).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "chdir",
+                    format!("failed to change directory to {}: {err}", dir.display()),
+                )
+            })?;
+        }
+        Ok(Variant::from_i32(0))
+    }
+
+    fn file_len_variant(&self, path: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "filelen"));
+        }
+        if self.native_fs_enabled() {
+            let p = self.variant_to_path(&path, capability, "filelen", "path")?;
+            let len = fs::metadata(&p).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "filelen",
+                    format!("failed to stat {}: {err}", p.display()),
+                )
+            })?;
+            // VBA `FileLen` returns a `Long`.
+            Ok(Variant::from_i32(len.len().min(i32::MAX as u64) as i32))
+        } else {
+            Ok(Variant::from_i32(0))
+        }
+    }
+
+    fn file_copy_variant(&self, source: Variant, dest: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "filecopy"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "filecopy"));
+        }
+        if self.native_fs_enabled() {
+            let src = self.variant_to_path(&source, capability, "filecopy", "source")?;
+            let dst = self.variant_to_path(&dest, capability, "filecopy", "destination")?;
+            fs::copy(&src, &dst).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "filecopy",
+                    format!(
+                        "failed to copy {} to {}: {err}",
+                        src.display(),
+                        dst.display()
+                    ),
+                )
+            })?;
+        }
+        Ok(Variant::from_i32(0))
+    }
+
     fn name_variant(&self, old_path: Variant, new_path: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {

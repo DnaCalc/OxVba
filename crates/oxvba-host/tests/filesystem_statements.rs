@@ -39,6 +39,36 @@ fn mkdir_creates_a_real_directory() {
 }
 
 #[test]
+fn filecopy_and_filelen_round_trip() {
+    // FileCopy duplicates a file; FileLen reports the copy's byte size; CurDir
+    // returns a non-empty working directory. (Snapshot order: globals.)
+    let dir = unique_temp_dir("fileops");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let src = dir.join("src.bin");
+    let dst = dir.join("dst.bin");
+    std::fs::write(&src, b"abcde").expect("seed src"); // 5 bytes
+    let source = format!(
+        "Public n As Long\nPublic cwd As String\n\
+         Sub Main()\n    FileCopy \"{src}\", \"{dst}\"\n    n = FileLen(\"{dst}\")\n    cwd = CurDir()\nEnd Sub\n",
+        src = vba_literal(&src),
+        dst = vba_literal(&dst),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let copied = dst.is_file();
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert!(copied, "FileCopy did not create {}", dst.display());
+    assert_eq!(snap[0].as_i32(), Some(5), "FileLen should be 5: {snap:?}");
+    assert!(
+        snap[1].as_bstr().is_some_and(|s| !s.as_str().is_empty()),
+        "CurDir should be non-empty: {snap:?}"
+    );
+}
+
+#[test]
 fn rmdir_removes_an_empty_directory() {
     let dir = unique_temp_dir("rmdir");
     let _ = std::fs::remove_dir_all(&dir);

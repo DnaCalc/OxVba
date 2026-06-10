@@ -183,6 +183,18 @@ pub trait FileSystemHal: Send + Sync {
     fn rmdir_variant(&self, _path: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "rmdir_variant")
     }
+    fn cur_dir_variant(&self, _drive: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "cur_dir_variant")
+    }
+    fn ch_dir_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "ch_dir_variant")
+    }
+    fn file_len_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "file_len_variant")
+    }
+    fn file_copy_variant(&self, _source: Variant, _dest: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "file_copy_variant")
+    }
     fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "seek_variant")
     }

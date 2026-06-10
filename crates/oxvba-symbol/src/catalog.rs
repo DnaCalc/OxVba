@@ -197,6 +197,10 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         // resolve by name as 1-argument statement-calls.
         FileMkDir => e(FileMkDir, &["MkDir"], sig(1, 1), FileStatement),
         FileRmDir => e(FileRmDir, &["RmDir"], sig(1, 1), FileStatement),
+        FileCurDir => e(FileCurDir, &["CurDir"], sig(0, 1), Ordinary),
+        FileChDir => e(FileChDir, &["ChDir"], sig(1, 1), FileStatement),
+        FileLen => e(FileLen, &["FileLen"], sig(1, 1), Ordinary),
+        FileCopy => e(FileCopy, &["FileCopy"], sig(2, 2), FileStatement),
         FileRead => e(FileRead, &[], variadic(0), Ordinary),
         FileWrite => e(FileWrite, &[], variadic(0), FileStatement),
         FilePrint => e(FilePrint, &[], variadic(0), FileStatement),
@@ -353,6 +357,10 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         FileKill,
         FileMkDir,
         FileRmDir,
+        FileCurDir,
+        FileChDir,
+        FileLen,
+        FileCopy,
         FileRead,
         FileWrite,
         FilePrint,
@@ -405,7 +413,7 @@ mod tests {
     #[test]
     fn catalog_covers_every_native_impl_id() {
         // Variants in oxvba-bundle's NativeImplId today (the catalog must cover each).
-        assert_eq!(ALL_INTRINSICS.len(), 140);
+        assert_eq!(ALL_INTRINSICS.len(), 144);
     }
 
     #[test]

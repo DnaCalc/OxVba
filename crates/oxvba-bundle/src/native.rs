@@ -141,6 +141,10 @@ pub enum NativeImplId {
     FileKill,
     FileMkDir,
     FileRmDir,
+    FileCurDir, // `CurDir([drive])`
+    FileChDir,  // `ChDir path`
+    FileLen,    // `FileLen(path)` — file size
+    FileCopy,   // `FileCopy source, dest`
     FileRead,
     FileWrite,
     FilePrint,
@@ -217,10 +221,11 @@ impl NativeImplId {
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
             | IsEmpty | IsMissing | IIf | Choose | Switch => M::Information,
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
-            FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileRead
-            | FileWrite | FilePrint | ConsolePrint | FileInput | ConsoleInput | FileLineInput
-            | ConsoleLineInput | FileEof | FileLof | FileSeek | FileLoc | FilePut | FileGetInto
-            | FileWidth | FileRename | FileLock | FileUnlock => M::FileIo,
+            FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
+            | FileChDir | FileLen | FileCopy | FileRead | FileWrite | FilePrint | ConsolePrint
+            | FileInput | ConsoleInput | FileLineInput | ConsoleLineInput | FileEof | FileLof
+            | FileSeek | FileLoc | FilePut | FileGetInto | FileWidth | FileRename | FileLock
+            | FileUnlock => M::FileIo,
             MsgBox
             | InputBox
             | Beep

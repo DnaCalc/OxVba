@@ -59,6 +59,20 @@ pub fn file_mkdir(args: &[Variant], host: &dyn HostServices) -> LibResult<Varian
 pub fn file_rmdir(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().rmdir_variant(req(args, 0)?)?)
 }
+pub fn file_cur_dir(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host
+        .fs()
+        .cur_dir_variant(opt(args, 0).cloned().unwrap_or_else(Variant::empty))?)
+}
+pub fn file_ch_dir(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().ch_dir_variant(req(args, 0)?)?)
+}
+pub fn file_len(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().file_len_variant(req(args, 0)?)?)
+}
+pub fn file_copy(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().file_copy_variant(req(args, 0)?, req(args, 1)?)?)
+}
 pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().read_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }
