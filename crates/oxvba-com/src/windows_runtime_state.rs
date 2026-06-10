@@ -823,16 +823,20 @@ pub unsafe fn unsubscribe_event_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
     subscription: ComSubscriptionToken,
 ) -> Result<(), String> {
+    // Remove the subscription from the state BEFORE releasing the transport:
+    // release_subscription_transport drops our only connection-point
+    // reference even when Unadvise reports failure, so a transport left in
+    // the map would be Unadvised/Released a second time by release_object or
+    // the state Drop — through an interface we no longer own (W1-com-004).
+    // Resolving and removing under one lock also closes the gap where a
+    // concurrent path could observe the subscription mid-teardown.
     let transport = {
-        let state = lock_state(com_state, "unsubscribe_event_transport")?;
-        resolve_subscription_transport(&state, subscription)?
+        let mut state = lock_state(com_state, "unsubscribe_event_transport")?;
+        let transport = resolve_subscription_transport(&state, subscription)?;
+        let _ = remove_subscription_callbacks(&mut state, subscription)?;
+        transport
     };
-    unsafe {
-        release_subscription_transport(transport)?;
-    }
-    let mut state = lock_state(com_state, "unsubscribe_event_remove")?;
-    let _ = remove_subscription_callbacks(&mut state, subscription)?;
-    Ok(())
+    unsafe { release_subscription_transport(transport) }
 }
 
 pub fn queue_projection_event_callbacks_shared(
