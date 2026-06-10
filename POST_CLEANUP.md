@@ -293,6 +293,14 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
     is **not freed** (real VBA frees its temp here, which crashes on static/CRT-owned
     pointers — guest code must never abort this host), accepting a leak in the rare
     callee-allocated case.
+  - **`VarPtr(s As String)` read-back trusts the native callee** (review finding
+    W1-runtime-002): the write-back decodes whatever BSTR pointer the call left in the
+    cell (`SysStringLen` + length read). A callee that stores a non-BSTR pointer there
+    causes an out-of-bounds read — exactly as in real VBA, where the String variable IS
+    a BSTR slot and a corrupted slot faults identically. A native callee already has
+    arbitrary-code power, so no in-process defense exists; the "guest never aborts the
+    host" doctrine covers OxVba's own logic over data it controls, not a native callee's
+    ABI violations. Accepted, documented here.
   - **`String` return** — the VB contract: the callee returns a BSTR of ANSI bytes
     (`SysAllocStringByteLen`); the runtime decodes it to Unicode and frees it.
   ANSI decode (`utf16_from_ansi`, CP_ACP, length-bounded) lives next to `ansi_c_string` in
