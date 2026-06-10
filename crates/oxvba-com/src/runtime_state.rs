@@ -261,14 +261,12 @@ impl ComEventCallbackValue {
 // INVARIANT this impl does NOT cover (W1-com-007): an `ObjectRef`-bearing
 // Variant dropped on a foreign thread releases through `compat_release`,
 // which parks zero-refcount project objects into that thread's thread_local
-// TERMINATIONS queue — a queue only the VM thread drains. If the last
-// `Arc<Mutex<WindowsComClientState>>` is dropped on a COM event thread
-// (possible while a native sink still holds the callback closure), queued
-// object callbacks lose their `Class_Terminate` and the parked allocation
-// strands. Fixing this for real means Weak sinks or a process-global
-// termination queue — tracked with the sink↔state Arc-cycle finding
-// (W1-com-008). Until then, hosts must unsubscribe/release before discarding
-// the bridge, which the VM teardown paths do.
+// TERMINATIONS queue — a queue only the VM thread drains. Since W1-com-008
+// the native event sinks hold the client state only WEAKLY, so the state
+// (and its queued callbacks) can no longer be dropped on a COM event thread
+// via sink release; the residual exposure is a host that hands its last
+// strong `Arc<Mutex<WindowsComClientState>>` to another thread itself. A
+// process-global termination queue would close that for good.
 unsafe impl Send for ComEventCallbackValue {}
 unsafe impl Sync for ComEventCallbackValue {}
 

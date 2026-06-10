@@ -108,7 +108,20 @@ fn callback_sink(
     com_state: Arc<Mutex<WindowsComClientState>>,
     subscription: ComSubscriptionToken,
 ) -> DispatchEventCallback {
+    // Hold the shared state WEAKLY: the native connection point owns this
+    // closure until Unadvise, and the only implicit Unadvise lives in
+    // WindowsComClientState::Drop — a strong Arc here therefore formed a
+    // cycle (state → binding → server connection point → sink → state) that
+    // kept the state, every retained IDispatch/IUnknown reference, and the
+    // sinks alive forever once a bridge was discarded with live
+    // subscriptions (W1-com-008). An event arriving after the last strong
+    // reference is gone is reported unconsumed — the runtime that would
+    // drain it no longer exists.
+    let com_state = Arc::downgrade(&com_state);
     Arc::new(move |args: &[ComValue]| {
+        let Some(com_state) = com_state.upgrade() else {
+            return false;
+        };
         let mut state = match com_state.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -891,6 +904,25 @@ mod tests {
     };
     use oxvba_runtime::{ObjectRef, bstr::BStr};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn callback_sink_does_not_keep_state_alive() {
+        // W1-com-008: the sink closure is owned by the native connection
+        // point until Unadvise, and the only implicit Unadvise lives in
+        // WindowsComClientState::Drop — so a strong capture formed a cycle
+        // that pinned the state (and its retained COM references) forever
+        // once a bridge was discarded with live subscriptions.
+        let state = Arc::new(Mutex::new(WindowsComClientState::default()));
+        let weak = Arc::downgrade(&state);
+        let sink = super::callback_sink(Arc::clone(&state), crate::ComSubscriptionToken::new(1));
+        drop(state);
+        assert!(
+            weak.upgrade().is_none(),
+            "the event sink must not keep the shared state alive"
+        );
+        // A late event after teardown is reported unconsumed, not a panic.
+        assert!(!sink(&[]));
+    }
 
     #[test]
     fn null_native_runtime_object_result_preserves_nothing_identity() {
