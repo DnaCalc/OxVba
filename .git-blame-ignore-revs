@@ -1,0 +1,5 @@
+# Mechanical commits to skip in git blame.
+# Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Workspace-wide rustfmt style-edition-2024 reformat
+16f94b9e2ee0418e2694977f5c841b4dae97a584
