@@ -94,6 +94,41 @@ fn vba_collection_new_add_count_item() {
 }
 
 #[test]
+fn vba_collection_keys_position_and_for_each() {
+    // String keys (Add item,key / Item(key) / Remove key), `after`-positioned
+    // insertion (Add 20 after "a" ⇒ [10,20,30]), and `For Each` enumeration in
+    // insertion order — all through the VBA-library Collection class.
+    let snap = run("Public byKey As Long\n\
+         Public total As Long\n\
+         Public cnt As Long\n\
+         Sub Main()\n\
+             Dim c As Collection\n\
+             Set c = New Collection\n\
+             c.Add 10, \"a\"\n\
+             c.Add 30, \"c\"\n\
+             c.Add 20, \"b\", , \"a\"\n\
+             byKey = c.Item(\"b\")\n\
+             Dim v\n\
+             For Each v In c\n\
+                 total = total + v\n\
+             Next\n\
+             c.Remove \"a\"\n\
+             cnt = c.Count\n\
+         End Sub\n");
+    assert_eq!(snap[0].as_i32(), Some(20), "Item(\"b\"): {snap:?}");
+    assert_eq!(
+        snap[1].as_i32(),
+        Some(60),
+        "For Each sum 10+20+30: {snap:?}"
+    );
+    assert_eq!(
+        snap[2].as_i32(),
+        Some(2),
+        "Count after Remove \"a\": {snap:?}"
+    );
+}
+
+#[test]
 fn datevalue_month_name_and_cdate_numeric() {
     // `DateValue` parses the `d mmm yyyy` text form; `CDate` of a numeric is the date
     // serial directly. Both blocked SQLiteForExcel's TestBinding/TestDates.

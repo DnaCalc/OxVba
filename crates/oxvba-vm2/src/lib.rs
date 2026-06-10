@@ -31,7 +31,7 @@ mod collection;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use collection::CollectionData;
+use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
     Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget, NativeCallee,
     NativeMethodId, NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
@@ -1116,34 +1116,39 @@ impl<'h> Vm<'h> {
         me: Variant,
         args: Vec<Variant>,
     ) -> Result<Variant, Fault> {
-        let key = variant_to_object(&me)?.compat_identity();
+        let id_key = variant_to_object(&me)?.compat_identity();
         match id {
             NativeMethodId::CollectionCount => Ok(Variant::from_i32(
-                self.collections.get(&key).map_or(0, CollectionData::count),
+                self.collections
+                    .get(&id_key)
+                    .map_or(0, CollectionData::count),
             )),
             NativeMethodId::CollectionAdd => {
-                let value = args.into_iter().next().unwrap_or_else(Variant::empty);
-                self.collections.entry(key).or_default().add(value);
+                let value = args.first().cloned().unwrap_or_else(Variant::empty);
+                let key = optional_key(args.get(1));
+                let before = optional_selector(args.get(2));
+                let after = optional_selector(args.get(3));
+                self.collections
+                    .entry(id_key)
+                    .or_default()
+                    .add(value, key, before, after)
+                    .map_err(collection_fault)?;
                 Ok(Variant::empty())
             }
             NativeMethodId::CollectionItem => {
-                let index = native_index_arg(args.first())?;
+                let sel = required_selector(args.first())?;
                 self.collections
-                    .get(&key)
-                    .and_then(|c| c.item_by_index(index))
-                    .ok_or_else(|| Fault::new(9, "Subscript out of range"))
+                    .get(&id_key)
+                    .map_or(Err(CollectionError::NotFound), |c| c.item(&sel))
+                    .map_err(collection_fault)
             }
             NativeMethodId::CollectionRemove => {
-                let index = native_index_arg(args.first())?;
-                let removed = self
-                    .collections
-                    .get_mut(&key)
-                    .is_some_and(|c| c.remove_by_index(index));
-                if removed {
-                    Ok(Variant::empty())
-                } else {
-                    Err(Fault::new(9, "Subscript out of range"))
-                }
+                let sel = required_selector(args.first())?;
+                self.collections
+                    .get_mut(&id_key)
+                    .map_or(Err(CollectionError::NotFound), |c| c.remove(&sel))
+                    .map_err(collection_fault)?;
+                Ok(Variant::empty())
             }
         }
     }
@@ -2003,9 +2008,19 @@ impl<'h> Vm<'h> {
                 self.set(*dst, Variant::from_i32(upper))?;
             }
             Op::ForEachInit { iter, src } => {
-                let elements = match self.get(*src)?.as_safearray() {
-                    Some(arr) => arr.variant_elements().unwrap_or_default(),
-                    None => Vec::new(),
+                let source = self.get(*src)?.clone();
+                // A built-in `Collection` enumerates its values in insertion order;
+                // otherwise the source is an array (SafeArray). The snapshot is taken
+                // at loop entry, matching the existing array behaviour.
+                let elements = if let Some(obj) = source.as_object_ref() {
+                    self.collections
+                        .get(&obj.compat_identity())
+                        .map(CollectionData::values)
+                        .unwrap_or_default()
+                } else if let Some(arr) = source.as_safearray() {
+                    arr.variant_elements().unwrap_or_default()
+                } else {
+                    Vec::new()
                 };
                 let key = self.target(*iter)?;
                 self.for_each.insert(
@@ -2488,17 +2503,60 @@ fn variant_to_object(value: &Variant) -> Result<ObjectRef, Fault> {
     Err(Fault::new(424, "Object required"))
 }
 
-/// Coerce a native-method index argument (`Collection.Item`/`Remove`) to `i32`.
-/// Numeric Variants are accepted leniently (Integer/Long/Double, rounded); an
-/// omitted argument is error 449, a non-numeric one is error 13. String keys are
-/// a later phase.
-fn native_index_arg(arg: Option<&Variant>) -> Result<i32, Fault> {
-    let value = arg.ok_or_else(|| Fault::new(449, "Argument not optional"))?;
-    value
-        .as_i32()
-        .or_else(|| value.as_i64().map(|n| n as i32))
-        .or_else(|| value.as_f64().map(|n| n.round() as i32))
-        .ok_or_else(|| Fault::new(13, "Type mismatch"))
+/// True for the omitted-optional-argument sentinel placed by `resolve_proc_args`.
+fn is_missing_arg(v: &Variant) -> bool {
+    v.as_error_code() == Some(MISSING_ARG)
+}
+
+/// A `Collection`/`Item`/`Remove`/`Add before|after` selector from a Variant: a
+/// string argument is a (folded) key, anything else a 1-based index (numeric
+/// coercion is lenient; a non-numeric, non-string value yields index 0, i.e. out
+/// of range → error 9).
+fn variant_selector(v: &Variant) -> Selector {
+    if let Some(s) = v.as_bstr() {
+        Selector::Key(s.as_str().to_ascii_lowercase())
+    } else {
+        let index = v
+            .as_i32()
+            .or_else(|| v.as_i64().map(|n| n as i32))
+            .or_else(|| v.as_f64().map(|n| n.round() as i32))
+            .unwrap_or(0);
+        Selector::Index(index)
+    }
+}
+
+/// The folded string key from an `Add` key argument, or `None` if omitted.
+fn optional_key(arg: Option<&Variant>) -> Option<String> {
+    let v = arg?;
+    (!is_missing_arg(v))
+        .then(|| v.as_bstr().map(|s| s.as_str().to_ascii_lowercase()))
+        .flatten()
+}
+
+/// A `Selector` from an optional `before`/`after` argument, or `None` if omitted.
+fn optional_selector(arg: Option<&Variant>) -> Option<Selector> {
+    let v = arg?;
+    (!is_missing_arg(v)).then(|| variant_selector(v))
+}
+
+/// A required `Item`/`Remove` selector. Omitted ⇒ error 449.
+fn required_selector(arg: Option<&Variant>) -> Result<Selector, Fault> {
+    match arg {
+        Some(v) if !is_missing_arg(v) => Ok(variant_selector(v)),
+        _ => Err(Fault::new(449, "Argument not optional")),
+    }
+}
+
+/// Map a collection data-model error onto its VBA run-time error number.
+fn collection_fault(err: CollectionError) -> Fault {
+    match err {
+        CollectionError::NotFound => Fault::new(9, "Subscript out of range"),
+        CollectionError::DuplicateKey => Fault::new(
+            457,
+            "This key is already associated with an element of this collection",
+        ),
+        CollectionError::BadArgument => Fault::new(5, "Invalid procedure call or argument"),
+    }
 }
 
 /// Object-identity key for `Is`: the object raw, or 0 for Nothing/non-object.
