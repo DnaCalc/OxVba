@@ -197,6 +197,26 @@ unsafe fn decimal96_to_windows(value: Decimal96) -> DECIMAL {
 }
 
 #[cfg(target_os = "windows")]
+/// Advance an n-dimensional SAFEARRAY index tuple in ROW-MAJOR order (last
+/// dimension varies fastest) — the runtime's flat element order (vm2
+/// `flat_index` folds dimensions left to right). `SafeArrayGet/PutElement`
+/// take `rgIndices` in declared-dimension order while the OS lays memory out
+/// with the FIRST dimension fastest; walking our flat vector and these tuples
+/// in lockstep therefore needs row-major tuple order — pairing them in OS
+/// memory order scrambles every rank ≥ 2 array exchanged with a real COM
+/// server even though writer/reader round-trips stay self-consistent
+/// (W1-com-011).
+fn advance_indices_row_major(indices: &mut [i32], bounds: &[SafeArrayBound]) {
+    for (dim_idx, bound) in bounds.iter().enumerate().rev() {
+        indices[dim_idx] += 1;
+        if indices[dim_idx] >= bound.lower + bound.count as i32 {
+            indices[dim_idx] = bound.lower;
+        } else {
+            return;
+        }
+    }
+}
+
 #[allow(unsafe_op_in_unsafe_fn)]
 // SAFEARRAY/VARIANT decoding is a boundary translation step. It reconstructs
 // semantic `ComValue` payloads from COM wire values rather than exposing the
@@ -266,19 +286,7 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         for _ in 0..total_len {
             let value = safe_array_element_nd(psa.cast_const(), &indices, element_vt)?;
             values.push(value);
-
-            let mut carry = true;
-            for (dim_idx, bound) in bounds.iter().enumerate() {
-                if !carry {
-                    break;
-                }
-                indices[dim_idx] += 1;
-                if indices[dim_idx] >= bound.lower + bound.count as i32 {
-                    indices[dim_idx] = bound.lower;
-                } else {
-                    carry = false;
-                }
-            }
+            advance_indices_row_major(&mut indices, &bounds);
         }
         values
     };
@@ -865,20 +873,7 @@ where
 
     for _ in 0..total_len {
         values.push(extract_element(&indices)?);
-
-        // Increment indices in column-major order (first dimension varies fastest).
-        let mut carry = true;
-        for (dim_idx, bound) in bounds.iter().enumerate() {
-            if !carry {
-                break;
-            }
-            indices[dim_idx] += 1;
-            if indices[dim_idx] >= bound.lower + bound.count as i32 {
-                indices[dim_idx] = bound.lower;
-            } else {
-                carry = false;
-            }
-        }
+        advance_indices_row_major(&mut indices, &bounds);
     }
 
     let array = if element_vt != VT_VARIANT_VALUE
@@ -928,7 +923,8 @@ where
     {
         let dims = u32::try_from(bounds.len())
             .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
-        // SAFEARRAYBOUND array in reverse order (SAFEARRAY expects rightmost dimension first).
+        // SAFEARRAYBOUND entries are in declared-dimension order (rgsabound[0]
+        // is dimension 1), exactly as the runtime stores them — no reversal.
         let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
             .iter()
             .map(|b| SAFEARRAYBOUND {
@@ -940,7 +936,6 @@ where
         if psa.is_null() {
             return Err("SafeArrayCreate(VT_VARIANT) returned null".to_string());
         }
-        // Iterate in column-major order matching the bounds.
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
         for value in values.iter() {
             let mut element: VARIANT = std::mem::zeroed();
@@ -965,19 +960,7 @@ where
                     hr as u32
                 ));
             }
-            // Increment indices in column-major order.
-            let mut carry = true;
-            for (dim_idx, bound) in bounds.iter().enumerate() {
-                if !carry {
-                    break;
-                }
-                indices[dim_idx] += 1;
-                if indices[dim_idx] >= bound.lower + bound.count as i32 {
-                    indices[dim_idx] = bound.lower;
-                } else {
-                    carry = false;
-                }
-            }
+            advance_indices_row_major(&mut indices, &bounds);
         }
         (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
         (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
@@ -1293,18 +1276,7 @@ unsafe fn set_typed_array_arg(
             let _ = SafeArrayDestroy(psa.cast_const());
             return Err(err);
         }
-        let mut carry = true;
-        for (dim_idx, bound) in bounds.iter().enumerate() {
-            if !carry {
-                break;
-            }
-            indices[dim_idx] += 1;
-            if indices[dim_idx] >= bound.lower + bound.count as i32 {
-                indices[dim_idx] = bound.lower;
-            } else {
-                carry = false;
-            }
-        }
+        advance_indices_row_major(&mut indices, &bounds);
     }
 
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | element_vt;
@@ -1751,6 +1723,115 @@ mod tests {
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
         System::Com::CY,
     };
+
+    #[test]
+    fn multidim_safearray_matches_os_element_placement() {
+        // W1-com-011: writer and reader were mutual inverses, so in-repo
+        // round-trips passed while every rank ≥ 2 array exchanged with a real
+        // COM server was element-scrambled. A non-square 2x3 with distinct
+        // values, built/read through the OS APIs, pins the true placement.
+        use oxvba_runtime::safe_array::SafeArrayBound;
+        use windows_sys::Win32::System::Com::SAFEARRAYBOUND;
+        use windows_sys::Win32::System::Ole::{SafeArrayCreate, SafeArrayGetElement};
+
+        unsafe {
+            let sa_bounds = [
+                SAFEARRAYBOUND {
+                    cElements: 2,
+                    lLbound: 1,
+                },
+                SAFEARRAYBOUND {
+                    cElements: 3,
+                    lLbound: 1,
+                },
+            ];
+            let psa = SafeArrayCreate(VT_VARIANT, 2, sa_bounds.as_ptr());
+            assert!(!psa.is_null(), "SafeArrayCreate failed");
+            for i in 1..=2i32 {
+                for j in 1..=3i32 {
+                    let mut element: VARIANT = std::mem::zeroed();
+                    element.Anonymous.Anonymous.vt = VT_I4;
+                    element.Anonymous.Anonymous.Anonymous.lVal = 10 * i + j;
+                    let indices = [i, j];
+                    let hr = SafeArrayPutElement(
+                        psa,
+                        indices.as_ptr(),
+                        (&element as *const VARIANT).cast(),
+                    );
+                    assert!(hr >= 0, "SafeArrayPutElement [{i},{j}]");
+                }
+            }
+            let mut variant: VARIANT = std::mem::zeroed();
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+
+            // Decode: the runtime flat order is row-major (last dim fastest).
+            let ComValue::ArrayIntent(decoded) =
+                variant_to_com_value(&variant).expect("decode 2x3 array")
+            else {
+                panic!("expected an array result");
+            };
+            let bounds = decoded.bounds().expect("decoded bounds");
+            assert_eq!((bounds[0].lower, bounds[0].count), (1, 2));
+            assert_eq!((bounds[1].lower, bounds[1].count), (1, 3));
+            let elements = decoded.variant_elements().expect("decoded elements");
+            for i in 1..=2i32 {
+                for j in 1..=3i32 {
+                    let flat = ((i - 1) * 3 + (j - 1)) as usize;
+                    assert_eq!(
+                        elements[flat].as_i32(),
+                        Some(10 * i + j),
+                        "decoded placement at ({i},{j})"
+                    );
+                }
+            }
+            let _ = VariantClear(&mut variant);
+
+            // Encode: marshal a runtime-built row-major array and read every
+            // element back through the OS index API.
+            let values: Vec<Variant> = (1..=2)
+                .flat_map(|i| (1..=3).map(move |j| Variant::from_i32(10 * i + j)))
+                .collect();
+            let array = SafeArray::from_variants_nd(
+                vec![
+                    SafeArrayBound { lower: 1, count: 2 },
+                    SafeArrayBound { lower: 1, count: 3 },
+                ],
+                values,
+            );
+            let mut variant: VARIANT = std::mem::zeroed();
+            let mut resolve_object =
+                |_handle| Err("object dispatch resolution not expected".to_string());
+            let mut add_ref = |_dispatch| {};
+            set_variant_from_com_value(
+                &mut variant,
+                &ComValue::ArrayIntent(array),
+                &mut resolve_object,
+                &mut add_ref,
+            )
+            .expect("encode 2x3 array");
+            let psa = variant.Anonymous.Anonymous.Anonymous.parray;
+            for i in 1..=2i32 {
+                for j in 1..=3i32 {
+                    let mut element: VARIANT = std::mem::zeroed();
+                    let indices = [i, j];
+                    let hr = SafeArrayGetElement(
+                        psa,
+                        indices.as_ptr(),
+                        (&mut element as *mut VARIANT).cast(),
+                    );
+                    assert!(hr >= 0, "SafeArrayGetElement [{i},{j}]");
+                    assert_eq!(
+                        element.Anonymous.Anonymous.Anonymous.lVal,
+                        10 * i + j,
+                        "encoded placement at ({i},{j})"
+                    );
+                    let _ = VariantClear(&mut element);
+                }
+            }
+            let _ = VariantClear(&mut variant);
+        }
+    }
 
     #[test]
     fn string_variant_roundtrips_through_windows_bridge() {
