@@ -914,7 +914,7 @@ where
 
     let element_vt = array.element_vartype();
     if element_vt != VT_VARIANT_VALUE && SafeArray::supports_intrinsic_element_vartype(element_vt) {
-        return set_typed_array_arg(variant, array, &values, resolve_object, add_ref_dispatch);
+        return set_typed_array_arg(variant, array, &values, resolve_object);
     }
 
     // Multi-dimensional path: use SafeArrayCreate with per-dimension bounds.
@@ -1056,7 +1056,6 @@ unsafe fn put_typed_safe_array_element(
     element_vt: u16,
     value: &Variant,
     resolve_object: &mut impl FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
-    add_ref_dispatch: &mut impl FnMut(*mut core::ffi::c_void),
 ) -> Result<(), String> {
     let hr = match element_vt {
         VT_I1_VALUE => {
@@ -1181,8 +1180,12 @@ unsafe fn put_typed_safe_array_element(
             let object = value
                 .as_object_ref()
                 .ok_or_else(|| format!("expected Object SAFEARRAY element, got {value:?}"))?;
+            // No manual AddRef here: SafeArrayPutElement itself AddRefs
+            // VT_DISPATCH/VT_UNKNOWN elements (like it SysAllocString-copies
+            // BSTRs), and the binding's own reference keeps the object alive
+            // across the call — an extra AddRef leaked one COM reference per
+            // element (W1-com-003; mirrors the VT_UNKNOWN arm below).
             let dispatch = resolve_object(object)?;
-            add_ref_dispatch(dispatch);
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1236,7 +1239,6 @@ unsafe fn set_typed_array_arg(
     array: &SafeArray,
     values: &[Variant],
     resolve_object: &mut impl FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
-    add_ref_dispatch: &mut impl FnMut(*mut core::ffi::c_void),
 ) -> Result<(), String> {
     let element_vt = array.element_vartype();
     let bounds = array.bounds().unwrap_or_else(|| {
@@ -1265,14 +1267,9 @@ unsafe fn set_typed_array_arg(
 
     let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
     for value in values {
-        if let Err(err) = put_typed_safe_array_element(
-            psa,
-            &indices,
-            element_vt,
-            value,
-            resolve_object,
-            add_ref_dispatch,
-        ) {
+        if let Err(err) =
+            put_typed_safe_array_element(psa, &indices, element_vt, value, resolve_object)
+        {
             let _ = SafeArrayDestroy(psa.cast_const());
             return Err(err);
         }
@@ -1554,6 +1551,8 @@ where
     FAddRefDispatch: FnMut(*mut c_void),
     FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
 {
+    // Clear the Invoke-owned result on success AND failure — an unsupported
+    // result shape must not leak the payload the VARIANT owns (W1-com-002).
     let value = variant_to_variant_value(
         result,
         query_dispatch_from_unknown,
@@ -1561,9 +1560,9 @@ where
         bind_dispatch_result,
         prog_id_hint,
         op,
-    )?;
+    );
     let _ = VariantClear(result);
-    Ok(value)
+    value
 }
 
 #[cfg(target_os = "windows")]
@@ -1688,11 +1687,28 @@ where
     }
     if vt == VT_UNKNOWN {
         let unknown = result.Anonymous.Anonymous.Anonymous.punkVal;
-        let dispatch = query_dispatch_from_unknown(unknown)?;
+        // Clear the Invoke-owned result on the error path too: the VARIANT
+        // owns the IUnknown reference, and returning early without clearing
+        // pinned the server object for good (W1-com-002).
+        let dispatch = match query_dispatch_from_unknown(unknown) {
+            Ok(dispatch) => dispatch,
+            Err(err) => {
+                let _ = VariantClear(result);
+                return Err(err);
+            }
+        };
         let _ = VariantClear(result);
         return Ok(VariantResultValue::Dispatch(dispatch));
     }
-    let value = variant_to_com_value(result)?;
+    // Same on the scalar lane: an unsupported result vt must not leak the
+    // BSTR/SAFEARRAY/interface payload the result still owns (W1-com-002).
+    let value = match variant_to_com_value(result) {
+        Ok(value) => value,
+        Err(err) => {
+            let _ = VariantClear(result);
+            return Err(err);
+        }
+    };
     let _ = VariantClear(result);
     Ok(VariantResultValue::Value(value))
 }
