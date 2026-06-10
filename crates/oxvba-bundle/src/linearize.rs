@@ -1025,16 +1025,45 @@ impl<'p> Linearizer<'p> {
                         });
                     }
                 }
+                // VBA continues an ascending loop (Step >= 0) while var <= limit and a
+                // descending one (Step < 0) while var >= limit; the step's sign is
+                // fixed at loop entry (start/end/step all evaluate exactly once).
+                let zero = self.new_temp();
+                self.emit(Op::LoadI32 {
+                    slot: zero,
+                    value: 0,
+                });
+                let step_nonneg = self.new_temp();
+                self.emit(Op::CmpGe {
+                    dst: step_nonneg,
+                    lhs: step_slot,
+                    rhs: zero,
+                    mode: StringCompareMode::Binary,
+                });
                 self.loop_exits.push((LoopKind::For, Vec::new()));
                 let top = self.here();
                 let cond = self.new_temp();
-                // FIDELITY: assumes a non-negative Step (the common case).
+                let jneg = self.emit(Op::JumpIfZero {
+                    cond_slot: step_nonneg,
+                    target_pc: 0,
+                });
                 self.emit(Op::CmpLe {
                     dst: cond,
                     lhs: var_slot,
                     rhs: limit,
                     mode: StringCompareMode::Binary,
                 });
+                let jtest = self.emit(Op::Jump { target_pc: 0 });
+                let neg_at = self.here();
+                self.patch(jneg, neg_at);
+                self.emit(Op::CmpGe {
+                    dst: cond,
+                    lhs: var_slot,
+                    rhs: limit,
+                    mode: StringCompareMode::Binary,
+                });
+                let test_at = self.here();
+                self.patch(jtest, test_at);
                 let jz = self.emit(Op::JumpIfZero {
                     cond_slot: cond,
                     target_pc: 0,

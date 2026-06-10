@@ -665,6 +665,58 @@ fn for_loop_accumulator() {
 }
 
 #[test]
+fn for_loop_negative_step_counts_down() {
+    let snap = run(
+        "Sub Main()\nDim i As Long\nDim sum As Long\nDim last As Long\nsum = 0\nFor i = 5 To 1 Step -1\nsum = sum + i\nlast = i\nNext i\nEnd Sub",
+    );
+    // 5+4+3+2+1 = 15; the last body iteration sees i = 1.
+    assert!(
+        snap.contains(&Variant::from_i32(15)),
+        "expected sum=15 in {snap:?}"
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(1)),
+        "expected last=1 in {snap:?}"
+    );
+}
+
+#[test]
+fn for_loop_negative_step_two_skips() {
+    let snap = run(
+        "Sub Main()\nDim i As Long\nDim c As Long\nc = 0\nFor i = 10 To 0 Step -2\nc = c + 1\nNext i\nEnd Sub",
+    );
+    // i = 10,8,6,4,2,0 -> 6 iterations.
+    assert!(
+        snap.contains(&Variant::from_i32(6)),
+        "expected c=6 in {snap:?}"
+    );
+}
+
+#[test]
+fn for_loop_runtime_negative_step() {
+    let snap = run(
+        "Sub Main()\nDim i As Long\nDim s As Long\nDim c As Long\ns = -10\nc = 0\nFor i = 30 To 10 Step s\nc = c + 1\nNext i\nEnd Sub",
+    );
+    // The step is only known at run time: i = 30,20,10 -> 3 iterations.
+    assert!(
+        snap.contains(&Variant::from_i32(3)),
+        "expected c=3 in {snap:?}"
+    );
+}
+
+#[test]
+fn for_loop_negative_step_empty_range() {
+    let snap = run(
+        "Sub Main()\nDim i As Long\nDim c As Long\nc = 9\nFor i = 1 To 5 Step -1\nc = c + 1\nNext i\nEnd Sub",
+    );
+    // Descending step with an ascending range runs zero iterations.
+    assert!(
+        snap.contains(&Variant::from_i32(9)),
+        "expected c=9 in {snap:?}"
+    );
+}
+
+#[test]
 fn while_loop_countdown() {
     let snap = run(
         "Sub Main()\nDim n As Long\nDim steps As Long\nn = 3\nsteps = 0\nDo While n > 0\nn = n - 1\nsteps = steps + 1\nLoop\nEnd Sub",
