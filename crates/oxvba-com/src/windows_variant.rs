@@ -168,7 +168,13 @@ unsafe fn runtime_bstr_from_windows(bstr: windows_sys::core::BSTR) -> BStr {
     }
     let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
     let slice = std::slice::from_raw_parts(bstr, len);
-    BStr::from_utf16_lossy(slice)
+    // Exact code-unit copy: VBA strings carry arbitrary UTF-16 units
+    // (including unpaired surrogates — a classic binary-string idiom), which
+    // the previous lossy String round-trip replaced with U+FFFD (W1-com-010).
+    // A real BSTR's unit count always fits its own byte-length prefix, so the
+    // allocation cannot fail.
+    BStr::from_utf16_units(slice)
+        .expect("BSTR unit count fits the BSTR byte-length prefix by construction")
 }
 
 #[cfg(target_os = "windows")]
@@ -423,16 +429,12 @@ unsafe fn safe_array_element_typed_nd(
         }
         VT_BSTR => {
             let bstr: windows_sys::core::BSTR = get_element!(windows_sys::core::BSTR, indices);
-            let text = if bstr.is_null() {
-                String::new()
-            } else {
-                let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-                let slice = std::slice::from_raw_parts(bstr, len);
-                let text = String::from_utf16_lossy(slice);
+            // Unit-exact decode (W1-com-010), same path as scalar BSTR results.
+            let value = runtime_bstr_from_windows(bstr);
+            if !bstr.is_null() {
                 SysFreeString(bstr);
-                text
-            };
-            ComValue::String(BStr::from(text)).to_variant()
+            }
+            ComValue::String(value).to_variant()
         }
         other => Err(format!(
             "unsupported SAFEARRAY element vartype {other} in multi-dimensional array"
@@ -1739,6 +1741,31 @@ mod tests {
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
         System::Com::CY,
     };
+
+    #[test]
+    fn bstr_decode_preserves_unpaired_surrogates_exactly() {
+        // W1-com-010: VBA strings carry arbitrary UTF-16 units (lone
+        // surrogates included); the lossy String round-trip turned them into
+        // U+FFFD on the COM result decode path. Assert at the BStr-unit level
+        // — the string intrinsics are lossy elsewhere, so Mid$/AscW cannot
+        // observe this.
+        use windows_sys::Win32::Foundation::SysAllocStringLen;
+        unsafe {
+            let units: [u16; 3] = [0x0041, 0xD800, 0x0042]; // 'A', lone high surrogate, 'B'
+            let bstr = SysAllocStringLen(units.as_ptr(), 3);
+            assert!(!bstr.is_null());
+            let mut variant: VARIANT = std::mem::zeroed();
+            variant.Anonymous.Anonymous.vt = VT_BSTR;
+            variant.Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            let value = variant_to_com_value(&variant).expect("decode bstr");
+            assert_eq!(
+                value,
+                ComValue::String(BStr::from_utf16_units(&units).expect("exact units")),
+                "decode must preserve the exact UTF-16 payload"
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
 
     #[test]
     fn multidim_safearray_matches_os_element_placement() {
