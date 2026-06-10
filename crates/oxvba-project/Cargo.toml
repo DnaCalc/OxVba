@@ -10,3 +10,5 @@ repository.workspace = true
 oxvba-symbol.workspace = true
 quick-xml.workspace = true
 thiserror.workspace = true
+[lints]
+workspace = true

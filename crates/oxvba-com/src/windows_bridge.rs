@@ -617,7 +617,7 @@ impl WindowsComBridge {
                         &binding.prog_id_name,
                         &self.state,
                     )
-                    .or_else(|_| Err(combined_failure))
+                    .map_err(|_| combined_failure)
                 },
             }
         };

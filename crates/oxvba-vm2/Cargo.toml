@@ -13,3 +13,5 @@ oxvba-lib.workspace = true
 oxvba-runtime.workspace = true
 oxvba-hal.workspace = true
 oxvba-com.workspace = true
+[lints]
+workspace = true

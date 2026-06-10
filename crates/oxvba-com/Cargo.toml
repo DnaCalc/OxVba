@@ -26,3 +26,5 @@ windows-sys = { version = "0.59", features = [
 
 [target.'cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))'.dependencies]
 libc.workspace = true
+[lints]
+workspace = true

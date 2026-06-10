@@ -19,3 +19,5 @@ thiserror.workspace = true
 oxvba-vm2.workspace = true
 oxvba-hal.workspace = true
 oxvba-com = { workspace = true, features = ["fixture-typelibs"] }
+[lints]
+workspace = true

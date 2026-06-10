@@ -141,12 +141,11 @@ impl<'a> SyntaxNode<'a> {
         }
         decl_kw?;
         let mut next = toks.next();
-        if decl_kw == Some(SyntaxKind::KwProperty) {
-            if let Some(t) = next {
-                if matches!(t.kind, SyntaxKind::KwGet | SyntaxKind::KwLet | SyntaxKind::KwSet) {
-                    next = toks.next();
-                }
-            }
+        if decl_kw == Some(SyntaxKind::KwProperty)
+            && let Some(t) = next
+            && matches!(t.kind, SyntaxKind::KwGet | SyntaxKind::KwLet | SyntaxKind::KwSet)
+        {
+            next = toks.next();
         }
         next.filter(|t| {
             matches!(t.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent) || t.kind.is_keyword()

@@ -32,7 +32,7 @@ impl ComTypeLibProvider {
 
     fn owns(&self, type_name: &str) -> bool {
         let folded = fold_identifier(type_name);
-        self.type_names.iter().any(|name| *name == folded)
+        self.type_names.contains(&folded)
     }
 
     pub fn activation_prog_id(&self) -> Option<&str> {

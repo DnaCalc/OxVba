@@ -31,9 +31,9 @@ fn bounded_demo_basproj() -> PathBuf {
 ///
 /// The fixture's `ThisWorkbook.Path` is a workspace-relative directory
 /// (`.external/sqliteforexcel/upstream/Distribution`) — in real Excel it would be the
-/// workbook's absolute folder. `SQLite3Initialize` `LoadLibrary`s `ThisWorkbook.Path
-/// + "\x64\SQLite3.dll"`, so the run must happen with the workspace root as the
-/// current directory for that relative path to resolve.
+/// workbook's absolute folder. `SQLite3Initialize` `LoadLibrary`s
+/// `ThisWorkbook.Path + "\x64\SQLite3.dll"`, so the run must happen with the
+/// workspace root as the current directory for that relative path to resolve.
 fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
     std::env::set_current_dir(workspace_root())
         .map_err(|err| format!("could not set cwd to the workspace root: {err}"))?;

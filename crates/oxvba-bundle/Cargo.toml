@@ -9,3 +9,5 @@ description = "Clean, slim execution target: primitive instruction set + native-
 
 [dependencies]
 oxvba-runtime.workspace = true
+[lints]
+workspace = true

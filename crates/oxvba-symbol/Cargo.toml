@@ -16,3 +16,5 @@ thiserror.workspace = true
 
 [dev-dependencies]
 oxvba-com = { workspace = true, features = ["fixture-typelibs"] }
+[lints]
+workspace = true

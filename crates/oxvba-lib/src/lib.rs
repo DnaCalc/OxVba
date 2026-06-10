@@ -82,7 +82,7 @@ impl Default for LibContext {
 
 // ── Argument / value helpers (shared by the family modules) ──────────────────
 
-pub(crate) fn need<'a>(args: &'a [Variant], index: usize) -> LibResult<&'a Variant> {
+pub(crate) fn need(args: &[Variant], index: usize) -> LibResult<&Variant> {
     args.get(index)
         .ok_or_else(|| LibError::invalid_call(format!("missing argument {index}")))
 }

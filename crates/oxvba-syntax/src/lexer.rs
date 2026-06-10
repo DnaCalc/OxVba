@@ -339,7 +339,7 @@ fn classify_number(text: &str) -> SyntaxKind {
     if matches!(text.as_bytes().last(), Some(b'!' | b'#' | b'@')) {
         return SyntaxKind::FloatLiteral;
     }
-    let body = text.trim_end_matches(|c| matches!(c, '%' | '&' | '^'));
+    let body = text.trim_end_matches(['%', '&', '^']);
     if body.contains('.') || body.contains('e') || body.contains('E') {
         SyntaxKind::FloatLiteral
     } else {

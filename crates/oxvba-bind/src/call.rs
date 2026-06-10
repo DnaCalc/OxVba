@@ -24,6 +24,10 @@ use crate::expr::{builtin, value_bound};
 use crate::types;
 use crate::{Bound, ProcLower};
 
+/// A bound pointer-helper operand: the pin kind, the operand value the VM
+/// pins, and an optional write-back target (source l-value + payload kind).
+type BoundPointerOperand = (PtrKind, CoreValue, Option<(CorePlace, PtrWritebackKind)>);
+
 impl<'a> ProcLower<'a> {
     /// Lower a resolved name + optional argument list to a value (a call, a
     /// constant, or a special form).
@@ -359,7 +363,7 @@ impl<'a> ProcLower<'a> {
         &mut self,
         intrinsic: StructuralIntrinsic,
         operand: SyntaxNode<'_>,
-    ) -> Result<(PtrKind, CoreValue, Option<(CorePlace, PtrWritebackKind)>), BindError> {
+    ) -> Result<BoundPointerOperand, BindError> {
         if let Ok((place, ty)) = self.bind_place(operand) {
             // `VarPtr(a(i))` → a pointer to the array's contiguous storage (read and
             // write the whole buffer), keyed off the base array place.

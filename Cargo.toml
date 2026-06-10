@@ -26,6 +26,22 @@ license = "MIT"
 authors = ["DNA Kode"]
 repository = "https://github.com/DnaCalc/OxVba"
 
+# CI runs `cargo clippy --workspace --all-targets -- -D warnings`, so every
+# warn-level lint here is build-blocking. Ratchet lints (documented below)
+# start at "allow" and are flipped to enforcing as review waves close.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+# Ratchet: flipped to "deny" when the unsafe-FFI review wave closes, after
+# every production unsafe block has a `// SAFETY:` comment.
+undocumented_unsafe_blocks = "allow"
+# Ratchet: flipped to "warn" at review-campaign end, after production
+# unwrap sites are classified (kept invariants become expect/INVARIANT).
+unwrap_used = "allow"
+
 [workspace.dependencies]
 oxvba-syntax = { path = "crates/oxvba-syntax" }
 oxvba-hal = { path = "crates/oxvba-hal" }

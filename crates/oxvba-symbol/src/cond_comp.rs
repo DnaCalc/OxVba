@@ -110,7 +110,7 @@ struct Frame {
 
 /// Whether the current point emits code (all enclosing branches active).
 fn emitting(stack: &[Frame]) -> bool {
-    stack.last().map_or(true, |f| f.branch_active)
+    stack.last().is_none_or(|f| f.branch_active)
 }
 
 /// Process a logical line's leading text. Returns `Ok(true)` if it was a CC
@@ -123,11 +123,11 @@ fn process_logical(
     let lower = text.to_ascii_lowercase();
 
     if directive_at(&lower, "#const") {
-        if emitting(stack) {
-            if let Some((name, expr)) = split_const(&text["#const".len()..]) {
-                let value = evaluate(expr, cc);
-                cc.insert(fold_identifier(name), value);
-            }
+        if emitting(stack)
+            && let Some((name, expr)) = split_const(&text["#const".len()..])
+        {
+            let value = evaluate(expr, cc);
+            cc.insert(fold_identifier(name), value);
         }
         return Ok(true);
     }

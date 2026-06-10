@@ -1596,11 +1596,12 @@ impl<'a> Parser<'a> {
 
         // File-I/O statements whose leading word lexes as an identifier
         // (Put/Seek/Width/Unlock/Reset), routed by statement-position + shape.
-        if self.current() == SyntaxKind::Ident && !self.peek_is_label_colon() {
-            if let Some(which) = self.ident_file_stmt_kind() {
-                self.parse_ident_file_stmt(which);
-                return;
-            }
+        if self.current() == SyntaxKind::Ident
+            && !self.peek_is_label_colon()
+            && let Some(which) = self.ident_file_stmt_kind()
+        {
+            self.parse_ident_file_stmt(which);
+            return;
         }
 
         let kind = self.current();

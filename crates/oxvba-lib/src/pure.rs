@@ -387,7 +387,7 @@ const VBA_EPOCH_DAYS_FROM_UNIX: i64 = -25569; // days from 1970-01-01 back to 18
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = (y - era * 400) as i64;
+    let yoe = y - era * 400;
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146097 + doe - 719468
@@ -774,7 +774,7 @@ fn rng_step(ctx: &mut LibContext) -> f64 {
 }
 
 /// An optional numeric argument, treating an `Empty` placeholder as omitted.
-fn numeric_arg<'a>(args: &'a [Variant], index: usize) -> Option<&'a Variant> {
+fn numeric_arg(args: &[Variant], index: usize) -> Option<&Variant> {
     opt(args, index).filter(|v| !matches!(v.vtype(), VarType::Empty))
 }
 
