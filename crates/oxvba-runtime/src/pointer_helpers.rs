@@ -196,8 +196,21 @@ unsafe fn set_windows_variant_array_arg(
     variant: *mut VARIANT,
     array: &crate::safe_array::SafeArray,
 ) -> Result<(), String> {
-    let Some(values) = array.variant_elements() else {
-        return Err("VarPtr over Variant containing an array shape without element payload is not yet supported".to_string());
+    // A declared-but-unallocated array (`Dim a()` never `ReDim`'d, or a fixed
+    // shape whose storage is null) has a descriptor shape but no element
+    // payload. VBA still marshals an array of that shape, so synthesize
+    // default (`Empty`) elements sized to the bounds — an empty array when the
+    // descriptor carries no bounds either. These flow through the same
+    // SAFEARRAY-creation paths below as a real payload.
+    let values: Vec<Variant> = match array.variant_elements() {
+        Some(values) => values,
+        None => {
+            let count = array
+                .bounds()
+                .map(|dims| dims.iter().map(|d| d.count as usize).product::<usize>())
+                .unwrap_or(0);
+            vec![Variant::empty(); count]
+        }
     };
 
     if let Some(bounds) = array.bounds()

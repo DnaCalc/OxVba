@@ -165,6 +165,13 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
   **Remaining (separate features, not the pointer path):** `pointer_helpers_end_to_end`'s
   byte-array Declare *parameter* passing + `VarPtr` of a Variant-Decimal/i64; the registry leak
   (next bullet); and the **true `As String` marshalling** further down.
+  **VarPtr over an unallocated array Variant — DONE.** `set_windows_variant_array_arg` used to
+  reject a Variant whose SAFEARRAY has a declared shape but null `pv_data` (a `Dim a()` never
+  `ReDim`'d, or a zero-length dynamic array). It now synthesizes default (`Empty`) elements
+  sized to the descriptor's bounds (empty when there are no bounds either) and marshals an
+  array of that shape, matching VBA. Windows-only marshalling; end-to-end coverage is via the
+  native-Declare lane (no portable unit test — the bounds-but-null-data state has no public
+  constructor).
 - **Conditional compilation (`#If`/`#ElseIf`/`#Else`/`#End If`/`#Const`)** — DONE.
   `oxvba_symbol::cond_comp::preprocess` runs before each module is parsed: it evaluates the directives
   against the predefined host constants (`Win64`/`VBA7`/`Win32` = True on the 64-bit runtime, others
