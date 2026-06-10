@@ -11,10 +11,9 @@ use crate::{
     binding_from_typelib_metadata, build_typelib_metadata, callback_arg, callback_arity,
     callback_subscription_token, execute_bound_variant_with_shared_state,
     host_dispatch_object_for_prog_id_shared, insert_bound_object_binding_at_handle_shared,
-    invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_variant_with_shared_state,
-    legacy_runtime_arg_values, member_spec_from_typelib_metadata,
-    member_token_and_spec_from_typelib_metadata_name, query_unknown_from_dispatch,
-    queue_projection_event_callbacks_shared, release_callback, release_object_binding_shared,
+    invoke_dispatch_variant_with_shared_state, legacy_runtime_arg_values,
+    member_spec_from_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
+    query_unknown_from_dispatch, release_callback, release_object_binding_shared,
     release_subscription_transport, resolve_bound_native_dispatch_shared,
     resolve_known_typelib_identity, resolve_named_argument_dispids,
     resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
@@ -422,40 +421,14 @@ impl WindowsComBridge {
                 "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projection dispatch requires legacy runtime-token arguments".to_string(),
             ));
         }
-        if binding.native_dispatch == 0 {
-            return Ok(None);
-        }
-        let dispatch = binding.native_dispatch as *mut RawIDispatch;
-        let invoke_result = unsafe {
-            invoke_bound_dispatch_legacy_i32_result(
-                dispatch,
-                request.member,
-                request.args.as_slice(),
-                &mut |member_token| {
-                    self.known_member_spec_for_prog_id_name(&binding.prog_id_name, member_token)
-                },
-                &mut |member_name, invoke_args| {
-                    self.resolve_named_argument_dispids(dispatch, member_name, invoke_args)
-                },
-                &mut |handle| {
-                    self.resolve_native_dispatch_for_object(handle)
-                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                },
-            )
-        };
-        unsafe {
-            crate::release_dispatch(dispatch);
-        }
-        let value = invoke_result.map_err(WindowsComBridgeDispatchError::InvokeFailure)?;
-        queue_projection_event_callbacks_shared(
-            &self.state,
-            request.object.clone(),
-            &binding,
-            request.member,
-            request.args.as_slice(),
-        )
-        .map_err(WindowsComBridgeDispatchError::Message)?;
-        Ok(Some(Variant::from_i32(value)))
+        // A binding with a live native dispatch is fully handled by
+        // execute_bound_variant_with_shared_state above (it returns Ok(None)
+        // only for a missing binding or native_dispatch == 0), so the legacy
+        // native fall-through that used to live here was unreachable — and it
+        // released the bindings map's retained dispatch reference without a
+        // matching AddRef, a loaded gun for any future refactor (W1-com-009).
+        let _ = binding;
+        Ok(None)
     }
 
     pub fn dispatch_invoke_dynamic_variant(
