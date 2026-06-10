@@ -802,6 +802,16 @@ impl<'a> ProcLower<'a> {
         ))
     }
 
+    /// The declared signature of an `Event` symbol (whose `imp` is a plain
+    /// `Signature`, like a method), for binding `RaiseEvent` arguments with the
+    /// event's ByRef/ByVal parameter directions.
+    pub(crate) fn event_signature(&self, sym: SymbolId) -> Option<Signature> {
+        match &self.g.env.symbols.symbol(sym)?.imp {
+            SymbolImpl::Signature(id) => self.g.env.signatures.get(*id).cloned(),
+            _ => None,
+        }
+    }
+
     fn proc_signature_for(&self, sym: SymbolId, kind: ProjectMemberKind) -> Option<Signature> {
         let imp = &self.g.env.symbols.symbol(sym)?.imp;
         let sig_id = match (imp, kind) {

@@ -886,6 +886,50 @@ fn withevents_raise_event_routes_to_handler() {
     );
 }
 
+#[test]
+fn raise_event_byref_param_writes_back_to_raiser() {
+    // VBA event parameters default to ByRef, and RaiseEvent is synchronous, so a
+    // handler that assigns to a ByRef parameter mutates the raiser's variable
+    // after RaiseEvent returns. (RaiseEvent args used to bind without the event
+    // signature, defaulting every argument to ByVal and dropping the write-back.)
+    let main = "Sub Main()\n    Dim r As Long\n    Dim k As Sink\n    Dim s As Source\n    Set s = New Source\n    Set k = New Sink\n    Set k.Watched = s\n    r = s.FireWith(7)\nEnd Sub\n";
+    let sink = "Public WithEvents Watched As Source\n\n\
+                Private Sub Watched_Poked(v As Long)\n    v = 1234\nEnd Sub\n";
+    let source = "Public Event Poked(v As Long)\n\n\
+                  Public Function FireWith(ByVal start As Long) As Long\n    Dim x As Long\n    x = start\n    RaiseEvent Poked(x)\n    FireWith = x\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Sink", ModuleKind::Class, sink),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        Some(1234.0),
+        "the handler's write to its ByRef parameter must reach the raiser's variable"
+    );
+}
+
+#[test]
+fn raise_event_byval_param_does_not_write_back() {
+    // The event declares its parameter ByVal, so a handler that assigns to it
+    // must mutate a copy — never the raiser's variable. (RaiseEvent args used
+    // to bind without the event's signature, so an l-value argument took the
+    // ByRef default and the handler's write corrupted the raiser's local.)
+    let main = "Sub Main()\n    Dim r As Long\n    Dim k As Sink\n    Dim s As Source\n    Set s = New Source\n    Set k = New Sink\n    Set k.Watched = s\n    r = s.FireWith(7)\nEnd Sub\n";
+    let sink = "Public WithEvents Watched As Source\n\n\
+                Private Sub Watched_Poked(ByVal v As Long)\n    v = 1234\nEnd Sub\n";
+    let source = "Public Event Poked(ByVal v As Long)\n\n\
+                  Public Function FireWith(ByVal start As Long) As Long\n    Dim x As Long\n    x = start\n    RaiseEvent Poked(x)\n    FireWith = x\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Sink", ModuleKind::Class, sink),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        Some(7.0),
+        "the handler's write to its ByVal parameter must not reach the raiser"
+    );
+}
+
 // ── COM late dispatch + Declare (structural — emit-correct, not run) ─────────
 
 /// The callee of a value, unwrapping a `Coerce` wrapper (an assignment to a typed

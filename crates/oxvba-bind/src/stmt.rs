@@ -253,11 +253,16 @@ impl<'a> ProcLower<'a> {
         let binding = self
             .resolve(name)
             .ok_or_else(|| self.unresolved(name, "event"))?;
-        let event = binding
-            .symbol
+        let symbol = binding.symbol;
+        let event = symbol
             .and_then(|s| self.g.ids.event_index_of.get(&s).copied())
             .ok_or_else(|| self.unresolved(name, "event index"))?;
-        let args = self.bind_args(node.raise_event_arg_list(), None)?;
+        // Bind against the event's declared signature so ByRef parameters (the
+        // VBA default) bind ByRef and write back to the raiser, and ByVal
+        // parameters bind ByVal. Without it every argument defaulted to ByVal,
+        // silently dropping ByRef event-parameter write-backs.
+        let signature = symbol.and_then(|s| self.event_signature(s));
+        let args = self.bind_args(node.raise_event_arg_list(), signature.as_ref())?;
         Ok(vec![CoreStmt::RaiseEvent {
             source,
             event,
