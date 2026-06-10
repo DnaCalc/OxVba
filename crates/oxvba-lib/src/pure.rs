@@ -185,16 +185,73 @@ pub fn join(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(texts?.join(&delim)))
 }
 
-/// FIDELITY: basic `Replace(expr, find, replace)`; ignores start/count/compare.
+/// `Replace(expr, find, replace, [start], [count], [compare])`. Per VBA the
+/// result is the substring of `expr` FROM `start` (1-based; the prefix before
+/// `start` is dropped), with up to `count` replacements (default -1 = all) of
+/// `find` by `replace`, matched binary or text per `compare` (default binary).
 pub fn replace(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let find = as_str(need(args, 1)?)?;
     let with = as_str(need(args, 2)?)?;
-    Ok(vstr(if find.is_empty() {
-        s
+    let start = match opt(args, 3) {
+        Some(v) => as_i32(v)?,
+        None => 1,
+    };
+    let count = match opt(args, 4) {
+        Some(v) => as_i32(v)?,
+        None => -1,
+    };
+    let text = text_compare(args, 5)?;
+    if start < 1 || count < -1 {
+        // VBA "Invalid procedure call or argument" (error 5).
+        return Err(LibError::invalid_call("Replace start/count out of range"));
+    }
+
+    // The result begins at `start` (1-based); a start past the end yields "".
+    let chars: Vec<char> = s.chars().collect();
+    let from = (start - 1) as usize;
+    if from >= chars.len() {
+        return Ok(vstr(String::new()));
+    }
+    let hay: Vec<char> = chars[from..].to_vec();
+
+    if find.is_empty() || count == 0 {
+        return Ok(vstr(hay.into_iter().collect::<String>()));
+    }
+
+    let needle: Vec<char> = find.chars().collect();
+    let needle_cmp: Vec<char> = norm_compare(find.clone(), text).chars().collect();
+    let limit = if count < 0 {
+        usize::MAX
     } else {
-        s.replace(&find, &with)
-    }))
+        count as usize
+    };
+    let mut out = String::new();
+    let mut i = 0usize;
+    let mut done = 0usize;
+    while i < hay.len() {
+        let window_matches = done < limit
+            && i + needle.len() <= hay.len()
+            && hay[i..i + needle.len()]
+                .iter()
+                .zip(&needle_cmp)
+                .all(|(h, n)| {
+                    if text {
+                        h.to_ascii_lowercase() == *n
+                    } else {
+                        h == n
+                    }
+                });
+        if window_matches {
+            out.push_str(&with);
+            i += needle.len();
+            done += 1;
+        } else {
+            out.push(hay[i]);
+            i += 1;
+        }
+    }
+    Ok(vstr(out))
 }
 
 pub fn trim(args: &[Variant], left: bool, right: bool) -> LibResult<Variant> {
@@ -220,9 +277,8 @@ pub fn str_comp(args: &[Variant]) -> LibResult<Variant> {
     }))
 }
 
-/// `Like` — supports `?`, `*`, `#` and an optional trailing compare mode
-/// (0=binary, 1=text). Already richer than the legacy VM (which implemented Like
-/// as plain equality). FIDELITY: `[charlist]` ranges not yet supported.
+/// `Like` — supports `?`, `*`, `#`, `[charlist]` (with `!` negation and `a-z`
+/// ranges), and an optional trailing compare mode (0=binary, 1=text).
 pub fn like(args: &[Variant]) -> LibResult<Variant> {
     let text = text_compare(args, 2)?;
     let s: Vec<char> = norm_compare(as_str(need(args, 0)?)?, text)

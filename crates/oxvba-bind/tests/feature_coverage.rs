@@ -340,6 +340,49 @@ fn scalar_boolean_like_const_expression_executes() {
 }
 
 #[test]
+fn replace_honors_start_count_and_compare() {
+    // start drops the prefix before it; count limits replacements; compare=1
+    // matches case-insensitively.
+    let snap = run("Sub Main()\n\
+         Dim a As String\nDim b As String\nDim c As String\n\
+         a = Replace(\"abcabc\", \"b\", \"X\", 3)\n\
+         b = Replace(\"abcabcabc\", \"b\", \"X\", 1, 2)\n\
+         c = Replace(\"aXaXaX\", \"x\", \"_\", 1, 2, 1)\n\
+         End Sub");
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("caXc"))),
+        "start=3 drops the prefix: {snap:?}"
+    );
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("aXcaXcabc"))),
+        "count=2 limits replacements: {snap:?}"
+    );
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("a_a_aX"))),
+        "compare=1 matches case-insensitively, count=2: {snap:?}"
+    );
+}
+
+#[test]
+fn like_charlist_ranges_negation_and_literal_bracket() {
+    // `[charlist]` with `a-z` ranges, `!` negation, and a literal `]` first.
+    let snap = run("Sub Main()\n\
+         Dim a As Boolean\nDim b As Boolean\nDim c As Boolean\nDim d As Boolean\n\
+         a = (\"f\" Like \"[a-z]\")\n\
+         b = (\"F\" Like \"[!a-z]\")\n\
+         c = (\"9\" Like \"[0-9a-f]\")\n\
+         d = (\"]\" Like \"[]x]\")\n\
+         End Sub");
+    assert!(
+        snap.iter()
+            .filter(|v| **v == Variant::from_bool(true))
+            .count()
+            >= 4,
+        "all four charlist matches should be true in {snap:?}"
+    );
+}
+
+#[test]
 fn scalar_string_const_expression_executes() {
     let snap = run(
         "Const Prefix As String = \"re\"\nConst CText As String = Prefix & \"ady\"\nSub Main()\nDim text As String\ntext = CText\nEnd Sub",
