@@ -254,7 +254,21 @@ impl ComEventCallbackValue {
 }
 
 // COM event callbacks can enter from native connection point threads. The
-// retained VARIANT owns or addrefs its BSTR, SAFEARRAY, and IUnknown payloads.
+// retained VARIANT owns or addrefs its BSTR, SAFEARRAY, and IUnknown payloads
+// (BStr/SafeArray clones are deep copies; refcounts are atomic), so the
+// cross-thread *memory* story is sound.
+//
+// INVARIANT this impl does NOT cover (W1-com-007): an `ObjectRef`-bearing
+// Variant dropped on a foreign thread releases through `compat_release`,
+// which parks zero-refcount project objects into that thread's thread_local
+// TERMINATIONS queue — a queue only the VM thread drains. If the last
+// `Arc<Mutex<WindowsComClientState>>` is dropped on a COM event thread
+// (possible while a native sink still holds the callback closure), queued
+// object callbacks lose their `Class_Terminate` and the parked allocation
+// strands. Fixing this for real means Weak sinks or a process-global
+// termination queue — tracked with the sink↔state Arc-cycle finding
+// (W1-com-008). Until then, hosts must unsubscribe/release before discarding
+// the bridge, which the VM teardown paths do.
 unsafe impl Send for ComEventCallbackValue {}
 unsafe impl Sync for ComEventCallbackValue {}
 
