@@ -316,6 +316,28 @@ impl IdAllocator {
             is_class_member,
         );
 
+        // `Static` locals persist across calls: allocate one zero-initialized
+        // bundle global per static local (mangled by proc so display names stay
+        // readable). Place resolution maps the symbol to this global; the frame
+        // skipped it above. Display-name collisions are harmless — `global_of`
+        // keys on the unique `SymbolId`.
+        for &sym_id in &symbols.symbols_in_scope(proc_scope).unwrap_or_default() {
+            let sym = symbols.symbol(sym_id).expect("symbol in scope");
+            if sym.kind != SymbolKind::StaticLocal {
+                continue;
+            }
+            let gid = GlobalId(self.globals.len());
+            let array_element = match &sym.imp {
+                SymbolImpl::DeclaredType(t) => types::array_element(t),
+                _ => None,
+            };
+            self.globals.push(CoreGlobal {
+                name: format!("{logical}#{}", alloc_name(env, sym.name)),
+                array_element,
+            });
+            self.global_of.insert(sym_id, gid);
+        }
+
         self.procs.push(ProcInfo {
             proc_id,
             name: logical,
@@ -414,10 +436,15 @@ fn build_frame(
     }
 
     // Then locals (declaration order, block scoping already flattened). A proc-level
-    // `Const` is namespace `Local` but folded to a value — it gets no frame slot.
+    // `Const` is namespace `Local` but folded to a value — it gets no frame slot;
+    // a `StaticLocal` persists across calls and is lowered to a bundle global
+    // (allocated in `alloc_proc`), so it gets no frame slot either.
     for &sym_id in &scope_syms {
         let sym = symbols.symbol(sym_id).expect("symbol in scope");
-        if sym.namespace == SymbolNamespace::Local && sym.kind != SymbolKind::Const {
+        if sym.namespace == SymbolNamespace::Local
+            && sym.kind != SymbolKind::Const
+            && sym.kind != SymbolKind::StaticLocal
+        {
             let array_element = match &sym.imp {
                 SymbolImpl::DeclaredType(t) => types::array_element(t),
                 _ => None,

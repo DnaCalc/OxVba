@@ -142,10 +142,12 @@ fn bind_one(
         });
     }
 
-    // Module-level fixed-size array globals are allocated once at program entry,
-    // before the entry procedure's own body runs.
+    // Module-level fixed-size array globals AND every proc's `Static` array/record
+    // locals are allocated once at program entry, before the entry procedure's own
+    // body runs.
     if let Some(entry_id) = ids.entry() {
-        let inits = lower.module_global_array_inits(&ids.procs[entry_id.0])?;
+        let mut inits = lower.module_global_array_inits(&ids.procs[entry_id.0])?;
+        inits.extend(lower.static_local_inits(&decls)?);
         if !inits.is_empty() {
             let body = &mut procs[entry_id.0].body;
             let tail = std::mem::take(body);

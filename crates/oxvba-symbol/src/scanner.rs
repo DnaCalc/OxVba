@@ -98,6 +98,7 @@ pub fn scan_module(
         next_descriptor_id,
         scan: &mut scan,
         module_name: &module_name,
+        proc_is_static: false,
     };
     ctx.walk(module_scope, module_syntax, true)?;
     Ok(scan)
@@ -109,6 +110,11 @@ struct ScanCtx<'a> {
     next_descriptor_id: &'a mut u32,
     scan: &'a mut ModuleScan,
     module_name: &'a str,
+    /// Set while walking the body of a `Static Sub/Function/Property`, so every
+    /// proc-local declarator becomes a `StaticLocal` even without its own
+    /// `Static` keyword. VBA has no nested procedures, so a single flag (no
+    /// stack) suffices.
+    proc_is_static: bool,
 }
 
 impl ScanCtx<'_> {
@@ -208,7 +214,16 @@ impl ScanCtx<'_> {
                         // builder, which skips `Const`).
                         (SymbolNamespace::Local, SymbolKind::Const)
                     } else if !module_level {
-                        (SymbolNamespace::Local, SymbolKind::Local)
+                        // `Static n` (or any local of a `Static` procedure) persists
+                        // across calls — a distinct kind the binder lowers to a
+                        // mangled global rather than a frame slot.
+                        let is_static = node.is_static() || self.proc_is_static;
+                        let local_kind = if is_static {
+                            SymbolKind::StaticLocal
+                        } else {
+                            SymbolKind::Local
+                        };
+                        (SymbolNamespace::Local, local_kind)
                     } else if declarator.is_with_events() {
                         (SymbolNamespace::Member, SymbolKind::WithEventsField)
                     } else {
@@ -365,7 +380,13 @@ impl ScanCtx<'_> {
             }
         }
         if let Some(body) = node.body_block() {
-            self.walk(proc_scope, body, false)?;
+            // A `Static` procedure makes all of its locals static; restore the
+            // flag afterward (procs don't nest, but keep it lexically scoped).
+            let outer = self.proc_is_static;
+            self.proc_is_static = node.is_static();
+            let result = self.walk(proc_scope, body, false);
+            self.proc_is_static = outer;
+            result?;
         }
         Ok(())
     }

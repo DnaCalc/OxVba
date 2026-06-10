@@ -41,6 +41,27 @@ impl<'a> Lower<'a> {
         Ok(out)
     }
 
+    /// Allocate every procedure's `Static` array/record locals exactly once, at
+    /// program entry. A proc's static declarators resolve to bundle globals, so
+    /// the `ReDim`/record-init runs from the entry prologue but targets the
+    /// persistent global; the per-call prologue skips them
+    /// ([`ProcLower::bind_dim`]). Bound in each declaring proc's own lower
+    /// context so its static symbols resolve. `decls` is in `ids.procs` order.
+    pub(crate) fn static_local_inits(
+        &'a self,
+        decls: &[SyntaxNode<'a>],
+    ) -> Result<Vec<CoreStmt>, BindError> {
+        let mut out = Vec::new();
+        for (info, decl) in self.ids.procs.iter().zip(decls.iter()) {
+            let Some(block) = decl.body_block() else {
+                continue;
+            };
+            let mut pl = self.proc_lower(info);
+            walk_static_dims(&mut pl, block, &mut out)?;
+        }
+        Ok(out)
+    }
+
     pub(crate) fn bind_proc_body(
         &'a self,
         info: &'a ProcInfo,
@@ -59,4 +80,20 @@ impl<'a> Lower<'a> {
             None => Ok(Vec::new()),
         }
     }
+}
+
+/// Walk a proc body emitting the once-per-program allocation of each `Static`
+/// array/record declarator (`ProcLower::bind_static_dim` filters to statics).
+fn walk_static_dims<'a>(
+    pl: &mut ProcLower<'a>,
+    node: SyntaxNode<'a>,
+    out: &mut Vec<CoreStmt>,
+) -> Result<(), BindError> {
+    if node.kind() == SyntaxKind::DimStmt {
+        out.extend(pl.bind_static_dim(node)?);
+    }
+    for child in node.child_nodes() {
+        walk_static_dims(pl, child, out)?;
+    }
+    Ok(())
 }

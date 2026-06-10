@@ -676,6 +676,68 @@ fn currency_cstr_keeps_sign_below_one() {
 }
 
 #[test]
+fn static_local_persists_across_calls() {
+    // A `Static` local is default-initialized once and persists, so the
+    // accumulator reaches 3 over three calls instead of resetting to 1.
+    let snap = run(
+        "Sub Main()\nDim total As Long\nDim i As Long\nFor i = 1 To 3\ntotal = Accumulate()\nNext i\nEnd Sub\n\
+         Function Accumulate() As Long\nStatic n As Long\nn = n + 1\nAccumulate = n\nEnd Function",
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(3)),
+        "expected total=3 (persisted, not reset to 1) in {snap:?}"
+    );
+}
+
+#[test]
+fn static_proc_makes_all_locals_static() {
+    // `Static Function` makes every local persist, even without its own
+    // `Static` keyword.
+    let snap = run(
+        "Sub Main()\nDim r As Long\nDim i As Long\nFor i = 1 To 3\nr = Tick()\nNext i\nEnd Sub\n\
+         Static Function Tick() As Long\nDim n As Long\nn = n + 1\nTick = n\nEnd Function",
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(3)),
+        "expected r=3 (Static Function persists its locals) in {snap:?}"
+    );
+}
+
+#[test]
+fn static_array_persists_and_allocates_once() {
+    // A `Static` fixed-size array allocates once at program entry and persists
+    // across calls; it must not be re-allocated (reset) per call.
+    let snap = run(
+        "Sub Main()\nDim r As Long\nDim i As Long\nFor i = 1 To 4\nr = Push(i)\nNext i\nEnd Sub\n\
+         Function Push(ByVal v As Long) As Long\nStatic a(1 To 3) As Long\nStatic count As Long\n\
+         count = count + 1\na(((count - 1) Mod 3) + 1) = v\nPush = a(1) + a(2) + a(3)\nEnd Function",
+    );
+    // Calls push 1,2,3,4 into a 3-slot ring → a = [4,2,3], last sum = 9.
+    assert!(
+        snap.contains(&Variant::from_i32(9)),
+        "expected the ring-buffer sum 9 (array persisted) in {snap:?}"
+    );
+}
+
+#[test]
+fn static_local_shadows_module_global() {
+    // A proc's `Static` local shadows a same-named module global inside the
+    // proc, while the module global keeps its own value.
+    let snap = run(
+        "Public n As Long\nSub Main()\nDim r As Long\nn = 100\nr = Bump()\nr = Bump()\nEnd Sub\n\
+         Function Bump() As Long\nStatic n As Long\nn = n + 1\nBump = n\nEnd Function",
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(100)),
+        "module global n must stay 100 in {snap:?}"
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(2)),
+        "the static local must reach 2 over two calls in {snap:?}"
+    );
+}
+
+#[test]
 fn for_loop_negative_step_counts_down() {
     let snap = run(
         "Sub Main()\nDim i As Long\nDim sum As Long\nDim last As Long\nsum = 0\nFor i = 5 To 1 Step -1\nsum = sum + i\nlast = i\nNext i\nEnd Sub",

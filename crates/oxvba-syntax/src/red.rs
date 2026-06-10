@@ -268,6 +268,16 @@ impl<'a> SyntaxNode<'a> {
             .any(|t| t.kind == SyntaxKind::KwWithEvents)
     }
 
+    /// True if this node carries a `Static` keyword among its direct tokens — a
+    /// `Static x` declaration statement, or a `Static Sub/Function/Property`
+    /// header (whose locals all become static). Only the node's own header
+    /// tokens are inspected, never nested body statements.
+    pub fn is_static(&self) -> bool {
+        self.child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwStatic)
+    }
+
     /// The `ParamDefault` of a `Param`, if any.
     pub fn param_default(&self) -> Option<SyntaxNode<'a>> {
         self.child_node(SyntaxKind::ParamDefault)

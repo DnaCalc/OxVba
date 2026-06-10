@@ -52,6 +52,10 @@ pub enum SymbolKind {
     WithEventsField,
     Parameter,
     Local,
+    /// A procedure-local declared `Static` (or any local of a `Static`
+    /// procedure): default-initialized once and persisting across calls. Lowered
+    /// to a bundle global with a mangled identity, not a frame slot.
+    StaticLocal,
     Const,
     LibraryConst,
     LibraryProc,

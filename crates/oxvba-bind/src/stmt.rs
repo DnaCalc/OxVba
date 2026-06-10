@@ -676,12 +676,36 @@ impl<'a> ProcLower<'a> {
     /// A `Dim` declarator allocation: a *fixed-size* array (`Dim a(1 To 3)`) via the
     /// `ReDim` path, or a UDT value (`Dim p As Point`) as a default-initialized record.
     /// A dynamic array (`Dim a()`) and plain scalars need no allocation.
+    ///
+    /// `Static` declarators are SKIPPED here — they persist across calls, so
+    /// re-allocating them in the per-call prologue would reset them. They are
+    /// allocated exactly once at program entry by [`Self::bind_static_dim`].
     pub(crate) fn bind_dim(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        self.bind_dim_filtered(node, false)
+    }
+
+    /// The per-program-entry allocation of a `Static` declarator's array/record
+    /// (the complement of [`Self::bind_dim`], which skips statics).
+    pub(crate) fn bind_static_dim(
+        &mut self,
+        node: SyntaxNode<'_>,
+    ) -> Result<Vec<CoreStmt>, BindError> {
+        self.bind_dim_filtered(node, true)
+    }
+
+    fn bind_dim_filtered(
+        &mut self,
+        node: SyntaxNode<'_>,
+        want_static: bool,
+    ) -> Result<Vec<CoreStmt>, BindError> {
         let mut out = Vec::new();
         for declarator in node.declarators() {
             let Some(name) = declarator.declarator_name() else {
                 continue;
             };
+            if self.is_static_local(name.text) != want_static {
+                continue;
+            }
             // A fixed-size array allocates via ReDim.
             if let Some(bounds_node) = declarator.array_bounds() {
                 if !bounds_node.children_of(SyntaxKind::Bound).is_empty() {
@@ -702,6 +726,16 @@ impl<'a> ProcLower<'a> {
             }
         }
         Ok(out)
+    }
+
+    /// Whether `name` resolves to a procedure-local declared `Static` (or a local
+    /// of a `Static` procedure) — lowered to a persistent bundle global.
+    fn is_static_local(&self, name: &str) -> bool {
+        self.resolve(name)
+            .and_then(|b| b.symbol)
+            .and_then(|s| self.g.env.symbols.symbol(s))
+            .map(|s| s.kind == oxvba_symbol::model::SymbolKind::StaticLocal)
+            .unwrap_or(false)
     }
 
     /// `Some(record allocation)` if `name` is a UDT-typed variable: a fresh record (a
