@@ -19,10 +19,8 @@
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
 | Testing | [`TESTING.md`](TESTING.md) | Test lanes, current coverage, and next testing milestones. |
 | Architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Current architecture snapshot and near-term evolution notes. |
-| IR Design | [`IR_DESIGN.md`](IR_DESIGN.md) | Current truth for the historical HIR/MIR/CFG scaffold and procedure-lowering IR decision boundary. |
-| Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status, executable-truth boundary, and planned evolution. |
+| Front-end and Core IR Contract | [`spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`](spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md) | The authoritative CST → binder → Core IR → bytecode contract for the clean pipeline. |
 | Executable Semantic Package | [`spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md) | Working-draft target for the shared bytecode-plus-metadata package consumed by VM, JIT, wrappers, and future native lanes. |
-| VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 | Conformance | [`CONFORMANCE.md`](CONFORMANCE.md) | Conformance assets, commands, and comparison policy. |
 | Conformance Evidence Layout | [`evidence/conformance/README.md`](evidence/conformance/README.md) | Active vs historical conformance artifact boundaries and governance scope. |
 | Integration Suite Strategy | [`evidence/conformance/PROJECT_INTEGRATION_SUITE_STRATEGY_V1.md`](evidence/conformance/PROJECT_INTEGRATION_SUITE_STRATEGY_V1.md) | Data-driven multi-project integration test strategy, deterministic policy contract, and growth plan. |
@@ -88,7 +86,6 @@
 | PMR Oracle Templates v1 | [`evidence/conformance/PMR_PROJECT_MODEL_ORACLE_TEMPLATES_V1.md`](evidence/conformance/PMR_PROJECT_MODEL_ORACLE_TEMPLATES_V1.md) | Structured Excel probe templates for deferred-oracle topics `CCT-037..CCT-041` (P10). |
 | PMR Oracle Runner | [`../scripts/run-pmr-project-model-oracle.ps1`](../scripts/run-pmr-project-model-oracle.ps1) | Automated Excel oracle capture runner for PMR topics (`CCT-037..CCT-041`) with CSV+summary artifacts. |
 | PMR Follow-up Queue | [`worksets/WORKSET_2026-03-03_PMR_FOLLOWUP_QUEUE_FROM_OBSERVATIONS.md`](worksets/WORKSET_2026-03-03_PMR_FOLLOWUP_QUEUE_FROM_OBSERVATIONS.md) | Queue generated from P10 observations and parity foldback, including divergence-linked implementation backlog. |
-| Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
 | Error Codes | [`ERROR_CODES.md`](ERROR_CODES.md) | Authoritative register of implemented, reserved, and proposal-only error-code families. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
 | Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |
