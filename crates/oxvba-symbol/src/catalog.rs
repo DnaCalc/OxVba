@@ -90,6 +90,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         StrReverse => e(StrReverse, &["StrReverse"], sig(1, 1), Ordinary),
         StrConv => e(StrConv, &["StrConv"], sig(2, 3), Ordinary),
         Format => e(Format, &["Format", "Format$"], sig(1, 4), Ordinary),
+        Filter => e(Filter, &["Filter"], sig(2, 4), Ordinary),
 
         // ── Math ──
         Abs => e(Abs, &["Abs"], sig(1, 1), Ordinary),
@@ -121,6 +122,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Second => e(Second, &["Second"], sig(1, 1), Ordinary),
         MonthName => e(MonthName, &["MonthName"], sig(1, 2), Ordinary),
         WeekdayName => e(WeekdayName, &["WeekdayName"], sig(1, 3), Ordinary),
+        DatePart => e(DatePart, &["DatePart"], sig(2, 4), Ordinary),
         DateNow => e(DateNow, &["Date", "Date$"], sig(0, 0), Ordinary),
         TimeNow => e(TimeNow, &["Time", "Time$"], sig(0, 0), Ordinary),
         Now => e(Now, &["Now"], sig(0, 0), Ordinary),
@@ -169,6 +171,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         IsObject => e(IsObject, &["IsObject"], sig(1, 1), Ordinary),
         IsNull => e(IsNull, &["IsNull"], sig(1, 1), Ordinary),
         IsEmpty => e(IsEmpty, &["IsEmpty"], sig(1, 1), Ordinary),
+        IsMissing => e(IsMissing, &["IsMissing"], sig(1, 1), Ordinary),
         // IIf/Choose/Switch resolve by name through the `vba_library` special-form
         // route, not the intrinsic-name map — so they carry no names here; the
         // entry exists only to give the lowering target a shape.
@@ -266,6 +269,7 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         StringRepeat,
         StrReverse,
         StrConv,
+        Filter,
         Format,
         Abs,
         Int,
@@ -294,6 +298,7 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         Second,
         MonthName,
         WeekdayName,
+        DatePart,
         DateNow,
         TimeNow,
         Now,
@@ -334,6 +339,7 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         IsObject,
         IsNull,
         IsEmpty,
+        IsMissing,
         IIf,
         Choose,
         Switch,
@@ -399,7 +405,7 @@ mod tests {
     #[test]
     fn catalog_covers_every_native_impl_id() {
         // Variants in oxvba-bundle's NativeImplId today (the catalog must cover each).
-        assert_eq!(ALL_INTRINSICS.len(), 137);
+        assert_eq!(ALL_INTRINSICS.len(), 140);
     }
 
     #[test]

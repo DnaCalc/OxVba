@@ -40,6 +40,7 @@ pub enum NativeImplId {
     StrReverse,
     StrConv,
     Format,
+    Filter, // `Filter(arr, match, [include], [compare])`
 
     // ── Math ─────────────────────────────────────────────────
     Abs,
@@ -71,8 +72,9 @@ pub enum NativeImplId {
     Second,
     MonthName,
     WeekdayName,
-    DateNow, // `Date`
-    TimeNow, // `Time`
+    DatePart, // `DatePart(interval, date, …)`
+    DateNow,  // `Date`
+    TimeNow,  // `Time`
     Now,
     Timer,
 
@@ -121,9 +123,10 @@ pub enum NativeImplId {
     IsObject,
     IsNull,
     IsEmpty,
-    IIf,    // `IIf(cond, t, f)` — eager (both arms evaluated)
-    Choose, // `Choose(idx, v1, …)` — 1-based, eager
-    Switch, // `Switch(c1, v1, c2, v2, …)` — eager
+    IsMissing, // `IsMissing(optionalArg)` — True for an omitted optional Variant
+    IIf,       // `IIf(cond, t, f)` — eager (both arms evaluated)
+    Choose,    // `Choose(idx, v1, …)` — 1-based, eager
+    Switch,    // `Switch(c1, v1, c2, v2, …)` — eager
 
     // ── Collection ───────────────────────────────────────────
     CollectionAdd,
@@ -202,17 +205,17 @@ impl NativeImplId {
         match self {
             Len | LenB | Left | Right | Mid | MidStmt | InStr | InStrRev | LCase | UCase
             | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc
-            | Space | StringRepeat | StrReverse | StrConv | Format => M::Strings,
+            | Space | StringRepeat | StrReverse | StrConv | Format | Filter => M::Strings,
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
-            | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DateNow
-            | TimeNow | Now | Timer => M::DateTime,
+            | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DatePart
+            | DateNow | TimeNow | Now | Timer => M::DateTime,
             Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
             | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
             Rnd | Randomize => M::Random,
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
-            | IsEmpty | IIf | Choose | Switch => M::Information,
+            | IsEmpty | IsMissing | IIf | Choose | Switch => M::Information,
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileRead
             | FileWrite | FilePrint | ConsolePrint | FileInput | ConsoleInput | FileLineInput

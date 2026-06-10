@@ -222,6 +222,7 @@ pub fn invoke(
         StrReverse => pure::str_reverse(args),
         StrConv => pure::str_conv(args),
         Format => pure::format(args),
+        Filter => pure::filter(args),
 
         // ── Math ──
         Abs => pure::math1(args, f64::abs),
@@ -253,6 +254,7 @@ pub fn invoke(
         Second => pure::date_part(args, pure::DatePart::Second),
         MonthName => pure::month_name(args),
         WeekdayName => pure::weekday_name(args),
+        DatePart => pure::vba_datepart(args),
         DateNow => host::date_now(host),
         TimeNow => host::time_now(host),
         Now => host::now(host),
@@ -300,6 +302,7 @@ pub fn invoke(
         IsObject => pure::is_vtype(args, |t| matches!(t, Vt::Object)),
         IsNull => pure::is_vtype(args, |t| matches!(t, Vt::Null)),
         IsEmpty => pure::is_vtype(args, |t| matches!(t, Vt::Empty)),
+        IsMissing => pure::is_missing(args),
         IIf => pure::iif(args),
         Choose => pure::choose(args),
         Switch => pure::switch(args),

@@ -172,6 +172,31 @@ pub fn split(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_safearray(SafeArray::from_variants(parts)))
 }
 
+/// `Filter(source, match, [include=True], [compare=binary])` — the subset of a
+/// string array whose elements contain (or, when `include` is False, omit) the
+/// `match` substring, returned as a fresh 0-based array.
+pub fn filter(args: &[Variant]) -> LibResult<Variant> {
+    let array = need(args, 0)?
+        .as_safearray()
+        .ok_or_else(|| LibError::type_mismatch("Filter expects a source array"))?;
+    let needle = as_str(need(args, 1)?)?;
+    let include = match opt(args, 2) {
+        Some(v) => as_bool_lenient(v),
+        None => true,
+    };
+    let text = text_compare(args, 3)?;
+    let needle_cmp = norm_compare(needle, text);
+    let mut out: Vec<Variant> = Vec::new();
+    for element in array.variant_elements().unwrap_or_default() {
+        let s = as_str(&element)?;
+        let contains = norm_compare(s, text).contains(&needle_cmp);
+        if contains == include {
+            out.push(element);
+        }
+    }
+    Ok(Variant::from_safearray(SafeArray::from_variants(out)))
+}
+
 pub fn join(args: &[Variant]) -> LibResult<Variant> {
     let array = need(args, 0)?
         .as_safearray()
@@ -764,6 +789,50 @@ pub fn len_b(args: &[Variant]) -> LibResult<Variant> {
     Ok(vi32(
         (as_str(need(args, 0)?)?.encode_utf16().count() * 2) as i32,
     ))
+}
+
+/// `DatePart(interval, date, [firstdayofweek], [firstweekofyear])` — extract a
+/// component named by `interval` (`yyyy`/`q`/`m`/`y`/`d`/`w`/`ww`/`h`/`n`/`s`).
+pub fn vba_datepart(args: &[Variant]) -> LibResult<Variant> {
+    let interval = as_str(need(args, 0)?)?.trim().to_ascii_lowercase();
+    let serial = as_f64(need(args, 1)?)?;
+    let (y, m, d) = serial_to_ymd(serial);
+    let (h, mi, s) = serial_to_hms(serial);
+    let value = match interval.as_str() {
+        "yyyy" => y as i32,
+        "q" => (((m - 1) / 3) + 1) as i32,
+        "m" => m as i32,
+        "d" => d as i32,
+        "w" => day_of_week(y as i32, m as u32, d as u32) + 1,
+        "y" => {
+            // Day of the year: this date's ordinal minus Jan 1's.
+            (days_from_civil(y, m, d) - days_from_civil(y, 1, 1) + 1) as i32
+        }
+        "ww" => {
+            // Week of year (default Sunday-first, week 1 = the week of Jan 1).
+            let doy = days_from_civil(y, m, d) - days_from_civil(y, 1, 1);
+            let jan1_dow = day_of_week(y as i32, 1, 1); // 0 = Sunday
+            ((doy + jan1_dow as i64) / 7 + 1) as i32
+        }
+        "h" => h as i32,
+        "n" => mi as i32,
+        "s" => s as i32,
+        other => {
+            return Err(LibError::invalid_call(format!(
+                "unknown DatePart interval `{other}`"
+            )));
+        }
+    };
+    Ok(vi32(value))
+}
+
+/// `IsMissing(arg)` — True only for an omitted optional `Variant` argument,
+/// which the VM materializes as vbError `&H80020004` (DISP_E_PARAMNOTFOUND).
+pub fn is_missing(args: &[Variant]) -> LibResult<Variant> {
+    const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
+    let v = need(args, 0)?;
+    let missing = v.vtype() == VarType::Error && v.as_error_code() == Some(MISSING_ARG);
+    Ok(vbool(missing))
 }
 
 /// Lenient truthiness for an optional Boolean-ish flag argument.

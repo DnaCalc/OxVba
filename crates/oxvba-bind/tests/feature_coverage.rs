@@ -340,6 +340,39 @@ fn scalar_boolean_like_const_expression_executes() {
 }
 
 #[test]
+fn filter_datepart_and_ismissing_intrinsics() {
+    // Filter keeps the matching elements; DatePart("q") is the quarter;
+    // IsMissing is True for an omitted optional Variant, False when supplied.
+    let snap = run(
+        "Public n As Long\nPublic q As Long\nPublic miss As Boolean\nPublic present As Boolean\n\
+         Sub Main()\n\
+         Dim f\nf = Filter(Array(\"apple\", \"banana\", \"grape\"), \"an\")\n\
+         n = UBound(f) - LBound(f) + 1\n\
+         q = DatePart(\"q\", DateSerial(2024, 8, 15))\n\
+         miss = Probe()\n\
+         present = Probe(5)\n\
+         End Sub\n\
+         Function Probe(Optional x) As Boolean\nProbe = IsMissing(x)\nEnd Function",
+    );
+    assert_eq!(
+        snap[0],
+        Variant::from_i32(1),
+        "Filter(\"an\") keeps only banana"
+    );
+    assert_eq!(snap[1], Variant::from_i32(3), "August is Q3");
+    assert_eq!(
+        snap[2],
+        Variant::from_bool(true),
+        "omitted optional is Missing"
+    );
+    assert_eq!(
+        snap[3],
+        Variant::from_bool(false),
+        "supplied optional is not Missing"
+    );
+}
+
+#[test]
 fn time_and_weekday_intrinsics() {
     // Hour/Minute/Second extract the time-of-day from a serial; WeekdayName
     // maps a 1-based weekday (1 = Sunday) to its name; LenB is 2× the UTF-16
