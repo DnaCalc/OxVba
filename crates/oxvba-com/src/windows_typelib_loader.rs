@@ -36,13 +36,13 @@ use windows_sys::Win32::System::Registry::{
 // ── ITypeLib / ITypeInfo vtable definitions ──
 
 #[cfg(target_os = "windows")]
-const INVOKE_FUNC: u16 = 1;
+const INVOKE_FUNC: u32 = 1;
 #[cfg(target_os = "windows")]
-const INVOKE_PROPERTYGET: u16 = 2;
+const INVOKE_PROPERTYGET: u32 = 2;
 #[cfg(target_os = "windows")]
-const INVOKE_PROPERTYPUT: u16 = 4;
+const INVOKE_PROPERTYPUT: u32 = 4;
 #[cfg(target_os = "windows")]
-const INVOKE_PROPERTYPUTREF: u16 = 8;
+const INVOKE_PROPERTYPUTREF: u32 = 8;
 
 #[cfg(target_os = "windows")]
 const TKIND_ENUM: u32 = 0;
@@ -156,7 +156,11 @@ struct FUNCDESC {
     lprgscode: *mut i32,
     lprgelemdescparam: *mut ELEMDESC,
     funckind: u32,
-    invkind: u16,
+    // INVOKEKIND is a 4-byte C enum in oaidl.h. This was declared u16, which
+    // only matched the real layout through accidental tail padding plus
+    // little-endian low-half reads (W1-hal-003); the static asserts below pin
+    // the layout against the OS ABI structurally.
+    invkind: u32,
     callconv: u32,
     cparams: i16,
     cparams_opt: i16,
@@ -165,6 +169,18 @@ struct FUNCDESC {
     elemdescfunc: ELEMDESC,
     wfuncdescflags: u16,
 }
+
+// FUNCDESC is read from COM-owned memory (ITypeInfo::GetFuncDesc), so its
+// layout must match oaidl.h exactly — pin the fields after each historically
+// fragile spot.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+const _: () = {
+    assert!(core::mem::offset_of!(FUNCDESC, invkind) == 28);
+    assert!(core::mem::offset_of!(FUNCDESC, callconv) == 32);
+    assert!(core::mem::offset_of!(FUNCDESC, cparams) == 36);
+    assert!(core::mem::offset_of!(FUNCDESC, oVft) == 40);
+    assert!(core::mem::offset_of!(FUNCDESC, elemdescfunc) == 48);
+};
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -665,7 +681,7 @@ unsafe fn typedesc_to_param_type(
 }
 
 #[cfg(target_os = "windows")]
-fn invkind_to_member_invoke_kind(invkind: u16) -> TypeLibMemberInvokeKind {
+fn invkind_to_member_invoke_kind(invkind: u32) -> TypeLibMemberInvokeKind {
     match invkind {
         INVOKE_PROPERTYGET => TypeLibMemberInvokeKind::PropertyGet,
         INVOKE_PROPERTYPUT => TypeLibMemberInvokeKind::PropertyPut,
@@ -766,7 +782,7 @@ fn typekind_label(typekind: u32) -> String {
 }
 
 #[cfg(target_os = "windows")]
-fn invkind_label(invkind: u16) -> String {
+fn invkind_label(invkind: u32) -> String {
     match invkind {
         INVOKE_FUNC => "func".to_string(),
         INVOKE_PROPERTYGET => "property_get".to_string(),
