@@ -333,15 +333,26 @@ where
         match arg.value {
             Some(ref value) => {
                 let value = value.to_com_value();
-                set_variant_from_com_value(&mut variant, &value, resolve_object, add_ref_dispatch)
-                    .map_err(|detail| ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                })?
+                if let Err(detail) = set_variant_from_com_value(
+                    &mut variant,
+                    &value,
+                    resolve_object,
+                    add_ref_dispatch,
+                ) {
+                    // VARIANT has no Drop: free the args marshalled so far
+                    // (owned BSTRs/SAFEARRAYs/AddRef'd interfaces) before
+                    // propagating (W1-com-001).
+                    let _ = windows_sys::Win32::System::Variant::VariantClear(&mut variant);
+                    clear_variant_args(&mut invoke_args);
+                    return Err(ComInvokeFailure {
+                        label,
+                        dispid,
+                        hr: None,
+                        arg_err: None,
+                        excep: None,
+                        detail: Some(detail),
+                    });
+                }
             }
             None => set_variant_missing_arg(&mut variant),
         }
@@ -449,8 +460,17 @@ where
         match arg.value {
             Some(ref value) => {
                 let value = value.to_com_value();
-                set_variant_from_com_value(&mut variant, &value, resolve_object, add_ref_dispatch)
-                    .map_err(|detail| validation_failure(label, dispid, detail))?
+                if let Err(detail) = set_variant_from_com_value(
+                    &mut variant,
+                    &value,
+                    resolve_object,
+                    add_ref_dispatch,
+                ) {
+                    // Free already-marshalled args before propagating (W1-com-001).
+                    let _ = windows_sys::Win32::System::Variant::VariantClear(&mut variant);
+                    clear_variant_args(&mut invoke_args);
+                    return Err(validation_failure(label, dispid, detail));
+                }
             }
             None => set_variant_missing_arg(&mut variant),
         }
@@ -554,20 +574,24 @@ where
             Some(ref value) => {
                 let value = value.to_com_value();
                 let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
-                set_variant_from_com_value(
+                if let Err(detail) = set_variant_from_com_value(
                     &mut variant,
                     &value,
                     resolve_object,
                     &mut add_ref_dispatch,
-                )
-                .map_err(|detail| ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                })?;
+                ) {
+                    // Free already-marshalled args before propagating (W1-com-001).
+                    let _ = windows_sys::Win32::System::Variant::VariantClear(&mut variant);
+                    clear_variant_args(&mut invoke_args);
+                    return Err(ComInvokeFailure {
+                        label,
+                        dispid,
+                        hr: None,
+                        arg_err: None,
+                        excep: None,
+                        detail: Some(detail),
+                    });
+                }
             }
             None => set_variant_missing_arg(&mut variant),
         }
@@ -656,8 +680,14 @@ where
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
         let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
-        set_variant_from_com_value(&mut variant, arg, resolve_object, &mut add_ref_dispatch)
-            .map_err(|detail| validation_failure(label, dispid, detail))?;
+        if let Err(detail) =
+            set_variant_from_com_value(&mut variant, arg, resolve_object, &mut add_ref_dispatch)
+        {
+            // Free already-marshalled args before propagating (W1-com-001).
+            let _ = windows_sys::Win32::System::Variant::VariantClear(&mut variant);
+            clear_variant_args(&mut invoke_args);
+            return Err(validation_failure(label, dispid, detail));
+        }
         invoke_args.push(variant);
     }
 
