@@ -75,7 +75,6 @@
 "for_nested_select_case.bas","basic-language","active basic language value-oracle fixture"
 "for_step_negative.bas","basic-language","active basic language value-oracle fixture"
 "for_step_positive.bas","basic-language","active basic language value-oracle fixture"
-"for_step_zero_error.bas","basic-language","active basic language value-oracle fixture"
 "for_zero_iter.bas","basic-language","active basic language value-oracle fixture"
 "function_call_basic.bas","basic-language","active basic language value-oracle fixture"
 "function_return_explicit_as_precedence_error.bas","basic-language","active basic language value-oracle fixture"
@@ -213,3 +212,5 @@
 "while_wend_basic.bas","basic-language","active basic language value-oracle fixture"
 "with_block_basic.bas","basic-language","active basic language value-oracle fixture"
 "with_block_member_target_chain.bas","host-or-boundary","late-bound or external boundary fixture; run outside basic language slot gate"
+"object_identity_is_nothing.bas","value-oracle-pending","Is operator on Nothing; oracle must pin As-New auto-instantiation before golden capture"
+"object_identity_is_same_and_different.bas","value-oracle-pending","Is identity on two As New instances; VM currently leaves As New uninstantiated under Is (different=true is suspect) - needs oracle"

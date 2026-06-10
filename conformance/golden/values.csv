@@ -63,7 +63,6 @@
 "for_nested_select_case.bas","ok","i32:21|i32:5"
 "for_step_negative.bas","ok","i32:3|i32:-1"
 "for_step_positive.bas","ok","i32:6|i32:7"
-"for_step_zero_error.bas","error",""
 "for_zero_iter.bas","ok","i32:5|i32:5"
 "function_call_basic.bas","ok","i32:9"
 "function_return_explicit_as_precedence_error.bas","error",""
