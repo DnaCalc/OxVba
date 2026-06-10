@@ -84,6 +84,10 @@ fn rmdir_removes_an_empty_directory() {
 fn clear_readonly(path: &std::path::Path) {
     if let Ok(meta) = std::fs::metadata(path) {
         let mut perms = meta.permissions();
+        // Windows-only test teardown: clearing the read-only bit so the temp file
+        // can be deleted. The cross-platform caveat the lint warns about (Unix
+        // mode bits) does not apply on this `#![cfg(target_os = "windows")]` lane.
+        #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         let _ = std::fs::set_permissions(path, perms);
     }
