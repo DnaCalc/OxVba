@@ -73,6 +73,27 @@ fn run(source: &str) -> Vec<Variant> {
 }
 
 #[test]
+fn vba_collection_new_add_count_item() {
+    // The built-in `Collection` is a class of the VBA library bundle: `New
+    // Collection` mints it via the cross-bundle coclass path, and `.Add`/`.Count`/
+    // `.Item` dispatch by name into native method bodies — no predeclared/Native
+    // route. (`Dim c As New Collection` auto-instantiation is a separate
+    // pre-existing `As New` gap, so use the `Set c = New Collection` form.)
+    let snap = run("Public n As Long\n\
+         Public a As Long\n\
+         Sub Main()\n\
+             Dim c As Collection\n\
+             Set c = New Collection\n\
+             c.Add 10\n\
+             c.Add 20\n\
+             n = c.Count\n\
+             a = c.Item(2)\n\
+         End Sub\n");
+    assert_eq!(snap[0].as_i32(), Some(2), "Count after two Adds: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(20), "Item(2): {snap:?}");
+}
+
+#[test]
 fn datevalue_month_name_and_cdate_numeric() {
     // `DateValue` parses the `d mmm yyyy` text form; `CDate` of a numeric is the date
     // serial directly. Both blocked SQLiteForExcel's TestBinding/TestDates.

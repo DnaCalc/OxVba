@@ -619,6 +619,44 @@ fn scanner_declares_enum_members() {
 #[test]
 fn predeclared_objects_are_recognized() {
     assert!(predeclared_object("Err").is_some());
-    assert!(predeclared_object("Collection").is_some());
+    assert!(predeclared_object("Debug").is_some());
+    // `Collection` is a class of the built-in `VBA` library bundle, not a
+    // predeclared object — it resolves as a creatable extern coclass instead.
+    assert!(predeclared_object("Collection").is_none());
     assert!(predeclared_object("NotAnObject").is_none());
+}
+
+#[test]
+fn collection_resolves_as_vba_extern_coclass_and_members() {
+    use crate::binding::DispatchRoute;
+    use crate::provider::Provider;
+    use crate::providers::vba_library::VbaLibraryProvider;
+    use crate::signature::VarTypeRef;
+
+    let p = VbaLibraryProvider;
+    assert_eq!(
+        p.resolve_extern_coclass("Collection"),
+        Some(("VBA".to_string(), "Collection".to_string()))
+    );
+    let recv = VarTypeRef::Object("collection".to_string());
+    let count = p
+        .resolve_member(&recv, "Count", None)
+        .expect("Count member");
+    match count.route {
+        DispatchRoute::ExternMember {
+            unit,
+            member,
+            kind,
+            has_receiver,
+            ..
+        } => {
+            assert_eq!(unit, "VBA");
+            assert_eq!(member, "Count");
+            assert_eq!(kind, oxvba_bundle::ProjectMemberKind::PropertyGet);
+            assert!(has_receiver);
+        }
+        other => panic!("expected ExternMember, got {other:?}"),
+    }
+    assert!(p.resolve_member(&recv, "Add", None).is_some());
+    assert!(p.resolve_member(&recv, "Bogus", None).is_none());
 }

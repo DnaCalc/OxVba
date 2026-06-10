@@ -124,12 +124,13 @@ pub enum LibraryConstValue {
     Int(i32),
 }
 
-/// The predeclared base-library objects.
+/// The predeclared base-library objects. `Collection` is intentionally absent:
+/// it resolves as a class of the built-in `VBA` library bundle (via the
+/// cross-bundle coclass/member path), not as a predeclared object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredeclaredObjectId {
     Debug,
     Err,
-    Collection,
 }
 
 /// A property's accessor set — one logical member with up to three accessors

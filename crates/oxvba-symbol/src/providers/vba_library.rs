@@ -1,17 +1,25 @@
 //! The VBA base-library provider: `vb*` value constants, the intrinsic catalog,
 //! the user-facing structural intrinsics (`VarPtr`/`StrPtr`/`ObjPtr`), the special
-//! forms (`Array`/`IIf`/…), and the predeclared `Debug`/`Err`/`Collection` objects.
-//! Constants are ported verbatim from the legacy `frontend_library`.
+//! forms (`Array`/`IIf`/…), and the predeclared `Debug`/`Err` objects. Constants
+//! are ported verbatim from the legacy `frontend_library`.
+//!
+//! The built-in `Collection` is *not* a predeclared object: it is a class of the
+//! `VBA` library bundle, resolved here as a creatable extern coclass
+//! (`resolve_extern_coclass`) whose members route cross-bundle to that unit
+//! (`resolve_member` → `ExternMember`), exactly like a referenced project's class.
 
 use oxvba_bundle::ProjectMemberKind;
 
 use crate::binding::{Binding, DispatchRoute, SpecialForm};
 use crate::catalog::name_to_intrinsic;
-use crate::model::{LibraryConstValue, PredeclaredObjectId};
+use crate::model::{LibraryConstValue, PredeclaredObjectId, fold_identifier};
 use crate::predeclared::{predeclared_member, predeclared_object};
 use crate::provider::Provider;
 use crate::signature::VarTypeRef;
 use crate::structural::StructuralIntrinsic;
+
+/// The unit name of the built-in library bundle (see `oxvba-bundle/vba_library`).
+const VBA_UNIT: &str = "VBA";
 
 pub struct VbaLibraryProvider;
 
@@ -44,10 +52,52 @@ impl Provider for VbaLibraryProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
+        // The built-in `Collection` resolves like a referenced coclass: its members
+        // bind cross-bundle to the `VBA` library class (late dispatch by name), not
+        // via a predeclared/`NativeImplId` route.
+        if fold_identifier(type_name) == "collection" {
+            return collection_member(name);
+        }
         let object = predeclared_object(type_name)?;
         let route = predeclared_member(object, name)?;
         Some(Binding::new(None, route))
     }
+
+    fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
+        // `New Collection` (or `New VBA.Collection`) instantiates the built-in
+        // `VBA.Collection` class via the same cross-bundle `NewExtern` path a
+        // referenced project's coclass uses.
+        let folded = fold_identifier(name);
+        let bare = folded.strip_prefix("vba.").unwrap_or(&folded);
+        (bare == "collection").then(|| (VBA_UNIT.to_string(), "Collection".to_string()))
+    }
+}
+
+/// Resolve a `Collection` member to its cross-bundle [`DispatchRoute::ExternMember`]
+/// route against the `VBA` unit. The accessor kinds must match the VBA bundle's
+/// `ClassMethod` kinds (`Count` is a property-get; the rest are methods) so the
+/// late-dispatch kind check matches; they are fixed by member name, not by the
+/// caller's `want` hint.
+fn collection_member(name: &str) -> Option<Binding> {
+    let (member, kind) = match fold_identifier(name).as_str() {
+        "add" => ("Add", ProjectMemberKind::Method),
+        "item" => ("Item", ProjectMemberKind::Method),
+        "count" => ("Count", ProjectMemberKind::PropertyGet),
+        "remove" => ("Remove", ProjectMemberKind::Method),
+        _ => return None,
+    };
+    Some(Binding::new(
+        None,
+        DispatchRoute::ExternMember {
+            unit: VBA_UNIT.to_string(),
+            owner: "Collection".to_string(),
+            member: member.to_string(),
+            kind,
+            param_types: Vec::new(),
+            param_names: Vec::new(),
+            has_receiver: true,
+        },
+    ))
 }
 
 /// The user-facing structural pointer intrinsics (the rest of the structural set

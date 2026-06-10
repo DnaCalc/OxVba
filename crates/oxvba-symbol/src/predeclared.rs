@@ -1,6 +1,7 @@
-//! The predeclared base-library objects `Debug`, `Err`, and `Collection`,
-//! modeled as static data behind the same member-resolution path as real COM
-//! objects (no fake typelib blob authored).
+//! The predeclared base-library objects `Debug` and `Err`, modeled as static
+//! data behind the same member-resolution path as real COM objects (no fake
+//! typelib blob authored). `Collection` is *not* here — it is a class of the
+//! built-in `VBA` library bundle (see `providers::vba_library`).
 
 use oxvba_bundle::NativeImplId;
 
@@ -12,7 +13,6 @@ pub fn predeclared_object(name: &str) -> Option<PredeclaredObjectId> {
     Some(match name.to_ascii_lowercase().as_str() {
         "debug" => PredeclaredObjectId::Debug,
         "err" => PredeclaredObjectId::Err,
-        "collection" => PredeclaredObjectId::Collection,
         _ => return None,
     })
 }
@@ -37,12 +37,5 @@ pub fn predeclared_member(obj: PredeclaredObjectId, name: &str) -> Option<Dispat
             "lastdllerror" => ErrMember::LastDllError,
             _ => return None,
         }),
-        PredeclaredObjectId::Collection => match folded.as_str() {
-            "add" => DispatchRoute::Native(NativeImplId::CollectionAdd),
-            "item" => DispatchRoute::Native(NativeImplId::CollectionItem),
-            "remove" => DispatchRoute::Native(NativeImplId::CollectionRemove),
-            "count" => DispatchRoute::Native(NativeImplId::CollectionCount),
-            _ => return None,
-        },
     })
 }
