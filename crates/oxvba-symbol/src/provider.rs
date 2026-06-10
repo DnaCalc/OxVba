@@ -293,6 +293,14 @@ impl ResolutionEnvironment {
             .map(Vec::len)
     }
 
+    /// All fields of UDT `name` in declaration order, as (folded name, type) —
+    /// for recursively default-initializing nested-UDT fields as records.
+    pub fn udt_field_list(&self, name: &str) -> Option<&[(String, crate::signature::VarTypeRef)]> {
+        self.udt_fields
+            .get(&crate::model::fold_identifier(name))
+            .map(Vec::as_slice)
+    }
+
     /// The (index, type) of field `field` in UDT `name`, for `p.<field>` access.
     pub fn udt_field(
         &self,

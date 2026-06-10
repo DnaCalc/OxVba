@@ -1081,6 +1081,55 @@ impl<'a> ProcLower<'a> {
             return Ok(bound);
         }
         let recv = self.member_receiver_bound(member_node)?;
+        // A field of a UDT receiver (`o.Lines(i)` / `o.field`): a fixed-index
+        // record element, optionally indexed when the field is an array. This
+        // is the value/read counterpart of `udt_field_place`, and is what makes
+        // nested UDT arrays (`o.Lines(i).Text`) resolve — the receiver of the
+        // outer `.Text` is the typed element of the inner array index.
+        if let VarTypeRef::Udt(udt) = &recv.ty
+            && let Some((index, field_ty)) = self
+                .g
+                .env
+                .udt_field(udt, member)
+                .map(|(i, t)| (i, t.clone()))
+        {
+            let base = match &recv.value {
+                CoreValue::Load(p) => p.clone(),
+                _ => {
+                    return Err(BindError::Unsupported(format!(
+                        "UDT field `.{member}` on a non-place receiver"
+                    )));
+                }
+            };
+            let field_place = CorePlace::RecordField {
+                base: Box::new(base),
+                index,
+            };
+            let field_ty = self.g.resolve_udt_type(field_ty);
+            return match arglist {
+                Some(a) => {
+                    let indices = self.bind_positional_values(a)?;
+                    let elem_ty = match field_ty {
+                        VarTypeRef::Array(inner) => self.g.resolve_udt_type(*inner),
+                        _ => VarTypeRef::Variant,
+                    };
+                    let place = CorePlace::Index {
+                        array: Box::new(field_place),
+                        indices,
+                    };
+                    Ok(Bound {
+                        value: CoreValue::Load(place.clone()),
+                        ty: elem_ty,
+                        place: Some(place),
+                    })
+                }
+                None => Ok(Bound {
+                    value: CoreValue::Load(field_place.clone()),
+                    ty: field_ty,
+                    place: Some(field_place),
+                }),
+            };
+        }
         match self.resolve_member(&recv.ty, member, None) {
             Some(binding) => match &binding.route {
                 DispatchRoute::ProjectMember { kind } => {

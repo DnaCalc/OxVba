@@ -583,6 +583,32 @@ impl<'a> ProcLower<'a> {
         };
         let mut place = CorePlace::Local(LocalId(0)); // overwritten on the first segment below
         for seg in rest {
+            // A field of a UDT receiver (`o.Lines`) is a fixed-index record
+            // element — the same `RecordField` shape `udt_field_place` builds,
+            // threaded through the dotted ReDim path so a UDT array field is a
+            // re-dimmable place. (The receiver is always a `Load(place)` here:
+            // we only reach `Udt` after descending into a record field, or from
+            // a UDT-typed leading variable.)
+            if let VarTypeRef::Udt(udt) = &ty
+                && let Some((index, field_ty)) =
+                    self.g.env.udt_field(udt, seg).map(|(i, t)| (i, t.clone()))
+            {
+                let base = match &recv {
+                    CoreValue::Load(p) => p.clone(),
+                    _ => {
+                        return Err(BindError::Unsupported(format!(
+                            "ReDim of UDT field `.{seg}` on a non-place receiver"
+                        )));
+                    }
+                };
+                place = CorePlace::RecordField {
+                    base: Box::new(base),
+                    index,
+                };
+                ty = self.g.resolve_udt_type(field_ty);
+                recv = CoreValue::Load(place.clone());
+                continue;
+            }
             let mb = self
                 .resolve_member(&ty, seg, None)
                 .ok_or_else(|| self.unresolved(seg, "ReDim member"))?;
@@ -720,10 +746,9 @@ impl<'a> ProcLower<'a> {
                 }
                 continue; // a dynamic `Dim a()` stays unallocated.
             }
-            // A UDT value allocates a default record.
-            if let Some(init) = self.udt_record_init(name.text)? {
-                out.push(init);
-            }
+            // A UDT value allocates a default record (recursively, so nested
+            // UDT fields are themselves records).
+            out.extend(self.udt_record_init(name.text)?);
         }
         Ok(out)
     }
@@ -738,29 +763,73 @@ impl<'a> ProcLower<'a> {
             .unwrap_or(false)
     }
 
-    /// `Some(record allocation)` if `name` is a UDT-typed variable: a fresh record (a
-    /// `SafeArray` of the type's fields, default-initialized) stored into its slot.
-    fn udt_record_init(&mut self, name: &str) -> Result<Option<CoreStmt>, BindError> {
+    /// Default-record allocation statements if `name` is a UDT-typed variable: a
+    /// fresh record (a `SafeArray` of the type's fields) for the value, plus a
+    /// nested record for each field that is itself a (scalar) UDT — so
+    /// `o.Item.N` works without a separate per-field allocation. (A UDT field
+    /// that is an *array* of UDT stays unallocated until `ReDim`; materializing
+    /// its elements as records is a separate runtime feature.)
+    fn udt_record_init(&mut self, name: &str) -> Result<Vec<CoreStmt>, BindError> {
         let Some(sym) = self.resolve(name).and_then(|b| b.symbol) else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         let oxvba_symbol::signature::VarTypeRef::Udt(udt) = self.symbol_type(sym) else {
-            return Ok(None);
-        };
-        let Some(field_count) = self.g.env.udt_field_count(&udt) else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         let place = self.place_by_name(name)?;
-        Ok(Some(CoreStmt::Assign {
-            place,
+        let mut out = Vec::new();
+        self.emit_udt_record_init(place, &udt, name, &mut out);
+        Ok(out)
+    }
+
+    /// Emit the default-record allocation for `place` (a value of UDT `udt`),
+    /// recursing into scalar-UDT fields so the whole nested record graph is
+    /// materialized. VBA forbids by-value self-referential UDTs, so the
+    /// recursion terminates.
+    fn emit_udt_record_init(
+        &self,
+        place: CorePlace,
+        udt: &str,
+        label: &str,
+        out: &mut Vec<CoreStmt>,
+    ) {
+        let Some(field_count) = self.g.env.udt_field_count(udt) else {
+            return;
+        };
+        out.push(CoreStmt::Assign {
+            place: place.clone(),
             value: CoreValue::NewRecord {
                 fields: field_count,
             },
             intent: AssignmentIntent::Let,
             target_kind: oxvba_bundle::AssignmentTargetKind::Scalar,
-            target_name: name.to_string(),
-            target_type_name: udt,
-        }))
+            target_name: label.to_string(),
+            target_type_name: udt.to_string(),
+        });
+        // The (index, inner-UDT-name) of each scalar UDT field, collected first
+        // so the env borrow is dropped before the recursive calls.
+        let nested: Vec<(usize, String)> = self
+            .g
+            .env
+            .udt_field_list(udt)
+            .map(|fields| {
+                fields
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, (_, ty))| match self.g.resolve_udt_type(ty.clone()) {
+                        oxvba_symbol::signature::VarTypeRef::Udt(inner) => Some((i, inner)),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (index, inner) in nested {
+            let sub = CorePlace::RecordField {
+                base: Box::new(place.clone()),
+                index,
+            };
+            self.emit_udt_record_init(sub, &inner, &format!("{label}.{inner}"), out);
+        }
     }
 
     fn bind_erase(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {

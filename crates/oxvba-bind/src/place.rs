@@ -37,14 +37,20 @@ impl<'a> ProcLower<'a> {
                 let base = node
                     .index_base()
                     .ok_or_else(|| BindError::Malformed("index base".into()))?;
-                let (base_place, _ty) = self.bind_place(base)?;
+                let (base_place, base_ty) = self.bind_place(base)?;
                 let indices = self.bind_index_values(node)?;
                 let place = CorePlace::Index {
                     array: Box::new(base_place),
                     indices,
                 };
-                // The element type isn't tracked through the array yet → Variant.
-                Ok((place, VarTypeRef::Variant))
+                // Track the array's element type so a nested UDT-array element
+                // (`o.Lines(i).Text`) can resolve its sub-fields; a non-array
+                // base (e.g. a default-member index) stays Variant.
+                let elem_ty = match base_ty {
+                    VarTypeRef::Array(inner) => self.g.resolve_udt_type(*inner),
+                    _ => VarTypeRef::Variant,
+                };
+                Ok((place, elem_ty))
             }
             SyntaxKind::ParenExpr => {
                 let inner = node

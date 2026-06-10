@@ -340,6 +340,20 @@ fn scalar_boolean_like_const_expression_executes() {
 }
 
 #[test]
+fn nested_scalar_udt_fields_are_recursively_materialized() {
+    // A UDT field that is itself a UDT (`Outer.Item As Inner`) is recursively
+    // default-initialized as a record, so `o.Item.N` is a live nested-record
+    // field — not an Empty that faults with "record expected".
+    let snap = run("Private Type Inner\nText As String\nN As Long\nEnd Type\n\
+         Private Type Outer\nItem As Inner\nCount As Long\nEnd Type\n\
+         Sub Main()\nDim o As Outer\no.Count = 5\no.Item.N = 7\nDim r As Long\nr = o.Item.N + o.Count\nEnd Sub");
+    assert!(
+        snap.contains(&Variant::from_i32(12)),
+        "expected o.Item.N + o.Count = 12 in {snap:?}"
+    );
+}
+
+#[test]
 fn single_line_function_body_executes() {
     // A whole `Function … : body : End Function` on one physical line (the
     // colon-separated single-line proc idiom, used heavily for trivial
