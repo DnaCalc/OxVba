@@ -134,17 +134,9 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
                 .as_decimal96()
                 .ok_or_else(|| "invalid Decimal variant payload".to_string())?
         )),
-        VarType::Currency => {
-            let scaled = value.as_currency_scaled_i64().unwrap_or(0);
-            let whole = scaled / 10_000;
-            let frac = (scaled % 10_000).unsigned_abs();
-            if frac == 0 {
-                BStr::from(format!("{whole}"))
-            } else {
-                let frac_str = format!("{frac:04}").trim_end_matches('0').to_string();
-                BStr::from(format!("{whole}.{frac_str}"))
-            }
-        }
+        VarType::Currency => BStr::from(format_vba_currency(
+            value.as_currency_scaled_i64().unwrap_or(0),
+        )),
         VarType::Error => BStr::from(format!("Error {}", value.as_error_code().unwrap_or(0))),
         VarType::String => {
             return value
@@ -159,6 +151,24 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
         }
     };
     Ok(text)
+}
+
+/// Format a Currency scaled-i64 (four implied decimals) the way VBA's `CStr`
+/// does. The sign is carried independently of the integer part — truncating
+/// division loses it whenever the integer part is zero (`-0.5` must not
+/// render as `0.5`) — and trailing fraction zeros are trimmed.
+fn format_vba_currency(scaled: i64) -> String {
+    let sign = if scaled < 0 { "-" } else { "" };
+    let magnitude = scaled.unsigned_abs();
+    let whole = magnitude / 10_000;
+    let frac = magnitude % 10_000;
+    if frac == 0 {
+        format!("{sign}{whole}")
+    } else {
+        let frac_str = format!("{frac:04}");
+        let frac_str = frac_str.trim_end_matches('0');
+        format!("{sign}{whole}.{frac_str}")
+    }
 }
 
 /// Format an f64 value the way VBA does: use enough decimal places but
@@ -223,16 +233,7 @@ pub fn print_display_text(value: &Variant) -> String {
             .unwrap_or_default(),
         VarType::Currency => value
             .as_currency_scaled_i64()
-            .map(|scaled| {
-                let whole = scaled / 10_000;
-                let frac = (scaled % 10_000).unsigned_abs();
-                if frac == 0 {
-                    format!("{whole}")
-                } else {
-                    let frac_str = format!("{frac:04}").trim_end_matches('0').to_string();
-                    format!("{whole}.{frac_str}")
-                }
-            })
+            .map(format_vba_currency)
             .unwrap_or_default(),
         VarType::ArrayVariant => value
             .as_safearray()
@@ -262,6 +263,34 @@ mod tests {
         let input = Variant::from_bool(true);
         let out = coerce_to(&input, VarType::Long).expect("coercion should succeed");
         assert_eq!(out.as_i32(), Some(-1));
+    }
+
+    #[test]
+    fn currency_to_string_keeps_sign_for_fractional_negatives() {
+        // -1 < v < 0 has integer part zero; the sign must not vanish with it.
+        for (scaled, expected) in [
+            (-5_000_i64, "-0.5"),
+            (-15_000, "-1.5"),
+            (-10_000, "-1"),
+            (5_000, "0.5"),
+            (0, "0"),
+            (-1, "-0.0001"),
+            (12_345_678, "1234.5678"),
+        ] {
+            let v = Variant::from_currency_scaled_i64(scaled);
+            assert_eq!(
+                variant_to_vba_string(&v)
+                    .expect("currency to string")
+                    .as_str(),
+                expected,
+                "scaled {scaled}"
+            );
+            assert_eq!(
+                super::print_display_text(&v),
+                expected,
+                "display text for scaled {scaled}"
+            );
+        }
     }
 
     #[test]

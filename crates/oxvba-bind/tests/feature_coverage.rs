@@ -665,6 +665,17 @@ fn for_loop_accumulator() {
 }
 
 #[test]
+fn currency_cstr_keeps_sign_below_one() {
+    // W1-runtime-001: the sign of a Currency in (-1, 0) lives only in the
+    // integer part under truncating division and used to vanish.
+    let snap = run("Sub Main()\nDim s As String\ns = CStr(CCur(-0.5))\nEnd Sub");
+    assert!(
+        snap.contains(&Variant::from_string("-0.5")),
+        "expected \"-0.5\" in {snap:?}"
+    );
+}
+
+#[test]
 fn for_loop_negative_step_counts_down() {
     let snap = run(
         "Sub Main()\nDim i As Long\nDim sum As Long\nDim last As Long\nsum = 0\nFor i = 5 To 1 Step -1\nsum = sum + i\nlast = i\nNext i\nEnd Sub",
