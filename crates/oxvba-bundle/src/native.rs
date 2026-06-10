@@ -11,9 +11,31 @@
 //!
 //! The grouping mirrors the real `VBA` type library's modules.
 
-/// A single natively-implemented VBA library function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum NativeImplId {
+/// Declares the [`NativeImplId`] enum and [`NativeImplId::ALL`] from a single
+/// variant list, so the set of native ops and the slice enumerating them are one
+/// source of truth and cannot drift apart.
+macro_rules! native_impl_ids {
+    ( $( $(#[$attr:meta])* $variant:ident ),+ $(,)? ) => {
+        /// A single natively-implemented VBA library function.
+        ///
+        /// Generated together with [`NativeImplId::ALL`] (see [`native_impl_ids!`]).
+        /// The exhaustive `intrinsic_entry` match in `oxvba-symbol` and the dispatch
+        /// match in `oxvba-lib` then make each variant's name/signature/body a
+        /// compile-time obligation — there is no hand-maintained roster to keep in sync.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum NativeImplId {
+            $( $(#[$attr])* $variant, )+
+        }
+
+        impl NativeImplId {
+            /// Every variant, in declaration order — generated alongside the enum,
+            /// so adding a variant extends this slice automatically.
+            pub const ALL: &'static [NativeImplId] = &[ $( NativeImplId::$variant, )+ ];
+        }
+    };
+}
+
+native_impl_ids! {
     // ── Strings ──────────────────────────────────────────────
     Len,
     LenB,

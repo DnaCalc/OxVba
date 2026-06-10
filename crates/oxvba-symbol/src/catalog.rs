@@ -243,158 +243,11 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
     }
 }
 
-/// Every `NativeImplId`. The `ALL_INTRINSICS.len() == <variant count>` test plus
-/// the exhaustive `intrinsic_entry` match are the two halves of the no-partial
-/// guarantee.
-pub const ALL_INTRINSICS: &[NativeImplId] = {
-    use NativeImplId::*;
-    &[
-        Len,
-        LenB,
-        Left,
-        Right,
-        Mid,
-        MidStmt,
-        InStr,
-        InStrRev,
-        LCase,
-        UCase,
-        Split,
-        Join,
-        Replace,
-        Trim,
-        LTrim,
-        RTrim,
-        StrComp,
-        Like,
-        Chr,
-        Asc,
-        Space,
-        StringRepeat,
-        StrReverse,
-        StrConv,
-        Filter,
-        Format,
-        Abs,
-        Int,
-        Fix,
-        Sgn,
-        Round,
-        Sqr,
-        Sin,
-        Cos,
-        Log,
-        Exp,
-        Atn,
-        Tan,
-        DateSerial,
-        TimeSerial,
-        DateValue,
-        TimeValue,
-        DateAdd,
-        DateDiff,
-        Year,
-        Month,
-        Day,
-        Weekday,
-        Hour,
-        Minute,
-        Second,
-        MonthName,
-        WeekdayName,
-        DatePart,
-        DateNow,
-        TimeNow,
-        Now,
-        Timer,
-        Hex,
-        Oct,
-        CStr,
-        Str,
-        Val,
-        CDate,
-        CVErr,
-        CBool,
-        CByte,
-        CInt,
-        CLng,
-        CLngLng,
-        CLngPtr,
-        CSng,
-        CDbl,
-        CCur,
-        CVar,
-        Rnd,
-        Randomize,
-        Fv,
-        Pv,
-        Pmt,
-        Npv,
-        Irr,
-        Mirr,
-        Rate,
-        NPer,
-        IsArray,
-        VarType,
-        TypeName,
-        IsNumeric,
-        IsError,
-        IsDate,
-        IsObject,
-        IsNull,
-        IsEmpty,
-        IsMissing,
-        IIf,
-        Choose,
-        Switch,
-        CollectionAdd,
-        CollectionItem,
-        CollectionRemove,
-        CollectionCount,
-        FreeFile,
-        FileOpen,
-        FileClose,
-        FileKill,
-        FileMkDir,
-        FileRmDir,
-        FileCurDir,
-        FileChDir,
-        FileLen,
-        FileCopy,
-        FileRead,
-        FileWrite,
-        FilePrint,
-        ConsolePrint,
-        FileInput,
-        ConsoleInput,
-        FileLineInput,
-        ConsoleLineInput,
-        FileEof,
-        FileLof,
-        FileSeek,
-        FileLoc,
-        FilePut,
-        FileGetInto,
-        FileWidth,
-        FileRename,
-        FileLock,
-        FileUnlock,
-        MsgBox,
-        InputBox,
-        Beep,
-        DoEvents,
-        Shell,
-        Environ,
-        Dir,
-        CreateObject,
-        ComSubscribeEvent,
-        ComUnsubscribeEvent,
-        ComEventCallbackSubscription,
-        ComEventCallbackArg,
-        ComReleaseEventCallback,
-        DebugPrint,
-    ]
-};
+/// Every `NativeImplId`, generated from the enum declaration itself
+/// ([`NativeImplId::ALL`]). The exhaustive `intrinsic_entry` match is the other
+/// half of the no-partial guarantee: a new variant fails to compile until it has
+/// an entry, and it joins this slice automatically — nothing to hand-maintain.
+pub const ALL_INTRINSICS: &[NativeImplId] = NativeImplId::ALL;
 
 /// Resolve a bare intrinsic name (case-insensitive) to its `NativeImplId`.
 pub fn name_to_intrinsic(name: &str) -> Option<NativeImplId> {
@@ -412,8 +265,23 @@ mod tests {
 
     #[test]
     fn catalog_covers_every_native_impl_id() {
-        // Variants in oxvba-bundle's NativeImplId today (the catalog must cover each).
-        assert_eq!(ALL_INTRINSICS.len(), 144);
+        // `intrinsic_entry` is a wildcard-free match, so name/signature/kind
+        // coverage is enforced at compile time and there is no count to maintain.
+        // This guards the one property the compiler can't: no callable name is
+        // claimed by two variants, which would make `name_to_intrinsic` (a
+        // first-match lookup) silently shadow one of them. Statement/assignment
+        // forms such as `MidStmt` carry no name and are dispatched structurally.
+        let mut seen: Vec<String> = Vec::new();
+        for id in ALL_INTRINSICS.iter().copied() {
+            for name in intrinsic_entry(id).names {
+                let lower = name.to_ascii_lowercase();
+                assert!(
+                    !seen.contains(&lower),
+                    "name {name:?} is claimed by more than one NativeImplId"
+                );
+                seen.push(lower);
+            }
+        }
     }
 
     #[test]
