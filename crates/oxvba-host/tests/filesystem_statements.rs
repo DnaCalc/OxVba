@@ -80,3 +80,74 @@ fn rmdir_removes_an_empty_directory() {
     result.expect("RmDir should succeed");
     assert!(!still_exists, "RmDir did not remove {}", dir.display());
 }
+
+fn clear_readonly(path: &std::path::Path) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_readonly(false);
+        let _ = std::fs::set_permissions(path, perms);
+    }
+}
+
+#[test]
+fn getattr_and_setattr_round_trip() {
+    // GetAttr reports a directory's vbDirectory bit; SetAttr toggles vbReadOnly on
+    // a file and GetAttr reflects it; SetAttr vbNormal clears it. (Snapshot order:
+    // globals in declaration order.)
+    let dir = unique_temp_dir("attrs");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("a.txt");
+    std::fs::write(&file, b"x").expect("seed file");
+    let source = format!(
+        "Public dirAttr As Long\nPublic roAttr As Long\nPublic clearedAttr As Long\n\
+         Sub Main()\n\
+         \u{20}   dirAttr = GetAttr(\"{dir}\")\n\
+         \u{20}   SetAttr \"{file}\", vbReadOnly\n\
+         \u{20}   roAttr = GetAttr(\"{file}\")\n\
+         \u{20}   SetAttr \"{file}\", vbNormal\n\
+         \u{20}   clearedAttr = GetAttr(\"{file}\")\n\
+         End Sub\n",
+        dir = vba_literal(&dir),
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    clear_readonly(&file); // ensure teardown can delete it
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(
+        snap[0].as_i32().map(|v| v & 16),
+        Some(16),
+        "directory should carry vbDirectory: {snap:?}"
+    );
+    assert_eq!(
+        snap[1].as_i32().map(|v| v & 1),
+        Some(1),
+        "file should be read-only after SetAttr vbReadOnly: {snap:?}"
+    );
+    assert_eq!(
+        snap[2].as_i32().map(|v| v & 1),
+        Some(0),
+        "read-only should be cleared after SetAttr vbNormal: {snap:?}"
+    );
+}
+
+#[test]
+fn chdrive_runs_against_the_current_drive() {
+    // ChDrive selects a drive's current directory. Drive a path on the current
+    // drive and confirm it executes; save/restore the process CWD so sibling
+    // tests (which all use absolute temp paths) are unaffected.
+    let saved = std::env::current_dir().expect("cwd");
+    let drive_letter = saved
+        .to_string_lossy()
+        .chars()
+        .next()
+        .expect("a drive letter")
+        .to_string();
+    let source = format!("Sub Main()\n    ChDrive \"{drive_letter}\"\nEnd Sub\n");
+    let result = run_clean(&source);
+    let _ = std::env::set_current_dir(&saved);
+    result.expect("ChDrive on the current drive should succeed");
+}

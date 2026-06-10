@@ -12,6 +12,101 @@ use std::{thread, time::Duration};
 
 use super::StandardHostServices;
 
+// VBA file-attribute bits. These are deliberately identical to the Win32
+// `FILE_ATTRIBUTE_*` values, which is what `GetAttr`/`SetAttr` expose.
+const VB_READONLY: i32 = 0x0001;
+const VB_HIDDEN: i32 = 0x0002;
+const VB_SYSTEM: i32 = 0x0004;
+const VB_DIRECTORY: i32 = 0x0010;
+const VB_ARCHIVE: i32 = 0x0020;
+/// The bits `SetAttr` is permitted to change (directory/volume are intrinsic).
+const VB_SETTABLE_ATTRS: i32 = VB_READONLY | VB_HIDDEN | VB_SYSTEM | VB_ARCHIVE;
+
+/// The documented VBA attribute bits for a path (VBA `GetAttr`).
+fn file_attribute_bits(meta: &fs::Metadata) -> i32 {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::MetadataExt;
+        (meta.file_attributes() as i32)
+            & (VB_READONLY | VB_HIDDEN | VB_SYSTEM | VB_DIRECTORY | VB_ARCHIVE)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Only read-only and directory are observable through portable std.
+        let mut bits = 0;
+        if meta.permissions().readonly() {
+            bits |= VB_READONLY;
+        }
+        if meta.is_dir() {
+            bits |= VB_DIRECTORY;
+        }
+        bits
+    }
+}
+
+/// Apply the settable attribute bits to `path`, preserving the bits `SetAttr`
+/// does not manage (e.g. `vbDirectory`). `settable` is pre-validated to contain
+/// only [`VB_SETTABLE_ATTRS`].
+fn apply_file_attributes(path: &Path, settable: i32) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_NORMAL, GetFileAttributesW, INVALID_FILE_ATTRIBUTES, SetFileAttributesW,
+        };
+
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: `wide` is a NUL-terminated UTF-16 buffer that outlives the call;
+        // `GetFileAttributesW` only reads it and returns the attribute DWORD (or
+        // INVALID_FILE_ATTRIBUTES on failure, which we surface as an OS error).
+        let current = unsafe { GetFileAttributesW(wide.as_ptr()) };
+        if current == INVALID_FILE_ATTRIBUTES {
+            return Err(std::io::Error::last_os_error());
+        }
+        let preserved = current & !(VB_SETTABLE_ATTRS as u32);
+        let mut new_attrs = preserved | (settable as u32);
+        if new_attrs == 0 {
+            new_attrs = FILE_ATTRIBUTE_NORMAL;
+        }
+        // SAFETY: same NUL-terminated UTF-16 buffer; `SetFileAttributesW` reads the
+        // path and applies `new_attrs`, returning 0 (FALSE) on failure.
+        let ok = unsafe { SetFileAttributesW(wide.as_ptr(), new_attrs) };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Portable std can only toggle the read-only bit; hidden/system/archive
+        // have no cross-platform equivalent.
+        let mut perms = fs::metadata(path)?.permissions();
+        perms.set_readonly(settable & VB_READONLY != 0);
+        fs::set_permissions(path, perms)
+    }
+}
+
+/// Change the current drive (VBA `ChDrive`). On Windows this selects the drive's
+/// remembered working directory; elsewhere there is no drive concept, so it is a
+/// no-op.
+fn change_drive(letter: char) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        // `set_current_dir("C:")` with no trailing separator selects drive C's
+        // current directory, which is exactly ChDrive's effect.
+        std::env::set_current_dir(format!("{letter}:"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = letter;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct FileSystemState {
     pub(super) handles: BTreeMap<i32, FileHandleState>,
@@ -1350,6 +1445,97 @@ impl FileSystemHal for StandardHostServices {
                         src.display(),
                         dst.display()
                     ),
+                )
+            })?;
+        }
+        Ok(Variant::from_i32(0))
+    }
+
+    fn get_attr_variant(&self, path: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "getattr"));
+        }
+        if self.native_fs_enabled() {
+            let p = self.variant_to_path(&path, capability, "getattr", "path")?;
+            let meta = fs::metadata(&p).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "getattr",
+                    format!("failed to stat {}: {err}", p.display()),
+                )
+            })?;
+            // VBA `GetAttr` returns an `Integer` of the documented attribute bits.
+            Ok(Variant::from_i32(file_attribute_bits(&meta)))
+        } else {
+            Ok(Variant::from_i32(0))
+        }
+    }
+
+    fn set_attr_variant(&self, path: Variant, attributes: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "setattr"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "setattr"));
+        }
+        let requested = self.variant_to_i32(&attributes, capability, "setattr", "attributes")?;
+        // `SetAttr` manages only these bits; `vbDirectory`/`vbVolume` are intrinsic
+        // to the entry and cannot be assigned, so a request to set them is an error
+        // (real VBA raises 5, "Invalid procedure call") rather than a silent no-op.
+        if requested & !VB_SETTABLE_ATTRS != 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "setattr",
+                format!(
+                    "attribute value {requested} sets bits SetAttr cannot change \
+                     (only vbReadOnly|vbHidden|vbSystem|vbArchive)"
+                ),
+            ));
+        }
+        if self.native_fs_enabled() {
+            let p = self.variant_to_path(&path, capability, "setattr", "path")?;
+            apply_file_attributes(&p, requested).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "setattr",
+                    format!("failed to set attributes on {}: {err}", p.display()),
+                )
+            })?;
+        }
+        Ok(Variant::from_i32(0))
+    }
+
+    fn ch_drive_variant(&self, drive: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "chdrive"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "chdrive"));
+        }
+        let Some(text) = drive.as_bstr() else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "chdrive",
+                "drive must be a string",
+            ));
+        };
+        // VBA `ChDrive` looks only at the first character; "" is a no-op.
+        if let Some(letter) = text.as_str().chars().next()
+            && self.native_fs_enabled()
+        {
+            change_drive(letter).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "chdrive",
+                    format!("failed to change drive to {letter:?}: {err}"),
                 )
             })?;
         }

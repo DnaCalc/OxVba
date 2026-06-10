@@ -166,7 +166,10 @@ native_impl_ids! {
     FileCurDir, // `CurDir([drive])`
     FileChDir,  // `ChDir path`
     FileLen,    // `FileLen(path)` — file size
-    FileCopy,   // `FileCopy source, dest`
+    FileCopy,    // `FileCopy source, dest`
+    FileGetAttr, // `GetAttr(path)` — file attribute bits (vbReadOnly|vbHidden|…)
+    FileSetAttr, // `SetAttr path, attributes`
+    FileChDrive, // `ChDrive drive`
     FileRead,
     FileWrite,
     FilePrint,
@@ -244,10 +247,10 @@ impl NativeImplId {
             | IsEmpty | IsMissing | IIf | Choose | Switch => M::Information,
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
-            | FileChDir | FileLen | FileCopy | FileRead | FileWrite | FilePrint | ConsolePrint
-            | FileInput | ConsoleInput | FileLineInput | ConsoleLineInput | FileEof | FileLof
-            | FileSeek | FileLoc | FilePut | FileGetInto | FileWidth | FileRename | FileLock
-            | FileUnlock => M::FileIo,
+            | FileChDir | FileLen | FileCopy | FileGetAttr | FileSetAttr | FileChDrive
+            | FileRead | FileWrite | FilePrint | ConsolePrint | FileInput | ConsoleInput
+            | FileLineInput | ConsoleLineInput | FileEof | FileLof | FileSeek | FileLoc
+            | FilePut | FileGetInto | FileWidth | FileRename | FileLock | FileUnlock => M::FileIo,
             MsgBox
             | InputBox
             | Beep

@@ -20,6 +20,7 @@ serde_json.workspace = true
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_Ole",
     "Win32_System_Variant",

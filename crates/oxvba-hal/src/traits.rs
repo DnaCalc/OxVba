@@ -195,6 +195,18 @@ pub trait FileSystemHal: Send + Sync {
     fn file_copy_variant(&self, _source: Variant, _dest: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "file_copy_variant")
     }
+    /// File attribute bits for a path (VBA `GetAttr(path)` — `vbReadOnly`/`vbHidden`/…).
+    fn get_attr_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "get_attr_variant")
+    }
+    /// Set a file's attribute bits (VBA `SetAttr path, attributes`).
+    fn set_attr_variant(&self, _path: Variant, _attributes: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "set_attr_variant")
+    }
+    /// Change the current drive (VBA `ChDrive drive`).
+    fn ch_drive_variant(&self, _drive: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "ch_drive_variant")
+    }
     fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "seek_variant")
     }

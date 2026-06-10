@@ -73,6 +73,15 @@ pub fn file_len(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant>
 pub fn file_copy(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().file_copy_variant(req(args, 0)?, req(args, 1)?)?)
 }
+pub fn file_get_attr(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().get_attr_variant(req(args, 0)?)?)
+}
+pub fn file_set_attr(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().set_attr_variant(req(args, 0)?, req(args, 1)?)?)
+}
+pub fn file_ch_drive(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().ch_drive_variant(req(args, 0)?)?)
+}
 pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().read_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }
