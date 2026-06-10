@@ -33,62 +33,79 @@ fn i64_or_double(v: Option<i64>, lossy: impl Fn() -> f64) -> Variant {
     }
 }
 
-pub fn add(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
-    match (lhs.vtype(), rhs.vtype()) {
-        (VarType::Integer, VarType::Integer) => Ok(Variant::from_i32(
-            i32::from(lhs.as_i16().unwrap_or(0)) + i32::from(rhs.as_i16().unwrap_or(0)),
-        )),
-        (VarType::Long, VarType::Long) => Ok(i32_or_double(
-            i64::from(lhs.as_i32().unwrap_or(0)) + i64::from(rhs.as_i32().unwrap_or(0)),
-        )),
-        (VarType::LongLong, VarType::LongLong) => Ok(i64_or_double(
-            lhs.as_i64()
-                .unwrap_or(0)
-                .checked_add(rhs.as_i64().unwrap_or(0)),
-            || lhs.as_i64().unwrap_or(0) as f64 + rhs.as_i64().unwrap_or(0) as f64,
-        )),
-        _ => widen_double(lhs, rhs, |a, b| a + b),
+/// The integer arithmetic lane an operand belongs to, with its exact value.
+/// Per the Excel oracle (OVERFLOW_ARITHMETIC_ORACLE_2026-05-31), the operation
+/// result type is the `numeric_join` of the operand ranks (`Byte` promotes to
+/// `Integer`; `Boolean` computes as `Integer` with `True = -1`), widening only
+/// on overflow — so any pair of sub-`LongLong` integers computes exactly and
+/// carries the `Long` result tag (the documented deferred carrier model), and
+/// a `LongLong` operand joins to the `LongLong` lane.
+enum IntLane {
+    /// Byte / Boolean / Integer / Long: values fit i32, results carry Long.
+    Long(i64),
+    /// LongLong involved: compute checked in i64, lossy Double on overflow.
+    LongLong(i64),
+}
+
+fn int_lane(v: &Variant) -> Option<IntLane> {
+    match v.vtype() {
+        VarType::Byte => Some(IntLane::Long(i64::from(v.as_u8().unwrap_or(0)))),
+        VarType::Boolean => Some(IntLane::Long(if v.as_bool().unwrap_or(false) {
+            -1
+        } else {
+            0
+        })),
+        VarType::Integer => Some(IntLane::Long(i64::from(v.as_i16().unwrap_or(0)))),
+        VarType::Long => Some(IntLane::Long(i64::from(v.as_i32().unwrap_or(0)))),
+        VarType::LongLong => Some(IntLane::LongLong(v.as_i64().unwrap_or(0))),
+        _ => None,
     }
+}
+
+pub fn add(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
+    if let (Some(l), Some(r)) = (int_lane(lhs), int_lane(rhs)) {
+        return Ok(match (l, r) {
+            (IntLane::Long(a), IntLane::Long(b)) => i32_or_double(a + b),
+            (IntLane::Long(a) | IntLane::LongLong(a), IntLane::Long(b) | IntLane::LongLong(b)) => {
+                i64_or_double(a.checked_add(b), || a as f64 + b as f64)
+            }
+        });
+    }
+    widen_double(lhs, rhs, |a, b| a + b)
 }
 
 pub fn sub(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
-    match (lhs.vtype(), rhs.vtype()) {
-        (VarType::Integer, VarType::Integer) => Ok(Variant::from_i32(
-            i32::from(lhs.as_i16().unwrap_or(0)) - i32::from(rhs.as_i16().unwrap_or(0)),
-        )),
-        (VarType::Long, VarType::Long) => Ok(i32_or_double(
-            i64::from(lhs.as_i32().unwrap_or(0)) - i64::from(rhs.as_i32().unwrap_or(0)),
-        )),
-        (VarType::LongLong, VarType::LongLong) => Ok(i64_or_double(
-            lhs.as_i64()
-                .unwrap_or(0)
-                .checked_sub(rhs.as_i64().unwrap_or(0)),
-            || lhs.as_i64().unwrap_or(0) as f64 - rhs.as_i64().unwrap_or(0) as f64,
-        )),
-        _ => widen_double(lhs, rhs, |a, b| a - b),
+    if let (Some(l), Some(r)) = (int_lane(lhs), int_lane(rhs)) {
+        return Ok(match (l, r) {
+            (IntLane::Long(a), IntLane::Long(b)) => i32_or_double(a - b),
+            (IntLane::Long(a) | IntLane::LongLong(a), IntLane::Long(b) | IntLane::LongLong(b)) => {
+                i64_or_double(a.checked_sub(b), || a as f64 - b as f64)
+            }
+        });
     }
+    widen_double(lhs, rhs, |a, b| a - b)
 }
 
 pub fn mul(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
-    match (lhs.vtype(), rhs.vtype()) {
-        (VarType::Integer, VarType::Integer) => Ok(i32_or_double(
-            i64::from(lhs.as_i16().unwrap_or(0)) * i64::from(rhs.as_i16().unwrap_or(0)),
-        )),
-        (VarType::Long, VarType::Long) => Ok(i32_or_double(
-            i64::from(lhs.as_i32().unwrap_or(0)) * i64::from(rhs.as_i32().unwrap_or(0)),
-        )),
-        (VarType::LongLong, VarType::LongLong) => Ok(i64_or_double(
-            lhs.as_i64()
-                .unwrap_or(0)
-                .checked_mul(rhs.as_i64().unwrap_or(0)),
-            || lhs.as_i64().unwrap_or(0) as f64 * rhs.as_i64().unwrap_or(0) as f64,
-        )),
-        _ => widen_double(lhs, rhs, |a, b| a * b),
+    if let (Some(l), Some(r)) = (int_lane(lhs), int_lane(rhs)) {
+        return Ok(match (l, r) {
+            (IntLane::Long(a), IntLane::Long(b)) => i32_or_double(a * b),
+            (IntLane::Long(a) | IntLane::LongLong(a), IntLane::Long(b) | IntLane::LongLong(b)) => {
+                i64_or_double(a.checked_mul(b), || a as f64 * b as f64)
+            }
+        });
     }
+    widen_double(lhs, rhs, |a, b| a * b)
 }
 
 pub fn neg(v: &Variant) -> Result<Variant, String> {
     match v.vtype() {
+        VarType::Byte => Ok(Variant::from_i32(-i32::from(v.as_u8().unwrap_or(0)))),
+        VarType::Boolean => Ok(Variant::from_i32(if v.as_bool().unwrap_or(false) {
+            1
+        } else {
+            0
+        })),
         VarType::Integer => Ok(Variant::from_i32(-i32::from(v.as_i16().unwrap_or(0)))),
         VarType::Long => Ok(i32_or_double(-i64::from(v.as_i32().unwrap_or(0)))),
         VarType::LongLong => Ok(i64_or_double(v.as_i64().unwrap_or(0).checked_neg(), || {
@@ -120,6 +137,41 @@ mod tests {
         let rhs = Variant::from_f64(0.5);
         let out = add(&lhs, &rhs).expect("add should succeed");
         assert_eq!(out.as_f64(), Some(10.5));
+    }
+
+    #[test]
+    fn mixed_integer_long_stays_in_integer_lane() {
+        // Oracle rule 1: numeric_join(Integer, Long) = Long — never Double.
+        let out = add(&Variant::from_i32(1), &Variant::from_i16(-2)).expect("add");
+        assert_eq!(out.as_i32(), Some(-1), "Long + Integer must yield Long");
+        let out = super::sub(&Variant::from_i16(3), &Variant::from_i32(5)).expect("sub");
+        assert_eq!(out.as_i32(), Some(-2), "Integer - Long must yield Long");
+        let out = super::mul(&Variant::from_i16(7), &Variant::from_i32(6)).expect("mul");
+        assert_eq!(out.as_i32(), Some(42), "Integer * Long must yield Long");
+    }
+
+    #[test]
+    fn byte_and_boolean_compute_as_integers() {
+        // Byte promotes to the integer lane (no Byte arithmetic in VBA);
+        // Boolean computes as Integer with True = -1.
+        let out = add(&Variant::from_u8(200), &Variant::from_u8(100)).expect("add");
+        assert_eq!(out.as_i32(), Some(300), "Byte + Byte widens past Byte");
+        let out = add(&Variant::from_bool(true), &Variant::from_i16(1)).expect("add");
+        assert_eq!(out.as_i32(), Some(0), "True + 1 = 0");
+    }
+
+    #[test]
+    fn mixed_longlong_joins_longlong_lane() {
+        let out = add(&Variant::from_i64(5_000_000_000), &Variant::from_i16(1)).expect("add");
+        assert_eq!(out.as_i64(), Some(5_000_000_001));
+    }
+
+    #[test]
+    fn neg_byte_and_boolean_stay_integral() {
+        let out = super::neg(&Variant::from_u8(5)).expect("neg");
+        assert_eq!(out.as_i32(), Some(-5), "-Byte(5) must stay integral");
+        let out = super::neg(&Variant::from_bool(true)).expect("neg");
+        assert_eq!(out.as_i32(), Some(1), "-True = 1");
     }
 }
 
