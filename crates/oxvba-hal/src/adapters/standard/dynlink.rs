@@ -311,6 +311,18 @@ impl DynamicLinkHal for StandardHostServices {
         descriptor: &DynLinkDescriptorView<'_>,
         args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
+        // Gate BOTH lanes before any dispatch: the m1-native-ffi branch reaches
+        // LoadLibrary + a real native call, and `allow_dynamic_link` is
+        // independent of `deterministic_mode` (a live host may forbid
+        // arbitrary DLLs). The deterministic fallback re-checks inside
+        // `bind_descriptor`; this is the single guard for the native lane.
+        let capability = CapabilityId::DynamicLinking;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "invoke_descriptor_variants"));
+        }
+        if !self.policy.allow_dynamic_link {
+            return Err(self.denied(capability, "invoke_descriptor_variants"));
+        }
         if descriptor.marshal_lane != "m1-native-ffi" || !self.native_mode_enabled() {
             let _binding = self.bind_descriptor(descriptor)?;
             let arg = args

@@ -2595,6 +2595,40 @@ mod tests {
     }
 
     #[test]
+    fn dynlink_invoke_descriptor_m1_native_lane_honors_policy_denial() {
+        // W1-hal-001: the m1-native-ffi branch must gate on allow_dynamic_link
+        // exactly like its siblings — a live (non-deterministic) host that
+        // forbids arbitrary DLLs must never reach LoadLibrary.
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                deterministic_mode: false,
+                allow_dynamic_link: false,
+                ..HostPolicy::default()
+            },
+        );
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 9,
+            declared_name: "GetTickCount",
+            library: "kernel32",
+            alias: "GetTickCount",
+            ordinal_alias: false,
+            symbol: 9.into(),
+            marshal_lane: "m1-native-ffi",
+            calling_convention: "platform-default",
+            selection_policy: "case-insensitive-canonical",
+            param_count: 0,
+            param_types: &[],
+            param_by_ref: &[],
+            return_type: Some(std::borrow::Cow::Borrowed("Long")),
+        };
+        let err = host
+            .invoke_descriptor_variants(&descriptor, &[])
+            .expect_err("native invoke must be policy-denied");
+        assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+    }
+
+    #[test]
     fn dynlink_bind_descriptor_rejects_unsupported_calling_convention() {
         let host = StandardHostServices::new(
             HalProfileId::Windows,
