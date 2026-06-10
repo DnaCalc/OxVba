@@ -207,6 +207,10 @@ pub trait FileSystemHal: Send + Sync {
     fn ch_drive_variant(&self, _drive: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "ch_drive_variant")
     }
+    /// A file's last-modified time as a VBA `Date` serial (VBA `FileDateTime(path)`).
+    fn file_date_time_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "file_date_time_variant")
+    }
     fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "seek_variant")
     }

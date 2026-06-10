@@ -204,6 +204,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         FileGetAttr => e(FileGetAttr, &["GetAttr"], sig(1, 1), Ordinary),
         FileSetAttr => e(FileSetAttr, &["SetAttr"], sig(2, 2), FileStatement),
         FileChDrive => e(FileChDrive, &["ChDrive"], sig(1, 1), FileStatement),
+        FileDateTime => e(FileDateTime, &["FileDateTime"], sig(1, 1), Ordinary),
         FileRead => e(FileRead, &[], variadic(0), Ordinary),
         FileWrite => e(FileWrite, &[], variadic(0), FileStatement),
         FilePrint => e(FilePrint, &[], variadic(0), FileStatement),

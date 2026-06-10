@@ -327,6 +327,7 @@ pub fn invoke(
         FileGetAttr => host::file_get_attr(args, host),
         FileSetAttr => host::file_set_attr(args, host),
         FileChDrive => host::file_ch_drive(args, host),
+        FileDateTime => host::file_date_time(args, host),
         FileRead => host::file_read(args, host),
         FileWrite => host::file_write(args, host),
         FilePrint => host::file_print(args, host),

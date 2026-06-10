@@ -169,7 +169,8 @@ native_impl_ids! {
     FileCopy,    // `FileCopy source, dest`
     FileGetAttr, // `GetAttr(path)` — file attribute bits (vbReadOnly|vbHidden|…)
     FileSetAttr, // `SetAttr path, attributes`
-    FileChDrive, // `ChDrive drive`
+    FileChDrive,  // `ChDrive drive`
+    FileDateTime, // `FileDateTime(path)` — last-modified as a Date serial
     FileRead,
     FileWrite,
     FilePrint,
@@ -248,9 +249,11 @@ impl NativeImplId {
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
             | FileChDir | FileLen | FileCopy | FileGetAttr | FileSetAttr | FileChDrive
-            | FileRead | FileWrite | FilePrint | ConsolePrint | FileInput | ConsoleInput
-            | FileLineInput | ConsoleLineInput | FileEof | FileLof | FileSeek | FileLoc
-            | FilePut | FileGetInto | FileWidth | FileRename | FileLock | FileUnlock => M::FileIo,
+            | FileDateTime | FileRead | FileWrite | FilePrint | ConsolePrint | FileInput
+            | ConsoleInput | FileLineInput | ConsoleLineInput | FileEof | FileLof | FileSeek
+            | FileLoc | FilePut | FileGetInto | FileWidth | FileRename | FileLock | FileUnlock => {
+                M::FileIo
+            }
             MsgBox
             | InputBox
             | Beep

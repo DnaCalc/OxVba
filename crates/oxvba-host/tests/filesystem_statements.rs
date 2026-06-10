@@ -135,6 +135,34 @@ fn getattr_and_setattr_round_trip() {
 }
 
 #[test]
+fn filedatetime_reads_a_files_modification_time() {
+    // A just-written file's FileDateTime must sit within a minute of Now() — both
+    // are built from the same UTC serial model, so this holds regardless of the
+    // test machine's time zone, without asserting an absolute timestamp.
+    let dir = unique_temp_dir("fdt");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("recent.txt");
+    std::fs::write(&file, b"x").expect("seed file");
+    let source = format!(
+        "Public gap As Double\n\
+         Sub Main()\n    gap = Abs(Now() - FileDateTime(\"{file}\"))\nEnd Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    let gap_days = snap[0].as_f64().expect("gap is a Double");
+    // One minute = 1/1440 of a day; a freshly written file is well within that.
+    assert!(
+        gap_days < 1.0 / 1440.0,
+        "FileDateTime should be ~Now for a just-written file, gap was {gap_days} days"
+    );
+}
+
+#[test]
 fn chdrive_runs_against_the_current_drive() {
     // ChDrive selects a drive's current directory. Drive a path on the current
     // drive and confirm it executes; save/restore the process CWD so sibling

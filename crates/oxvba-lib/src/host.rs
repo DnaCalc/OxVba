@@ -82,6 +82,9 @@ pub fn file_set_attr(args: &[Variant], host: &dyn HostServices) -> LibResult<Var
 pub fn file_ch_drive(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().ch_drive_variant(req(args, 0)?)?)
 }
+pub fn file_date_time(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().file_date_time_variant(req(args, 0)?)?)
+}
 pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().read_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }

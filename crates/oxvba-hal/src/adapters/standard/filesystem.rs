@@ -90,6 +90,19 @@ fn apply_file_attributes(path: &Path, settable: i32) -> std::io::Result<()> {
     }
 }
 
+/// Days from the VBA serial epoch (1899-12-30) to the Unix epoch (1970-01-01).
+const VBA_EPOCH_OFFSET_DAYS: f64 = 25_569.0;
+
+/// Convert a wall-clock `SystemTime` to a VBA `Date` serial (whole part = days
+/// since 1899-12-30, fractional part = time of day). Built the same UTC way as
+/// the `Now`/`Date`/`Time` time facet, so file and clock dates use one model.
+fn system_time_to_vba_serial(time: std::time::SystemTime) -> f64 {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_secs_f64() / 86_400.0 + VBA_EPOCH_OFFSET_DAYS,
+        Err(e) => VBA_EPOCH_OFFSET_DAYS - e.duration().as_secs_f64() / 86_400.0,
+    }
+}
+
 /// Change the current drive (VBA `ChDrive`). On Windows this selects the drive's
 /// remembered working directory; elsewhere there is no drive concept, so it is a
 /// no-op.
@@ -1540,6 +1553,38 @@ impl FileSystemHal for StandardHostServices {
             })?;
         }
         Ok(Variant::from_i32(0))
+    }
+
+    fn file_date_time_variant(&self, path: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "filedatetime"));
+        }
+        if self.native_fs_enabled() {
+            let p = self.variant_to_path(&path, capability, "filedatetime", "path")?;
+            let meta = fs::metadata(&p).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "filedatetime",
+                    format!("failed to stat {}: {err}", p.display()),
+                )
+            })?;
+            let modified = meta.modified().map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "filedatetime",
+                    format!("modification time unavailable for {}: {err}", p.display()),
+                )
+            })?;
+            // VBA `FileDateTime` returns a `Date`; the serial is built the same
+            // (UTC) way as the `Now`/`Date`/`Time` facet, for a consistent model.
+            Ok(Variant::from_date_f64(system_time_to_vba_serial(modified)))
+        } else {
+            // Deterministic lane: no real files; a stable zero serial (1899-12-30).
+            Ok(Variant::from_date_f64(0.0))
+        }
     }
 
     fn name_variant(&self, old_path: Variant, new_path: Variant) -> HalResult<Variant> {
