@@ -53,6 +53,12 @@ pub fn file_close(args: &[Variant], host: &dyn HostServices) -> LibResult<Varian
 pub fn file_kill(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().kill_variant(req(args, 0)?)?)
 }
+pub fn file_mkdir(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().mkdir_variant(req(args, 0)?)?)
+}
+pub fn file_rmdir(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.fs().rmdir_variant(req(args, 0)?)?)
+}
 pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().read_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }

@@ -185,6 +185,10 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         // is not a lexer keyword, so it parses as an ordinary statement-call and must
         // resolve by name (a 1-argument native).
         FileKill => e(FileKill, &["Kill"], sig(1, 1), FileStatement),
+        // Like `Kill`, the directory statements are not lexer keywords — they
+        // resolve by name as 1-argument statement-calls.
+        FileMkDir => e(FileMkDir, &["MkDir"], sig(1, 1), FileStatement),
+        FileRmDir => e(FileRmDir, &["RmDir"], sig(1, 1), FileStatement),
         FileRead => e(FileRead, &[], variadic(0), Ordinary),
         FileWrite => e(FileWrite, &[], variadic(0), FileStatement),
         FilePrint => e(FilePrint, &[], variadic(0), FileStatement),
@@ -331,6 +335,8 @@ pub const ALL_INTRINSICS: &[NativeImplId] = {
         FileOpen,
         FileClose,
         FileKill,
+        FileMkDir,
+        FileRmDir,
         FileRead,
         FileWrite,
         FilePrint,

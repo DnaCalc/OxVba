@@ -131,6 +131,8 @@ pub enum NativeImplId {
     FileOpen,
     FileClose,
     FileKill,
+    FileMkDir,
+    FileRmDir,
     FileRead,
     FileWrite,
     FilePrint,
@@ -206,10 +208,10 @@ impl NativeImplId {
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
             | IsEmpty | IIf | Choose | Switch => M::Information,
             CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
-            FreeFile | FileOpen | FileClose | FileKill | FileRead | FileWrite | FilePrint
-            | ConsolePrint | FileInput | ConsoleInput | FileLineInput | ConsoleLineInput
-            | FileEof | FileLof | FileSeek | FileLoc | FilePut | FileGetInto | FileWidth
-            | FileRename | FileLock | FileUnlock => M::FileIo,
+            FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileRead
+            | FileWrite | FilePrint | ConsolePrint | FileInput | ConsoleInput | FileLineInput
+            | ConsoleLineInput | FileEof | FileLof | FileSeek | FileLoc | FilePut | FileGetInto
+            | FileWidth | FileRename | FileLock | FileUnlock => M::FileIo,
             MsgBox
             | InputBox
             | Beep

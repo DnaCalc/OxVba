@@ -734,6 +734,68 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(0))
     }
 
+    fn mkdir_variant(&self, path: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "mkdir"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "mkdir"));
+        }
+        let Some(path_text) = path.as_bstr() else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "mkdir",
+                "path must be a string",
+            ));
+        };
+        if self.native_fs_enabled() {
+            // VBA `MkDir` creates a single directory (error 75 if it already
+            // exists / the parent is missing); mirror with a non-recursive create.
+            fs::create_dir(Path::new(&path_text.as_str())).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "mkdir",
+                    format!("failed to create directory {path_text}: {err}"),
+                )
+            })?;
+        }
+        Ok(Variant::from_i32(0))
+    }
+
+    fn rmdir_variant(&self, path: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "rmdir"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "rmdir"));
+        }
+        let Some(path_text) = path.as_bstr() else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "rmdir",
+                "path must be a string",
+            ));
+        };
+        if self.native_fs_enabled() {
+            // VBA `RmDir` removes an empty directory; `remove_dir` (non-recursive)
+            // matches (it errors if the directory is non-empty or missing).
+            fs::remove_dir(Path::new(&path_text.as_str())).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "rmdir",
+                    format!("failed to remove directory {path_text}: {err}"),
+                )
+            })?;
+        }
+        Ok(Variant::from_i32(0))
+    }
+
     fn seek_variant(&self, handle: Variant, position: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {

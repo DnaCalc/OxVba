@@ -310,6 +310,8 @@ pub fn invoke(
         FileOpen => host::file_open(args, host),
         FileClose => host::file_close(args, host),
         FileKill => host::file_kill(args, host),
+        FileMkDir => host::file_mkdir(args, host),
+        FileRmDir => host::file_rmdir(args, host),
         FileRead => host::file_read(args, host),
         FileWrite => host::file_write(args, host),
         FilePrint => host::file_print(args, host),

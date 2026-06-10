@@ -177,6 +177,12 @@ pub trait FileSystemHal: Send + Sync {
     fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "kill_variant")
     }
+    fn mkdir_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "mkdir_variant")
+    }
+    fn rmdir_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "rmdir_variant")
+    }
     fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "seek_variant")
     }
