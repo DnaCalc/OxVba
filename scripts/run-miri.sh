@@ -24,12 +24,6 @@ cargo +nightly miri test -p oxvba-jit 2>&1 || {
     exit 1
 }
 
-echo "=== Running miri on oxvba-vm (semantics + broadword only) ==="
-cargo +nightly miri test -p oxvba-vm -- semantics broadword 2>&1 || {
-    echo "FAIL: oxvba-vm miri"
-    exit 1
-}
-
 echo "=== Running miri on oxvba-com (miri_variant mock paths) ==="
 cargo +nightly miri test -p oxvba-com -- miri_variant 2>&1 || {
     echo "FAIL: oxvba-com miri"

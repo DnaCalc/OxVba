@@ -73,15 +73,6 @@ try {
     if ($Conformance) {
         Write-Host "[oxvba] conformance"
         & "$PSScriptRoot/run-conformance.ps1"
-        Write-Host "[oxvba] conformance (com-early)"
-        $comEarlyArgs = @{
-            IncludeFormalLane = $true
-            RunId = $resolvedRunId
-        }
-        if ($NoArtifacts) {
-            $comEarlyArgs["NoArtifacts"] = $true
-        }
-        & "$PSScriptRoot/run-com-early-conformance.ps1" @comEarlyArgs
     }
 
     if ($Matrix) {

@@ -3,43 +3,63 @@
 ## Current Workspace
 
 Workspace crates and current roles:
-- `oxvba-syntax`: lexer/parser and syntax-tree infrastructure.
+- `oxvba-syntax`: lossless lexer/parser and green/red syntax-tree
+  infrastructure (CST).
 - `oxvba-runtime`: canonical runtime value substrate centered on `Variant`,
   `BStr`, `ObjectRef`, `SAFEARRAY`, and related semantic carriers.
-- `oxvba-compiler`: resolve/typecheck/project lowering and bytecode emission.
-- `oxvba-vm`: register-slot interpreter over `Variant` values.
-- `oxvba-jit`: placeholder crate boundary for a future JIT v2 design; current
-  APIs report not implemented and do not fall back to VM execution.
+- `oxvba-symbol`: uniform symbol model — providers (project modules, VBA base
+  library, COM type libraries, `Declare` descriptors, host primitives,
+  referenced-project surfaces), source-agnostic resolution, and the intrinsic
+  catalog.
+- `oxvba-bind`: the binder. Lowers resolved CST to Core IR (`CoreProgram`):
+  procedure bodies, places, coercions, call binding, imports/exports.
+- `oxvba-bundle`: Core IR definitions, the primitive instruction set, and
+  `linearize` — producing the `Bundle`, the executable bytecode + descriptor
+  package both runtimes consume.
+- `oxvba-vm2`: the interpreting VM; executes `Bundle`s (including multi-bundle
+  cross-project linking via `Vm::link`) and is the permanent reference
+  runtime.
+- `oxvba-lib`: native bodies of the VBA base library (strings, math, dates,
+  conversion, financial, file I/O dispatch).
+- `oxvba-jit`: placeholder crate boundary for the future Cranelift JIT;
+  current APIs report not implemented and do not fall back to VM execution.
 - `oxvba-hal`: host/profile/policy boundary plus shared adapter/bootstrap core.
 - `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services,
-  COM wire translation, runtime state/metadata, and the compiler-facing COM
-  reference facade direction.
-- `oxvba-host`: engine orchestration, host policy, project runtime sessions, and
-  event dispatch.
-- `oxvba-launcher`: standalone launcher for direct VBA script execution.
+  COM wire translation (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`), typelib
+  loading, and runtime state/metadata.
+- `oxvba-host`: engine orchestration — bind/linearize/execute pipeline, host
+  policy, snapshots, error routing.
+- `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
+  reference-closure loading.
 - `oxvba-cli`: CLI bootstrap/run surface.
 
 ## Current Execution Shape
 
-High-level execution path:
-- source/project inputs enter through `oxvba-host` or `oxvba-cli`;
-- `oxvba-compiler` emits `Bytecode` plus runtime/project metadata, currently
-  packaged by `OxBundle` when persistence or wrapper surfaces need a durable
-  compiled artifact;
-- `oxvba-vm` executes compiled code over register slots using the current
-  bytecode and metadata surfaces;
-- `oxvba-jit` is disabled pending a new design and must not be used as
-  compatibility or performance evidence;
-- wrapper EXE/library paths package compiled OxVba artifacts and dispatch
-  through the existing runtime lanes rather than emitting direct native code;
-- `oxvba-hal` provides profile/policy-governed host services;
-- `oxvba-com` translates runtime values to and from COM wire representations
-  (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, event payload transport).
+The clean pipeline is the sole execution path:
+
+```
+source/project (oxvba-project, oxvba-cli, oxvba-host)
+  -> oxvba-syntax lossless CST          (parsed once, shared)
+  -> oxvba-symbol resolution environment
+  -> oxvba-bind                          binder -> Core IR (CoreProgram)
+  -> oxvba-bundle::linearize             -> Bundle (bytecode + descriptors)
+  -> oxvba-vm2                           interprets; one Bundle per project,
+                                         cross-project dispatch via Vm::link
+```
+
+- `oxvba-lib` provides base-library natives invoked from the VM;
+- `oxvba-hal` provides profile/policy-governed host services (filesystem,
+  console, dynamic linking for `Declare`, COM adapter, events);
+- `oxvba-com` translates runtime values to and from COM wire representations;
+- `oxvba-jit` is a stub pending the JIT v2 design and must not be used as
+  compatibility or performance evidence.
+
+The authoritative front-end and package contract is
+[`docs/spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`](spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md).
 
 The current repository does not have a direct native AOT compiler that emits PE
-or ELF objects. Native compilation is a planned later lane after the
-native-ready rebase worksets establish a coherent value substrate, correctness
-corpus, runner schema, and real procedure-lowering IR decision.
+or ELF objects. Native compilation is a planned later lane, after the Cranelift
+JIT consumes the same package.
 
 ## End-State Destination (North Star)
 
@@ -50,9 +70,9 @@ targets**:
 ```
 source
   -> oxvba-syntax lossless CST
-  -> binder -> bound HIR + SemanticModel
-  -> lowering
-  -> bytecode + metadata  (the executable semantic package)
+  -> binder (oxvba-bind) -> Core IR
+  -> linearize (oxvba-bundle)
+  -> bytecode + metadata  (the executable semantic package: Bundle)
         |-- interpreting VM   reference oracle; runs anywhere, incl. browser (WASM) and desktop (Tauri)
         \-- Cranelift JIT     optimizing fast path, lowering from the same package
 ```
@@ -82,10 +102,8 @@ The destination is reached in **two strictly ordered phases**:
    - all build targets — `Bundle`, `WrapperExe`, `WrapperLibrary`, and
      `WrappedComServer` (`BuildTarget` in `oxvba-project`); native-image
      `NativeExe`/`NativeDll` are a later evolution.
-   The in-flight front-end HIR migration (tracked under `bd-aprs`; see
-   [`FRONTEND_STATE_REPORT_2026-06-03.md`](FRONTEND_STATE_REPORT_2026-06-03.md))
-   is part of making this phase correct. The package must be designed JIT-ready
-   during this phase so Phase 2 need not reopen it.
+   The package must be designed JIT-ready during this phase so Phase 2 need
+   not reopen it.
 2. **Phase 2 — Cranelift JIT.** Only after Phase 1, build the Cranelift-based
    JIT on the same bytecode + metadata, with deep optimization, while the VM
    remains the stable reference. JIT activation is gated on Phase-1 correctness,
@@ -102,8 +120,9 @@ The declared type model for that package is
 expression/call model is
 [`docs/spec/VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](spec/VBA_EXPRESSION_CALL_SEMANTICS_V1.md).
 
-The current `OxBundle` is the seed of this direction, but it is not yet the
-full contract. The target package must preserve the bytecode control stream,
+The current `Bundle` (`oxvba-bundle`) implements the core of this direction,
+but it is not yet the full contract. The target package must preserve the
+bytecode control stream,
 declared type/slot metadata, procedure/project metadata, UDT descriptors,
 array descriptors, COM/native descriptors, error/source maps, helper ABI
 requirements, host capability requirements, carrier/layout versioning,
@@ -156,30 +175,19 @@ execution truth.
 
 ## Current IR Truth
 
-Two different things have been called "IR" in this repo; they must not be
-conflated:
+The single active IR is **Core IR** (`oxvba-bundle::coreir`): a resolved,
+source-agnostic tree (`CoreProgram` / `CoreProc` / `CoreStmt` / `CoreValue` /
+`CorePlace`) emitted by the binder (`oxvba-bind`) and consumed by `linearize`,
+which produces the `Bundle` instruction stream plus descriptors. Every
+desugaring is explicit in the binder; the contract is
+[`docs/spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`](spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md).
 
-- The **removed `oxvba-ir` mid-level optimization IR** (`VbaHir`/`VbaMir`/`CfgIr`
-  plus the `lower_to_hir` no-op lowering). It was removed during the native-ready
-  rebase because it was a sequence-preserving scaffold rather than a semantic
-  compiler layer: it did not carry the block, terminator, slot-effect,
-  helper-call, diagnostic, or source/bytecode mapping structure needed for native
-  compilation. There is still **no** active multi-level (HIR→MIR→CFG)
-  *optimization* pipeline of this kind.
-- The **active front-end bound HIR** (`oxvba-compiler/src/frontend_hir*.rs`): a
-  source-level, resolved, arena-allocated tree with CST back-pointers, plus a
-  `SemanticModel` overlay for IDE queries. This is the in-flight replacement for
-  the legacy string-rewriting front-end (`project.rs` rewrites + legacy
-  `resolve::parse_expr`), tracked under `bd-aprs` (see
-  [`FRONTEND_STATE_REPORT_2026-06-03.md`](FRONTEND_STATE_REPORT_2026-06-03.md) and
-  the End-State Destination above). For the migrated construct subset the default
-  production path is now `source → oxvba-syntax CST → binder → bound HIR →
-  lowering → bytecode`, with a legacy fallback for not-yet-migrated constructs.
-  This front-end HIR is **not** the removed `oxvba-ir`; it currently lowers (via
-  the existing `BoundModule`/`emit` backend) to the same bytecode the VM already
-  executes, and is not a separate optimization pipeline.
+There is **no** mid-level (HIR→MIR→CFG) *optimization* pipeline. The earlier
+`oxvba-ir` scaffold (`VbaHir`/`VbaMir`/`CfgIr`), the legacy string-rewriting
+front-end, and the transitional `oxvba-compiler` bound-HIR were all removed
+with the legacy stack; see git history.
 
-JIT v2 planning now names the future procedure-lowering IR
+JIT v2 planning names the future procedure-lowering IR
 `ProcLoweringIr`. It may be introduced only as a real contract with:
 - basic blocks and typed terminators;
 - explicit slot/value effects;
@@ -213,23 +221,19 @@ compiled artifact while VM behavior remains the reference execution oracle.
      coverage;
    - those lanes proceed with `oxvba-com` as the live bridge.
 
-## Native-Ready Rebase Direction
+## Current Direction
 
-The current native-ready execution authority is
-[`docs/worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`](worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md).
+Phase 1 (full correctness on the VM) is the active phase. Near-term work is
+ordered:
+- conformance and robustness of the clean pipeline (the `.bas` conformance
+  corpus under `conformance/`, the differential oracle against real Office
+  VBA, and hardening of the unsafe FFI/COM marshalling core);
+- language-surface completion on the existing `Bundle` contract (no ISA growth
+  without contract review);
+- only then Phase 2: the Cranelift JIT consuming the same package, followed by
+  native-image lanes.
 
-Near-term architectural work is intentionally ordered before direct native AOT:
-- rebase docs around implementation truth and archive historical plans;
-- keep active APIs free of `RuntimeValue` and fake IR scaffolds;
-- make numeric helpers and UDT planning `Variant`-native and descriptor-backed,
-  while keeping native UDT ABI materialization as a separate future layer;
-- build a correctness corpus that exposes numeric, coercion, error-state, array,
-  and UDT skeletons;
-- standardize VM/wrapper runner results before comparing native artifacts, with
-  JIT rows limited to explicit disabled-placeholder status until JIT v2 lands;
-- only then introduce direct native compilation through the executable semantic
-  package and a real procedure-lowering IR.
-
-The MACH-1000 material remains useful historical synthesis and vision context,
-but it is not the current implementation authority where it conflicts with this
-architecture snapshot, the native-ready worksets, or implementation evidence.
+Historical worksets, gate apparatus, and the MACH-1000 material under
+`docs/archive/` and `docs/worksets/` are synthesis and vision context, not
+implementation authority where they conflict with this snapshot or the spec
+contracts under `docs/spec/`.
