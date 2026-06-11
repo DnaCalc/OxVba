@@ -166,6 +166,61 @@ IDispatch slots: `get_Count(this, i32* retval)`, `Exists(this, i32, VARIANT_BOOL
 - **Verify earliest in S2:** the simplest slot `get_Count(this, i32* retval)` proves
   this-ptr + out-cell + HRESULT before any BSTR/VARIANT complexity.
 
+## Progress (2026-06-12)
+
+**S1–S4 COMPLETE + verified** (commits `307f0ae2`, `3c035213`, `b40c0647`, `e755556c`).
+The mechanism is proven, gating + IDispatch fallback are correct, and there is **zero
+regression** (default policy stays `DispatchOnly`; all 7 live COM tests green; oxvba-com
+118/0; clippy `-D warnings` clean). Two genuine ABI hazards were caught and fixed during
+the build: **(a)** typelibs ship at different `oVft` granularities — `vtable_slot` =
+`oVft / syskind_granularity` where granularity comes from the containing typelib's
+`TLIBATTR.syskind` (SYS_WIN32 ACE DAO ships 4-byte oVft even when loaded 64-bit; forcing
+`/8` computed half the slot and crashed). **(b)** VARIANT is passed by reference on Win64;
+`VT_BOOL`/`VT_CY` need distinct out-cell decoders.
+
+**THE KEY FINDING (reshapes S5 — this is what "fully" requires).** Live transport counts:
+- DAO (in-process ACE): value 7 ✓, **vtable_count=1** (`rs.Close` dispatched via vtable),
+  idispatch_count=7.
+- Excel (out-of-process): value 42.5 ✓, **vtable_count=0** — every call fell back to
+  IDispatch.
+
+The headline data-round-trip members (Excel `Range.Value`, DAO `Field.Value`) do **not**
+yet go through the vtable. Root cause: OxVba vtable-calls the **`IDispatch` pointer**
+directly. For an **in-process** dual object that pointer aliases the custom dual-interface
+vtable (`[IUnknown|IDispatch slots 0-6][custom slots 7+]`), so a slot ≥7 call works
+(DAO `rs.Close`). For an **out-of-process** object we hold an `IDispatch` *marshaling
+proxy* with only 7 slots — a slot ≥7 call read past it and **access-violated the host**
+(caught live; now gated off by an `IID_IProxyManager` QI → proxies always fall back).
+
+**The fix that delivers the goal fully (real IDE-style early binding):** do not vtable-call
+the raw `IDispatch` pointer. Instead `QueryInterface` the object for the **typelib-declared
+dual interface IID** (from the member's defining `ITypeInfo` `GetTypeAttr().guid`) and call
+the slot on *that* pointer. The oleaut universal marshaler (`PSOAInterface`) builds a proper
+**vtable proxy** for any oleaut-compatible dual interface, so this works **uniformly
+in-process and out-of-process** — it is exactly how the VBA IDE holds and calls early-bound
+references. This removes the proxy special-case (a proxy QI'd for the custom interface *is*
+vtable-callable).
+
+### S5 — REDEFINED (delivers "fully")
+1. **Custom-interface QI dispatch** (the core): extract the defining dual-interface IID per
+   member/interface (`ITypeInfo::GetTypeAttr().guid`, plumbed onto the member spec / live
+   recovery path); QI the object for it; vtable-call on the QI'd pointer; manage its
+   lifetime (Release). This makes Excel `Range.Value` and all out-of-process dual members
+   dispatch via vtable. **Riskiest remaining work** (out-of-process marshaling; host-AV
+   class bugs) — validate on Excel `Range.Value` first.
+2. **Omitted-optional arguments**: vtable calls cannot drop trailing positional optionals;
+   supply the typelib-declared default or `VT_ERROR`/`DISP_E_PARAMNOTFOUND` so members like
+   DAO `Fields(0)` / `OpenRecordset(sql,…optionals)` go through vtable instead of falling
+   back on arity.
+3. **Raw-getter / Invoke divergence** (investigate): DAO `Field.Value` via the raw dual
+   getter returned "Invalid operation" while `Invoke` returns 7 — likely a default-member
+   getter quirk or wrong interface; resolve once (1) lands (correct interface) or keep it on
+   the best-effort fallback if genuinely server-specific. Do **not** mask real errors.
+4. Property-put via vtable for in-process servers; `VT_CY`/`VT_DATE` completeness;
+   `IUnknown**` retvals (`query_dispatch_from_unknown`).
+
+### S6 — flip default to PreferVtable (unchanged, post-S5)
+
 ## Cross-refs
 
 `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md` (anticipates default `prefer_vtable`
