@@ -378,6 +378,20 @@ pub fn not(v: &Variant) -> R {
     if v.vtype() == VarType::Boolean {
         return Ok(Variant::from_bool(!v.as_bool().unwrap_or(false)));
     }
+    // `Not <array>` — the VBA `(Not Not arr)` allocation-probe idiom. Real VBA
+    // applies `Not` to the array's underlying `SAFEARRAY*` pointer: an
+    // unallocated dynamic array (`Dim a()`, never `ReDim`-ed) is a null
+    // descriptor, so `Not Not a` is 0; an allocated one yields a stable non-zero.
+    // Here an unallocated array is an `Empty` slot (handled by the numeric path
+    // below: `!0 = -1`, then the outer `Not(-1) = 0`), so only an *allocated*
+    // array Variant reaches this arm — model it as a non-zero descriptor handle
+    // so the double-`Not` round-trips to that non-zero (≠ 0). The handle's exact
+    // value is irrelevant; only its non-zeroness (which survives `!!handle`) is.
+    if v.vtype() == VarType::ArrayVariant {
+        let allocated = v.as_safearray().is_some_and(|a| a.bounds().is_some());
+        let handle: i64 = if allocated { 1 } else { 0 };
+        return Ok(long_or_double(!handle));
+    }
     Ok(long_or_double(!int(v)?))
 }
 
@@ -489,4 +503,44 @@ pub fn coerce_fixed_string(v: &Variant, len: usize) -> Variant {
         }
     }
     Variant::from_string(s.into_iter().collect::<String>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxvba_runtime::safe_array::SafeArray;
+
+    /// `(Not Not arr) = 0` for an unallocated dynamic array (an `Empty` slot),
+    /// and `≠ 0` for an allocated one — the VBA allocation-probe idiom.
+    #[test]
+    fn not_not_array_probes_allocation() {
+        // Unallocated `Dim a()` is an Empty slot: `!0 = -1`, then `!(-1) = 0`.
+        let unallocated = Variant::empty();
+        let inner = not(&unallocated).unwrap();
+        let outer = not(&inner).unwrap();
+        assert_eq!(int(&outer).unwrap(), 0, "unallocated array probes as 0");
+
+        // An allocated array (a bounded SafeArray) double-Nots to a non-zero.
+        let allocated = Variant::from_safearray(SafeArray::from_variants(vec![
+            Variant::from_i32(1),
+            Variant::from_i32(2),
+        ]));
+        let inner = not(&allocated).unwrap();
+        let outer = not(&inner).unwrap();
+        assert_ne!(
+            int(&outer).unwrap(),
+            0,
+            "allocated array probes as non-zero"
+        );
+    }
+
+    /// A single `Not <allocated array>` no longer faults type 13 — it returns a
+    /// numeric value (the complement of the descriptor handle).
+    #[test]
+    fn not_of_allocated_array_is_numeric_not_a_fault() {
+        let allocated =
+            Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_i32(7)]));
+        let result = not(&allocated).expect("Not on an array must not fault");
+        assert!(int(&result).is_ok());
+    }
 }

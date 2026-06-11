@@ -170,6 +170,30 @@ fn array_return_function_is_an_array_copy() {
 }
 
 #[test]
+fn not_not_array_is_an_allocation_probe() {
+    // The VBA `(Not Not arr)` idiom probes whether a dynamic array is allocated:
+    // 0 before `ReDim`, non-zero after. A single `Not <array>` used to fault
+    // type 13 (the bitwise path called `int` on an array Variant).
+    let snap = run("Public before As Long\nPublic after As Long\n\
+         Sub Main()\n\
+         Dim a() As Long\n\
+         before = (Not Not a)\n\
+         ReDim a(0 To 2)\n\
+         after = (Not Not a)\n\
+         End Sub");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(0),
+        "unallocated probes as 0: {snap:?}"
+    );
+    assert_ne!(
+        snap[1].as_i32(),
+        Some(0),
+        "allocated probes as non-zero: {snap:?}"
+    );
+}
+
+#[test]
 fn pointer_helper_pins_are_freed_per_native_call_not_leaked() {
     // Each `StrPtr` pins a cloned cell in the process-global registry; the
     // consuming `Declare` call frees it afterwards. Under the deterministic policy
