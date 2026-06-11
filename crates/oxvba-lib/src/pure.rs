@@ -380,67 +380,6 @@ fn char_in_charlist(c: char, body: &[char]) -> bool {
     found != negate
 }
 
-/// The 5 Windows-1252 byte → Unicode differences from Latin-1 in the 0x80–0x9F
-/// range. CP-1252 equals Latin-1 (the code point itself) for 0x00–0x7F and
-/// 0xA0–0xFF; only 0x80–0x9F differ. The 5 undefined CP-1252 slots
-/// (0x81/0x8D/0x8F/0x90/0x9D) pass through to their control-char code point
-/// (U+0081 etc.), matching Windows' best-fit behaviour, so they are simply absent
-/// from this table (decode falls through to `byte as char`).
-///
-/// FIDELITY: this hardcodes Windows-1252 (the de-facto Western ANSI code page);
-/// honouring the true system ANSI code page is a future refinement.
-const CP1252_HIGH: &[(u8, char)] = &[
-    (0x80, '\u{20AC}'), // €
-    (0x82, '\u{201A}'),
-    (0x83, '\u{0192}'), // ƒ
-    (0x84, '\u{201E}'),
-    (0x85, '\u{2026}'), // …
-    (0x86, '\u{2020}'), // †
-    (0x87, '\u{2021}'), // ‡
-    (0x88, '\u{02C6}'), // ˆ
-    (0x89, '\u{2030}'), // ‰
-    (0x8A, '\u{0160}'), // Š
-    (0x8B, '\u{2039}'), // ‹
-    (0x8C, '\u{0152}'), // Œ
-    (0x8E, '\u{017D}'), // Ž
-    (0x91, '\u{2018}'),
-    (0x92, '\u{2019}'),
-    (0x93, '\u{201C}'),
-    (0x94, '\u{201D}'),
-    (0x95, '\u{2022}'), // •
-    (0x96, '\u{2013}'), // – en-dash
-    (0x97, '\u{2014}'), // — em-dash
-    (0x98, '\u{02DC}'), // ˜
-    (0x99, '\u{2122}'), // ™
-    (0x9A, '\u{0161}'), // š
-    (0x9B, '\u{203A}'), // ›
-    (0x9C, '\u{0153}'), // œ
-    (0x9E, '\u{017E}'), // ž
-    (0x9F, '\u{0178}'), // Ÿ
-];
-
-/// Decode a Windows-1252 byte to its Unicode `char`. Total — every byte maps
-/// (the 5 undefined slots pass through to their control code point).
-fn cp1252_decode(byte: u8) -> char {
-    // The table holds only the 0x80–0x9F remaps; any other byte falls through.
-    if let Some(&(_, ch)) = CP1252_HIGH.iter().find(|&&(b, _)| b == byte) {
-        return ch;
-    }
-    // 0x00–0x7F, 0xA0–0xFF, and the 5 undefined high slots are the code point itself.
-    byte as char
-}
-
-/// Encode a `char` to its Windows-1252 byte, or `None` if not representable.
-fn cp1252_encode(ch: char) -> Option<u8> {
-    let cp = ch as u32;
-    // Direct Latin-1 ranges (code point == byte).
-    if cp <= 0x7F || (0xA0..=0xFF).contains(&cp) {
-        return Some(cp as u8);
-    }
-    // The remapped 0x80–0x9F bytes (reverse of the table).
-    CP1252_HIGH.iter().find(|&&(_, c)| c == ch).map(|&(b, _)| b)
-}
-
 /// Shared code-point decode for `Chr`/`ChrW`: the argument is a VBA `Long` whose
 /// low 16 bits are the (wide) character code; negatives wrap via `code as u16`.
 /// Rejects the UTF-16 surrogate range and otherwise returns the `char`.
@@ -459,8 +398,9 @@ pub fn chr_w(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(ch.to_string()))
 }
 
-/// `Chr(code)` — genuine ANSI (Windows-1252): codes 0..=255 map through CP-1252;
-/// codes 256..=65535 act WIDE (VBA7 `Chr` is wide above 255); negatives wrap.
+/// `Chr(code)` — genuine ANSI: codes 0..=255 decode through the live system ANSI
+/// code page (`CP_ACP` on Windows, the CP-1252 fallback off-Windows); codes
+/// 256..=65535 act WIDE (VBA7 `Chr` is wide above 255); negatives wrap.
 pub fn chr(args: &[Variant]) -> LibResult<Variant> {
     let code = as_i32(need(args, 0)?)?;
     let value = if (-32768..=65535).contains(&code) {
@@ -469,7 +409,12 @@ pub fn chr(args: &[Variant]) -> LibResult<Variant> {
         return Err(LibError::invalid_call("invalid character code"));
     };
     let ch = if value <= 0xFF {
-        cp1252_decode(value as u8)
+        // A single ANSI byte decodes to one Unicode char via the shared codec; fall
+        // back to the byte's own code point if the host ACP leaves it undefined.
+        oxvba_runtime::ansi::ansi_decode(&[value as u8])
+            .chars()
+            .next()
+            .unwrap_or(value as u8 as char)
     } else {
         wide_char(code)?
     };
@@ -487,15 +432,23 @@ pub fn asc_w(args: &[Variant]) -> LibResult<Variant> {
     Ok(vi32(i32::from((ch as u32 as u16) as i16)))
 }
 
-/// `Asc(s)` — genuine ANSI (Windows-1252): the first char's CP-1252 byte (0..=255).
-/// A char not representable in CP-1252 yields 63 (`"?"`, VBA's unmappable best-fit).
+/// `Asc(s)` — genuine ANSI: the first char's byte in the live system ANSI code page
+/// (`CP_ACP` on Windows, the CP-1252 fallback off-Windows). For the common
+/// Western/CP-1252 SBCS case this is the 0..=255 ANSI code; a char the host ACP
+/// cannot represent yields 63 (`"?"`, VBA's unmappable best-fit). (DBCS lead-byte /
+/// 2-byte `Asc` on a multibyte ACP is an accepted documented edge: we return the
+/// first byte only.)
 pub fn asc(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let ch = s
         .chars()
         .next()
         .ok_or_else(|| LibError::invalid_call("Asc of empty string"))?;
-    Ok(vi32(i32::from(cp1252_encode(ch).unwrap_or(b'?'))))
+    let byte = oxvba_runtime::ansi::ansi_encode(&ch.to_string())
+        .first()
+        .copied()
+        .unwrap_or(b'?');
+    Ok(vi32(i32::from(byte)))
 }
 
 pub fn space(args: &[Variant]) -> LibResult<Variant> {
@@ -1419,14 +1372,34 @@ pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
 
 pub fn is_numeric(args: &[Variant]) -> LibResult<Variant> {
     let v = need(args, 0)?;
-    // A numeric-typed Variant is numeric iff it coerces to Double (the original
-    // behaviour, unchanged). A *String* is numeric iff its text represents a VBA
-    // number — `coerce_to(.., Double)` does not parse strings, so a numeric string
-    // like "42" would otherwise wrongly report False.
-    let result = if v.vtype() == VarType::String {
-        is_numeric_string(&as_str(v)?)
-    } else {
-        oxvba_runtime::coerce::coerce_to(v, VarType::Double).is_ok()
+    // A *String* is numeric iff its text represents a VBA number — `coerce_to(..,
+    // Double)` does not parse strings, so a numeric string like "42" needs the
+    // dedicated grammar check. Every other subtype is judged by its `VarType`:
+    // VBA's `IsNumeric` is True only for the genuine numeric subtypes and `Empty`,
+    // and False for `Boolean`/`Date`/`Null`/`Object`/`Error`/arrays/`Nothing`
+    // (`coerce_to(.., Double)` would wrongly accept Boolean and Date).
+    let result = match v.vtype() {
+        VarType::String => is_numeric_string(&as_str(v)?),
+        VarType::Empty
+        | VarType::Integer
+        | VarType::Long
+        | VarType::Single
+        | VarType::Double
+        | VarType::Currency
+        | VarType::Byte
+        | VarType::SignedByte
+        | VarType::Decimal
+        | VarType::LongLong
+        | VarType::UnsignedInteger
+        | VarType::UnsignedLong
+        | VarType::UnsignedLongLong
+        | VarType::UnsignedInt => true,
+        VarType::Boolean
+        | VarType::Date
+        | VarType::Null
+        | VarType::Object
+        | VarType::Error
+        | VarType::ArrayVariant => false,
     };
     Ok(vbool(result))
 }
@@ -1621,10 +1594,16 @@ mod tests {
         assert!(!isnum(vs("inf")));
         assert!(!isnum(vs("&HZZ"))); // bad hex digits
         assert!(!isnum(vs("&H"))); // empty hex body
-        // Non-string behaviour is unchanged: a numeric-typed value still coerces to
-        // Double (the original `coerce_to` path), so it stays True.
+        // Genuine numeric subtypes and Empty are numeric (the VarType check).
         assert!(isnum(Variant::from_i32(42)));
         assert!(isnum(Variant::from_f64(3.5)));
+        assert!(isnum(Variant::empty()));
+        // Boolean, Date and Null are NOT numeric in VBA — even though Boolean/Date
+        // would coerce to Double, `IsNumeric` rejects them by subtype.
+        assert!(!isnum(Variant::from_bool(true)));
+        assert!(!isnum(Variant::from_bool(false)));
+        assert!(!isnum(Variant::from_date_f64(45000.0))); // a Date-typed Variant
+        assert!(!isnum(Variant::null()));
     }
 
     fn chr_(id_args: &[Variant], wide: bool) -> String {
@@ -1644,15 +1623,17 @@ mod tests {
         assert_eq!(asc_("A", false), 65);
         assert_eq!(asc_("A", true), 65);
 
-        // 128..255: Chr is CP-1252 (150 → en-dash) while ChrW is the raw code point.
+        // 128..255: Chr decodes through the system ANSI codec — on the dev/CI host
+        // (CP-1252 Windows ACP, or the off-Windows CP-1252 fallback) 150 → en-dash —
+        // while ChrW is always the raw code point.
         assert_eq!(chr_(&[Variant::from_i32(150)], false), "\u{2013}"); // –
         assert_eq!(chr_(&[Variant::from_i32(150)], true), "\u{0096}"); // U+0096
         assert_ne!(
             chr_(&[Variant::from_i32(150)], false),
             chr_(&[Variant::from_i32(150)], true)
         );
-        // Asc is the CP-1252 byte; AscW is the Unicode code point.
-        assert_eq!(asc_("\u{2013}", false), 150); // en-dash → CP-1252 byte 150
+        // Asc is the system-ANSI byte (150 on a CP-1252 host); AscW is the code point.
+        assert_eq!(asc_("\u{2013}", false), 150); // en-dash → ANSI byte 150
         assert_eq!(asc_("\u{2013}", true), 8211); // en-dash → U+2013
 
         // The wide range (>255) agrees: Chr acts wide above 255.

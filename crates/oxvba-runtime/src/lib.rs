@@ -1,6 +1,7 @@
 //! oxvba-runtime: core Variant representation and runtime semantics scaffolding.
 
 pub mod alloc;
+pub mod ansi;
 pub mod arithmetic;
 pub mod bstr;
 pub mod builtins;
