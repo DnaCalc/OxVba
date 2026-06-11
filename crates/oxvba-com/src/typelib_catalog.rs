@@ -249,7 +249,7 @@ pub fn source_interface_event_spec_supported(spec: &ComEventSpec) -> bool {
         && spec.connection_point_iid.is_some()
 }
 
-fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> ComMemberSpec {
+pub(crate) fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> ComMemberSpec {
     ComMemberSpec {
         name: member.name.clone(),
         requires_argument: member.requires_argument,

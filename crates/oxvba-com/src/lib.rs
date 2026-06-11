@@ -70,6 +70,7 @@ pub use typelib::{
     TypeLibResolvedIdentity, runtime_class_descriptor_from_typelib_metadata,
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
+pub(crate) use typelib_catalog::map_member_metadata_to_spec;
 pub use typelib_catalog::{
     TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata, build_typelib_metadata,
     event_spec_from_typelib_metadata, known_typelib_identity_for_prog_id_name,
@@ -106,6 +107,8 @@ pub use windows_connection_point::{
     try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
     unadvise_connection_point,
 };
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub use windows_invoke::try_vtable_member_spec_invoke_with_shared_state;
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, ComTransportCounters, execute_bound_variant,
@@ -158,6 +161,10 @@ pub use windows_test_dispatch::{
     TEST_DISPID_SUM_PAIR, TEST_DISPID_VALUE, TEST_EVENT_CHANGED, TEST_EVENT_CHANGED_PAIR,
     TEST_NAMED_DISPID_INDEX, TEST_NAMED_DISPID_LHS, TEST_NAMED_DISPID_RHS, TEST_NAMED_DISPID_VALUE,
     create_oxvba_test_dispatch, raw_oxvba_test_dispatch_vtable_invoke,
+};
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub use windows_typelib_loader::{
+    dispatch_is_marshaling_proxy, live_member_metadata_from_dispatch,
 };
 #[cfg(target_os = "windows")]
 pub use windows_variant::{

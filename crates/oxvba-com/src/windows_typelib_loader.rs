@@ -727,6 +727,38 @@ unsafe fn typedesc_to_param_type(
     apply_byref_param_type(vt_to_param_type(tdesc.vt, false), is_byref)
 }
 
+/// Resolve a `[out,retval]` parameter's INNER TYPEDESC to the member's by-VALUE
+/// language return type. A dual member encodes its return as `[out,retval] T*`,
+/// so the retval handler strips the outer pointer and passes the inner here.
+/// Unlike [`typedesc_to_param_type`], this NEVER produces a `ByRef*` type: a
+/// further pointer-to-interface (`IDispatch**` → inner `IDispatch*`) is the
+/// interface return `Object`, not a by-ref object, and a pointer-to-scalar is
+/// the scalar return. Mis-classifying an interface retval as `ByRefObject` made
+/// every object-returning member (Excel `Range`, `Workbooks`; DAO `Fields`,
+/// `Field`) fail the v1 vtable gate.
+///
+/// # Safety
+/// `owner_ptinfo` must be a live ITypeInfo for the duration of any
+/// `GetRefTypeInfo` resolution this performs.
+#[cfg(target_os = "windows")]
+unsafe fn retval_typedesc_to_param_type(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> TypeLibParamType {
+    // A pointer-to-interface (or pointer-to-anything) in retval position is the
+    // by-value language type of the pointee; strip the pointer without byref.
+    if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
+        let inner = &*(tdesc.union_field as *const TYPEDESC);
+        return retval_typedesc_to_param_type(owner_ptinfo, inner);
+    }
+    if tdesc.vt == VT_USERDEFINED {
+        // A user-defined type (interface/enum/alias) by value: resolve to Object/
+        // Long/the aliased scalar, never byref.
+        return typedesc_to_param_type(owner_ptinfo, tdesc, false);
+    }
+    vt_to_param_type(tdesc.vt, false)
+}
+
 #[cfg(target_os = "windows")]
 fn invkind_to_member_invoke_kind(invkind: u32) -> TypeLibMemberInvokeKind {
     match invkind {
@@ -1268,16 +1300,6 @@ unsafe fn extract_typelib_identity(
         ));
     }
 
-    // TLIBATTR layout: GUID, LCID, SYSKIND, WORD wMajorVerNum, WORD wMinorVerNum, WORD wLibFlags
-    #[repr(C)]
-    struct TLIBATTR {
-        guid: windows_sys::core::GUID,
-        lcid: u32,
-        syskind: u32,
-        w_major_ver_num: u16,
-        w_minor_ver_num: u16,
-        w_lib_flags: u16,
-    }
     let attr = &*(pattr as *const TLIBATTR);
     let libid = guid_to_string(&attr.guid);
     let major = attr.w_major_ver_num;
@@ -1511,23 +1533,75 @@ pub fn enumerate_typelib_members_for_interface(
     Ok(Vec::new())
 }
 
-/// Convert a `FUNCDESC::oVft` byte offset into an x64 vtable **slot index**.
-///
-/// The offset's granularity is the pointer size of the architecture the typelib
-/// was authored for (4 bytes for a 32-bit typelib, 8 bytes for a 64-bit one);
-/// the slot index is invariant across both, so we divide by whichever pointer
-/// size the offset is aligned to. Returns `None` for a negative or non-4-aligned
-/// (malformed) offset so the member is treated as having no usable vtable slot.
+/// TLIBATTR layout (oaidl.h): GUID, LCID, SYSKIND, wMajorVerNum, wMinorVerNum,
+/// wLibFlags. `syskind` distinguishes the typelib's authored word size, which is
+/// the granularity of `FUNCDESC::oVft`.
 #[cfg(target_os = "windows")]
-fn vtable_slot_index_from_ovft(ovft: i16) -> Option<u16> {
-    let raw = u16::try_from(ovft).ok()?;
-    if raw % 8 == 0 {
-        Some(raw / 8)
-    } else if raw % 4 == 0 {
-        Some(raw / 4)
-    } else {
-        None
+#[repr(C)]
+struct TLIBATTR {
+    guid: windows_sys::core::GUID,
+    lcid: u32,
+    syskind: u32,
+    w_major_ver_num: u16,
+    w_minor_ver_num: u16,
+    w_lib_flags: u16,
+}
+
+/// SYS_WIN64 == 3 (8-byte pointers); SYS_WIN16/WIN32/MAC use 4-byte `oVft`
+/// granularity. The slot INDEX is invariant; only the byte divisor differs.
+#[cfg(target_os = "windows")]
+const SYS_WIN64: u32 = 3;
+
+#[cfg(target_os = "windows")]
+fn ovft_pointer_size_for_syskind(syskind: u32) -> u16 {
+    if syskind == SYS_WIN64 { 8 } else { 4 }
+}
+
+/// Determine the `oVft` byte granularity (pointer size) authored into the
+/// typelib that CONTAINS this ITypeInfo, by reading its `TLIBATTR.syskind`. This
+/// is the only reliable disambiguator: a 32-bit typelib advances `oVft` in
+/// 4-byte steps even when loaded in a 64-bit process, so an even slot's `oVft`
+/// is divisible by 8 and a naive `/8` would compute HALF the correct slot and
+/// call the wrong vtable function (an access violation). Defaults to 8 (x64) if
+/// the containing typelib or its attributes cannot be read.
+///
+/// # Safety
+/// `ptinfo` must be a live ITypeInfo pointer for the duration of the call.
+#[cfg(target_os = "windows")]
+unsafe fn ovft_pointer_size_from_containing_typelib(ptinfo: *mut c_void) -> u16 {
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut ptlib: *mut c_void = null_mut();
+    let mut index: u32 = 0;
+    let hr = ((*vtbl).get_containing_type_lib)(ptinfo, &mut ptlib, &mut index);
+    if hr != COM_S_OK || ptlib.is_null() {
+        return 8;
     }
+    let lib_vtbl = *(ptlib as *const *const ITypeLibVtbl);
+    let mut pattr: *mut c_void = null_mut();
+    let attr_hr = ((*lib_vtbl).get_lib_attr)(ptlib, &mut pattr);
+    let pointer_size = if attr_hr == COM_S_OK && !pattr.is_null() {
+        let syskind = (*(pattr as *const TLIBATTR)).syskind;
+        let size = ovft_pointer_size_for_syskind(syskind);
+        ((*lib_vtbl).release_t_lib_attr)(ptlib, pattr);
+        size
+    } else {
+        8
+    };
+    ((*lib_vtbl).release)(ptlib);
+    pointer_size
+}
+
+/// Convert a `FUNCDESC::oVft` byte offset into an x64 vtable **slot index** using
+/// the typelib's authored pointer-size `granularity` (4 or 8). Returns `None` for
+/// a negative or mis-aligned offset so the member is treated as having no usable
+/// vtable slot.
+#[cfg(target_os = "windows")]
+fn vtable_slot_index_from_ovft(ovft: i16, granularity: u16) -> Option<u16> {
+    let raw = u16::try_from(ovft).ok()?;
+    if granularity == 0 || raw % granularity != 0 {
+        return None;
+    }
+    Some(raw / granularity)
 }
 
 /// Extracts member metadata from a single ITypeInfo.
@@ -1535,6 +1609,11 @@ fn vtable_slot_index_from_ovft(ovft: i16) -> Option<u16> {
 unsafe fn extract_members_from_typeinfo(
     ptinfo: *mut c_void,
 ) -> Result<Vec<TypeLibMemberMetadata>, String> {
+    // Determine the `oVft` byte granularity from the CONTAINING typelib's syskind
+    // once, before walking FUNCDESCs — a 32-bit typelib's oVft advances 4 bytes
+    // per slot, a 64-bit typelib's 8 bytes, and dividing by the wrong size yields
+    // a wrong (often half) slot index that crashes the host on the vtable call.
+    let ovft_granularity = ovft_pointer_size_from_containing_typelib(ptinfo);
     let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
     let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
     let hr = ((*vtbl).get_type_attr)(ptinfo, &mut pattr);
@@ -1620,11 +1699,14 @@ unsafe fn extract_members_from_typeinfo(
             let flags = param_desc.paramdesc.wparamflags;
             let vt = param_desc.tdesc.vt;
             if (flags & 0x0008) != 0 {
+                // `[out,retval] T*`: strip the outer out-pointer, then resolve the
+                // pointee to its by-VALUE language type (an interface → Object,
+                // never ByRefObject).
                 let retval_type = if vt == VT_PTR && param_desc.tdesc.union_field != 0 {
                     let inner = &*(param_desc.tdesc.union_field as *const TYPEDESC);
-                    typedesc_to_param_type(ptinfo, inner, false)
+                    retval_typedesc_to_param_type(ptinfo, inner)
                 } else if vt == VT_USERDEFINED {
-                    typedesc_to_param_type(ptinfo, &param_desc.tdesc, false)
+                    retval_typedesc_to_param_type(ptinfo, &param_desc.tdesc)
                 } else {
                     vt_to_param_type(vt, false)
                 };
@@ -1643,16 +1725,21 @@ unsafe fn extract_members_from_typeinfo(
             parameter_optional.push(is_optional);
         }
 
-        // Extract return type
+        // Extract return type. A `[out,retval]` param (above) wins; otherwise the
+        // function's own declared return drives it. Some typelibs (notably DAO)
+        // declare the language return type directly here as `T*` rather than the
+        // HRESULT+retval-param idiom, so resolve it by VALUE (an interface `T*`
+        // return is `Object`, a `T*` scalar is the scalar) — NOT via the by-ref
+        // pointer path, which would mis-type an object return as `ByRefObject` and
+        // make it fail the v1 vtable gate.
         let ret_vt = fd.elemdescfunc.tdesc.vt;
         let return_type = retval_return_type.or_else(|| {
             if ret_vt == VT_VOID || ret_vt == VT_HRESULT {
                 None
             } else {
-                Some(typedesc_to_param_type(
+                Some(retval_typedesc_to_param_type(
                     ptinfo,
                     &fd.elemdescfunc.tdesc,
-                    false,
                 ))
             }
         });
@@ -1684,9 +1771,9 @@ unsafe fn extract_members_from_typeinfo(
         // both — divide by whichever pointer size the offset is aligned to:
         //   * 8-aligned  → 64-bit-granular typelib → index = oVft / 8
         //   * 4-aligned  → 32-bit-granular typelib → index = oVft / 4
-        // A non-4-aligned or negative oVft is malformed: treat the member as
+        // A mis-aligned or negative oVft is malformed: treat the member as
         // having no usable vtable slot rather than computing a wrong index.
-        let vtable_slot = vtable_slot_index_from_ovft(fd.oVft);
+        let vtable_slot = vtable_slot_index_from_ovft(fd.oVft, ovft_granularity);
 
         members.push(TypeLibMemberMetadata {
             name: func_name,
@@ -1706,6 +1793,114 @@ unsafe fn extract_members_from_typeinfo(
         ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
     }
     Ok(members)
+}
+
+/// `IID_IProxyManager` `{00000008-0000-0000-C000-000000000046}`. A COM
+/// marshaling proxy (for an out-of-process or cross-apartment object) exposes
+/// this interface; an in-process object's real interface pointer does not.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+const IID_IPROXYMANAGER: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x0000_0008,
+    data2: 0x0000,
+    data3: 0x0000,
+    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+/// Whether `dispatch` is a COM **marshaling proxy** (an out-of-process /
+/// cross-apartment object), as opposed to a direct in-process interface pointer.
+///
+/// This is THE safety gate for the vtable fast path: a proxy's IDispatch vtable
+/// implements only the 7 `IUnknown`+`IDispatch` slots and forwards `Invoke`
+/// across the marshaler — it does NOT lay out the custom dual-interface slots, so
+/// calling slot ≥ 7 on a proxy reads past its vtable and ACCESS-VIOLATES the
+/// host. We detect a proxy by `QueryInterface(IID_IProxyManager)`: proxies
+/// answer it, in-process objects return `E_NOINTERFACE`. Excel (`CreateObject`,
+/// out-of-process) is a proxy → IDispatch only; ACE DAO (in-process DLL) is not
+/// → vtable-eligible. On any error we conservatively report "proxy" so we never
+/// vtable-call something we could not prove is in-process.
+///
+/// # Safety
+/// `dispatch` must be a live `IDispatch` pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub unsafe fn dispatch_is_marshaling_proxy(
+    dispatch: *mut crate::windows_client::RawIDispatch,
+) -> bool {
+    if dispatch.is_null() {
+        return true;
+    }
+    // SAFETY: `dispatch` is a live IDispatch per this fn's `# Safety`; the first
+    // vtable slot is IUnknown::QueryInterface. We request IProxyManager into a
+    // local out-pointer and Release it immediately if granted (we only need the
+    // yes/no answer), so no reference leaks.
+    unsafe {
+        let vtbl = &*(*dispatch).vtbl;
+        let mut ppv: *mut c_void = null_mut();
+        let hr =
+            (vtbl.unknown.query_interface)(dispatch.cast::<c_void>(), &IID_IPROXYMANAGER, &mut ppv);
+        if hr == COM_S_OK && !ppv.is_null() {
+            let proxy_unknown = ppv.cast::<crate::windows_client::RawIUnknown>();
+            let proxy_vtbl = &*(*proxy_unknown).vtbl;
+            (proxy_vtbl.release)(ppv);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Extract the FUNCDESC vtable signature for a single member of a LIVE COM
+/// object, by asking the object for its own `ITypeInfo` (`IDispatch::GetTypeInfo`)
+/// rather than a registered typelib. This is what lets early-bound member calls
+/// on objects with no prog-id-resolvable typelib (Excel `Range`, DAO `Field`,
+/// and every `::<invoke-result>` object in a member chain) still recover the
+/// dual-interface vtable slot so the vtable fast path can fire.
+///
+/// Returns the matching member's metadata — including `vtable_slot`,
+/// `parameter_types`, `return_type`, and `callconv_is_stdcall` — selected by
+/// `dispid` (FUNCDESC `memid`) and, when several FUNCDESCs share a memid
+/// (propget/propput pairs), the requested `invoke_kind`. `None` if the object
+/// exposes no type info, the member is absent, or the lookup fails.
+///
+/// # Safety
+/// `dispatch` must be a live `IDispatch` pointer held alive for the duration of
+/// this call (the bindings map's retained reference satisfies this).
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub unsafe fn live_member_metadata_from_dispatch(
+    dispatch: *mut crate::windows_client::RawIDispatch,
+    dispid: i32,
+    invoke_kind: TypeLibMemberInvokeKind,
+) -> Option<TypeLibMemberMetadata> {
+    if dispatch.is_null() {
+        return None;
+    }
+    // SAFETY: `dispatch` is a live IDispatch per this fn's `# Safety`; its first
+    // field is the vtable, and GetTypeInfo writes either null (no type info,
+    // S_FALSE/typeinfo-not-available) or one owned ITypeInfo reference.
+    let ptinfo = unsafe {
+        let vtbl = &*(*dispatch).vtbl;
+        let mut ptinfo: *mut c_void = null_mut();
+        let hr = (vtbl.get_type_info)(dispatch.cast::<c_void>(), 0, 0, &mut ptinfo);
+        if hr != COM_S_OK || ptinfo.is_null() {
+            return None;
+        }
+        ptinfo
+    };
+    // SAFETY: `ptinfo` is one owned ITypeInfo reference; extract its members,
+    // then Release it exactly once (its first field is the ITypeInfo vtable).
+    let members = unsafe {
+        let result = extract_members_from_typeinfo(ptinfo);
+        let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+        ((*ti_vtbl).release)(ptinfo);
+        result.ok()?
+    };
+    // Prefer an exact (memid, invoke_kind) match; fall back to memid alone so a
+    // member whose recorded kind differs slightly (e.g. a method surfaced as a
+    // property-get default) still resolves.
+    members
+        .iter()
+        .find(|m| m.token == dispid && m.invoke_kind == invoke_kind)
+        .or_else(|| members.iter().find(|m| m.token == dispid))
+        .cloned()
 }
 
 #[cfg(target_os = "windows")]
@@ -2234,19 +2429,26 @@ mod tests {
 
     #[test]
     fn vtable_slot_index_handles_32bit_and_64bit_granular_typelibs() {
-        // 64-bit-granular typelib: 8-byte slots. Slot 7 (first dual custom slot
-        // after the 7 IUnknown+IDispatch slots) is oVft 56.
-        assert_eq!(vtable_slot_index_from_ovft(56), Some(7));
-        assert_eq!(vtable_slot_index_from_ovft(72), Some(9));
-        // 32-bit-granular typelib (e.g. scrrun.dll): 4-byte slots. Slot 7 is
-        // oVft 28 (28 % 8 != 0, so the 4-aligned path applies → 28 / 4 = 7).
-        assert_eq!(vtable_slot_index_from_ovft(28), Some(7));
-        // The live regression that motivated this: oVft 12 from a 32-bit typelib
-        // is slot 3, not a panic.
-        assert_eq!(vtable_slot_index_from_ovft(12), Some(3));
-        // Malformed offsets carry no usable slot.
-        assert_eq!(vtable_slot_index_from_ovft(-8), None);
-        assert_eq!(vtable_slot_index_from_ovft(6), None);
+        // 64-bit-granular typelib (syskind SYS_WIN64 → 8-byte slots). Slot 7
+        // (first dual custom slot after the 7 IUnknown+IDispatch slots) is oVft 56.
+        assert_eq!(vtable_slot_index_from_ovft(56, 8), Some(7));
+        assert_eq!(vtable_slot_index_from_ovft(72, 8), Some(9));
+        // 32-bit-granular typelib (e.g. scrrun.dll / Excel / DAO → 4-byte slots):
+        // slot 7 is oVft 28, slot 3 is oVft 12. The DISAMBIGUATION is the only
+        // correct one: oVft 24 from a 32-bit typelib is slot 6, NOT slot 3 — a
+        // naive "/8 if divisible by 8" computed slot 3 and crashed the host.
+        assert_eq!(vtable_slot_index_from_ovft(28, 4), Some(7));
+        assert_eq!(vtable_slot_index_from_ovft(12, 4), Some(3));
+        assert_eq!(vtable_slot_index_from_ovft(24, 4), Some(6));
+        // The same oVft 24 in a 64-bit typelib really is slot 3.
+        assert_eq!(vtable_slot_index_from_ovft(24, 8), Some(3));
+        // syskind → granularity mapping.
+        assert_eq!(ovft_pointer_size_for_syskind(SYS_WIN64), 8);
+        assert_eq!(ovft_pointer_size_for_syskind(1 /* SYS_WIN32 */), 4);
+        // Malformed / mis-aligned offsets carry no usable slot.
+        assert_eq!(vtable_slot_index_from_ovft(-8, 8), None);
+        assert_eq!(vtable_slot_index_from_ovft(6, 8), None);
+        assert_eq!(vtable_slot_index_from_ovft(6, 4), None);
     }
 
     #[test]

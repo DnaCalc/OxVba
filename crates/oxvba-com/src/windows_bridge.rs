@@ -477,6 +477,96 @@ impl WindowsComBridge {
         Ok(None)
     }
 
+    /// Attempt a vtable this-call for a late-bound-by-name member whose dispid is
+    /// already resolved, recovering the FUNCDESC signature from the LIVE object's
+    /// own `ITypeInfo`. This is an OPPORTUNISTIC acceleration layer: it returns
+    /// `Ok(Some(value))` on a vtable success (and counts it), and `Ok(None)` in
+    /// every other case — an ineligible member, a marshaling proxy, no live type
+    /// info, OR a vtable call that failed (the recovered shape was not v1-covered)
+    /// — so the caller always continues cleanly to the proven IDispatch invoke.
+    /// It therefore never surfaces a hard error of its own (ZERO REGRESSION).
+    #[cfg(target_arch = "x86_64")]
+    fn try_live_vtable_invoke(
+        &self,
+        dispatch: *mut RawIDispatch,
+        dispid: i32,
+        request: &DynamicCallRequest,
+        args: &[ComInvokeArg],
+    ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
+        use crate::TypeLibMemberInvokeKind as K;
+        // SAFETY GATE: never vtable-call a marshaling proxy. An out-of-process
+        // object (Excel via CreateObject) hands us a proxy whose IDispatch vtable
+        // has only the 7 IUnknown+IDispatch slots and forwards Invoke across the
+        // marshaler — its custom dual slots (>= 7) do not exist in this address
+        // space, so calling one access-violates the host. Only a direct in-process
+        // interface pointer (ACE DAO's in-proc DLL) lays out the real vtable.
+        // SAFETY: `dispatch` is the live, bindings-map-retained IDispatch for this
+        // call (the caller guarded `native_dispatch != 0`).
+        if unsafe { crate::dispatch_is_marshaling_proxy(dispatch) } {
+            return Ok(None);
+        }
+        // The COM invoke kind this call intends, used to pick the right FUNCDESC
+        // when a propget/propput pair shares a memid. PropertyPutRef (Set p = obj)
+        // is deferred to IDispatch in v1.
+        let preferred_kind = match request.call_kind_hint {
+            Some(DynamicCallKind::PropertyLet) => K::PropertyPut,
+            Some(DynamicCallKind::PropertySet) => return Ok(None),
+            _ => K::Method,
+        };
+        // SAFETY: `dispatch` is the live, bindings-map-retained IDispatch for this
+        // call (the caller guarded `native_dispatch != 0` and the retained
+        // reference keeps it alive for this lookup).
+        let metadata =
+            unsafe { crate::live_member_metadata_from_dispatch(dispatch, dispid, preferred_kind) };
+        let Some(metadata) = metadata else {
+            return Ok(None);
+        };
+        let spec = crate::map_member_metadata_to_spec(&metadata);
+        // SAFETY: `dispatch` is the live, bindings-map-retained dual interface;
+        // the spec-level attempt gates the slot/callconv/signature before any
+        // vtable call and reuses the IDispatch path's resolve/bind closures.
+        let outcome = unsafe {
+            crate::try_vtable_member_spec_invoke_with_shared_state(
+                dispatch.cast(),
+                dispid,
+                &spec,
+                args,
+                true,
+                &self.state,
+            )
+        };
+        match outcome {
+            Ok(Some(value)) => {
+                self.vtable_call_count.fetch_add(1, Ordering::Relaxed);
+                Ok(Some(value))
+            }
+            // BEST-EFFORT semantics for this LIVE-RECOVERED path: the spec was
+            // recovered heuristically from the object's own ITypeInfo at runtime
+            // (not from authoritative bind-time metadata), and some real servers'
+            // raw dual getters diverge from their IDispatch::Invoke behavior (DAO
+            // `Field.Value` returns "Invalid operation" via the slot yet 7 via
+            // Invoke). So a failure here is treated as "this member's vtable shape
+            // is not v1-covered" and falls back to the proven IDispatch path,
+            // preserving ZERO REGRESSION. (The authoritative fixture/bound path in
+            // `try_vtable_member_spec_invoke_with_shared_state` still PROPAGATES a
+            // genuine hr<0 to its caller; only this opportunistic acceleration
+            // layer absorbs it.)
+            Ok(None) | Err(_) => Ok(None),
+        }
+    }
+
+    /// Non-x64 stub: the vtable marshaller is x64-only, so this always declines.
+    #[cfg(not(target_arch = "x86_64"))]
+    fn try_live_vtable_invoke(
+        &self,
+        _dispatch: *mut RawIDispatch,
+        _dispid: i32,
+        _request: &DynamicCallRequest,
+        _args: &[ComInvokeArg],
+    ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
+        Ok(None)
+    }
+
     pub fn dispatch_invoke_dynamic_variant(
         &self,
         request: &DynamicCallRequest,
@@ -569,6 +659,22 @@ impl WindowsComBridge {
             // reference per native binding, keeping the pointer live for this lookup).
             let dispid = unsafe { crate::get_dispid_by_name(dispatch, member_name) }
                 .map_err(WindowsComBridgeDispatchError::Message)?;
+            // Early-bound vtable fast path for late-bound-by-name members: ask the
+            // LIVE object for its own ITypeInfo FUNCDESC (slot/params/retval/
+            // callconv) for this dispid, build a ComMemberSpec, and (for a direct
+            // in-process interface, not a marshaling proxy) attempt the vtable
+            // this-call. This is what makes a registered dual interface's members
+            // (e.g. ACE DAO's in-proc `Recordset.Close`) vtable-eligible even
+            // though their `::<invoke-result>` bindings carry no
+            // prog-id-resolvable typelib metadata. Any ineligible shape — or a
+            // proxy, or a recovered shape that fails — returns Ok(None) and falls
+            // through to the proven IDispatch invoke below.
+            if prefer_vtable
+                && let Some(value) =
+                    self.try_live_vtable_invoke(dispatch, dispid, request, args.as_slice())?
+            {
+                return Ok(Some(value));
+            }
             let named_arg_dispids = if args.iter().any(|arg| arg.name.is_some()) {
                 // SAFETY: `dispatch` is the same live pointer GetIDsOfNames just succeeded
                 // on; the bindings map's retained reference keeps it alive for this lookup.

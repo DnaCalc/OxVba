@@ -1656,17 +1656,20 @@ impl ComTransportCounters<'_> {
 /// - a vtable slot is present, and the slot index is `>= 7` (oVft `>= 56`), so we
 ///   never call an `IUnknown`/`IDispatch` slot;
 /// - the FUNCDESC declares `CC_STDCALL`;
-/// - a full signature is present: one `parameter_types` entry per supplied
-///   positional arg, and a known `return_type` when the call expects a value
-///   (property-get / method that returns; a no-retval property-put is fine);
-/// - every parameter VARTYPE and the return VARTYPE (if any) is in the v1 set.
+/// - EXACT arity: exactly one declared parameter type per supplied positional
+///   arg. The vtable ABI cannot drop a trailing optional param (no DISPPARAMS to
+///   shorten), so a member called with fewer args than its FUNCDESC declares
+///   (e.g. an omitted optional) falls back to IDispatch (workset v1 deferral);
+/// - every parameter VARTYPE and the return VARTYPE (if any) is in the v1 set. A
+///   `None` return (a void method / HRESULT-only put) is fine — the marshaller
+///   simply appends no `[out,retval]` cell.
 ///
 /// When this returns `false` the caller runs the unchanged IDispatch path.
 #[cfg(target_os = "windows")]
 fn vtable_gate_admits(
     spec: &crate::ComMemberSpec,
     positional_arg_count: usize,
-    expects_value: bool,
+    return_type: Option<crate::TypeLibParamType>,
 ) -> bool {
     let Some(slot) = spec.vtable_slot else {
         return false;
@@ -1678,12 +1681,9 @@ fn vtable_gate_admits(
     if !spec.callconv_is_stdcall {
         return false;
     }
-    // A full signature: exactly one declared parameter type per supplied
-    // positional arg. (A property-put's trailing value arg is one of these.)
+    // Exact arity: one declared parameter type per supplied positional arg. (A
+    // property-put's trailing value arg is one of these.)
     if spec.parameter_types.len() != positional_arg_count {
-        return false;
-    }
-    if expects_value && spec.return_type.is_none() {
         return false;
     }
     if spec
@@ -1693,7 +1693,7 @@ fn vtable_gate_admits(
     {
         return false;
     }
-    if let Some(rt) = spec.return_type
+    if let Some(rt) = return_type
         && !is_v1_vtable_vartype(rt)
     {
         return false;
@@ -1738,16 +1738,18 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     {
         return Ok(None);
     }
-    let (label, expects_value) = match spec.invoke_kind {
-        crate::TypeLibMemberInvokeKind::PropertyGet => ("property-get", true),
-        crate::TypeLibMemberInvokeKind::Method => ("method", true),
+    let (label, return_type) = match spec.invoke_kind {
+        // A property-get / method returns whatever its FUNCDESC declares — a value
+        // (`Some`) or nothing (`None`, a void method like `Quit`).
+        crate::TypeLibMemberInvokeKind::PropertyGet => ("property-get", spec.return_type),
+        crate::TypeLibMemberInvokeKind::Method => ("method", spec.return_type),
         // A property-put's HRESULT-only member returns no value; the trailing
         // value argument is an ordinary positional [in] param to the vtable slot.
-        crate::TypeLibMemberInvokeKind::PropertyPut => ("property-put", false),
+        crate::TypeLibMemberInvokeKind::PropertyPut => ("property-put", None),
         // PropertyPutRef (Set p = obj) is deferred to the IDispatch path in v1.
         crate::TypeLibMemberInvokeKind::PropertyPutRef => return Ok(None),
     };
-    if !vtable_gate_admits(spec, args.len(), expects_value) {
+    if !vtable_gate_admits(spec, args.len(), return_type) {
         return Ok(None);
     }
     // Marshal the positional args to `Variant` (the vtable marshaller's input).
@@ -1759,11 +1761,6 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // A value went missing between the omitted-check and here; be safe.
         return Ok(None);
     }
-    let return_type = if expects_value {
-        spec.return_type
-    } else {
-        None
-    };
 
     let mut resolve_object = |handle: ObjectRef| {
         crate::resolve_bound_native_dispatch_shared(com_state, handle)
