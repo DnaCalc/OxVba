@@ -2668,15 +2668,26 @@ impl<'a> Parser<'a> {
             if self.is_expr_start() {
                 self.parse_expr(); // callee (possibly with member/index postfix)
             }
-            // Bare argument list
+            // Bare argument list. A leading call-site `ByVal`/`ByRef` modifier
+            // (`Inc ByVal r`) also starts the argument list even though the
+            // keyword itself is not an expression start.
             self.eat_whitespace();
-            if self.is_expr_start() || self.at(SyntaxKind::Comma) {
+            if self.at_bare_arg_list_start() {
                 self.parse_bare_arg_list();
             }
             self.eat_to_statement_end();
         }
 
         self.finish_node();
+    }
+
+    /// True when a bare (no-paren) argument list begins here: an expression, an
+    /// empty leading slot (`,`), or a call-site `ByVal`/`ByRef` passing modifier.
+    fn at_bare_arg_list_start(&self) -> bool {
+        self.is_expr_start()
+            || self.at(SyntaxKind::Comma)
+            || self.at(SyntaxKind::KwByVal)
+            || self.at(SyntaxKind::KwByRef)
     }
 
     /// Peek ahead to determine if the current line is an assignment (`x = ...`)

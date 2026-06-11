@@ -1244,7 +1244,7 @@ impl<'a> ProcLower<'a> {
             .next()
             .ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
         let expr = match first {
-            ArgItem::Positional(e) => e,
+            ArgItem::Positional(e, _) => e,
             _ => return Err(BindError::Malformed("Err.Raise number".into())),
         };
         let value = self.bind_expr(expr)?.value;

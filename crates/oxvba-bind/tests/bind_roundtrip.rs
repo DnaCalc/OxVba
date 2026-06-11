@@ -533,6 +533,25 @@ fn parenthesized_argument_forces_by_val() {
 }
 
 #[test]
+fn call_site_byval_forces_by_val_over_byref_param() {
+    // A call-site `ByVal r` overrides the callee's declared `ByRef`, so the
+    // mutation must NOT reach the caller's `r`. (The parser accepted the
+    // `ByVal`/`ByRef` modifier but dropped it, so this used to mutate r to 105.)
+    let src = "Sub Main()\n    Dim r As Long\n    r = 5\n    Inc ByVal r\nEnd Sub\n\nSub Inc(ByRef n As Long)\n    n = n + 100\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(5.0));
+}
+
+#[test]
+fn call_site_byref_keeps_write_back() {
+    // The control: `Inc r` (no modifier) and an explicit `Inc ByRef r` both
+    // write back through the ByRef param.
+    let bare = "Sub Main()\n    Dim r As Long\n    r = 5\n    Inc r\nEnd Sub\n\nSub Inc(ByRef n As Long)\n    n = n + 100\nEnd Sub\n";
+    let explicit = "Sub Main()\n    Dim r As Long\n    r = 5\n    Inc ByRef r\nEnd Sub\n\nSub Inc(ByRef n As Long)\n    n = n + 100\nEnd Sub\n";
+    assert_eq!(run_main_local0(bare), Some(105.0));
+    assert_eq!(run_main_local0(explicit), Some(105.0));
+}
+
+#[test]
 fn hex_literal() {
     assert_eq!(
         run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")),

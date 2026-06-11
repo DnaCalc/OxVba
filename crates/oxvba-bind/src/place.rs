@@ -169,7 +169,7 @@ impl<'a> ProcLower<'a> {
         let mut values = Vec::new();
         for item in arglist.arg_items() {
             match item {
-                oxvba_syntax::red::ArgItem::Positional(expr) => {
+                oxvba_syntax::red::ArgItem::Positional(expr, _) => {
                     values.push(self.bind_expr(expr)?.value)
                 }
                 oxvba_syntax::red::ArgItem::Named { value, .. } => {

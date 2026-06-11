@@ -16,7 +16,7 @@ use oxvba_symbol::model::{
 };
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
 use oxvba_symbol::structural::StructuralIntrinsic;
-use oxvba_syntax::red::ArgItem;
+use oxvba_syntax::red::{ArgItem, CallSitePassing};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
@@ -161,7 +161,7 @@ impl<'a> ProcLower<'a> {
                         BindError::Malformed(format!("`{name}` requires an array argument"))
                     })?;
                 let expr = match first {
-                    ArgItem::Positional(e) => e,
+                    ArgItem::Positional(e, _) => e,
                     _ => return Err(BindError::Malformed(format!("`{name}` array argument"))),
                 };
                 let (place, _) = self.bind_place(expr)?;
@@ -196,7 +196,7 @@ impl<'a> ProcLower<'a> {
                         BindError::Malformed(format!("`{name}` requires an argument"))
                     })?;
                 let expr = match first {
-                    ArgItem::Positional(e) => e,
+                    ArgItem::Positional(e, _) => e,
                     _ => return Err(BindError::Malformed(format!("`{name}` argument"))),
                 };
                 let (kind, value, _writeback) = self.pointer_operand(*s, expr)?;
@@ -255,8 +255,18 @@ impl<'a> ProcLower<'a> {
         &mut self,
         expr: SyntaxNode<'_>,
         param: Option<&Param>,
+        passing: CallSitePassing,
     ) -> Result<CoreArg, BindError> {
-        let by_ref = param.map(|p| p.mode == PassingMode::ByRef).unwrap_or(false);
+        // A call-site `ByVal`/`ByRef` overrides the callee's declared direction;
+        // otherwise the declared direction (default ByRef) stands.
+        let by_ref = match passing {
+            CallSitePassing::ByVal => false,
+            CallSitePassing::ByRef => true,
+            CallSitePassing::Default => {
+                param.map(|p| p.mode == PassingMode::ByRef).unwrap_or(false)
+            }
+        };
+        // VBA forces pass-by-value when an argument is wrapped in parentheses.
         let forced_by_val = expr.kind() == SyntaxKind::ParenExpr;
         if by_ref
             && !forced_by_val
@@ -276,7 +286,18 @@ impl<'a> ProcLower<'a> {
     /// direction comes from a typelib/`Declare` param list, not a project
     /// `Signature`). ByRef l-value (not parenthesised) → `ByRef`; else `ByVal`
     /// (no coercion — the value is marshaled by the callee).
-    fn bind_arg_byref(&mut self, expr: SyntaxNode<'_>, by_ref: bool) -> Result<CoreArg, BindError> {
+    fn bind_arg_byref(
+        &mut self,
+        expr: SyntaxNode<'_>,
+        by_ref: bool,
+        passing: CallSitePassing,
+    ) -> Result<CoreArg, BindError> {
+        // A call-site `ByVal`/`ByRef` overrides the typelib/`Declare` direction.
+        let by_ref = match passing {
+            CallSitePassing::ByVal => false,
+            CallSitePassing::ByRef => true,
+            CallSitePassing::Default => by_ref,
+        };
         if by_ref
             && expr.kind() != SyntaxKind::ParenExpr
             && let Ok((place, _)) = self.bind_place(expr)
@@ -307,10 +328,12 @@ impl<'a> ProcLower<'a> {
                         value: self.bind_expr(value)?.value,
                     });
                 }
-                ArgItem::Positional(expr) => {
-                    args.push(
-                        self.bind_arg_byref(expr, param_by_ref.get(i).copied().unwrap_or(false))?,
-                    );
+                ArgItem::Positional(expr, passing) => {
+                    args.push(self.bind_arg_byref(
+                        expr,
+                        param_by_ref.get(i).copied().unwrap_or(false),
+                        passing,
+                    )?);
                 }
             }
         }
@@ -342,8 +365,13 @@ impl<'a> ProcLower<'a> {
                     name: name.text.to_string(),
                     value: self.bind_expr(value)?.value,
                 }),
-                ArgItem::Positional(expr) => {
-                    let by_ref = param_by_ref.get(i).copied().unwrap_or(false);
+                ArgItem::Positional(expr, passing) => {
+                    // A call-site `ByVal`/`ByRef` overrides the declared direction.
+                    let by_ref = match passing {
+                        CallSitePassing::ByVal => false,
+                        CallSitePassing::ByRef => true,
+                        CallSitePassing::Default => param_by_ref.get(i).copied().unwrap_or(false),
+                    };
                     if let Some((intrinsic, operand)) = self.pointer_call(expr) {
                         let (kind, value, wb) = self.pointer_operand(intrinsic, operand)?;
                         args.push(CoreArg::ByVal(CoreValue::Ptr {
@@ -358,9 +386,12 @@ impl<'a> ProcLower<'a> {
                             });
                         }
                     } else if !by_ref && param_is_string.get(i).copied().unwrap_or(false) {
-                        args.push(self.bind_byval_string_arg(expr)?);
+                        // A call-site `ByVal` over a `ByVal As String` param suppresses
+                        // the pre-sized-buffer write-back; `Default` keeps it.
+                        args.push(self.bind_byval_string_arg(expr, passing)?);
                     } else {
-                        args.push(self.bind_arg_byref(expr, by_ref)?);
+                        // `by_ref` already folds in the override, so pass `Default`.
+                        args.push(self.bind_arg_byref(expr, by_ref, CallSitePassing::Default)?);
                     }
                 }
             }
@@ -377,8 +408,15 @@ impl<'a> ProcLower<'a> {
     /// reaches the variable; anything else (a literal, an expression, `(s)`, or a
     /// non-String l-value, whose conversion temp VBA also discards) binds ByVal
     /// with no write-back.
-    fn bind_byval_string_arg(&mut self, expr: SyntaxNode<'_>) -> Result<CoreArg, BindError> {
-        if expr.kind() != SyntaxKind::ParenExpr
+    fn bind_byval_string_arg(
+        &mut self,
+        expr: SyntaxNode<'_>,
+        passing: CallSitePassing,
+    ) -> Result<CoreArg, BindError> {
+        // An explicit call-site `ByVal` opts out of the pre-sized-buffer
+        // write-back: the caller wants a pure value, not the marshaled-back buffer.
+        if passing != CallSitePassing::ByVal
+            && expr.kind() != SyntaxKind::ParenExpr
             && let Ok((place, ty)) = self.bind_place(expr)
             && matches!(ty, VarTypeRef::Builtin(BuiltinType::String))
         {
@@ -409,7 +447,7 @@ impl<'a> ProcLower<'a> {
             _ => return None,
         };
         match expr.index_arg_list()?.arg_items().into_iter().next()? {
-            ArgItem::Positional(operand) => Some((intrinsic, operand)),
+            ArgItem::Positional(operand, _) => Some((intrinsic, operand)),
             _ => None,
         }
     }
@@ -466,8 +504,15 @@ impl<'a> ProcLower<'a> {
         &mut self,
         expr: SyntaxNode<'_>,
         param: Option<&TypeLibParamType>,
+        passing: CallSitePassing,
     ) -> Result<CoreArg, BindError> {
-        if param.is_some_and(|p| p.is_by_ref()) {
+        // A call-site `ByVal`/`ByRef` overrides the typelib param direction.
+        let by_ref = match passing {
+            CallSitePassing::ByVal => false,
+            CallSitePassing::ByRef => true,
+            CallSitePassing::Default => param.is_some_and(|p| p.is_by_ref()),
+        };
+        if by_ref {
             if expr.kind() != SyntaxKind::ParenExpr
                 && let Ok((place, _)) = self.bind_place(expr)
             {
@@ -505,8 +550,8 @@ impl<'a> ProcLower<'a> {
                         value: self.bind_expr(value)?.value,
                     });
                 }
-                ArgItem::Positional(expr) => {
-                    args.push(self.bind_extern_one(expr, param_types.get(i))?)
+                ArgItem::Positional(expr, passing) => {
+                    args.push(self.bind_extern_one(expr, param_types.get(i), passing)?)
                 }
             }
         }
@@ -534,8 +579,8 @@ impl<'a> ProcLower<'a> {
         let mut pos = 0usize;
         for item in items {
             match item {
-                ArgItem::Positional(expr) => {
-                    let arg = self.bind_extern_one(expr, param_types.get(pos))?;
+                ArgItem::Positional(expr, passing) => {
+                    let arg = self.bind_extern_one(expr, param_types.get(pos), passing)?;
                     if pos < n {
                         slots[pos] = Some(arg)
                     } else {
@@ -558,7 +603,11 @@ impl<'a> ProcLower<'a> {
                         .position(|p| fold_identifier(p) == folded)
                     {
                         Some(i) => {
-                            slots[i] = Some(self.bind_extern_one(value, param_types.get(i))?)
+                            slots[i] = Some(self.bind_extern_one(
+                                value,
+                                param_types.get(i),
+                                CallSitePassing::Default,
+                            )?)
                         }
                         None => return Err(self.unresolved(name.text, "named argument")),
                     }
@@ -595,8 +644,12 @@ impl<'a> ProcLower<'a> {
                         value: v,
                     });
                 }
-                ArgItem::Positional(expr) => {
-                    args.push(self.bind_one_arg(expr, signature.and_then(|s| s.params.get(i)))?);
+                ArgItem::Positional(expr, passing) => {
+                    args.push(self.bind_one_arg(
+                        expr,
+                        signature.and_then(|s| s.params.get(i)),
+                        passing,
+                    )?);
                 }
             }
         }
@@ -684,13 +737,14 @@ impl<'a> ProcLower<'a> {
         let mut pos = 0usize;
         for item in items {
             match item {
-                ArgItem::Positional(expr) => {
+                ArgItem::Positional(expr, passing) => {
                     if pos < fixed_count {
-                        slots[pos] = Some(self.bind_one_arg(expr, signature.params.get(pos))?);
+                        slots[pos] =
+                            Some(self.bind_one_arg(expr, signature.params.get(pos), passing)?);
                     } else {
                         // Variadic-tail (ParamArray) element, or an extra positional
                         // when there is no ParamArray — bound ByVal, no signature param.
-                        tail.push(self.bind_one_arg(expr, None)?);
+                        tail.push(self.bind_one_arg(expr, None, passing)?);
                     }
                     pos += 1;
                 }
@@ -715,7 +769,12 @@ impl<'a> ProcLower<'a> {
                             ));
                         }
                         Some(i) if i < fixed_count => {
-                            slots[i] = Some(self.bind_one_arg(value, signature.params.get(i))?);
+                            // A named arg has no call-site `ByVal`/`ByRef` modifier.
+                            slots[i] = Some(self.bind_one_arg(
+                                value,
+                                signature.params.get(i),
+                                CallSitePassing::Default,
+                            )?);
                         }
                         Some(_) => {
                             return Err(BindError::Unsupported(
@@ -788,7 +847,7 @@ impl<'a> ProcLower<'a> {
         let mut args: Vec<CoreArg> = Vec::with_capacity(items.len());
         for (i, item) in items.into_iter().enumerate() {
             let arg = match item {
-                ArgItem::Positional(expr) => CoreArg::ByVal(self.bind_expr(expr)?.value),
+                ArgItem::Positional(expr, _) => CoreArg::ByVal(self.bind_expr(expr)?.value),
                 ArgItem::Named { name, value } if i >= 3 => CoreArg::Named {
                     name: name.text.to_string(),
                     value: self.bind_expr(value)?.value,

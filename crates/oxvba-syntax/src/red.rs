@@ -515,9 +515,24 @@ impl<'a> SyntaxNode<'a> {
                         })
                     })
                     .flatten();
+                // A leading `ByVal`/`ByRef` keyword token forces the call-site
+                // passing mode (a positional arg only — `name := ByVal x` is not
+                // VBA). Parsed as a flat leading token of the segment.
+                let passing = seg
+                    .iter()
+                    .find_map(|e| match e {
+                        SyntaxElement::Token(t) if t.kind == SyntaxKind::KwByVal => {
+                            Some(CallSitePassing::ByVal)
+                        }
+                        SyntaxElement::Token(t) if t.kind == SyntaxKind::KwByRef => {
+                            Some(CallSitePassing::ByRef)
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or(CallSitePassing::Default);
                 match (name, value) {
                     (Some(name), Some(value)) => ArgItem::Named { name, value },
-                    (None, Some(value)) => ArgItem::Positional(value),
+                    (None, Some(value)) => ArgItem::Positional(value, passing),
                     _ => ArgItem::Omitted,
                 }
             })
@@ -744,11 +759,22 @@ fn is_comparison_op(kind: SyntaxKind) -> bool {
     )
 }
 
+/// A call-site argument's passing-mode override: a leading `ByVal`/`ByRef`
+/// keyword on the argument (`CopyMemory dst, ByVal src, n`). `Default` = no
+/// override, so the callee's declared direction stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallSitePassing {
+    Default,
+    ByVal,
+    ByRef,
+}
+
 /// One argument of an `ArgList`, as the binder consumes it.
 #[derive(Debug, Clone, Copy)]
 pub enum ArgItem<'a> {
-    /// A positional argument: the value expression.
-    Positional(SyntaxNode<'a>),
+    /// A positional argument: the value expression + any call-site `ByVal`/`ByRef`
+    /// override leading it.
+    Positional(SyntaxNode<'a>, CallSitePassing),
     /// A named argument `name := value`.
     Named {
         name: SyntaxToken<'a>,
@@ -1049,7 +1075,10 @@ mod tests {
         assert_eq!(ix.index_base().unwrap().kind(), SyntaxKind::IdentExpr);
         let args = ix.index_arg_list().unwrap().arg_items();
         assert_eq!(args.len(), 2);
-        assert!(matches!(args[0], ArgItem::Positional(_)));
+        assert!(matches!(
+            args[0],
+            ArgItem::Positional(_, CallSitePassing::Default)
+        ));
     }
 
     #[test]
@@ -1078,12 +1107,50 @@ mod tests {
         let ix = find_first(p.syntax(), SyntaxKind::IndexExpr).expect("call");
         let items = ix.index_arg_list().unwrap().arg_items();
         assert_eq!(items.len(), 3);
-        assert!(matches!(items[0], ArgItem::Positional(_)));
+        assert!(matches!(
+            items[0],
+            ArgItem::Positional(_, CallSitePassing::Default)
+        ));
         assert!(matches!(items[1], ArgItem::Omitted));
         match items[2] {
             ArgItem::Named { name, .. } => assert_eq!(name.text, "c"),
             _ => panic!("expected named arg"),
         }
+    }
+
+    #[test]
+    fn arg_items_capture_call_site_byval_byref() {
+        // A leading `ByVal`/`ByRef` on a positional argument is captured as the
+        // arg's `CallSitePassing`, in both the parenthesized-call and the bare
+        // statement-call forms.
+        let p = crate::parser::parse(&in_sub("CopyMemory dst, ByVal src, n\n"));
+        let call = find_first(p.syntax(), SyntaxKind::CallStmt).expect("call stmt");
+        let items = call.call_arg_list().expect("arg list").arg_items();
+        assert_eq!(items.len(), 3);
+        assert!(matches!(
+            items[0],
+            ArgItem::Positional(_, CallSitePassing::Default)
+        ));
+        assert!(matches!(
+            items[1],
+            ArgItem::Positional(_, CallSitePassing::ByVal)
+        ));
+        assert!(matches!(
+            items[2],
+            ArgItem::Positional(_, CallSitePassing::Default)
+        ));
+
+        let p2 = crate::parser::parse(&in_sub("x = f(ByRef a, b)\n"));
+        let ix = find_first(p2.syntax(), SyntaxKind::IndexExpr).expect("call");
+        let items = ix.index_arg_list().unwrap().arg_items();
+        assert!(matches!(
+            items[0],
+            ArgItem::Positional(_, CallSitePassing::ByRef)
+        ));
+        assert!(matches!(
+            items[1],
+            ArgItem::Positional(_, CallSitePassing::Default)
+        ));
     }
 
     #[test]
