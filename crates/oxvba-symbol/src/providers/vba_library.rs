@@ -8,8 +8,8 @@
 //! (`resolve_extern_coclass`) whose members route cross-bundle to that unit
 //! (`resolve_member` → `ExternMember`), exactly like a referenced project's class.
 
-use oxvba_bundle::ProjectMemberKind;
 use oxvba_bundle::coreir::CoreConst;
+use oxvba_bundle::{LibraryModule, ProjectMemberKind};
 
 use crate::binding::{Binding, DispatchRoute, SpecialForm};
 use crate::catalog::name_to_intrinsic;
@@ -21,6 +21,10 @@ use crate::structural::StructuralIntrinsic;
 
 /// The unit name of the built-in library bundle (see `oxvba-bundle/vba_library`).
 const VBA_UNIT: &str = "VBA";
+
+/// The `VBA` module that owns the string library functions; must match the
+/// bundle's `STRINGS_MODULE` so an import token matches the export token.
+const STRINGS_MODULE: &str = "Strings";
 
 pub struct VbaLibraryProvider;
 
@@ -37,6 +41,29 @@ impl Provider for VbaLibraryProvider {
             return Some(Binding::new(None, DispatchRoute::PredeclaredObject(object)));
         }
         if let Some(id) = name_to_intrinsic(name) {
+            // A `Strings`-module library function resolves like a referenced
+            // project's hidden-module free function: a cross-bundle `ExternMember`
+            // (no receiver) against the synthetic `VBA` unit's `Strings` module.
+            // The binder lowers it to a `ModuleFunc` import + `ExternProc` call, and
+            // the VM runs the linked native-bodied proc through `oxvba-lib` — the
+            // same `oxvba-lib` body the bespoke `Native` route used, so behaviour is
+            // unchanged. Every other intrinsic keeps the `Native(id)` route.
+            if id.module() == LibraryModule::Strings
+                && let Some(member) = id.strings_member_name()
+            {
+                return Some(Binding::new(
+                    None,
+                    DispatchRoute::ExternMember {
+                        unit: VBA_UNIT.to_string(),
+                        owner: STRINGS_MODULE.to_string(),
+                        member: member.to_string(),
+                        kind: ProjectMemberKind::Method,
+                        param_types: Vec::new(),
+                        param_names: Vec::new(),
+                        has_receiver: false,
+                    },
+                ));
+            }
             return Some(Binding::new(None, DispatchRoute::Native(id)));
         }
         if let Some(structural) = user_structural_intrinsic(name) {

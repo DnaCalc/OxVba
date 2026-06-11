@@ -33,8 +33,9 @@ use std::collections::HashMap;
 
 use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
-    Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget, NativeCallee,
-    NativeMethodId, NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
+    Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget, NativeBody,
+    NativeCallee, NativeImplId, NativeMethodId, NumericMode, Op, ProcArg, ProjectMemberKind,
+    PtrWritebackKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -777,15 +778,31 @@ impl<'h> Vm<'h> {
             desc.entry_pc,
             desc.native,
         );
-        // Native-bodied library *functions* called cross-bundle land here in a later
-        // phase; today the only native bodies are `Collection` *methods*, reached by
-        // late member dispatch (`run_proc_core`), so a native body here is not yet
-        // expected. Guard rather than execute the placeholder body.
-        if native.is_some() {
-            return Err(Fault::new(
-                5,
-                "native-bodied procedure is not yet callable via CallExtern",
-            ));
+        // A native-bodied **library function** (e.g. `Strings.Left`) called
+        // cross-bundle runs through `oxvba-lib` directly — no frame is pushed, since
+        // its arguments are positional ByVal values and its body needs no VM frame
+        // (the `entry_pc` body is the bundle's lone `Return` placeholder). This is
+        // the same dispatch as `Op::CallNative { NativeCallee::Builtin(..) }`, so the
+        // function behaves identically whether resolved via the `Native` route or
+        // (for `Strings`) via this `ExternProc` route. Object *methods*
+        // (`NativeBody::Method`) never reach `CallExtern` — they arrive by late
+        // member dispatch (`run_proc_core`) — so that arm is rejected.
+        match native {
+            None => {}
+            Some(NativeBody::Library(id)) => {
+                let argv = self.extern_native_args(args)?;
+                let value = self.invoke_native_lib(id, &argv)?;
+                if let Some(slot) = dst {
+                    self.set(slot, value)?;
+                }
+                return Ok(());
+            }
+            Some(NativeBody::Method(_)) => {
+                return Err(Fault::new(
+                    5,
+                    "native object method is not callable via CallExtern",
+                ));
+            }
         }
 
         // Resolve dst + args in the CALLER's bundle (current `cur`) before switching.
@@ -1009,16 +1026,30 @@ impl<'h> Vm<'h> {
                 desc.frame_slots,
             )
         };
-        // A native-bodied procedure (a built-in library member, e.g. a `Collection`
-        // method) runs directly with `Me` + its positional arguments instead of
-        // pushing a bytecode frame. `resolve_proc_args` placed args at slots `1..`
-        // (slot 0 is `Me`); recover them in order. ByRef args (none today) would
-        // arrive via `aliases` and are not yet threaded through.
-        if let Some(native_id) = native {
-            let mut ordered = byval;
-            ordered.sort_by_key(|(slot, _)| *slot);
-            let args: Vec<Variant> = ordered.into_iter().map(|(_, value)| value).collect();
-            return self.run_native_method(native_id, me, args);
+        // A native-bodied procedure runs directly with its positional arguments
+        // instead of pushing a bytecode frame. `resolve_proc_args` placed args at
+        // slots `1..` (slot 0 is `Me`); recover them in order. ByRef args (none
+        // today) would arrive via `aliases` and are not yet threaded through.
+        //
+        // A `Method` body (a built-in object's method, e.g. `Collection.Add`) runs
+        // inside the VM via `run_native_method` so it can mutate VM-held instance
+        // state. A `Library` body (a base-library function) runs through `oxvba-lib`
+        // with no receiver — `Strings` functions reach this path only if dispatched
+        // as a member (they are not), but it is handled for completeness/uniformity.
+        match native {
+            Some(NativeBody::Method(id)) => {
+                let mut ordered = byval;
+                ordered.sort_by_key(|(slot, _)| *slot);
+                let args: Vec<Variant> = ordered.into_iter().map(|(_, value)| value).collect();
+                return self.run_native_method(id, me, args);
+            }
+            Some(NativeBody::Library(id)) => {
+                let mut ordered = byval;
+                ordered.sort_by_key(|(slot, _)| *slot);
+                let args: Vec<Variant> = ordered.into_iter().map(|(_, value)| value).collect();
+                return self.invoke_native_lib(id, &args);
+            }
+            None => {}
         }
         let max_local = byval
             .iter()
@@ -1276,6 +1307,32 @@ impl<'h> Vm<'h> {
                 CallArg::Const(value) => Ok(Variant::from_i32(*value)),
             })
             .collect()
+    }
+
+    /// Assemble the argument Variants for a native-bodied library function reached
+    /// cross-bundle (an `Op::CallExtern` whose target proc has a
+    /// [`NativeBody::Library`] body). The args are positional ByVal values in the
+    /// *caller's* bundle (no ByRef — the binder binds these as ByVal), gathered in
+    /// order with **no truncation** to any frame size. An omitted optional slot
+    /// becomes `Empty`, exactly as `native_args` maps `CallArg::Omitted`, so a
+    /// `Strings` call binds equivalently however it is routed.
+    fn extern_native_args(&self, args: &[ProcArg]) -> Result<Vec<Variant>, Fault> {
+        args.iter()
+            .map(|a| match a {
+                ProcArg::ByVal(s) | ProcArg::ByRef(s) => self.cloned(*s),
+                ProcArg::Omitted => Ok(Variant::empty()),
+            })
+            .collect()
+    }
+
+    /// Run a base-library function (`NativeImplId`) on already-assembled argument
+    /// Variants through `oxvba-lib`, mapping a library error to a VBA fault. The
+    /// single dispatch point shared by `Op::CallNative { Builtin }` and a
+    /// `NativeBody::Library` proc reached cross-bundle (`call_extern`): both forms
+    /// run the identical body, so a library function behaves the same however it is
+    /// routed.
+    fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Fault> {
+        oxvba_lib::invoke(id, argv, self.host, &mut self.lib).map_err(Fault::from_lib)
     }
 
     fn arg_object(&self, arg: Option<&CallArg>) -> Result<ObjectRef, Fault> {
@@ -1797,8 +1854,7 @@ impl<'h> Vm<'h> {
                 let value = match callee {
                     NativeCallee::Builtin(id) => {
                         let argv = self.native_args(args)?;
-                        oxvba_lib::invoke(*id, &argv, self.host, &mut self.lib)
-                            .map_err(Fault::from_lib)?
+                        self.invoke_native_lib(*id, &argv)?
                     }
                     NativeCallee::ComDispatch {
                         selector,

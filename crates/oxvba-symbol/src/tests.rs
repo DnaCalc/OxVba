@@ -160,7 +160,18 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     assert!(
         matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
-    assert!(matches!(p.resolve("Len"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
+    // A non-Strings intrinsic keeps the bespoke `Native` route.
+    assert!(matches!(p.resolve("Abs"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
+    // A `Strings`-module library function now resolves as a cross-bundle member of
+    // the synthetic `VBA` unit (no receiver), like a referenced free function.
+    assert!(matches!(
+        p.resolve("Len"),
+        Some(b) if matches!(
+            &b.route,
+            DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
+                if unit == "VBA" && owner == "Strings" && member == "Len"
+        )
+    ));
     assert!(
         matches!(p.resolve("VarPtr"), Some(b) if matches!(b.route, DispatchRoute::Structural(_)))
     );
@@ -478,9 +489,16 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         env.resolve(&from_global, "vbCrLf"),
         Some(b) if matches!(b.route, DispatchRoute::ConstValue(_))
     ));
+    // A non-Strings intrinsic resolves through the `Native` route; a `Strings`
+    // function resolves cross-bundle to the `VBA` unit — both via the same
+    // source-agnostic provider path.
+    assert!(matches!(
+        env.resolve(&from_global, "Abs"),
+        Some(b) if matches!(b.route, DispatchRoute::Native(_))
+    ));
     assert!(matches!(
         env.resolve(&from_global, "Len"),
-        Some(b) if matches!(b.route, DispatchRoute::Native(_))
+        Some(b) if matches!(b.route, DispatchRoute::ExternMember { has_receiver: false, .. })
     ));
 }
 

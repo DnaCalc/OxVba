@@ -19,7 +19,7 @@ pub mod vba_library;
 
 pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 pub use linearize::{LinearizeError, linearize};
-pub use native::{LibraryModule, NativeImplId, NativeMethodId};
+pub use native::{LibraryModule, NativeBody, NativeImplId, NativeMethodId};
 pub use vba_library::vba_library_bundle;
 
 pub use coreir::{
@@ -190,10 +190,12 @@ pub struct ProcedureDescriptor {
     /// Frame-local slot holding the function's result (`None` for a `Sub`).
     pub return_slot: Option<usize>,
     /// `Some` when this procedure's body is native VM code (a built-in library
-    /// member such as a `Collection` method) rather than bytecode at `entry_pc`.
-    /// The VM invokes the native body directly instead of pushing a frame; the
-    /// `entry_pc` body is then just a `Return` placeholder keeping indices valid.
-    pub native: Option<NativeMethodId>,
+    /// function such as `Left`, or a built-in object method such as a `Collection`
+    /// method) rather than bytecode at `entry_pc`. The VM invokes the native body
+    /// directly instead of pushing a frame; the `entry_pc` body is then just a
+    /// `Return` placeholder keeping indices valid. See [`NativeBody`] for how the
+    /// two body kinds (library function vs object method) are dispatched.
+    pub native: Option<NativeBody>,
 }
 
 /// pc → source line, for diagnostics / error reporting / debugging.

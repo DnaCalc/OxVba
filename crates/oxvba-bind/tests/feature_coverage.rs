@@ -530,6 +530,53 @@ fn replace_honors_start_count_and_compare() {
 }
 
 #[test]
+fn strings_library_functions_route_through_vba_bundle() {
+    // The `Strings` library functions are native-bodied procs of the synthetic
+    // `VBA` bundle: the binder resolves each as `ExternMember { has_receiver:
+    // false }` → `ExportToken::ModuleFunc` → `Op::CallExtern`, and the VM runs the
+    // linked `NativeBody::Library` body through `oxvba-lib` (no frame). This proves
+    // the routing change is behaviour-preserving across the representative shapes:
+    // single-arg (Len/UCase), two-arg (Left), optional-trailing-arg (Mid without
+    // length), and optional-mid/trailing args (InStr's start + Replace's find).
+    let snap = run("Sub Main()\n\
+         Dim a As String\nDim b As Long\nDim c As String\n\
+         Dim d As String\nDim e As Long\nDim f As String\n\
+         a = Left(\"hello\", 3)\n\
+         b = InStr(\"abcabc\", \"b\")\n\
+         c = UCase(\"ab\")\n\
+         d = Replace(\"a-b-c\", \"-\", \"+\")\n\
+         e = Len(\"hello\")\n\
+         f = Mid(\"hello\", 2, 3)\n\
+         End Sub");
+    assert_eq!(
+        snap.iter().filter_map(Variant::as_i32).collect::<Vec<_>>(),
+        vec![2, 5],
+        "InStr==2 and Len==5: {snap:?}"
+    );
+    for expected in ["hel", "AB", "a+b+c", "ell"] {
+        assert!(
+            snap.contains(&Variant::from_string(BStr::from(expected))),
+            "expected {expected:?} among string results: {snap:?}"
+        );
+    }
+}
+
+#[test]
+fn strings_mid_without_length_takes_remainder() {
+    // `Mid(s, start)` with the optional length omitted must take the remainder —
+    // the `ExternProc` route must not pad a trailing optional into an explicit
+    // argument (which would change the result).
+    let snap = run("Sub Main()\n\
+         Dim a As String\n\
+         a = Mid(\"hello\", 2)\n\
+         End Sub");
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("ello"))),
+        "Mid without length: {snap:?}"
+    );
+}
+
+#[test]
 fn like_charlist_ranges_negation_and_literal_bracket() {
     // `[charlist]` with `a-z` ranges, `!` negation, and a literal `]` first.
     let snap = run("Sub Main()\n\
