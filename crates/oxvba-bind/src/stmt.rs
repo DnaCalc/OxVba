@@ -1,13 +1,14 @@
 //! The statement binder: `bind_block` / `bind_stmt` lower every statement CST
 //! node to `CoreStmt`s — assignment (with intent + coercion), control flow,
-//! error-state, `ReDim`/`Erase`, and the file-I/O statements (→ native calls).
+//! error-state, `ReDim`/`Erase`, and the file-I/O statements (→ cross-bundle
+//! `ExternProc` calls into the synthetic `VBA` bundle's `FileSystem` module).
 
 use oxvba_bundle::coreir::{
     CaseClause, CoreArg, CoreBinOp, CoreBound, CoreCallee, CoreCaseBlock, CoreConst, CoreIfArm,
     CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::{AssignmentIntent, NumericMode, ProjectMemberKind};
+use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::fold_identifier;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
@@ -869,7 +870,47 @@ impl<'a> ProcLower<'a> {
         Ok(out)
     }
 
-    // ── File I/O (best-effort native lowering) ──────────────
+    // ── File I/O (cross-bundle `VBA.FileSystem` member calls) ────────────────
+    //
+    // The funny-syntax file statements keep their special PARSING (dedicated CST
+    // nodes) and special ARG-SHAPING (the packed `Open` mode, the `Put`/`Get` record
+    // tuples, the `Print #` item lists, …); only the CALLEE changed — from the
+    // bespoke `CoreCallee::Native(File*)` route to a cross-bundle `ExternProc` call
+    // into the synthetic `VBA` bundle's `FileSystem` module (a native-bodied proc).
+    // The VM's `call_extern` shortcuts the `NativeBody::Library` body straight to the
+    // same `oxvba-lib` function the `Native` route used (positional ByVal args via
+    // `extern_native_args`), so behaviour is unchanged.
+
+    /// Build a cross-bundle call into the synthetic `VBA` bundle for a migrated
+    /// native-bodied library member `id` — interning a `ModuleFunc` import (linked to
+    /// the bundle's export by the shared `(module, member)` location) and emitting a
+    /// `CoreCallee::ExternProc` call carrying the caller-shaped `args`. The location is
+    /// the parser-bound file statement's `library_statement_member` (`FileSystem.Open`/
+    /// `Print`/`Put`/`Get`/…) when present, else the by-name `library_member`
+    /// (`Strings.Len`, or `FileSystem.Seek` for the `Seek #n, pos` statement which
+    /// reuses the function form's member). This is the statement-side equivalent of the
+    /// `DispatchRoute::ExternMember` lowering in `call.rs` (which the by-name functions
+    /// already use); the VM's `call_extern` shortcuts the `NativeBody::Library` body to
+    /// the same `oxvba-lib` function the bespoke `Native` route invoked, so behaviour
+    /// is unchanged — only the callee differs.
+    fn vba_library_call(&self, id: NativeImplId, args: Vec<CoreArg>) -> CoreValue {
+        let (module, member) = id
+            .library_statement_member()
+            .or_else(|| id.library_member())
+            .expect("a migrated library id has a VBA bundle member");
+        let import = self.g.intern_import(BundleImport {
+            unit: "VBA".to_string(),
+            token: ExportToken::ModuleFunc {
+                module: module.to_string(),
+                member: member.to_string(),
+                kind: ProjectMemberKind::Method,
+            },
+        });
+        CoreValue::Call {
+            callee: CoreCallee::ExternProc { import },
+            args,
+        }
+    }
 
     fn bind_file_io(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let id = match node.kind() {
@@ -917,10 +958,7 @@ impl<'a> ProcLower<'a> {
                 args.push(CoreArg::ByVal(self.bind_expr(e)?.value));
             }
         }
-        Ok(vec![CoreStmt::Eval(CoreValue::Call {
-            callee: CoreCallee::Native(id),
-            args,
-        })])
+        Ok(vec![CoreStmt::Eval(self.vba_library_call(id, args))])
     }
 
     /// `Open path For <mode> As #n [Len = reclen]` lowers to
@@ -975,10 +1013,9 @@ impl<'a> ProcLower<'a> {
             CoreArg::ByVal(packed),
             CoreArg::ByVal(record_len),
         ];
-        Ok(vec![CoreStmt::Eval(CoreValue::Call {
-            callee: CoreCallee::Native(NativeImplId::FileOpen),
-            args,
-        })])
+        Ok(vec![CoreStmt::Eval(
+            self.vba_library_call(NativeImplId::FileOpen, args),
+        )])
     }
 
     /// `Get #n, [rec], var` reads a record into `var`, so it lowers as
@@ -1012,10 +1049,11 @@ impl<'a> ProcLower<'a> {
                 oxvba_symbol::signature::BuiltinType::String,
             ) => {
                 let target_value = self.bind_expr(*target_node)?.value;
-                let len = CoreValue::Call {
-                    callee: CoreCallee::Native(NativeImplId::Len),
-                    args: vec![CoreArg::ByVal(target_value)],
-                };
+                // `Len` is a by-name `VBA.Strings` member; route it cross-bundle too
+                // so no file-statement path uses `CoreCallee::Native` (only the
+                // out-of-scope `Debug.Print` diagnostics statement still does).
+                let len =
+                    self.vba_library_call(NativeImplId::Len, vec![CoreArg::ByVal(target_value)]);
                 CoreValue::Unary {
                     op: oxvba_bundle::coreir::CoreUnOp::Negate,
                     expr: Box::new(len),
@@ -1030,10 +1068,11 @@ impl<'a> ProcLower<'a> {
             CoreArg::ByVal(type_code),
             CoreArg::ByVal(str_len),
         ];
-        let read = CoreValue::Call {
-            callee: CoreCallee::Native(NativeImplId::FileGetInto),
-            args,
-        };
+        // `Get #n, [rec], var` reads INTO `var`; the read value is the call result and
+        // the write-back is the wrapping `CoreStmt::Assign` below (NOT a ByRef arg), so
+        // routing the read through `ExternProc` preserves the write-back exactly — the
+        // target slot is the assignment's place, untouched by the callee change.
+        let read = self.vba_library_call(NativeImplId::FileGetInto, args);
         let value = types::coerce(
             read,
             &oxvba_symbol::signature::VarTypeRef::Variant,
@@ -1076,10 +1115,9 @@ impl<'a> ProcLower<'a> {
             CoreArg::ByVal(value.value),
             CoreArg::ByVal(CoreValue::Const(CoreConst::I32(fixed))),
         ];
-        Ok(vec![CoreStmt::Eval(CoreValue::Call {
-            callee: CoreCallee::Native(NativeImplId::FilePut),
-            args,
-        })])
+        Ok(vec![CoreStmt::Eval(
+            self.vba_library_call(NativeImplId::FilePut, args),
+        )])
     }
 
     // ── Small helpers ───────────────────────────────────────

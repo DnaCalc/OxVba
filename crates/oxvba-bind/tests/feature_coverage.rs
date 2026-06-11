@@ -658,7 +658,7 @@ fn information_predicates_route_through_vba_bundle() {
 fn filesystem_functions_route_through_vba_bundle() {
     // The `FileIo` by-name FUNCTIONS (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
     // `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc` — catalog `Ordinary`, non-empty names)
-    // are now native-bodied procs of the synthetic `VBA` bundle, exported under the
+    // are native-bodied procs of the synthetic `VBA` bundle, exported under the
     // canonical `FileSystem` module: the binder resolves each as `ExternMember
     // { has_receiver: false }` → a `VBA`/`FileSystem` `ModuleFunc` import +
     // `Op::CallExtern` → `NativeBody::Library`, exactly like the `Interaction` host
@@ -668,8 +668,10 @@ fn filesystem_functions_route_through_vba_bundle() {
     // the linearized entry bundle imports each callee from `VBA`/`FileSystem`, which
     // is exactly the cross-bundle link the bespoke `Native` route did not produce.
     //
-    // The `FileStatement` forms (`Open`/`Close`/`Kill`/`Print #`/`Put`/`Name`/…) stay
-    // on the `Native` route (P4) — they are NOT bound by name.
+    // The by-NAME `FileStatement` forms (`Kill`/`MkDir`/`RmDir`/`ChDir`/`ChDrive`/
+    // `SetAttr`/`FileCopy` — not lexer keywords, so they resolve by name) route the
+    // same way (P4). The name-LESS `FileStatement` forms (`Open`/`Print #`/`Put`/`Get`/
+    // …) are parser-bound and covered by `file_statements_route_through_vba_bundle`.
     let program = oxvba_bind::bind_program(
         &manifest(
             "Sub Main()\n\
@@ -677,6 +679,8 @@ fn filesystem_functions_route_through_vba_bundle() {
              n = FreeFile\n\
              p = CurDir()\n\
              l = FileLen(\"x\")\n\
+             MkDir \"d\"\n\
+             FileCopy \"a\", \"b\"\n\
              End Sub",
         ),
         &NullTypeLibs,
@@ -684,7 +688,7 @@ fn filesystem_functions_route_through_vba_bundle() {
     .expect("bind should succeed");
     let bundle = oxvba_bundle::linearize(&program).expect("linearize should succeed");
 
-    for member in ["FreeFile", "CurDir", "FileLen"] {
+    for member in ["FreeFile", "CurDir", "FileLen", "MkDir", "FileCopy"] {
         assert!(
             bundle.imports.iter().any(|imp| {
                 imp.unit.eq_ignore_ascii_case("VBA")
@@ -698,6 +702,87 @@ fn filesystem_functions_route_through_vba_bundle() {
             "expected a VBA/FileSystem import for {member}: {:?}",
             bundle.imports
         );
+    }
+}
+
+#[test]
+fn file_statements_route_through_vba_bundle() {
+    // The name-less, parser-bound funny-syntax file STATEMENTS (`Open`/`Close`/
+    // `Print #`/`Write #`/`Input #`/`Line Input #`/`Put`/`Get`/`Seek #`/`Width #`/
+    // `Name … As`/`Lock`/`Unlock`) keep their special parsing + arg-shaping in
+    // `stmt.rs`, but now lower to a cross-bundle `ExternProc` call into the `VBA`
+    // bundle's `FileSystem` module (the `library_statement_member` location — `Open`/
+    // `Print`/`Put`/`Get`/… — or, for the `Seek #n, pos` statement, the by-name
+    // `library_member(FileSeek)` member `Seek`) instead of `CoreCallee::Native(File*)`.
+    // We assert the *routing*: the linearized entry bundle imports each statement's
+    // member from `VBA`/`FileSystem` (the real filesystem behaviour is proved by
+    // `oxvba-host`'s `filesystem_statements.rs` and the VM round-trip tests in
+    // `bind_roundtrip.rs`).
+    let program = oxvba_bind::bind_program(
+        &manifest(
+            "Sub Main()\n\
+             Dim r As Long\n\
+             Open \"f.dat\" For Random As #1 Len = 8\n\
+             Print #1, \"hi\"\n\
+             Put #1, 1, 222\n\
+             Get #1, 1, r\n\
+             Seek #1, 1\n\
+             Width #1, 80\n\
+             Close #1\n\
+             Name \"a\" As \"b\"\n\
+             End Sub",
+        ),
+        &NullTypeLibs,
+    )
+    .expect("bind should succeed");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize should succeed");
+
+    // The internal member names the parser-bound statements import, plus `Seek`
+    // (the statement form reuses the by-name function member).
+    for member in [
+        "Open", "Print", "Put", "Get", "Seek", "Width", "Close", "Name",
+    ] {
+        assert!(
+            bundle.imports.iter().any(|imp| {
+                imp.unit.eq_ignore_ascii_case("VBA")
+                    && matches!(
+                        &imp.token,
+                        oxvba_bundle::ExportToken::ModuleFunc { module, member: m, .. }
+                            if module.eq_ignore_ascii_case("FileSystem")
+                                && m.eq_ignore_ascii_case(member)
+                    )
+            }),
+            "expected a VBA/FileSystem import for statement member {member}: {:?}",
+            bundle.imports
+        );
+    }
+    // And no file statement remains on the bespoke `CoreCallee::Native` route.
+    use oxvba_bundle::coreir::{CoreCallee, CoreStmt, CoreValue};
+    use oxvba_bundle::native::NativeImplId;
+    fn value_native(v: &CoreValue) -> Option<NativeImplId> {
+        match v {
+            CoreValue::Call {
+                callee: CoreCallee::Native(n),
+                ..
+            } => Some(*n),
+            CoreValue::Unary { expr, .. } => value_native(expr),
+            _ => None,
+        }
+    }
+    for proc in &program.procs {
+        for stmt in &proc.body {
+            let native = match stmt {
+                CoreStmt::Eval(v) => value_native(v),
+                CoreStmt::Assign { value, .. } => value_native(value),
+                _ => None,
+            };
+            if let Some(id) = native {
+                assert!(
+                    id.library_member().is_none() && id.library_statement_member().is_none(),
+                    "a migrated file id {id:?} must not stay on CoreCallee::Native",
+                );
+            }
+        }
     }
 }
 

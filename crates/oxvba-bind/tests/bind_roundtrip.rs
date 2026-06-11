@@ -345,23 +345,32 @@ fn declare_byval_string_lvalue_binds_byref_for_ansi_writeback() {
 }
 
 #[test]
-fn kill_statement_resolves_to_file_kill_native() {
+fn kill_statement_routes_to_vba_filesystem() {
     // `Kill pathname` is not a lexer keyword (unlike Open/Close/Print#/Name/…), so it
-    // parses as an ordinary statement-call and must resolve by name to the FileKill
-    // native (a 1-argument call).
+    // parses as an ordinary statement-call and resolves by name. Since P4 it routes
+    // cross-bundle to the `VBA` unit's `FileSystem.Kill` member (an `ExternProc` call),
+    // exactly like the by-name file functions — not the bespoke `Native` route.
     let program = bind("Sub Main()\n    Kill \"scratch.tmp\"\nEnd Sub\n");
-    assert!(oxvba_bundle::linearize(&program).is_ok());
-    let entry = program.entry.expect("entry");
-    let lowered = program.procs[entry.0].body.iter().any(|stmt| {
-        matches!(
-            stmt,
-            CoreStmt::Eval(CoreValue::Call {
-                callee: CoreCallee::Native(NativeImplId::FileKill),
-                ..
-            })
-        )
-    });
-    assert!(lowered, "`Kill` should lower to a FileKill native call");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    assert!(
+        imports_vba_filesystem(&bundle, "Kill"),
+        "`Kill` should import VBA/FileSystem.Kill: {:?}",
+        bundle.imports
+    );
+}
+
+/// True if the linearized `bundle` imports a `VBA`/`FileSystem` `ModuleFunc` named
+/// `member` (the cross-bundle link a `FileSystem` call lowers to).
+fn imports_vba_filesystem(bundle: &oxvba_bundle::Bundle, member: &str) -> bool {
+    bundle.imports.iter().any(|imp| {
+        imp.unit.eq_ignore_ascii_case("VBA")
+            && matches!(
+                &imp.token,
+                oxvba_bundle::ExportToken::ModuleFunc { module, member: m, .. }
+                    if module.eq_ignore_ascii_case("FileSystem")
+                        && m.eq_ignore_ascii_case(member)
+            )
+    })
 }
 
 #[test]
@@ -1056,34 +1065,51 @@ fn declare_byref_arg_emits_byref() {
     );
 }
 
-// ── File I/O (structural — bind emits native ops; not run) ────────────────────
+// ── File I/O (structural — bind emits cross-bundle ExternProc calls; not run) ──
 
 #[test]
-fn file_io_lowers_to_native_calls() {
+fn file_io_lowers_to_vba_filesystem_externs() {
+    // Since P4 the funny-syntax file statements lower to cross-bundle `ExternProc`
+    // calls into the `VBA` bundle's `FileSystem` module (internal member names
+    // `Open`/`Print`/`Close`/…) rather than `CoreCallee::Native(File*)`. We assert the
+    // entry bundle imports each member; the special arg-shaping is unchanged.
     let src = "Sub Main()\n    Dim f As Long\n    f = FreeFile\n    Open \"x.txt\" For Output As #1\n    Print #1, \"hi\"\n    Close #1\nEnd Sub\n";
     let program = bind(src);
-    assert!(
-        contains_native(&program, NativeImplId::FilePrint),
-        "expected a FilePrint native call in the lowered program"
-    );
-    assert!(contains_native(&program, NativeImplId::FileOpen));
-    assert!(contains_native(&program, NativeImplId::FileClose));
-}
-
-fn contains_native(program: &CoreProgram, id: NativeImplId) -> bool {
-    program
-        .procs
-        .iter()
-        .any(|p| p.body.iter().any(|s| stmt_has_native(s, id)))
-}
-
-fn stmt_has_native(stmt: &CoreStmt, id: NativeImplId) -> bool {
-    match stmt {
-        CoreStmt::Eval(value) => value_has_native(value, id),
-        _ => false,
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    for member in ["Open", "Print", "Close"] {
+        assert!(
+            imports_vba_filesystem(&bundle, member),
+            "expected a VBA/FileSystem import for {member}: {:?}",
+            bundle.imports
+        );
     }
+    // No file statement remains on the bespoke `CoreCallee::Native` route.
+    assert!(
+        !contains_file_native(&program),
+        "no file statement may lower to CoreCallee::Native after P4"
+    );
 }
 
-fn value_has_native(value: &CoreValue, id: NativeImplId) -> bool {
-    matches!(value, CoreValue::Call { callee: CoreCallee::Native(n), .. } if *n == id)
+/// True if any statement still lowers a *migrated* file id to `CoreCallee::Native`.
+fn contains_file_native(program: &CoreProgram) -> bool {
+    fn value_native(v: &CoreValue) -> Option<NativeImplId> {
+        match v {
+            CoreValue::Call {
+                callee: CoreCallee::Native(n),
+                ..
+            } => Some(*n),
+            CoreValue::Unary { expr, .. } => value_native(expr),
+            _ => None,
+        }
+    }
+    program.procs.iter().flat_map(|p| &p.body).any(|s| {
+        let id = match s {
+            CoreStmt::Eval(v) => value_native(v),
+            CoreStmt::Assign { value, .. } => value_native(value),
+            _ => None,
+        };
+        id.is_some_and(|id| {
+            id.library_member().is_some() || id.library_statement_member().is_some()
+        })
+    })
 }

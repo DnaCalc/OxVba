@@ -160,9 +160,21 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     assert!(
         matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
-    // A non-migrated intrinsic — a `FileIo` STATEMENT form resolved by name (`Kill`,
-    // CallShape `FileStatement`) — keeps the bespoke `Native` route (it is P4).
-    assert!(matches!(p.resolve("Kill"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
+    // The by-name `FileStatement` forms (`Kill`/`MkDir`/… are not lexer keywords, so
+    // they resolve by name) now route cross-bundle to the `VBA` unit's `FileSystem`
+    // module, exactly like the by-name file functions — P4 migrated them off the
+    // bespoke `Native` route. (The name-LESS file statements `Open`/`Print #`/… are
+    // parser-bound, never resolved by name; the only intrinsic still on the `Native`
+    // route is the predeclared `Debug.Print`, exercised in
+    // `library_resolves_predeclared_members`.)
+    assert!(matches!(
+        p.resolve("Kill"),
+        Some(b) if matches!(
+            &b.route,
+            DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
+                if unit == "VBA" && owner == "FileSystem" && member == "Kill"
+        )
+    ));
     // A `FileIo` by-name FUNCTION (`FreeFile`) now routes cross-bundle to the `VBA`
     // unit's `FileSystem` module (migrated this round).
     assert!(matches!(
@@ -534,14 +546,13 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         env.resolve(&from_global, "vbCrLf"),
         Some(b) if matches!(b.route, DispatchRoute::ConstValue(_))
     ));
-    // A non-migrated intrinsic (`Kill`, a `FileIo` STATEMENT form resolved by name)
-    // resolves through the `Native` route; migrated functions (`Len`, a `Strings`
-    // member; `IsNumeric`, an `Information` predicate; and `FreeFile`, a `FileSystem`
-    // by-name function) resolve cross-bundle to the `VBA` unit — all via the same
-    // source-agnostic provider path.
+    // Migrated members resolve cross-bundle to the `VBA` unit, all via the same
+    // source-agnostic provider path: `Len` (a `Strings` member), `IsNumeric` (an
+    // `Information` predicate), `FreeFile` (a `FileSystem` by-name function), and `Kill`
+    // (a by-name `FileSystem` STATEMENT — not a lexer keyword, so it resolves by name).
     assert!(matches!(
         env.resolve(&from_global, "Kill"),
-        Some(b) if matches!(b.route, DispatchRoute::Native(_))
+        Some(b) if matches!(b.route, DispatchRoute::ExternMember { has_receiver: false, .. })
     ));
     assert!(matches!(
         env.resolve(&from_global, "Len"),

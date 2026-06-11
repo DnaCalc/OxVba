@@ -301,20 +301,28 @@ impl NativeImplId {
     ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
     ///   lowering target) and the `Com*` event-machinery ids (not user-callable by
     ///   name) stay `None`;
-    /// - the `FileIo` by-name **functions** (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
-    ///   `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc`) — the catalog-`Ordinary`, non-empty-
-    ///   name members, exported under the canonical VBA typelib module **`FileSystem`**.
-    ///   Like `Interaction`, these reach host filesystem services through
-    ///   `invoke_native_lib`, so rerouting changes only the dispatch route, not
-    ///   behaviour. Their `FileIo` STATEMENT-form siblings (`FileOpen`/`FileClose`/
-    ///   `Kill`/`MkDir`/…/`Print #`/`Put`/`Name`/`Lock`/… — catalog `FileStatement`,
-    ///   bound from the parser in `oxvba-bind/stmt.rs`, not by name) and the name-less
-    ///   `FileRead` stay `None` (a later slice — P4).
+    /// - the `FileIo` by-**name** members, exported under the canonical VBA typelib
+    ///   module **`FileSystem`** (member = catalog primary). These split into the
+    ///   catalog-`Ordinary` FUNCTION forms (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
+    ///   `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc`) and the by-name `FileStatement` forms
+    ///   that are *not lexer keywords* (`Kill`/`MkDir`/`RmDir`/`ChDir`/`ChDrive`/
+    ///   `SetAttr`/`FileCopy`), which parse as ordinary statement-calls and resolve via
+    ///   `name_to_intrinsic` just like a function — the binder never consults the
+    ///   catalog `CallShape`, so both kinds migrate identically. Like `Interaction`,
+    ///   they reach host filesystem services through `invoke_native_lib`, so rerouting
+    ///   changes only the dispatch route, not behaviour. Their name-LESS `FileIo`
+    ///   STATEMENT-form siblings (`FileOpen`/`FileClose`/`Print #`/`Put`/`Get`/`Name`/
+    ///   `Lock`/… — parsed to dedicated CST nodes and lowered in `oxvba-bind/stmt.rs`,
+    ///   not resolved by name) live in [`NativeImplId::library_statement_member`]
+    ///   instead (they have no catalog name for the primary-name drift-guard).
     ///
-    /// `None` for every other id: those `Information`/`Interaction`/`FileIo` exceptions
-    /// above, `Diagnostics` (`Debug.Print`/`Debug.Assert`, internal), and the
-    /// `Collection` members (a class, not a free function). Those keep the bespoke
-    /// `DispatchRoute::Native(id)` route.
+    /// `None` for every other id: the `Information`/`Interaction` exceptions above, the
+    /// special forms `IIf`/`Choose`/`Switch`/`CreateObject`, the name-LESS `FileIo`
+    /// statement forms (see `library_statement_member`) and the name-less `FileRead`,
+    /// `Diagnostics` (`Debug.Print`/`Debug.Assert`, internal), and the `Collection`
+    /// members (a class, not a free function). The special forms and `FileRead` keep
+    /// the bespoke `DispatchRoute::Native(id)` route; the parser-bound file statements
+    /// are emitted as `ExternProc` calls to their `library_statement_member` location.
     pub fn library_member(self) -> Option<(&'static str, &'static str)> {
         use NativeImplId::*;
         // The owning module name for the migrated id; `None` for any module/id that
@@ -435,9 +443,20 @@ impl NativeImplId {
             Shell => "Shell",
             Environ => "Environ",
             Dir => "Dir",
-            // ── FileSystem (the FileIo by-name FUNCTIONS — Ordinary, non-empty names) ──
+            // ── FileSystem (the FileIo by-NAME members — non-empty catalog `names`) ──
             // Module is "FileSystem" (the canonical VBA typelib module name), not the
             // `LibraryModule::FileIo` enum name; see the module-name lookup below.
+            //
+            // These split into the `Ordinary` FUNCTION forms and the `FileStatement`
+            // forms that are *still resolved by name* (`Kill`/`MkDir`/… are not lexer
+            // keywords, so they parse as ordinary statement-calls and bind through
+            // `name_to_intrinsic`). Both kinds resolve identically — the catalog's
+            // `CallShape` is informational and not consulted by the binder — so both
+            // migrate here, with the member name = catalog primary (covered by the
+            // `migrated_library_member_name_matches_catalog_primary` drift-guard). The
+            // name-LESS `FileStatement` forms (`FileOpen`/`Print #`/`Put`/… — parsed to
+            // dedicated CST nodes, lowered in `oxvba-bind/stmt.rs`) instead live in
+            // `library_statement_member` (they have no catalog name to guard against).
             FreeFile => "FreeFile",
             FileCurDir => "CurDir",
             FileLen => "FileLen",
@@ -447,11 +466,22 @@ impl NativeImplId {
             FileLof => "LOF",
             FileSeek => "Seek",
             FileLoc => "Loc",
-            // Everything else stays on the `Native(id)` route: the name-less
+            // The by-name `FileStatement` forms (not parser-bound — they resolve by
+            // name like a function): member = catalog primary.
+            FileKill => "Kill",
+            FileMkDir => "MkDir",
+            FileRmDir => "RmDir",
+            FileChDir => "ChDir",
+            FileChDrive => "ChDrive",
+            FileSetAttr => "SetAttr",
+            FileCopy => "FileCopy",
+            // Everything else is NOT a by-name `library_member`: the name-less
             // `MidStmt`/`Like`; the `Information` special forms `IIf`/`Choose`/`Switch`;
-            // the `Interaction` `CreateObject` + `Com*` machinery; the `FileIo`
-            // STATEMENT forms and the name-less `FileRead` (a later slice — P4);
-            // `Diagnostics` (`DebugPrint`); and the `Collection` members.
+            // the `Interaction` `CreateObject` + `Com*` machinery; the name-LESS
+            // `FileIo` STATEMENT forms (now `library_statement_member` — parser-bound,
+            // emitted as `ExternProc` from `stmt.rs`) and the name-less `FileRead`;
+            // `Diagnostics` (`DebugPrint`); and the `Collection` members. The special
+            // forms / `FileRead` keep the `Native(id)` route.
             _ => return None,
         };
         // The owning module name. `module()` is the authoritative grouping; the
@@ -530,10 +560,77 @@ impl NativeImplId {
             Shell | Dir => 2,
             MsgBox => 5,
             InputBox => 7,
-            // ── FileSystem by-name functions ── (all max-arity 1)
+            // ── FileSystem by-name members ──
+            // The single-argument forms (functions + the 1-arg name-statements).
             FreeFile | FileCurDir | FileLen | FileGetAttr | FileDateTime | FileEof | FileLof
-            | FileSeek | FileLoc => 1,
-            // Not a migrated bundle member.
+            | FileSeek | FileLoc | FileKill | FileMkDir | FileRmDir | FileChDir | FileChDrive => 1,
+            // The two-argument name-statements.
+            FileSetAttr | FileCopy => 2,
+            // Not a migrated bundle member (the parser-bound statements use
+            // `library_statement_param_count`).
+            _ => 0,
+        }
+    }
+
+    /// The synthetic `VBA`-bundle location `(module, member)` for a **name-less**
+    /// file STATEMENT — the funny-syntax forms parsed to dedicated CST nodes and
+    /// lowered in `oxvba-bind/stmt.rs` (`Open`/`Close`/`Print #`/`Write #`/`Input #`/
+    /// `Line Input #`/`Width #`/`Name … As`/`Lock`/`Unlock`/`Put`/`Get`). Returns
+    /// `None` for any other id.
+    ///
+    /// This is the statement-form analogue of [`NativeImplId::library_member`]. It is a
+    /// SEPARATE table because these ids have **empty** catalog `names` (they are not
+    /// user-resolvable by name — `name_to_intrinsic` never returns them), so they
+    /// cannot be guarded by the catalog-primary-name parity check that the by-name
+    /// members use. Instead they are exported under fixed INTERNAL member names of the
+    /// `FileSystem` module (chosen to read like the VBA keyword), and the binder
+    /// emits a cross-bundle `ExportToken::ModuleFunc` import + `Op::CallExtern` to
+    /// them — replacing the bespoke `CoreCallee::Native(File*)` lowering that
+    /// `stmt.rs` used. A drift-guard test (`statement_members_are_native_library_procs`
+    /// in `oxvba-bundle/vba_library`) asserts the bundle exports each of these.
+    ///
+    /// `FileSeek` is **not** here: its function form `Seek(n)` is a by-name member
+    /// (`library_member` → `FileSystem.Seek`), and the `Seek #n, pos` STATEMENT reuses
+    /// that same member (the `oxvba-lib` body dispatches on the argument count), so
+    /// `stmt.rs` routes the statement through `library_member(FileSeek)`.
+    pub fn library_statement_member(self) -> Option<(&'static str, &'static str)> {
+        use NativeImplId::*;
+        let member = match self {
+            FileOpen => "Open",
+            FileClose => "Close",
+            FilePrint => "Print",
+            FileWrite => "Write",
+            FileInput => "Input",
+            FileLineInput => "LineInput",
+            FileWidth => "Width",
+            FileRename => "Name",
+            FileLock => "Lock",
+            FileUnlock => "Unlock",
+            FilePut => "Put",
+            FileGetInto => "Get",
+            _ => return None,
+        };
+        Some(("FileSystem", member))
+    }
+
+    /// The informational parameter count recorded on the bundle's
+    /// [`ProcedureDescriptor`](crate::ProcedureDescriptor) for a name-less file
+    /// statement member (see [`NativeImplId::library_statement_member`]) — its
+    /// maximum fixed arity. The native body reads its arguments positionally and
+    /// ignores this; variadic print/input forms cap their own args, so `0` stands in
+    /// for them. `0` for any id that is not a statement member.
+    pub fn library_statement_param_count(self) -> usize {
+        use NativeImplId::*;
+        match self {
+            // `FileOpen(path, packed-mode, reclen)` — see `bind_open` in `stmt.rs`.
+            FileOpen => 3,
+            // `FileGetInto(handle, rec, type-code, str-len)` / `FilePut(handle, rec,
+            // value, fixed-flag)` — fixed 4-tuples assembled by `bind_get`/`bind_put`.
+            FileGetInto | FilePut => 4,
+            // `FileClose([handle…])`, the `Print #`/`Write #`/`Input #` families and
+            // `Width #`/`Name … As`/`Lock`/`Unlock` are variadic; cap at 0.
+            FileClose | FilePrint | FileWrite | FileInput | FileLineInput | FileWidth
+            | FileRename | FileLock | FileUnlock => 0,
             _ => 0,
         }
     }

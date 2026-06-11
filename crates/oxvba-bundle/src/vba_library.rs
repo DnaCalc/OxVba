@@ -15,11 +15,14 @@
 //!   like an `Op::CallNative { NativeCallee::Builtin(..) }` — no frame, no bespoke
 //!   `CoreCallee::Native` route.
 //!
-//! Today this exposes the `Collection` class and the migrated library functions —
+//! Today this exposes the `Collection` class and the migrated library members —
 //! the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial` modules,
-//! the `Information` predicates, the `Interaction` host functions, and the `FileIo`
-//! by-name functions (exported under the `FileSystem` module) — every id for which
-//! [`NativeImplId::library_member`] is `Some`. The bundle's `ops` are a lone
+//! the `Information` predicates, the `Interaction` host functions, the `FileIo`
+//! by-name members (functions + the by-name statements `Kill`/`MkDir`/… — exported
+//! under the `FileSystem` module), and the name-less file STATEMENTS (`Open`/`Print`/
+//! `Put`/`Get`/… — also under `FileSystem`, via fixed internal member names) — every
+//! id for which [`NativeImplId::library_member`] or
+//! [`NativeImplId::library_statement_member`] is `Some`. The bundle's `ops` are a lone
 //! `Return` placeholder that is never executed (native bodies bypass the frame
 //! machinery, and the class has no `Class_Initialize`).
 
@@ -120,24 +123,33 @@ fn build() -> Bundle {
         target: ExportTarget::Class(0),
     }];
 
-    // The migrated library functions (the `Strings`/`Math`/`DateTime`/`Conversion`/
+    // Each migrated id contributes one native-bodied module proc (a
+    // `NativeBody::Library` body run through `oxvba-lib`) + a `ModuleFunc` export at
+    // its `(module, member)` location, so the binder's `ExternMember { has_receiver:
+    // false }` / `ExternProc` resolution links to it cross-bundle (an import token
+    // matches this export token exactly). The by-NAME members come from
+    // `library_member` (member = catalog primary; shared with the binder's
+    // `name_to_intrinsic` reroute — the whole `Strings`/`Math`/`DateTime`/`Conversion`/
     // `Random`/`Financial` modules, the `Information` predicates, the `Interaction`
-    // host functions, and the `FileIo` by-name functions): each is a native-bodied module proc (a
-    // `NativeBody::Library` body run through `oxvba-lib`), exported as a `ModuleFunc`
-    // so the binder's `ExternMember { has_receiver: false }` resolution links to it
-    // cross-bundle. The `(module, member)` location and the export's member name
-    // come from the single source of truth `NativeImplId::library_member`, shared
-    // with the binder so an import token matches this export token exactly. We
-    // iterate `NativeImplId::ALL` and keep every id for which `library_member` is
-    // `Some`, so a new migrated id is exported automatically (a drift-guard test
-    // asserts coverage).
+    // host functions, and the `FileSystem` by-name functions + by-name statements). The
+    // name-LESS file STATEMENTS come from `library_statement_member` (fixed internal
+    // names; shared with the parser-bound lowering in `oxvba-bind/stmt.rs`). Both yield
+    // an identical `ExternProc`-callable proc, so a cross-bundle `CallExtern` reaches
+    // the `oxvba-lib` body either way. Iterating `NativeImplId::ALL` exports a new
+    // migrated id automatically (drift-guard tests assert coverage).
     for &id in NativeImplId::ALL {
-        let Some((module, member)) = id.library_member() else {
+        let Some((module, member, param_count)) = id
+            .library_member()
+            .map(|(m, mem)| (m, mem, id.library_param_count()))
+            .or_else(|| {
+                id.library_statement_member()
+                    .map(|(m, mem)| (m, mem, id.library_statement_param_count()))
+            })
+        else {
             continue;
         };
         // `param_count` is informational for native bodies (the `oxvba-lib` body
         // reads its arguments positionally), sized at the maximum-arity form.
-        let param_count = id.library_param_count();
         let proc = procedures.len();
         procedures.push(ProcedureDescriptor {
             name: member.to_string(),
@@ -203,29 +215,34 @@ mod tests {
         }
     }
 
-    /// The migrated-id gate: `library_member()` is `Some` for exactly the migrated
-    /// set and `None` for everything else. Migrated =
+    /// The migrated-id gate: `library_member()` is `Some` for exactly the by-NAME
+    /// migrated set and `None` for everything else. Migrated =
     /// - the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial`
     ///   modules, minus the name-less `MidStmt`/`Like`;
     /// - the `Information` **predicates** (but NOT the `IIf`/`Choose`/`Switch` special
     ///   forms);
     /// - the `Interaction` **host functions** (but NOT `CreateObject` or the `Com*`
     ///   event machinery);
-    /// - the `FileIo` by-name **functions** (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
-    ///   `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc` — the catalog-`Ordinary`, non-empty-
-    ///   name members), but NOT the `FileStatement` forms or the name-less `FileRead`.
+    /// - the `FileIo` by-**name** members: the `Ordinary` functions (`FreeFile`/
+    ///   `CurDir`/`FileLen`/`GetAttr`/`FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc`) AND the
+    ///   by-name `FileStatement` forms that resolve through `name_to_intrinsic` because
+    ///   they are not lexer keywords (`Kill`/`MkDir`/`RmDir`/`ChDir`/`ChDrive`/
+    ///   `SetAttr`/`FileCopy`). The name-LESS `FileStatement` forms (`FileOpen`/
+    ///   `Print #`/`Put`/`Get`/… — parser-bound) are NOT here: they are
+    ///   `library_statement_member`s, guarded separately below. The name-less
+    ///   `FileRead` stays `None`.
     ///
-    /// Everything else — those exceptions, the `FileIo` statement forms, `Diagnostics`,
-    /// and the `Collection` members — keeps the bespoke `Native` route. The exclusions
-    /// are asserted by id (not just by module) so a careless future change to one of
-    /// the partially migrated modules is caught.
+    /// Everything else — those exceptions, the name-less file statements, `FileRead`,
+    /// `Diagnostics`, and the `Collection` members — keeps the bespoke `Native` route
+    /// (special forms) or is a statement member. The exclusions are asserted by id
+    /// (not just by module) so a careless future change is caught.
     #[test]
     fn library_member_covers_exactly_the_migrated_ids() {
         use crate::native::LibraryModule as M;
         use NativeImplId::*;
 
         // Information predicates, Interaction host functions, and the FileIo by-name
-        // functions are migrated members of their (otherwise partially excluded)
+        // members are migrated members of their (otherwise partially excluded)
         // modules; everything else in those modules is explicitly excluded below.
         let information_predicate = |id| {
             matches!(
@@ -248,11 +265,12 @@ mod tests {
                 MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir
             )
         };
-        // The FileIo ids whose catalog `CallShape` is `Ordinary` AND whose name set is
-        // non-empty — the by-name FUNCTION forms. The `FileStatement` forms (FileOpen,
-        // FileClose, Kill, MkDir, …, Print #, Put, Name, Lock, …) and the name-less
-        // `FileRead` stay on the Native route (P4).
-        let fileio_function = |id| {
+        // The FileIo ids resolved by NAME — both the `Ordinary` function forms and the
+        // `FileStatement` forms that are not lexer keywords (`Kill`/`MkDir`/…). The
+        // name-LESS `FileStatement` forms (FileOpen/FilePrint/FilePut/FileGetInto/…)
+        // are `library_statement_member`s, not `library_member`s; the name-less
+        // `FileRead` stays on the Native route.
+        let fileio_by_name = |id| {
             matches!(
                 id,
                 FreeFile
@@ -264,6 +282,13 @@ mod tests {
                     | FileLof
                     | FileSeek
                     | FileLoc
+                    | FileKill
+                    | FileMkDir
+                    | FileRmDir
+                    | FileChDir
+                    | FileChDrive
+                    | FileSetAttr
+                    | FileCopy
             )
         };
 
@@ -274,7 +299,7 @@ mod tests {
                 }
                 M::Information => information_predicate(id),
                 M::Interaction => interaction_host_fn(id),
-                M::FileIo => fileio_function(id),
+                M::FileIo => fileio_by_name(id),
                 M::Collection | M::Diagnostics => false,
             };
             assert_eq!(
@@ -282,11 +307,16 @@ mod tests {
                 migrated,
                 "library_member({id:?}) disagrees with the migrated-id set",
             );
+            // A by-name member and a name-less statement member are disjoint: never both.
+            assert!(
+                !(id.library_member().is_some() && id.library_statement_member().is_some()),
+                "{id:?} is both a library_member and a library_statement_member",
+            );
         }
 
-        // Spot-check the deliberate exclusions stay `None` even though their modules
-        // are partially migrated. The `FileIo` STATEMENT forms (and the name-less
-        // `FileRead`) must NOT migrate — they are P4.
+        // Spot-check the deliberate exclusions stay `None` (special forms / name-less
+        // `FileRead`); the name-less file STATEMENT forms are excluded from
+        // `library_member` but ARE `library_statement_member`s (asserted separately).
         for excluded in [
             IIf,
             Choose,
@@ -294,21 +324,19 @@ mod tests {
             CreateObject,
             ComSubscribeEvent,
             DebugPrint,
-            FileOpen,
-            FileClose,
-            FileKill,
-            FileChDir,
-            FileSetAttr,
-            FileCopy,
-            FilePut,
             FileRead,
         ] {
             assert!(
                 excluded.library_member().is_none(),
                 "{excluded:?} must stay on the Native route",
             );
+            assert!(
+                excluded.library_statement_member().is_none(),
+                "{excluded:?} is not a file statement member",
+            );
         }
-        // And spot-check the new inclusions are present.
+        // And spot-check the by-name inclusions are present — including the by-name
+        // file STATEMENTS (Kill/MkDir/…) that migrated this round.
         for included in [
             VarType,
             TypeName,
@@ -326,6 +354,13 @@ mod tests {
             FileLof,
             FileSeek,
             FileLoc,
+            FileKill,
+            FileMkDir,
+            FileRmDir,
+            FileChDir,
+            FileChDrive,
+            FileSetAttr,
+            FileCopy,
         ] {
             assert!(
                 included.library_member().is_some(),
@@ -333,8 +368,8 @@ mod tests {
             );
         }
 
-        // The FileSystem functions export under the canonical VBA typelib module name,
-        // not the `LibraryModule::FileIo` enum name.
+        // The FileSystem members export under the canonical VBA typelib module name,
+        // not the `LibraryModule::FileIo` enum name; member == catalog primary.
         assert_eq!(FreeFile.library_member(), Some(("FileSystem", "FreeFile")));
         assert_eq!(FileCurDir.library_member(), Some(("FileSystem", "CurDir")));
         assert_eq!(
@@ -342,17 +377,103 @@ mod tests {
             Some(("FileSystem", "GetAttr"))
         );
         assert_eq!(FileSeek.library_member(), Some(("FileSystem", "Seek")));
+        assert_eq!(FileKill.library_member(), Some(("FileSystem", "Kill")));
+        assert_eq!(FileCopy.library_member(), Some(("FileSystem", "FileCopy")));
+        assert_eq!(
+            FileSetAttr.library_member(),
+            Some(("FileSystem", "SetAttr"))
+        );
     }
 
-    /// Drift-guard: every migrated id (`library_member()` is `Some`) is exported by
-    /// the bundle as a `ModuleFunc` at its `(module, member)` location, targeting a
-    /// proc with a `NativeBody::Library` body — so a cross-bundle `CallExtern`
-    /// reaches the `oxvba-lib` body (the route the binder now lowers these calls to).
+    /// The name-less file STATEMENT gate: `library_statement_member()` is `Some` for
+    /// exactly the parser-bound, empty-catalog-name `FileStatement` ids (lowered in
+    /// `oxvba-bind/stmt.rs`) and `None` for everything else — including the by-name
+    /// file members (which are `library_member`s) and `FileSeek` (whose statement form
+    /// reuses the by-name `FileSystem.Seek`).
     #[test]
-    fn migrated_funcs_are_native_library_module_procs() {
+    fn library_statement_member_covers_exactly_the_parser_bound_statements() {
+        use NativeImplId::*;
+
+        let parser_bound_statement = |id| {
+            matches!(
+                id,
+                FileOpen
+                    | FileClose
+                    | FilePrint
+                    | FileWrite
+                    | FileInput
+                    | FileLineInput
+                    | FileWidth
+                    | FileRename
+                    | FileLock
+                    | FileUnlock
+                    | FilePut
+                    | FileGetInto
+            )
+        };
+        for &id in NativeImplId::ALL {
+            assert_eq!(
+                id.library_statement_member().is_some(),
+                parser_bound_statement(id),
+                "library_statement_member({id:?}) disagrees with the parser-bound set",
+            );
+            if let Some((module, _member)) = id.library_statement_member() {
+                assert_eq!(
+                    module, "FileSystem",
+                    "statement {id:?} must own to FileSystem"
+                );
+            }
+        }
+        // The fixed internal member names the binder targets.
+        assert_eq!(
+            FileOpen.library_statement_member(),
+            Some(("FileSystem", "Open"))
+        );
+        assert_eq!(
+            FilePrint.library_statement_member(),
+            Some(("FileSystem", "Print"))
+        );
+        assert_eq!(
+            FilePut.library_statement_member(),
+            Some(("FileSystem", "Put"))
+        );
+        assert_eq!(
+            FileGetInto.library_statement_member(),
+            Some(("FileSystem", "Get"))
+        );
+        assert_eq!(
+            FileRename.library_statement_member(),
+            Some(("FileSystem", "Name"))
+        );
+        // `FileSeek` is a by-name member, not a statement member (its `Seek #n, pos`
+        // statement reuses the by-name `FileSystem.Seek`).
+        assert_eq!(FileSeek.library_statement_member(), None);
+        // No two statement members collide on a member name within FileSystem.
+        let mut names: Vec<&str> = NativeImplId::ALL
+            .iter()
+            .filter_map(|id| id.library_statement_member().map(|(_, m)| m))
+            .collect();
+        names.sort_unstable();
+        let count = names.len();
+        names.dedup();
+        assert_eq!(names.len(), count, "statement member names must be unique");
+    }
+
+    /// Drift-guard: every migrated id — both by-name members (`library_member()`) and
+    /// name-less file statements (`library_statement_member()`) — is exported by the
+    /// bundle as a `ModuleFunc` at its `(module, member)` location, targeting a proc
+    /// with a `NativeBody::Library` body — so a cross-bundle `CallExtern` reaches the
+    /// `oxvba-lib` body (the route the binder now lowers both kinds of call to).
+    #[test]
+    fn migrated_members_are_native_library_module_procs() {
         let b = vba_library_bundle();
         for &id in NativeImplId::ALL {
-            let Some((module, member)) = id.library_member() else {
+            // The location is whichever of the two tables yields it (they are
+            // disjoint, asserted in `library_member_covers_exactly_the_migrated_ids`).
+            let Some((module, member)) = id
+                .library_member()
+                .or_else(|| id.library_statement_member())
+            else {
                 continue;
             };
             let export = b
