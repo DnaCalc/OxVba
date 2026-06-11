@@ -300,19 +300,29 @@ impl NativeImplId {
     ///   so rerouting changes only the dispatch route, not behaviour). Their
     ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
     ///   lowering target) and the `Com*` event-machinery ids (not user-callable by
-    ///   name) stay `None`.
+    ///   name) stay `None`;
+    /// - the `FileIo` by-name **functions** (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
+    ///   `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc`) — the catalog-`Ordinary`, non-empty-
+    ///   name members, exported under the canonical VBA typelib module **`FileSystem`**.
+    ///   Like `Interaction`, these reach host filesystem services through
+    ///   `invoke_native_lib`, so rerouting changes only the dispatch route, not
+    ///   behaviour. Their `FileIo` STATEMENT-form siblings (`FileOpen`/`FileClose`/
+    ///   `Kill`/`MkDir`/…/`Print #`/`Put`/`Name`/`Lock`/… — catalog `FileStatement`,
+    ///   bound from the parser in `oxvba-bind/stmt.rs`, not by name) and the name-less
+    ///   `FileRead` stay `None` (a later slice — P4).
     ///
-    /// `None` for every other id: those `Information`/`Interaction` exceptions above,
-    /// all `FileIo` (a later slice), `Diagnostics` (`Debug.Print`/`Debug.Assert`,
-    /// internal), and the `Collection` members (a class, not a free function). Those
-    /// keep the bespoke `DispatchRoute::Native(id)` route.
+    /// `None` for every other id: those `Information`/`Interaction`/`FileIo` exceptions
+    /// above, `Diagnostics` (`Debug.Print`/`Debug.Assert`, internal), and the
+    /// `Collection` members (a class, not a free function). Those keep the bespoke
+    /// `DispatchRoute::Native(id)` route.
     pub fn library_member(self) -> Option<(&'static str, &'static str)> {
         use NativeImplId::*;
         // The owning module name for the migrated id; `None` for any module/id that
-        // does not route through the bundle. `Information` and `Interaction` are
-        // partially migrated (predicates / host functions only), so the per-id `match`
-        // below — not the module alone — decides their membership; the excluded ids of
-        // those modules fall through to the final `_ => return None`.
+        // does not route through the bundle. `Information`, `Interaction`, and `FileIo`
+        // are partially migrated (predicates / host functions / by-name file functions
+        // only), so the per-id `match` below — not the module alone — decides their
+        // membership; the excluded ids of those modules fall through to the final
+        // `_ => return None`.
         let member = match self {
             // ── Strings ──
             Len => "Len",
@@ -425,9 +435,22 @@ impl NativeImplId {
             Shell => "Shell",
             Environ => "Environ",
             Dir => "Dir",
+            // ── FileSystem (the FileIo by-name FUNCTIONS — Ordinary, non-empty names) ──
+            // Module is "FileSystem" (the canonical VBA typelib module name), not the
+            // `LibraryModule::FileIo` enum name; see the module-name lookup below.
+            FreeFile => "FreeFile",
+            FileCurDir => "CurDir",
+            FileLen => "FileLen",
+            FileGetAttr => "GetAttr",
+            FileDateTime => "FileDateTime",
+            FileEof => "EOF",
+            FileLof => "LOF",
+            FileSeek => "Seek",
+            FileLoc => "Loc",
             // Everything else stays on the `Native(id)` route: the name-less
             // `MidStmt`/`Like`; the `Information` special forms `IIf`/`Choose`/`Switch`;
-            // the `Interaction` `CreateObject` + `Com*` machinery; all `FileIo`;
+            // the `Interaction` `CreateObject` + `Com*` machinery; the `FileIo`
+            // STATEMENT forms and the name-less `FileRead` (a later slice — P4);
             // `Diagnostics` (`DebugPrint`); and the `Collection` members.
             _ => return None,
         };
@@ -444,10 +467,15 @@ impl NativeImplId {
             LibraryModule::Financial => "Financial",
             LibraryModule::Information => "Information",
             LibraryModule::Interaction => "Interaction",
-            // `Collection`/`FileIo`/`Diagnostics` have no migrated members, so no id
-            // that reaches here belongs to them; if one ever did it would be a bug to
-            // surface loudly rather than silently mis-route.
-            LibraryModule::Collection | LibraryModule::FileIo | LibraryModule::Diagnostics => {
+            // The `FileIo` by-name FUNCTIONS export under the canonical VBA typelib
+            // module name "FileSystem" (not the `LibraryModule::FileIo` enum name); the
+            // partially migrated module's STATEMENT/name-less ids were already excluded
+            // by the per-id `match` above, so only a migrated function reaches here.
+            LibraryModule::FileIo => "FileSystem",
+            // `Collection`/`Diagnostics` have no migrated members, so no id that reaches
+            // here belongs to them; if one ever did it would be a bug to surface loudly
+            // rather than silently mis-route.
+            LibraryModule::Collection | LibraryModule::Diagnostics => {
                 unreachable!(
                     "non-migrated module {:?} yielded a member name",
                     self.module()
@@ -502,6 +530,9 @@ impl NativeImplId {
             Shell | Dir => 2,
             MsgBox => 5,
             InputBox => 7,
+            // ── FileSystem by-name functions ── (all max-arity 1)
+            FreeFile | FileCurDir | FileLen | FileGetAttr | FileDateTime | FileEof | FileLof
+            | FileSeek | FileLoc => 1,
             // Not a migrated bundle member.
             _ => 0,
         }

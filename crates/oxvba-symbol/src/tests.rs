@@ -160,11 +160,19 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     assert!(
         matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
-    // A non-migrated intrinsic (a `FileIo` function) keeps the bespoke `Native`
-    // route.
-    assert!(
-        matches!(p.resolve("FreeFile"), Some(b) if matches!(b.route, DispatchRoute::Native(_)))
-    );
+    // A non-migrated intrinsic — a `FileIo` STATEMENT form resolved by name (`Kill`,
+    // CallShape `FileStatement`) — keeps the bespoke `Native` route (it is P4).
+    assert!(matches!(p.resolve("Kill"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
+    // A `FileIo` by-name FUNCTION (`FreeFile`) now routes cross-bundle to the `VBA`
+    // unit's `FileSystem` module (migrated this round).
+    assert!(matches!(
+        p.resolve("FreeFile"),
+        Some(b) if matches!(
+            &b.route,
+            DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
+                if unit == "VBA" && owner == "FileSystem" && member == "FreeFile"
+        )
+    ));
     // An `Information` predicate now routes cross-bundle to the `VBA` unit's
     // `Information` module (migrated this round).
     assert!(matches!(
@@ -526,12 +534,13 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         env.resolve(&from_global, "vbCrLf"),
         Some(b) if matches!(b.route, DispatchRoute::ConstValue(_))
     ));
-    // A non-migrated intrinsic (`FreeFile`, a `FileIo` function) resolves through the
-    // `Native` route; migrated functions (`Len`, a `Strings` member, and `IsNumeric`,
-    // an `Information` predicate) resolve cross-bundle to the `VBA` unit — all via the
-    // same source-agnostic provider path.
+    // A non-migrated intrinsic (`Kill`, a `FileIo` STATEMENT form resolved by name)
+    // resolves through the `Native` route; migrated functions (`Len`, a `Strings`
+    // member; `IsNumeric`, an `Information` predicate; and `FreeFile`, a `FileSystem`
+    // by-name function) resolve cross-bundle to the `VBA` unit — all via the same
+    // source-agnostic provider path.
     assert!(matches!(
-        env.resolve(&from_global, "FreeFile"),
+        env.resolve(&from_global, "Kill"),
         Some(b) if matches!(b.route, DispatchRoute::Native(_))
     ));
     assert!(matches!(
@@ -540,6 +549,10 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
     ));
     assert!(matches!(
         env.resolve(&from_global, "IsNumeric"),
+        Some(b) if matches!(b.route, DispatchRoute::ExternMember { has_receiver: false, .. })
+    ));
+    assert!(matches!(
+        env.resolve(&from_global, "FreeFile"),
         Some(b) if matches!(b.route, DispatchRoute::ExternMember { has_receiver: false, .. })
     ));
 }

@@ -17,8 +17,9 @@
 //!
 //! Today this exposes the `Collection` class and the migrated library functions —
 //! the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial` modules,
-//! the `Information` predicates, and the `Interaction` host functions (every id for
-//! which [`NativeImplId::library_member`] is `Some`). The bundle's `ops` are a lone
+//! the `Information` predicates, the `Interaction` host functions, and the `FileIo`
+//! by-name functions (exported under the `FileSystem` module) — every id for which
+//! [`NativeImplId::library_member`] is `Some`. The bundle's `ops` are a lone
 //! `Return` placeholder that is never executed (native bodies bypass the frame
 //! machinery, and the class has no `Class_Initialize`).
 
@@ -120,8 +121,8 @@ fn build() -> Bundle {
     }];
 
     // The migrated library functions (the `Strings`/`Math`/`DateTime`/`Conversion`/
-    // `Random`/`Financial` modules, the `Information` predicates, and the
-    // `Interaction` host functions): each is a native-bodied module proc (a
+    // `Random`/`Financial` modules, the `Information` predicates, the `Interaction`
+    // host functions, and the `FileIo` by-name functions): each is a native-bodied module proc (a
     // `NativeBody::Library` body run through `oxvba-lib`), exported as a `ModuleFunc`
     // so the binder's `ExternMember { has_receiver: false }` resolution links to it
     // cross-bundle. The `(module, member)` location and the export's member name
@@ -209,20 +210,23 @@ mod tests {
     /// - the `Information` **predicates** (but NOT the `IIf`/`Choose`/`Switch` special
     ///   forms);
     /// - the `Interaction` **host functions** (but NOT `CreateObject` or the `Com*`
-    ///   event machinery).
+    ///   event machinery);
+    /// - the `FileIo` by-name **functions** (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
+    ///   `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc` — the catalog-`Ordinary`, non-empty-
+    ///   name members), but NOT the `FileStatement` forms or the name-less `FileRead`.
     ///
-    /// Everything else — those exceptions, all `FileIo`, `Diagnostics`, and the
-    /// `Collection` members — keeps the bespoke `Native` route. The exclusions are
-    /// asserted by id (not just by module) so a careless future change to one of the
-    /// partially migrated modules is caught.
+    /// Everything else — those exceptions, the `FileIo` statement forms, `Diagnostics`,
+    /// and the `Collection` members — keeps the bespoke `Native` route. The exclusions
+    /// are asserted by id (not just by module) so a careless future change to one of
+    /// the partially migrated modules is caught.
     #[test]
     fn library_member_covers_exactly_the_migrated_ids() {
         use crate::native::LibraryModule as M;
         use NativeImplId::*;
 
-        // Information predicates and Interaction host functions are migrated members
-        // of their (otherwise excluded) modules; everything else in those modules is
-        // explicitly excluded below.
+        // Information predicates, Interaction host functions, and the FileIo by-name
+        // functions are migrated members of their (otherwise partially excluded)
+        // modules; everything else in those modules is explicitly excluded below.
         let information_predicate = |id| {
             matches!(
                 id,
@@ -244,6 +248,24 @@ mod tests {
                 MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir
             )
         };
+        // The FileIo ids whose catalog `CallShape` is `Ordinary` AND whose name set is
+        // non-empty — the by-name FUNCTION forms. The `FileStatement` forms (FileOpen,
+        // FileClose, Kill, MkDir, …, Print #, Put, Name, Lock, …) and the name-less
+        // `FileRead` stay on the Native route (P4).
+        let fileio_function = |id| {
+            matches!(
+                id,
+                FreeFile
+                    | FileCurDir
+                    | FileLen
+                    | FileGetAttr
+                    | FileDateTime
+                    | FileEof
+                    | FileLof
+                    | FileSeek
+                    | FileLoc
+            )
+        };
 
         for &id in NativeImplId::ALL {
             let migrated = match id.module() {
@@ -252,7 +274,8 @@ mod tests {
                 }
                 M::Information => information_predicate(id),
                 M::Interaction => interaction_host_fn(id),
-                M::Collection | M::FileIo | M::Diagnostics => false,
+                M::FileIo => fileio_function(id),
+                M::Collection | M::Diagnostics => false,
             };
             assert_eq!(
                 id.library_member().is_some(),
@@ -262,7 +285,8 @@ mod tests {
         }
 
         // Spot-check the deliberate exclusions stay `None` even though their modules
-        // are partially migrated.
+        // are partially migrated. The `FileIo` STATEMENT forms (and the name-less
+        // `FileRead`) must NOT migrate — they are P4.
         for excluded in [
             IIf,
             Choose,
@@ -270,7 +294,14 @@ mod tests {
             CreateObject,
             ComSubscribeEvent,
             DebugPrint,
-            FreeFile,
+            FileOpen,
+            FileClose,
+            FileKill,
+            FileChDir,
+            FileSetAttr,
+            FileCopy,
+            FilePut,
+            FileRead,
         ] {
             assert!(
                 excluded.library_member().is_none(),
@@ -279,13 +310,38 @@ mod tests {
         }
         // And spot-check the new inclusions are present.
         for included in [
-            VarType, TypeName, IsNumeric, IsMissing, MsgBox, Environ, Dir,
+            VarType,
+            TypeName,
+            IsNumeric,
+            IsMissing,
+            MsgBox,
+            Environ,
+            Dir,
+            FreeFile,
+            FileCurDir,
+            FileLen,
+            FileGetAttr,
+            FileDateTime,
+            FileEof,
+            FileLof,
+            FileSeek,
+            FileLoc,
         ] {
             assert!(
                 included.library_member().is_some(),
                 "{included:?} must route through the VBA bundle",
             );
         }
+
+        // The FileSystem functions export under the canonical VBA typelib module name,
+        // not the `LibraryModule::FileIo` enum name.
+        assert_eq!(FreeFile.library_member(), Some(("FileSystem", "FreeFile")));
+        assert_eq!(FileCurDir.library_member(), Some(("FileSystem", "CurDir")));
+        assert_eq!(
+            FileGetAttr.library_member(),
+            Some(("FileSystem", "GetAttr"))
+        );
+        assert_eq!(FileSeek.library_member(), Some(("FileSystem", "Seek")));
     }
 
     /// Drift-guard: every migrated id (`library_member()` is `Some`) is exported by

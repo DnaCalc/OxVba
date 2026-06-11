@@ -655,6 +655,53 @@ fn information_predicates_route_through_vba_bundle() {
 }
 
 #[test]
+fn filesystem_functions_route_through_vba_bundle() {
+    // The `FileIo` by-name FUNCTIONS (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
+    // `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc` — catalog `Ordinary`, non-empty names)
+    // are now native-bodied procs of the synthetic `VBA` bundle, exported under the
+    // canonical `FileSystem` module: the binder resolves each as `ExternMember
+    // { has_receiver: false }` → a `VBA`/`FileSystem` `ModuleFunc` import +
+    // `Op::CallExtern` → `NativeBody::Library`, exactly like the `Interaction` host
+    // functions. Their behaviour reaches the host filesystem (proved end-to-end by
+    // `oxvba-host`'s `filesystem_statements.rs` against the real filesystem); the null
+    // HAL adapter does not support filesystem I/O, so here we assert the *routing*:
+    // the linearized entry bundle imports each callee from `VBA`/`FileSystem`, which
+    // is exactly the cross-bundle link the bespoke `Native` route did not produce.
+    //
+    // The `FileStatement` forms (`Open`/`Close`/`Kill`/`Print #`/`Put`/`Name`/…) stay
+    // on the `Native` route (P4) — they are NOT bound by name.
+    let program = oxvba_bind::bind_program(
+        &manifest(
+            "Sub Main()\n\
+             Dim n As Long\nDim p As String\nDim l As Long\n\
+             n = FreeFile\n\
+             p = CurDir()\n\
+             l = FileLen(\"x\")\n\
+             End Sub",
+        ),
+        &NullTypeLibs,
+    )
+    .expect("bind should succeed");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize should succeed");
+
+    for member in ["FreeFile", "CurDir", "FileLen"] {
+        assert!(
+            bundle.imports.iter().any(|imp| {
+                imp.unit.eq_ignore_ascii_case("VBA")
+                    && matches!(
+                        &imp.token,
+                        oxvba_bundle::ExportToken::ModuleFunc { module, member: m, .. }
+                            if module.eq_ignore_ascii_case("FileSystem")
+                                && m.eq_ignore_ascii_case(member)
+                    )
+            }),
+            "expected a VBA/FileSystem import for {member}: {:?}",
+            bundle.imports
+        );
+    }
+}
+
+#[test]
 fn iif_stays_an_eager_special_form() {
     // `IIf` is NOT rerouted through the bundle: it stays a special form lowered
     // eagerly (both arms evaluated) to `CoreCallee::Native(IIf)`. It must still pick
