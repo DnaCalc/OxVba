@@ -283,29 +283,36 @@ impl NativeImplId {
     /// `"FV"`), and the module name is the [`LibraryModule`] the id belongs to; both
     /// live here because the bundle cannot depend on the catalog.
     ///
-    /// `Some` exactly for the **migrated** modules — `Strings`, `Math`, `DateTime`,
-    /// `Conversion`, `Random`, `Financial` — minus their name-less members
-    /// (`MidStmt`, the `Mid(…) = …` statement form, and `Like`, the operator, which
-    /// are not ordinary by-name library functions). `None` for every other id: the
-    /// `Information` special forms (`IIf`/`Choose`/`Switch`) and predicate functions,
-    /// `Interaction`, `FileIo`, `Diagnostics`, and the `Collection` members (a class,
-    /// not a free function). Those keep the bespoke `DispatchRoute::Native(id)` route.
+    /// `Some` exactly for the **migrated** ids:
+    /// - the whole `Strings`, `Math`, `DateTime`, `Conversion`, `Random`,
+    ///   `Financial` modules — minus their name-less members (`MidStmt`, the
+    ///   `Mid(…) = …` statement form, and `Like`, the operator, which are not
+    ///   ordinary by-name library functions);
+    /// - the `Information` **predicate** functions (`IsArray`/`VarType`/`TypeName`/
+    ///   `IsNumeric`/`IsError`/`IsDate`/`IsObject`/`IsNull`/`IsEmpty`/`IsMissing`) —
+    ///   ordinary by-name functions; their `Information`-module siblings `IIf`,
+    ///   `Choose`, `Switch` are **special forms** (eager but with dedicated binder
+    ///   lowering, resolved by `special_form`, not `name_to_intrinsic`) and stay
+    ///   `None`;
+    /// - the `Interaction` **host** functions (`MsgBox`/`InputBox`/`Beep`/`DoEvents`/
+    ///   `Shell`/`Environ`/`Dir`) — ordinary by-name functions that reach host
+    ///   services (the native body already receives the host via `invoke_native_lib`,
+    ///   so rerouting changes only the dispatch route, not behaviour). Their
+    ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
+    ///   lowering target) and the `Com*` event-machinery ids (not user-callable by
+    ///   name) stay `None`.
+    ///
+    /// `None` for every other id: those `Information`/`Interaction` exceptions above,
+    /// all `FileIo` (a later slice), `Diagnostics` (`Debug.Print`/`Debug.Assert`,
+    /// internal), and the `Collection` members (a class, not a free function). Those
+    /// keep the bespoke `DispatchRoute::Native(id)` route.
     pub fn library_member(self) -> Option<(&'static str, &'static str)> {
-        use LibraryModule as M;
         use NativeImplId::*;
-        let module = match self.module() {
-            M::Strings => "Strings",
-            M::Math => "Math",
-            M::DateTime => "DateTime",
-            M::Conversion => "Conversion",
-            M::Random => "Random",
-            M::Financial => "Financial",
-            // Not yet migrated: Information (special forms + predicates),
-            // Collection (a class), FileIo, Interaction, Diagnostics.
-            M::Information | M::Collection | M::FileIo | M::Interaction | M::Diagnostics => {
-                return None;
-            }
-        };
+        // The owning module name for the migrated id; `None` for any module/id that
+        // does not route through the bundle. `Information` and `Interaction` are
+        // partially migrated (predicates / host functions only), so the per-id `match`
+        // below — not the module alone — decides their membership; the excluded ids of
+        // those modules fall through to the final `_ => return None`.
         let member = match self {
             // ── Strings ──
             Len => "Len",
@@ -399,10 +406,53 @@ impl NativeImplId {
             Mirr => "MIRR",
             Rate => "Rate",
             NPer => "NPer",
-            // Any id whose `module()` is a migrated module but is not listed above
-            // would be a name-less member; none exist beyond `MidStmt`/`Like`. The
-            // non-migrated modules already returned `None` above.
+            // ── Information (predicates only — IIf/Choose/Switch stay special forms) ──
+            IsArray => "IsArray",
+            VarType => "VarType",
+            TypeName => "TypeName",
+            IsNumeric => "IsNumeric",
+            IsError => "IsError",
+            IsDate => "IsDate",
+            IsObject => "IsObject",
+            IsNull => "IsNull",
+            IsEmpty => "IsEmpty",
+            IsMissing => "IsMissing",
+            // ── Interaction (host functions only) ──
+            MsgBox => "MsgBox",
+            InputBox => "InputBox",
+            Beep => "Beep",
+            DoEvents => "DoEvents",
+            Shell => "Shell",
+            Environ => "Environ",
+            Dir => "Dir",
+            // Everything else stays on the `Native(id)` route: the name-less
+            // `MidStmt`/`Like`; the `Information` special forms `IIf`/`Choose`/`Switch`;
+            // the `Interaction` `CreateObject` + `Com*` machinery; all `FileIo`;
+            // `Diagnostics` (`DebugPrint`); and the `Collection` members.
             _ => return None,
+        };
+        // The owning module name. `module()` is the authoritative grouping; the
+        // per-id `match` above already excluded the non-migrated ids of the partially
+        // migrated `Information`/`Interaction` modules, so this only ever runs for a
+        // migrated id (every migrated module maps to a name here).
+        let module = match self.module() {
+            LibraryModule::Strings => "Strings",
+            LibraryModule::Math => "Math",
+            LibraryModule::DateTime => "DateTime",
+            LibraryModule::Conversion => "Conversion",
+            LibraryModule::Random => "Random",
+            LibraryModule::Financial => "Financial",
+            LibraryModule::Information => "Information",
+            LibraryModule::Interaction => "Interaction",
+            // `Collection`/`FileIo`/`Diagnostics` have no migrated members, so no id
+            // that reaches here belongs to them; if one ever did it would be a bug to
+            // surface loudly rather than silently mis-route.
+            LibraryModule::Collection | LibraryModule::FileIo | LibraryModule::Diagnostics => {
+                unreachable!(
+                    "non-migrated module {:?} yielded a member name",
+                    self.module()
+                )
+            }
         };
         Some((module, member))
     }
@@ -443,6 +493,15 @@ impl NativeImplId {
             Mirr => 3,
             Fv | Pv | Pmt | NPer => 5,
             Rate => 6,
+            // ── Information predicates ── (all single-argument)
+            IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
+            | IsEmpty | IsMissing => 1,
+            // ── Interaction host functions ──
+            Beep | DoEvents => 0,
+            Environ => 1,
+            Shell | Dir => 2,
+            MsgBox => 5,
+            InputBox => 7,
             // Not a migrated bundle member.
             _ => 0,
         }

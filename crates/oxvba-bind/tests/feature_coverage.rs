@@ -617,6 +617,64 @@ fn math_datetime_conversion_functions_route_through_vba_bundle() {
 }
 
 #[test]
+fn information_predicates_route_through_vba_bundle() {
+    // The `Information` predicates (`IsArray`/`VarType`/`TypeName`/`IsNumeric`/…) are
+    // now native-bodied procs of the synthetic `VBA` bundle (`ExternMember
+    // { has_receiver: false }` → `ModuleFunc` → `Op::CallExtern` → `NativeBody::
+    // Library`), like the `Strings`/`Math`/… slices — but their `Information`-module
+    // siblings `IIf`/`Choose`/`Switch` stay eager special forms. Behaviour must be
+    // identical to the old `Native` route.
+    let snap = run("Sub Main()\n\
+         Dim vt As Long\n\
+         Dim tn As String\n\
+         Dim isn As Boolean\n\
+         Dim isa As Boolean\n\
+         Dim arr(1 To 3) As Long\n\
+         vt = VarType(5#)\n\
+         tn = TypeName(\"hello\")\n\
+         isn = IsNumeric(42)\n\
+         isa = IsArray(arr)\n\
+         End Sub");
+    // VarType(5#) == vbDouble (5); TypeName("hello") == "String".
+    assert!(
+        snap.iter().any(|v| v.as_i32() == Some(5)),
+        "VarType(5#) must be vbDouble (5): {snap:?}"
+    );
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("String"))),
+        "TypeName(\"hello\") must be \"String\": {snap:?}"
+    );
+    // IsNumeric(42) == True and IsArray(arr) == True.
+    assert!(
+        snap.iter()
+            .filter(|v| **v == Variant::from_bool(true))
+            .count()
+            >= 2,
+        "IsNumeric(42) and IsArray(arr) must both be True: {snap:?}"
+    );
+}
+
+#[test]
+fn iif_stays_an_eager_special_form() {
+    // `IIf` is NOT rerouted through the bundle: it stays a special form lowered
+    // eagerly (both arms evaluated) to `CoreCallee::Native(IIf)`. It must still pick
+    // the correct arm by its condition.
+    let snap = run("Sub Main()\n\
+         Dim a As Long\nDim b As Long\n\
+         a = IIf(True, 10, 20)\n\
+         b = IIf(False, 10, 20)\n\
+         End Sub");
+    assert!(
+        snap.iter().any(|v| v.as_i32() == Some(10)),
+        "IIf(True, 10, 20) must be 10: {snap:?}"
+    );
+    assert!(
+        snap.iter().any(|v| v.as_i32() == Some(20)),
+        "IIf(False, 10, 20) must be 20: {snap:?}"
+    );
+}
+
+#[test]
 fn like_charlist_ranges_negation_and_literal_bracket() {
     // `[charlist]` with `a-z` ranges, `!` negation, and a literal `]` first.
     let snap = run("Sub Main()\n\

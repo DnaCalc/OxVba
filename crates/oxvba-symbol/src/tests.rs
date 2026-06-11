@@ -160,10 +160,34 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     assert!(
         matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
-    // A non-migrated intrinsic (an `Information` predicate) keeps the bespoke
-    // `Native` route.
+    // A non-migrated intrinsic (a `FileIo` function) keeps the bespoke `Native`
+    // route.
     assert!(
-        matches!(p.resolve("IsNumeric"), Some(b) if matches!(b.route, DispatchRoute::Native(_)))
+        matches!(p.resolve("FreeFile"), Some(b) if matches!(b.route, DispatchRoute::Native(_)))
+    );
+    // An `Information` predicate now routes cross-bundle to the `VBA` unit's
+    // `Information` module (migrated this round).
+    assert!(matches!(
+        p.resolve("IsNumeric"),
+        Some(b) if matches!(
+            &b.route,
+            DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
+                if unit == "VBA" && owner == "Information" && member == "IsNumeric"
+        )
+    ));
+    // An `Interaction` host function routes cross-bundle to the `VBA` unit's
+    // `Interaction` module.
+    assert!(matches!(
+        p.resolve("Environ"),
+        Some(b) if matches!(
+            &b.route,
+            DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
+                if unit == "VBA" && owner == "Interaction" && member == "Environ"
+        )
+    ));
+    // The `IIf` special form stays a `SpecialForm` route (NOT migrated).
+    assert!(
+        matches!(p.resolve("IIf"), Some(b) if matches!(b.route, DispatchRoute::SpecialForm(_)))
     );
     // A `Strings`-module library function now resolves as a cross-bundle member of
     // the synthetic `VBA` unit (no receiver), like a referenced free function.
@@ -502,15 +526,20 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         env.resolve(&from_global, "vbCrLf"),
         Some(b) if matches!(b.route, DispatchRoute::ConstValue(_))
     ));
-    // A non-migrated intrinsic (`IsNumeric`) resolves through the `Native` route; a
-    // migrated function (`Len`, a `Strings` member) resolves cross-bundle to the
-    // `VBA` unit — both via the same source-agnostic provider path.
+    // A non-migrated intrinsic (`FreeFile`, a `FileIo` function) resolves through the
+    // `Native` route; migrated functions (`Len`, a `Strings` member, and `IsNumeric`,
+    // an `Information` predicate) resolve cross-bundle to the `VBA` unit — all via the
+    // same source-agnostic provider path.
     assert!(matches!(
-        env.resolve(&from_global, "IsNumeric"),
+        env.resolve(&from_global, "FreeFile"),
         Some(b) if matches!(b.route, DispatchRoute::Native(_))
     ));
     assert!(matches!(
         env.resolve(&from_global, "Len"),
+        Some(b) if matches!(b.route, DispatchRoute::ExternMember { has_receiver: false, .. })
+    ));
+    assert!(matches!(
+        env.resolve(&from_global, "IsNumeric"),
         Some(b) if matches!(b.route, DispatchRoute::ExternMember { has_receiver: false, .. })
     ));
 }

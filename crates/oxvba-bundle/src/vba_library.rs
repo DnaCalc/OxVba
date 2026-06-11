@@ -15,10 +15,11 @@
 //!   like an `Op::CallNative { NativeCallee::Builtin(..) }` — no frame, no bespoke
 //!   `CoreCallee::Native` route.
 //!
-//! Today this exposes the `Collection` class and the migrated library modules
-//! (`Strings`, `Math`, `DateTime`, `Conversion`, `Random`, `Financial` — every id
-//! for which [`NativeImplId::library_member`] is `Some`). The bundle's `ops` are a
-//! lone `Return` placeholder that is never executed (native bodies bypass the frame
+//! Today this exposes the `Collection` class and the migrated library functions —
+//! the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial` modules,
+//! the `Information` predicates, and the `Interaction` host functions (every id for
+//! which [`NativeImplId::library_member`] is `Some`). The bundle's `ops` are a lone
+//! `Return` placeholder that is never executed (native bodies bypass the frame
 //! machinery, and the class has no `Class_Initialize`).
 
 use std::sync::OnceLock;
@@ -118,8 +119,9 @@ fn build() -> Bundle {
         target: ExportTarget::Class(0),
     }];
 
-    // The migrated library modules (`Strings`, `Math`, `DateTime`, `Conversion`,
-    // `Random`, `Financial`): each function is a native-bodied module proc (a
+    // The migrated library functions (the `Strings`/`Math`/`DateTime`/`Conversion`/
+    // `Random`/`Financial` modules, the `Information` predicates, and the
+    // `Interaction` host functions): each is a native-bodied module proc (a
     // `NativeBody::Library` body run through `oxvba-lib`), exported as a `ModuleFunc`
     // so the binder's `ExternMember { has_receiver: false }` resolution links to it
     // cross-bundle. The `(module, member)` location and the export's member name
@@ -200,23 +202,88 @@ mod tests {
         }
     }
 
-    /// The migrated-module gate: `library_member()` is `Some` for exactly the
-    /// `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial` ids (minus the
-    /// name-less `MidStmt`/`Like`), and `None` for every other module — so the
-    /// non-migrated surface (`Information` special forms + predicates, `FileIo`,
-    /// `Interaction`, `Diagnostics`, `Collection`) keeps the `Native` route.
+    /// The migrated-id gate: `library_member()` is `Some` for exactly the migrated
+    /// set and `None` for everything else. Migrated =
+    /// - the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial`
+    ///   modules, minus the name-less `MidStmt`/`Like`;
+    /// - the `Information` **predicates** (but NOT the `IIf`/`Choose`/`Switch` special
+    ///   forms);
+    /// - the `Interaction` **host functions** (but NOT `CreateObject` or the `Com*`
+    ///   event machinery).
+    ///
+    /// Everything else — those exceptions, all `FileIo`, `Diagnostics`, and the
+    /// `Collection` members — keeps the bespoke `Native` route. The exclusions are
+    /// asserted by id (not just by module) so a careless future change to one of the
+    /// partially migrated modules is caught.
     #[test]
-    fn library_member_covers_exactly_the_migrated_modules() {
+    fn library_member_covers_exactly_the_migrated_ids() {
         use crate::native::LibraryModule as M;
+        use NativeImplId::*;
+
+        // Information predicates and Interaction host functions are migrated members
+        // of their (otherwise excluded) modules; everything else in those modules is
+        // explicitly excluded below.
+        let information_predicate = |id| {
+            matches!(
+                id,
+                IsArray
+                    | VarType
+                    | TypeName
+                    | IsNumeric
+                    | IsError
+                    | IsDate
+                    | IsObject
+                    | IsNull
+                    | IsEmpty
+                    | IsMissing
+            )
+        };
+        let interaction_host_fn = |id| {
+            matches!(
+                id,
+                MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir
+            )
+        };
+
         for &id in NativeImplId::ALL {
-            let migrated = matches!(
-                id.module(),
-                M::Strings | M::Math | M::DateTime | M::Conversion | M::Random | M::Financial
-            ) && !matches!(id, NativeImplId::MidStmt | NativeImplId::Like);
+            let migrated = match id.module() {
+                M::Strings | M::Math | M::DateTime | M::Conversion | M::Random | M::Financial => {
+                    !matches!(id, MidStmt | Like)
+                }
+                M::Information => information_predicate(id),
+                M::Interaction => interaction_host_fn(id),
+                M::Collection | M::FileIo | M::Diagnostics => false,
+            };
             assert_eq!(
                 id.library_member().is_some(),
                 migrated,
-                "library_member({id:?}) disagrees with the migrated-module set",
+                "library_member({id:?}) disagrees with the migrated-id set",
+            );
+        }
+
+        // Spot-check the deliberate exclusions stay `None` even though their modules
+        // are partially migrated.
+        for excluded in [
+            IIf,
+            Choose,
+            Switch,
+            CreateObject,
+            ComSubscribeEvent,
+            DebugPrint,
+            FreeFile,
+        ] {
+            assert!(
+                excluded.library_member().is_none(),
+                "{excluded:?} must stay on the Native route",
+            );
+        }
+        // And spot-check the new inclusions are present.
+        for included in [
+            VarType, TypeName, IsNumeric, IsMissing, MsgBox, Environ, Dir,
+        ] {
+            assert!(
+                included.library_member().is_some(),
+                "{included:?} must route through the VBA bundle",
             );
         }
     }
