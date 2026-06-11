@@ -373,6 +373,10 @@ impl ComHal for RecordingHostServices {
             .com()
             .invalidate_typelib_cache(scope, reference_name)
     }
+
+    fn com_dispatch_transport_counts(&self) -> (u64, u64) {
+        self.inner.com().com_dispatch_transport_counts()
+    }
 }
 
 impl TimeLocaleHal for RecordingHostServices {

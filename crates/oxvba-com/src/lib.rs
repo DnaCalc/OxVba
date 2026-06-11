@@ -108,7 +108,7 @@ pub use windows_connection_point::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
-    ComInvokeExceptionInfo, ComInvokeFailure, execute_bound_variant,
+    ComInvokeExceptionInfo, ComInvokeFailure, ComTransportCounters, execute_bound_variant,
     execute_bound_variant_with_shared_state, invoke_bound_dispatch_legacy_i32_result,
     invoke_bound_dispatch_variant_with_shared_state, invoke_direct_dispid_variant,
     invoke_direct_dispid_variant_with_shared_state, invoke_dispatch_legacy_i32_result,
@@ -135,6 +135,15 @@ pub use windows_runtime_state::{
     resolve_bound_runtime_object_shared, resolve_member_dispid_cached,
     resolve_subscription_transport, subscribe_event_shared, take_polled_callback_payload,
     unsubscribe_event_shared,
+};
+#[cfg(all(
+    target_os = "windows",
+    target_arch = "x86_64",
+    any(test, feature = "fixture-typelibs")
+))]
+pub use windows_test_dispatch::{
+    DUAL_SLOT_EXISTS, DUAL_SLOT_GET_COUNT, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
+    DUAL_SLOT_RAISE_ERROR, create_oxvba_dual_vtable_object,
 };
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 pub use windows_test_dispatch::{

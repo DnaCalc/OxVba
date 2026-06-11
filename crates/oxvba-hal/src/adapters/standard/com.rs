@@ -799,4 +799,18 @@ impl ComHal for StandardHostServices {
             Err(self.unsupported(capability, "invalidate_typelib_cache"))
         }
     }
+
+    fn com_dispatch_transport_counts(&self) -> (u64, u64) {
+        #[cfg(target_os = "windows")]
+        {
+            (
+                self.com_bridge.vtable_call_count(),
+                self.com_bridge.idispatch_call_count(),
+            )
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            (0, 0)
+        }
+    }
 }

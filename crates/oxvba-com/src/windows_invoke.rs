@@ -1597,11 +1597,247 @@ where
     }
 }
 
+/// Whether a FUNCDESC parameter/return VARTYPE is in the v1 vtable marshalling
+/// set (the exact shapes [`crate::windows_vtable::vtable_invoke`] marshals). Any
+/// VARTYPE outside this set — `Decimal`, `LongPtr`, every `ByRef*`, SAFEARRAY
+/// (which surfaces as a `Variant` array intent the marshaller rejects) — gates
+/// the call to the IDispatch fallback rather than risking a wrong-ABI vtable
+/// call. Mirrors the marshaller's own supported-shape match so the gate and the
+/// marshaller never disagree.
+#[cfg(target_os = "windows")]
+pub fn is_v1_vtable_vartype(param_type: crate::TypeLibParamType) -> bool {
+    use crate::TypeLibParamType as P;
+    matches!(
+        param_type,
+        P::Variant
+            | P::Long
+            | P::Integer
+            | P::String
+            | P::Boolean
+            | P::Double
+            | P::Single
+            | P::Currency
+            | P::Date
+            | P::Object
+            | P::Byte
+            | P::LongLong
+    )
+}
+
+/// Per-bridge transport counters incremented at the exact return sites of a
+/// successful early-bound member call: a vtable success bumps `vtable`, an
+/// IDispatch `Invoke` success bumps `idispatch`. A host test reads these to
+/// prove which transport carried a given member (the LAST call in a live script
+/// — e.g. `app.Quit` — is not the asserted member, so a counter, not a
+/// last-transport snapshot, is what lets the assertion target a specific call).
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+pub struct ComTransportCounters<'a> {
+    pub vtable: &'a std::sync::atomic::AtomicU64,
+    pub idispatch: &'a std::sync::atomic::AtomicU64,
+}
+
+#[cfg(target_os = "windows")]
+impl ComTransportCounters<'_> {
+    fn record_vtable(&self) {
+        self.vtable
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn record_idispatch(&self) {
+        self.idispatch
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// The GATE: take the vtable path iff `prefer_vtable` AND the resolved member
+/// carries a full, callable, v1-marshallable dual signature. Returns `true` only
+/// when ALL hold:
+/// - a vtable slot is present, and the slot index is `>= 7` (oVft `>= 56`), so we
+///   never call an `IUnknown`/`IDispatch` slot;
+/// - the FUNCDESC declares `CC_STDCALL`;
+/// - a full signature is present: one `parameter_types` entry per supplied
+///   positional arg, and a known `return_type` when the call expects a value
+///   (property-get / method that returns; a no-retval property-put is fine);
+/// - every parameter VARTYPE and the return VARTYPE (if any) is in the v1 set.
+///
+/// When this returns `false` the caller runs the unchanged IDispatch path.
+#[cfg(target_os = "windows")]
+fn vtable_gate_admits(
+    spec: &crate::ComMemberSpec,
+    positional_arg_count: usize,
+    expects_value: bool,
+) -> bool {
+    let Some(slot) = spec.vtable_slot else {
+        return false;
+    };
+    // Never vtable-call an IUnknown (0..=2) or IDispatch (3..=6) slot.
+    if slot < 7 {
+        return false;
+    }
+    if !spec.callconv_is_stdcall {
+        return false;
+    }
+    // A full signature: exactly one declared parameter type per supplied
+    // positional arg. (A property-put's trailing value arg is one of these.)
+    if spec.parameter_types.len() != positional_arg_count {
+        return false;
+    }
+    if expects_value && spec.return_type.is_none() {
+        return false;
+    }
+    if spec
+        .parameter_types
+        .iter()
+        .any(|p| !is_v1_vtable_vartype(*p))
+    {
+        return false;
+    }
+    if let Some(rt) = spec.return_type
+        && !is_v1_vtable_vartype(rt)
+    {
+        return false;
+    }
+    true
+}
+
+/// Attempt an early-bound member call through the COM vtable, with a clean
+/// fall-back vs propagate distinction.
+///
+/// Returns:
+/// - `Ok(Some(value))` — the vtable call ran and succeeded; the caller must NOT
+///   also run the IDispatch path (and should record the vtable transport).
+/// - `Ok(None)` — the member is ineligible (gate failed) OR the marshaller
+///   reported an unsupported shape (a validation failure, `hr == None`); the
+///   caller falls back to the unchanged IDispatch path.
+/// - `Err(failure)` — the vtable call genuinely failed with a real COM HRESULT
+///   (`hr == Some(hr < 0)`); the caller PROPAGATES it (no silent fallback that
+///   would mask the failure).
+///
+/// # Safety
+/// `dispatch` must be a live dual-interface pointer for the bound object (the
+/// bindings map holds one retained reference, keeping it live for this call).
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+#[allow(clippy::result_large_err)]
+pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    spec: &crate::ComMemberSpec,
+    args: &[ComInvokeArg],
+    prefer_vtable: bool,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<Option<Variant>, ComInvokeFailure> {
+    if !prefer_vtable {
+        return Ok(None);
+    }
+    // The vtable carries left-to-right positional params only; any named or
+    // omitted argument is a shape the IDispatch path owns.
+    if args
+        .iter()
+        .any(|arg| arg.name.is_some() || arg.value.is_none())
+    {
+        return Ok(None);
+    }
+    let (label, expects_value) = match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyGet => ("property-get", true),
+        crate::TypeLibMemberInvokeKind::Method => ("method", true),
+        // A property-put's HRESULT-only member returns no value; the trailing
+        // value argument is an ordinary positional [in] param to the vtable slot.
+        crate::TypeLibMemberInvokeKind::PropertyPut => ("property-put", false),
+        // PropertyPutRef (Set p = obj) is deferred to the IDispatch path in v1.
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => return Ok(None),
+    };
+    if !vtable_gate_admits(spec, args.len(), expects_value) {
+        return Ok(None);
+    }
+    // Marshal the positional args to `Variant` (the vtable marshaller's input).
+    let variant_args: Vec<Variant> = args
+        .iter()
+        .filter_map(|arg| arg.value.as_ref().map(|v| v.variant().clone()))
+        .collect();
+    if variant_args.len() != args.len() {
+        // A value went missing between the omitted-check and here; be safe.
+        return Ok(None);
+    }
+    let return_type = if expects_value {
+        spec.return_type
+    } else {
+        None
+    };
+
+    let mut resolve_object = |handle: ObjectRef| {
+        crate::resolve_bound_native_dispatch_shared(com_state, handle)
+            .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+    };
+    // The vtable [out,retval] interface convention transfers one reference to
+    // us; hand it to the bindings map, exactly as the IDispatch result path does.
+    let mut bind_dispatch_result = |dispatch: *mut core::ffi::c_void| {
+        // SAFETY: a non-null pointer here carries the one reference the callee
+        // AddRef'd for the [out,retval]; ownership transfers to the bindings map,
+        // satisfying bind_native_runtime_object_result_shared's contract.
+        unsafe {
+            crate::windows_runtime_state::bind_native_runtime_object_result_shared(
+                com_state,
+                dispatch.cast::<crate::RawIDispatch>(),
+                &spec.name,
+            )
+        }
+        .map(Variant::from_object_ref)
+    };
+
+    let slot = spec.vtable_slot.expect("gate guaranteed a slot");
+    // SAFETY: the gate proved `spec.vtable_slot >= 7` with a CC_STDCALL,
+    // fully-typed, v1-marshallable signature, and `dispatch` is the live
+    // bindings-map-retained dual interface; this is exactly the contract
+    // vtable_invoke documents (`HRESULT slot(this, params…, retval*)`).
+    let result = unsafe {
+        crate::windows_vtable::vtable_invoke(
+            dispatch,
+            slot,
+            &spec.parameter_types,
+            return_type,
+            spec.invoke_kind,
+            &variant_args,
+            label,
+            dispid,
+            &mut resolve_object,
+            &mut bind_dispatch_result,
+        )
+    };
+    match result {
+        Ok(value) => Ok(Some(value)),
+        // A real COM error (the call ran and the server returned hr < 0):
+        // PROPAGATE — never silently fall back and mask a genuine failure.
+        Err(failure) if failure.hr.is_some() => Err(failure),
+        // An unsupported-shape / validation signal (hr == None, detail set): the
+        // marshaller declined this call. Fall back to the IDispatch path.
+        Err(_unsupported) => Ok(None),
+    }
+}
+
+/// Non-x64 Windows stub: the libffi this-call vtable marshaller is x64-only
+/// (`windows_vtable` is gated to `target_arch = "x86_64"`), so every member
+/// falls back to the IDispatch path here.
+#[cfg(all(target_os = "windows", not(target_arch = "x86_64")))]
+#[allow(clippy::result_large_err)]
+pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
+    _dispatch: *mut core::ffi::c_void,
+    _dispid: i32,
+    _spec: &crate::ComMemberSpec,
+    _args: &[ComInvokeArg],
+    _prefer_vtable: bool,
+    _com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<Option<Variant>, ComInvokeFailure> {
+    Ok(None)
+}
+
 #[cfg(target_os = "windows")]
 #[allow(clippy::too_many_arguments, clippy::missing_safety_doc)]
 pub unsafe fn execute_bound_variant_with_shared_state<FTryVtable, FKnownSpec>(
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
     request: &ComInvokeRequest,
+    prefer_vtable: bool,
+    transport: ComTransportCounters<'_>,
     try_vtable_invoke: &mut FTryVtable,
     known_member_spec: &mut FKnownSpec,
 ) -> Result<Option<Variant>, String>
@@ -1651,11 +1887,39 @@ where
     };
     let mut invoke_member_spec =
         |dispid: i32, spec: &crate::ComMemberSpec, invoke_args: &[ComInvokeArg], prog_id: &str| {
+            // Early-bound vtable fast path: when the policy prefers it AND the
+            // resolved member carries a full, callable, v1-marshallable dual
+            // signature, dispatch through the COM vtable slot directly. An
+            // ineligible member or an unsupported shape returns Ok(None) → the
+            // unchanged IDispatch path below; a real COM error (hr < 0) is
+            // propagated, never silently swallowed.
+            // SAFETY: `dispatch` is the live bindings-map-retained dual interface
+            // for this bound object (checked non-zero above), exactly what the
+            // vtable attempt's `# Safety` requires.
+            match unsafe {
+                try_vtable_member_spec_invoke_with_shared_state(
+                    dispatch.cast(),
+                    dispid,
+                    spec,
+                    invoke_args,
+                    prefer_vtable,
+                    com_state,
+                )
+            } {
+                Ok(Some(value)) => {
+                    transport.record_vtable();
+                    return Ok(value);
+                }
+                Ok(None) => {}
+                Err(failure) => {
+                    return Err(render_invoke_fault_message(&failure));
+                }
+            }
             // SAFETY: `dispatch` was recovered from a live bindings-map entry
             // whose retained IDispatch reference outlives this call (the
             // invoking runtime holds the object); the shared-state helper
             // installs callbacks that uphold COM retention rules.
-            unsafe {
+            let value = unsafe {
                 invoke_member_spec_variant_with_shared_state(
                     dispatch.cast(),
                     dispid,
@@ -1665,7 +1929,9 @@ where
                     com_state,
                 )
             }
-            .map_err(|failure| render_invoke_fault_message(&failure))
+            .map_err(|failure| render_invoke_fault_message(&failure))?;
+            transport.record_idispatch();
+            Ok(value)
         };
     let mut invoke_direct_dispid = |member: i32,
                                     invoke_kind: crate::TypeLibMemberInvokeKind,

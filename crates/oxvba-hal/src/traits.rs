@@ -410,6 +410,15 @@ pub trait ComHal: Send + Sync {
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
     ) -> HalResult<Variant>;
+
+    /// `(vtable_call_count, idispatch_call_count)`: how many early-bound member
+    /// calls this adapter has dispatched through the COM vtable fast path versus
+    /// `IDispatch::Invoke` so far. A host test reads this to prove which transport
+    /// carried a given member under a `PreferVtable` policy. Adapters with no real
+    /// COM transport (deterministic / null / wasm) report `(0, 0)`.
+    fn com_dispatch_transport_counts(&self) -> (u64, u64) {
+        (0, 0)
+    }
 }
 
 pub trait TimeLocaleHal: Send + Sync {

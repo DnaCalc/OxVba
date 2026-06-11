@@ -8,10 +8,11 @@
 //! reuses the existing Variant↔VARIANT / BSTR / interface-binding helpers so
 //! ownership matches the IDispatch path exactly.
 //!
-//! Scope (workset S2): this is the foundation. `vtable_invoke` is proven by an
-//! in-process unit test against a real custom dual vtable fixture; it is NOT yet
-//! wired into live dispatch (that is S3). Until S3 wires it, production never
-//! calls it.
+//! Scope: introduced in workset S2 (proven by an in-process unit test against a
+//! real custom dual vtable fixture). As of S3 it is wired into live dispatch via
+//! [`crate::windows_invoke::try_vtable_member_spec_invoke_with_shared_state`],
+//! gated behind the `PreferVtable` policy with an IDispatch fallback for any
+//! ineligible member or unsupported marshalling shape.
 //!
 //! Error model: a vtable call has no `EXCEPINFO`. On `hr < 0` the rich error is
 //! retrieved via `GetErrorInfo(0)` → `IErrorInfo` and mapped into the SAME
@@ -19,12 +20,6 @@
 //! `render_invoke_fault_message` / `map_com_hresult_label` are reused verbatim.
 
 #![cfg(all(target_os = "windows", target_arch = "x86_64"))]
-// `vtable_invoke` and its marshalling helpers are exercised by the in-process
-// unit test below (which proves the libffi this-call end-to-end), but the lib
-// target has no non-test caller yet: S3 wires `vtable_invoke` into the dispatch
-// decision tree (`windows_bridge::try_vtable_invoke`). Allow dead code until
-// then so the foundation can land fixture-only without a premature live wire.
-#![allow(dead_code)]
 // `ComInvokeFailure` is a large Err variant shared with the IDispatch path
 // (windows_invoke.rs allows the same lint); keeping the failure shape identical
 // is what lets S3 route vtable faults through the existing render/classify lane.

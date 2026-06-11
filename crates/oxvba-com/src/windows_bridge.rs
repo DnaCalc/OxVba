@@ -20,6 +20,7 @@ use crate::{
     take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
 use oxvba_runtime::{ObjectRef, Variant};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,13 @@ pub struct WindowsComBridge {
     state: Arc<Mutex<WindowsComClientState>>,
     typelib_state: Arc<Mutex<TypeLibMetadataCacheState>>,
     force_registered_test_dispatch: bool,
+    /// Count of early-bound member calls that dispatched through the COM vtable
+    /// slot (the `prefer_vtable` fast path). Mirrors the `last_dll_error` atomic
+    /// pattern so a host test can observe which transport carried a member.
+    vtable_call_count: Arc<AtomicU64>,
+    /// Count of early-bound member calls that dispatched through
+    /// `IDispatch::Invoke` (the default path and the vtable fallback).
+    idispatch_call_count: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +49,22 @@ impl WindowsComBridge {
             state: Arc::new(Mutex::new(WindowsComClientState::default())),
             typelib_state: Arc::new(Mutex::new(TypeLibMetadataCacheState::default())),
             force_registered_test_dispatch,
+            vtable_call_count: Arc::new(AtomicU64::new(0)),
+            idispatch_call_count: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Number of early-bound member calls dispatched through the COM vtable slot
+    /// so far (the `prefer_vtable` fast path). A host test reads this to prove a
+    /// supported member went through the vtable.
+    pub fn vtable_call_count(&self) -> u64 {
+        self.vtable_call_count.load(Ordering::Relaxed)
+    }
+
+    /// Number of early-bound member calls dispatched through `IDispatch::Invoke`
+    /// so far (the default path and the vtable fallback).
+    pub fn idispatch_call_count(&self) -> u64 {
+        self.idispatch_call_count.load(Ordering::Relaxed)
     }
 
     pub fn shared_state(&self) -> &Arc<Mutex<WindowsComClientState>> {
@@ -382,57 +405,42 @@ impl WindowsComBridge {
         let positional_values = legacy_runtime_arg_values(request.args.as_slice());
         validate_named_arg_order(request.args.as_slice())
             .map_err(WindowsComBridgeDispatchError::Message)?;
+        // The legacy i32-only `try_vtable_invoke` hook (formerly the in-process
+        // `raw_oxvba_test_dispatch_vtable_invoke` behavioral oracle) is now
+        // SUBSUMED by the real, spec-driven vtable path that fires at the
+        // member-spec decision point inside `execute_bound_variant_with_shared_state`
+        // (S3 — see `try_vtable_member_spec_invoke_with_shared_state`). That path
+        // sees the full ComMemberSpec (slot / parameter_types / return_type /
+        // callconv) and the original Variant args, so it can gate + marshal a true
+        // vtable this-call with an IDispatch fallback for any ineligible shape.
+        // This closure is retained only to satisfy `execute_bound_variant`'s
+        // signature; it always declines, so the legacy i32 candidate never
+        // shortcuts the spec-level path.
         let mut try_vtable_invoke =
-            |dispatch: *mut RawIDispatch,
-             binding: &ComBinding,
-             member: i32,
-             positional_values: &[i32]| {
-                if !prefer_vtable {
-                    return Ok(None);
-                }
-                #[cfg(any(test, feature = "fixture-typelibs"))]
-                {
-                    if !binding
-                        .prog_id_name
-                        .eq_ignore_ascii_case(crate::OXVBA_TEST_DISPATCH_PROGID)
-                    {
-                        return Ok(None);
-                    }
-                    if member == crate::TEST_DISPID_ECHO_VARIANT {
-                        return Ok(None);
-                    }
-                    // SAFETY: the prog-id guard above admits only the in-process
-                    // `OxVba.TestDispatch` fixture, the exact object whose vtable layout
-                    // `raw_oxvba_test_dispatch_vtable_invoke` is written against, and the
-                    // bindings map owns one retained dispatch reference that keeps the
-                    // object alive for the duration of this call.
-                    unsafe {
-                        crate::raw_oxvba_test_dispatch_vtable_invoke(
-                            dispatch,
-                            member,
-                            positional_values,
-                        )
-                    }
-                }
-                #[cfg(not(any(test, feature = "fixture-typelibs")))]
-                {
-                    let _ = (dispatch, binding, member, positional_values);
-                    Ok(None)
-                }
-            };
+            |_dispatch: *mut RawIDispatch,
+             _binding: &ComBinding,
+             _member: i32,
+             _positional_values: &[i32]| Ok(None);
         let mut known_member_spec = |binding: &ComBinding, token: ComMemberToken| {
             self.known_member_spec_for_prog_id_name(&binding.prog_id_name, token)
+        };
+        let transport = crate::ComTransportCounters {
+            vtable: &self.vtable_call_count,
+            idispatch: &self.idispatch_call_count,
         };
         // SAFETY: any dispatch pointer the callee resolves comes from the bindings map,
         // which owns one retained `IDispatch` reference per native binding (W1-com-009)
         // established at bind time; bindings are only released from the VM thread that is
         // currently inside this call (cross-thread state access is limited to event sinks,
-        // which only queue callback payloads), so the pointer stays live across the invoke,
-        // and the vtable fast path above is guarded to the in-process test dispatch.
+        // which only queue callback payloads), so the pointer stays live across the invoke
+        // — including the spec-level vtable this-call, which the gate restricts to a
+        // dual interface whose retained reference keeps it alive for the duration.
         let early = unsafe {
             execute_bound_variant_with_shared_state(
                 &self.state,
                 request,
+                prefer_vtable,
+                transport,
                 &mut try_vtable_invoke,
                 &mut known_member_spec,
             )
@@ -474,7 +482,11 @@ impl WindowsComBridge {
         request: &DynamicCallRequest,
         prefer_vtable: bool,
     ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
-        let _ = prefer_vtable;
+        // `prefer_vtable` is threaded through every re-dispatch below: the
+        // Token/DefaultMember/Name→token selectors route back through
+        // `dispatch_invoke_variant` (which honors the vtable fast path once the
+        // member token resolves to a spec carrying a slot), and the late-bound
+        // GetIDsOfNames tail genuinely has no static spec, so it stays IDispatch.
         match &request.member {
             DynamicMemberSelector::Token(value) => {
                 return self.dispatch_invoke_variant(
@@ -602,7 +614,7 @@ impl WindowsComBridge {
                     // bindings are only released from the VM thread currently inside this
                     // call; `dispid` and the named-arg DISPIDs were resolved from that same
                     // dispatch above.
-                    return unsafe {
+                    let put_result = unsafe {
                         invoke_dispatch_variant_with_shared_state(
                             dispatch.cast(),
                             dispid,
@@ -613,9 +625,13 @@ impl WindowsComBridge {
                             &binding.prog_id_name,
                             &self.state,
                         )
+                    };
+                    if put_result.is_ok() {
+                        self.idispatch_call_count.fetch_add(1, Ordering::Relaxed);
                     }
-                    .map(Some)
-                    .map_err(WindowsComBridgeDispatchError::InvokeFailure);
+                    return put_result
+                        .map(Some)
+                        .map_err(WindowsComBridgeDispatchError::InvokeFailure);
                 }
                 _ => {}
             }
@@ -661,6 +677,9 @@ impl WindowsComBridge {
                 },
             }
         };
+        if invoke_result.is_ok() {
+            self.idispatch_call_count.fetch_add(1, Ordering::Relaxed);
+        }
         invoke_result
             .map(Some)
             .map_err(WindowsComBridgeDispatchError::InvokeFailure)
@@ -671,6 +690,148 @@ impl WindowsComBridge {
 mod tests {
     use super::*;
     use crate::dynamic_object::DynamicCallArg;
+
+    /// Insert a native binding (carrying one retained reference on `native_ptr`)
+    /// at a fixed handle, with a single member spec keyed by `member_token`, a
+    /// pre-cached dispid (so the dispatch decision tree never calls
+    /// `GetIDsOfNames` against the fixture), and the chosen prog id.
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn insert_native_member_binding(
+        bridge: &WindowsComBridge,
+        handle: i32,
+        prog_id: &str,
+        native_ptr: *mut core::ffi::c_void,
+        member_token: crate::ComMemberToken,
+        dispid: i32,
+        spec: crate::ComMemberSpec,
+    ) -> ObjectRef {
+        let mut binding = ComBinding::new(prog_id.to_string(), native_ptr as usize);
+        binding.member_specs.insert(member_token, spec);
+        binding.member_dispids.insert(member_token, dispid);
+        crate::insert_bound_object_binding_at_handle_shared(
+            bridge.shared_state(),
+            ObjectRef::from_compat_identity(handle),
+            binding,
+        )
+        .expect("insert native member binding")
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn count_member_spec(
+        name: &str,
+        vtable_slot: Option<u16>,
+        callconv_is_stdcall: bool,
+    ) -> crate::ComMemberSpec {
+        crate::ComMemberSpec {
+            name: name.to_string(),
+            requires_argument: false,
+            invoke_kind: crate::TypeLibMemberInvokeKind::PropertyGet,
+            parameter_names: Vec::new(),
+            is_default_member: false,
+            vtable_slot,
+            parameter_types: Vec::new(),
+            return_type: Some(crate::TypeLibParamType::Long),
+            callconv_is_stdcall,
+        }
+    }
+
+    /// S3: under a `PreferVtable` policy, a member that passes the vtable gate (a
+    /// real custom dual slot, CC_STDCALL, fully-typed v1 signature) dispatches
+    /// through the COM vtable — proven by the real S2 dual-vtable fixture
+    /// (`get_Count` at slot 7 returns 7) and the `vtable_call_count` increment.
+    /// A member that fails the gate (no slot) falls back to `IDispatch::Invoke`,
+    /// bumping `idispatch_call_count` instead.
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn prefer_vtable_routes_eligible_member_through_vtable_and_falls_back_otherwise() {
+        // ── Supported shape → vtable transport ──
+        let bridge = WindowsComBridge::new(false);
+        // The real custom dual vtable fixture: slot 7 = get_Count(this, i32*) -> 7.
+        let dual = crate::create_oxvba_dual_vtable_object();
+        let member = ComMemberToken::new(7);
+        let object = insert_native_member_binding(
+            &bridge,
+            7001,
+            "OxVba.DualFixture",
+            dual,
+            member,
+            7, // arbitrary cached dispid; the vtable path ignores it (uses the slot)
+            count_member_spec("Count", Some(crate::DUAL_SLOT_GET_COUNT), true),
+        );
+        let request = ComInvokeRequest {
+            object: object.clone(),
+            member,
+            args: Vec::new(),
+            invoke_kind_hint: None,
+        };
+        let before_vtable = bridge.vtable_call_count();
+        let before_idispatch = bridge.idispatch_call_count();
+        let value = bridge
+            .dispatch_invoke_variant(&request, true)
+            .expect("vtable dispatch should not error")
+            .expect("a value should be produced");
+        assert_eq!(
+            value.as_i32(),
+            Some(7),
+            "get_Count must round-trip 7 through the real vtable slot"
+        );
+        assert_eq!(
+            bridge.vtable_call_count(),
+            before_vtable + 1,
+            "a supported member must increment the vtable transport counter"
+        );
+        assert_eq!(
+            bridge.idispatch_call_count(),
+            before_idispatch,
+            "the vtable path must not also count an IDispatch invoke"
+        );
+        let _ = bridge.release_object_binding(object);
+
+        // ── Unsupported shape (no vtable slot) → IDispatch fallback ──
+        // The real `OxVba.TestDispatch` IDispatch object has a working Invoke but
+        // its members carry no custom vtable slot, so the gate declines and the
+        // call falls back to IDispatch::Invoke (Count -> 7), bumping idispatch.
+        let fallback_bridge = WindowsComBridge::new(false);
+        let dispatch = crate::create_oxvba_test_dispatch();
+        let count = ComMemberToken::new(crate::TEST_DISPID_COUNT);
+        let fallback_object = insert_native_member_binding(
+            &fallback_bridge,
+            7002,
+            crate::OXVBA_TEST_DISPATCH_PROGID,
+            dispatch.cast::<core::ffi::c_void>(),
+            count,
+            crate::TEST_DISPID_COUNT,
+            count_member_spec("Count", None, true),
+        );
+        let fallback_request = ComInvokeRequest {
+            object: fallback_object.clone(),
+            member: count,
+            args: Vec::new(),
+            invoke_kind_hint: None,
+        };
+        let before_vtable = fallback_bridge.vtable_call_count();
+        let before_idispatch = fallback_bridge.idispatch_call_count();
+        let fallback_value = fallback_bridge
+            .dispatch_invoke_variant(&fallback_request, true)
+            .expect("fallback dispatch should not error")
+            .expect("a value should be produced");
+        assert_eq!(
+            fallback_value.as_i32(),
+            Some(7),
+            "the IDispatch fallback must still return Count = 7"
+        );
+        assert_eq!(
+            fallback_bridge.vtable_call_count(),
+            before_vtable,
+            "a no-slot member must NOT take the vtable path"
+        );
+        assert_eq!(
+            fallback_bridge.idispatch_call_count(),
+            before_idispatch + 1,
+            "an ineligible member must fall back to IDispatch and count it"
+        );
+        let _ = fallback_bridge.release_object_binding(fallback_object);
+    }
 
     /// A projection-only binding (`native_dispatch == 0`) has no live IDispatch. A
     /// late-bound member name that misses the typelib path must return a clean error
