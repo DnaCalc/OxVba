@@ -69,7 +69,15 @@ pub enum NumericMode {
 }
 
 /// Element type of a runtime array (for `ReDim`/typed element storage).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// `Record` carries the recursive per-field layout of a UDT element, so a `ReDim`
+/// of a UDT array (`ReDim o.Lines(0 To n)`, `Lines() As ocrLine`) can seed each
+/// element with a default record — recursively materializing nested scalar-UDT
+/// subfields (`ocrLine.Words() As OcrWord`, `OcrWord.Rect As RECTF`) so
+/// `Lines(i).Words(j).Rect.X` reads back without a per-field fault. A UDT field
+/// that is itself an *array* of UDT stays `Variant` (unallocated until its own
+/// `ReDim`). This variant makes `ArrayElementType` non-`Copy`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArrayElementType {
     Variant,
     Integer,
@@ -83,6 +91,9 @@ pub enum ArrayElementType {
     Date,
     String,
     Boolean,
+    /// A UDT-record element: the per-field element layout (one entry per record
+    /// field, in field order).
+    Record(Vec<ArrayElementType>),
 }
 
 /// Assignment intent on a `ValidateAssignment` (Let vs Set vs implicit).

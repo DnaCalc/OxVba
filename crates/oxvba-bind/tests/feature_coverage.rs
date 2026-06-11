@@ -502,6 +502,77 @@ fn nested_scalar_udt_fields_are_recursively_materialized() {
 }
 
 #[test]
+fn udt_array_elements_are_materialized_as_records() {
+    // `ReDim arr(...)` of a UDT array seeds each element with a default record,
+    // recursing into nested scalar-UDT subfields — so `Lines(i).Text` and the
+    // nested `Lines(i).Rect.X` (the element's own scalar-UDT subfield is itself a
+    // default record) read back instead of faulting type 13 ("record expected")
+    // on an `Empty` element.
+    let snap = run("Private Type RectF\nX As Long\nEnd Type\n\
+         Private Type LineT\nText As String\nRect As RectF\nEnd Type\n\
+         Public gText As String\nPublic gX As Long\n\
+         Sub Main()\n\
+         Dim lines() As LineT\n\
+         ReDim lines(0 To 1)\n\
+         lines(0).Text = \"hello\"\n\
+         lines(1).Rect.X = 42\n\
+         gText = lines(0).Text\n\
+         gX = lines(1).Rect.X\n\
+         End Sub");
+    assert_eq!(
+        snap[0].as_bstr().map(|b| b.as_str()),
+        Some("hello".to_string()),
+        "Lines(0).Text reads back: {snap:?}"
+    );
+    assert_eq!(
+        snap[1].as_i32(),
+        Some(42),
+        "nested Lines(1).Rect.X reads back (recursive record seed): {snap:?}"
+    );
+}
+
+#[test]
+fn udt_array_whole_copy_is_independent() {
+    // Assigning a whole UDT array is a value copy: mutating an element's record
+    // field in the copy must not reach the source array's element.
+    let snap = run("Private Type Cell\nV As Long\nEnd Type\n\
+         Public srcV As Long\n\
+         Sub Main()\n\
+         Dim a() As Cell\nDim b() As Cell\n\
+         ReDim a(0 To 0)\n\
+         a(0).V = 1\n\
+         b = a\n\
+         b(0).V = 99\n\
+         srcV = a(0).V\n\
+         End Sub");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(1),
+        "source a(0).V stays 1 after b(0).V = 99: {snap:?}"
+    );
+}
+
+#[test]
+fn redim_preserve_keeps_existing_udt_element_records() {
+    // `ReDim Preserve` of a UDT array keeps each existing element's record (its
+    // populated field), default-seeding only the grown tail — so an earlier write
+    // survives the resize and the new element is a usable record.
+    let snap = run("Private Type Cell\nV As Long\nEnd Type\n\
+         Public kept As Long\nPublic grown As Long\n\
+         Sub Main()\n\
+         Dim a() As Cell\n\
+         ReDim a(0 To 0)\n\
+         a(0).V = 7\n\
+         ReDim Preserve a(0 To 1)\n\
+         a(1).V = 9\n\
+         kept = a(0).V\n\
+         grown = a(1).V\n\
+         End Sub");
+    assert_eq!(snap[0].as_i32(), Some(7), "preserved a(0).V: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(9), "grown a(1).V: {snap:?}");
+}
+
+#[test]
 fn single_line_function_body_executes() {
     // A whole `Function … : body : End Function` on one physical line (the
     // colon-separated single-line proc idiom, used heavily for trivial

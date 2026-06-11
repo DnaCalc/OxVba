@@ -33,9 +33,9 @@ use std::collections::HashMap;
 
 use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
-    Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget, NativeBody,
-    NativeCallee, NativeImplId, NativeMethodId, NumericMode, Op, ProcArg, ProjectMemberKind,
-    PtrWritebackKind,
+    ArrayElementType, Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget,
+    NativeBody, NativeCallee, NativeImplId, NativeMethodId, NumericMode, Op, ProcArg,
+    ProjectMemberKind, PtrWritebackKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -1930,23 +1930,27 @@ impl<'h> Vm<'h> {
                 dst,
                 upper_bounds,
                 lower_bounds,
-                ..
+                element_type,
             } => {
                 let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
                 let count: usize = bounds.iter().map(|b| b.count as usize).product();
                 // `from_shape` alone leaves a null payload (no element storage); a
-                // freshly `ReDim`-ed array must hold `count` Empty elements so a
-                // following `ArraySet`/`ArrayGet` lands in range.
-                let array =
-                    SafeArray::from_shape_and_variants(bounds, vec![Variant::empty(); count])
-                        .map_err(Fault::from_string)?;
+                // freshly `ReDim`-ed array must hold `count` default elements so a
+                // following `ArraySet`/`ArrayGet` lands in range. A UDT-array element
+                // is seeded with a default record (recursively) so `Lines(i).Field`
+                // reads back; any other element type defaults to `Empty`.
+                let elems = (0..count)
+                    .map(|_| default_array_element(element_type))
+                    .collect();
+                let array = SafeArray::from_shape_and_variants(bounds, elems)
+                    .map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(array))?;
             }
             Op::ArrayResizePreserve {
                 dst,
                 upper_bounds,
                 lower_bounds,
-                ..
+                element_type,
             } => {
                 let old = self
                     .get(*dst)?
@@ -1955,10 +1959,14 @@ impl<'h> Vm<'h> {
                     .unwrap_or_default();
                 let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
                 let count: usize = bounds.iter().map(|b| b.count as usize).product();
-                let mut elems = vec![Variant::empty(); count];
-                for (i, value) in old.into_iter().enumerate() {
-                    if i < elems.len() {
-                        elems[i] = value;
+                // Keep each existing element (its record, for a UDT array); only the
+                // grown tail is freshly default-seeded — so `ReDim Preserve` never
+                // overwrites a populated element with a blank default record.
+                let mut elems: Vec<Variant> = Vec::with_capacity(count);
+                for i in 0..count {
+                    match old.get(i) {
+                        Some(value) => elems.push(value.clone()),
+                        None => elems.push(default_array_element(element_type)),
                     }
                 }
                 let array = SafeArray::from_shape_and_variants(bounds, elems)
@@ -2528,6 +2536,21 @@ impl<'h> Vm<'h> {
 }
 
 // ── Free helpers ──────────────────────────────────────────────────────────────
+
+/// The default value for a freshly-`ReDim`-ed array element. A UDT-record element
+/// is a default record (a `SafeArray` of its field defaults), built recursively so
+/// nested scalar-UDT subfields are themselves default records — mirroring the
+/// binder's `emit_udt_record_init` so `Lines(i).Words(j).Rect.X` reads back. Every
+/// other element type defaults to `Empty` (VBA's zero), matching scalar `ReDim`.
+fn default_array_element(element_type: &ArrayElementType) -> Variant {
+    match element_type {
+        ArrayElementType::Record(fields) => {
+            let elems = fields.iter().map(default_array_element).collect();
+            Variant::from_safearray(SafeArray::from_variants(elems))
+        }
+        _ => Variant::empty(),
+    }
+}
 
 fn member_kind_to_dynamic(kind: ProjectMemberKind) -> DynamicCallKind {
     match kind {

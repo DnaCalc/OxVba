@@ -450,6 +450,42 @@ impl Lower<'_> {
             other => other,
         }
     }
+
+    /// The runtime array-element layout for a `ReDim`/`Erase` element type. Builtin
+    /// elements map to their scalar tag; a **UDT element** becomes a recursive
+    /// [`ArrayElementType::Record`] carrying each field's layout (so the VM seeds a
+    /// default record per element, recursing into nested scalar-UDT subfields). A
+    /// field that is itself an *array* (of UDT or otherwise) stays `Variant` —
+    /// unallocated until its own `ReDim`. The recursion terminates because VBA
+    /// forbids by-value self-referential UDTs.
+    fn array_element_layout(&self, elem: &VarTypeRef) -> oxvba_bundle::ArrayElementType {
+        match self.resolve_udt_type(elem.clone()) {
+            VarTypeRef::Udt(udt) => {
+                let fields = self
+                    .env
+                    .udt_field_list(&udt)
+                    .map(|fs| {
+                        fs.iter()
+                            .map(|(_, ty)| self.array_field_layout(ty))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                oxvba_bundle::ArrayElementType::Record(fields)
+            }
+            other => crate::types::array_element_of(&other),
+        }
+    }
+
+    /// The layout of one *record field* for [`Self::array_element_layout`]: a scalar
+    /// UDT field is a nested `Record`; an array field (`Words() As OcrWord`) stays
+    /// `Variant` (unallocated until `ReDim`); a builtin maps to its scalar tag.
+    fn array_field_layout(&self, ty: &VarTypeRef) -> oxvba_bundle::ArrayElementType {
+        match self.resolve_udt_type(ty.clone()) {
+            VarTypeRef::Udt(_) => self.array_element_layout(ty),
+            VarTypeRef::Array(_) => oxvba_bundle::ArrayElementType::Variant,
+            other => crate::types::array_element_of(&other),
+        }
+    }
 }
 
 /// Per-procedure mutable lowering state.

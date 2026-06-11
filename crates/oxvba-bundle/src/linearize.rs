@@ -1191,14 +1191,14 @@ impl<'p> Linearizer<'p> {
                         dst: array_slot,
                         upper_bounds,
                         lower_bounds,
-                        element_type: *element_type,
+                        element_type: element_type.clone(),
                     }
                 } else {
                     Op::ArrayResize {
                         dst: array_slot,
                         upper_bounds,
                         lower_bounds,
-                        element_type: *element_type,
+                        element_type: element_type.clone(),
                     }
                 });
                 if let Some(place) = writeback {

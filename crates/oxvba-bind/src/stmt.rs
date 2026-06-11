@@ -537,7 +537,7 @@ impl<'a> ProcLower<'a> {
                 }
                 let element_type = match &ty {
                     oxvba_symbol::signature::VarTypeRef::Array(inner) => {
-                        types::array_element_of(inner)
+                        self.g.array_element_layout(inner)
                     }
                     _ => oxvba_bundle::ArrayElementType::Variant,
                 };
@@ -1205,7 +1205,7 @@ impl<'a> ProcLower<'a> {
         if let Some(sym) = self.resolve(name).and_then(|b| b.symbol)
             && let oxvba_symbol::signature::VarTypeRef::Array(inner) = self.symbol_type(sym)
         {
-            return types::array_element_of(&inner);
+            return self.g.array_element_layout(&inner);
         }
         oxvba_bundle::ArrayElementType::Variant
     }
