@@ -861,13 +861,15 @@ impl ObjectRef {
 
     pub fn compat_identity(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
-        // SAFETY: ASSUMPTION — `self.0` must point at a `CompatObjectBase` (the documented
-        // precondition on `is_compat_object`). Today that holds for every `ObjectRef`: the safe
-        // constructors mint such boxes, and the unsafe raw constructors are only used to
-        // round-trip pointers previously produced by `raw_iunknown()` on them (Variant wire
-        // bytes, SAFEARRAY object slots). But `Debug`/`Display` reach here without an
-        // `is_compat_object` guard, so wrapping a genuinely foreign COM interface in the future
-        // would make this read out of bounds.
+        // SAFETY: `self.0` points at a live `CompatObjectBase`. Every `ObjectRef` in the
+        // workspace is such a box: the safe constructors mint them, the COM bridge wraps even
+        // foreign IDispatch/IUnknown objects in compat boxes keyed by a binding handle
+        // (`retained_runtime_object` in oxvba-com), and the unsafe raw constructors only
+        // round-trip pointers `raw_iunknown()` produced from those boxes (Variant payloads,
+        // SAFEARRAY object slots). The two entry points that previously reached here without an
+        // `is_compat_object` check — the `Debug`/`Display` impls below — now guard on it, so the
+        // remaining callers (`raw`/`route_key`/`is_project_instance`/HAL/vm2 dispatch) all sit on
+        // compat objects. This `ObjectRef`'s retained reference keeps the box alive for the read.
         unsafe { (*owner).identity.compat_identity }
     }
 
@@ -1069,8 +1071,12 @@ impl Drop for ObjectRef {
 
 impl core::fmt::Debug for ObjectRef {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // `compat_identity` is only meaningful on our own `CompatObjectBase` boxes; gate on the
+        // vtbl-identity check so a (future) foreign IUnknown wrapper formats without an
+        // out-of-bounds read past its vtbl. `is_compat_object` is safe for any IUnknown.
+        let compat_identity = self.is_compat_object().then(|| self.compat_identity());
         f.debug_struct("ObjectRef")
-            .field("compat_identity", &self.compat_identity())
+            .field("compat_identity", &compat_identity)
             .field("ptr", &self.0)
             .finish()
     }
@@ -1078,7 +1084,14 @@ impl core::fmt::Debug for ObjectRef {
 
 impl core::fmt::Display for ObjectRef {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.compat_identity())
+        // Gate on `is_compat_object` (see `Debug` above): only compat boxes carry a
+        // `compat_identity`; a foreign IUnknown wrapper renders as `<foreign>` rather than
+        // reading uninitialized identity bytes past its vtbl.
+        if self.is_compat_object() {
+            write!(f, "{}", self.compat_identity())
+        } else {
+            write!(f, "<foreign>")
+        }
     }
 }
 
