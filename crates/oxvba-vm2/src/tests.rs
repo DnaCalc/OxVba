@@ -13,7 +13,8 @@ use oxvba_bundle::{
     isa::CallArg,
 };
 use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken,
+    ComCallbackPayload, ComCallbackToken, ComCallbackValue, ComMemberToken, ComObjectDescriptor,
+    ComSubscriptionToken, ComValue,
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -109,7 +110,10 @@ impl ComHal for MockEventHost {
                 subscription: ComSubscriptionToken::new(7),
                 object: ObjectRef::from_compat_identity(99),
                 event: ComMemberToken::new(7),
-                args: Vec::new(),
+                // The payload is self-contained: the event pump reads its args
+                // directly (the per-arg `event_callback_*` accessors below are the
+                // retired path), so carry the delivered arg here.
+                args: vec![ComCallbackValue::from_com_value(ComValue::I32(self.arg))],
             }))
         } else {
             Ok(None)

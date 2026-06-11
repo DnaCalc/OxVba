@@ -1204,20 +1204,16 @@ impl<'h> Vm<'h> {
                 .get(&payload.subscription.raw())
                 .map(|sink| (sink.owner.clone(), sink.handler));
             if let Some((owner, handler)) = sink {
-                let arity = self
-                    .host
-                    .com()
-                    .event_callback_arity(payload.callback)
-                    .unwrap_or(0);
-                let mut values = Vec::with_capacity(arity);
-                for index in 0..arity {
-                    let value = self
-                        .host
-                        .com()
-                        .event_callback_variant(payload.callback, index)
-                        .unwrap_or_else(|_| Variant::empty());
-                    values.push(value);
-                }
+                // The polled payload is self-contained: `poll_event_callback`
+                // consumes the queued callback and returns its event args inline, so
+                // read them straight from the payload. (The per-arg
+                // `event_callback_arity`/`event_callback_variant` accessors would
+                // miss — the queue entry is already gone after the poll.)
+                let values: Vec<Variant> = payload
+                    .args
+                    .iter()
+                    .map(|arg| arg.variant().clone())
+                    .collect();
                 // The handler is a proc in the sink's (owner's) bundle — run it there.
                 let owner_bundle = owner
                     .as_object_ref()

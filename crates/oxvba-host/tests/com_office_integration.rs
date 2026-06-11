@@ -223,59 +223,78 @@ fn access_late_bound_application_activation() {
 #[test]
 #[ignore = "requires the registered OxVba.TestEventServer COM coclass; run explicitly with --ignored"]
 fn com_source_withevents_handler_fires_through_live_dispatch_sink() {
-    // End-to-end live validation of the COM-source `WithEvents` path: a sink with
-    // a `WithEvents x As OxVba.TestEventServer` field + an `x_OnValueChanged`
-    // handler subscribes to the real coclass's dispinterface event source. Calling
-    // `FireValueChanged 42` makes the server raise `OnValueChanged(42)`, which the
-    // connection-point sink delivers back into the guest handler (the inbound
-    // event pump runs at statement boundaries), landing 42 in a guest global.
+    // End-to-end live validation of the COM-source `WithEvents` path. `WithEvents`
+    // is only valid in a class module, so the sink lives in a class module
+    // (`Sink`): it holds `WithEvents src As OxVba.TestEventServer` + an
+    // `src_OnValueChanged` handler, subscribes to the real coclass's dispinterface
+    // event source on `Set src = New …`, calls `FireValueChanged 42` (the server
+    // raises `OnValueChanged(42)`), and the connection-point sink delivers it back
+    // into the handler (the inbound event pump runs at statement boundaries — the
+    // `DoEvents` is that boundary). `Main` reads the captured value into a global.
     //
-    // This exercises the binder's COM-source EventRoute emission (Fix A), the live
-    // loader's dispinterface→Dispatch-path classification (Fix B), and the
-    // connection-point Advise/IDispatch-sink runtime together. The headless lane
-    // proves the route + classification in isolation; this proves the live wiring.
-    // A reference to the TestEventServer typelib makes `OxVba.TestEventServer`
-    // resolve as a creatable coclass (so `New` works) AND types the WithEvents
-    // field so the binder emits the EventRoute for OnValueChanged.
-    let references = vec![typelib_ref_by_libid(
-        "OxVba_TestEventServer",
-        "{E2A30001-0001-0001-0001-000000000001}",
-        1,
-        0,
-    )];
-    let source = "Public got As Long\n\
-         Private WithEvents x As OxVba.TestEventServer\n\
+    // Exercises the binder's COM-source EventRoute emission, the WithEventsSet
+    // subscribe op, the live loader's dispinterface→Dispatch-path classification,
+    // and the connection-point Advise/IDispatch-sink runtime together. (The class
+    // module `Sink` sorts after `Main`, keeping `Main`'s globals first in the
+    // snapshot.)
+    use oxvba_symbol::manifest as sym;
+    let main_src = "Public result As Long\n\
          Sub Main()\n\
-         Set x = New OxVba.TestEventServer\n\
-         x.FireValueChanged 42\n\
+         Dim s As New Sink\n\
+         s.Wire\n\
+         result = s.CapturedValue()\n\
+         End Sub\n";
+    let sink_src = "Private mGot As Long\n\
+         Private WithEvents src As OxVba.TestEventServer\n\
+         Public Sub Wire()\n\
+         Set src = New OxVba.TestEventServer\n\
+         src.FireValueChanged 42\n\
          DoEvents\n\
          End Sub\n\
-         Private Sub x_OnValueChanged(ByVal value As Long)\n\
-         got = value\n\
+         Public Function CapturedValue() As Long\n\
+         CapturedValue = mGot\n\
+         End Function\n\
+         Private Sub src_OnValueChanged(ByVal value As Long)\n\
+         mGot = value\n\
          End Sub\n";
-    match run_clean_with_references(source, references) {
+    let manifest = sym::SymbolProjectManifest {
+        project_name: "Main".to_string(),
+        project_kind: sym::ProjectKind::Source,
+        modules: vec![
+            sym::ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: sym::ModuleKind::Procedural,
+                attributes: sym::ModuleAttributes::named("Main"),
+                source: main_src.to_string(),
+            },
+            sym::ModuleUnit {
+                module_name: "Sink".to_string(),
+                module_kind: sym::ModuleKind::Class,
+                attributes: sym::ModuleAttributes::named("Sink"),
+                source: sink_src.to_string(),
+            },
+        ],
+        references: vec![typelib_ref_by_libid(
+            "OxVba_TestEventServer",
+            "{E2A30001-0001-0001-0001-000000000001}",
+            1,
+            0,
+        )],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let result = engine
+        .execute_manifest_with_variant_snapshot(&manifest)
+        .map_err(|d| format!("{:?}: {}", d.phase(), d.message()));
+    match result {
         Ok(snap) => {
-            let delivered = snap.iter().any(|v| v.as_i32() == Some(42));
-            let created = snap.iter().any(|v| v.as_object_ref().is_some());
             assert!(
-                created,
-                "early-bound `New OxVba.TestEventServer` should create the COM source: {snap:?}"
+                snap.iter().any(|v| v.as_i32() == Some(42)),
+                "expected OnValueChanged(42) to reach the class sink's src_OnValueChanged \
+                 handler (captured into `result`): {snap:?}"
             );
-            // FRONTIER (task #12): the binder emits the EventRoute and the source
-            // object is created + the connection-point subscribe is attempted, but
-            // live event DELIVERY back to `x_OnValueChanged` is not yet wired — the
-            // runtime subscribe path needs the source dispinterface IID + dispatch
-            // spec looked up for the source coclass (today `subscribe_event` can't
-            // find the spec, and `subscribe_com_events` silently swallows the
-            // error). When that plumbing lands, `delivered` becomes true.
-            if delivered {
-                eprintln!("OK: live OnValueChanged(42) delivered to x_OnValueChanged");
-            } else {
-                eprintln!(
-                    "FRONTIER: COM-source object created + subscribe attempted, but live event \
-                     delivery is not yet wired (event-spec/IID plumbing, task #12): {snap:?}"
-                );
-            }
         }
         Err(err) if is_typelib_absent(&err) => {
             eprintln!("SKIP: OxVba.TestEventServer typelib/coclass not registered: {err}");

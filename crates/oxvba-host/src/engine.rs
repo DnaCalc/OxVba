@@ -314,8 +314,24 @@ impl Engine {
             reference_projects: Vec::new(),
             conditional_constants: std::collections::BTreeMap::new(),
         };
+        self.execute_manifest_with_variant_snapshot(&manifest)
+    }
+
+    /// Execute a pre-built single-project **manifest** (one or more modules — e.g. a
+    /// procedural `Main` plus a class module — and any references) on the clean path,
+    /// snapshotting the module globals followed by the entry `Sub Main` frame's
+    /// locals. This is the multi-module counterpart of
+    /// [`Self::execute_source_with_references_and_snapshot`]; it is what a `WithEvents`
+    /// sink test needs, since `WithEvents` is only valid in a class module.
+    pub fn execute_manifest_with_variant_snapshot(
+        &self,
+        manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        if self.config.enable_jit {
+            return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+        }
         let typelibs = oxvba_symbol::CatalogTypeLibResolver;
-        let program = oxvba_bind::bind_program(&manifest, &typelibs)
+        let program = oxvba_bind::bind_program(manifest, &typelibs)
             .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
         let bundle = oxvba_bundle::linearize(&program)
             .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
