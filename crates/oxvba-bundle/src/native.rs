@@ -271,21 +271,43 @@ impl NativeImplId {
         }
     }
 
-    /// The canonical `Strings`-module member name this id is exported under in the
-    /// synthetic `VBA` library bundle (e.g. `StringRepeat` → `"String"`, `LenB` →
-    /// `"LenB"`), or `None` for an id outside [`LibraryModule::Strings`]. This is
-    /// the single source of truth shared by the bundle's export tokens and the
-    /// binder's `ExternMember` resolution, so the two match exactly (an import is
-    /// linked to its export by case-insensitive name). It mirrors the primary
-    /// (first) user-facing name in the `oxvba-symbol` intrinsic catalog, but lives
-    /// here because the bundle cannot depend on the catalog.
+    /// The synthetic `VBA`-bundle location `(module, member)` this id is exported
+    /// under, or `None` for an id that does **not** route through the bundle.
     ///
-    /// `MidStmt` (the `Mid(…) = …` statement form) and `Like` (the operator) are
-    /// intentionally `None`: neither is an ordinary library function resolvable by
-    /// bare name, so neither routes through the `VBA` bundle.
-    pub fn strings_member_name(self) -> Option<&'static str> {
+    /// This is the single source of truth shared by the bundle's export tokens
+    /// (`oxvba-bundle/vba_library`) and the binder's `ExternMember` resolution
+    /// (`oxvba-symbol/providers/vba_library`), so a cross-bundle import is linked to
+    /// its export by construction (case-insensitive name match). The member name
+    /// mirrors the primary (first) user-facing name in the `oxvba-symbol` intrinsic
+    /// catalog (e.g. `StringRepeat` → `"String"`, `DateNow` → `"Date"`, `Fv` →
+    /// `"FV"`), and the module name is the [`LibraryModule`] the id belongs to; both
+    /// live here because the bundle cannot depend on the catalog.
+    ///
+    /// `Some` exactly for the **migrated** modules — `Strings`, `Math`, `DateTime`,
+    /// `Conversion`, `Random`, `Financial` — minus their name-less members
+    /// (`MidStmt`, the `Mid(…) = …` statement form, and `Like`, the operator, which
+    /// are not ordinary by-name library functions). `None` for every other id: the
+    /// `Information` special forms (`IIf`/`Choose`/`Switch`) and predicate functions,
+    /// `Interaction`, `FileIo`, `Diagnostics`, and the `Collection` members (a class,
+    /// not a free function). Those keep the bespoke `DispatchRoute::Native(id)` route.
+    pub fn library_member(self) -> Option<(&'static str, &'static str)> {
+        use LibraryModule as M;
         use NativeImplId::*;
-        Some(match self {
+        let module = match self.module() {
+            M::Strings => "Strings",
+            M::Math => "Math",
+            M::DateTime => "DateTime",
+            M::Conversion => "Conversion",
+            M::Random => "Random",
+            M::Financial => "Financial",
+            // Not yet migrated: Information (special forms + predicates),
+            // Collection (a class), FileIo, Interaction, Diagnostics.
+            M::Information | M::Collection | M::FileIo | M::Interaction | M::Diagnostics => {
+                return None;
+            }
+        };
+        let member = match self {
+            // ── Strings ──
             Len => "Len",
             LenB => "LenB",
             Left => "Left",
@@ -310,12 +332,120 @@ impl NativeImplId {
             StrConv => "StrConv",
             Format => "Format",
             Filter => "Filter",
-            // `MidStmt` is the assignment-statement form (not a value function) and
-            // `Like` is an operator (empty catalog name) — neither is a bundle
-            // member. Every other `Strings` id is listed above.
+            // `MidStmt` (assignment form) and `Like` (operator) are name-less — not
+            // bundle members, even though their module is `Strings`.
             MidStmt | Like => return None,
+            // ── Math ──
+            Abs => "Abs",
+            Int => "Int",
+            Fix => "Fix",
+            Sgn => "Sgn",
+            Round => "Round",
+            Sqr => "Sqr",
+            Sin => "Sin",
+            Cos => "Cos",
+            Log => "Log",
+            Exp => "Exp",
+            Atn => "Atn",
+            Tan => "Tan",
+            // ── DateTime ──
+            DateSerial => "DateSerial",
+            TimeSerial => "TimeSerial",
+            DateValue => "DateValue",
+            TimeValue => "TimeValue",
+            DateAdd => "DateAdd",
+            DateDiff => "DateDiff",
+            Year => "Year",
+            Month => "Month",
+            Day => "Day",
+            Weekday => "Weekday",
+            Hour => "Hour",
+            Minute => "Minute",
+            Second => "Second",
+            MonthName => "MonthName",
+            WeekdayName => "WeekdayName",
+            DatePart => "DatePart",
+            DateNow => "Date",
+            TimeNow => "Time",
+            Now => "Now",
+            Timer => "Timer",
+            // ── Conversion ──
+            Hex => "Hex",
+            Oct => "Oct",
+            CStr => "CStr",
+            Str => "Str",
+            Val => "Val",
+            CDate => "CDate",
+            CVErr => "CVErr",
+            CBool => "CBool",
+            CByte => "CByte",
+            CInt => "CInt",
+            CLng => "CLng",
+            CLngLng => "CLngLng",
+            CLngPtr => "CLngPtr",
+            CSng => "CSng",
+            CDbl => "CDbl",
+            CCur => "CCur",
+            CVar => "CVar",
+            // ── Random ──
+            Rnd => "Rnd",
+            Randomize => "Randomize",
+            // ── Financial ── (catalog primaries are upper-cased)
+            Fv => "FV",
+            Pv => "PV",
+            Pmt => "Pmt",
+            Npv => "NPV",
+            Irr => "IRR",
+            Mirr => "MIRR",
+            Rate => "Rate",
+            NPer => "NPer",
+            // Any id whose `module()` is a migrated module but is not listed above
+            // would be a name-less member; none exist beyond `MidStmt`/`Like`. The
+            // non-migrated modules already returned `None` above.
             _ => return None,
-        })
+        };
+        Some((module, member))
+    }
+
+    /// The informational parameter count recorded on the bundle's
+    /// [`ProcedureDescriptor`] for this migrated library function — its
+    /// **maximum** arity (the native body reads its arguments positionally and
+    /// ignores this; it is only a descriptor field). `0` for any id that is not a
+    /// migrated bundle member. Mirrors the catalog's `max_args` (the bundle cannot
+    /// depend on the catalog), with `0` standing in for the variadic forms here
+    /// (`Filter`/`Split`/etc. cap their own args).
+    pub fn library_param_count(self) -> usize {
+        use NativeImplId::*;
+        match self {
+            // ── Strings ──
+            Len | LenB | LCase | UCase | Trim | LTrim | RTrim | Chr | Asc | Space | StrReverse => 1,
+            Left | Right | Join | StringRepeat => 2,
+            Mid | StrComp | StrConv => 3,
+            InStr | InStrRev | Split | Format | Filter => 4,
+            Replace => 6,
+            // ── Math ──
+            Abs | Int | Fix | Sgn | Sqr | Sin | Cos | Log | Exp | Atn | Tan => 1,
+            Round => 2,
+            // ── DateTime ──
+            Year | Month | Day | Hour | Minute | Second | DateValue | TimeValue => 1,
+            Weekday | MonthName => 2,
+            DateSerial | TimeSerial | DateAdd => 3,
+            DatePart | WeekdayName => 4,
+            DateDiff => 5,
+            DateNow | TimeNow | Now | Timer => 0,
+            // ── Conversion ── (all single-argument)
+            Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
+            | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => 1,
+            // ── Random ──
+            Rnd | Randomize => 1,
+            // ── Financial ──
+            Npv | Irr => 2,
+            Mirr => 3,
+            Fv | Pv | Pmt | NPer => 5,
+            Rate => 6,
+            // Not a migrated bundle member.
+            _ => 0,
+        }
     }
 
     /// True when the body must reach host services (UI, filesystem, process,

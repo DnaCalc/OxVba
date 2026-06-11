@@ -15,10 +15,11 @@
 //!   like an `Op::CallNative { NativeCallee::Builtin(..) }` — no frame, no bespoke
 //!   `CoreCallee::Native` route.
 //!
-//! Today this exposes the `Collection` class and the `Strings` library module.
-//! The bundle's `ops` are a lone `Return` placeholder that is never executed
-//! (native bodies bypass the frame machinery, and the class has no
-//! `Class_Initialize`).
+//! Today this exposes the `Collection` class and the migrated library modules
+//! (`Strings`, `Math`, `DateTime`, `Conversion`, `Random`, `Financial` — every id
+//! for which [`NativeImplId::library_member`] is `Some`). The bundle's `ops` are a
+//! lone `Return` placeholder that is never executed (native bodies bypass the frame
+//! machinery, and the class has no `Class_Initialize`).
 
 use std::sync::OnceLock;
 
@@ -46,46 +47,6 @@ struct MethodSpec {
     native: NativeMethodId,
     param_count: usize,
 }
-
-/// The `VBA` typelib module that owns the string library functions.
-const STRINGS_MODULE: &str = "Strings";
-
-/// The `Strings`-module library functions exported by the `VBA` bundle, each with
-/// the parameter count recorded on its descriptor. The id's `module()` is
-/// `LibraryModule::Strings` and its `strings_member_name()` is the export name;
-/// `param_count` is informational for native bodies (the `oxvba-lib` body reads
-/// its arguments positionally), so it is sized at the maximum-arity form. The
-/// `String`/`String$` repeat function appears as `StringRepeat` (canonical name
-/// `"String"`); `MidStmt` (assignment form) and `Like` (operator) are excluded —
-/// neither is an ordinary by-name library function (see
-/// [`NativeImplId::strings_member_name`]). A test (`strings_exports_cover_module`)
-/// asserts this list covers every named `Strings` id, so it cannot silently drift.
-const STRINGS_FUNCS: &[(NativeImplId, usize)] = &[
-    (NativeImplId::Len, 1),
-    (NativeImplId::LenB, 1),
-    (NativeImplId::Left, 2),
-    (NativeImplId::Right, 2),
-    (NativeImplId::Mid, 3),
-    (NativeImplId::InStr, 4),
-    (NativeImplId::InStrRev, 4),
-    (NativeImplId::LCase, 1),
-    (NativeImplId::UCase, 1),
-    (NativeImplId::Split, 4),
-    (NativeImplId::Join, 2),
-    (NativeImplId::Replace, 6),
-    (NativeImplId::Trim, 1),
-    (NativeImplId::LTrim, 1),
-    (NativeImplId::RTrim, 1),
-    (NativeImplId::StrComp, 3),
-    (NativeImplId::Chr, 1),
-    (NativeImplId::Asc, 1),
-    (NativeImplId::Space, 1),
-    (NativeImplId::StringRepeat, 2),
-    (NativeImplId::StrReverse, 1),
-    (NativeImplId::StrConv, 3),
-    (NativeImplId::Format, 4),
-    (NativeImplId::Filter, 4),
-];
 
 fn build() -> Bundle {
     let specs = [
@@ -119,7 +80,7 @@ fn build() -> Bundle {
         },
     ];
 
-    let mut procedures = Vec::with_capacity(specs.len() + STRINGS_FUNCS.len());
+    let mut procedures = Vec::with_capacity(specs.len() + NativeImplId::ALL.len());
     let mut methods = Vec::with_capacity(specs.len());
     for spec in &specs {
         let proc = procedures.len();
@@ -157,16 +118,23 @@ fn build() -> Bundle {
         target: ExportTarget::Class(0),
     }];
 
-    // The `Strings` library module: each function is a native-bodied module proc
-    // (a `NativeBody::Library` body run through `oxvba-lib`), exported as a
-    // `ModuleFunc` so the binder's `ExternMember { has_receiver: false }`
-    // resolution links to it cross-bundle. The exported member name is the id's
-    // canonical name (`NativeImplId::strings_member_name`), shared with the binder
-    // so an import token matches this export token exactly.
-    for &(id, param_count) in STRINGS_FUNCS {
-        let member = id
-            .strings_member_name()
-            .expect("STRINGS_FUNCS lists only named Strings ids");
+    // The migrated library modules (`Strings`, `Math`, `DateTime`, `Conversion`,
+    // `Random`, `Financial`): each function is a native-bodied module proc (a
+    // `NativeBody::Library` body run through `oxvba-lib`), exported as a `ModuleFunc`
+    // so the binder's `ExternMember { has_receiver: false }` resolution links to it
+    // cross-bundle. The `(module, member)` location and the export's member name
+    // come from the single source of truth `NativeImplId::library_member`, shared
+    // with the binder so an import token matches this export token exactly. We
+    // iterate `NativeImplId::ALL` and keep every id for which `library_member` is
+    // `Some`, so a new migrated id is exported automatically (a drift-guard test
+    // asserts coverage).
+    for &id in NativeImplId::ALL {
+        let Some((module, member)) = id.library_member() else {
+            continue;
+        };
+        // `param_count` is informational for native bodies (the `oxvba-lib` body
+        // reads its arguments positionally), sized at the maximum-arity form.
+        let param_count = id.library_param_count();
         let proc = procedures.len();
         procedures.push(ProcedureDescriptor {
             name: member.to_string(),
@@ -181,7 +149,7 @@ fn build() -> Bundle {
         });
         exports.push(BundleExport {
             token: ExportToken::ModuleFunc {
-                module: STRINGS_MODULE.to_string(),
+                module: module.to_string(),
                 member: member.to_string(),
                 kind: ProjectMemberKind::Method,
             },
@@ -232,62 +200,58 @@ mod tests {
         }
     }
 
-    /// `STRINGS_FUNCS` must list every named `Strings` library id (so the bundle
-    /// exports the whole module and the binder's `ExternMember` route always
-    /// resolves). The only `Strings` ids without a bundle export are `MidStmt` (the
-    /// assignment-statement form) and `Like` (the operator) — both name-less.
+    /// The migrated-module gate: `library_member()` is `Some` for exactly the
+    /// `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial` ids (minus the
+    /// name-less `MidStmt`/`Like`), and `None` for every other module — so the
+    /// non-migrated surface (`Information` special forms + predicates, `FileIo`,
+    /// `Interaction`, `Diagnostics`, `Collection`) keeps the `Native` route.
     #[test]
-    fn strings_exports_cover_module() {
-        use crate::native::LibraryModule;
-        let listed: std::collections::HashSet<NativeImplId> =
-            STRINGS_FUNCS.iter().map(|&(id, _)| id).collect();
+    fn library_member_covers_exactly_the_migrated_modules() {
+        use crate::native::LibraryModule as M;
         for &id in NativeImplId::ALL {
-            if id.module() != LibraryModule::Strings {
-                continue;
-            }
-            match id.strings_member_name() {
-                // A named Strings function must be exported by the bundle.
-                Some(_) => assert!(
-                    listed.contains(&id),
-                    "named Strings id {id:?} is missing from STRINGS_FUNCS"
-                ),
-                // MidStmt / Like are intentionally not bundle members.
-                None => assert!(
-                    matches!(id, NativeImplId::MidStmt | NativeImplId::Like),
-                    "unexpected name-less Strings id {id:?}"
-                ),
-            }
+            let migrated = matches!(
+                id.module(),
+                M::Strings | M::Math | M::DateTime | M::Conversion | M::Random | M::Financial
+            ) && !matches!(id, NativeImplId::MidStmt | NativeImplId::Like);
+            assert_eq!(
+                id.library_member().is_some(),
+                migrated,
+                "library_member({id:?}) disagrees with the migrated-module set",
+            );
         }
     }
 
-    /// Every `Strings` function is exported as a `ModuleFunc` whose target proc has
-    /// a `NativeBody::Library` body, so a cross-bundle `CallExtern` reaches the
-    /// `oxvba-lib` body (the route the binder now lowers these calls to).
+    /// Drift-guard: every migrated id (`library_member()` is `Some`) is exported by
+    /// the bundle as a `ModuleFunc` at its `(module, member)` location, targeting a
+    /// proc with a `NativeBody::Library` body — so a cross-bundle `CallExtern`
+    /// reaches the `oxvba-lib` body (the route the binder now lowers these calls to).
     #[test]
-    fn strings_funcs_are_native_library_module_procs() {
+    fn migrated_funcs_are_native_library_module_procs() {
         let b = vba_library_bundle();
-        for &(id, _) in STRINGS_FUNCS {
-            let member = id.strings_member_name().unwrap();
+        for &id in NativeImplId::ALL {
+            let Some((module, member)) = id.library_member() else {
+                continue;
+            };
             let export = b
                 .exports
                 .iter()
                 .find(|e| {
                     matches!(
                         &e.token,
-                        ExportToken::ModuleFunc { module, member: m, kind }
-                            if module == "Strings"
+                        ExportToken::ModuleFunc { module: owner, member: m, kind }
+                            if owner == module
                                 && m.eq_ignore_ascii_case(member)
                                 && *kind == ProjectMemberKind::Method
                     )
                 })
-                .unwrap_or_else(|| panic!("missing Strings export for {id:?}"));
+                .unwrap_or_else(|| panic!("missing {module} export for {id:?}"));
             let ExportTarget::Proc(proc) = export.target else {
-                panic!("Strings export {id:?} must target a proc");
+                panic!("library export {id:?} must target a proc");
             };
             assert_eq!(
                 b.procedures[proc].native,
                 Some(NativeBody::Library(id)),
-                "Strings export {id:?} must have a NativeBody::Library body",
+                "library export {id:?} must have a NativeBody::Library body",
             );
         }
     }

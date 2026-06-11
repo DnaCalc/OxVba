@@ -298,6 +298,30 @@ mod tests {
     }
 
     #[test]
+    fn migrated_library_member_name_matches_catalog_primary() {
+        // The `VBA`-bundle export/import name for a migrated id
+        // (`NativeImplId::library_member`) must equal the catalog's *primary* (first)
+        // user-facing name — the name `name_to_intrinsic` maps a source identifier to.
+        // If they diverged, a user-typed call (`Abs(x)`) would resolve to the id but
+        // the binder would import a member name the bundle never exported, breaking
+        // the cross-bundle link. This binds the two hand-written name sources (which
+        // live in different crates) together.
+        for id in ALL_INTRINSICS.iter().copied() {
+            let Some((_module, member)) = id.library_member() else {
+                continue;
+            };
+            let primary = intrinsic_entry(id)
+                .names
+                .first()
+                .unwrap_or_else(|| panic!("migrated id {id:?} has no catalog name"));
+            assert!(
+                member.eq_ignore_ascii_case(primary),
+                "library_member name {member:?} != catalog primary {primary:?} for {id:?}",
+            );
+        }
+    }
+
+    #[test]
     fn quirky_call_shapes_are_classified() {
         assert_eq!(
             intrinsic_entry(NativeImplId::MidStmt).call_shape,

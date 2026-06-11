@@ -577,6 +577,46 @@ fn strings_mid_without_length_takes_remainder() {
 }
 
 #[test]
+fn math_datetime_conversion_functions_route_through_vba_bundle() {
+    // Math/DateTime/Conversion/Financial functions are now native-bodied procs of
+    // the synthetic `VBA` bundle (`ExternMember { has_receiver: false }` →
+    // `ModuleFunc` → `Op::CallExtern` → `NativeBody::Library`), exactly like the
+    // `Strings` slice. Behaviour must be identical to the old `Native` route across
+    // the representative shapes: single-arg (Abs), banker's rounding with an omitted
+    // optional digits arg (Round), base conversion (Hex), string→number coercion
+    // (CLng), and a 3-arg constructor round-tripped through accessors
+    // (DateSerial → Year/Month/Day).
+    let snap = run("Sub Main()\n\
+         Dim a As Long\nDim r As Double\nDim h As String\nDim n As Long\n\
+         Dim d As Date\nDim y As Long\nDim mo As Long\nDim dy As Long\n\
+         a = Abs(-5)\n\
+         r = Round(2.5)\n\
+         h = Hex(255)\n\
+         n = CLng(\"42\")\n\
+         d = DateSerial(2021, 7, 15)\n\
+         y = Year(d)\n\
+         mo = Month(d)\n\
+         dy = Day(d)\n\
+         End Sub");
+    // Abs(-5)==5, CLng("42")==42, Year==2021, Month==7, Day==15.
+    assert_eq!(
+        snap.iter().filter_map(Variant::as_i32).collect::<Vec<_>>(),
+        vec![5, 42, 2021, 7, 15],
+        "integer-valued results: {snap:?}"
+    );
+    // Round(2.5)==2 (banker's rounding to even), as a Double.
+    assert!(
+        snap.iter().any(|v| v.as_f64() == Some(2.0)),
+        "Round(2.5) must be 2.0 (banker's): {snap:?}"
+    );
+    // Hex(255)=="FF".
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("FF"))),
+        "Hex(255) must be \"FF\": {snap:?}"
+    );
+}
+
+#[test]
 fn like_charlist_ranges_negation_and_literal_bracket() {
     // `[charlist]` with `a-z` ranges, `!` negation, and a literal `]` first.
     let snap = run("Sub Main()\n\

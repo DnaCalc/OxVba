@@ -160,8 +160,11 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     assert!(
         matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
-    // A non-Strings intrinsic keeps the bespoke `Native` route.
-    assert!(matches!(p.resolve("Abs"), Some(b) if matches!(b.route, DispatchRoute::Native(_))));
+    // A non-migrated intrinsic (an `Information` predicate) keeps the bespoke
+    // `Native` route.
+    assert!(
+        matches!(p.resolve("IsNumeric"), Some(b) if matches!(b.route, DispatchRoute::Native(_)))
+    );
     // A `Strings`-module library function now resolves as a cross-bundle member of
     // the synthetic `VBA` unit (no receiver), like a referenced free function.
     assert!(matches!(
@@ -170,6 +173,16 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
             &b.route,
             DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
                 if unit == "VBA" && owner == "Strings" && member == "Len"
+        )
+    ));
+    // A `Math` function now also routes cross-bundle to the `VBA` unit's `Math`
+    // module, proving the migration generalized beyond `Strings`.
+    assert!(matches!(
+        p.resolve("Abs"),
+        Some(b) if matches!(
+            &b.route,
+            DispatchRoute::ExternMember { unit, owner, member, has_receiver: false, .. }
+                if unit == "VBA" && owner == "Math" && member == "Abs"
         )
     ));
     assert!(
@@ -489,11 +502,11 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         env.resolve(&from_global, "vbCrLf"),
         Some(b) if matches!(b.route, DispatchRoute::ConstValue(_))
     ));
-    // A non-Strings intrinsic resolves through the `Native` route; a `Strings`
-    // function resolves cross-bundle to the `VBA` unit — both via the same
-    // source-agnostic provider path.
+    // A non-migrated intrinsic (`IsNumeric`) resolves through the `Native` route; a
+    // migrated function (`Len`, a `Strings` member) resolves cross-bundle to the
+    // `VBA` unit — both via the same source-agnostic provider path.
     assert!(matches!(
-        env.resolve(&from_global, "Abs"),
+        env.resolve(&from_global, "IsNumeric"),
         Some(b) if matches!(b.route, DispatchRoute::Native(_))
     ));
     assert!(matches!(
