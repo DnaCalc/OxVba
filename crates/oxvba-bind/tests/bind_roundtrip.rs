@@ -957,6 +957,107 @@ fn raise_event_byval_param_does_not_write_back() {
     );
 }
 
+// ── COM-source WithEvents: binder emits EventRoutes for a typelib coclass ────
+
+/// Resolve the fixture `OxVba.TestEventServer` typelib through the real fixture
+/// catalog (enabled by the `fixture-typelibs` dev-dep), so the bind test exercises
+/// the genuine event classification (OnSimpleEvent/OnValueChanged/OnPairChanged,
+/// all `Dispatch` path) rather than a hand-rolled blob.
+struct EventServerTypeLibs;
+impl TypeLibResolver for EventServerTypeLibs {
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        let identity = oxvba_com::resolve_known_typelib_identity(request)?;
+        Some(oxvba_com::build_typelib_metadata(&identity))
+    }
+}
+
+#[test]
+fn withevents_com_source_emits_event_route() {
+    // A `WithEvents` field typed as a referenced COM coclass plus a matching
+    // `<field>_<EventName>` handler must produce an `EventRoute` bound to that
+    // handler, keyed on the event's dispid/token (the runtime subscribe key).
+    let main = "Private WithEvents x As OxVba.TestEventServer\n\n\
+                Private Sub x_OnValueChanged(ByVal v As Long)\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Class,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "OxVba_TestEventServer".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("oxvba_testeventserver.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
+
+    // OnValueChanged is event token 2 in the fixture typelib; exactly one route is
+    // emitted (only OnValueChanged has a matching handler) and it targets the
+    // handler proc, keyed on that token.
+    assert_eq!(
+        program.event_routes.len(),
+        1,
+        "exactly one EventRoute (only OnValueChanged has a handler): {:?}",
+        program.event_routes
+    );
+    let route = &program.event_routes[0];
+    assert_eq!(
+        route.event, 2,
+        "route keyed on the OnValueChanged dispid/token"
+    );
+    let handler = &program.procs[route.handler];
+    assert!(
+        handler.name.eq_ignore_ascii_case("x_OnValueChanged"),
+        "route targets the x_OnValueChanged handler, got: {}",
+        handler.name
+    );
+}
+
+#[test]
+fn withevents_com_source_without_handler_emits_no_route() {
+    // A COM-source `WithEvents` field with no matching handler emits no route
+    // (nothing to subscribe).
+    let main = "Private WithEvents x As OxVba.TestEventServer\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Class,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "OxVba_TestEventServer".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("oxvba_testeventserver.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
+    assert!(
+        program.event_routes.is_empty(),
+        "no handler ⇒ no EventRoute: {:?}",
+        program.event_routes
+    );
+}
+
 // ── COM late dispatch + Declare (structural — emit-correct, not run) ─────────
 
 /// The callee of a value, unwrapping a `Coerce` wrapper (an assignment to a typed

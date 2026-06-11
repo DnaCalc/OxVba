@@ -541,14 +541,20 @@ impl WindowsComBridge {
                 prefer_vtable,
             );
         }
+        // A projection-only binding (`native_dispatch == 0`) has no live IDispatch
+        // to name-resolve against; the typelib path above already missed, so there
+        // is nothing left to dispatch on. Return a clean error rather than passing a
+        // null dispatch into GetIDsOfNames (which does not null-check).
+        if binding.native_dispatch == 0 {
+            return Err(WindowsComBridgeDispatchError::Message(format!(
+                "no live IDispatch for late-bound member '{member_name}' (projection-only binding)"
+            )));
+        }
         let dispatch = binding.native_dispatch as *mut RawIDispatch;
         let invoke_result = {
-            // SAFETY: ASSUMPTION — `binding.native_dispatch` is non-zero on this late-bound
-            // name path (the bindings map owns one retained `IDispatch` reference per
-            // native binding, keeping the pointer live for this lookup); a projection-only
-            // binding (native_dispatch == 0) whose member name misses the typelib path
-            // above would pass a null dispatch into GetIDsOfNames, which does not
-            // null-check.
+            // SAFETY: `binding.native_dispatch` is non-zero (guarded just above) on this
+            // late-bound name path (the bindings map owns one retained `IDispatch`
+            // reference per native binding, keeping the pointer live for this lookup).
             let dispid = unsafe { crate::get_dispid_by_name(dispatch, member_name) }
                 .map_err(WindowsComBridgeDispatchError::Message)?;
             let named_arg_dispids = if args.iter().any(|arg| arg.name.is_some()) {
@@ -658,5 +664,43 @@ impl WindowsComBridge {
         invoke_result
             .map(Some)
             .map_err(WindowsComBridgeDispatchError::InvokeFailure)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dynamic_object::DynamicCallArg;
+
+    /// A projection-only binding (`native_dispatch == 0`) has no live IDispatch. A
+    /// late-bound member name that misses the typelib path must return a clean error
+    /// rather than passing a null dispatch into GetIDsOfNames. Uses the fixture
+    /// `OxVba.TestEventServer` typelib (enabled by the test build) and a member name
+    /// it does not export, so the dynamic-name fallback is reached.
+    #[test]
+    fn dynamic_dispatch_on_projection_only_binding_errors_cleanly() {
+        let bridge = WindowsComBridge::new(false);
+        let object = bridge
+            .bind_projection_object(
+                ObjectRef::from_compat_identity(4242),
+                "OxVba.TestEventServer",
+            )
+            .expect("bind projection object for fixture prog id");
+        let request = DynamicCallRequest {
+            object,
+            member: DynamicMemberSelector::Name("NoSuchMember".to_string()),
+            args: Vec::<DynamicCallArg>::new(),
+            call_kind_hint: Some(DynamicCallKind::Method),
+        };
+        let result = bridge.dispatch_invoke_dynamic_variant(&request, false);
+        match result {
+            Err(WindowsComBridgeDispatchError::Message(message)) => {
+                assert!(
+                    message.contains("no live IDispatch") && message.contains("NoSuchMember"),
+                    "expected a clean projection-only error, got: {message}"
+                );
+            }
+            other => panic!("expected a clean Message error, got: {other:?}"),
+        }
     }
 }

@@ -67,6 +67,16 @@ pub trait Provider {
         let _ = recv;
         None
     }
+    /// Enumerate the source events of `recv`'s type, if this provider owns it, as
+    /// `(folded event name, event token/dispid)`. The token is the value the
+    /// runtime keys subscriptions on (it is what `subscribe_event` is called with),
+    /// so a `WithEvents` sink built from this list routes a delivered callback for
+    /// that dispid to its `<field>_<EventName>` handler. Returns `None` when this
+    /// provider does not own the type (so the chain can keep searching).
+    fn source_events(&self, recv: &VarTypeRef) -> Option<Vec<(String, i32)>> {
+        let _ = recv;
+        None
+    }
     /// If `name` is a creatable COM coclass this provider owns, return its
     /// activation ProgID (so `New <coclass>` can lower to `CreateObject`).
     fn resolve_coclass(&self, name: &str) -> Option<String> {
@@ -234,6 +244,18 @@ impl ResolutionEnvironment {
         self.providers
             .iter()
             .find_map(|provider| provider.resolve_default_member(recv))
+    }
+
+    /// Enumerate the source events of a COM coclass named `source_name` (the
+    /// declared type of a `WithEvents` field), as `(folded event name, event
+    /// token/dispid)`. Used by the binder to build `EventRoute`s for a COM-source
+    /// `WithEvents` sink. Returns `None` when no provider owns the type (e.g. it is
+    /// an active/referenced project class, handled by the binder's own branches).
+    pub fn com_source_events(&self, source_name: &str) -> Option<Vec<(String, i32)>> {
+        let recv = VarTypeRef::Object(source_name.to_string());
+        self.providers
+            .iter()
+            .find_map(|provider| provider.source_events(&recv))
     }
 
     pub fn push_provider(&mut self, provider: Box<dyn Provider>) {

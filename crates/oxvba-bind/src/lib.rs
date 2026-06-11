@@ -291,8 +291,12 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
 /// **active** source reads its `Event` symbols + `ids.event_index_of`; a
 /// **referenced** source reads its export surface's `SurfaceEvent`s (whose
 /// `event_id` equals the source bundle's own `event_index_of`, so a sink built here
-/// routes the same id the source's `RaiseEvent` fires). `source_name` may be
-/// project-qualified (`Lib.Clock`).
+/// routes the same id the source's `RaiseEvent` fires). A **COM coclass** source
+/// (a referenced typelib coclass, e.g. `OxVba.TestEventServer`) reads the typelib's
+/// source events via the `ComTypeLibProvider`, whose `event id` is the event's
+/// dispid/token — exactly the value `subscribe_com_events` passes to
+/// `subscribe_event`, so a delivered callback for that dispid routes to the handler.
+/// `source_name` may be project-qualified (`Lib.Clock`).
 fn source_events(
     env: &ResolutionEnvironment,
     ids: &IdAllocator,
@@ -344,6 +348,11 @@ fn source_events(
                 .map(|e| (fold_identifier(&e.name), e.event_id))
                 .collect();
         }
+    }
+    // Referenced COM coclass (a typelib source). The `event id` is the event's
+    // dispid/token — the runtime subscribe/poll key.
+    if let Some(events) = env.com_source_events(source_name) {
+        return events;
     }
     Vec::new()
 }

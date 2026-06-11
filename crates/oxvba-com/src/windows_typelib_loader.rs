@@ -1858,16 +1858,24 @@ unsafe fn extract_events_from_coclass(
             continue;
         }
 
-        // Get the source interface IID
+        // Get the source interface IID and typekind. The typekind selects the event
+        // dispatch path: a `dispinterface` source (TKIND_DISPATCH — the shape Office
+        // event interfaces and our dispinterface fixtures use) delivers events as
+        // late-bound IDispatch::Invoke calls on the sink, so it takes the fully
+        // functional `Dispatch` path (any arity). A true vtable source interface
+        // (TKIND_INTERFACE) takes the `SourceInterface` path. Defaulting an unknown
+        // kind to `Dispatch` keeps the arity-flexible path rather than the
+        // arity-1-only `SourceInterface` one.
         let ref_vtbl = *(ref_info as *const *const ITypeInfoVtbl);
         let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
         let hr = ((*ref_vtbl).get_type_attr)(ref_info, &mut ref_attr);
-        let iid = if hr == COM_S_OK && !ref_attr.is_null() {
+        let (iid, dispatch_path) = if hr == COM_S_OK && !ref_attr.is_null() {
             let iid_str = guid_to_string(&(*ref_attr).guid);
+            let typekind = (*ref_attr).typekind;
             ((*ref_vtbl).release_type_attr)(ref_info, ref_attr);
-            Some(iid_str)
+            (Some(iid_str), source_dispatch_path_for_typekind(typekind))
         } else {
-            None
+            (None, TypeLibEventDispatchPath::Dispatch)
         };
 
         // Walk the source interface functions as events
@@ -1880,7 +1888,7 @@ unsafe fn extract_events_from_coclass(
                     name: member.name,
                     token: member.token,
                     callback_arity: member.parameter_names.len() as u8,
-                    dispatch_path: TypeLibEventDispatchPath::SourceInterface,
+                    dispatch_path,
                     connection_point_iid: iid.clone(),
                     dispatch_member_id: Some(member.token),
                 });
@@ -1889,6 +1897,20 @@ unsafe fn extract_events_from_coclass(
     }
 
     Ok(events)
+}
+
+/// The event dispatch path implied by a source interface's `TYPEKIND`. A
+/// `dispinterface` source (`TKIND_DISPATCH`) delivers events via late-bound
+/// `IDispatch::Invoke` on the sink → the fully functional `Dispatch` path (any
+/// arity). A true vtable source interface (`TKIND_INTERFACE`) → the
+/// `SourceInterface` path. Any other kind falls back to `Dispatch` (the
+/// arity-flexible path) rather than the arity-1-only `SourceInterface`.
+#[cfg(target_os = "windows")]
+fn source_dispatch_path_for_typekind(typekind: u32) -> TypeLibEventDispatchPath {
+    match typekind {
+        TKIND_INTERFACE => TypeLibEventDispatchPath::SourceInterface,
+        _ => TypeLibEventDispatchPath::Dispatch,
+    }
 }
 
 /// Extracts the ProgID for a CoClass from the typelib (for As New support).
@@ -2210,5 +2232,25 @@ mod tests {
             );
         }
         // It's OK if this fails on hosts where stdole registry data is unavailable.
+    }
+
+    #[test]
+    fn source_dispatch_path_classifies_typekind() {
+        // A dispinterface source (TKIND_DISPATCH — Office event interfaces and our
+        // dispinterface fixtures) → the arity-flexible Dispatch path.
+        assert_eq!(
+            source_dispatch_path_for_typekind(TKIND_DISPATCH),
+            TypeLibEventDispatchPath::Dispatch
+        );
+        // A true vtable source interface → the SourceInterface path.
+        assert_eq!(
+            source_dispatch_path_for_typekind(TKIND_INTERFACE),
+            TypeLibEventDispatchPath::SourceInterface
+        );
+        // Any other kind falls back to the arity-flexible Dispatch path.
+        assert_eq!(
+            source_dispatch_path_for_typekind(TKIND_COCLASS),
+            TypeLibEventDispatchPath::Dispatch
+        );
     }
 }

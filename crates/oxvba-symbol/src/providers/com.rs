@@ -104,6 +104,25 @@ impl Provider for ComTypeLibProvider {
             None
         }
     }
+
+    fn source_events(&self, recv: &VarTypeRef) -> Option<Vec<(String, i32)>> {
+        let VarTypeRef::Object(type_name) = recv else {
+            return None;
+        };
+        if !self.owns(type_name) {
+            return None;
+        }
+        // The event `token` is the value the runtime keys subscriptions on (it is
+        // what `subscribe_event` is passed), so the route built from this list
+        // routes a delivered callback for that dispid back to the handler.
+        Some(
+            self.blob
+                .events
+                .iter()
+                .map(|event| (fold_identifier(&event.name), event.token))
+                .collect(),
+        )
+    }
 }
 
 fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata) -> Binding {

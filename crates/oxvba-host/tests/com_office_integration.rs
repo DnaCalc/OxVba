@@ -167,3 +167,40 @@ fn access_late_bound_application_activation() {
         Err(err) => panic!("Access late-bound activation failed: {err}"),
     }
 }
+
+#[test]
+#[ignore = "requires the registered OxVba.TestEventServer COM coclass; run explicitly with --ignored"]
+fn com_source_withevents_handler_fires_through_live_dispatch_sink() {
+    // End-to-end live validation of the COM-source `WithEvents` path: a sink with
+    // a `WithEvents x As OxVba.TestEventServer` field + an `x_OnValueChanged`
+    // handler subscribes to the real coclass's dispinterface event source. Calling
+    // `FireValueChanged 42` makes the server raise `OnValueChanged(42)`, which the
+    // connection-point sink delivers back into the guest handler (the inbound
+    // event pump runs at statement boundaries), landing 42 in a guest global.
+    //
+    // This exercises the binder's COM-source EventRoute emission (Fix A), the live
+    // loader's dispinterface→Dispatch-path classification (Fix B), and the
+    // connection-point Advise/IDispatch-sink runtime together. The headless lane
+    // proves the route + classification in isolation; this proves the live wiring.
+    let source = "Public got As Long\n\
+         Private WithEvents x As OxVba.TestEventServer\n\
+         Sub Main()\n\
+         Set x = New OxVba.TestEventServer\n\
+         x.FireValueChanged 42\n\
+         End Sub\n\
+         Private Sub x_OnValueChanged(ByVal value As Long)\n\
+         got = value\n\
+         End Sub\n";
+    match run_clean(source) {
+        Ok(snap) => {
+            assert!(
+                snap.iter().any(|v| v.as_i32() == Some(42)),
+                "expected the OnValueChanged(42) callback to reach x_OnValueChanged in {snap:?}"
+            );
+        }
+        Err(err) if is_component_absent(&err) => {
+            eprintln!("SKIP: OxVba.TestEventServer not registered: {err}");
+        }
+        Err(err) => panic!("COM-source WithEvents live dispatch failed: {err}"),
+    }
+}
