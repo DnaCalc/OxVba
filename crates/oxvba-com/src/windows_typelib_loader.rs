@@ -414,14 +414,14 @@ fn reg_query_default_string(subkey: &str) -> Result<String, String> {
         ));
     }
 
-    // SAFETY: ASSUMPTION — `key` was opened successfully above (open_status == 0),
-    // so it is a valid HKEY until the RegCloseKey below, and the first
-    // RegQueryValueExW call only sizes the value (null data pointer). The second
-    // call declares the in/out `bytes` as the buffer capacity while `buffer`
-    // actually holds `(bytes / 2) * 2` bytes; this is sound only if the REG_SZ
-    // value's byte length is even (true for well-formed UTF-16 registry strings —
-    // an odd-length value would overstate the capacity by one byte). The API never
-    // writes past the declared capacity (ERROR_MORE_DATA instead).
+    // SAFETY: `key` was opened successfully above (the `open_status != 0` early return is the
+    // only other exit and `key` is never reassigned), so it is a valid HKEY until the
+    // RegCloseKey below. The first RegQueryValueExW call only sizes the value (null data
+    // pointer). For the second call, `bytes` declares the buffer capacity passed to the API,
+    // and the buffer is sized to `ceil(bytes / 2)` u16s so that its byte length always meets or
+    // exceeds the declared `bytes` capacity — even for an odd-length value, the API can never
+    // write past the real allocation. The API writes at most `bytes` bytes (ERROR_MORE_DATA if
+    // the value grew between calls).
     let result = unsafe {
         let mut value_type = 0u32;
         let mut bytes = 0u32;
@@ -442,7 +442,9 @@ fn reg_query_default_string(subkey: &str) -> Result<String, String> {
                 "RegQueryValueExW returned non-string type {value_type} for `HKCR\\{subkey}`"
             ))
         } else {
-            let char_len = usize::try_from(bytes / 2)
+            // Round byte length up to whole u16s so the allocation covers the full declared
+            // `bytes` capacity even when the registry value's byte length is odd.
+            let char_len = usize::try_from(bytes.div_ceil(2))
                 .map_err(|_| format!("registry string too large for `HKCR\\{subkey}`"))?;
             let mut buffer = vec![0u16; char_len];
             let status = RegQueryValueExW(
