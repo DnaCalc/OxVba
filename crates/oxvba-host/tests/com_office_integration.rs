@@ -382,3 +382,53 @@ fn test_event_server_early_bound_ping_returns_42() {
         Err(err) => panic!("OxVba.TestEventServer early-bound Ping failed: {err}"),
     }
 }
+
+#[test]
+#[ignore = "launches the real ACE DAO engine; run explicitly with --ignored"]
+fn dao_early_bound_recordset_field_round_trips() {
+    // Early-bound twin of `dao_late_bound_create_table_insert_query`: a reference to
+    // the ACE DAO typelib (LIBID {4AC9E1DA-5BAD-4AC7-86E3-24F4CDCECA28}, "Microsoft
+    // Office 16.0 Access Database Engine Object Library", typelib version 12.0 — the
+    // registry stores it as the hex key `c.0`) types the receivers (`DAO.DBEngine`,
+    // `DAO.Database`, `DAO.Recordset`, `DAO.Field`). Each member call then resolves to
+    // a dispid and lowers to `EarlyCom{dispid}`, dispatching by dispid through real
+    // IDispatch::Invoke — including the member-return-type threading that lets
+    // `rs.Fields(0).Value` walk `Recordset → Fields → Field → Value`. Creates a
+    // database + table, inserts a row, and reads it back through the typed recordset.
+    let db = TempDbPath::new("dao_early");
+    let references = vec![typelib_ref_by_libid(
+        "DAO",
+        "{4AC9E1DA-5BAD-4AC7-86E3-24F4CDCECA28}",
+        12,
+        0,
+    )];
+    let source = format!(
+        "Public got As Long\n\
+         Sub Main()\n\
+         Dim eng As DAO.DBEngine\n\
+         Set eng = CreateObject(\"DAO.DBEngine.120\")\n\
+         Dim db As DAO.Database\n\
+         Set db = eng.CreateDatabase(\"{path}\", \";LANGID=0x0409;CP=1252;COUNTRY=0\")\n\
+         db.Execute \"CREATE TABLE T (N LONG)\"\n\
+         db.Execute \"INSERT INTO T (N) VALUES (7)\"\n\
+         Dim rs As DAO.Recordset\n\
+         Set rs = db.OpenRecordset(\"SELECT N FROM T\")\n\
+         got = rs.Fields(0).Value\n\
+         rs.Close\n\
+         db.Close\n\
+         End Sub\n",
+        path = db.as_vba_literal()
+    );
+    match run_clean_with_references(&source, references) {
+        Ok(snap) => {
+            assert!(
+                snap.iter().any(|v| v.as_i32() == Some(7)),
+                "expected the early-bound DAO recordset value 7 in {snap:?}"
+            );
+        }
+        Err(err) if is_typelib_absent(&err) => {
+            eprintln!("SKIP: ACE DAO typelib / DAO.DBEngine.120 not registered: {err}");
+        }
+        Err(err) => panic!("DAO early-bound round-trip failed: {err}"),
+    }
+}
