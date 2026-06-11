@@ -37,6 +37,8 @@ pub mod windows_test_dispatch;
 pub mod windows_typelib_loader;
 #[cfg(target_os = "windows")]
 pub mod windows_variant;
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub mod windows_vtable;
 
 pub use dispatch::{ComDispatch, DispatchResult};
 pub use dynamic_object::{

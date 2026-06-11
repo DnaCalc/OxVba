@@ -3438,3 +3438,502 @@ pub unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
         _ => Ok(None),
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// Real custom dual vtable fixture (workset S2)
+//
+// Unlike `raw_oxvba_test_dispatch_vtable_invoke` (a behavioral ORACLE that
+// re-implements members in Rust and never touches a vtable), this is a REAL
+// ABI vtable: a `#[repr(C)]` struct whose first 7 slots are the standard
+// IUnknown+IDispatch slots and whose slots 7.. are `extern "system"` custom
+// dual-interface members. The S2 unit test drives `vtable_invoke` through
+// libffi against these slots to prove the marshaller end-to-end.
+//
+// Slot layout (index → member):
+//   0  QueryInterface          (IUnknown)
+//   1  AddRef                  (IUnknown)
+//   2  Release                 (IUnknown)
+//   3  GetTypeInfoCount        (IDispatch)
+//   4  GetTypeInfo             (IDispatch)
+//   5  GetIDsOfNames           (IDispatch)
+//   6  Invoke                  (IDispatch)
+//   7  get_Count(this, i32*)                       -> HRESULT
+//   8  Exists(this, i32, VARIANT_BOOL*)            -> HRESULT
+//   9  put_Value(this, VARIANT*)                   -> HRESULT
+//   10 Lookup(this, BSTR, IDispatch**)             -> HRESULT
+//   11 raise_error(this, i32*) [SetErrorInfo+fail] -> HRESULT
+// ════════════════════════════════════════════════════════════════════════
+
+/// The custom-interface IErrorInfo IID, `{1CF2B120-547D-101B-8E65-08002B2BD119}`.
+#[cfg(target_os = "windows")]
+const IID_IERRORINFO: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x1CF2_B120,
+    data2: 0x547D,
+    data3: 0x101B,
+    data4: [0x8E, 0x65, 0x08, 0x00, 0x2B, 0x2B, 0xD1, 0x19],
+};
+
+/// Slot indices of the custom dual members (for the unit test to call by name).
+pub const DUAL_SLOT_GET_COUNT: u16 = 7;
+pub const DUAL_SLOT_EXISTS: u16 = 8;
+pub const DUAL_SLOT_PUT_VALUE: u16 = 9;
+pub const DUAL_SLOT_LOOKUP: u16 = 10;
+pub const DUAL_SLOT_RAISE_ERROR: u16 = 11;
+
+/// Source/Description the `raise_error` slot installs via `SetErrorInfo`, for
+/// the unit test to assert it surfaces through `ComInvokeExceptionInfo`.
+pub const DUAL_RAISE_ERROR_SOURCE: &str = "OxVba.DualFixture";
+pub const DUAL_RAISE_ERROR_DESCRIPTION: &str = "controlled vtable error via SetErrorInfo";
+/// The failure HRESULT `raise_error` returns (DISP_E_EXCEPTION).
+#[cfg(target_os = "windows")]
+pub const DUAL_RAISE_ERROR_HRESULT: i32 = COM_DISP_E_EXCEPTION;
+
+#[cfg(target_os = "windows")]
+// SAFETY: oleaut32 export transcribed with the stdcall `system` ABI;
+// SetErrorInfo installs the thread's current error object (or clears it on a
+// null pointer). The call site passes a live IErrorInfo it owns one ref of.
+unsafe extern "system" {
+    fn SetErrorInfo(dwreserved: u32, perrinfo: *mut core::ffi::c_void) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawDualVtbl {
+    /// The 7 standard IUnknown+IDispatch slots (indices 0..=6).
+    dispatch: RawIDispatchVtbl,
+    /// slot 7
+    get_count: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut i32) -> i32,
+    /// slot 8
+    exists: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        key: i32,
+        out: *mut VARIANT_BOOL,
+    ) -> i32,
+    /// slot 9
+    put_value: unsafe extern "system" fn(this: *mut core::ffi::c_void, value: *mut VARIANT) -> i32,
+    /// slot 10
+    lookup: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        key: windows_sys::core::BSTR,
+        out: *mut *mut RawIDispatch,
+    ) -> i32,
+    /// slot 11
+    raise_error: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut i32) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaDualObject {
+    vtbl: *const RawDualVtbl,
+    ref_count: AtomicU32,
+    /// Last value stashed by `put_Value`, so the unit test can round-trip it.
+    last_put_value: AtomicI32,
+}
+
+#[cfg(target_os = "windows")]
+static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
+    dispatch: RawIDispatchVtbl {
+        unknown: RawIUnknownVtbl {
+            query_interface: oxvba_dual_query_interface,
+            add_ref: oxvba_dual_add_ref,
+            release: oxvba_dual_release,
+        },
+        get_type_info_count: oxvba_dual_get_type_info_count,
+        get_type_info: oxvba_dual_get_type_info,
+        get_ids_of_names: oxvba_dual_get_ids_of_names,
+        invoke: oxvba_dual_invoke,
+    },
+    get_count: oxvba_dual_get_count,
+    exists: oxvba_dual_exists,
+    put_value: oxvba_dual_put_value,
+    lookup: oxvba_dual_lookup,
+    raise_error: oxvba_dual_raise_error,
+};
+
+/// Construct the real custom dual-vtable fixture object. Returns the `this`
+/// pointer (a `*const *const fnptr` whose vtable is [`OXVBA_DUAL_VTBL`]) with one
+/// reference; release it with `oxvba_dual_release` (slot 2) or by driving the
+/// vtable. The unit test owns the single reference.
+#[cfg(target_os = "windows")]
+pub fn create_oxvba_dual_vtable_object() -> *mut core::ffi::c_void {
+    let object = Box::new(OxvbaDualObject {
+        vtbl: &OXVBA_DUAL_VTBL,
+        ref_count: AtomicU32::new(1),
+        last_put_value: AtomicI32::new(0),
+    });
+    Box::into_raw(object).cast::<core::ffi::c_void>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_dual(this: *mut core::ffi::c_void) -> *mut OxvbaDualObject {
+    this.cast::<OxvbaDualObject>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if riid.is_null() {
+        return COM_E_NOINTERFACE;
+    }
+    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IDISPATCH) {
+        *ppv = this;
+        let _ = oxvba_dual_add_ref(this);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_dual(this);
+    (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_release(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_dual(this);
+    let remaining = (*owner).ref_count.fetch_sub(1, Ordering::AcqRel) - 1;
+    if remaining == 0 {
+        drop(Box::from_raw(owner));
+    }
+    remaining
+}
+
+// The IDispatch slots are present so the layout matches a real dual interface,
+// but the S2 marshaller calls the custom slots directly; these are minimal.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_type_info_count(
+    _this: *mut core::ffi::c_void,
+    pctinfo: *mut u32,
+) -> i32 {
+    if !pctinfo.is_null() {
+        *pctinfo = 0;
+    }
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_type_info(
+    _this: *mut core::ffi::c_void,
+    _itinfo: u32,
+    _lcid: u32,
+    pptinfo: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if !pptinfo.is_null() {
+        *pptinfo = std::ptr::null_mut();
+    }
+    COM_E_NOTIMPL
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_ids_of_names(
+    _this: *mut core::ffi::c_void,
+    _riid: *const windows_sys::core::GUID,
+    _names: *mut *mut u16,
+    _count: u32,
+    _lcid: u32,
+    _dispids: *mut i32,
+) -> i32 {
+    COM_DISP_E_UNKNOWNNAME
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_invoke(
+    _this: *mut core::ffi::c_void,
+    _dispid: i32,
+    _riid: *const windows_sys::core::GUID,
+    _lcid: u32,
+    _flags: u16,
+    _params: *mut DISPPARAMS,
+    _result: *mut VARIANT,
+    _excep: *mut EXCEPINFO,
+    _arg_err: *mut u32,
+) -> i32 {
+    // The dual fixture is exercised via its vtable slots, not Invoke.
+    COM_DISP_E_MEMBERNOTFOUND
+}
+
+// ── Custom dual-interface slots (indices 7..) ──
+
+/// slot 7: `get_Count(this, [out,retval] i32*)` — the simplest member; proves
+/// this-ptr + out-cell + HRESULT + slot-index addressing in isolation.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_count(
+    _this: *mut core::ffi::c_void,
+    out: *mut i32,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = 7;
+    COM_S_OK
+}
+
+/// slot 8: `Exists(this, i32 key, [out,retval] VARIANT_BOOL*)`.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_exists(
+    _this: *mut core::ffi::c_void,
+    key: i32,
+    out: *mut VARIANT_BOOL,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = if key == 42 { -1 } else { 0 };
+    COM_S_OK
+}
+
+/// slot 9: `put_Value(this, [in] VARIANT*)` — stashes the i32 payload so the
+/// test can round-trip it via `get_Count`-style read or the returned status.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_put_value(
+    this: *mut core::ffi::c_void,
+    value: *mut VARIANT,
+) -> i32 {
+    if value.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let owner = as_oxvba_dual(this);
+    match com_variant_to_com_value(&*value) {
+        Ok(ComValue::I32(v)) => {
+            (*owner).last_put_value.store(v, Ordering::Release);
+            COM_S_OK
+        }
+        Ok(_) => COM_DISP_E_TYPEMISMATCH,
+        Err(_) => COM_DISP_E_TYPEMISMATCH,
+    }
+}
+
+/// slot 10: `Lookup(this, [in] BSTR key, [out,retval] IDispatch**)` — returns a
+/// fresh `OxVba.TestDispatch` object (AddRef'd) when the key is non-empty.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_lookup(
+    _this: *mut core::ffi::c_void,
+    key: windows_sys::core::BSTR,
+    out: *mut *mut RawIDispatch,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = std::ptr::null_mut();
+    if key.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    // create_oxvba_test_dispatch returns a fresh object with one reference; the
+    // [out,retval] convention transfers that reference to the caller.
+    *out = create_oxvba_test_dispatch();
+    COM_S_OK
+}
+
+/// slot 11: `raise_error(this, [out,retval] i32*)` — installs a rich
+/// IErrorInfo via SetErrorInfo, then returns a failure HRESULT (the out-cell is
+/// left zeroed; the caller must not read it on failure).
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_raise_error(
+    _this: *mut core::ffi::c_void,
+    out: *mut i32,
+) -> i32 {
+    if !out.is_null() {
+        *out = 0;
+    }
+    let errinfo =
+        create_oxvba_dual_error_info(DUAL_RAISE_ERROR_SOURCE, DUAL_RAISE_ERROR_DESCRIPTION);
+    let _ = SetErrorInfo(0, errinfo.cast::<core::ffi::c_void>());
+    DUAL_RAISE_ERROR_HRESULT
+}
+
+// ── Minimal IErrorInfo implementation for the raise_error slot ──
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawErrorInfoVtbl {
+    query_interface: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        riid: *const windows_sys::core::GUID,
+        ppv: *mut *mut core::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
+    get_guid: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pguid: *mut windows_sys::core::GUID,
+    ) -> i32,
+    get_source: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pbstr: *mut windows_sys::core::BSTR,
+    ) -> i32,
+    get_description: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pbstr: *mut windows_sys::core::BSTR,
+    ) -> i32,
+    get_help_file: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pbstr: *mut windows_sys::core::BSTR,
+    ) -> i32,
+    get_help_context: unsafe extern "system" fn(this: *mut core::ffi::c_void, pdw: *mut u32) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaDualErrorInfo {
+    vtbl: *const RawErrorInfoVtbl,
+    ref_count: AtomicU32,
+    source: Vec<u16>,
+    description: Vec<u16>,
+}
+
+#[cfg(target_os = "windows")]
+static OXVBA_DUAL_ERRORINFO_VTBL: RawErrorInfoVtbl = RawErrorInfoVtbl {
+    query_interface: oxvba_dual_errorinfo_query_interface,
+    add_ref: oxvba_dual_errorinfo_add_ref,
+    release: oxvba_dual_errorinfo_release,
+    get_guid: oxvba_dual_errorinfo_get_guid,
+    get_source: oxvba_dual_errorinfo_get_source,
+    get_description: oxvba_dual_errorinfo_get_description,
+    get_help_file: oxvba_dual_errorinfo_get_help_file,
+    get_help_context: oxvba_dual_errorinfo_get_help_context,
+};
+
+#[cfg(target_os = "windows")]
+fn create_oxvba_dual_error_info(source: &str, description: &str) -> *mut core::ffi::c_void {
+    let object = Box::new(OxvbaDualErrorInfo {
+        vtbl: &OXVBA_DUAL_ERRORINFO_VTBL,
+        ref_count: AtomicU32::new(1),
+        source: source.encode_utf16().chain(std::iter::once(0)).collect(),
+        description: description
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect(),
+    });
+    Box::into_raw(object).cast::<core::ffi::c_void>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_dual_error_info(this: *mut core::ffi::c_void) -> *mut OxvbaDualErrorInfo {
+    this.cast::<OxvbaDualErrorInfo>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if riid.is_null() {
+        return COM_E_NOINTERFACE;
+    }
+    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IERRORINFO) {
+        *ppv = this;
+        let _ = oxvba_dual_errorinfo_add_ref(this);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_dual_error_info(this);
+    (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_release(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_dual_error_info(this);
+    let remaining = (*owner).ref_count.fetch_sub(1, Ordering::AcqRel) - 1;
+    if remaining == 0 {
+        drop(Box::from_raw(owner));
+    }
+    remaining
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_get_guid(
+    _this: *mut core::ffi::c_void,
+    pguid: *mut windows_sys::core::GUID,
+) -> i32 {
+    if !pguid.is_null() {
+        *pguid = IID_NULL;
+    }
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_get_source(
+    this: *mut core::ffi::c_void,
+    pbstr: *mut windows_sys::core::BSTR,
+) -> i32 {
+    if pbstr.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let owner = as_oxvba_dual_error_info(this);
+    *pbstr = SysAllocString((*owner).source.as_ptr());
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_get_description(
+    this: *mut core::ffi::c_void,
+    pbstr: *mut windows_sys::core::BSTR,
+) -> i32 {
+    if pbstr.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let owner = as_oxvba_dual_error_info(this);
+    *pbstr = SysAllocString((*owner).description.as_ptr());
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_get_help_file(
+    _this: *mut core::ffi::c_void,
+    pbstr: *mut windows_sys::core::BSTR,
+) -> i32 {
+    if !pbstr.is_null() {
+        *pbstr = std::ptr::null_mut();
+    }
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_errorinfo_get_help_context(
+    _this: *mut core::ffi::c_void,
+    pdw: *mut u32,
+) -> i32 {
+    if !pdw.is_null() {
+        *pdw = 0;
+    }
+    COM_S_OK
+}

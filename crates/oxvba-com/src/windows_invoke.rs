@@ -224,7 +224,14 @@ fn sanitize_error_text(text: &str) -> String {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn bstr_to_string_and_free(bstr: windows_sys::core::BSTR) -> Option<String> {
+/// Read a callee-transferred BSTR into an owned `String` and free it with
+/// `SysFreeString` (we own the transferred string). Shared with the vtable
+/// marshaller, which has the same retval-BSTR ownership shape.
+///
+/// # Safety
+/// `bstr`, when non-null, must be a BSTR whose ownership has transferred to us
+/// (so freeing it exactly once here is correct) and which is otherwise valid.
+pub(crate) unsafe fn bstr_to_string_and_free(bstr: windows_sys::core::BSTR) -> Option<String> {
     if bstr.is_null() {
         return None;
     }

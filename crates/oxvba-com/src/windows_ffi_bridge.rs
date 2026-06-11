@@ -123,8 +123,24 @@ fn x64_return_type(return_type: FfiReturnType) -> LibffiType {
     }
 }
 
+/// Shared libffi CIF-construction-and-call core, used by both the `Declare`
+/// stdcall path ([`invoke_stdcall_x64`]) and the COM vtable this-call path
+/// ([`crate::windows_vtable::vtable_invoke`]). Builds a Win64 CIF from each
+/// argument's runtime type and calls `proc_addr` with a typed return, packing
+/// the result into the raw `i64` carrier the callers interpret per
+/// `return_type` (floats via `to_bits`, pointers via `as isize`).
+///
+/// # Safety
+/// `proc_addr` must be a callable function pointer whose true ABI matches the
+/// CIF this builds from `args` + `return_type`; every pointer-bearing argument
+/// (string buffers borrowed from `args`, `Pointer` pins) must stay alive for the
+/// duration of the call. The caller upholds the ABI/signature contract.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-unsafe fn invoke_stdcall_x64(proc_addr: usize, args: &[FfiArg], return_type: FfiReturnType) -> i64 {
+pub(crate) unsafe fn call_via_libffi(
+    proc_addr: usize,
+    args: &[FfiArg],
+    return_type: FfiReturnType,
+) -> i64 {
     let prepared_args: Vec<PreparedX64Arg> =
         args.iter().map(PreparedX64Arg::from_ffi_arg).collect();
     let cif = LibffiCif::new(
@@ -148,6 +164,15 @@ unsafe fn invoke_stdcall_x64(proc_addr: usize, args: &[FfiArg], return_type: Ffi
         FfiReturnType::LongLong => cif.call::<i64>(code_ptr, &ffi_args),
         FfiReturnType::LongPtr => cif.call::<*mut c_void>(code_ptr, &ffi_args) as isize as i64,
     }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn invoke_stdcall_x64(proc_addr: usize, args: &[FfiArg], return_type: FfiReturnType) -> i64 {
+    // SAFETY: forwarded caller contract — invoke_stdcall_x64's own callers
+    // uphold the ABI/signature + argument-lifetime invariants call_via_libffi
+    // requires (documented on its `# Safety`); this is a pure extraction of the
+    // former inline body with identical behavior.
+    unsafe { call_via_libffi(proc_addr, args, return_type) }
 }
 
 // ══════════════════════════════════════════════════════════════════════
