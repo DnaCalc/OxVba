@@ -791,7 +791,7 @@ impl<'a> ProcLower<'a> {
     /// `o.Item.N` works without a separate per-field allocation. (A UDT field
     /// that is an *array* of UDT stays unallocated until `ReDim`; materializing
     /// its elements as records is a separate runtime feature.)
-    fn udt_record_init(&mut self, name: &str) -> Result<Vec<CoreStmt>, BindError> {
+    pub(crate) fn udt_record_init(&mut self, name: &str) -> Result<Vec<CoreStmt>, BindError> {
         let Some(sym) = self.resolve(name).and_then(|b| b.symbol) else {
             return Ok(Vec::new());
         };

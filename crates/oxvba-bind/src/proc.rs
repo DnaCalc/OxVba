@@ -4,6 +4,9 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::coreir::CoreStmt;
+use oxvba_symbol::manifest::ModuleKind;
+use oxvba_symbol::model::{SymbolImpl, SymbolKind, fold_identifier};
+use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
@@ -32,6 +35,16 @@ impl<'a> Lower<'a> {
         let mut pl = self.proc_lower(entry_info);
         let mut out = Vec::new();
         for module in self.env.modules() {
+            // Class-module declarations are per-instance *fields*, not bundle
+            // globals: a `Private p As SomeUdt` resolves only through `Me` (a
+            // `CorePlace::Field`), which the entry proc's frame can't reach
+            // (`me_local = None`). Binding them here against the entry context
+            // would fault `"… is not a variable"`. Each class field's default
+            // record-init is emitted per-instance into its `Class_Initialize`
+            // prologue instead (see `class_field_record_inits`).
+            if module.module_kind == ModuleKind::Class {
+                continue;
+            }
             for node in module.syntax.child_nodes() {
                 if node.kind() == SyntaxKind::DimStmt {
                     out.extend(pl.bind_dim(node)?);
@@ -70,15 +83,85 @@ impl<'a> Lower<'a> {
         let mut pl = self.proc_lower(info);
         match decl.body_block() {
             Some(block) => {
+                // A class's `Class_Initialize` runs once per instance, before any
+                // user code: prepend the default record-init of each per-instance
+                // UDT-typed field (`Private m_Results As OcrResults`), resolved in
+                // this member's frame (where `Me` exists), so the scalar UDT field
+                // is a default record rather than `Empty`.
+                let mut stmts = pl.class_field_record_inits()?;
                 // VBA hoists declarations: a fixed-size array `Dim` allocates once at
                 // proc entry, before any statement (so a `Dim` in a loop or after its
                 // first use still works), then the body runs.
-                let mut stmts = pl.collect_fixed_array_inits(block)?;
+                stmts.extend(pl.collect_fixed_array_inits(block)?);
                 stmts.extend(pl.bind_block(block)?);
                 Ok(stmts)
             }
             None => Ok(Vec::new()),
         }
+    }
+}
+
+impl<'a> ProcLower<'a> {
+    /// The per-instance default record-init statements for this proc, when it is a
+    /// class's `Class_Initialize`: one `NewRecord` (recursing into nested scalar-UDT
+    /// subfields) per module-level UDT-typed instance field. Empty for any other
+    /// proc — including a class proc that is not `Class_Initialize`, and a class with
+    /// no UDT fields.
+    ///
+    /// These are emitted here (not as bundle globals) because a class field is
+    /// reached through `Me` (`CorePlace::Field`), which only exists inside a class
+    /// member's frame. Fields are visited in symbol order (stable) and resolved by
+    /// name in this member's context, so `place_by_name` returns the field place.
+    fn class_field_record_inits(&mut self) -> Result<Vec<CoreStmt>, BindError> {
+        // Only a class's `Class_Initialize` materializes instance fields.
+        if self.info.class_name.is_none()
+            || !fold_identifier(&self.info.name).eq("class_initialize")
+        {
+            return Ok(Vec::new());
+        }
+        // The class field symbols live in the module scope (the proc scope's parent).
+        let Some(module_scope) = self
+            .g
+            .env
+            .symbols
+            .scopes()
+            .iter()
+            .find(|s| s.id == self.info.proc_scope)
+            .and_then(|s| s.parent)
+        else {
+            return Ok(Vec::new());
+        };
+        // Collect (folded field name, declared type) for each module-level Field, so
+        // the symbol-table borrow is released before binding (which borrows `self`).
+        let fields: Vec<String> = self
+            .g
+            .env
+            .symbols
+            .symbols_in_scope(module_scope)
+            .map_err(|e| BindError::Malformed(format!("{e:?}")))?
+            .into_iter()
+            .filter_map(|sym_id| {
+                let sym = self.g.env.symbols.symbol(sym_id)?;
+                if sym.kind != SymbolKind::Field {
+                    return None;
+                }
+                let SymbolImpl::DeclaredType(ty) = &sym.imp else {
+                    return None;
+                };
+                // Only scalar UDT fields need a default record; array fields stay
+                // unallocated until `ReDim` (their element materialization is a
+                // separate runtime feature).
+                if !matches!(self.g.resolve_udt_type(ty.clone()), VarTypeRef::Udt(_)) {
+                    return None;
+                }
+                Some(self.g.env.symbols.name(sym.name)?.first_spelling.clone())
+            })
+            .collect();
+        let mut out = Vec::new();
+        for name in fields {
+            out.extend(self.udt_record_init(&name)?);
+        }
+        Ok(out)
     }
 }
 

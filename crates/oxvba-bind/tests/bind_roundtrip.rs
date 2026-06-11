@@ -957,6 +957,77 @@ fn raise_event_byval_param_does_not_write_back() {
     );
 }
 
+// ── Class-module UDT fields: per-instance default record-init ────────────────
+
+#[test]
+fn class_udt_field_initializes_and_round_trips() {
+    // A class module with a scalar UDT field (`Private p As Point`) must bind
+    // without faulting `"is not a variable"` (the field resolves through `Me`,
+    // unreachable from the entry proc's frame — its default record-init is
+    // emitted per-instance into `Class_Initialize`). At runtime the field is a
+    // default record, so writing/reading a sub-field round-trips.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Set b = New Box\n\
+                \x20   b.SetX 42\n    r = b.GetX\nEnd Sub\n";
+    let class = "Private Type Point\n  X As Long\n  Y As Long\nEnd Type\n\
+                 Private p As Point\n\n\
+                 Private Sub Class_Initialize()\n    p.Y = 0\nEnd Sub\n\n\
+                 Public Sub SetX(ByVal v As Long)\n    p.X = v\nEnd Sub\n\n\
+                 Public Property Get GetX() As Long\n    GetX = p.X\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, class),
+        ]),
+        Some(42.0),
+        "a class scalar-UDT field is a default record, so its sub-field round-trips"
+    );
+}
+
+#[test]
+fn class_with_udt_field_and_no_class_initialize_binds() {
+    // The same shape with *no* `Class_Initialize`: binding must still SKIP the
+    // class field as a bundle global (no `"is not a variable"`). This guards the
+    // bind half — the runtime materialization is the gap below.
+    let main = "Sub Main()\n    Dim b As Box\n    Set b = New Box\nEnd Sub\n";
+    let class = "Private Type Point\n  X As Long\nEnd Type\n\
+                 Private p As Point\n\n\
+                 Public Sub SetX(ByVal v As Long)\n    p.X = v\nEnd Sub\n";
+    // Binds + links + runs (Main never touches the field) without panicking.
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, class),
+        ]),
+        None
+    );
+}
+
+// KNOWN GAP: a class scalar-UDT field whose class has NO `Class_Initialize` is
+// never default-record-initialized (the per-instance record-init is emitted
+// into the `Class_Initialize` prologue; with no such proc there is nowhere to
+// emit it). Writing a sub-field then faults type 13 ("record expected"). The
+// general fix is to SYNTHESIZE a `Class_Initialize` (a new ProcId wired as the
+// class's initialize) when a class with UDT fields has none — a class-build-seam
+// change deferred here. ChibiEx HAS a `Class_Initialize`, so this gap does not
+// affect the acceptance test.
+#[test]
+#[ignore = "no-Class_Initialize UDT-field record-init: synthesize-prologue path deferred"]
+fn class_udt_field_without_class_initialize_round_trips() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Set b = New Box\n\
+                \x20   b.SetX 7\n    r = b.GetX\nEnd Sub\n";
+    let class = "Private Type Point\n  X As Long\nEnd Type\n\
+                 Private p As Point\n\n\
+                 Public Sub SetX(ByVal v As Long)\n    p.X = v\nEnd Sub\n\n\
+                 Public Property Get GetX() As Long\n    GetX = p.X\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, class),
+        ]),
+        Some(7.0)
+    );
+}
+
 // ── COM-source WithEvents: binder emits EventRoutes for a typelib coclass ────
 
 /// Resolve the fixture `OxVba.TestEventServer` typelib through the real fixture

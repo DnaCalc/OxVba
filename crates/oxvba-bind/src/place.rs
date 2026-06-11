@@ -102,10 +102,10 @@ impl<'a> ProcLower<'a> {
         let Some(member) = node.member_name_token().map(|t| t.text) else {
             return Ok(None);
         };
-        let Some(recv_node) = node.member_receiver() else {
-            return Ok(None);
-        };
-        let Ok((base_place, VarTypeRef::Udt(udt))) = self.bind_place(recv_node) else {
+        // The receiver place + UDT type: an explicit `recv.field`, or — for a
+        // leading-dot `.field` inside `With <udt>` — the active With receiver
+        // (whose `place`/`ty` were captured when the `With` object was bound).
+        let Some((base_place, udt)) = self.udt_receiver_place(node)? else {
             return Ok(None);
         };
         let Some((index, field_ty)) = self
@@ -121,6 +121,32 @@ impl<'a> ProcLower<'a> {
             index,
         };
         Ok(Some((place, self.g.resolve_udt_type(field_ty))))
+    }
+
+    /// The receiver place + folded UDT name for a `MemberExpr` whose receiver is a
+    /// UDT value: an explicit `recv.field` (binds `recv` as a place) or a leading-dot
+    /// `.field` inside a `With <udt-value>` block (reuses the active `With` receiver's
+    /// captured place). `None` when the receiver is absent or not a UDT place.
+    fn udt_receiver_place(
+        &mut self,
+        node: SyntaxNode<'_>,
+    ) -> Result<Option<(CorePlace, String)>, BindError> {
+        if node.member_has_leading_dot() {
+            let Some(recv) = self.with_stack.last() else {
+                return Ok(None);
+            };
+            return match (&recv.ty, &recv.place) {
+                (VarTypeRef::Udt(udt), Some(place)) => Ok(Some((place.clone(), udt.clone()))),
+                _ => Ok(None),
+            };
+        }
+        let Some(recv_node) = node.member_receiver() else {
+            return Ok(None);
+        };
+        match self.bind_place(recv_node) {
+            Ok((place, VarTypeRef::Udt(udt))) => Ok(Some((place, udt))),
+            _ => Ok(None),
+        }
     }
 
     /// Bind the index expressions of an `IndexExpr` to a list of values.

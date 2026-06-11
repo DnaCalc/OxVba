@@ -470,8 +470,8 @@ struct Bound {
     value: CoreValue,
     ty: VarTypeRef,
     /// The l-value this expression denotes, when any. Consumed by the
-    /// objects/COM phase (default-member application, `With`/member receivers).
-    #[allow(dead_code)]
+    /// objects/COM phase (default-member application, `With`/member receivers)
+    /// and by `udt_receiver_place` to reach a UDT `With`-receiver's record.
     place: Option<CorePlace>,
 }
 
