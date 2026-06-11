@@ -106,19 +106,23 @@ fn chibiex_class_parses_without_errors() {
 }
 
 #[test]
-#[ignore = "ChibiEx parses fully; binding awaits nested-UDT-array member access \
-            (`udt.arrayField(i).subField`) — see the gap task"]
 fn chibiex_class_binds_and_linearizes() {
     // A `Main` entry that instantiates the class, plus the verbatim ChibiEx
     // class module. (Predefined cond-comp constants select the Win64/VBA7
     // PtrSafe declare branch, matching the 64-bit runtime target.)
     //
-    // STATUS: parses fully and binds past the single-line procs, ByVal
-    // call-args, and `vbNullString`; the remaining bind gap is nested-UDT
-    // array member access — `m_Results.Lines(i).Text`, where `Lines() As
-    // ocrLine` is a dynamic array field of one UDT whose element is another
-    // UDT — plus the `(Not Not arr)` allocation-check idiom. Un-ignore when
-    // the UDT round lands.
+    // STATUS: binds + linearizes cleanly through the clean stack. This is a
+    // front-end acceptance (bind + linearize), NOT a VM run — full execution
+    // needs Windows-native WinRT OCR plus a PDF. The UDT round made it pass:
+    // array-aware UDT field types (`Lines() As ocrLine` ⇒ `Array(ocrLine)`),
+    // per-instance class-field record-init in `Class_Initialize`, and UDT
+    // member access through a `With` receiver (`With m_Results.Lines(i) … .Text`).
+    //
+    // DEFERRED runtime-materialization follow-up (does NOT block bind/linearize):
+    // populating each UDT-array element as a default record after `ReDim` so
+    // `Lines(i).Text` reads back at RUN time, and the `(Not Not arr)` allocation
+    // idiom — both are exercised only by a live OCR run, which this test does not
+    // perform.
     let manifest = SymbolProjectManifest {
         project_name: "ChibiPdf".into(),
         project_kind: ProjectKind::Source,
