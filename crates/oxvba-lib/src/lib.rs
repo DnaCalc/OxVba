@@ -217,6 +217,8 @@ pub fn invoke(
         Like => pure::like(args),
         Chr => pure::chr(args),
         Asc => pure::asc(args),
+        ChrW => pure::chr_w(args),
+        AscW => pure::asc_w(args),
         Space => pure::space(args),
         StringRepeat => pure::string_repeat(args),
         StrReverse => pure::str_reverse(args),

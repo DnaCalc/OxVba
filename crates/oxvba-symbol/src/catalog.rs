@@ -83,8 +83,10 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         RTrim => e(RTrim, &["RTrim", "RTrim$"], sig(1, 1), Ordinary),
         StrComp => e(StrComp, &["StrComp"], sig(2, 3), Ordinary),
         Like => e(Like, &[], sig(2, 2), Ordinary), // the `Like` operator
-        Chr => e(Chr, &["Chr", "Chr$", "ChrW", "ChrW$"], sig(1, 1), Ordinary),
-        Asc => e(Asc, &["Asc", "AscW"], sig(1, 1), Ordinary),
+        Chr => e(Chr, &["Chr", "Chr$"], sig(1, 1), Ordinary),
+        Asc => e(Asc, &["Asc"], sig(1, 1), Ordinary),
+        ChrW => e(ChrW, &["ChrW", "ChrW$"], sig(1, 1), Ordinary),
+        AscW => e(AscW, &["AscW"], sig(1, 1), Ordinary),
         Space => e(Space, &["Space", "Space$"], sig(1, 1), Ordinary),
         StringRepeat => e(StringRepeat, &["String", "String$"], sig(2, 2), Ordinary),
         StrReverse => e(StrReverse, &["StrReverse"], sig(1, 1), Ordinary),

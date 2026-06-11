@@ -655,6 +655,86 @@ fn information_predicates_route_through_vba_bundle() {
 }
 
 #[test]
+fn is_numeric_recognises_numeric_strings() {
+    // `IsNumeric` of a numeric-typed value worked already; the fix makes it also
+    // recognise a STRING that represents a number ("42", "&HFF", "  -1.5e3  ") while
+    // still rejecting non-numeric text ("12a", "abc", "").
+    let snap = run("Public a As Boolean\n\
+         Public b As Boolean\n\
+         Public c As Boolean\n\
+         Public d As Boolean\n\
+         Public e As Boolean\n\
+         Sub Main()\n\
+             a = IsNumeric(\"42\")\n\
+             b = IsNumeric(\"&HFF\")\n\
+             c = IsNumeric(\"  -1.5e3  \")\n\
+             d = IsNumeric(\"12a\")\n\
+             e = IsNumeric(42)\n\
+         End Sub");
+    assert_eq!(
+        snap[0],
+        Variant::from_bool(true),
+        "IsNumeric(\"42\"): {snap:?}"
+    );
+    assert_eq!(
+        snap[1],
+        Variant::from_bool(true),
+        "IsNumeric(\"&HFF\"): {snap:?}"
+    );
+    assert_eq!(
+        snap[2],
+        Variant::from_bool(true),
+        "IsNumeric(\"  -1.5e3  \"): {snap:?}"
+    );
+    assert_eq!(
+        snap[3],
+        Variant::from_bool(false),
+        "IsNumeric(\"12a\"): {snap:?}"
+    );
+    assert_eq!(snap[4], Variant::from_bool(true), "IsNumeric(42): {snap:?}");
+}
+
+#[test]
+fn chr_asc_ansi_distinct_from_chrw_ascw_wide() {
+    // `Chr`/`Asc` are genuine ANSI (Windows-1252); `ChrW`/`AscW` are Unicode-wide.
+    // They agree for ASCII but DIFFER in 128..255: Chr(150) is the CP-1252 en-dash
+    // (U+2013) while ChrW(150) is the raw control char U+0096.
+    let snap = run("Public ansiEq As Boolean\n\
+         Public wideDiffers As Boolean\n\
+         Public ascAnsi As Long\n\
+         Public ascWide As Long\n\
+         Public euro As Long\n\
+         Sub Main()\n\
+             ansiEq = (Chr(150) = ChrW(&H2013))\n\
+             wideDiffers = (ChrW(150) <> Chr(150))\n\
+             ascAnsi = Asc(ChrW(&H2013))\n\
+             ascWide = AscW(ChrW(&H2013))\n\
+             euro = Asc(ChrW(8364))\n\
+         End Sub");
+    assert_eq!(
+        snap[0],
+        Variant::from_bool(true),
+        "Chr(150) == ChrW(0x2013) (CP-1252 en-dash): {snap:?}"
+    );
+    assert_eq!(
+        snap[1],
+        Variant::from_bool(true),
+        "ChrW(150) differs from Chr(150): {snap:?}"
+    );
+    assert_eq!(snap[2].as_i32(), Some(150), "Asc(en-dash) == 150: {snap:?}");
+    assert_eq!(
+        snap[3].as_i32(),
+        Some(8211),
+        "AscW(en-dash) == 8211: {snap:?}"
+    );
+    assert_eq!(
+        snap[4].as_i32(),
+        Some(128),
+        "Asc(€) == 128 (CP-1252): {snap:?}"
+    );
+}
+
+#[test]
 fn filesystem_functions_route_through_vba_bundle() {
     // The `FileIo` by-name FUNCTIONS (`FreeFile`/`CurDir`/`FileLen`/`GetAttr`/
     // `FileDateTime`/`EOF`/`LOF`/`Seek`/`Loc` — catalog `Ordinary`, non-empty names)

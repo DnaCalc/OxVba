@@ -55,8 +55,10 @@ native_impl_ids! {
     RTrim,
     StrComp,
     Like,
-    Chr,
-    Asc,
+    Chr,  // `Chr`/`Chr$` — ANSI (Windows-1252)
+    Asc,  // `Asc` — ANSI (Windows-1252)
+    ChrW, // `ChrW`/`ChrW$` — Unicode-wide
+    AscW, // `AscW` — Unicode-wide
     Space,
     StringRepeat, // `String(n, ch)`
     StrReverse,
@@ -234,8 +236,8 @@ impl NativeImplId {
         use NativeImplId::*;
         match self {
             Len | LenB | Left | Right | Mid | MidStmt | InStr | InStrRev | LCase | UCase
-            | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc
-            | Space | StringRepeat | StrReverse | StrConv | Format | Filter => M::Strings,
+            | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc | ChrW
+            | AscW | Space | StringRepeat | StrReverse | StrConv | Format | Filter => M::Strings,
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
             | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DatePart
@@ -351,6 +353,8 @@ impl NativeImplId {
             StrComp => "StrComp",
             Chr => "Chr",
             Asc => "Asc",
+            ChrW => "ChrW",
+            AscW => "AscW",
             Space => "Space",
             StringRepeat => "String",
             StrReverse => "StrReverse",
@@ -526,7 +530,8 @@ impl NativeImplId {
         use NativeImplId::*;
         match self {
             // ── Strings ──
-            Len | LenB | LCase | UCase | Trim | LTrim | RTrim | Chr | Asc | Space | StrReverse => 1,
+            Len | LenB | LCase | UCase | Trim | LTrim | RTrim | Chr | Asc | ChrW | AscW | Space
+            | StrReverse => 1,
             Left | Right | Join | StringRepeat => 2,
             Mid | StrComp | StrConv => 3,
             InStr | InStrRev | Split | Format | Filter => 4,
