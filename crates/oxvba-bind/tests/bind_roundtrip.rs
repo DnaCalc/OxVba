@@ -1058,6 +1058,56 @@ fn withevents_com_source_without_handler_emits_no_route() {
     );
 }
 
+// ── COM early binding: typed receiver lowers a member call to EarlyCom{dispid} ──
+
+#[test]
+fn typed_com_receiver_member_call_lowers_to_early_com() {
+    // A receiver typed as a referenced COM coclass (`Dim s As OxVba.TestEventServer`)
+    // resolves its member against the real fixture typelib, so `s.Ping()` lowers to an
+    // early-bound dispatch keyed on Ping's dispid (104 in the fixture) — NOT a
+    // by-name LateDispatch (the untyped-Object default). This proves the whole
+    // early-bind lowering against a genuine typelib blob, headlessly.
+    let main = "Sub Main()\n    Dim s As OxVba.TestEventServer\n    Dim r As Long\n    r = s.Ping()\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "OxVba_TestEventServer".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("oxvba_testeventserver.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
+
+    // Exactly one early-bound COM call, on Ping's dispid; and no late dispatch to Ping
+    // (that would mean the typed receiver was treated as an untyped Object).
+    let callees = top_level_callees(&program);
+    assert!(
+        callees
+            .iter()
+            .any(|c| matches!(c, CoreCallee::EarlyCom { dispid: 104, .. })),
+        "expected an EarlyCom on Ping's dispid (104), got: {callees:?}"
+    );
+    assert!(
+        !callees.iter().any(|c| matches!(
+            c,
+            CoreCallee::LateDispatch { name, .. } if name.eq_ignore_ascii_case("Ping")
+        )),
+        "Ping on a typed receiver must NOT lower to LateDispatch: {callees:?}"
+    );
+}
+
 // ── COM late dispatch + Declare (structural — emit-correct, not run) ─────────
 
 /// The callee of a value, unwrapping a `Coerce` wrapper (an assignment to a typed

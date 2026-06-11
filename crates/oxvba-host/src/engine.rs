@@ -2,7 +2,9 @@
 //!
 //! `Engine` configures host services (HAL profile / policy / callbacks) and runs
 //! VBA on the clean pipeline — `oxvba_bind` → `oxvba_bundle::linearize` →
-//! `oxvba_vm2` — for a single source module or a `.basproj` project closure. The
+//! `oxvba_vm2` — for a single source module (optionally carrying typelib/native/host
+//! references, so an early-bound COM call reaches the resolver) or a `.basproj`
+//! project closure. The
 //! legacy compiler/VM execution path (and its COM-event / session / immediate-window
 //! machinery) was removed with `oxvba-compiler`/`oxvba-vm`; see git history.
 
@@ -275,6 +277,26 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        self.execute_source_with_references_and_snapshot(source, Vec::new())
+    }
+
+    /// Execute a single VBA **source** module that carries one or more project
+    /// references (typelibs, native libraries, host-injected object models) on the
+    /// clean path, snapshotting the same way as
+    /// [`Self::execute_source_with_variant_snapshot_clean`] (module globals followed
+    /// by the entry `Sub Main` frame's locals).
+    ///
+    /// This is the reference-carrying counterpart of the bare-source entry: passing
+    /// a [`oxvba_symbol::manifest::ProjectReference::TypeLibrary`] threads a typelib
+    /// through the resolver, so a typed receiver (`Dim x As Excel.Application`)
+    /// resolves its members to dispids and the binder lowers them to early-bound COM
+    /// dispatch (`EarlyCom{dispid}`) — the early-binding path the bare-source entry
+    /// (with `references: Vec::new()`) can never reach.
+    pub fn execute_source_with_references_and_snapshot(
+        &self,
+        source: &str,
+        references: Vec<oxvba_symbol::manifest::ProjectReference>,
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         if self.config.enable_jit {
             return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
         }
@@ -288,7 +310,7 @@ impl Engine {
                 attributes: sym::ModuleAttributes::named("Main"),
                 source: source.to_string(),
             }],
-            references: Vec::new(),
+            references,
             reference_projects: Vec::new(),
             conditional_constants: std::collections::BTreeMap::new(),
         };
