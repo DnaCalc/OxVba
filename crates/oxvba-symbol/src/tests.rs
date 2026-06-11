@@ -405,6 +405,8 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 is_default_member: false,
                 parameter_types: vec![TypeLibParamType::ByRefLong],
                 return_type: None,
+                callconv_is_stdcall: true,
+                is_dual: true,
             },
             TypeLibMemberMetadata {
                 name: "Item".into(),
@@ -417,6 +419,8 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::Long],
                 return_type: Some(TypeLibParamType::Variant),
+                callconv_is_stdcall: true,
+                is_dual: true,
             },
         ],
         events: vec![TypeLibEventMetadata {

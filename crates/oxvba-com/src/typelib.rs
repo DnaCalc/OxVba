@@ -96,6 +96,10 @@ impl TypeLibParamType {
 pub struct TypeLibMemberMetadata {
     pub name: String,
     pub token: i32,
+    /// x64 vtable **slot index** (NOT a byte offset). The live loader divides
+    /// `FUNCDESC::oVft` by 8 before storing it here, so this value can be used
+    /// directly to index `(*(*this))[slot]` on x64. `None` for members without
+    /// a vtable slot (pure dispinterface members).
     pub vtable_slot: Option<u16>,
     pub requires_argument: bool,
     pub invoke_kind: TypeLibMemberInvokeKind,
@@ -104,6 +108,14 @@ pub struct TypeLibMemberMetadata {
     pub is_default_member: bool,
     pub parameter_types: Vec<TypeLibParamType>,
     pub return_type: Option<TypeLibParamType>,
+    /// True when `FUNCDESC::callconv == CC_STDCALL` (4) — the only convention
+    /// the x64 vtable marshaller may call through. Fixture/catalog metadata
+    /// that never drives a real vtable call leaves this `false`.
+    pub callconv_is_stdcall: bool,
+    /// True when the member's containing type carries `TYPEFLAG_FDUAL`, i.e. it
+    /// is reachable both via `IDispatch::Invoke` and a custom-interface vtable
+    /// slot. Informational; the vtable gate keys on `vtable_slot` + callconv.
+    pub is_dual: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,6 +305,8 @@ mod tests {
                     is_default_member: true,
                     parameter_types: Vec::new(),
                     return_type: Some(TypeLibParamType::Long),
+                    callconv_is_stdcall: true,
+                    is_dual: true,
                 },
                 TypeLibMemberMetadata {
                     name: "Item".to_string(),
@@ -305,6 +319,8 @@ mod tests {
                     is_default_member: false,
                     parameter_types: vec![TypeLibParamType::Variant],
                     return_type: Some(TypeLibParamType::Variant),
+                    callconv_is_stdcall: false,
+                    is_dual: true,
                 },
             ],
             events: Vec::new(),

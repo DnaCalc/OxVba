@@ -208,6 +208,10 @@ mod tests {
             invoke_kind: TypeLibMemberInvokeKind::Method,
             parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
             is_default_member: false,
+            vtable_slot: None,
+            parameter_types: Vec::new(),
+            return_type: None,
+            callconv_is_stdcall: false,
         };
         let args = canonicalize_member_known_args(
             &spec,
@@ -247,6 +251,10 @@ mod tests {
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["value".to_string()],
                 is_default_member: true,
+                vtable_slot: None,
+                parameter_types: Vec::new(),
+                return_type: None,
+                callconv_is_stdcall: false,
             },
         );
         let request = ComInvokeRequest {
@@ -273,6 +281,10 @@ mod tests {
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["value".to_string()],
                 is_default_member: true,
+                vtable_slot: None,
+                parameter_types: Vec::new(),
+                return_type: None,
+                callconv_is_stdcall: false,
             },
         );
         let request = ComInvokeRequest {

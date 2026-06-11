@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComCallbackValue, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
-    runtime_class_descriptor_from_typelib_metadata,
+    TypeLibParamType, runtime_class_descriptor_from_typelib_metadata,
 };
 use oxvba_runtime::{
     ObjectRef, RuntimeClassDescriptor, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
@@ -207,6 +207,13 @@ fn member_specs_from_typelib_metadata(
                     invoke_kind: member.invoke_kind,
                     parameter_names: member.parameter_names.clone(),
                     is_default_member: member.is_default_member,
+                    vtable_slot: member.vtable_slot,
+                    parameter_types: member.parameter_types.clone(),
+                    return_type: member.return_type,
+                    // The FUNCDESC callconv is not part of the projected
+                    // metadata blob; honor the explicit `callconv_is_stdcall`
+                    // bit the live loader stamps onto `TypeLibMemberMetadata`.
+                    callconv_is_stdcall: member.callconv_is_stdcall,
                 },
             )
         })
@@ -308,6 +315,21 @@ pub struct ComMemberSpec {
     pub invoke_kind: TypeLibMemberInvokeKind,
     pub parameter_names: Vec<String>,
     pub is_default_member: bool,
+    /// x64 vtable **slot index** (NOT a byte offset). The live typelib loader
+    /// divides `FUNCDESC::oVft` by 8 before storing it (see
+    /// `extract_members_from_typeinfo`), so this is the index into
+    /// `(*(*this))[slot]` that the S2 `vtable_invoke` marshaller uses directly.
+    /// `None` for dispinterface-only members with no vtable slot.
+    pub vtable_slot: Option<u16>,
+    /// Per-parameter VARTYPEs carried from the FUNCDESC, left-to-right (the
+    /// `[out,retval]` parameter is surfaced as `return_type`, not here).
+    pub parameter_types: Vec<TypeLibParamType>,
+    /// The member's logical return type (typically the `[out,retval]` T* of a
+    /// dual member, whose ABI return is the HRESULT). `None` for `void`/HRESULT.
+    pub return_type: Option<TypeLibParamType>,
+    /// True when the member's FUNCDESC declares `CC_STDCALL` (callconv == 4),
+    /// the only calling convention the x64 vtable marshaller may call.
+    pub callconv_is_stdcall: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -501,7 +523,10 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComBinding, ComEventSubscription, ComRuntimeState, binding_from_typelib_metadata};
+    use super::{
+        ComBinding, ComEventSubscription, ComRuntimeState, binding_from_typelib_metadata,
+        member_specs_from_typelib_metadata,
+    };
     use crate::{
         ComMemberToken, ComValue, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
         TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
@@ -538,6 +563,8 @@ mod tests {
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::String],
                 return_type: Some(TypeLibParamType::Long),
+                callconv_is_stdcall: true,
+                is_dual: true,
             }],
             events: Vec::new(),
         };
@@ -581,6 +608,61 @@ mod tests {
             .expect("binding-level default descriptor plan should resolve");
         assert_eq!(default_plan.dispatch_id, 7);
         assert_eq!(binding.runtime_dispatch_plan_cache.len(), 2);
+    }
+
+    #[test]
+    fn member_specs_carry_funcdesc_vtable_signature() {
+        // S1: the FUNCDESC vtable signature (slot index + param VARTYPEs +
+        // return type + callconv) must survive the projection into
+        // `ComMemberSpec`, where today it was dropped. `vtable_slot` carries the
+        // x64 slot INDEX (oVft / 8), not the raw byte offset.
+        let metadata = TypeLibMetadataBlob {
+            identity: sample_typelib_identity(),
+            activation_prog_id: Some("TestLib.Widget".to_string()),
+            member_name_to_token: vec![("Lookup".to_string(), 7)],
+            members: vec![TypeLibMemberMetadata {
+                name: "Lookup".to_string(),
+                token: 7,
+                // Slot index 9 (== oVft 72 / 8); past the 7 IUnknown+IDispatch
+                // slots, so a real dual-interface custom slot.
+                vtable_slot: Some(9),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["key".to_string()],
+                parameter_optional: vec![false],
+                is_default_member: false,
+                parameter_types: vec![TypeLibParamType::String],
+                return_type: Some(TypeLibParamType::Long),
+                callconv_is_stdcall: true,
+                is_dual: true,
+            }],
+            events: Vec::new(),
+        };
+
+        let specs = member_specs_from_typelib_metadata(&metadata);
+        let spec = specs
+            .get(&ComMemberToken::new(7))
+            .expect("Lookup member spec should be projected from the metadata blob");
+        assert_eq!(spec.name, "Lookup");
+        assert_eq!(
+            spec.vtable_slot,
+            Some(9),
+            "the divided x64 slot index must reach the member spec"
+        );
+        assert_eq!(
+            spec.parameter_types,
+            vec![TypeLibParamType::String],
+            "FUNCDESC parameter VARTYPEs must reach the member spec"
+        );
+        assert_eq!(
+            spec.return_type,
+            Some(TypeLibParamType::Long),
+            "the [out,retval] return type must reach the member spec"
+        );
+        assert!(
+            spec.callconv_is_stdcall,
+            "a CC_STDCALL dual member must carry callconv_is_stdcall == true"
+        );
     }
 
     #[test]

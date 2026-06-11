@@ -448,6 +448,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "Exists".to_string(),
@@ -460,6 +462,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "FireChanged".to_string(),
@@ -472,6 +476,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "FireChangedPair".to_string(),
@@ -484,6 +490,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "FireChangedSourceInterface".to_string(),
@@ -496,6 +504,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
@@ -508,6 +518,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "Lookup".to_string(),
@@ -520,6 +532,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SetValue".to_string(),
@@ -532,6 +546,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SetValueRef".to_string(),
@@ -544,6 +560,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "Value".to_string(),
@@ -556,6 +574,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SumPair".to_string(),
@@ -568,6 +588,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "LookupPair".to_string(),
@@ -580,6 +602,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SetIndexedValue".to_string(),
@@ -592,6 +616,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SetIndexedValueRef".to_string(),
@@ -604,6 +630,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "EchoVariant".to_string(),
@@ -616,6 +644,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: true,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "RaiseException".to_string(),
@@ -628,6 +658,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "RaiseRichException".to_string(),
@@ -640,6 +672,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallInt".to_string(),
@@ -652,6 +686,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedWord".to_string(),
@@ -664,6 +700,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByte".to_string(),
@@ -676,6 +714,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSignedByte".to_string(),
@@ -688,6 +728,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformInt".to_string(),
@@ -700,6 +742,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformUInt".to_string(),
@@ -712,6 +756,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnHyper".to_string(),
@@ -724,6 +770,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyper".to_string(),
@@ -736,6 +784,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDouble".to_string(),
@@ -748,6 +798,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSingle".to_string(),
@@ -760,6 +812,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDate".to_string(),
@@ -772,6 +826,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnCurrency".to_string(),
@@ -784,6 +840,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDecimal".to_string(),
@@ -796,6 +854,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnBool".to_string(),
@@ -808,6 +868,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnString".to_string(),
@@ -820,6 +882,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnMissingMemberName".to_string(),
@@ -832,6 +896,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPingMemberName".to_string(),
@@ -844,6 +910,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLookupMemberName".to_string(),
@@ -856,6 +924,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSumPairMemberName".to_string(),
@@ -868,6 +938,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLookupPairMemberName".to_string(),
@@ -880,6 +952,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetValueMemberName".to_string(),
@@ -892,6 +966,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetValueRefMemberName".to_string(),
@@ -904,6 +980,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueMemberName".to_string(),
@@ -916,6 +994,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueRefMemberName".to_string(),
@@ -928,6 +1008,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnValueMemberName".to_string(),
@@ -940,6 +1022,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDefaultMemberName".to_string(),
@@ -952,6 +1036,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnEmpty".to_string(),
@@ -964,6 +1050,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnNull".to_string(),
@@ -976,6 +1064,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnError".to_string(),
@@ -988,6 +1078,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByRefLong".to_string(),
@@ -1000,6 +1092,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByRefLongArray".to_string(),
@@ -1012,6 +1106,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideHyper".to_string(),
@@ -1024,6 +1120,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideHyperArray".to_string(),
@@ -1036,6 +1134,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyper".to_string(),
@@ -1048,6 +1148,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyperArray".to_string(),
@@ -1060,6 +1162,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnVariantMatrix".to_string(),
@@ -1072,6 +1176,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "NewEnum".to_string(),
@@ -1084,6 +1190,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownVariantArray".to_string(),
@@ -1096,6 +1204,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLong".to_string(),
@@ -1108,6 +1218,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedLong".to_string(),
@@ -1120,6 +1232,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallIntArray".to_string(),
@@ -1132,6 +1246,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnBoolArray".to_string(),
@@ -1144,6 +1260,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnStringArray".to_string(),
@@ -1156,6 +1274,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallIntMatrix".to_string(),
@@ -1168,6 +1288,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknown".to_string(),
@@ -1180,6 +1302,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownArray".to_string(),
@@ -1192,6 +1316,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByteArray".to_string(),
@@ -1204,6 +1330,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSignedByteArray".to_string(),
@@ -1216,6 +1344,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformIntArray".to_string(),
@@ -1228,6 +1358,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformUIntArray".to_string(),
@@ -1240,6 +1372,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnHyperArray".to_string(),
@@ -1252,6 +1386,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyperArray".to_string(),
@@ -1264,6 +1400,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDoubleArray".to_string(),
@@ -1276,6 +1414,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSingleArray".to_string(),
@@ -1288,6 +1428,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDateArray".to_string(),
@@ -1300,6 +1442,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnCurrencyArray".to_string(),
@@ -1312,6 +1456,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDecimalArray".to_string(),
@@ -1324,6 +1470,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedLong".to_string(),
@@ -1336,6 +1484,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedLongArray".to_string(),
@@ -1348,6 +1498,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWidePlatformUInt".to_string(),
@@ -1360,6 +1512,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWidePlatformUIntArray".to_string(),
@@ -1372,6 +1526,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLongArray".to_string(),
@@ -1384,6 +1540,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedLongArray".to_string(),
@@ -1396,6 +1554,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatch".to_string(),
@@ -1408,6 +1568,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SelfDispatch".to_string(),
@@ -1420,6 +1582,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfUnknown".to_string(),
@@ -1432,6 +1596,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "SelfUnknown".to_string(),
@@ -1444,6 +1610,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ClassifyVariantArg".to_string(),
@@ -1456,6 +1624,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ClassifyVariantArrayFirstElementArg".to_string(),
@@ -1468,6 +1638,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatchArray".to_string(),
@@ -1480,6 +1652,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfTypedDispatchArray".to_string(),
@@ -1492,6 +1666,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfTypedUnknownArray".to_string(),
@@ -1504,6 +1680,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
         ];
         let events = vec![
@@ -1611,6 +1789,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "FireValueChanged".to_string(),
@@ -1623,6 +1803,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "FirePairChanged".to_string(),
@@ -1635,6 +1817,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
@@ -1647,6 +1831,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
                 parameter_types: Vec::new(),
                 return_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
             },
         ];
         let events = vec![
@@ -1875,6 +2061,10 @@ fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> ComMemberSpec 
         invoke_kind: member.invoke_kind,
         parameter_names: member.parameter_names.clone(),
         is_default_member: member.is_default_member,
+        vtable_slot: member.vtable_slot,
+        parameter_types: member.parameter_types.clone(),
+        return_type: member.return_type,
+        callconv_is_stdcall: member.callconv_is_stdcall,
     }
 }
 

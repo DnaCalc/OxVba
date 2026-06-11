@@ -256,6 +256,10 @@ fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> ComMemberSpec 
         invoke_kind: member.invoke_kind,
         parameter_names: member.parameter_names.clone(),
         is_default_member: member.is_default_member,
+        vtable_slot: member.vtable_slot,
+        parameter_types: member.parameter_types.clone(),
+        return_type: member.return_type,
+        callconv_is_stdcall: member.callconv_is_stdcall,
     }
 }
 

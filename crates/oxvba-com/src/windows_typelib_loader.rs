@@ -59,6 +59,17 @@ const TKIND_COCLASS: u32 = 5;
 #[cfg(target_os = "windows")]
 const TKIND_ALIAS: u32 = 6;
 
+/// `CALLCONV::CC_STDCALL` from oaidl.h — the only calling convention the x64
+/// vtable marshaller may dispatch through.
+#[cfg(target_os = "windows")]
+const CC_STDCALL: u32 = 4;
+
+/// `TYPEFLAG_FDUAL` from oaidl.h — set on a type that is both an `IDispatch`
+/// dispinterface and a custom-interface vtable (so its members are reachable
+/// both ways). Informational for the early-bound vtable gate.
+#[cfg(target_os = "windows")]
+const TYPEFLAG_FDUAL: u16 = 0x0040;
+
 #[cfg(target_os = "windows")]
 #[allow(dead_code)]
 const IMPLTYPEFLAG_FDEFAULT: i32 = 1;
@@ -1500,6 +1511,25 @@ pub fn enumerate_typelib_members_for_interface(
     Ok(Vec::new())
 }
 
+/// Convert a `FUNCDESC::oVft` byte offset into an x64 vtable **slot index**.
+///
+/// The offset's granularity is the pointer size of the architecture the typelib
+/// was authored for (4 bytes for a 32-bit typelib, 8 bytes for a 64-bit one);
+/// the slot index is invariant across both, so we divide by whichever pointer
+/// size the offset is aligned to. Returns `None` for a negative or non-4-aligned
+/// (malformed) offset so the member is treated as having no usable vtable slot.
+#[cfg(target_os = "windows")]
+fn vtable_slot_index_from_ovft(ovft: i16) -> Option<u16> {
+    let raw = u16::try_from(ovft).ok()?;
+    if raw % 8 == 0 {
+        Some(raw / 8)
+    } else if raw % 4 == 0 {
+        Some(raw / 4)
+    } else {
+        None
+    }
+}
+
 /// Extracts member metadata from a single ITypeInfo.
 #[cfg(target_os = "windows")]
 unsafe fn extract_members_from_typeinfo(
@@ -1513,6 +1543,9 @@ unsafe fn extract_members_from_typeinfo(
     }
     let func_count = (*pattr).cfuncs as u32;
     let typekind = (*pattr).typekind;
+    // TYPEFLAG_FDUAL on the containing type tells us its members are reachable
+    // both via IDispatch::Invoke and a custom-interface vtable slot.
+    let is_dual = ((*pattr).wtypeflags & TYPEFLAG_FDUAL) != 0;
     ((*vtbl).release_type_attr)(ptinfo, pattr);
 
     let mut members = Vec::new();
@@ -1526,6 +1559,7 @@ unsafe fn extract_members_from_typeinfo(
         let fd = &*pfuncdesc;
         let memid = fd.memid;
         let invkind = fd.invkind;
+        let callconv_is_stdcall = fd.callconv == CC_STDCALL;
         // Clamp like the audit path: `cParams` is i16 in COM-owned memory, and a
         // corrupt typelib reporting a negative count would sign-extend into a
         // multi-billion ELEMDESC walk / allocation (W1-hal-002).
@@ -1637,10 +1671,27 @@ unsafe fn extract_members_from_typeinfo(
         // Default member check (DISPID 0)
         let is_default_member = memid == 0;
 
+        // `FUNCDESC::oVft` is a BYTE OFFSET into the vtable. We store the slot
+        // INDEX (not the raw offset) in `vtable_slot` so the S2 `vtable_invoke`
+        // marshaller can index `(*(*this))[slot]` directly.
+        //
+        // ABI subtlety: the offset's granularity is the pointer size of the
+        // architecture the *typelib* was authored for, NOT necessarily x64. Many
+        // shipping OLE typelibs (e.g. Scripting Runtime / scrrun.dll) are 32-bit
+        // typelibs whose `oVft` advances in 4-byte steps (slot 3 → oVft 12) even
+        // when loaded in a 64-bit process; modern 64-bit typelibs advance in
+        // 8-byte steps (slot 3 → oVft 24). The slot INDEX is invariant across
+        // both — divide by whichever pointer size the offset is aligned to:
+        //   * 8-aligned  → 64-bit-granular typelib → index = oVft / 8
+        //   * 4-aligned  → 32-bit-granular typelib → index = oVft / 4
+        // A non-4-aligned or negative oVft is malformed: treat the member as
+        // having no usable vtable slot rather than computing a wrong index.
+        let vtable_slot = vtable_slot_index_from_ovft(fd.oVft);
+
         members.push(TypeLibMemberMetadata {
             name: func_name,
             token: memid,
-            vtable_slot: u16::try_from(fd.oVft).ok(),
+            vtable_slot,
             requires_argument,
             invoke_kind,
             parameter_names,
@@ -1648,6 +1699,8 @@ unsafe fn extract_members_from_typeinfo(
             is_default_member,
             parameter_types,
             return_type,
+            callconv_is_stdcall,
+            is_dual,
         });
 
         ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
@@ -2178,6 +2231,23 @@ use crate::typelib::{TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibResolve
 mod tests {
     use super::*;
     use crate::typelib::TypeLibResolveRequest;
+
+    #[test]
+    fn vtable_slot_index_handles_32bit_and_64bit_granular_typelibs() {
+        // 64-bit-granular typelib: 8-byte slots. Slot 7 (first dual custom slot
+        // after the 7 IUnknown+IDispatch slots) is oVft 56.
+        assert_eq!(vtable_slot_index_from_ovft(56), Some(7));
+        assert_eq!(vtable_slot_index_from_ovft(72), Some(9));
+        // 32-bit-granular typelib (e.g. scrrun.dll): 4-byte slots. Slot 7 is
+        // oVft 28 (28 % 8 != 0, so the 4-aligned path applies → 28 / 4 = 7).
+        assert_eq!(vtable_slot_index_from_ovft(28), Some(7));
+        // The live regression that motivated this: oVft 12 from a 32-bit typelib
+        // is slot 3, not a panic.
+        assert_eq!(vtable_slot_index_from_ovft(12), Some(3));
+        // Malformed offsets carry no usable slot.
+        assert_eq!(vtable_slot_index_from_ovft(-8), None);
+        assert_eq!(vtable_slot_index_from_ovft(6), None);
+    }
 
     #[test]
     fn load_scrrun_typelib_from_registry() {
