@@ -834,10 +834,12 @@ fn collect_udt_fields_in(
             .into_iter()
             .filter_map(|f| {
                 let field = fold_identifier(normalize_identifier_token(f.declarator_name()?.text));
-                let ty = f
-                    .declared_type()
-                    .map(type_ref_node)
-                    .unwrap_or(VarTypeRef::Variant);
+                // A `TypeField` shares the declarator accessors (`declared_type`,
+                // `array_bounds`, fixed-string `*N`), so reuse the same array-aware
+                // refinement: an array field (`Words() As OcrWord`) must type as
+                // `Array(OcrWord)`, not the scalar element type, so member access
+                // through an index step (`o.Words(i).Text`) resolves the element UDT.
+                let ty = declared_var_type(f);
                 Some((field, ty))
             })
             .collect();
@@ -996,5 +998,45 @@ mod tests {
     fn friend_is_distinct_from_public_and_private() {
         let members = scan_members("Friend Sub Helper()\nEnd Sub\n");
         assert_eq!(vis_of(&members, "Helper"), Visibility::Friend);
+    }
+
+    /// A UDT field declared with a trailing `()` array marker must type as
+    /// `Array(element)`, not the scalar element — so a member-access index step
+    /// (`o.Lines(i).Text`) resolves through the element UDT. A scalar UDT field
+    /// keeps its scalar type.
+    #[test]
+    fn udt_array_field_types_as_array() {
+        let source = "Private Type Inner\n  Text As String\nEnd Type\n\
+                      Private Type Outer\n  Lines() As Inner\n  Scalar As Inner\nEnd Type\n";
+        let parse = oxvba_syntax::parse(source);
+        assert!(
+            parse.errors().is_empty(),
+            "parse errors: {:?}",
+            parse.errors()
+        );
+        let roots = [parse.syntax()];
+        let udts = collect_udt_fields(&roots);
+        let outer = udts.get("outer").expect("Outer UDT scanned");
+        let (_, lines_ty) = outer
+            .iter()
+            .find(|(name, _)| name == "lines")
+            .expect("Lines field present");
+        match lines_ty {
+            VarTypeRef::Array(inner) => assert_eq!(
+                **inner,
+                VarTypeRef::Object("inner".into()),
+                "array element should be the Inner type (object/UDT name)"
+            ),
+            other => panic!("expected Array element type, got {other:?}"),
+        }
+        let (_, scalar_ty) = outer
+            .iter()
+            .find(|(name, _)| name == "scalar")
+            .expect("Scalar field present");
+        assert_eq!(
+            *scalar_ty,
+            VarTypeRef::Object("inner".into()),
+            "a scalar UDT field stays scalar"
+        );
     }
 }
