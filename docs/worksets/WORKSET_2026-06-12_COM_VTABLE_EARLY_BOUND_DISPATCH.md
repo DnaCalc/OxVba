@@ -219,6 +219,57 @@ vtable-callable).
 4. Property-put via vtable for in-process servers; `VT_CY`/`VT_DATE` completeness;
    `IUnknown**` retvals (`query_dispatch_from_unknown`).
 
+### S5a OUTCOME (2026-06-12) — QI dispatch landed AV-safe; live out-of-aliased vtable infeasible
+
+S5a built the custom-interface QI machinery exactly as redefined: the dual interface
+IID (`ITypeInfo::GetTypeAttr().guid`) is captured in `extract_members_from_typeinfo`,
+carried on `TypeLibMemberMetadata` → `ComMemberSpec` (`ComInterfaceIid`, a
+platform-neutral `GUID` carrier since `windows_sys::core::GUID` has no
+`Debug`/`Eq`), and the dispatch site (`try_vtable_member_spec_invoke_with_shared_state`)
+QueryInterfaces the object for it (`query_interface_pointer`, ref-managed +
+`release_unknown`) before any slot call. The old `dispatch_is_marshaling_proxy` /
+`IID_IProxyManager` proxy-blanket-reject gate is **deleted**.
+
+**THE FINDING (validated live on Excel FIRST, then DAO — both crashed, then made safe):**
+A typelib `oVft`-derived slot index does **not** reliably index the **live** vtable of a
+QI'd interface that is a marshaling / cross-apartment proxy. Both Excel (out-of-process)
+and ACE DAO (in-process **but** `QueryInterface(dual IID)` returns a *separate* tear-off /
+apartment-proxy pointer, not the bound IDispatch) ACCESS-VIOLATED the host on the slot
+call — even after confirming the QI'd interface's own live `ITypeInfo` GUID **and** reading
+the slot back from that same interface's type info (the slot is the same unreliable
+`oVft`-derived value). Evidence: under a QI-only dry run every member QI'd cleanly and the
+live-`ITypeInfo` GUID+name+slot all verified (DAO `Field.Value`→slot34/iid00000057,
+`Recordset.Close`→98/00000035, `Database.Close`→44/00000071), yet the real slot call
+faulted (`Recordset.Close` slot 98 even *succeeded* once, `Database.Close` slot 44
+faulted — interface-specific, not a uniform off-by-N). So neither the GUID match nor the
+slot read from the interface itself is a sufficient safety predicate on a proxy.
+
+**THE SHIPPED GUARD (HOST-AV SAFETY wins over the S4 DAO vtable count):** the slot is
+only called when `QueryInterface(dual IID)` returns the **identity-equal** pointer to the
+bound IDispatch — i.e. a direct in-process dual that *aliases* its IDispatch, the exact
+layout the S2/S3 fixture and S4's `Recordset.Close` proved callable. When the QI'd pointer
+differs (every real out-of-aliased server: Excel proxies, DAO tear-offs), we fall back to
+`IDispatch::Invoke`. Result: **zero host crash; Excel 42.5 and DAO 7 round-trip
+byte-for-byte; all 7 live COM tests green; oxvba-com 120/0; clippy `-D warnings` clean.**
+The two live tests now assert AV-safe round-trip + IDispatch fallback (the S4
+`vtable_count>=1` DAO assertion is retired — it depended on the now-understood-fragile
+in-process raw-pointer aliasing, which is unsafe to generalize). A new oxvba-com unit test
+(`prefer_vtable_falls_back_when_interface_iid_is_not_exposed`) locks in the QI-fail
+fallback; the fixture's QI returns identity-equal `this`, so the in-process vtable path
+(get_Count→7) still fires and is asserted.
+
+**Consequence for the program:** delivering *live* early-bound vtable dispatch for
+real out-of-process / cross-apartment Office objects is **infeasible with the metadata we
+have** — the typelib slot indices do not address the live proxy vtables, and there is no
+in-band way to recover the proxy's true vtable layout. Real IDE-fidelity early binding
+would need a fundamentally different mechanism (e.g. the proxy/stub typelib marshaler used
+to *build* the vtable, not just consume slot indices), which is out of this workset's scope.
+**S5b (omitted-optionals) and S5c (Field.Value divergence, property-put, VT_CY/DATE,
+IUnknown**) are now moot for live servers** (everything falls back); they remain only as
+in-process-fixture coverage if pursued. **S6 (flip default to PreferVtable) is SAFE to do**
+(PreferVtable now never AVs — it just falls back), but yields no live behavior change, so it
+is not worth flipping for performance.
+
 ### S6 — flip default to PreferVtable (unchanged, post-S5)
 
 ## Cross-refs

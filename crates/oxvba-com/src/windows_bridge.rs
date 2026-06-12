@@ -494,17 +494,17 @@ impl WindowsComBridge {
         args: &[ComInvokeArg],
     ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
         use crate::TypeLibMemberInvokeKind as K;
-        // SAFETY GATE: never vtable-call a marshaling proxy. An out-of-process
-        // object (Excel via CreateObject) hands us a proxy whose IDispatch vtable
-        // has only the 7 IUnknown+IDispatch slots and forwards Invoke across the
-        // marshaler — its custom dual slots (>= 7) do not exist in this address
-        // space, so calling one access-violates the host. Only a direct in-process
-        // interface pointer (ACE DAO's in-proc DLL) lays out the real vtable.
-        // SAFETY: `dispatch` is the live, bindings-map-retained IDispatch for this
-        // call (the caller guarded `native_dispatch != 0`).
-        if unsafe { crate::dispatch_is_marshaling_proxy(dispatch) } {
-            return Ok(None);
-        }
+        // S5a: the old proxy-always-fallback gate (`dispatch_is_marshaling_proxy`
+        // via IID_IProxyManager) is GONE. We no longer vtable-call the raw
+        // IDispatch pointer — `try_vtable_member_spec_invoke_with_shared_state`
+        // QueryInterfaces the object for the member's typelib-declared DUAL
+        // interface IID and calls the slot on that QI'd pointer. The oleaut
+        // universal marshaler builds a real vtable proxy for an out-of-process
+        // dual interface too, so a marshaling proxy (Excel via CreateObject) is now
+        // vtable-callable through the QI'd pointer rather than a host-AV risk. The
+        // defensive guard moved into the QI itself: a slot is only ever called
+        // after a SUCCESSFUL QI for the exact dual IID, else we fall back.
+        //
         // The COM invoke kind this call intends, used to pick the right FUNCDESC
         // when a propget/propput pair shares a memid. PropertyPutRef (Set p = obj)
         // is deferred to IDispatch in v1.
@@ -838,6 +838,10 @@ mod tests {
             parameter_types: Vec::new(),
             return_type: Some(crate::TypeLibParamType::Long),
             callconv_is_stdcall,
+            // A vtable-eligible spec (slot present) carries the dual fixture IID so
+            // the S5a dispatch path can QueryInterface the fixture object for it
+            // before the slot call; a no-slot spec has no interface identity.
+            interface_iid: vtable_slot.map(|_| crate::DUAL_FIXTURE_INTERFACE_IID),
         }
     }
 
@@ -937,6 +941,71 @@ mod tests {
             "an ineligible member must fall back to IDispatch and count it"
         );
         let _ = fallback_bridge.release_object_binding(fallback_object);
+    }
+
+    /// S5a HOST-AV SAFETY: a member that IS gate-eligible (a custom slot,
+    /// CC_STDCALL, full v1 signature, an interface IID) but whose IID the live
+    /// object does NOT expose must `QueryInterface`-fail and fall back to
+    /// `IDispatch::Invoke` — it must NEVER vtable-call an unverified pointer. The
+    /// `OxVba.TestDispatch` object answers IUnknown/IDispatch (+ its event IIDs)
+    /// only, so a spec carrying a bogus IID drives the QI-fail fallback: the call
+    /// still returns the correct value (its IDispatch::Invoke for `Count` is 7) with
+    /// the IDispatch transport counted and the vtable transport untouched, proving
+    /// no slot was ever called on an interface the object does not expose.
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn prefer_vtable_falls_back_when_interface_iid_is_not_exposed() {
+        let bridge = WindowsComBridge::new(false);
+        let dispatch = crate::create_oxvba_test_dispatch();
+        let count = ComMemberToken::new(crate::TEST_DISPID_COUNT);
+        // Gate-eligible spec EXCEPT its interface IID is one this object's
+        // QueryInterface rejects — so the QI fails before any slot call. The slot is
+        // present (gate-eligible) but never reached: the IDispatch path serves Count.
+        let bogus_iid = crate::ComInterfaceIid {
+            data1: 0xDEAD_BEEF,
+            data2: 0x0000,
+            data3: 0x0000,
+            data4: [0; 8],
+        };
+        let mut spec = count_member_spec("Count", Some(crate::DUAL_SLOT_GET_COUNT), true);
+        spec.interface_iid = Some(bogus_iid);
+        let object = insert_native_member_binding(
+            &bridge,
+            7003,
+            crate::OXVBA_TEST_DISPATCH_PROGID,
+            dispatch.cast::<core::ffi::c_void>(),
+            count,
+            crate::TEST_DISPID_COUNT,
+            spec,
+        );
+        let request = ComInvokeRequest {
+            object: object.clone(),
+            member: count,
+            args: Vec::new(),
+            invoke_kind_hint: None,
+        };
+        let before_vtable = bridge.vtable_call_count();
+        let before_idispatch = bridge.idispatch_call_count();
+        let value = bridge
+            .dispatch_invoke_variant(&request, true)
+            .expect("QI-fail fallback dispatch should not error")
+            .expect("a value should be produced");
+        assert_eq!(
+            value.as_i32(),
+            Some(7),
+            "the QI-fail IDispatch fallback must still return Count = 7"
+        );
+        assert_eq!(
+            bridge.vtable_call_count(),
+            before_vtable,
+            "a member whose IID is not QI-able must NOT take the vtable path"
+        );
+        assert_eq!(
+            bridge.idispatch_call_count(),
+            before_idispatch + 1,
+            "the unexposed-IID member must fall back to IDispatch and count it"
+        );
+        let _ = bridge.release_object_binding(object);
     }
 
     /// A projection-only binding (`native_dispatch == 0`) has no live IDispatch. A

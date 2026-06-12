@@ -395,6 +395,44 @@ pub unsafe fn query_unknown_from_dispatch(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+/// `QueryInterface` a live COM object for an arbitrary interface IID, returning a
+/// fresh interface pointer that carries one reference the caller must `Release`.
+///
+/// Workset S5a uses this to obtain the typelib-declared **dual interface** pointer
+/// for an early-bound member: the oleaut universal marshaler (`PSOAInterface`)
+/// builds a real vtable proxy for any oleaut-compatible dual interface, so the
+/// returned pointer is vtable-callable uniformly in-process and out-of-process —
+/// exactly how the VBA IDE holds an early-bound reference. Returns `Err` on
+/// `E_NOINTERFACE` / any failing HRESULT / a null result, so the dispatch site can
+/// cleanly fall back to `IDispatch` (it must NEVER vtable-call without a verified
+/// pointer for the exact IID).
+///
+/// # Safety
+///
+/// `object` must be a valid live COM interface pointer whose first field is an
+/// `IUnknown` vtable, held alive for the duration of the call.
+pub unsafe fn query_interface_pointer(
+    object: *mut core::ffi::c_void,
+    iid: &windows_sys::core::GUID,
+) -> Result<*mut core::ffi::c_void, String> {
+    if object.is_null() {
+        return Err("QueryInterface received a null object pointer".to_string());
+    }
+    let unknown = object.cast::<RawIUnknown>();
+    let mut interface: *mut core::ffi::c_void = core::ptr::null_mut();
+    let vtbl = (*unknown).vtbl;
+    let hr = ((*vtbl).query_interface)(unknown.cast(), iid, &mut interface);
+    if hr < 0 || interface.is_null() {
+        return Err(format!(
+            "IUnknown::QueryInterface(custom interface) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(interface)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 /// # Safety
 ///
 /// `unknown` must be a valid live COM interface pointer whose `IUnknown` vtable can be called.

@@ -1625,6 +1625,16 @@ unsafe fn extract_members_from_typeinfo(
     // TYPEFLAG_FDUAL on the containing type tells us its members are reachable
     // both via IDispatch::Invoke and a custom-interface vtable slot.
     let is_dual = ((*pattr).wtypeflags & TYPEFLAG_FDUAL) != 0;
+    // The containing ITypeInfo's GUID IS the dual interface IID (S5a): for a dual
+    // the dispinterface and the vtable interface share the same IID, so this is
+    // the exact interface we QueryInterface for at the dispatch site to obtain a
+    // real-vtable pointer that works in-process AND out-of-process. We capture it
+    // for every typeinfo (an interface/dispinterface always has a meaningful
+    // GUID); an all-zero IID is treated as "absent" by the dispatch-site gate.
+    let interface_iid = {
+        let iid = crate::ComInterfaceIid::from_guid(&(*pattr).guid);
+        (!iid.is_null()).then_some(iid)
+    };
     ((*vtbl).release_type_attr)(ptinfo, pattr);
 
     let mut members = Vec::new();
@@ -1788,6 +1798,7 @@ unsafe fn extract_members_from_typeinfo(
             return_type,
             callconv_is_stdcall,
             is_dual,
+            interface_iid,
         });
 
         ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
@@ -1795,58 +1806,14 @@ unsafe fn extract_members_from_typeinfo(
     Ok(members)
 }
 
-/// `IID_IProxyManager` `{00000008-0000-0000-C000-000000000046}`. A COM
-/// marshaling proxy (for an out-of-process or cross-apartment object) exposes
-/// this interface; an in-process object's real interface pointer does not.
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-const IID_IPROXYMANAGER: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0x0000_0008,
-    data2: 0x0000,
-    data3: 0x0000,
-    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
-};
-
-/// Whether `dispatch` is a COM **marshaling proxy** (an out-of-process /
-/// cross-apartment object), as opposed to a direct in-process interface pointer.
-///
-/// This is THE safety gate for the vtable fast path: a proxy's IDispatch vtable
-/// implements only the 7 `IUnknown`+`IDispatch` slots and forwards `Invoke`
-/// across the marshaler — it does NOT lay out the custom dual-interface slots, so
-/// calling slot ≥ 7 on a proxy reads past its vtable and ACCESS-VIOLATES the
-/// host. We detect a proxy by `QueryInterface(IID_IProxyManager)`: proxies
-/// answer it, in-process objects return `E_NOINTERFACE`. Excel (`CreateObject`,
-/// out-of-process) is a proxy → IDispatch only; ACE DAO (in-process DLL) is not
-/// → vtable-eligible. On any error we conservatively report "proxy" so we never
-/// vtable-call something we could not prove is in-process.
-///
-/// # Safety
-/// `dispatch` must be a live `IDispatch` pointer for the duration of the call.
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-pub unsafe fn dispatch_is_marshaling_proxy(
-    dispatch: *mut crate::windows_client::RawIDispatch,
-) -> bool {
-    if dispatch.is_null() {
-        return true;
-    }
-    // SAFETY: `dispatch` is a live IDispatch per this fn's `# Safety`; the first
-    // vtable slot is IUnknown::QueryInterface. We request IProxyManager into a
-    // local out-pointer and Release it immediately if granted (we only need the
-    // yes/no answer), so no reference leaks.
-    unsafe {
-        let vtbl = &*(*dispatch).vtbl;
-        let mut ppv: *mut c_void = null_mut();
-        let hr =
-            (vtbl.unknown.query_interface)(dispatch.cast::<c_void>(), &IID_IPROXYMANAGER, &mut ppv);
-        if hr == COM_S_OK && !ppv.is_null() {
-            let proxy_unknown = ppv.cast::<crate::windows_client::RawIUnknown>();
-            let proxy_vtbl = &*(*proxy_unknown).vtbl;
-            (proxy_vtbl.release)(ppv);
-            true
-        } else {
-            false
-        }
-    }
-}
+// Workset S5a removed `dispatch_is_marshaling_proxy` (and its `IID_IProxyManager`
+// probe). The vtable fast path no longer calls a slot on the raw IDispatch
+// pointer — it QueryInterfaces the object for the member's dual interface IID and
+// calls on that (real-vtable) pointer, which works for an out-of-process
+// marshaling proxy too via the oleaut universal marshaler. So a proxy is no longer
+// a host-AV risk to be blanket-rejected; the only safety predicate that remains is
+// "QI for the exact dual IID must succeed before any slot call", enforced inside
+// `try_vtable_member_spec_invoke_with_shared_state`.
 
 /// Extract the FUNCDESC vtable signature for a single member of a LIVE COM
 /// object, by asking the object for its own `ITypeInfo` (`IDispatch::GetTypeInfo`)

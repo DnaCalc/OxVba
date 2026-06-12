@@ -214,6 +214,9 @@ fn member_specs_from_typelib_metadata(
                     // metadata blob; honor the explicit `callconv_is_stdcall`
                     // bit the live loader stamps onto `TypeLibMemberMetadata`.
                     callconv_is_stdcall: member.callconv_is_stdcall,
+                    // S5a: carry the dual interface IID so the vtable dispatch
+                    // site can QueryInterface for it before any slot call.
+                    interface_iid: member.interface_iid,
                 },
             )
         })
@@ -330,6 +333,14 @@ pub struct ComMemberSpec {
     /// True when the member's FUNCDESC declares `CC_STDCALL` (callconv == 4),
     /// the only calling convention the x64 vtable marshaller may call.
     pub callconv_is_stdcall: bool,
+    /// IID of the member's defining **dual interface** (the containing
+    /// `ITypeInfo`'s `GetTypeAttr().guid`). Workset S5a: the vtable dispatch site
+    /// `QueryInterface`s the live object for this exact IID and calls the slot on
+    /// the returned interface pointer (a real vtable, in-process or out-of-process
+    /// via the oleaut universal marshaler) instead of the raw `IDispatch`. `None`
+    /// when no live interface identity is known (the vtable path then declines and
+    /// falls back to `IDispatch`).
+    pub interface_iid: Option<crate::ComInterfaceIid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -528,7 +539,7 @@ mod tests {
         member_specs_from_typelib_metadata,
     };
     use crate::{
-        ComMemberToken, ComValue, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
+        ComInterfaceIid, ComMemberToken, ComValue, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
         TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
     };
     use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, RuntimeMemberInvokeKind, VarType};
@@ -565,6 +576,7 @@ mod tests {
                 return_type: Some(TypeLibParamType::Long),
                 callconv_is_stdcall: true,
                 is_dual: true,
+                interface_iid: None,
             }],
             events: Vec::new(),
         };
@@ -635,6 +647,12 @@ mod tests {
                 return_type: Some(TypeLibParamType::Long),
                 callconv_is_stdcall: true,
                 is_dual: true,
+                interface_iid: Some(ComInterfaceIid {
+                    data1: 0x1234_5678,
+                    data2: 0x9abc,
+                    data3: 0xdef0,
+                    data4: [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80],
+                }),
             }],
             events: Vec::new(),
         };
@@ -662,6 +680,16 @@ mod tests {
         assert!(
             spec.callconv_is_stdcall,
             "a CC_STDCALL dual member must carry callconv_is_stdcall == true"
+        );
+        assert_eq!(
+            spec.interface_iid,
+            Some(ComInterfaceIid {
+                data1: 0x1234_5678,
+                data2: 0x9abc,
+                data3: 0xdef0,
+                data4: [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80],
+            }),
+            "the dual interface IID must reach the member spec for QI dispatch (S5a)"
         );
     }
 

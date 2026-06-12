@@ -65,9 +65,9 @@ pub use runtime_state::{
     binding_from_typelib_metadata,
 };
 pub use typelib::{
-    TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
-    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
-    TypeLibResolvedIdentity, runtime_class_descriptor_from_typelib_metadata,
+    ComInterfaceIid, TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata,
+    TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType,
+    TypeLibResolveRequest, TypeLibResolvedIdentity, runtime_class_descriptor_from_typelib_metadata,
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
 pub(crate) use typelib_catalog::map_member_metadata_to_spec;
@@ -98,8 +98,8 @@ pub use windows_client::{
     RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl, activate_dispatch_by_prog_id,
     activate_runtime_binding, activate_runtime_dispatch, activate_runtime_object_binding_shared,
     add_ref_dispatch, get_dispid_by_name, get_dispids_by_names, guid_equals, parse_guid_canonical,
-    query_dispatch_from_unknown, query_unknown_from_dispatch, release_connection_point,
-    release_dispatch, release_unknown, resolve_named_argument_dispids,
+    query_dispatch_from_unknown, query_interface_pointer, query_unknown_from_dispatch,
+    release_connection_point, release_dispatch, release_unknown, resolve_named_argument_dispids,
 };
 #[cfg(target_os = "windows")]
 pub use windows_connection_point::{
@@ -145,8 +145,9 @@ pub use windows_runtime_state::{
     any(test, feature = "fixture-typelibs")
 ))]
 pub use windows_test_dispatch::{
-    DUAL_SLOT_EXISTS, DUAL_SLOT_GET_COUNT, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
-    DUAL_SLOT_RAISE_ERROR, create_oxvba_dual_vtable_object,
+    DUAL_FIXTURE_INTERFACE_IID, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_COUNT, DUAL_SLOT_LOOKUP,
+    DUAL_SLOT_PUT_VALUE, DUAL_SLOT_RAISE_ERROR, IID_OXVBA_DUAL_FIXTURE,
+    create_oxvba_dual_vtable_object,
 };
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 pub use windows_test_dispatch::{
@@ -163,9 +164,7 @@ pub use windows_test_dispatch::{
     create_oxvba_test_dispatch, raw_oxvba_test_dispatch_vtable_invoke,
 };
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-pub use windows_typelib_loader::{
-    dispatch_is_marshaling_proxy, live_member_metadata_from_dispatch,
-};
+pub use windows_typelib_loader::live_member_metadata_from_dispatch;
 #[cfg(target_os = "windows")]
 pub use windows_variant::{
     VariantResultValue, set_variant_from_com_value, take_variant_result_value,

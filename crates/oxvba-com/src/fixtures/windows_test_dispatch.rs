@@ -3480,6 +3480,30 @@ pub const DUAL_SLOT_PUT_VALUE: u16 = 9;
 pub const DUAL_SLOT_LOOKUP: u16 = 10;
 pub const DUAL_SLOT_RAISE_ERROR: u16 = 11;
 
+/// The custom **dual interface IID** the fixture answers from `QueryInterface`
+/// (besides `IUnknown`/`IDispatch`). Workset S5a: the vtable dispatch path QIs the
+/// object for the member's dual IID and calls the slot on the returned pointer.
+/// The fixture's QI returns `this` for this IID (its dual vtable aliases the
+/// IDispatch vtable in-process), so the QI'd pointer is the same vtable-callable
+/// object the slot tests already drive.
+#[cfg(target_os = "windows")]
+pub const IID_OXVBA_DUAL_FIXTURE: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0xE2A3_0D01,
+    data2: 0x0D01,
+    data3: 0x0D01,
+    data4: [0x0D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
+};
+
+/// The same dual IID as the platform-neutral [`crate::ComInterfaceIid`] carrier
+/// the member spec / metadata blob hold, so a test can stamp it onto a spec.
+#[cfg(target_os = "windows")]
+pub const DUAL_FIXTURE_INTERFACE_IID: crate::ComInterfaceIid = crate::ComInterfaceIid {
+    data1: 0xE2A3_0D01,
+    data2: 0x0D01,
+    data3: 0x0D01,
+    data4: [0x0D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
+};
+
 /// Source/Description the `raise_error` slot installs via `SetErrorInfo`, for
 /// the unit test to assert it surfaces through `ComInvokeExceptionInfo`.
 pub const DUAL_RAISE_ERROR_SOURCE: &str = "OxVba.DualFixture";
@@ -3584,7 +3608,13 @@ unsafe extern "system" fn oxvba_dual_query_interface(
     if riid.is_null() {
         return COM_E_NOINTERFACE;
     }
-    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IDISPATCH) {
+    // S5a: also answer the custom dual interface IID (returning `this`, which in
+    // an in-process dual aliases the IDispatch vtable). This is what the vtable
+    // dispatch path QueryInterfaces for before calling a custom slot.
+    if guid_equals(riid, &IID_IUNKNOWN)
+        || guid_equals(riid, &IID_IDISPATCH)
+        || guid_equals(riid, &IID_OXVBA_DUAL_FIXTURE)
+    {
         *ppv = this;
         let _ = oxvba_dual_add_ref(this);
         return COM_S_OK;

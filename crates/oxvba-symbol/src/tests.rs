@@ -407,6 +407,7 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 return_type: None,
                 callconv_is_stdcall: true,
                 is_dual: true,
+                interface_iid: None,
             },
             TypeLibMemberMetadata {
                 name: "Item".into(),
@@ -421,6 +422,7 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 return_type: Some(TypeLibParamType::Variant),
                 callconv_is_stdcall: true,
                 is_dual: true,
+                interface_iid: None,
             },
         ],
         events: vec![TypeLibEventMetadata {

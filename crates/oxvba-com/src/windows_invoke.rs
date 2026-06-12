@@ -1655,6 +1655,9 @@ impl ComTransportCounters<'_> {
 /// when ALL hold:
 /// - a vtable slot is present, and the slot index is `>= 7` (oVft `>= 56`), so we
 ///   never call an `IUnknown`/`IDispatch` slot;
+/// - the member carries its defining **dual interface IID** (S5a), which the
+///   dispatch site `QueryInterface`s the object for before any slot call — without
+///   it we cannot obtain a verified vtable pointer, so we must not vtable-call;
 /// - the FUNCDESC declares `CC_STDCALL`;
 /// - EXACT arity: exactly one declared parameter type per supplied positional
 ///   arg. The vtable ABI cannot drop a trailing optional param (no DISPPARAMS to
@@ -1677,6 +1680,14 @@ fn vtable_gate_admits(
     // Never vtable-call an IUnknown (0..=2) or IDispatch (3..=6) slot.
     if slot < 7 {
         return false;
+    }
+    // S5a HOST-AV SAFETY: a usable dual interface IID is mandatory. We only ever
+    // vtable-call after a SUCCESSFUL QueryInterface for this exact IID, so without
+    // one (or with a null IID) we cannot prove the pointer's vtable layout and
+    // must fall back to IDispatch.
+    match spec.interface_iid {
+        Some(iid) if !iid.is_null() => {}
+        _ => return false,
     }
     if !spec.callconv_is_stdcall {
         return false;
@@ -1783,13 +1794,56 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     };
 
     let slot = spec.vtable_slot.expect("gate guaranteed a slot");
-    // SAFETY: the gate proved `spec.vtable_slot >= 7` with a CC_STDCALL,
-    // fully-typed, v1-marshallable signature, and `dispatch` is the live
-    // bindings-map-retained dual interface; this is exactly the contract
-    // vtable_invoke documents (`HRESULT slot(this, params…, retval*)`).
+    // S5a CORE: do NOT vtable-call the raw IDispatch pointer. QueryInterface the
+    // object for the member's typelib-declared DUAL interface IID (the gate proved
+    // it is present and non-null). This is how the VBA IDE holds an early-bound
+    // reference. If the QI fails (E_NOINTERFACE / null) we fall back to IDispatch
+    // (Ok(None)); we NEVER call a slot on an unverified pointer (no host AV).
+    let iid = spec
+        .interface_iid
+        .expect("gate guaranteed an interface IID")
+        .to_guid();
+    // SAFETY: `dispatch` is the live, bindings-map-retained interface pointer for
+    // this bound object; QueryInterface reads its IUnknown vtable and, on success,
+    // hands back one fresh reference we own (Released below on every path).
+    let interface = match unsafe { crate::query_interface_pointer(dispatch, &iid) } {
+        Ok(interface) => interface,
+        // E_NOINTERFACE or any failing QI: this object does not expose the dual
+        // interface in a vtable-callable form here — fall back to IDispatch.
+        Err(_) => return Ok(None),
+    };
+
+    // S5a HOST-AV SAFETY — the decisive guard, grounded in live evidence (in-process
+    // ACE DAO + out-of-process Excel). A typelib `oVft`-derived slot index does NOT
+    // reliably index the LIVE vtable of a QI'd interface that is a marshaling /
+    // apartment proxy: the slot can map to an unbacked entry and ACCESS-VIOLATE the
+    // host, and the slot read from that interface's OWN live ITypeInfo is the same
+    // `oVft`-derived value (equally unreliable), so confirming the GUID + slot is NOT
+    // sufficient to make the call safe on a proxy. The only configuration proven not
+    // to AV is a DIRECT in-process interface pointer we can index by slot index —
+    // exactly the case where `QueryInterface(dual IID)` returns the SAME pointer as
+    // the bound IDispatch (an in-process dual aliases its IDispatch, the layout the
+    // S2/S3 fixture and S4's `Recordset.Close` validated). When the QI'd pointer
+    // DIFFERS (a tear-off / proxy), we cannot prove the slot maps correctly, so we
+    // fall back to IDispatch rather than risk a host crash. (See the workset S5a
+    // report: full out-of-process vtable dispatch is infeasible with this metadata.)
+    if !core::ptr::eq(dispatch, interface) {
+        // SAFETY: Release the QI'd reference we own, then fall back to IDispatch.
+        unsafe {
+            crate::release_unknown(interface);
+        }
+        return Ok(None);
+    }
+
+    // SAFETY: `interface` is the QI'd dual-interface pointer carrying one reference
+    // we own and is IDENTITY-EQUAL to the bound in-process IDispatch (an aliasing
+    // dual), so its vtable is the real custom-slot vtable we can index directly. The
+    // gate proved `slot >= 7` with a CC_STDCALL, fully-typed, v1-marshallable
+    // signature, so the slot's ABI is `HRESULT slot(this, params…, retval*)` —
+    // exactly vtable_invoke's contract.
     let result = unsafe {
         crate::windows_vtable::vtable_invoke(
-            dispatch,
+            interface,
             slot,
             &spec.parameter_types,
             return_type,
@@ -1801,6 +1855,15 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
             &mut bind_dispatch_result,
         )
     };
+
+    // Release the QI'd interface reference on every path (success, COM error, and
+    // unsupported-shape) — QI added one ref; we own and drop exactly that one.
+    // SAFETY: `interface` is the single reference `query_interface_pointer` handed
+    // us; we Release it exactly once here and never use it afterward.
+    unsafe {
+        crate::release_unknown(interface);
+    }
+
     match result {
         Ok(value) => Ok(Some(value)),
         // A real COM error (the call ran and the server returned hr < 0):

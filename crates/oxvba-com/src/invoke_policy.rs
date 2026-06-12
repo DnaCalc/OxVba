@@ -212,6 +212,7 @@ mod tests {
             parameter_types: Vec::new(),
             return_type: None,
             callconv_is_stdcall: false,
+            interface_iid: None,
         };
         let args = canonicalize_member_known_args(
             &spec,
@@ -255,6 +256,7 @@ mod tests {
                 parameter_types: Vec::new(),
                 return_type: None,
                 callconv_is_stdcall: false,
+                interface_iid: None,
             },
         );
         let request = ComInvokeRequest {
@@ -285,6 +287,7 @@ mod tests {
                 parameter_types: Vec::new(),
                 return_type: None,
                 callconv_is_stdcall: false,
+                interface_iid: None,
             },
         );
         let request = ComInvokeRequest {

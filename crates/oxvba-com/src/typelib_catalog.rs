@@ -260,6 +260,7 @@ pub(crate) fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> Com
         parameter_types: member.parameter_types.clone(),
         return_type: member.return_type,
         callconv_is_stdcall: member.callconv_is_stdcall,
+        interface_iid: member.interface_iid,
     }
 }
 

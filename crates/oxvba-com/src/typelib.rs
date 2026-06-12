@@ -36,6 +36,52 @@ pub struct TypeLibMetadataBlob {
     pub events: Vec<TypeLibEventMetadata>,
 }
 
+/// A COM interface IID in its canonical `{data1-data2-data3-data4}` field layout
+/// (the same byte layout as `windows_sys::core::GUID`), stored platform-neutrally
+/// so it can ride on the metadata blob / `ComMemberSpec` (which derive
+/// `Debug`/`PartialEq`/`Eq`, traits `GUID` does not implement) on every target.
+///
+/// Workset S5a carries the member's defining **dual interface** IID here so the
+/// vtable dispatch site can `QueryInterface` the live object for that exact
+/// interface and call the slot on the returned (real-vtable) pointer — uniformly
+/// in-process and out-of-process — instead of vtable-calling the raw `IDispatch`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComInterfaceIid {
+    pub data1: u32,
+    pub data2: u16,
+    pub data3: u16,
+    pub data4: [u8; 8],
+}
+
+#[cfg(target_os = "windows")]
+impl ComInterfaceIid {
+    /// Adopt a live `windows_sys::core::GUID` (e.g. `TYPEATTR::guid`) into the
+    /// platform-neutral carrier.
+    pub fn from_guid(guid: &windows_sys::core::GUID) -> Self {
+        Self {
+            data1: guid.data1,
+            data2: guid.data2,
+            data3: guid.data3,
+            data4: guid.data4,
+        }
+    }
+
+    /// Project back to a `windows_sys::core::GUID` for `QueryInterface`.
+    pub fn to_guid(self) -> windows_sys::core::GUID {
+        windows_sys::core::GUID {
+            data1: self.data1,
+            data2: self.data2,
+            data3: self.data3,
+            data4: self.data4,
+        }
+    }
+
+    /// True for the all-zero IID (`IID_NULL`), which is never a usable QI target.
+    pub fn is_null(&self) -> bool {
+        self.data1 == 0 && self.data2 == 0 && self.data3 == 0 && self.data4 == [0; 8]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeLibParamType {
     Variant,
@@ -116,6 +162,14 @@ pub struct TypeLibMemberMetadata {
     /// is reachable both via `IDispatch::Invoke` and a custom-interface vtable
     /// slot. Informational; the vtable gate keys on `vtable_slot` + callconv.
     pub is_dual: bool,
+    /// IID of the member's **defining dual interface** (the containing
+    /// `ITypeInfo`'s `GetTypeAttr().guid`). Workset S5a: the vtable dispatch site
+    /// `QueryInterface`s the live object for this IID and calls the slot on the
+    /// returned interface pointer, so the call works uniformly in-process and
+    /// out-of-process (the oleaut universal marshaler builds a real vtable proxy
+    /// for any oleaut dual interface). `None` for fixture/catalog metadata that
+    /// carries no live interface identity.
+    pub interface_iid: Option<ComInterfaceIid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -307,6 +361,7 @@ mod tests {
                     return_type: Some(TypeLibParamType::Long),
                     callconv_is_stdcall: true,
                     is_dual: true,
+                    interface_iid: None,
                 },
                 TypeLibMemberMetadata {
                     name: "Item".to_string(),
@@ -321,6 +376,7 @@ mod tests {
                     return_type: Some(TypeLibParamType::Variant),
                     callconv_is_stdcall: false,
                     is_dual: true,
+                    interface_iid: None,
                 },
             ],
             events: Vec::new(),
