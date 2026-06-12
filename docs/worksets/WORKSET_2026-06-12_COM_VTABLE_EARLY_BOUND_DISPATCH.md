@@ -264,9 +264,17 @@ have** — the typelib slot indices do not address the live proxy vtables, and t
 in-band way to recover the proxy's true vtable layout. Real IDE-fidelity early binding
 would need a fundamentally different mechanism (e.g. the proxy/stub typelib marshaler used
 to *build* the vtable, not just consume slot indices), which is out of this workset's scope.
-**S5b (omitted-optionals) and S5c (Field.Value divergence, property-put, VT_CY/DATE,
-IUnknown**) are now moot for live servers** (everything falls back); they remain only as
-in-process-fixture coverage if pursued. **S6 (flip default to PreferVtable) is SAFE to do**
+**S5b (omitted-optionals) is moot for live servers** (everything falls back, so making an
+omitted-optional member vtable-eligible changes nothing live) and was NOT implemented.
+**S5c was delivered as in-process-fixture marshaller coverage only:** the Field.Value
+"divergence" is fully explained by the S5a finding (its QI'd DAO Field interface is a
+tear-off, `same=false`, so it falls back — not a getter quirk and no masked error); and the
+remaining S5c marshalling items were hardened against the dual-vtable fixture
+(`windows_vtable.rs` tests): a `VT_CY` retval (`get_Price`, new `OutCell::Currency`
+coverage), a `VT_DATE` retval (`get_Created`) — for which the marshaller now decodes a
+distinct **Date** Variant (new `OutCell::Date`, previously a plain Double), and a
+`VT_UNKNOWN`/`VT_DISPATCH` interface retval (`get_Owner`). Property-put was already covered
+by the existing `put_Value` fixture slot. **S6 (flip default to PreferVtable) is SAFE**
 (PreferVtable now never AVs — it just falls back), but yields no live behavior change, so it
 is not worth flipping for performance.
 

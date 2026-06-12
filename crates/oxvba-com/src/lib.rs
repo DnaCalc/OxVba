@@ -145,8 +145,9 @@ pub use windows_runtime_state::{
     any(test, feature = "fixture-typelibs")
 ))]
 pub use windows_test_dispatch::{
-    DUAL_FIXTURE_INTERFACE_IID, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_COUNT, DUAL_SLOT_LOOKUP,
-    DUAL_SLOT_PUT_VALUE, DUAL_SLOT_RAISE_ERROR, IID_OXVBA_DUAL_FIXTURE,
+    DUAL_CREATED_OLE_DATE, DUAL_FIXTURE_INTERFACE_IID, DUAL_PRICE_SCALED_I64, DUAL_SLOT_EXISTS,
+    DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE,
+    DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE, DUAL_SLOT_RAISE_ERROR, IID_OXVBA_DUAL_FIXTURE,
     create_oxvba_dual_vtable_object,
 };
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]

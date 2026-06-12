@@ -182,6 +182,9 @@ enum OutCell {
     I64(Box<i64>),
     F64(Box<f64>),
     F32(Box<f32>),
+    /// A `VT_DATE` (f64 OLE date) retval cell that decodes to a Date Variant,
+    /// distinct from a plain `VT_R8` Double retval (`OutCell::F64`).
+    Date(Box<f64>),
     Currency(Box<i64>),
     Bstr(Box<windows_sys::core::BSTR>),
     Variant(Box<VARIANT>),
@@ -481,7 +484,8 @@ fn alloc_out_cell(return_type: TypeLibParamType) -> Result<OutCell, String> {
         P::Boolean => OutCell::Bool(Box::new(0)),
         P::Byte => OutCell::I32(Box::new(0)),
         P::LongLong => OutCell::I64(Box::new(0)),
-        P::Double | P::Date => OutCell::F64(Box::new(0.0)),
+        P::Double => OutCell::F64(Box::new(0.0)),
+        P::Date => OutCell::Date(Box::new(0.0)),
         P::Single => OutCell::F32(Box::new(0.0)),
         P::Currency => OutCell::Currency(Box::new(0)),
         P::String => OutCell::Bstr(Box::new(std::ptr::null_mut())),
@@ -502,7 +506,7 @@ fn out_cell_ptr(cell: &mut OutCell) -> Option<*mut c_void> {
         OutCell::I32(b) => Some((b.as_mut() as *mut i32).cast::<c_void>()),
         OutCell::I16(b) | OutCell::Bool(b) => Some((b.as_mut() as *mut i16).cast::<c_void>()),
         OutCell::I64(b) | OutCell::Currency(b) => Some((b.as_mut() as *mut i64).cast::<c_void>()),
-        OutCell::F64(b) => Some((b.as_mut() as *mut f64).cast::<c_void>()),
+        OutCell::F64(b) | OutCell::Date(b) => Some((b.as_mut() as *mut f64).cast::<c_void>()),
         OutCell::F32(b) => Some((b.as_mut() as *mut f32).cast::<c_void>()),
         OutCell::Bstr(b) => Some((b.as_mut() as *mut windows_sys::core::BSTR).cast::<c_void>()),
         OutCell::Variant(b) => Some((b.as_mut() as *mut VARIANT).cast::<c_void>()),
@@ -567,6 +571,8 @@ where
         OutCell::I64(b) => Variant::from_i64(*b),
         OutCell::Currency(b) => Variant::from_currency_scaled_i64(*b),
         OutCell::F64(b) => Variant::from_f64(*b),
+        // A VT_DATE retval decodes to a Date Variant (not a plain Double).
+        OutCell::Date(b) => Variant::from_date_f64(*b),
         OutCell::F32(b) => Variant::from_f64(f64::from(*b)),
         OutCell::Bstr(b) => {
             // Callee transferred ownership of the retval BSTR; take + free it.
@@ -660,9 +666,10 @@ fn com_value_to_currency_i64(value: &ComValue) -> Result<i64, String> {
 mod tests {
     use super::*;
     use crate::windows_test_dispatch::{
-        DUAL_RAISE_ERROR_DESCRIPTION, DUAL_RAISE_ERROR_SOURCE, DUAL_SLOT_EXISTS,
-        DUAL_SLOT_GET_COUNT, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE, DUAL_SLOT_RAISE_ERROR,
-        create_oxvba_dual_vtable_object,
+        DUAL_CREATED_OLE_DATE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
+        DUAL_RAISE_ERROR_SOURCE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED,
+        DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
+        DUAL_SLOT_RAISE_ERROR, create_oxvba_dual_vtable_object,
     };
     use oxvba_runtime::VarType;
 
@@ -847,6 +854,119 @@ mod tests {
             value.as_object_ref().map(|o| o.raw()),
             Some(99),
             "the bind closure's sentinel ObjectRef should surface"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn get_price_decodes_currency_out_cell() {
+        // S5c: a VT_CY [out,retval] decodes through OutCell::Currency to a Currency
+        // Variant (i64 scaled ×10000), not a plain integer.
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        // SAFETY: get_Price is slot 12: () -> CY retval.
+        let value = unsafe {
+            vtable_invoke(
+                this,
+                DUAL_SLOT_GET_PRICE,
+                &[],
+                Some(TypeLibParamType::Currency),
+                TypeLibMemberInvokeKind::PropertyGet,
+                &[],
+                "property-get",
+                12,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("get_Price should succeed");
+        assert_eq!(
+            value.vtype(),
+            VarType::Currency,
+            "VT_CY retval must decode to a Currency Variant"
+        );
+        assert_eq!(
+            value.as_currency_scaled_i64(),
+            Some(DUAL_PRICE_SCALED_I64),
+            "the scaled currency value must round-trip"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn get_created_decodes_date_out_cell() {
+        // S5c: a VT_DATE [out,retval] decodes through OutCell::Date to a Date
+        // Variant (distinct from a plain Double), exercising the new date out-cell.
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        // SAFETY: get_Created is slot 13: () -> DATE retval.
+        let value = unsafe {
+            vtable_invoke(
+                this,
+                DUAL_SLOT_GET_CREATED,
+                &[],
+                Some(TypeLibParamType::Date),
+                TypeLibMemberInvokeKind::PropertyGet,
+                &[],
+                "property-get",
+                13,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("get_Created should succeed");
+        assert_eq!(
+            value.vtype(),
+            VarType::Date,
+            "VT_DATE retval must decode to a Date Variant, not a Double"
+        );
+        assert_eq!(
+            value.as_date_f64(),
+            Some(DUAL_CREATED_OLE_DATE),
+            "the OLE date value must round-trip"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn get_owner_binds_iunknown_retval_object() {
+        // S5c: a VT_UNKNOWN/VT_DISPATCH [out,retval] is decoded through
+        // OutCell::Interface and handed to the bind closure, which takes ownership
+        // of the transferred reference (here releasing it and surfacing a sentinel).
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        // SAFETY: get_Owner is slot 14: () -> IUnknown* retval (a TestDispatch whose
+        // IUnknown aliases its IDispatch, so the bound pointer is a live object).
+        let value = unsafe {
+            vtable_invoke(
+                this,
+                DUAL_SLOT_GET_OWNER,
+                &[],
+                Some(TypeLibParamType::Object),
+                TypeLibMemberInvokeKind::PropertyGet,
+                &[],
+                "property-get",
+                14,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("get_Owner should succeed");
+        assert_eq!(
+            value.vtype(),
+            VarType::Object,
+            "an interface retval must decode to a bound object Variant"
+        );
+        assert_eq!(
+            value.as_object_ref().map(|o| o.raw()),
+            Some(99),
+            "the bind closure's sentinel ObjectRef should surface for the retval"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };

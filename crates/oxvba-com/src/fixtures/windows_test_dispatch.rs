@@ -3479,6 +3479,20 @@ pub const DUAL_SLOT_EXISTS: u16 = 8;
 pub const DUAL_SLOT_PUT_VALUE: u16 = 9;
 pub const DUAL_SLOT_LOOKUP: u16 = 10;
 pub const DUAL_SLOT_RAISE_ERROR: u16 = 11;
+/// slot 12: `get_Price(this, [out,retval] CY*)` — a VT_CY (currency, i64 scaled
+/// ×10000) return, exercising the marshaller's `OutCell::Currency` decoder.
+pub const DUAL_SLOT_GET_PRICE: u16 = 12;
+/// slot 13: `get_Created(this, [out,retval] DATE*)` — a VT_DATE (f64 OLE date)
+/// return, exercising the marshaller's date out-cell decoder.
+pub const DUAL_SLOT_GET_CREATED: u16 = 13;
+/// slot 14: `get_Owner(this, [out,retval] IUnknown**)` — a VT_UNKNOWN return that
+/// the marshaller must `QueryInterface(IDispatch)` (`query_dispatch_from_unknown`).
+pub const DUAL_SLOT_GET_OWNER: u16 = 14;
+
+/// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
+pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
+/// The OLE-date value `get_Created` returns (an arbitrary fixed f64).
+pub const DUAL_CREATED_OLE_DATE: f64 = 45_000.5;
 
 /// The custom **dual interface IID** the fixture answers from `QueryInterface`
 /// (besides `IUnknown`/`IDispatch`). Workset S5a: the vtable dispatch path QIs the
@@ -3543,6 +3557,13 @@ struct RawDualVtbl {
     ) -> i32,
     /// slot 11
     raise_error: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut i32) -> i32,
+    /// slot 12: `get_Price(this, [out,retval] CY*)`
+    get_price: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut CY) -> i32,
+    /// slot 13: `get_Created(this, [out,retval] DATE* as f64)`
+    get_created: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut f64) -> i32,
+    /// slot 14: `get_Owner(this, [out,retval] IUnknown**)`
+    get_owner:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut *mut RawIUnknown) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3572,6 +3593,9 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     put_value: oxvba_dual_put_value,
     lookup: oxvba_dual_lookup,
     raise_error: oxvba_dual_raise_error,
+    get_price: oxvba_dual_get_price,
+    get_created: oxvba_dual_get_created,
+    get_owner: oxvba_dual_get_owner,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -3790,6 +3814,57 @@ unsafe extern "system" fn oxvba_dual_raise_error(
         create_oxvba_dual_error_info(DUAL_RAISE_ERROR_SOURCE, DUAL_RAISE_ERROR_DESCRIPTION);
     let _ = SetErrorInfo(0, errinfo.cast::<core::ffi::c_void>());
     DUAL_RAISE_ERROR_HRESULT
+}
+
+/// slot 12: `get_Price(this, [out,retval] CY*)` — writes a currency value (i64
+/// scaled ×10000) so the marshaller's `OutCell::Currency` decoder is exercised.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_price(this: *mut core::ffi::c_void, out: *mut CY) -> i32 {
+    let _ = this;
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    // A CY is an 8-byte i64 union; write the scaled value directly.
+    (*out).int64 = DUAL_PRICE_SCALED_I64;
+    COM_S_OK
+}
+
+/// slot 13: `get_Created(this, [out,retval] DATE*)` — writes an OLE date (f64) so
+/// the marshaller's date out-cell decoder is exercised.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_created(
+    this: *mut core::ffi::c_void,
+    out: *mut f64,
+) -> i32 {
+    let _ = this;
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = DUAL_CREATED_OLE_DATE;
+    COM_S_OK
+}
+
+/// slot 14: `get_Owner(this, [out,retval] IUnknown**)` — returns a fresh
+/// `OxVba.TestDispatch` as a bare `IUnknown` (AddRef'd, ownership transferred), so
+/// the marshaller must `QueryInterface(IDispatch)` the returned IUnknown
+/// (`query_dispatch_from_unknown`) to bind it as an object result.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_owner(
+    this: *mut core::ffi::c_void,
+    out: *mut *mut RawIUnknown,
+) -> i32 {
+    let _ = this;
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    // create_oxvba_test_dispatch returns a fresh IDispatch with one reference; its
+    // first field is its IUnknown vtable, so it casts to IUnknown* directly and the
+    // [out,retval] convention transfers that single reference to the caller.
+    *out = create_oxvba_test_dispatch().cast::<RawIUnknown>();
+    COM_S_OK
 }
 
 // ── Minimal IErrorInfo implementation for the raise_error slot ──
