@@ -217,6 +217,12 @@ fn member_specs_from_typelib_metadata(
                     // S5a: carry the dual interface IID so the vtable dispatch
                     // site can QueryInterface for it before any slot call.
                     interface_iid: member.interface_iid,
+                    // Carry the FDUAL/source-typekind/AV-bound triad the gate
+                    // keys on (previously dropped, which is how a pure
+                    // dispinterface member slipped past with a slot).
+                    is_dual: member.is_dual,
+                    source_typekind: member.source_typekind,
+                    vtable_slot_bound: member.vtable_slot_bound,
                 },
             )
         })
@@ -333,14 +339,26 @@ pub struct ComMemberSpec {
     /// True when the member's FUNCDESC declares `CC_STDCALL` (callconv == 4),
     /// the only calling convention the x64 vtable marshaller may call.
     pub callconv_is_stdcall: bool,
-    /// IID of the member's defining **dual interface** (the containing
-    /// `ITypeInfo`'s `GetTypeAttr().guid`). Workset S5a: the vtable dispatch site
-    /// `QueryInterface`s the live object for this exact IID and calls the slot on
-    /// the returned interface pointer (a real vtable, in-process or out-of-process
-    /// via the oleaut universal marshaler) instead of the raw `IDispatch`. `None`
-    /// when no live interface identity is known (the vtable path then declines and
-    /// falls back to `IDispatch`).
+    /// IID of the member's defining **dual interface**. For a live-recovered
+    /// FDUAL member this is the PARTNER `TKIND_INTERFACE`'s GUID; for a
+    /// registered-typelib interface it is the containing `ITypeInfo`'s GUID. The
+    /// vtable dispatch site `QueryInterface`s the live object for this exact IID
+    /// and calls the slot on the returned interface pointer instead of the raw
+    /// `IDispatch`. `None` when no live interface identity is known (the vtable
+    /// path then declines and falls back to `IDispatch`).
     pub interface_iid: Option<crate::ComInterfaceIid>,
+    /// True when the member's defining type carried `TYPEFLAG_FDUAL`. The vtable
+    /// gate requires `is_dual && source_typekind == Interface`.
+    pub is_dual: bool,
+    /// The `TKIND` the vtable metadata was sourced from. A slot is only callable
+    /// when this is `Interface` (a real vtable); a pure `dispinterface` member
+    /// (`Dispatch`) has no slot. The gate rejects anything but `Interface`.
+    pub source_typekind: Option<crate::SourceTypeKind>,
+    /// AV-safety bound: `cbSizeVft / size_of::<*const c_void>()` of the source
+    /// INTERFACE typeinfo (= `cbSizeVft/8` on x64). The gate requires
+    /// `slot < vtable_slot_bound` so a slot can never over-run the live vtable.
+    /// `None` when the bound is unknown (the gate then declines).
+    pub vtable_slot_bound: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -577,6 +595,8 @@ mod tests {
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: None,
+                source_typekind: Some(crate::SourceTypeKind::Interface),
+                vtable_slot_bound: Some(64),
             }],
             events: Vec::new(),
         };
@@ -653,6 +673,8 @@ mod tests {
                     data3: 0xdef0,
                     data4: [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80],
                 }),
+                source_typekind: Some(crate::SourceTypeKind::Interface),
+                vtable_slot_bound: Some(64),
             }],
             events: Vec::new(),
         };
@@ -690,6 +712,19 @@ mod tests {
                 data4: [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80],
             }),
             "the dual interface IID must reach the member spec for QI dispatch (S5a)"
+        );
+        // The FDUAL/source-typekind/AV-bound triad must also project (previously
+        // dropped); the vtable gate keys on all three.
+        assert!(spec.is_dual, "is_dual must reach the member spec");
+        assert_eq!(
+            spec.source_typekind,
+            Some(crate::SourceTypeKind::Interface),
+            "the source TKIND must reach the member spec"
+        );
+        assert_eq!(
+            spec.vtable_slot_bound,
+            Some(64),
+            "the AV-safety slot bound must reach the member spec"
         );
     }
 

@@ -839,9 +839,15 @@ mod tests {
             return_type: Some(crate::TypeLibParamType::Long),
             callconv_is_stdcall,
             // A vtable-eligible spec (slot present) carries the dual fixture IID so
-            // the S5a dispatch path can QueryInterface the fixture object for it
-            // before the slot call; a no-slot spec has no interface identity.
+            // the dispatch path can QueryInterface the fixture object for it before
+            // the slot call; a no-slot spec has no interface identity. The eligible
+            // spec is a real custom INTERFACE dual with an AV-safety bound that
+            // admits the fixture's custom slots (7..=14); the in-process fixture's
+            // QI(dual IID) returns `this`, so the bound only needs to exceed those.
             interface_iid: vtable_slot.map(|_| crate::DUAL_FIXTURE_INTERFACE_IID),
+            is_dual: vtable_slot.is_some(),
+            source_typekind: vtable_slot.map(|_| crate::SourceTypeKind::Interface),
+            vtable_slot_bound: vtable_slot.map(|_| 64),
         }
     }
 

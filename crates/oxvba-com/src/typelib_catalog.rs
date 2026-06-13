@@ -261,6 +261,9 @@ pub(crate) fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> Com
         return_type: member.return_type,
         callconv_is_stdcall: member.callconv_is_stdcall,
         interface_iid: member.interface_iid,
+        is_dual: member.is_dual,
+        source_typekind: member.source_typekind,
+        vtable_slot_bound: member.vtable_slot_bound,
     }
 }
 

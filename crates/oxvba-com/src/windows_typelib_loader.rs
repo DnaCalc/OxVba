@@ -1578,6 +1578,23 @@ fn vtable_slot_index_from_ovft(ovft: i16) -> Option<u16> {
     Some(raw / LIVE_VTABLE_STRIDE)
 }
 
+/// The vtable **slot-count bound** of an interface from its `TYPEATTR::cbSizeVft`
+/// (the vtable byte size), in LIVE pointer units (`cbSizeVft / 8` on x64). This
+/// is the AV-safety net the probe proved: a slot index `>= bound` would over-read
+/// the live vtable (the access violation). `None` when `cbSizeVft` is zero.
+///
+/// `cbSizeVft` MUST come from the FDUAL partner INTERFACE typeinfo, NOT the
+/// dispinterface (whose `cbSizeVft = 56` is just IDispatch's 7 slots). The probe
+/// measured Recordset's interface `cbSizeVft = 736` → bound 92, and Field's
+/// interface `cbSizeVft = 464` → bound 58.
+#[cfg(target_os = "windows")]
+fn vtable_slot_bound_from_cb_size_vft(cb_size_vft: u16) -> Option<u16> {
+    if cb_size_vft == 0 || LIVE_VTABLE_STRIDE == 0 {
+        return None;
+    }
+    Some(cb_size_vft / LIVE_VTABLE_STRIDE)
+}
+
 /// Extracts member metadata from a single ITypeInfo.
 #[cfg(target_os = "windows")]
 unsafe fn extract_members_from_typeinfo(
@@ -1594,6 +1611,19 @@ unsafe fn extract_members_from_typeinfo(
     // TYPEFLAG_FDUAL on the containing type tells us its members are reachable
     // both via IDispatch::Invoke and a custom-interface vtable slot.
     let is_dual = ((*pattr).wtypeflags & TYPEFLAG_FDUAL) != 0;
+    // The TKIND this typeinfo describes. Only a real custom interface
+    // (TKIND_INTERFACE) carries a callable vtable; a dispinterface
+    // (TKIND_DISPATCH) does not (its FUNCDESC.oVft is authored for the FDUAL
+    // PARTNER interface, so a slot call on the dispinterface pointer over-reads).
+    let source_typekind = match typekind {
+        TKIND_INTERFACE => Some(crate::SourceTypeKind::Interface),
+        TKIND_DISPATCH => Some(crate::SourceTypeKind::Dispatch),
+        _ => None,
+    };
+    // AV-safety bound: the slot count of THIS typeinfo's vtable, in LIVE pointer
+    // units (cbSizeVft / 8 on x64). For a TKIND_INTERFACE this is the real vtable
+    // length; the gate requires slot < bound so a slot can never over-run it.
+    let vtable_slot_bound = vtable_slot_bound_from_cb_size_vft((*pattr).cb_size_vft);
     // The containing ITypeInfo's GUID IS the dual interface IID (S5a): for a dual
     // the dispinterface and the vtable interface share the same IID, so this is
     // the exact interface we QueryInterface for at the dispatch site to obtain a
@@ -1743,7 +1773,19 @@ unsafe fn extract_members_from_typeinfo(
         // in LIVE pointer-size units, so the index is `oVft / 8` on x64 (see
         // `vtable_slot_index_from_ovft` for the value-oracle evidence behind the
         // divisor). A mis-aligned or negative oVft yields `None`.
-        let vtable_slot = vtable_slot_index_from_ovft(fd.oVft);
+        //
+        // GATE (workset slice D): a vtable slot is only callable when sourced from
+        // a real custom interface — `FDUAL && TKIND_INTERFACE`. A pure
+        // dispinterface (`TKIND_DISPATCH`) member's oVft is authored for the FDUAL
+        // PARTNER vtable, so it does NOT index the dispinterface's own 7-slot
+        // vtable; calling it there over-reads. The live-recovery path crosses to
+        // the partner INTERFACE (slice B) to source a callable slot; here, on a
+        // bare dispinterface typeinfo, we drop the slot.
+        let vtable_slot = if is_dual && typekind == TKIND_INTERFACE {
+            vtable_slot_index_from_ovft(fd.oVft)
+        } else {
+            None
+        };
 
         members.push(TypeLibMemberMetadata {
             name: func_name,
@@ -1759,6 +1801,8 @@ unsafe fn extract_members_from_typeinfo(
             callconv_is_stdcall,
             is_dual,
             interface_iid,
+            source_typekind,
+            vtable_slot_bound,
         });
 
         ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);

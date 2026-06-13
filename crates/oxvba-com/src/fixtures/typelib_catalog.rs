@@ -451,6 +451,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "Exists".to_string(),
@@ -466,6 +468,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "FireChanged".to_string(),
@@ -481,6 +485,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "FireChangedPair".to_string(),
@@ -496,6 +502,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "FireChangedSourceInterface".to_string(),
@@ -511,6 +519,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
@@ -526,6 +536,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "Lookup".to_string(),
@@ -541,6 +553,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SetValue".to_string(),
@@ -556,6 +570,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SetValueRef".to_string(),
@@ -571,6 +587,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "Value".to_string(),
@@ -586,6 +604,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SumPair".to_string(),
@@ -601,6 +621,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "LookupPair".to_string(),
@@ -616,6 +638,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SetIndexedValue".to_string(),
@@ -631,6 +655,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SetIndexedValueRef".to_string(),
@@ -646,6 +672,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "EchoVariant".to_string(),
@@ -661,6 +689,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "RaiseException".to_string(),
@@ -676,6 +706,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "RaiseRichException".to_string(),
@@ -691,6 +723,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallInt".to_string(),
@@ -706,6 +740,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedWord".to_string(),
@@ -721,6 +757,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByte".to_string(),
@@ -736,6 +774,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSignedByte".to_string(),
@@ -751,6 +791,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformInt".to_string(),
@@ -766,6 +808,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformUInt".to_string(),
@@ -781,6 +825,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnHyper".to_string(),
@@ -796,6 +842,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyper".to_string(),
@@ -811,6 +859,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDouble".to_string(),
@@ -826,6 +876,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSingle".to_string(),
@@ -841,6 +893,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDate".to_string(),
@@ -856,6 +910,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnCurrency".to_string(),
@@ -871,6 +927,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDecimal".to_string(),
@@ -886,6 +944,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnBool".to_string(),
@@ -901,6 +961,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnString".to_string(),
@@ -916,6 +978,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnMissingMemberName".to_string(),
@@ -931,6 +995,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPingMemberName".to_string(),
@@ -946,6 +1012,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLookupMemberName".to_string(),
@@ -961,6 +1029,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSumPairMemberName".to_string(),
@@ -976,6 +1046,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLookupPairMemberName".to_string(),
@@ -991,6 +1063,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetValueMemberName".to_string(),
@@ -1006,6 +1080,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetValueRefMemberName".to_string(),
@@ -1021,6 +1097,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueMemberName".to_string(),
@@ -1036,6 +1114,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueRefMemberName".to_string(),
@@ -1051,6 +1131,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnValueMemberName".to_string(),
@@ -1066,6 +1148,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDefaultMemberName".to_string(),
@@ -1081,6 +1165,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnEmpty".to_string(),
@@ -1096,6 +1182,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnNull".to_string(),
@@ -1111,6 +1199,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnError".to_string(),
@@ -1126,6 +1216,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByRefLong".to_string(),
@@ -1141,6 +1233,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByRefLongArray".to_string(),
@@ -1156,6 +1250,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideHyper".to_string(),
@@ -1171,6 +1267,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideHyperArray".to_string(),
@@ -1186,6 +1284,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyper".to_string(),
@@ -1201,6 +1301,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyperArray".to_string(),
@@ -1216,6 +1318,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnVariantMatrix".to_string(),
@@ -1231,6 +1335,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "NewEnum".to_string(),
@@ -1246,6 +1352,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownVariantArray".to_string(),
@@ -1261,6 +1369,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLong".to_string(),
@@ -1276,6 +1386,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedLong".to_string(),
@@ -1291,6 +1403,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallIntArray".to_string(),
@@ -1306,6 +1420,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnBoolArray".to_string(),
@@ -1321,6 +1437,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnStringArray".to_string(),
@@ -1336,6 +1454,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallIntMatrix".to_string(),
@@ -1351,6 +1471,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknown".to_string(),
@@ -1366,6 +1488,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownArray".to_string(),
@@ -1381,6 +1505,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnByteArray".to_string(),
@@ -1396,6 +1522,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSignedByteArray".to_string(),
@@ -1411,6 +1539,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformIntArray".to_string(),
@@ -1426,6 +1556,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnPlatformUIntArray".to_string(),
@@ -1441,6 +1573,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnHyperArray".to_string(),
@@ -1456,6 +1590,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyperArray".to_string(),
@@ -1471,6 +1607,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDoubleArray".to_string(),
@@ -1486,6 +1624,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSingleArray".to_string(),
@@ -1501,6 +1641,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDateArray".to_string(),
@@ -1516,6 +1658,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnCurrencyArray".to_string(),
@@ -1531,6 +1675,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnDecimalArray".to_string(),
@@ -1546,6 +1692,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedLong".to_string(),
@@ -1561,6 +1709,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedLongArray".to_string(),
@@ -1576,6 +1726,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWidePlatformUInt".to_string(),
@@ -1591,6 +1743,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnWidePlatformUIntArray".to_string(),
@@ -1606,6 +1760,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnLongArray".to_string(),
@@ -1621,6 +1777,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedLongArray".to_string(),
@@ -1636,6 +1794,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatch".to_string(),
@@ -1651,6 +1811,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SelfDispatch".to_string(),
@@ -1666,6 +1828,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfUnknown".to_string(),
@@ -1681,6 +1845,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "SelfUnknown".to_string(),
@@ -1696,6 +1862,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ClassifyVariantArg".to_string(),
@@ -1711,6 +1879,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ClassifyVariantArrayFirstElementArg".to_string(),
@@ -1726,6 +1896,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatchArray".to_string(),
@@ -1741,6 +1913,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfTypedDispatchArray".to_string(),
@@ -1756,6 +1930,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "ReturnSelfTypedUnknownArray".to_string(),
@@ -1771,6 +1947,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
         ];
         let events = vec![
@@ -1881,6 +2059,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "FireValueChanged".to_string(),
@@ -1896,6 +2076,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "FirePairChanged".to_string(),
@@ -1911,6 +2093,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
@@ -1926,6 +2110,8 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
         ];
         let events = vec![
@@ -2159,6 +2345,9 @@ fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> ComMemberSpec 
         return_type: member.return_type,
         callconv_is_stdcall: member.callconv_is_stdcall,
         interface_iid: member.interface_iid,
+        is_dual: member.is_dual,
+        source_typekind: member.source_typekind,
+        vtable_slot_bound: member.vtable_slot_bound,
     }
 }
 

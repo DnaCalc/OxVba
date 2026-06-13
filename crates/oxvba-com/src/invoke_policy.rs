@@ -213,6 +213,9 @@ mod tests {
             return_type: None,
             callconv_is_stdcall: false,
             interface_iid: None,
+            is_dual: false,
+            source_typekind: None,
+            vtable_slot_bound: None,
         };
         let args = canonicalize_member_known_args(
             &spec,
@@ -257,6 +260,9 @@ mod tests {
                 return_type: None,
                 callconv_is_stdcall: false,
                 interface_iid: None,
+                is_dual: false,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
         );
         let request = ComInvokeRequest {
@@ -288,6 +294,9 @@ mod tests {
                 return_type: None,
                 callconv_is_stdcall: false,
                 interface_iid: None,
+                is_dual: false,
+                source_typekind: None,
+                vtable_slot_bound: None,
             },
         );
         let request = ComInvokeRequest {

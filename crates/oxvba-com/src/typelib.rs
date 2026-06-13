@@ -160,16 +160,26 @@ pub struct TypeLibMemberMetadata {
     pub callconv_is_stdcall: bool,
     /// True when the member's containing type carries `TYPEFLAG_FDUAL`, i.e. it
     /// is reachable both via `IDispatch::Invoke` and a custom-interface vtable
-    /// slot. Informational; the vtable gate keys on `vtable_slot` + callconv.
+    /// slot. The vtable gate requires `is_dual && source_typekind == Interface`.
     pub is_dual: bool,
-    /// IID of the member's **defining dual interface** (the containing
-    /// `ITypeInfo`'s `GetTypeAttr().guid`). Workset S5a: the vtable dispatch site
-    /// `QueryInterface`s the live object for this IID and calls the slot on the
-    /// returned interface pointer, so the call works uniformly in-process and
-    /// out-of-process (the oleaut universal marshaler builds a real vtable proxy
-    /// for any oleaut dual interface). `None` for fixture/catalog metadata that
-    /// carries no live interface identity.
+    /// IID of the member's **defining dual interface**. For the live-recovery
+    /// FDUAL crossing this is the PARTNER `TKIND_INTERFACE`'s GUID (the IID the
+    /// dispatch site `QueryInterface`s for); for a registered-typelib interface
+    /// it is the containing `ITypeInfo`'s GUID. The dispatch site QIs the live
+    /// object for this IID and calls the slot on the returned interface pointer.
+    /// `None` for fixture/catalog metadata with no live interface identity.
     pub interface_iid: Option<ComInterfaceIid>,
+    /// The `TKIND` the vtable metadata was sourced from. A vtable slot is only
+    /// callable when this is `Interface` (a real custom vtable); a pure
+    /// `dispinterface` member (`Dispatch`) has no slot. `None` for
+    /// fixture/catalog metadata that never describes a live source type.
+    pub source_typekind: Option<SourceTypeKind>,
+    /// AV-safety bound: the highest valid slot index + 1, i.e. the source
+    /// INTERFACE's `cbSizeVft / size_of::<*const c_void>()` (= `cbSizeVft/8` on
+    /// x64). The gate requires `slot < vtable_slot_bound` so a slot can never
+    /// over-run the live vtable (the access violation the probe root-caused).
+    /// `None` when the bound is unknown (then the gate declines).
+    pub vtable_slot_bound: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +188,19 @@ pub enum TypeLibMemberInvokeKind {
     Method,
     PropertyPut,
     PropertyPutRef,
+}
+
+/// The `TKIND` of the `ITypeInfo` a member's vtable metadata (slot, IID,
+/// `cbSizeVft` bound) was sourced from. A pure `dispinterface` member
+/// (`TKIND_DISPATCH`) has NO vtable slot; only a real custom **interface**
+/// (`TKIND_INTERFACE`, reached by crossing the FDUAL partner) carries a callable
+/// vtable. The vtable gate admits a slot ONLY when the source is `Interface`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceTypeKind {
+    /// `TKIND_INTERFACE` — a real vtable interface; slot is callable.
+    Interface,
+    /// `TKIND_DISPATCH` — a `dispinterface`; members have no vtable slot.
+    Dispatch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -362,6 +385,8 @@ mod tests {
                     callconv_is_stdcall: true,
                     is_dual: true,
                     interface_iid: None,
+                    source_typekind: Some(SourceTypeKind::Interface),
+                    vtable_slot_bound: Some(64),
                 },
                 TypeLibMemberMetadata {
                     name: "Item".to_string(),
@@ -377,6 +402,8 @@ mod tests {
                     callconv_is_stdcall: false,
                     is_dual: true,
                     interface_iid: None,
+                    source_typekind: Some(SourceTypeKind::Interface),
+                    vtable_slot_bound: Some(64),
                 },
             ],
             events: Vec::new(),
