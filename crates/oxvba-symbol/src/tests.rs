@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_bundle::coreir::CoreConst;
 use oxvba_com::{
-    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-    TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+    SourceTypeKind, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
 };
 
 use crate::binding::DispatchRoute;
@@ -408,6 +408,9 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: None,
+                parameter_optional_defaults: Vec::new(),
+                source_typekind: Some(SourceTypeKind::Interface),
+                vtable_slot_bound: Some(64),
             },
             TypeLibMemberMetadata {
                 name: "Item".into(),
@@ -423,6 +426,9 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: None,
+                parameter_optional_defaults: Vec::new(),
+                source_typekind: Some(SourceTypeKind::Interface),
+                vtable_slot_bound: Some(64),
             },
         ],
         events: vec![TypeLibEventMetadata {
