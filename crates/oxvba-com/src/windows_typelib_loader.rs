@@ -1547,61 +1547,35 @@ struct TLIBATTR {
     w_lib_flags: u16,
 }
 
-/// SYS_WIN64 == 3 (8-byte pointers); SYS_WIN16/WIN32/MAC use 4-byte `oVft`
-/// granularity. The slot INDEX is invariant; only the byte divisor differs.
+/// The LIVE vtable stride: oleaut reports `FUNCDESC::oVft` in pointer-size units
+/// of the RUNNING process, so a slot advances `size_of::<*const c_void>()` bytes
+/// (8 on x64). This is the only correct divisor (see [`vtable_slot_index_from_ovft`]).
 #[cfg(target_os = "windows")]
-const SYS_WIN64: u32 = 3;
+const LIVE_VTABLE_STRIDE: u16 = core::mem::size_of::<*const c_void>() as u16;
 
-#[cfg(target_os = "windows")]
-fn ovft_pointer_size_for_syskind(syskind: u32) -> u16 {
-    if syskind == SYS_WIN64 { 8 } else { 4 }
-}
-
-/// Determine the `oVft` byte granularity (pointer size) authored into the
-/// typelib that CONTAINS this ITypeInfo, by reading its `TLIBATTR.syskind`. This
-/// is the only reliable disambiguator: a 32-bit typelib advances `oVft` in
-/// 4-byte steps even when loaded in a 64-bit process, so an even slot's `oVft`
-/// is divisible by 8 and a naive `/8` would compute HALF the correct slot and
-/// call the wrong vtable function (an access violation). Defaults to 8 (x64) if
-/// the containing typelib or its attributes cannot be read.
+/// Convert a `FUNCDESC::oVft` byte offset into a vtable **slot index**.
 ///
-/// # Safety
-/// `ptinfo` must be a live ITypeInfo pointer for the duration of the call.
+/// THE ROOT-CAUSE FIX (workset `WORKSET_2026-06-12_COM_VTABLE_EARLY_BOUND_DISPATCH`):
+/// `slot = oVft / size_of::<*const c_void>()` — i.e. `oVft / 8` on x64, the LIVE
+/// pointer-size stride, NOT the typelib's authored syskind granularity.
+///
+/// The prior code divided by the CONTAINING typelib's `syskind` pointer size
+/// (4 for `SYS_WIN32`). That was wrong: oleaut already reports `oVft` in LIVE
+/// pointer-size units regardless of the typelib's authored word size, so a `/4`
+/// DOUBLED every slot index. The crash-isolated value-oracle probe
+/// (`crates/oxvba-com/tests/com_vtable_probe.rs`) proved it on a live ACE DAO
+/// engine: `Field.Value` has `oVft=136` → slot `17` (= 136/8) returns the correct
+/// `VT_I4(7)`, whereas slot `34` (= 136/4) returns garbage `VT_EMPTY`; and
+/// `Recordset.Close`'s `/4` slot `98` over-ran the 92-slot vtable, which is the
+/// access violation that shipped CI-green. A negative or mis-aligned offset is
+/// malformed: return `None` so the member is treated as having no vtable slot.
 #[cfg(target_os = "windows")]
-unsafe fn ovft_pointer_size_from_containing_typelib(ptinfo: *mut c_void) -> u16 {
-    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
-    let mut ptlib: *mut c_void = null_mut();
-    let mut index: u32 = 0;
-    let hr = ((*vtbl).get_containing_type_lib)(ptinfo, &mut ptlib, &mut index);
-    if hr != COM_S_OK || ptlib.is_null() {
-        return 8;
-    }
-    let lib_vtbl = *(ptlib as *const *const ITypeLibVtbl);
-    let mut pattr: *mut c_void = null_mut();
-    let attr_hr = ((*lib_vtbl).get_lib_attr)(ptlib, &mut pattr);
-    let pointer_size = if attr_hr == COM_S_OK && !pattr.is_null() {
-        let syskind = (*(pattr as *const TLIBATTR)).syskind;
-        let size = ovft_pointer_size_for_syskind(syskind);
-        ((*lib_vtbl).release_t_lib_attr)(ptlib, pattr);
-        size
-    } else {
-        8
-    };
-    ((*lib_vtbl).release)(ptlib);
-    pointer_size
-}
-
-/// Convert a `FUNCDESC::oVft` byte offset into an x64 vtable **slot index** using
-/// the typelib's authored pointer-size `granularity` (4 or 8). Returns `None` for
-/// a negative or mis-aligned offset so the member is treated as having no usable
-/// vtable slot.
-#[cfg(target_os = "windows")]
-fn vtable_slot_index_from_ovft(ovft: i16, granularity: u16) -> Option<u16> {
+fn vtable_slot_index_from_ovft(ovft: i16) -> Option<u16> {
     let raw = u16::try_from(ovft).ok()?;
-    if granularity == 0 || raw % granularity != 0 {
+    if LIVE_VTABLE_STRIDE == 0 || raw % LIVE_VTABLE_STRIDE != 0 {
         return None;
     }
-    Some(raw / granularity)
+    Some(raw / LIVE_VTABLE_STRIDE)
 }
 
 /// Extracts member metadata from a single ITypeInfo.
@@ -1609,11 +1583,6 @@ fn vtable_slot_index_from_ovft(ovft: i16, granularity: u16) -> Option<u16> {
 unsafe fn extract_members_from_typeinfo(
     ptinfo: *mut c_void,
 ) -> Result<Vec<TypeLibMemberMetadata>, String> {
-    // Determine the `oVft` byte granularity from the CONTAINING typelib's syskind
-    // once, before walking FUNCDESCs — a 32-bit typelib's oVft advances 4 bytes
-    // per slot, a 64-bit typelib's 8 bytes, and dividing by the wrong size yields
-    // a wrong (often half) slot index that crashes the host on the vtable call.
-    let ovft_granularity = ovft_pointer_size_from_containing_typelib(ptinfo);
     let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
     let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
     let hr = ((*vtbl).get_type_attr)(ptinfo, &mut pattr);
@@ -1769,21 +1738,12 @@ unsafe fn extract_members_from_typeinfo(
         let is_default_member = memid == 0;
 
         // `FUNCDESC::oVft` is a BYTE OFFSET into the vtable. We store the slot
-        // INDEX (not the raw offset) in `vtable_slot` so the S2 `vtable_invoke`
-        // marshaller can index `(*(*this))[slot]` directly.
-        //
-        // ABI subtlety: the offset's granularity is the pointer size of the
-        // architecture the *typelib* was authored for, NOT necessarily x64. Many
-        // shipping OLE typelibs (e.g. Scripting Runtime / scrrun.dll) are 32-bit
-        // typelibs whose `oVft` advances in 4-byte steps (slot 3 → oVft 12) even
-        // when loaded in a 64-bit process; modern 64-bit typelibs advance in
-        // 8-byte steps (slot 3 → oVft 24). The slot INDEX is invariant across
-        // both — divide by whichever pointer size the offset is aligned to:
-        //   * 8-aligned  → 64-bit-granular typelib → index = oVft / 8
-        //   * 4-aligned  → 32-bit-granular typelib → index = oVft / 4
-        // A mis-aligned or negative oVft is malformed: treat the member as
-        // having no usable vtable slot rather than computing a wrong index.
-        let vtable_slot = vtable_slot_index_from_ovft(fd.oVft, ovft_granularity);
+        // INDEX (not the raw offset) in `vtable_slot` so the `vtable_invoke`
+        // marshaller can index `(*(*this))[slot]` directly. oleaut reports `oVft`
+        // in LIVE pointer-size units, so the index is `oVft / 8` on x64 (see
+        // `vtable_slot_index_from_ovft` for the value-oracle evidence behind the
+        // divisor). A mis-aligned or negative oVft yields `None`.
+        let vtable_slot = vtable_slot_index_from_ovft(fd.oVft);
 
         members.push(TypeLibMemberMetadata {
             name: func_name,
@@ -2395,27 +2355,25 @@ mod tests {
     use crate::typelib::TypeLibResolveRequest;
 
     #[test]
-    fn vtable_slot_index_handles_32bit_and_64bit_granular_typelibs() {
-        // 64-bit-granular typelib (syskind SYS_WIN64 → 8-byte slots). Slot 7
-        // (first dual custom slot after the 7 IUnknown+IDispatch slots) is oVft 56.
-        assert_eq!(vtable_slot_index_from_ovft(56, 8), Some(7));
-        assert_eq!(vtable_slot_index_from_ovft(72, 8), Some(9));
-        // 32-bit-granular typelib (e.g. scrrun.dll / Excel / DAO → 4-byte slots):
-        // slot 7 is oVft 28, slot 3 is oVft 12. The DISAMBIGUATION is the only
-        // correct one: oVft 24 from a 32-bit typelib is slot 6, NOT slot 3 — a
-        // naive "/8 if divisible by 8" computed slot 3 and crashed the host.
-        assert_eq!(vtable_slot_index_from_ovft(28, 4), Some(7));
-        assert_eq!(vtable_slot_index_from_ovft(12, 4), Some(3));
-        assert_eq!(vtable_slot_index_from_ovft(24, 4), Some(6));
-        // The same oVft 24 in a 64-bit typelib really is slot 3.
-        assert_eq!(vtable_slot_index_from_ovft(24, 8), Some(3));
-        // syskind → granularity mapping.
-        assert_eq!(ovft_pointer_size_for_syskind(SYS_WIN64), 8);
-        assert_eq!(ovft_pointer_size_for_syskind(1 /* SYS_WIN32 */), 4);
+    #[cfg(target_arch = "x86_64")]
+    fn vtable_slot_index_uses_live_pointer_stride() {
+        // THE ROOT-CAUSE FIX: slot = oVft / size_of::<*const c_void>() (= /8 on
+        // x64), the LIVE pointer-size stride oleaut reports oVft in — NOT the
+        // typelib's authored syskind granularity. Value-oracle evidence from
+        // com_vtable_probe.rs (live ACE DAO):
+        //   Field.Value     oVft=136 → slot 17 (returned VT_I4(7), MATCH)
+        //   Recordset member oVft=392 → slot 49
+        //   another member   oVft=360 → slot 45
+        assert_eq!(vtable_slot_index_from_ovft(136), Some(17));
+        assert_eq!(vtable_slot_index_from_ovft(392), Some(49));
+        assert_eq!(vtable_slot_index_from_ovft(360), Some(45));
+        // Slot 7 (first dual custom slot after the 7 IUnknown+IDispatch slots) is
+        // oVft 56; slot 9 is oVft 72.
+        assert_eq!(vtable_slot_index_from_ovft(56), Some(7));
+        assert_eq!(vtable_slot_index_from_ovft(72), Some(9));
         // Malformed / mis-aligned offsets carry no usable slot.
-        assert_eq!(vtable_slot_index_from_ovft(-8, 8), None);
-        assert_eq!(vtable_slot_index_from_ovft(6, 8), None);
-        assert_eq!(vtable_slot_index_from_ovft(6, 4), None);
+        assert_eq!(vtable_slot_index_from_ovft(-8), None);
+        assert_eq!(vtable_slot_index_from_ovft(6), None);
     }
 
     #[test]
