@@ -1819,6 +1819,211 @@ unsafe fn extract_members_from_typeinfo(
 // "QI for the exact dual IID must succeed before any slot call", enforced inside
 // `try_vtable_member_spec_invoke_with_shared_state`.
 
+/// A live dispinterface's FDUAL PARTNER `TKIND_INTERFACE` facts, recovered by
+/// crossing the dispinterface typeinfo to its partner interface (workset slice B,
+/// ported from the value-oracle probe `com_vtable_probe.rs`). These are exactly
+/// the inputs the vtable gate + dispatch site need to slot-call safely:
+/// the partner INTERFACE IID to `QueryInterface` for, and its `cbSizeVft`-derived
+/// AV-safety slot bound.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+struct PartnerInterfaceFacts {
+    /// The partner INTERFACE's GUID — the IID the dispatch site QIs for.
+    interface_iid: crate::ComInterfaceIid,
+    /// AV-safety bound: `cbSizeVft / size_of::<*const c_void>()` of the PARTNER
+    /// interface (NOT the dispinterface, whose cbSizeVft=56 is just IDispatch).
+    vtable_slot_bound: Option<u16>,
+}
+
+/// Cross from a dual `dispinterface` ITypeInfo to its FDUAL PARTNER
+/// `TKIND_INTERFACE` ITypeInfo. The canonical crossing is
+/// `GetRefTypeOfImplType(-1)` → `GetRefTypeInfo`; some authoring uses impl-type
+/// index 0, so we fall back to 0. Returns the owned partner ITypeInfo (caller
+/// Releases it). AV-free: pure ITypeInfo reads. (Ported from the probe's
+/// `cross_to_partner_interface`.)
+///
+/// # Safety
+/// `disp_ti` must be a live ITypeInfo pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn cross_to_partner_interface(disp_ti: *mut c_void) -> Option<*mut c_void> {
+    if disp_ti.is_null() {
+        return None;
+    }
+    let vtbl = *(disp_ti as *const *const ITypeInfoVtbl);
+    // Try impl-type index -1 (u32::MAX bit pattern — the FDUAL partner) first,
+    // then 0. An invalid index returns a failure HRESULT (no out-of-bounds read).
+    for idx in [u32::MAX, 0u32] {
+        let mut href: u32 = 0;
+        let hr_ref = ((*vtbl).get_ref_type_of_impl_type)(disp_ti, idx, &mut href);
+        if hr_ref != COM_S_OK {
+            continue;
+        }
+        let mut partner: *mut c_void = null_mut();
+        let hr_ti = ((*vtbl).get_ref_type_info)(disp_ti, href, &mut partner);
+        if hr_ti == COM_S_OK && !partner.is_null() {
+            return Some(partner);
+        }
+    }
+    None
+}
+
+/// Read a member's `oVft` (FUNCDESC byte offset into the vtable) by name from an
+/// ITypeInfo, matched case-insensitively. AV-free. (Ported from the probe's
+/// `member_desc` oVft read.)
+///
+/// # Safety
+/// `ptinfo` must be a live ITypeInfo pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn member_ovft_by_name(ptinfo: *mut c_void, name: &str) -> Option<i16> {
+    if ptinfo.is_null() {
+        return None;
+    }
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut pattr: *mut TYPEATTR = null_mut();
+    if ((*vtbl).get_type_attr)(ptinfo, &mut pattr) != COM_S_OK || pattr.is_null() {
+        return None;
+    }
+    let cfuncs = (*pattr).cfuncs;
+    ((*vtbl).release_type_attr)(ptinfo, pattr);
+
+    let mut found = None;
+    for fi in 0..u32::from(cfuncs) {
+        let mut pfuncdesc: *mut FUNCDESC = null_mut();
+        if ((*vtbl).get_func_desc)(ptinfo, fi, &mut pfuncdesc) != COM_S_OK || pfuncdesc.is_null() {
+            continue;
+        }
+        let memid = (*pfuncdesc).memid;
+        let ovft = (*pfuncdesc).oVft;
+        // Member name via GetDocumentation(memid): name into the first out-arg.
+        let mut pname: *mut u16 = null_mut();
+        let hr_doc = ((*vtbl).get_documentation)(
+            ptinfo,
+            memid,
+            &mut pname,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+        );
+        if hr_doc == COM_S_OK
+            && let Some(member_name) = bstr_to_string_and_free(pname)
+            && member_name.eq_ignore_ascii_case(name)
+        {
+            found = Some(ovft);
+        }
+        ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
+        if found.is_some() {
+            break;
+        }
+    }
+    found
+}
+
+/// Find a member's `oVft` by name, searching (in order) the partner INTERFACE
+/// itself, its base-interface chain (`GetRefTypeOfImplType(0)` → `GetRefTypeInfo`,
+/// repeated), then the dispinterface face (which lists ALL members with their
+/// oVft authored for the partner vtable). Inherited members like `Close`/`Value`
+/// live on a BASE interface, not the leaf. AV-free. (Ported from the probe's
+/// `member_desc_with_source`.)
+///
+/// # Safety
+/// `partner_ti` and `disp_ti` must be live ITypeInfo pointers for the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn member_ovft_with_source(
+    partner_ti: *mut c_void,
+    disp_ti: *mut c_void,
+    name: &str,
+) -> Option<i16> {
+    // 1. the partner INTERFACE's own funcs.
+    if let Some(ovft) = member_ovft_by_name(partner_ti, name) {
+        return Some(ovft);
+    }
+    // 2. walk the base-interface chain via impl-type index 0.
+    let mut cur = partner_ti;
+    let mut owned_chain: Vec<*mut c_void> = Vec::new();
+    let mut result = None;
+    let mut depth = 0u32;
+    loop {
+        depth += 1;
+        if depth > 8 {
+            break; // guard against cycles.
+        }
+        let vtbl = *(cur as *const *const ITypeInfoVtbl);
+        let mut href: u32 = 0;
+        if ((*vtbl).get_ref_type_of_impl_type)(cur, 0, &mut href) != COM_S_OK {
+            break;
+        }
+        let mut base: *mut c_void = null_mut();
+        if ((*vtbl).get_ref_type_info)(cur, href, &mut base) != COM_S_OK || base.is_null() {
+            break;
+        }
+        owned_chain.push(base);
+        if let Some(ovft) = member_ovft_by_name(base, name) {
+            result = Some(ovft);
+            break;
+        }
+        cur = base;
+    }
+    for ti in owned_chain {
+        let ti_vtbl = *(ti as *const *const ITypeInfoVtbl);
+        ((*ti_vtbl).release)(ti);
+    }
+    if result.is_some() {
+        return result;
+    }
+    // 3. the dispinterface face lists ALL members with oVft authored for the
+    //    partner vtable.
+    member_ovft_by_name(disp_ti, name)
+}
+
+/// Cross a live FDUAL `dispinterface` typeinfo to its PARTNER `TKIND_INTERFACE`
+/// and recover the facts needed to vtable-call `member_name`: the partner
+/// INTERFACE IID (to QI for), the member's recovered vtable SLOT (`oVft / 8` from
+/// the inherited chain), and the partner's `cbSizeVft`-derived AV-safety bound.
+/// Returns `None` when the crossing fails, the member's oVft is not found on any
+/// face, or the slot is malformed. AV-free.
+///
+/// # Safety
+/// `disp_ti` must be a live ITypeInfo pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn partner_interface_slot_facts(
+    disp_ti: *mut c_void,
+    member_name: &str,
+) -> Option<(u16, PartnerInterfaceFacts)> {
+    let partner_ti = cross_to_partner_interface(disp_ti)?;
+    // Read the partner INTERFACE's guid + cbSizeVft (the bound MUST come from the
+    // partner, NOT the dispinterface whose cbSizeVft=56 is just IDispatch).
+    let vtbl = *(partner_ti as *const *const ITypeInfoVtbl);
+    let mut pattr: *mut TYPEATTR = null_mut();
+    let attrs = if ((*vtbl).get_type_attr)(partner_ti, &mut pattr) == COM_S_OK && !pattr.is_null() {
+        let iid = crate::ComInterfaceIid::from_guid(&(*pattr).guid);
+        let bound = vtable_slot_bound_from_cb_size_vft((*pattr).cb_size_vft);
+        ((*vtbl).release_type_attr)(partner_ti, pattr);
+        Some((iid, bound))
+    } else {
+        None
+    };
+    // Resolve the member's oVft from whichever face describes it (partner
+    // INTERFACE, its base chain, or the dispinterface face).
+    let ovft = member_ovft_with_source(partner_ti, disp_ti, member_name);
+
+    // Release the partner ITypeInfo (the base chain released itself inside the
+    // resolver).
+    let partner_vtbl = *(partner_ti as *const *const ITypeInfoVtbl);
+    ((*partner_vtbl).release)(partner_ti);
+
+    let (interface_iid, vtable_slot_bound) = attrs?;
+    if interface_iid.is_null() {
+        return None;
+    }
+    let slot = vtable_slot_index_from_ovft(ovft?)?;
+    Some((
+        slot,
+        PartnerInterfaceFacts {
+            interface_iid,
+            vtable_slot_bound,
+        },
+    ))
+}
+
 /// Extract the FUNCDESC vtable signature for a single member of a LIVE COM
 /// object, by asking the object for its own `ITypeInfo` (`IDispatch::GetTypeInfo`)
 /// rather than a registered typelib. This is what lets early-bound member calls
@@ -1856,22 +2061,52 @@ pub unsafe fn live_member_metadata_from_dispatch(
         }
         ptinfo
     };
-    // SAFETY: `ptinfo` is one owned ITypeInfo reference; extract its members,
-    // then Release it exactly once (its first field is the ITypeInfo vtable).
-    let members = unsafe {
-        let result = extract_members_from_typeinfo(ptinfo);
+    // SAFETY: `ptinfo` is one owned ITypeInfo reference. We extract its members
+    // and, when it is the FDUAL dispinterface face Office/DAO objects return from
+    // GetTypeInfo(0), cross to the partner INTERFACE to recover a callable slot —
+    // ALL while `ptinfo` is still live — then Release it exactly once.
+    unsafe {
+        let members = match extract_members_from_typeinfo(ptinfo) {
+            Ok(members) => members,
+            Err(_) => {
+                let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+                ((*ti_vtbl).release)(ptinfo);
+                return None;
+            }
+        };
+        // Prefer an exact (memid, invoke_kind) match; fall back to memid alone so
+        // a member whose recorded kind differs (e.g. a method surfaced as a
+        // property-get default) still resolves.
+        let selected = members
+            .iter()
+            .find(|m| m.token == dispid && m.invoke_kind == invoke_kind)
+            .or_else(|| members.iter().find(|m| m.token == dispid))
+            .cloned();
+
+        // FDUAL CROSSING (workset slice B): GetTypeInfo(0) returned the
+        // DISPINTERFACE face, so the base extractor dropped the slot
+        // (source_typekind == Dispatch). For a dual member, cross to the partner
+        // INTERFACE to recover the real vtable slot + the partner IID to QI for +
+        // the AV-safety bound from the partner's cbSizeVft. The probe proved this
+        // is what makes an in-process slot call return the correct value (DAO
+        // Field.Value oVft=136 → slot 17 → VT_I4(7)).
+        let patched = selected.map(|mut member| {
+            if member.is_dual
+                && member.source_typekind == Some(crate::SourceTypeKind::Dispatch)
+                && let Some((slot, facts)) = partner_interface_slot_facts(ptinfo, &member.name)
+            {
+                member.vtable_slot = Some(slot);
+                member.interface_iid = Some(facts.interface_iid);
+                member.vtable_slot_bound = facts.vtable_slot_bound;
+                member.source_typekind = Some(crate::SourceTypeKind::Interface);
+            }
+            member
+        });
+
         let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
         ((*ti_vtbl).release)(ptinfo);
-        result.ok()?
-    };
-    // Prefer an exact (memid, invoke_kind) match; fall back to memid alone so a
-    // member whose recorded kind differs slightly (e.g. a method surfaced as a
-    // property-get default) still resolves.
-    members
-        .iter()
-        .find(|m| m.token == dispid && m.invoke_kind == invoke_kind)
-        .or_else(|| members.iter().find(|m| m.token == dispid))
-        .cloned()
+        patched
+    }
 }
 
 #[cfg(target_os = "windows")]
