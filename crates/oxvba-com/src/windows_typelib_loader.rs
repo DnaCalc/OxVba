@@ -1889,14 +1889,14 @@ unsafe fn extract_members_from_typeinfo(
     Ok(members)
 }
 
-// Workset S5a removed `dispatch_is_marshaling_proxy` (and its `IID_IProxyManager`
-// probe). The vtable fast path no longer calls a slot on the raw IDispatch
-// pointer — it QueryInterfaces the object for the member's dual interface IID and
-// calls on that (real-vtable) pointer, which works for an out-of-process
-// marshaling proxy too via the oleaut universal marshaler. So a proxy is no longer
-// a host-AV risk to be blanket-rejected; the only safety predicate that remains is
-// "QI for the exact dual IID must succeed before any slot call", enforced inside
-// `try_vtable_member_spec_invoke_with_shared_state`.
+// The vtable fast path never calls a slot on the raw IDispatch pointer: it
+// QueryInterfaces the object for the member's dual interface IID and calls on that
+// pointer, gated inside `try_vtable_member_spec_invoke_with_shared_state`. That
+// gate keeps a marshaling-proxy exclusion (`dispatch_is_marshaling_proxy` via
+// IID_IProxyManager): S1 verified live that an out-of-process proxy's dual-IID
+// vtable slots are combase NDR forwarders a typelib `oVft` slot cannot index (a
+// slot call AVs the host), so an out-of-process object falls back to IDispatch
+// while a direct in-process interface is vtable-callable.
 
 /// A live dispinterface's FDUAL PARTNER `TKIND_INTERFACE` facts, recovered by
 /// crossing the dispinterface typeinfo to its partner interface (workset slice B,

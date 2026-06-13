@@ -494,16 +494,16 @@ impl WindowsComBridge {
         args: &[ComInvokeArg],
     ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
         use crate::TypeLibMemberInvokeKind as K;
-        // S5a: the old proxy-always-fallback gate (`dispatch_is_marshaling_proxy`
-        // via IID_IProxyManager) is GONE. We no longer vtable-call the raw
-        // IDispatch pointer — `try_vtable_member_spec_invoke_with_shared_state`
-        // QueryInterfaces the object for the member's typelib-declared DUAL
-        // interface IID and calls the slot on that QI'd pointer. The oleaut
-        // universal marshaler builds a real vtable proxy for an out-of-process
-        // dual interface too, so a marshaling proxy (Excel via CreateObject) is now
-        // vtable-callable through the QI'd pointer rather than a host-AV risk. The
-        // defensive guard moved into the QI itself: a slot is only ever called
-        // after a SUCCESSFUL QI for the exact dual IID, else we fall back.
+        // This live-recovered path delegates the actual eligibility gate (and the
+        // out-of-process marshaling-proxy exclusion) to
+        // `try_vtable_member_spec_invoke_with_shared_state`. We no longer vtable-call
+        // the raw IDispatch pointer here: that helper QueryInterfaces the object for
+        // the member's typelib-declared DUAL interface IID and slot-calls the QI'd
+        // pointer, but ONLY after declining a marshaling proxy. S1 verified live
+        // that an out-of-process proxy's dual-IID vtable slots are combase NDR
+        // forwarders a typelib `oVft` slot cannot index (a slot call AVs the host),
+        // so the proxy exclusion is kept and an out-of-process object falls back to
+        // IDispatch; a direct in-process interface (DAO) is vtable-callable.
         //
         // The COM invoke kind this call intends, used to pick the right FUNCDESC
         // when a propget/propput pair shares a memid. PropertyPutRef (Set p = obj)

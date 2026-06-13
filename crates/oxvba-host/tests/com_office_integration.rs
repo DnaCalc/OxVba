@@ -359,11 +359,12 @@ fn excel_early_bound_range_value_round_trips() {
          End Sub\n";
     // Run under PreferVtable. Excel via `CreateObject` is OUT-OF-PROCESS, so each
     // object answers the IID_IProxyManager QueryInterface (it is a marshaling
-    // proxy), and the dispatch path therefore EXCLUDES it from the in-process
-    // vtable fast path and falls back to IDispatch — a typelib `oVft` slot does not
-    // index a marshaling-stub vtable. This is the in/out-of-process discriminator:
-    // DAO (in-process) goes through the vtable, Excel (out-of-process) does not.
-    // The 42.5 round-trip is byte-for-byte identical with ZERO host crash.
+    // proxy whose dual-IID vtable slots are combase NDR forwarders that a typelib
+    // `oVft` slot does NOT index — verified to AV the host), and the dispatch path
+    // therefore EXCLUDES it from the vtable fast path and falls back to IDispatch.
+    // This is the in/out-of-process discriminator: DAO (in-process) goes through
+    // the vtable, Excel (out-of-process) does not. The 42.5 round-trip is
+    // byte-for-byte identical with ZERO host crash.
     match run_clean_with_references_prefer_vtable(source, references) {
         Ok((snap, (vtable_count, idispatch_count))) => {
             assert!(
@@ -391,6 +392,118 @@ fn excel_early_bound_range_value_round_trips() {
         }
         Err(err) => panic!("Excel early-bound round-trip failed: {err}"),
     }
+}
+
+#[test]
+#[ignore = "launches real Excel; run explicitly with --ignored"]
+fn excel_early_bound_application_out_of_process_falls_back_no_av() {
+    // S1 OUT-OF-PROCESS VALUE ORACLE + HOST-AV GUARD. Excel `Application` is a
+    // TRUE dual (TYPEFLAG_FDUAL; its `_Application` partner INTERFACE is the
+    // vtable face), and `Application` activated via `CreateObject` is
+    // OUT-OF-PROCESS — so the object QI's as a marshaling proxy whose dual-IID
+    // vtable slots are `combase.dll` NDR forwarders.
+    //
+    // S1 verification (crash-isolated, `OXVBA_VTABLE_DIAG`) established that a
+    // typelib-`oVft`-indexed this-call on that proxy ACCESS-VIOLATES the host —
+    // even the simplest case (`Application.Build`: no-arg `Long`-retval get) — so
+    // the marshaling-proxy exclusion is KEPT. This test is the regression guard
+    // that the kept exclusion holds under `PreferVtable`: an out-of-process object
+    // must fall back to IDispatch (NEVER vtable), the values must be correct, and
+    // the host must NOT crash.
+    //
+    // Members exercised (both v1-vtable-eligible were a slot call attempted):
+    //   - `Application.Version` → BSTR retval
+    //   - `Application.Build`   → Long retval
+    //
+    // VALUE ORACLE: read each member early-bound (typed, PreferVtable) and
+    // late-bound (Variant receiver → IDispatch) and assert they agree.
+    let references = vec![typelib_ref_by_libid(
+        "Excel",
+        "{00020813-0000-0000-C000-000000000046}",
+        1,
+        9,
+    )];
+    let early_source = "Public ver As String\n\
+         Public bld As Long\n\
+         Sub Main()\n\
+         Dim app As Excel.Application\n\
+         Set app = CreateObject(\"Excel.Application\")\n\
+         app.Visible = False\n\
+         app.DisplayAlerts = False\n\
+         ver = app.Version\n\
+         bld = app.Build\n\
+         app.Quit\n\
+         End Sub\n";
+    let late_source = "Public ver As String\n\
+         Public bld As Long\n\
+         Sub Main()\n\
+         Dim app As Object\n\
+         Set app = CreateObject(\"Excel.Application\")\n\
+         app.Visible = False\n\
+         app.DisplayAlerts = False\n\
+         ver = app.Version\n\
+         bld = app.Build\n\
+         app.Quit\n\
+         End Sub\n";
+
+    let early = run_clean_with_references_prefer_vtable(early_source, references);
+    let (early_snap, (vtable_count, idispatch_count)) = match early {
+        Ok(ok) => ok,
+        Err(err) if is_typelib_absent(&err) => {
+            eprintln!("SKIP: Excel typelib / Excel.Application not registered: {err}");
+            return;
+        }
+        Err(err) => panic!("Excel early-bound Version/Build run failed: {err}"),
+    };
+    let late_snap = match run_clean(late_source) {
+        Ok(snap) => snap,
+        Err(err) if is_component_absent(&err) => {
+            eprintln!("SKIP: Excel.Application not registered: {err}");
+            return;
+        }
+        Err(err) => panic!("Excel late-bound Version/Build oracle run failed: {err}"),
+    };
+
+    // Extract the (String version, Long build) pair from a run's snapshot.
+    let extract = |snap: &[Variant]| -> (Option<String>, Option<i32>) {
+        let ver = snap
+            .iter()
+            .find_map(|v| v.as_bstr().map(|b| b.as_str()).filter(|t| !t.is_empty()));
+        let bld = snap.iter().find_map(|v| v.as_i32().filter(|n| *n > 0));
+        (ver, bld)
+    };
+    let (early_ver, early_bld) = extract(&early_snap);
+    let (late_ver, late_bld) = extract(&late_snap);
+
+    assert!(
+        early_ver.is_some() && early_bld.is_some(),
+        "early-bound run must read a non-empty Version and a positive Build, got \
+         ver={early_ver:?} build={early_bld:?} in {early_snap:?}"
+    );
+    assert_eq!(
+        early_ver, late_ver,
+        "Application.Version must agree early-vs-late: early={early_ver:?} late={late_ver:?}"
+    );
+    assert_eq!(
+        early_bld, late_bld,
+        "Application.Build must agree early-vs-late: early={early_bld:?} late={late_bld:?}"
+    );
+    // HOST-AV GUARD: out-of-process must dispatch ENTIRELY via IDispatch (the
+    // marshaling-proxy exclusion fires before any slot call), so the vtable fast
+    // path must never engage for these proxied members.
+    assert_eq!(
+        vtable_count, 0,
+        "out-of-process Excel must fall back to IDispatch (no vtable slot call), \
+         got vtable={vtable_count} idispatch={idispatch_count}"
+    );
+    assert!(
+        idispatch_count >= 1,
+        "expected the run to dispatch at least one COM member via IDispatch"
+    );
+    eprintln!(
+        "Excel Application out-of-process: ver={early_ver:?} build={early_bld:?} \
+         vtable={vtable_count} idispatch={idispatch_count} (proxy exclusion held, no AV)"
+    );
 }
 
 #[test]

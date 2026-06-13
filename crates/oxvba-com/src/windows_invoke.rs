@@ -1832,10 +1832,18 @@ fn synthesize_trailing_optional_args(
 /// `IProxyManager` — `{00000008-0000-0000-C000-000000000046}`. EVERY COM
 /// marshaling proxy (out-of-process / cross-apartment) implements it; a direct
 /// in-process object does not. A successful `QueryInterface` for it ⇒ the pointer
-/// we hold is a PROXY, not a direct interface, so its vtable is the marshaling
-/// stub's — a typelib `oVft` slot does NOT index it and a slot call would
-/// access-violate. The probe proved DAO (in-process) FAILS this QI while
-/// out-of-process Excel SUCCEEDS it; that is the in/out-of-process discriminator.
+/// we hold is a PROXY whose dual-interface vtable slots are `combase.dll` NDR
+/// stubless forwarders (verified live: Excel out-of-process `Application` QI's
+/// the `_Application` dual IID `{000208D5}` to a proxy whose slot fnptrs live in
+/// `combase.dll`). Those forwarders index the proxy's RPC procedure-format table
+/// by slot position, and that table's length is the marshaled RPC interface's
+/// method count — NOT the typelib `_Application` `cbSizeVft/8`. So a typelib
+/// `oVft`-derived slot does NOT validly index the proxy's forwarder table, and a
+/// slot call over-reads it → host access violation (observed for the simplest
+/// case: `Application.Build`, a no-arg `Long`-retval get, slot 69 of bound 474).
+/// This is the in/out-of-process discriminator: a DIRECT in-process interface
+/// (DAO) FAILS this QI and is vtable-callable; an out-of-process proxy SUCCEEDS
+/// it and must fall back to IDispatch.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 const IID_IPROXYMANAGER: windows_sys::core::GUID = windows_sys::core::GUID {
     data1: 0x0000_0008,
@@ -1975,12 +1983,29 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
 
     let slot = spec.vtable_slot.expect("gate guaranteed a slot");
 
-    // IN/OUT-OF-PROCESS DISCRIMINATOR (workset slice E). The proven recipe runs
-    // full in-process vtable dispatch but must EXCLUDE marshaling proxies, whose
-    // vtable is the universal-marshaler stub (a typelib `oVft` slot does not index
-    // it). The probe proved DAO is in-process (IID_IProxyManager QI FAILS) while
-    // out-of-process Excel IS a proxy (QI SUCCEEDS) → IDispatch fallback. This is
-    // why Excel stays IDispatch and DAO goes through the vtable.
+    // OUT-OF-PROCESS DISCRIMINATOR (HOST-AV SAFETY). S1 attempted to lift this
+    // exclusion so out-of-process objects would flow into the production
+    // `vtable_invoke` (QI the dual IID, slot-call the proxy). LIVE VERIFICATION
+    // (crash-isolated, `OXVBA_VTABLE_DIAG`) proved out-of-process AVs the host
+    // even with the production marshaller: for Excel `Application` activated via
+    // `CreateObject` (out-of-process), QI for the `_Application` dual IID
+    // `{000208D5}` SUCCEEDS and returns a distinct proxy whose slot fnptrs live in
+    // `combase.dll` — NDR stubless forwarders. Calling even the simplest member
+    // (`Application.Build`: no-arg `Long`-retval get, slot 69 of bound 474)
+    // through that forwarder access-violates (`STATUS_ACCESS_VIOLATION`). The
+    // root cause: a combase forwarder indexes the proxy's RPC procedure-format
+    // table by slot, and that table is sized to the marshaled RPC interface's
+    // method count, NOT the typelib `_Application` `cbSizeVft/8` the gate's bound
+    // came from. So a typelib `oVft`-derived slot does NOT validly index the
+    // proxy's forwarder table; the AV-safety bound (from the typelib) cannot make
+    // an out-of-process slot call safe. Since the default is `PreferVtable`, a
+    // lifted exclusion would AV the HOST in normal operation, not just a test —
+    // so we KEEP a (now precisely-rationalized) marshaling-proxy exclusion: an
+    // out-of-process object falls back to the proven IDispatch path (correct
+    // value, no AV). A DIRECT in-process interface (DAO) FAILS this QI and stays
+    // on the vtable. (Out-of-process via the vtable would require driving the
+    // call through combase's RPC channel by RPC-proc number rather than a raw
+    // typelib-oVft this-call — a separate, larger piece of work.)
     // SAFETY: `dispatch` is the live, bindings-map-retained interface pointer.
     if unsafe { dispatch_is_marshaling_proxy(dispatch) } {
         return Ok(None);
