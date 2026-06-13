@@ -1735,6 +1735,42 @@ fn vtable_gate_admits(
     true
 }
 
+/// `IProxyManager` — `{00000008-0000-0000-C000-000000000046}`. EVERY COM
+/// marshaling proxy (out-of-process / cross-apartment) implements it; a direct
+/// in-process object does not. A successful `QueryInterface` for it ⇒ the pointer
+/// we hold is a PROXY, not a direct interface, so its vtable is the marshaling
+/// stub's — a typelib `oVft` slot does NOT index it and a slot call would
+/// access-violate. The probe proved DAO (in-process) FAILS this QI while
+/// out-of-process Excel SUCCEEDS it; that is the in/out-of-process discriminator.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+const IID_IPROXYMANAGER: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x0000_0008,
+    data2: 0x0000,
+    data3: 0x0000,
+    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+/// True when `object` is a COM marshaling proxy (it answers `QueryInterface` for
+/// `IID_IProxyManager`). Releases the probe reference. AV-free: a pure QI.
+///
+/// # Safety
+/// `object` must be a live COM interface pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn dispatch_is_marshaling_proxy(object: *mut core::ffi::c_void) -> bool {
+    // SAFETY: `object` is a live interface pointer per this fn's contract;
+    // query_interface_pointer reads its IUnknown vtable and, on success, hands
+    // back one owned reference we Release immediately.
+    match unsafe { crate::query_interface_pointer(object, &IID_IPROXYMANAGER) } {
+        Ok(proxy) => {
+            // SAFETY: `proxy` is the single reference the QI handed us; Release it
+            // exactly once (we only needed its existence as the proxy signal).
+            unsafe { crate::release_unknown(proxy) };
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 /// Attempt an early-bound member call through the COM vtable, with a clean
 /// fall-back vs propagate distinction.
 ///
@@ -1817,11 +1853,26 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     };
 
     let slot = spec.vtable_slot.expect("gate guaranteed a slot");
-    // S5a CORE: do NOT vtable-call the raw IDispatch pointer. QueryInterface the
-    // object for the member's typelib-declared DUAL interface IID (the gate proved
-    // it is present and non-null). This is how the VBA IDE holds an early-bound
-    // reference. If the QI fails (E_NOINTERFACE / null) we fall back to IDispatch
-    // (Ok(None)); we NEVER call a slot on an unverified pointer (no host AV).
+
+    // IN/OUT-OF-PROCESS DISCRIMINATOR (workset slice E). The proven recipe runs
+    // full in-process vtable dispatch but must EXCLUDE marshaling proxies, whose
+    // vtable is the universal-marshaler stub (a typelib `oVft` slot does not index
+    // it). The probe proved DAO is in-process (IID_IProxyManager QI FAILS) while
+    // out-of-process Excel IS a proxy (QI SUCCEEDS) → IDispatch fallback. This is
+    // why Excel stays IDispatch and DAO goes through the vtable.
+    // SAFETY: `dispatch` is the live, bindings-map-retained interface pointer.
+    if unsafe { dispatch_is_marshaling_proxy(dispatch) } {
+        return Ok(None);
+    }
+
+    // QueryInterface the object for the member's typelib-declared DUAL interface
+    // IID (the gate proved it is present and non-null) — this is how the VBA IDE
+    // holds an early-bound reference. A non-aliasing in-process tear-off is now
+    // ACCEPTED (the old `ptr::eq(dispatch, interface)` aliasing-only restriction is
+    // GONE): the bound check below makes a bound-validated slot on a direct
+    // in-process interface safe and correct. If the QI fails (E_NOINTERFACE /
+    // null) we fall back to IDispatch; we NEVER call a slot on an unverified
+    // pointer (no host AV).
     let iid = spec
         .interface_iid
         .expect("gate guaranteed an interface IID")
@@ -1836,34 +1887,26 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         Err(_) => return Ok(None),
     };
 
-    // S5a HOST-AV SAFETY — the decisive guard, grounded in live evidence (in-process
-    // ACE DAO + out-of-process Excel). A typelib `oVft`-derived slot index does NOT
-    // reliably index the LIVE vtable of a QI'd interface that is a marshaling /
-    // apartment proxy: the slot can map to an unbacked entry and ACCESS-VIOLATE the
-    // host, and the slot read from that interface's OWN live ITypeInfo is the same
-    // `oVft`-derived value (equally unreliable), so confirming the GUID + slot is NOT
-    // sufficient to make the call safe on a proxy. The only configuration proven not
-    // to AV is a DIRECT in-process interface pointer we can index by slot index —
-    // exactly the case where `QueryInterface(dual IID)` returns the SAME pointer as
-    // the bound IDispatch (an in-process dual aliases its IDispatch, the layout the
-    // S2/S3 fixture and S4's `Recordset.Close` validated). When the QI'd pointer
-    // DIFFERS (a tear-off / proxy), we cannot prove the slot maps correctly, so we
-    // fall back to IDispatch rather than risk a host crash. (See the workset S5a
-    // report: full out-of-process vtable dispatch is infeasible with this metadata.)
-    if !core::ptr::eq(dispatch, interface) {
-        // SAFETY: Release the QI'd reference we own, then fall back to IDispatch.
-        unsafe {
-            crate::release_unknown(interface);
+    // AV-SAFETY NET (re-asserted at the dispatch site, not just the gate): the slot
+    // MUST be inside the source INTERFACE's live vtable (cbSizeVft/8). The gate
+    // already checked this, but we re-verify here so a slot call can never over-run
+    // the live vtable — the access violation the probe root-caused. Without a known
+    // bound, or with an out-of-range slot, fall back to IDispatch.
+    match spec.vtable_slot_bound {
+        Some(bound) if slot < bound => {}
+        _ => {
+            // SAFETY: Release the QI'd reference we own, then fall back.
+            unsafe { crate::release_unknown(interface) };
+            return Ok(None);
         }
-        return Ok(None);
     }
 
     // SAFETY: `interface` is the QI'd dual-interface pointer carrying one reference
-    // we own and is IDENTITY-EQUAL to the bound in-process IDispatch (an aliasing
-    // dual), so its vtable is the real custom-slot vtable we can index directly. The
-    // gate proved `slot >= 7` with a CC_STDCALL, fully-typed, v1-marshallable
-    // signature, so the slot's ABI is `HRESULT slot(this, params…, retval*)` —
-    // exactly vtable_invoke's contract.
+    // we own, on a DIRECT in-process object (not a marshaling proxy — excluded
+    // above), so its vtable is the real custom-slot vtable we can index directly.
+    // The gate + the bound re-check above proved `7 <= slot < cbSizeVft/8` with a
+    // CC_STDCALL, fully-typed, v1-marshallable signature, so the slot's ABI is
+    // `HRESULT slot(this, params…, retval*)` — exactly vtable_invoke's contract.
     let result = unsafe {
         crate::windows_vtable::vtable_invoke(
             interface,
