@@ -1715,10 +1715,46 @@ fn vtable_gate_admits(
     if !spec.callconv_is_stdcall {
         return false;
     }
-    // Exact arity: one declared parameter type per supplied positional arg. (A
-    // property-put's trailing value arg is one of these.)
-    if spec.parameter_types.len() != positional_arg_count {
+    // ARITY (D3 widened). The vtable ABI has no DISPPARAMS to shorten, so the slot
+    // call must pass the FULL declared positional list. We admit:
+    //  - exact arity (one supplied positional per declared param), OR
+    //  - FEWER supplied positionals when every MISSING one is a TRAILING optional
+    //    the dispatch site can synthesize (a typelib default, or a VARIANT that
+    //    becomes VT_ERROR/DISP_E_PARAMNOTFOUND). A required or non-synthesizable
+    //    optional in the missing tail declines (the IDispatch path drops trailing
+    //    optionals natively).
+    // A guest supplying MORE positionals than declared is always a mismatch.
+    if positional_arg_count > spec.parameter_types.len() {
         return false;
+    }
+    if positional_arg_count < spec.parameter_types.len() {
+        if !trailing_optionals_are_synthesizable(spec, positional_arg_count) {
+            return false;
+        }
+        // D3 RETURN-TRUST GUARD. Synthesizing omitted optionals only newly routes a
+        // member to the vtable; we must not do that for a member whose typelib
+        // return type the vtable result-decode cannot trust. A `Method` declared to
+        // return a bare INTEGER scalar is the unreliable case: some Automation
+        // typelibs (DAO `Database.OpenRecordset`) declare an object-returning method
+        // with a scalar return (`RecordsetTypeEnum`/`Long`) even though COM hands
+        // back an interface pointer — the IDispatch path tolerates this by reading
+        // the live VARIANT vt, but the vtable path trusts the declared type and would
+        // decode the Recordset pointer as a `Long`. So for the D3 widening we decline
+        // a scalar-returning Method and let it fall back to IDispatch (a void or
+        // Object return, or a property-get, is decode-safe and stays admitted).
+        if spec.invoke_kind == crate::TypeLibMemberInvokeKind::Method
+            && matches!(
+                return_type,
+                Some(
+                    crate::TypeLibParamType::Long
+                        | crate::TypeLibParamType::Integer
+                        | crate::TypeLibParamType::Byte
+                        | crate::TypeLibParamType::LongLong
+                )
+            )
+        {
+            return false;
+        }
     }
     if spec
         .parameter_types
@@ -1733,6 +1769,64 @@ fn vtable_gate_admits(
         return false;
     }
     true
+}
+
+/// True when every declared parameter from `supplied_count..` (the ones the guest
+/// OMITTED) is a trailing optional the vtable dispatch site can synthesize: it has
+/// a typelib default ([`OptionalParamDefault::HasDefault`]) or is an optional
+/// VARIANT ([`OptionalParamDefault::OptionalVariant`]). A [`Required`] or an
+/// [`OptionalNoDefault`] in the missing tail — or a metadata source that carries
+/// no `parameter_optional_defaults` at all (fixture/catalog) — declines, so a
+/// member with no synthesis metadata keeps the pre-D3 exact-arity behavior.
+#[cfg(target_os = "windows")]
+fn trailing_optionals_are_synthesizable(
+    spec: &crate::ComMemberSpec,
+    supplied_count: usize,
+) -> bool {
+    // Without per-parameter synthesis rules we cannot prove the tail is droppable.
+    if spec.parameter_optional_defaults.len() != spec.parameter_types.len() {
+        return false;
+    }
+    spec.parameter_optional_defaults[supplied_count..]
+        .iter()
+        .all(|rule| {
+            matches!(
+                rule,
+                crate::OptionalParamDefault::HasDefault(_)
+                    | crate::OptionalParamDefault::OptionalVariant
+            )
+        })
+}
+
+/// Synthesize the trailing omitted positional arguments (declared order) for a
+/// vtable slot call: a `HasDefault` rule materializes its typelib default value, an
+/// `OptionalVariant` rule materializes a `VT_ERROR`/`DISP_E_PARAMNOTFOUND` Variant
+/// (the standard "missing optional" marshaling). Returns `None` if any missing
+/// entry is not synthesizable (the gate already proved otherwise, so this is a
+/// belt-and-suspenders decline). The returned vector is appended AFTER the
+/// supplied args, before the marshaller's `[out,retval]` cell.
+#[cfg(target_os = "windows")]
+fn synthesize_trailing_optional_args(
+    spec: &crate::ComMemberSpec,
+    supplied_count: usize,
+) -> Option<Vec<Variant>> {
+    if spec.parameter_optional_defaults.len() != spec.parameter_types.len() {
+        return None;
+    }
+    let mut synthesized = Vec::with_capacity(spec.parameter_types.len() - supplied_count);
+    for rule in &spec.parameter_optional_defaults[supplied_count..] {
+        match rule {
+            crate::OptionalParamDefault::HasDefault(default) => {
+                synthesized.push(default.to_variant());
+            }
+            crate::OptionalParamDefault::OptionalVariant => {
+                synthesized.push(Variant::from_error_code(COM_DISP_E_PARAMNOTFOUND));
+            }
+            crate::OptionalParamDefault::Required
+            | crate::OptionalParamDefault::OptionalNoDefault => return None,
+        }
+    }
+    Some(synthesized)
 }
 
 /// `IProxyManager` — `{00000008-0000-0000-C000-000000000046}`. EVERY COM
@@ -1800,12 +1894,27 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     if !prefer_vtable {
         return Ok(None);
     }
-    // The vtable carries left-to-right positional params only; any named or
-    // omitted argument is a shape the IDispatch path owns.
-    if args
-        .iter()
-        .any(|arg| arg.name.is_some() || arg.value.is_none())
+    // AV-SAFETY: only proceed on a live, pointer-aligned object pointer. A null or
+    // misaligned `dispatch` cannot be a real COM interface, so QueryInterface-ing it
+    // (and later Releasing the result) would dereference garbage; decline to the
+    // IDispatch path, which validates the handle through its own resolution.
+    if dispatch.is_null()
+        || !(dispatch as usize).is_multiple_of(std::mem::align_of::<*const core::ffi::c_void>())
     {
+        return Ok(None);
+    }
+    // The vtable carries left-to-right positional params only; any NAMED argument
+    // is a shape the IDispatch path owns.
+    if args.iter().any(|arg| arg.name.is_some()) {
+        return Ok(None);
+    }
+    // Omitted (value-less) args are admitted ONLY as a TRAILING run (D3): the slot
+    // call must pass the full positional list, and we can synthesize trailing
+    // optionals but not express an interior gap. So count the leading supplied
+    // (value-bearing) prefix and require every arg after it to be omitted; an
+    // interior omission (a Some after a None) falls back to IDispatch.
+    let supplied_count = args.iter().take_while(|arg| arg.value.is_some()).count();
+    if args[supplied_count..].iter().any(|arg| arg.value.is_some()) {
         return Ok(None);
     }
     let (label, return_type) = match spec.invoke_kind {
@@ -1819,17 +1928,29 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // PropertyPutRef (Set p = obj) is deferred to the IDispatch path in v1.
         crate::TypeLibMemberInvokeKind::PropertyPutRef => return Ok(None),
     };
-    if !vtable_gate_admits(spec, args.len(), return_type) {
+    // Gate on the SUPPLIED positional count (the gate widens to admit fewer
+    // supplied than declared when the missing trailing params are synthesizable).
+    if !vtable_gate_admits(spec, supplied_count, return_type) {
         return Ok(None);
     }
-    // Marshal the positional args to `Variant` (the vtable marshaller's input).
-    let variant_args: Vec<Variant> = args
+    // Marshal the supplied positional args to `Variant` (the marshaller's input).
+    let mut variant_args: Vec<Variant> = args[..supplied_count]
         .iter()
         .filter_map(|arg| arg.value.as_ref().map(|v| v.variant().clone()))
         .collect();
-    if variant_args.len() != args.len() {
-        // A value went missing between the omitted-check and here; be safe.
+    if variant_args.len() != supplied_count {
+        // A value went missing between the prefix count and here; be safe.
         return Ok(None);
+    }
+    // Append the synthesized trailing optionals (declared order) so the slot call
+    // passes the full positional list the FUNCDESC declares.
+    if supplied_count < spec.parameter_types.len() {
+        match synthesize_trailing_optional_args(spec, supplied_count) {
+            Some(extra) => variant_args.extend(extra),
+            // The gate proved these are synthesizable; if that ever disagrees,
+            // decline rather than slot-call with a short positional list.
+            None => return Ok(None),
+        }
     }
 
     let mut resolve_object = |handle: ObjectRef| {
@@ -1886,6 +2007,16 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // interface in a vtable-callable form here — fall back to IDispatch.
         Err(_) => return Ok(None),
     };
+
+    // AV-SAFETY: a real interface pointer is pointer-aligned. A misaligned (or null)
+    // QI result is not a usable interface — neither slot-callable nor safely
+    // Releasable (Release would dereference garbage). Decline to IDispatch WITHOUT
+    // releasing it.
+    if interface.is_null()
+        || !(interface as usize).is_multiple_of(std::mem::align_of::<*const core::ffi::c_void>())
+    {
+        return Ok(None);
+    }
 
     // AV-SAFETY NET (re-asserted at the dispatch site, not just the gate): the slot
     // MUST be inside the source INTERFACE's live vtable (cbSizeVft/8). The gate
@@ -2133,6 +2264,7 @@ mod gate_tests {
             is_default_member: false,
             vtable_slot: Some(slot),
             parameter_types: Vec::new(),
+            parameter_optional_defaults: Vec::new(),
             return_type: Some(crate::TypeLibParamType::Long),
             callconv_is_stdcall: true,
             interface_iid: Some(ComInterfaceIid {
@@ -2202,6 +2334,155 @@ mod gate_tests {
         assert!(!vtable_gate_admits(
             &no_bound,
             0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+    }
+
+    /// A 3-VARIANT-param spec (e.g. DAO `OpenRecordset(source, [type], [options])`
+    /// shape) with the trailing two declared `OptionalVariant`. The `source` is
+    /// required (no default rule needed for the leading supplied arg).
+    fn three_param_optional_variant_spec() -> ComMemberSpec {
+        let mut spec = eligible_spec(20, 58);
+        spec.name = "OpenRecordset".to_string();
+        spec.invoke_kind = TypeLibMemberInvokeKind::Method;
+        spec.requires_argument = true;
+        spec.parameter_types = vec![
+            crate::TypeLibParamType::Variant,
+            crate::TypeLibParamType::Variant,
+            crate::TypeLibParamType::Variant,
+        ];
+        spec.parameter_optional_defaults = vec![
+            crate::OptionalParamDefault::Required,
+            crate::OptionalParamDefault::OptionalVariant,
+            crate::OptionalParamDefault::OptionalVariant,
+        ];
+        spec.return_type = Some(crate::TypeLibParamType::Object);
+        spec
+    }
+
+    #[test]
+    fn gate_admits_omitted_trailing_optional_variants() {
+        // D3: 1 supplied of 3 declared, the missing two are trailing OptionalVariant
+        // → ADMIT (the dispatch site synthesizes VT_ERROR/DISP_E_PARAMNOTFOUND).
+        let spec = three_param_optional_variant_spec();
+        assert!(vtable_gate_admits(
+            &spec,
+            1,
+            Some(crate::TypeLibParamType::Object)
+        ));
+        // Exact arity (all 3 supplied) still admits.
+        assert!(vtable_gate_admits(
+            &spec,
+            3,
+            Some(crate::TypeLibParamType::Object)
+        ));
+        // 2 supplied of 3: the one missing trailing optional is synthesizable.
+        assert!(vtable_gate_admits(
+            &spec,
+            2,
+            Some(crate::TypeLibParamType::Object)
+        ));
+    }
+
+    #[test]
+    fn gate_admits_omitted_trailing_default_value() {
+        // D3: a trailing optional carrying a typelib default value is synthesizable.
+        let mut spec = three_param_optional_variant_spec();
+        spec.parameter_types[1] = crate::TypeLibParamType::Long;
+        spec.parameter_optional_defaults[1] =
+            crate::OptionalParamDefault::HasDefault(crate::ComDefaultValue::Int(5));
+        // 1 supplied of 3: missing [1]=HasDefault(Long), [2]=OptionalVariant → ADMIT.
+        assert!(vtable_gate_admits(
+            &spec,
+            1,
+            Some(crate::TypeLibParamType::Object)
+        ));
+    }
+
+    #[test]
+    fn gate_rejects_omitted_required_or_unsynthesizable_optional() {
+        // A missing REQUIRED param in the tail declines (can't drop it).
+        let mut required_tail = three_param_optional_variant_spec();
+        required_tail.parameter_optional_defaults[2] = crate::OptionalParamDefault::Required;
+        assert!(!vtable_gate_admits(
+            &required_tail,
+            1,
+            Some(crate::TypeLibParamType::Object)
+        ));
+        // A missing optional NON-VARIANT with no default declines (no safe value).
+        let mut no_default = three_param_optional_variant_spec();
+        no_default.parameter_types[2] = crate::TypeLibParamType::Long;
+        no_default.parameter_optional_defaults[2] = crate::OptionalParamDefault::OptionalNoDefault;
+        assert!(!vtable_gate_admits(
+            &no_default,
+            1,
+            Some(crate::TypeLibParamType::Object)
+        ));
+        // No synthesis metadata at all (empty defaults vector) keeps pre-D3
+        // exact-arity behavior: 1 supplied of 3 declared declines.
+        let mut no_metadata = three_param_optional_variant_spec();
+        no_metadata.parameter_optional_defaults = Vec::new();
+        assert!(!vtable_gate_admits(
+            &no_metadata,
+            1,
+            Some(crate::TypeLibParamType::Object)
+        ));
+        // More supplied than declared is always a mismatch.
+        let spec = three_param_optional_variant_spec();
+        assert!(!vtable_gate_admits(
+            &spec,
+            4,
+            Some(crate::TypeLibParamType::Object)
+        ));
+    }
+
+    #[test]
+    fn gate_return_trust_guard_declines_scalar_returning_method_on_omitted_optional() {
+        // D3 RETURN-TRUST GUARD: a Method declared to return a bare integer scalar
+        // (the DAO `OpenRecordset` quirk — declared `Long`, actually returns an
+        // object) must DECLINE the D3 omitted-optional widening and fall back to
+        // IDispatch, since the vtable result-decode would mis-decode an object as a
+        // scalar.
+        for scalar in [
+            crate::TypeLibParamType::Long,
+            crate::TypeLibParamType::Integer,
+            crate::TypeLibParamType::Byte,
+            crate::TypeLibParamType::LongLong,
+        ] {
+            let mut spec = three_param_optional_variant_spec();
+            spec.invoke_kind = TypeLibMemberInvokeKind::Method;
+            spec.return_type = Some(scalar);
+            // 1 supplied of 3 (omitted optionals) + scalar-returning Method → DECLINE.
+            assert!(
+                !vtable_gate_admits(&spec, 1, Some(scalar)),
+                "scalar-returning Method with omitted optionals must decline ({scalar:?})"
+            );
+            // But EXACT arity is unaffected by the guard (it only gates the widening),
+            // so the same scalar-returning Method at full arity stays admitted.
+            assert!(
+                vtable_gate_admits(&spec, 3, Some(scalar)),
+                "exact-arity scalar-returning Method must still admit ({scalar:?})"
+            );
+        }
+        // A void (None) or Object-returning Method with omitted optionals is
+        // decode-safe and stays admitted (CreateDatabase/Execute shape).
+        let mut void_method = three_param_optional_variant_spec();
+        void_method.return_type = None;
+        assert!(vtable_gate_admits(&void_method, 1, None));
+        let object_method = three_param_optional_variant_spec(); // returns Object
+        assert!(vtable_gate_admits(
+            &object_method,
+            1,
+            Some(crate::TypeLibParamType::Object)
+        ));
+        // A scalar-returning PROPERTY-GET with omitted optionals stays admitted (a
+        // property-get scalar return is trustworthy — e.g. an indexed Field.Value).
+        let mut scalar_getter = three_param_optional_variant_spec();
+        scalar_getter.invoke_kind = TypeLibMemberInvokeKind::PropertyGet;
+        scalar_getter.return_type = Some(crate::TypeLibParamType::Long);
+        assert!(vtable_gate_admits(
+            &scalar_getter,
+            1,
             Some(crate::TypeLibParamType::Long)
         ));
     }

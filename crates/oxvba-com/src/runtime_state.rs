@@ -209,6 +209,11 @@ fn member_specs_from_typelib_metadata(
                     is_default_member: member.is_default_member,
                     vtable_slot: member.vtable_slot,
                     parameter_types: member.parameter_types.clone(),
+                    // D3: carry the per-parameter omitted-optional synthesis rules
+                    // so the vtable gate can admit a call that drops trailing
+                    // optionals (with a default or a VARIANT) and the dispatch site
+                    // can synthesize them in declared order.
+                    parameter_optional_defaults: member.parameter_optional_defaults.clone(),
                     return_type: member.return_type,
                     // The FUNCDESC callconv is not part of the projected
                     // metadata blob; honor the explicit `callconv_is_stdcall`
@@ -333,6 +338,14 @@ pub struct ComMemberSpec {
     /// Per-parameter VARTYPEs carried from the FUNCDESC, left-to-right (the
     /// `[out,retval]` parameter is surfaced as `return_type`, not here).
     pub parameter_types: Vec<TypeLibParamType>,
+    /// Per-parameter (parallel to `parameter_types`) synthesis rule for an OMITTED
+    /// trailing positional argument on the vtable slot path (D3). When the guest
+    /// supplies fewer positionals than `parameter_types.len()`, the vtable gate
+    /// admits the call only if every missing trailing entry here is synthesizable
+    /// (a `HasDefault` value or an `OptionalVariant`), and the dispatch site
+    /// appends the synthesized args in declared order before the `[out,retval]`.
+    /// Empty (fixture/catalog metadata) means "exact arity only", as before D3.
+    pub parameter_optional_defaults: Vec<crate::OptionalParamDefault>,
     /// The member's logical return type (typically the `[out,retval]` T* of a
     /// dual member, whose ABI return is the HRESULT). `None` for `void`/HRESULT.
     pub return_type: Option<TypeLibParamType>,
@@ -589,6 +602,7 @@ mod tests {
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["key".to_string()],
                 parameter_optional: vec![true],
+                parameter_optional_defaults: Vec::new(),
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::String],
                 return_type: Some(TypeLibParamType::Long),
@@ -662,6 +676,7 @@ mod tests {
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["key".to_string()],
                 parameter_optional: vec![false],
+                parameter_optional_defaults: Vec::new(),
                 is_default_member: false,
                 parameter_types: vec![TypeLibParamType::String],
                 return_type: Some(TypeLibParamType::Long),

@@ -503,3 +503,97 @@ fn dao_early_bound_recordset_field_round_trips() {
         Err(err) => panic!("DAO early-bound round-trip failed: {err}"),
     }
 }
+
+#[test]
+#[ignore = "launches the real ACE DAO engine; run explicitly with --ignored"]
+fn dao_early_bound_omitted_optional_args_dispatch_via_vtable() {
+    // D3 LIVE-VERIFY (workset COM_VTABLE_EARLY_BOUND_DISPATCH D3 — omitted trailing
+    // optional arguments over the vtable). Several DAO members in this script are
+    // called with FEWER positional args than their FUNCDESC declares, omitting
+    // trailing optionals:
+    //   - `eng.CreateDatabase(path, options)` declares a 3rd optional VARIANT param;
+    //   - `db.Execute sql` declares a 2nd optional VARIANT `Options` param.
+    // Before D3 the vtable gate required EXACT arity, so these fell back to
+    // IDispatch. D3 widens the gate: when the missing trailing params are optional
+    // (a typelib default or a VARIANT), the dispatch site SYNTHESIZES them — an
+    // optional VARIANT becomes a `VT_ERROR`/`DISP_E_PARAMNOTFOUND` Variant, the same
+    // "missing optional" marshaling a VBA caller's omitted optional produces — and
+    // the member dispatches through the vtable slot with the full positional list.
+    //
+    // VALUE ORACLE: `CreateDatabase` (omitted optional, returns the Database Object)
+    // and `Execute` (omitted optional, void) must dispatch through the vtable AND be
+    // value-correct — proven by the round-trip reading the inserted row back as 7
+    // through the typed recordset. A DispatchOnly baseline run of the SAME script
+    // gives the floor; the PreferVtable run must show MORE vtable calls (the D3
+    // members now go through the vtable) with the identical value.
+    //
+    // NOTE: `db.OpenRecordset(sql)` also omits trailing optionals, but its DAO
+    // dispinterface FUNCDESC declares a scalar (`RecordsetTypeEnum`/`Long`) return
+    // even though COM returns a `Recordset` object; the vtable result-decode cannot
+    // trust that, so D3's return-trust guard declines the scalar-returning Method and
+    // it stays on IDispatch (correct Recordset). That is why idispatch_count is > 0.
+    let db = TempDbPath::new("dao_d3_optional");
+    let references = vec![typelib_ref_by_libid(
+        "DAO",
+        "{4AC9E1DA-5BAD-4AC7-86E3-24F4CDCECA28}",
+        12,
+        0,
+    )];
+    // `eng.CreateDatabase(path, options)` omits a trailing optional VARIANT 3rd
+    // param; `db.Execute sql` omits a trailing optional VARIANT `Options` param.
+    // Under D3 both synthesize the omitted optional and dispatch through the vtable.
+    let source = format!(
+        "Public got As Long\n\
+         Sub Main()\n\
+         Dim eng As DAO.DBEngine\n\
+         Set eng = CreateObject(\"DAO.DBEngine.120\")\n\
+         Dim db As DAO.Database\n\
+         Set db = eng.CreateDatabase(\"{path}\", \";LANGID=0x0409;CP=1252;COUNTRY=0\")\n\
+         db.Execute \"CREATE TABLE T (N LONG)\"\n\
+         db.Execute \"INSERT INTO T (N) VALUES (7)\"\n\
+         Dim rs As DAO.Recordset\n\
+         Set rs = db.OpenRecordset(\"SELECT N FROM T\")\n\
+         got = rs.Fields(0).Value\n\
+         rs.Close\n\
+         db.Close\n\
+         End Sub\n",
+        path = db.as_vba_literal()
+    );
+
+    // The DispatchOnly floor is structurally 0 (that policy never touches the
+    // vtable bridge), so we only need the PreferVtable run: it must show vtable
+    // calls (the D3 omitted-optional members go through the vtable) AND read the
+    // inserted row back as 7 (value oracle). `OpenRecordset` here also omits
+    // optionals but its DAO dispinterface FUNCDESC declares a scalar
+    // (`RecordsetTypeEnum`/`Long`) return even though COM hands back a `Recordset`
+    // object; the vtable result-decode cannot trust that, so D3's return-trust guard
+    // declines the scalar-returning Method and it falls back to IDispatch (correct
+    // Recordset) — which is why `idispatch_count` is non-zero.
+    match run_clean_with_references_prefer_vtable(&source, references) {
+        Ok((snap, (vtable_count, idispatch_count))) => {
+            // VALUE ORACLE: the omitted-optional CreateDatabase + Execute path
+            // produced a database whose inserted row reads back as 7.
+            assert!(
+                snap.iter().any(|v| v.as_i32() == Some(7)),
+                "expected the omitted-optional DAO round-trip value 7 in {snap:?}"
+            );
+            // D3 must ACTUALLY route the omitted-optional members through the vtable
+            // (CreateDatabase + the two Execute calls), so the vtable count exceeds
+            // what the exact-arity members alone would produce.
+            assert!(
+                vtable_count >= 3,
+                "expected D3 to dispatch the omitted-optional members \
+                 (CreateDatabase + 2x Execute) through the vtable, got \
+                 vtable={vtable_count} idispatch={idispatch_count}"
+            );
+            eprintln!(
+                "DAO D3 omitted-optional transport: vtable={vtable_count} \
+                 idispatch={idispatch_count}"
+            );
+        }
+        Err(err) if is_typelib_absent(&err) => {
+            eprintln!("SKIP: ACE DAO typelib / DAO.DBEngine.120 not registered: {err}");
+        }
+        Err(err) => panic!("DAO D3 omitted-optional round-trip failed: {err}"),
+    }
+}

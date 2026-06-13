@@ -236,6 +236,17 @@ where
             "null this pointer for vtable invoke",
         ));
     }
+    // AV-SAFETY: a live COM interface pointer is always pointer-aligned (8 on x64).
+    // A misaligned `this` cannot be a real interface — dereferencing it to read the
+    // vtable would access-violate (or, in debug, trip the misaligned-deref check).
+    // Decline (validation failure → IDispatch fallback) rather than deref it.
+    if !(this as usize).is_multiple_of(std::mem::align_of::<*const c_void>()) {
+        return Err(validation_failure(
+            label,
+            dispid,
+            format!("misaligned this pointer {this:p} for vtable invoke"),
+        ));
+    }
     if args.len() != parameter_types.len() {
         return Err(validation_failure(
             label,

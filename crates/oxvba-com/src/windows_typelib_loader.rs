@@ -10,8 +10,8 @@
 
 #[cfg(target_os = "windows")]
 use crate::typelib::{
-    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-    TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+    OptionalParamDefault, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
 };
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
@@ -151,6 +151,23 @@ struct PARAMDESC {
     pparamdescex: *mut c_void,
     wparamflags: u16,
 }
+
+/// `tagPARAMDESCEX` (oaidl.h): the optional default-value record a `PARAMDESC`
+/// points to when `PARAMFLAG_FHASDEFAULT` is set. `cBytes` is the struct size;
+/// `varDefaultValue` is the VARIANT holding the typelib-declared default. On x64
+/// the VARIANT (8-byte aligned) sits at offset 8 after the 4-byte `cBytes` +
+/// 4 bytes padding — pinned by the static asserts below against the OS ABI.
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct PARAMDESCEX {
+    c_bytes: u32,
+    var_default_value: windows_sys::Win32::System::Variant::VARIANT,
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+const _: () = {
+    assert!(core::mem::offset_of!(PARAMDESCEX, var_default_value) == 8);
+};
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -1595,6 +1612,63 @@ fn vtable_slot_bound_from_cb_size_vft(cb_size_vft: u16) -> Option<u16> {
     Some(cb_size_vft / LIVE_VTABLE_STRIDE)
 }
 
+/// `PARAMFLAG_FOPT` — the parameter is `[optional]`.
+#[cfg(target_os = "windows")]
+const PARAMFLAG_FOPT: u16 = 0x0010;
+/// `PARAMFLAG_FHASDEFAULT` — the parameter carries a `PARAMDESCEX` default value.
+#[cfg(target_os = "windows")]
+const PARAMFLAG_FHASDEFAULT: u16 = 0x0020;
+
+/// Compute the D3 omitted-optional synthesis rule for one `[in]` parameter from
+/// its FUNCDESC flags / resolved language type. `is_optional` is the loader's
+/// own optionality decision (`PARAMFLAG_FOPT` OR inside the trailing-optional run
+/// reported by `cParamsOpt`), reused so the rule and `parameter_optional` agree.
+///
+/// - `FHASDEFAULT` with a readable `PARAMDESCEX.varDefaultValue` →
+///   [`OptionalParamDefault::HasDefault`] carrying the projected default value.
+/// - optional `VARIANT` with no default → [`OptionalParamDefault::OptionalVariant`]
+///   (synthesized as `VT_ERROR`/`DISP_E_PARAMNOTFOUND` at the dispatch site).
+/// - optional non-`VARIANT` with no default → [`OptionalParamDefault::OptionalNoDefault`]
+///   (an omitted one declines the vtable path).
+/// - otherwise → [`OptionalParamDefault::Required`].
+///
+/// # Safety
+/// `param_desc` must be a live `ELEMDESC` from a `GetFuncDesc` FUNCDESC; when
+/// `FHASDEFAULT` is set its `paramdesc.pparamdescex` points to a live
+/// `PARAMDESCEX` whose `varDefaultValue` VARIANT we only read (never free — the
+/// typelib owns it).
+#[cfg(target_os = "windows")]
+unsafe fn optional_param_default_for(
+    param_desc: &ELEMDESC,
+    param_type: TypeLibParamType,
+    is_optional: bool,
+) -> OptionalParamDefault {
+    let flags = param_desc.paramdesc.wparamflags;
+    if (flags & PARAMFLAG_FHASDEFAULT) != 0 {
+        let pdex = param_desc.paramdesc.pparamdescex;
+        if !pdex.is_null() {
+            // SAFETY: FHASDEFAULT guarantees a live PARAMDESCEX here; we read its
+            // varDefaultValue VARIANT by shared reference (variant_to_com_value
+            // never mutates or frees it — the typelib retains ownership).
+            let pdex = &*(pdex as *const PARAMDESCEX);
+            if let Ok(value) = crate::variant_to_com_value(&pdex.var_default_value)
+                && let Some(default) = crate::ComDefaultValue::from_com_value(&value)
+            {
+                return OptionalParamDefault::HasDefault(default);
+            }
+        }
+        // FHASDEFAULT but unreadable: treat by the optional rules below.
+    }
+    if !is_optional {
+        return OptionalParamDefault::Required;
+    }
+    if param_type == TypeLibParamType::Variant {
+        OptionalParamDefault::OptionalVariant
+    } else {
+        OptionalParamDefault::OptionalNoDefault
+    }
+}
+
 /// Extracts member metadata from a single ITypeInfo.
 #[cfg(target_os = "windows")]
 unsafe fn extract_members_from_typeinfo(
@@ -1700,6 +1774,7 @@ unsafe fn extract_members_from_typeinfo(
         // and do not count it as a callable input parameter.
         let mut parameter_types = Vec::new();
         let mut parameter_optional = Vec::new();
+        let mut parameter_optional_defaults = Vec::new();
         let mut retval_return_type = None;
         let optional_count = u32::try_from(fd.cparams_opt.max(0)).unwrap_or(0);
         let optional_start = cparams.saturating_sub(optional_count);
@@ -1728,10 +1803,13 @@ unsafe fn extract_members_from_typeinfo(
             } else {
                 vt_to_param_type(vt, is_byref)
             };
-            let is_optional = (flags & 0x0010) != 0 // PARAMFLAG_FOPT
-                || p >= optional_start;
+            let is_optional = (flags & PARAMFLAG_FOPT) != 0 || p >= optional_start;
+            // D3: per-parameter omitted-optional synthesis rule (default value /
+            // VARIANT-missing / non-synthesizable / required) for the vtable path.
+            let optional_default = optional_param_default_for(param_desc, param_type, is_optional);
             parameter_types.push(param_type);
             parameter_optional.push(is_optional);
+            parameter_optional_defaults.push(optional_default);
         }
 
         // Extract return type. A `[out,retval]` param (above) wins; otherwise the
@@ -1795,6 +1873,7 @@ unsafe fn extract_members_from_typeinfo(
             invoke_kind,
             parameter_names,
             parameter_optional,
+            parameter_optional_defaults,
             is_default_member,
             parameter_types,
             return_type,

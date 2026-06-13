@@ -138,6 +138,109 @@ impl TypeLibParamType {
     }
 }
 
+/// A scalar typelib-declared parameter default value (the IDL `defaultvalue`
+/// attribute only permits constant scalars — never an object or a SAFEARRAY), in
+/// a form that is plainly `Send + Sync + Eq` so it can ride on `ComMemberSpec`
+/// inside the shared `Arc<Mutex<WindowsComClientState>>` (a full `ComValue` could
+/// carry a `!Send` `ObjectRef`/`SafeArray`, which a constant default never is).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComDefaultValue {
+    Empty,
+    Null,
+    Bool(bool),
+    /// VT_I2/VT_I4/VT_UI1/VT_INT — any integer default, carried as i64.
+    Int(i64),
+    /// VT_R4/VT_R8 — a floating default, carried by its exact 8-byte bit pattern
+    /// so the enum stays `Eq` (NaN-bit-identical defaults compare equal).
+    FloatBits(u64),
+    /// VT_CY — a currency default scaled ×10000 (the COM CY integer).
+    CurrencyScaled(i64),
+    /// VT_DATE — an OLE automation date default, by its exact bit pattern.
+    DateBits(u64),
+    /// VT_BSTR — a string default.
+    Str(String),
+    /// VT_ERROR — an error-code default (scode).
+    ErrorCode(i32),
+}
+
+/// How a trailing positional parameter that the guest OMITTED can be synthesized
+/// for a vtable slot call (the vtable ABI has no DISPPARAMS to shorten, so an
+/// omitted optional must be supplied as a concrete value). One entry per declared
+/// FUNCDESC parameter, left-to-right, parallel to [`TypeLibMemberMetadata::parameter_types`].
+///
+/// The vtable gate (D3) admits a call with fewer supplied positionals than
+/// declared params ONLY when every missing one is trailing and is either
+/// [`HasDefault`](OptionalParamDefault::HasDefault) or
+/// [`OptionalVariant`](OptionalParamDefault::OptionalVariant); a [`Required`] or
+/// an [`OptionalNoDefault`] in the missing tail falls the whole call back to the
+/// IDispatch path (which can drop trailing optionals natively).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OptionalParamDefault {
+    /// A required parameter (no `PARAMFLAG_FOPT`/`FHASDEFAULT`, and not inside the
+    /// FUNCDESC trailing-optional run). Cannot be omitted from a vtable call.
+    Required,
+    /// Optional with a typelib-declared default value (`PARAMFLAG_FHASDEFAULT`,
+    /// `0x0020`): the `PARAMDESCEX.varDefaultValue` projected into a scalar
+    /// [`ComDefaultValue`]. When omitted, this exact value is synthesized.
+    HasDefault(ComDefaultValue),
+    /// An optional `VARIANT`-typed parameter with no declared default
+    /// (`PARAMFLAG_FOPT`, `0x0010`). When omitted, a `VT_ERROR` VARIANT carrying
+    /// `DISP_E_PARAMNOTFOUND` is synthesized (the standard "missing optional"
+    /// marshaling a VBA caller's omitted optional produces).
+    OptionalVariant,
+    /// An optional NON-`VARIANT` parameter with no declared default. There is no
+    /// safe value to synthesize for the slot ABI, so an omitted one of these
+    /// declines the vtable path (the IDispatch fallback handles it).
+    OptionalNoDefault,
+}
+
+impl ComDefaultValue {
+    /// Project a typelib default `ComValue` (read from `PARAMDESCEX.varDefaultValue`)
+    /// into the `Send`-safe scalar carrier. Returns `None` for the non-scalar kinds
+    /// a constant default never legitimately is (object / SAFEARRAY / Decimal),
+    /// which then decline a stored default (the param falls back to its optional
+    /// rule).
+    pub fn from_com_value(value: &crate::ComValue) -> Option<Self> {
+        use crate::ComValue as V;
+        Some(match value {
+            V::Empty => Self::Empty,
+            V::Null => Self::Null,
+            V::Bool(b) => Self::Bool(*b),
+            V::I32(n) => Self::Int(i64::from(*n)),
+            V::I64(n) => Self::Int(*n),
+            V::U64(n) => Self::Int(i64::try_from(*n).ok()?),
+            // A VT_DATE default surfaces as an F64 with the Date subtype; preserve
+            // it so the synthesized argument materializes as a Date, not a Double.
+            V::F64(f) if f.subtype() == oxvba_runtime::F64Subtype::Date => {
+                Self::DateBits(f.as_f64().to_bits())
+            }
+            V::F64(f) => Self::FloatBits(f.as_f64().to_bits()),
+            V::Currency(c) => Self::CurrencyScaled(c.scaled_i64()),
+            V::String(s) => Self::Str(s.to_string()),
+            V::ErrorCode(code) => Self::ErrorCode(*code),
+            // A constant default is never an object, array, or Decimal.
+            V::Object(_) | V::ArrayIntent(_) | V::Decimal(_) => return None,
+        })
+    }
+
+    /// Materialize the default into the runtime [`Variant`] the vtable marshaller
+    /// consumes for the synthesized positional argument.
+    pub fn to_variant(&self) -> oxvba_runtime::Variant {
+        use oxvba_runtime::Variant;
+        match self {
+            Self::Empty => Variant::empty(),
+            Self::Null => Variant::null(),
+            Self::Bool(b) => Variant::from_bool(*b),
+            Self::Int(n) => Variant::from_i64(*n),
+            Self::FloatBits(bits) => Variant::from_f64(f64::from_bits(*bits)),
+            Self::CurrencyScaled(scaled) => Variant::from_currency_scaled_i64(*scaled),
+            Self::DateBits(bits) => Variant::from_date_f64(f64::from_bits(*bits)),
+            Self::Str(s) => Variant::from_string(s.clone()),
+            Self::ErrorCode(code) => Variant::from_error_code(*code),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibMemberMetadata {
     pub name: String,
@@ -151,6 +254,12 @@ pub struct TypeLibMemberMetadata {
     pub invoke_kind: TypeLibMemberInvokeKind,
     pub parameter_names: Vec<String>,
     pub parameter_optional: Vec<bool>,
+    /// Per-parameter (left-to-right, parallel to `parameter_types`) synthesis rule
+    /// for an OMITTED trailing positional argument on the vtable slot path (D3).
+    /// Empty for fixture/catalog metadata that never drives a real vtable call;
+    /// the gate treats an empty vector as "no omitted-optional support" and only
+    /// admits exact-arity calls, exactly as before D3.
+    pub parameter_optional_defaults: Vec<OptionalParamDefault>,
     pub is_default_member: bool,
     pub parameter_types: Vec<TypeLibParamType>,
     pub return_type: Option<TypeLibParamType>,
@@ -379,6 +488,7 @@ mod tests {
                     invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                     parameter_names: Vec::new(),
                     parameter_optional: Vec::new(),
+                    parameter_optional_defaults: Vec::new(),
                     is_default_member: true,
                     parameter_types: Vec::new(),
                     return_type: Some(TypeLibParamType::Long),
@@ -396,6 +506,7 @@ mod tests {
                     invoke_kind: TypeLibMemberInvokeKind::Method,
                     parameter_names: vec!["index".to_string()],
                     parameter_optional: vec![true],
+                    parameter_optional_defaults: Vec::new(),
                     is_default_member: false,
                     parameter_types: vec![TypeLibParamType::Variant],
                     return_type: Some(TypeLibParamType::Variant),

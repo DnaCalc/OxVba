@@ -836,6 +836,7 @@ mod tests {
             is_default_member: false,
             vtable_slot,
             parameter_types: Vec::new(),
+            parameter_optional_defaults: Vec::new(),
             return_type: Some(crate::TypeLibParamType::Long),
             callconv_is_stdcall,
             // A vtable-eligible spec (slot present) carries the dual fixture IID so
