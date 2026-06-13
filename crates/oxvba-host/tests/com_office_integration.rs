@@ -357,34 +357,32 @@ fn excel_early_bound_range_value_round_trips() {
          wb.Close False\n\
          app.Quit\n\
          End Sub\n";
-    // S5a: run under PreferVtable through the custom-interface QI dispatch path.
-    // The bridge no longer vtable-calls the raw IDispatch (the S4 proxy guard is
-    // gone); it QueryInterfaces each object for the member's dual interface IID and
-    // verifies the slot against the QI'd interface's own live ITypeInfo before any
-    // slot call. Excel via `CreateObject` is OUT-OF-PROCESS, so QI returns a real
-    // marshaling-proxy interface pointer that DIFFERS from the bound IDispatch — and
-    // the S5a HOST-AV finding is that a typelib `oVft` slot does not reliably index
-    // such a proxy's live vtable (a slot call access-violated the host). The S5a
-    // safety guard therefore only slot-calls when the QI'd pointer is IDENTITY-EQUAL
-    // to the bound IDispatch (an aliasing in-process dual); Excel's proxies are not,
-    // so every member safely falls back to IDispatch. ZERO host crash; the 42.5
-    // round-trip is byte-for-byte identical; all transport stays IDispatch. (The
-    // vtable marshaller + QI machinery are proven in-process by the oxvba-com S2/S3
-    // fixture tests, where QI returns the same aliasing pointer.)
+    // Run under PreferVtable. Excel via `CreateObject` is OUT-OF-PROCESS, so each
+    // object answers the IID_IProxyManager QueryInterface (it is a marshaling
+    // proxy), and the dispatch path therefore EXCLUDES it from the in-process
+    // vtable fast path and falls back to IDispatch — a typelib `oVft` slot does not
+    // index a marshaling-stub vtable. This is the in/out-of-process discriminator:
+    // DAO (in-process) goes through the vtable, Excel (out-of-process) does not.
+    // The 42.5 round-trip is byte-for-byte identical with ZERO host crash.
     match run_clean_with_references_prefer_vtable(source, references) {
         Ok((snap, (vtable_count, idispatch_count))) => {
             assert!(
                 snap.iter().any(|v| v.as_f64() == Some(42.5)),
                 "expected the early-bound Excel Range round-trip 42.5 in {snap:?}"
             );
-            // Some COM dispatch happened (the run did real work), and the
-            // out-of-process proxies route entirely through IDispatch (no AV).
+            // Out-of-process proxies route ENTIRELY through IDispatch (the
+            // IProxyManager exclude fires); the vtable fast path must never engage.
+            assert_eq!(
+                vtable_count, 0,
+                "out-of-process Excel must dispatch entirely via IDispatch (proxy \
+                 exclude), got vtable={vtable_count} idispatch={idispatch_count}"
+            );
             assert!(
-                vtable_count + idispatch_count >= 1,
-                "expected the run to dispatch at least one COM member"
+                idispatch_count >= 1,
+                "expected the run to dispatch at least one COM member via IDispatch"
             );
             eprintln!(
-                "Excel early-bound transport (QI guard → IDispatch fallback): \
+                "Excel early-bound transport (out-of-process → IDispatch): \
                  vtable={vtable_count} idispatch={idispatch_count}"
             );
         }
@@ -465,36 +463,37 @@ fn dao_early_bound_recordset_field_round_trips() {
          End Sub\n",
         path = db.as_vba_literal()
     );
-    // S5a: run under PreferVtable through the custom-interface QI dispatch path.
-    // For each early-bound member the bridge QueryInterfaces the object for the
-    // member's typelib-declared dual interface IID and verifies the slot against
-    // the QI'd interface's OWN live ITypeInfo before any slot call (HOST-AV SAFETY).
+    // Run under PreferVtable through the in-process FDUAL-crossing vtable path
+    // (workset WORKSET_2026-06-12_COM_VTABLE_EARLY_BOUND_DISPATCH). For each
+    // early-bound member the bridge recovers the member's metadata from the live
+    // object's GetTypeInfo(0) dispinterface, crosses to the FDUAL PARTNER
+    // INTERFACE to recover the real vtable slot (oVft/8) + the partner IID to QI
+    // for + the AV-safety bound (partner cbSizeVft/8), excludes marshaling proxies
+    // (IID_IProxyManager QI), and slot-calls the QI'd in-process interface only
+    // when the slot is in bounds.
     //
-    // KEY S5a FINDING (recorded in the workset): a typelib `oVft`-derived slot index
-    // does NOT reliably index the LIVE vtable of a QI'd DAO interface. ACE DAO runs
-    // in-process, but `QueryInterface(dual IID)` returns a SEPARATE interface pointer
-    // (a tear-off / apartment proxy), not the bound IDispatch — and calling the
-    // typelib slot on that pointer access-violates the host even when the IID and
-    // the member name/slot are confirmed from the interface's own ITypeInfo. The
-    // only configuration proven not to crash is a DIRECT in-process pointer where
-    // `QueryInterface(dual IID)` returns the SAME pointer as the bound IDispatch (an
-    // aliasing dual); DAO's interfaces do not, so every member safely falls back to
-    // `IDispatch::Invoke`. The value 7 therefore round-trips IDENTICALLY (ZERO host
-    // crash, byte-for-byte the same result) with transport entirely IDispatch.
+    // ACE DAO runs IN-PROCESS (the IID_IProxyManager QI FAILS), so members like
+    // rs.Fields(0).Value DISPATCH THROUGH THE VTABLE — the value-oracle observed
+    // (vtable=3, idispatch=5) returning the correct 7 with NO host AV. (Earlier
+    // worksets fell entirely back to IDispatch because the slot divisor was wrong;
+    // the root-cause fix is slot = oVft / size_of::<*const c_void>().)
     match run_clean_with_references_prefer_vtable(&source, references) {
         Ok((snap, (vtable_count, idispatch_count))) => {
+            // VALUE ORACLE: the value 7 must round-trip — i.e. Field.Value
+            // dispatched THROUGH THE VTABLE returned the correct 7.
             assert!(
                 snap.iter().any(|v| v.as_i32() == Some(7)),
                 "expected the early-bound DAO recordset value 7 in {snap:?}"
             );
-            // The run must not crash the host and must do real COM work; the QI
-            // safety guard sends every DAO member to the IDispatch fallback.
+            // In-process DAO must ACTUALLY use the vtable fast path (not just fall
+            // back): at least one member dispatched through the COM vtable.
             assert!(
-                vtable_count + idispatch_count >= 1,
-                "expected the run to dispatch at least one COM member"
+                vtable_count >= 1,
+                "expected in-process DAO to dispatch >= 1 member through the vtable, \
+                 got vtable={vtable_count} idispatch={idispatch_count}"
             );
             eprintln!(
-                "DAO early-bound transport (QI guard → IDispatch fallback): \
+                "DAO early-bound transport (in-process FDUAL vtable): \
                  vtable={vtable_count} idispatch={idispatch_count}"
             );
         }
