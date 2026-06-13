@@ -280,6 +280,74 @@ is not worth flipping for performance.
 
 ### S6 — flip default to PreferVtable (unchanged, post-S5)
 
+## Round 2 — definitive design (2026-06-13, ultracode design workflow `wf_e70d8106-7da`)
+
+Full design: the workflow output (persisted) has the exhaustive version. Headline: the
+S5a "infeasible" conclusion was **overcautious** — it stopped at "the QI'd slot call
+crashes" without isolating *why*. A 5-investigator + adversarial design pass found the
+actual root cause is a **confirmed code omission**, and split the goal into a
+provably-safe tier (ship now) and an empirically-safe tier (probe-gated).
+
+**ROOT CAUSE (H-A, confirmed in code, not hypothesis).** `live_member_metadata_from_dispatch`
+(windows_typelib_loader.rs:1846) feeds `IDispatch::GetTypeInfo(0)` to the slot extractor.
+For DAO that classically returns a **`dispinterface` (`TKIND_DISPATCH`)**, whose
+`FUNCDESC::oVft` is **undefined/garbage** (dispinterface members are Invoke-only — no
+vtable slot). `extract_members_from_typeinfo` reads `typekind`/`is_dual`
+(windows_typelib_loader.rs:1624/1627) but computes `vtable_slot` from `oVft` regardless
+(`:1786`). And `is_dual` is **dropped** projecting `TypeLibMemberMetadata` →
+`ComMemberSpec` (runtime_state.rs:204-220; `ComMemberSpec` has no such field, `:315-344`),
+so `vtable_gate_admits` (windows_invoke.rs:1672-1713) cannot and does not check dual-ness.
+→ a bogus slot from garbage `oVft` indexes into/past the 7-slot IDispatch vtable → AV. The
+"slot 98 succeeded once, 44 faulted" UB tell fits (garbage `oVft` per member → different
+wrong address). **Decisive measurement (P0 probe):** read `TYPEATTR.typekind` + `FDUAL` on
+`GetTypeInfo(0)` of a live DAO Recordset.
+
+**H-B (secondary).** Even a true `FDUAL TKIND_INTERFACE`'s QI'd tear-off may have a
+*physical* vtable shorter/different than the typelib's design-time `oVft`. **No read-only
+oracle** proves design-time `oVft` == runtime physical offset → foreign-object safety
+cannot be proven by construction.
+
+**TIER MODEL.**
+- **Tier 1 — provably safe, SHIP:** (a) `core::ptr::eq(dispatch, interface)` aliasing duals
+  (windows_invoke.rs:1830, already the shipped guard); (b) **OxVba-authored class instances**
+  (we own the metadata + vtable layout → `oVft` == physical by construction) — the
+  highest-value safe target; distinguish them at the dispatch site via a bundle-owned flag.
+- **Tier 2 — empirically safe, foreign in-proc (DAO/Scripting):** vtable only for an
+  `(IID, version, slot)` triple on an **offline crash-isolated-probe-derived allowlist**,
+  validated by a **value-oracle** (vtable result byte-matches `IDispatch::Invoke`). Keyed by
+  interface *version* (Recordset vs Recordset2) — versioned tear-offs differ physically.
+
+**DETECTION signals — necessary, not sufficient:** `IID_IProxyManager` QI = **EXCLUDE-only**
+(S_OK ⇒ proxy ⇒ fall back; E_NOINTERFACE does NOT prove safe). `GetModuleHandleEx(FROM_ADDRESS)`
+is **probe-only** — getting the fnptr requires reading `*vtbl.add(slot)`, the very crashing
+read; never a live gate predicate.
+
+**UNIFICATION (with Declare/native) — decision: STATUS QUO, add nothing.** The shared seam
+is already correct and complete: `FfiArg`/`FfiReturnType`/`call_via_libffi`
+(windows_ffi_bridge.rs) — both `invoke_stdcall_x64` (Declare) and `vtable_invoke` (COM)
+lower through it. The marshallers stay separate: Declare's scalar conv consumes `&Variant`
+(lenient); COM's consumes `&ComValue` (strict — its `Err` arm is the guard that turns a
+wrong-typed COM arg into an IDispatch fallback instead of a malformed typed this-call that
+would AV the host). Merging would make that host-AV-relevant miscoercion spellable again —
+a regression in the one subsystem that must not regress. ByRef cells (`NativeByRefStorage`
+vs `OutCell`) are genuinely different (in/out-Variant + ANSI-buffer vs out-retval +
+BSTR-ownership). Both adversarial passes converged on status quo.
+
+**SLICE LEDGER (probe first; S1+S2+S7 land regardless of probe):**
+- **P0** — crash-isolated probe `crates/oxvba-com/tests/com_vtable_probe.rs` (inspect: typekind/FDUAL/cbSizeVft + QI matrix + module-resolved vtable walk; then ONE value-oracle guarded call). Decides H-A vs H-B and whether Tier-2 is pursued. (task #29)
+- **S1** — carry `is_dual` + `source_typekind` to `ComMemberSpec` (stop the drop at runtime_state.rs:204-220; add fields :315-344). Closes the confirmed omission. No live COM.
+- **S2** — gate rejects non-dual/dispinterface: `vtable_slot=None` unless `FDUAL TKIND_INTERFACE` (windows_typelib_loader.rs:1786); add `is_dual && Interface` to `vtable_gate_admits`.
+- **S3 [PENDING PROBE]** — source the dual typeinfo by GUID via `get_type_info_of_guid` (declared/unused windows_typelib_loader.rs:237) instead of `GetTypeInfo(0)`. Only if probe confirms H-A.
+- **S4** — resurrect `IID_IProxyManager` EXCLUDE-only detector (un-tombstone windows_typelib_loader.rs:1809).
+- **S5 [PENDING PROBE]** — Tier-2 `(IID,version,slot)` allowlist for foreign in-proc. Only if the probe value-oracle proves a foreign triple safe; else DAO stays IDispatch-only.
+- **S6** — distinguish OxVba-authored class instances (Tier-1, bundle-owned flag).
+- **S7** — real live-path fixture (current `windows_test_dispatch.rs` `GetTypeInfo` is `E_NOTIMPL` and QI aliases `this`, so NO existing test exercises the live-recovery/non-aliasing/short-vtable path — exactly how S5a shipped a CI-green AV). Mandatory before trusting any gate test.
+
+**RISK:** P0 gates the foreign approach; if DAO's `GetTypeInfo(0)` is dispinterface AND the
+dual-by-GUID `oVft` still mismatches the physical tear-off vtable, only Tier-1 ships. Confine
+the crashing `*vtbl.add(slot)` read to the offline probe. Value-oracle (not "no AV") is the
+success criterion. Land S1+S2+S7 regardless (close the `is_dual` drop / dispinterface-slot bug).
+
 ## Cross-refs
 
 `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md` (anticipates default `prefer_vtable`
