@@ -53,8 +53,11 @@ use oxvba_com::windows_client::{
 use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
 use windows_sys::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize, DISPATCH_METHOD,
-    DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO, FUNCDESC, SYS_WIN32, SYS_WIN64, TKIND_DISPATCH,
-    TKIND_INTERFACE, TLIBATTR, TYPEATTR,
+    DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPPARAMS, ELEMDESC, EXCEPINFO, FUNCDESC,
+    SYS_WIN32, SYS_WIN64, TKIND_DISPATCH, TKIND_INTERFACE, TLIBATTR, TYPEATTR,
+};
+use windows_sys::Win32::System::Ole::{
+    PARAMFLAG_FIN, PARAMFLAG_FLCID, PARAMFLAG_FOPT, PARAMFLAG_FOUT, PARAMFLAG_FRETVAL,
 };
 use windows_sys::Win32::System::Variant::{
     VARIANT, VT_BSTR, VT_DISPATCH, VariantClear, VariantInit,
@@ -113,6 +116,18 @@ const fn dao_iid(data1: u32) -> GUID {
         data4: [0x80, 0x00, 0x00, 0xAA, 0x00, 0x6D, 0x2E, 0xA4],
     }
 }
+
+/// Excel's `_Application` dual interface IID `{000208D5-0000-0000-C000-000000000046}`.
+/// This is the interface marshaled by PSOAInterface `{00020424}` (the oleaut
+/// universal/typelib marshaler) — a typelib-aligned vtable proxy that SHOULD be
+/// vtable-callable by `slot = oVft / 8`. The Excel `_Application` probe ladder
+/// below QIs the live out-of-process IDispatch for this IID.
+const IID_EXCEL_APPLICATION: GUID = GUID {
+    data1: 0x0002_08D5,
+    data2: 0x0000,
+    data3: 0x0000,
+    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
 
 // ── ITypeInfo (subset) ───────────────────────────────────────────────────────
 //
@@ -2100,4 +2115,981 @@ fn probe_c4_recordset_close_partner_ovft_div4() {
 fn probe_c8_recordset_close_partner_ovft_div8() {
     // Fn C (oVft/8): Recordset.Close on the QI'd partner INTERFACE pointer.
     recordset_close_partner_oracle(8);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  EXCEL  _Application  OUT-OF-PROCESS  VTABLE  ISOLATION  LADDER            ║
+// ║                                                                            ║
+// ║  Excel's `_Application` {000208D5-…} is marshaled by PSOAInterface         ║
+// ║  {00020424} = the oleaut universal/typelib marshaler (oleaut32 hosted in   ║
+// ║  combase). That marshaler builds a TYPELIB-ALIGNED vtable proxy: the proxy ║
+// ║  pointer we QI for {000208D5} IS vtable-callable by `slot = oVft / 8`.     ║
+// ║  (Contrast Range {00020846}, marshaled by PSDispatch {00020420} = IDispatch║
+// ║  only — NOT vtable-callable. We never touch Range here.)                   ║
+// ║                                                                            ║
+// ║  A prior worker called `_Application.Build` on the QI'd proxy and it AV'd.  ║
+// ║  The conclusion "fundamental NDR" was wrong (combase ≠ NDR; this is        ║
+// ║  oleaut). So the AV is a SLOT or INVOCATION bug. This ladder calls slots   ║
+// ║  in increasing complexity on the LIVE out-of-process proxy to localize it: ║
+// ║                                                                            ║
+// ║    Rung A  IUnknown::AddRef  (slot 1)        — local proxy op, no RPC      ║
+// ║    Rung B  IDispatch::GetTypeInfoCount (slot 3)                            ║
+// ║    Rung C  the custom slot `Build` at oVft/8 and (separately) oVft/4       ║
+// ║    Rung D  the custom propget `Version` (BSTR* out) at oVft/8              ║
+// ║                                                                            ║
+// ║  Each rung is its OWN #[ignore] test → its OWN process under               ║
+// ║  --test-threads=1, so an AV in one rung (exit -1073741819 / 0xC0000005)    ║
+// ║  cannot hide the result of another. Every guarded call is preceded by a    ║
+// ║  flushed banner; there is NO resuming exception handler.                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+/// A live Excel automation graph: the activated `IDispatch` (used for the Quit
+/// teardown and the IDispatch::Invoke oracles) plus the QI'd `_Application`
+/// vtable proxy pointer (the subject under test). Drop quits Excel and releases.
+struct ExcelApp {
+    /// The `IDispatch` returned by `CoCreateInstance` (out-of-process proxy).
+    disp: *mut RawIDispatch,
+    /// The QI'd `{000208D5}` `_Application` proxy pointer (== `disp` value or a
+    /// sibling tear-off, depending on the marshaler) or null if QI failed.
+    app: *mut c_void,
+}
+
+impl Drop for ExcelApp {
+    fn drop(&mut self) {
+        // Best-effort: quit Excel so no orphan EXCEL.EXE lingers. Quit is a no-arg
+        // method on the Application; we drive it via the SAFE IDispatch path.
+        if !self.disp.is_null()
+            && let Ok(quit_id) = dispid_of(self.disp, "Quit")
+        {
+            let (_hr, mut r) = invoke(self.disp, quit_id, DISPATCH_METHOD, &mut []);
+            clear_variant(&mut r);
+        }
+        // SAFETY: `app` (if non-null) came from a successful QI that AddRef'd it; we
+        // owe one Release. `disp` is the activated IDispatch we own one ref on.
+        unsafe {
+            if !self.app.is_null() {
+                release_unknown(self.app);
+            }
+            if !self.disp.is_null() {
+                release_dispatch(self.disp);
+            }
+        }
+    }
+}
+
+/// Set a no-argument `BOOL`/`VARIANT_BOOL` property by name via IDispatch::Invoke
+/// with the named `DISPID_PROPERTYPUT` argument (the COM put protocol). Used to
+/// set `Application.Visible = False` so no Excel window flashes. AV-free.
+fn invoke_put_bool(disp: *mut RawIDispatch, name: &str, value: bool) -> i32 {
+    let Ok(dispid) = dispid_of(disp, name) else {
+        return i32::MIN;
+    };
+    // VT_BOOL argument: VARIANT_TRUE = -1, VARIANT_FALSE = 0.
+    // SAFETY: zero + VariantInit yields a valid VARIANT; we set the VT_BOOL arm.
+    let mut arg: VARIANT = unsafe {
+        let mut v: VARIANT = std::mem::zeroed();
+        VariantInit(&mut v);
+        v.Anonymous.Anonymous.vt = 11; // VT_BOOL
+        v.Anonymous.Anonymous.Anonymous.boolVal = if value { -1 } else { 0 };
+        v
+    };
+    let mut rgvarg = [arg];
+    // DISPID_PROPERTYPUT is -3; the put value is the single named arg.
+    let mut named = [-3i32];
+    let mut params = DISPPARAMS {
+        rgvarg: rgvarg.as_mut_ptr(),
+        rgdispidNamedArgs: named.as_mut_ptr(),
+        cArgs: 1,
+        cNamedArgs: 1,
+    };
+    // SAFETY: EXCEPINFO plain-data zero is valid empty.
+    let mut excep: EXCEPINFO = unsafe { std::mem::zeroed() };
+    let mut arg_err = 0u32;
+    const IID_NULL: GUID = GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    // SAFETY: `disp` is a live IDispatch; `params` references live `rgvarg`/`named`
+    // arrays that outlive the call; the out slots are live.
+    let hr = unsafe {
+        ((*(*disp).vtbl).invoke)(
+            disp.cast(),
+            dispid,
+            &IID_NULL,
+            0x0400,
+            DISPATCH_PROPERTYPUT,
+            &mut params,
+            ptr::null_mut(),
+            &mut excep,
+            &mut arg_err,
+        )
+    };
+    clear_variant(&mut arg);
+    hr
+}
+
+/// Activate out-of-process Excel, hide it, and QI for the `_Application` interface.
+/// Returns `Ok(None)` if Excel is not registered (environment skip). The returned
+/// guard quits Excel on Drop. AV-free.
+fn build_excel_app() -> Result<Option<ExcelApp>, String> {
+    let disp = match activate_dispatch_by_prog_id("Excel.Application") {
+        Ok(p) => p,
+        Err(e) if is_not_registered(&e) => {
+            println!("SKIP: Excel not registered ({e})");
+            return Ok(None);
+        }
+        Err(e) => return Err(format!("activate Excel.Application failed: {e}")),
+    };
+    println!(
+        "  activated Excel.Application IDispatch = 0x{:x}",
+        disp as usize
+    );
+
+    // Hide the window (best-effort; a non-fatal failure just means a flash).
+    let put_hr = invoke_put_bool(disp, "Visible", false);
+    println!(
+        "  Application.Visible = False (put hr=0x{:08X})",
+        put_hr as u32
+    );
+
+    // QI the IDispatch for the `_Application` dual IID.
+    let (hr_qi, app) = raw_qi(disp.cast(), &IID_EXCEL_APPLICATION);
+    let same = !app.is_null() && ptr::eq(app, disp.cast::<c_void>());
+    println!(
+        "  QI(_Application {g}) hr=0x{hr:08X} ptr=0x{p:x} same_as_idispatch={same}",
+        g = fmt_guid(&IID_EXCEL_APPLICATION),
+        hr = hr_qi as u32,
+        p = app as usize,
+        same = same,
+    );
+    if hr_qi < 0 || app.is_null() {
+        // Still return the graph so Drop quits Excel; the rung will abort.
+        return Ok(Some(ExcelApp {
+            disp,
+            app: ptr::null_mut(),
+        }));
+    }
+
+    Ok(Some(ExcelApp { disp, app }))
+}
+
+/// Boilerplate used by every Excel rung: CoInitialize STA, build the app, and run
+/// `body` with the live [`ExcelApp`]. Skips cleanly when Excel is absent.
+fn with_excel_app(body: impl FnOnce(&ExcelApp)) {
+    // SAFETY: STA matches the host apartment model.
+    let hr_init = unsafe { CoInitializeEx(ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+    println!("CoInitializeEx(STA) hr=0x{:08X}", hr_init as u32);
+
+    let app = match build_excel_app() {
+        Ok(Some(a)) => a,
+        Ok(None) => {
+            // SAFETY: balancing CoInitializeEx; no live COM objects remain.
+            unsafe { CoUninitialize() };
+            return;
+        }
+        Err(e) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            panic!("Excel setup failed: {e}");
+        }
+    };
+
+    body(&app);
+
+    io::stdout().flush().ok();
+    drop(app);
+    // SAFETY: balancing CoInitializeEx; ExcelApp::drop released/quit the objects.
+    unsafe { CoUninitialize() };
+}
+
+/// Read the `_Application` interface typeinfo `(guid, typekind, FDUAL, cFuncs,
+/// cbSizeVft, granularity)` by QIing the live object's IDispatch for its typeinfo
+/// and crossing to the dual partner. For Excel the IDispatch GetTypeInfo(0) gives
+/// the `_Application` dispinterface; the partner crossing yields the vtable
+/// INTERFACE (same IID {000208D5} for Excel's dual). AV-free.
+fn excel_app_iface_attr(disp: *mut RawIDispatch) -> Option<IfaceAttr> {
+    let disp_ti = type_info_of(disp);
+    if disp_ti.is_null() {
+        return None;
+    }
+    // Prefer the dual partner INTERFACE typeinfo (the real vtable face). Fall back
+    // to the dispinterface face if the crossing fails.
+    let (partner_opt, which) = cross_to_partner_interface(disp_ti);
+    println!("  [_Application typeinfo] partner crossing via: {which}");
+    let chosen = partner_opt.unwrap_or(disp_ti);
+    let attr = iface_attr(chosen);
+    // SAFETY: release the partner (if a distinct owned crossing) and the
+    // dispinterface typeinfo. `chosen != disp_ti` ⇒ `partner_opt` was Some and
+    // owned; releasing the dispinterface is always owed.
+    unsafe {
+        if chosen != disp_ti {
+            ((*(*chosen.cast::<RawITypeInfo>()).vtbl).release)(chosen.cast());
+        }
+        ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast());
+    }
+    attr
+}
+
+/// Recover a member's `(oVft, invkind, cParams, callconv)` from the `_Application`
+/// dual face by name, searching partner INTERFACE → base chain → dispinterface
+/// face (reusing [`member_desc_with_source`]). AV-free.
+fn excel_app_member(disp: *mut RawIDispatch, name: &str) -> Option<(MemberDesc, String)> {
+    let disp_ti = type_info_of(disp);
+    if disp_ti.is_null() {
+        return None;
+    }
+    let (partner_opt, _which) = cross_to_partner_interface(disp_ti);
+    let partner_ti = partner_opt.unwrap_or(disp_ti);
+    let found = member_desc_with_source(partner_ti, disp_ti, name);
+    // SAFETY: release crossings.
+    unsafe {
+        if partner_opt.is_some() && partner_ti != disp_ti {
+            ((*(*partner_ti.cast::<RawITypeInfo>()).vtbl).release)(partner_ti.cast());
+        }
+        ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast());
+    }
+    found
+}
+
+/// Decode a PARAMFLAGS bitmask to a short human string (FIN/FOUT/FRETVAL/FLCID/…).
+fn paramflags_str(flags: u16) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if flags & PARAMFLAG_FIN != 0 {
+        parts.push("IN");
+    }
+    if flags & PARAMFLAG_FOUT != 0 {
+        parts.push("OUT");
+    }
+    if flags & PARAMFLAG_FRETVAL != 0 {
+        parts.push("RETVAL");
+    }
+    if flags & PARAMFLAG_FLCID != 0 {
+        parts.push("LCID");
+    }
+    if flags & PARAMFLAG_FOPT != 0 {
+        parts.push("OPT");
+    }
+    if parts.is_empty() {
+        format!("0x{flags:04X}")
+    } else {
+        parts.join("|")
+    }
+}
+
+/// Dump the per-parameter ELEMDESC (vt + PARAMFLAGS) of one named member from the
+/// `_Application` dual face. This reveals the TRUE vtable arity the proxy's NDR
+/// forwarder expects — the decisive evidence for the `RPC_X_NULL_REF_POINTER`
+/// (0x800706F4) diagnosis. AV-free: pure ITypeInfo reads.
+fn dump_member_params(disp: *mut RawIDispatch, name: &str) {
+    let disp_ti = type_info_of(disp);
+    if disp_ti.is_null() {
+        println!("  [params {name}] no IDispatch typeinfo");
+        return;
+    }
+    let (partner_opt, _which) = cross_to_partner_interface(disp_ti);
+    let partner_ti = partner_opt.unwrap_or(disp_ti);
+    // Find the member's FUNCDESC on whichever typeinfo declares it.
+    for (ti, face) in [
+        (partner_ti, "partner-INTERFACE"),
+        (disp_ti, "dispinterface"),
+    ] {
+        if ti.is_null() {
+            continue;
+        }
+        let vt = ti.cast::<RawITypeInfo>();
+        let mut pattr: *mut TYPEATTR = ptr::null_mut();
+        // SAFETY: live ITypeInfo; GetTypeAttr yields an owned TYPEATTR.
+        let hr = unsafe { ((*(*vt).vtbl).get_type_attr)(vt.cast(), &mut pattr) };
+        if hr < 0 || pattr.is_null() {
+            continue;
+        }
+        // SAFETY: valid TYPEATTR.
+        let cfuncs = unsafe { (*pattr).cFuncs };
+        let mut found = false;
+        for fi in 0..cfuncs {
+            let mut pfd: *mut FUNCDESC = ptr::null_mut();
+            // SAFETY: GetFuncDesc(i) for i < cFuncs yields an owned FUNCDESC.
+            let hr_fd =
+                unsafe { ((*(*vt).vtbl).get_func_desc)(vt.cast(), u32::from(fi), &mut pfd) };
+            if hr_fd < 0 || pfd.is_null() {
+                continue;
+            }
+            // SAFETY: valid FUNCDESC.
+            let fd = unsafe { *pfd };
+            if let Some(n) = get_member_name(vt, fd.memid)
+                && n.eq_ignore_ascii_case(name)
+            {
+                found = true;
+                // Return-type vt of the function itself (elemdescFunc.tdesc.vt).
+                let ret_vt = fd.elemdescFunc.tdesc.vt;
+                println!(
+                    "  [params {name} on {face}] memid={memid} oVft={ov} invkind={ik}({ikn}) \
+                     cParams={cp} cParamsOpt={cpo} callconv={cc} funcRetVt={rv}",
+                    memid = fd.memid,
+                    ov = fd.oVft,
+                    ik = fd.invkind,
+                    ikn = invkind_name(fd.invkind),
+                    cp = fd.cParams,
+                    cpo = fd.cParamsOpt,
+                    cc = fd.callconv,
+                    rv = ret_vt,
+                );
+                // Walk the cParams ELEMDESCs.
+                if !fd.lprgelemdescParam.is_null() && fd.cParams > 0 {
+                    // SAFETY: `lprgelemdescParam` points to `cParams` ELEMDESCs per the
+                    // FUNCDESC contract; we read each in bounds.
+                    let params: &[ELEMDESC] = unsafe {
+                        std::slice::from_raw_parts(fd.lprgelemdescParam, fd.cParams as usize)
+                    };
+                    for (pi, ed) in params.iter().enumerate() {
+                        // SAFETY: reading the paramdesc arm of a valid ELEMDESC union.
+                        let flags = unsafe { ed.Anonymous.paramdesc.wParamFlags };
+                        let pvt = ed.tdesc.vt;
+                        println!(
+                            "      param[{pi}] vt={pvt} flags={fs}",
+                            pvt = pvt,
+                            fs = paramflags_str(flags),
+                        );
+                    }
+                }
+            }
+            // SAFETY: releasing the FUNCDESC.
+            unsafe { ((*(*vt).vtbl).release_func_desc)(vt.cast(), pfd) };
+            if found {
+                break;
+            }
+        }
+        // SAFETY: releasing the TYPEATTR.
+        unsafe { ((*(*vt).vtbl).release_type_attr)(vt.cast(), pattr) };
+        if found {
+            break;
+        }
+    }
+    // SAFETY: release crossings.
+    unsafe {
+        if partner_opt.is_some() && partner_ti != disp_ti {
+            ((*(*partner_ti.cast::<RawITypeInfo>()).vtbl).release)(partner_ti.cast());
+        }
+        ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast());
+    }
+}
+
+// ── Rung 0/2 — object + AV-FREE vtable walk ──────────────────────────────────
+
+#[test]
+#[ignore = "live out-of-process Excel; AV-free inspection of the _Application proxy vtable"]
+fn probe_excel_app_inspect() {
+    with_excel_app(|app| {
+        println!("================= INSPECT: Excel _Application proxy =================");
+        if app.app.is_null() {
+            println!("  _Application QI failed earlier; nothing to walk");
+            return;
+        }
+
+        // Is the bound IDispatch a marshaling proxy? (out-of-process ⇒ yes.)
+        let (hr_proxy, proxy_ptr) = raw_qi(app.disp.cast(), &IID_IPROXYMANAGER);
+        let is_proxy = hr_proxy >= 0 && !proxy_ptr.is_null();
+        println!(
+            "  [proxy?] QI(IProxyManager) hr=0x{:08X} is_proxy={is_proxy} (expect true OOP)",
+            hr_proxy as u32
+        );
+        if !proxy_ptr.is_null() {
+            // SAFETY: owned interface pointer from a successful QI.
+            unsafe { release_unknown(proxy_ptr) };
+        }
+
+        // The _Application interface typeinfo: cbSizeVft bounds the walk.
+        let attr = excel_app_iface_attr(app.disp);
+        let (cb, gran) = match &attr {
+            Some(a) => {
+                println!(
+                    "  [_Application iface] guid={g} typekind={tk}({tkn}) FDUAL={fd} cFuncs={cf} \
+                     cbSizeVft={cb} syskind={sk} granularity={gr} → slots={n}",
+                    g = fmt_guid(&a.guid),
+                    tk = a.typekind,
+                    tkn = typekind_name(a.typekind),
+                    fd = a.fdual,
+                    cf = a.c_funcs,
+                    cb = a.cb_size_vft,
+                    sk = a.syskind,
+                    gr = a.granularity,
+                    n = if a.granularity == 0 {
+                        0
+                    } else {
+                        a.cb_size_vft / a.granularity
+                    },
+                );
+                (a.cb_size_vft, a.granularity)
+            }
+            None => {
+                println!("  [_Application iface] typeinfo unavailable; cannot bound the walk");
+                (0, 8)
+            }
+        };
+
+        // Annotate the Build / Version slots so the walk marks them.
+        let mut annotate: Vec<(i64, String)> = Vec::new();
+        for m in ["Build", "Version"] {
+            if let Some((md, src)) = excel_app_member(app.disp, m) {
+                let s8 = i64::from(md.o_vft) / 8;
+                let s4 = i64::from(md.o_vft) / 4;
+                println!(
+                    "  member `{m}` [from {src}] oVft={ov} invkind={ik}({ikn}) cParams={cp} \
+                     slot@oVft/8={s8} slot@oVft/4={s4}",
+                    ov = md.o_vft,
+                    ik = md.invkind,
+                    ikn = invkind_name(md.invkind),
+                    cp = md.c_params,
+                );
+                annotate.push((s8, format!("{m}@oVft/8")));
+                annotate.push((s4, format!("{m}@oVft/4")));
+            }
+        }
+
+        // Decisive: the TRUE vtable arity each member's NDR forwarder expects.
+        println!("  --- member parameter shapes (true vtable arity) ---");
+        dump_member_params(app.disp, "Build");
+        dump_member_params(app.disp, "Version");
+
+        if cb == 0 {
+            println!("  no cbSizeVft → skipping the bounded walk");
+        } else {
+            println!("  raw vtable walk of the QI'd _Application proxy (slots 0..N, bounded):");
+            walk_iface_vtable("_Application", app.app, cb, gran, &annotate);
+        }
+        println!("================= END INSPECT: Excel _Application proxy =================\n");
+    });
+}
+
+// ── Rung A — IUnknown::AddRef (slot 1), a LOCAL proxy op (no RPC) ─────────────
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls IUnknown::AddRef on the _Application proxy"]
+fn probe_excel_app_rung_a_addref() {
+    with_excel_app(|app| {
+        println!("--------- RUNG A: IUnknown::AddRef (slot 1) on the _Application proxy ---------");
+        if app.app.is_null() {
+            println!("  _Application QI failed; aborting rung A");
+            return;
+        }
+        println!(
+            "  >>> ABOUT TO VTABLE-CALL AddRef (slot 1) on _Application proxy 0x{:x} <<<",
+            app.app as usize
+        );
+        io::stdout().flush().ok();
+
+        // SAFETY: AddRef at IUnknown slot 1 is present on EVERY COM interface,
+        // including any proxy; its ABI is `fn(this) -> u32` and it never RPCs (the
+        // proxy bumps a LOCAL refcount). Reading the vtable base + slot 1 and calling
+        // it is the same deref the production path uses; an AV here would mean the
+        // raw-vtable-call MECHANISM itself fails on an oleaut proxy.
+        let rc = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(1);
+            let f: extern "system" fn(*mut c_void) -> u32 = std::mem::transmute(fnptr);
+            f(this)
+        };
+        println!("  AddRef returned refcount={rc} (no AV → raw vtable-call mechanism WORKS)");
+        io::stdout().flush().ok();
+
+        // Rebalance: call Release (slot 2, same ABI) exactly once.
+        // SAFETY: Release at IUnknown slot 2; balances the AddRef above.
+        let rc2 = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(2);
+            let f: extern "system" fn(*mut c_void) -> u32 = std::mem::transmute(fnptr);
+            f(this)
+        };
+        println!("  Release returned refcount={rc2} (rebalanced)");
+        io::stdout().flush().ok();
+    });
+}
+
+// ── Rung B — IDispatch::GetTypeInfoCount (slot 3) ────────────────────────────
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls IDispatch::GetTypeInfoCount on the proxy"]
+fn probe_excel_app_rung_b_gettypeinfocount() {
+    with_excel_app(|app| {
+        println!(
+            "--------- RUNG B: IDispatch::GetTypeInfoCount (slot 3) on the _Application proxy ---------"
+        );
+        if app.app.is_null() {
+            println!("  _Application QI failed; aborting rung B");
+            return;
+        }
+        println!(
+            "  >>> ABOUT TO VTABLE-CALL GetTypeInfoCount (slot 3) on _Application proxy 0x{:x} <<<",
+            app.app as usize
+        );
+        io::stdout().flush().ok();
+
+        let mut count: u32 = 0xFFFF_FFFF;
+        // SAFETY: GetTypeInfoCount is IDispatch slot 3 (after QI/AddRef/Release); its
+        // ABI is `fn(this, *mut u32) -> HRESULT`. `_Application` is a dual interface,
+        // so its vtable layers IDispatch over IUnknown and slot 3 is valid. `&mut
+        // count` is a live out-slot. A bogus result here would mean an IDispatch-level
+        // vtable slot is mis-dispatched on the proxy.
+        let hr = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(3);
+            let f: extern "system" fn(*mut c_void, *mut u32) -> i32 = std::mem::transmute(fnptr);
+            f(this, &mut count)
+        };
+        println!(
+            "  GetTypeInfoCount hr=0x{:08X} count={count} (expect hr=0 count=1, no AV)",
+            hr as u32
+        );
+        io::stdout().flush().ok();
+    });
+}
+
+// ── Rung C — the custom slot `Build` (no-arg Long retval) ────────────────────
+
+/// Shared body for the `Build` custom-slot rung. `divisor` chooses oVft/8 vs
+/// oVft/4. Always runs the SAFE IDispatch::Invoke(Build) oracle FIRST (expect a
+/// Long like 20026), then ONE guarded vtable call `fn(this, *mut i32) -> HRESULT`.
+fn excel_build_rung(divisor: i32) {
+    with_excel_app(|app| {
+        println!("--------- RUNG C: _Application.Build custom slot (oVft/{divisor}) ---------");
+        if app.app.is_null() {
+            println!("  _Application QI failed; aborting rung C");
+            return;
+        }
+
+        // (A) SAFE oracle via IDispatch::Invoke(Build) FIRST.
+        let oracle_i4 = match dispid_of(app.disp, "Build") {
+            Ok(id) => {
+                let (hr, mut r) = invoke(
+                    app.disp,
+                    id,
+                    DISPATCH_PROPERTYGET | DISPATCH_METHOD,
+                    &mut [],
+                );
+                let decoded = decode_variant(&r);
+                // SAFETY: read the VT_I4 arm if applicable (Build is a Long).
+                let i4 = unsafe {
+                    match r.Anonymous.Anonymous.vt {
+                        3 => Some(r.Anonymous.Anonymous.Anonymous.lVal),
+                        2 => Some(i32::from(r.Anonymous.Anonymous.Anonymous.iVal)),
+                        _ => None,
+                    }
+                };
+                println!(
+                    "  ORACLE IDispatch::Invoke(Build) hr=0x{:08X} retval={decoded} i4={i4:?}",
+                    hr as u32
+                );
+                clear_variant(&mut r);
+                i4
+            }
+            Err(hr) => {
+                println!("  GetIDsOfNames(Build) hr=0x{:08X}; no oracle", hr as u32);
+                None
+            }
+        };
+        io::stdout().flush().ok();
+
+        // (B) Recover Build's oVft from the _Application typeinfo and compute slots.
+        let Some((md, src)) = excel_app_member(app.disp, "Build") else {
+            println!("  Build member not found on the _Application dual face; aborting");
+            return;
+        };
+        let attr = excel_app_iface_attr(app.disp);
+        let vtbl_len = attr
+            .as_ref()
+            .map(|a| {
+                if a.granularity == 0 {
+                    0
+                } else {
+                    a.cb_size_vft / a.granularity
+                }
+            })
+            .unwrap_or(0);
+        let slot8 = i64::from(md.o_vft) / 8;
+        let slot4 = i64::from(md.o_vft) / 4;
+        let slot = (i64::from(md.o_vft) / i64::from(divisor)) as usize;
+        println!(
+            "  Build [from {src}] oVft={ov} invkind={ik}({ikn}) cParams={cp} \
+             slot@oVft/8={s8} slot@oVft/4={s4} chosen(divisor={divisor})={slot} \
+             proxy-vtable-len(cbSizeVft/{gr})={vl} in_range={inr}",
+            ov = md.o_vft,
+            ik = md.invkind,
+            ikn = invkind_name(md.invkind),
+            cp = md.c_params,
+            s8 = slot8,
+            s4 = slot4,
+            gr = attr.as_ref().map(|a| a.granularity).unwrap_or(0),
+            vl = vtbl_len,
+            inr = (slot as u16) < vtbl_len.max(1),
+        );
+        println!(
+            "  >>> ABOUT TO VTABLE-CALL Build at slot={slot} (oVft/{divisor}) on _Application proxy (AV risk) <<<"
+        );
+        io::stdout().flush().ok();
+
+        // (C) ONE guarded vtable call. Build is a no-arg Long property/method; the
+        // dual ABI is `HRESULT get_Build(this, long* pRet)`.
+        let mut build_out: i32 = -1;
+        // SAFETY: the deliberate isolated risk. `app.app` is the live QI'd
+        // _Application proxy; we read its vtable base + the chosen slot exactly as
+        // production does, then call `fn(this, *mut i32) -> HRESULT` with a live
+        // out-slot. A wrong slot/granularity faults and kills the process by design.
+        let hr = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(slot);
+            let f: extern "system" fn(*mut c_void, *mut i32) -> i32 = std::mem::transmute(fnptr);
+            f(this, &mut build_out)
+        };
+        println!(
+            "  VTABLE CALL Build slot={slot} hr=0x{:08X} build={build_out}",
+            hr as u32
+        );
+
+        // (D) Oracle: value equality vs the IDispatch::Invoke result.
+        match (oracle_i4, hr >= 0) {
+            (Some(a), true) if a == build_out => {
+                println!("  ORACLE: MATCH (vtable Build == invoke Build == {a}) — slot CORRECT")
+            }
+            (Some(a), _) => println!(
+                "  ORACLE: MISMATCH (invoke={a} vtable hr=0x{:08X} build={build_out})",
+                hr as u32
+            ),
+            (None, _) => println!(
+                "  ORACLE: no invoke baseline; vtable hr=0x{:08X} build={build_out}",
+                hr as u32
+            ),
+        }
+        io::stdout().flush().ok();
+    });
+}
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls _Application.Build at oVft/8 (may AV)"]
+fn probe_excel_app_rung_c_build_ovft_div8() {
+    excel_build_rung(8);
+}
+
+// ── Rung C-FIXED — Build with the FULL `[propget, lcid]` vtable signature ─────
+//
+// The inspect rung proved Build is declared `[propget, lcid]`: its vtable ABI is
+// `HRESULT get_Build(this, LCID lcid, long* pRet)` — THREE slots, not two. The
+// earlier two-arg call `(this, long* pRet)` mis-placed the out-pointer into the
+// LCID register and left the retval register garbage → RPC_X_NULL_REF_POINTER
+// (0x800706F4). This rung calls the CORRECT 3-arg signature at slot oVft/8 and
+// expects the same value the IDispatch oracle returns (Build 20026).
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls _Application.Build with the LCID-aware signature"]
+fn probe_excel_app_rung_c_build_fixed_lcid() {
+    with_excel_app(|app| {
+        println!(
+            "--------- RUNG C-FIXED: _Application.Build with full [propget,lcid] ABI (oVft/8) ---------"
+        );
+        if app.app.is_null() {
+            println!("  _Application QI failed; aborting");
+            return;
+        }
+
+        // (A) SAFE oracle via IDispatch::Invoke(Build) FIRST.
+        let oracle = match dispid_of(app.disp, "Build") {
+            Ok(id) => {
+                let (hr, mut r) = invoke(
+                    app.disp,
+                    id,
+                    DISPATCH_PROPERTYGET | DISPATCH_METHOD,
+                    &mut [],
+                );
+                let decoded = decode_variant(&r);
+                println!(
+                    "  ORACLE IDispatch::Invoke(Build) hr=0x{:08X} retval={decoded}",
+                    hr as u32
+                );
+                clear_variant(&mut r);
+                Some(decoded)
+            }
+            Err(hr) => {
+                println!("  GetIDsOfNames(Build) hr=0x{:08X}; no oracle", hr as u32);
+                None
+            }
+        };
+        io::stdout().flush().ok();
+
+        let Some((md, src)) = excel_app_member(app.disp, "Build") else {
+            println!("  Build member not found; aborting");
+            return;
+        };
+        let slot = (i64::from(md.o_vft) / 8) as usize;
+        // LCID 0 = LOCALE_NEUTRAL; the proxy accepts it for an lcid propget.
+        let lcid: u32 = 0;
+        println!(
+            "  Build [from {src}] oVft={ov} slot@oVft/8={slot} → calling get_Build(this, lcid={lcid}, long* pRet)",
+            ov = md.o_vft,
+        );
+        println!(
+            "  >>> ABOUT TO VTABLE-CALL Build (3-arg LCID ABI) at slot={slot} on _Application proxy <<<"
+        );
+        io::stdout().flush().ok();
+
+        let mut build_out: i32 = -1;
+        // SAFETY: the deliberate isolated call with the CORRECT vtable arity proven
+        // by the inspect rung: `fn(this, LCID, *mut i32) -> HRESULT`. `app.app` is the
+        // live QI'd proxy; slot is oVft/8 (the real combase forwarder, in range);
+        // `&mut build_out` is the live `[out,retval]` slot.
+        let hr = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(slot);
+            let f: extern "system" fn(*mut c_void, u32, *mut i32) -> i32 =
+                std::mem::transmute(fnptr);
+            f(this, lcid, &mut build_out)
+        };
+        println!(
+            "  VTABLE CALL Build(lcid) slot={slot} hr=0x{:08X} build={build_out}",
+            hr as u32
+        );
+        match &oracle {
+            Some(o) if o.contains(&build_out.to_string()) && hr >= 0 => println!(
+                "  ORACLE: MATCH (vtable Build={build_out} matches invoke {o}) — \
+                 LCID-AWARE VTABLE DISPATCH WORKS"
+            ),
+            other => println!(
+                "  ORACLE: vtable hr=0x{:08X} build={build_out} vs invoke {other:?}",
+                hr as u32
+            ),
+        }
+        io::stdout().flush().ok();
+    });
+}
+
+// ── Rung D-FIXED — Version with the FULL `[propget, lcid]` BSTR signature ─────
+//
+// Same lcid proof for the BSTR propget: `HRESULT get_Version(this, LCID lcid,
+// BSTR* pRet)`. Calls the correct 3-arg ABI at slot oVft/8 and expects "16.0".
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls _Application.Version with the LCID-aware signature"]
+fn probe_excel_app_rung_d_version_fixed_lcid() {
+    with_excel_app(|app| {
+        println!(
+            "--------- RUNG D-FIXED: _Application.Version with full [propget,lcid] BSTR ABI (oVft/8) ---------"
+        );
+        if app.app.is_null() {
+            println!("  _Application QI failed; aborting");
+            return;
+        }
+
+        // (A) SAFE oracle FIRST (expect "16.0").
+        let oracle = match dispid_of(app.disp, "Version") {
+            Ok(id) => {
+                let (hr, mut r) = invoke(app.disp, id, DISPATCH_PROPERTYGET, &mut []);
+                let s = bstr_of_variant(&r);
+                println!(
+                    "  ORACLE IDispatch::Invoke(Version) hr=0x{:08X} retval={s:?}",
+                    hr as u32
+                );
+                clear_variant(&mut r);
+                s
+            }
+            Err(hr) => {
+                println!("  GetIDsOfNames(Version) hr=0x{:08X}; no oracle", hr as u32);
+                None
+            }
+        };
+        io::stdout().flush().ok();
+
+        let Some((md, src)) = excel_app_member(app.disp, "Version") else {
+            println!("  Version member not found; aborting");
+            return;
+        };
+        let slot = (i64::from(md.o_vft) / 8) as usize;
+        let lcid: u32 = 0;
+        println!(
+            "  Version [from {src}] oVft={ov} slot@oVft/8={slot} → get_Version(this, lcid={lcid}, BSTR* pRet)",
+            ov = md.o_vft,
+        );
+        println!(
+            "  >>> ABOUT TO VTABLE-CALL Version (3-arg LCID ABI) at slot={slot} on _Application proxy <<<"
+        );
+        io::stdout().flush().ok();
+
+        let mut bstr_out: *mut u16 = ptr::null_mut();
+        // SAFETY: correct vtable arity `fn(this, LCID, *mut BSTR) -> HRESULT` proven
+        // by the inspect rung. `app.app` is the live proxy; slot is oVft/8 (in range);
+        // `&mut bstr_out` is the live `[out,retval]` BSTR slot the marshaler fills.
+        let hr = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(slot);
+            let f: extern "system" fn(*mut c_void, u32, *mut *mut u16) -> i32 =
+                std::mem::transmute(fnptr);
+            f(this, lcid, &mut bstr_out)
+        };
+        let decoded = if bstr_out.is_null() {
+            None
+        } else {
+            // SAFETY: NUL-terminated UTF-16 BSTR the marshaler allocated; read to NUL
+            // then free exactly once.
+            unsafe {
+                let mut len = 0usize;
+                while *bstr_out.add(len) != 0 {
+                    len += 1;
+                }
+                let slice = std::slice::from_raw_parts(bstr_out, len);
+                let s = String::from_utf16_lossy(slice);
+                SysFreeString(bstr_out);
+                Some(s)
+            }
+        };
+        println!(
+            "  VTABLE CALL Version(lcid) slot={slot} hr=0x{:08X} retval={decoded:?}",
+            hr as u32
+        );
+        match (&oracle, &decoded) {
+            (Some(a), Some(b)) if a == b => println!(
+                "  ORACLE: MATCH (vtable Version={b:?} matches invoke {a:?}) — \
+                 LCID-AWARE BSTR VTABLE DISPATCH WORKS"
+            ),
+            (a, b) => println!("  ORACLE: invoke={a:?} vtable={b:?} hr=0x{:08X}", hr as u32),
+        }
+        io::stdout().flush().ok();
+    });
+}
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls _Application.Build at oVft/4 (may AV)"]
+fn probe_excel_app_rung_c_build_ovft_div4() {
+    excel_build_rung(4);
+}
+
+// ── Rung D — the custom propget `Version` (BSTR* out) at oVft/8 ───────────────
+
+#[test]
+#[ignore = "live out-of-process Excel; vtable-calls _Application.Version (BSTR out) at oVft/8 (may AV)"]
+fn probe_excel_app_rung_d_version() {
+    with_excel_app(|app| {
+        println!(
+            "--------- RUNG D: _Application.Version custom propget (BSTR out, oVft/8) ---------"
+        );
+        if app.app.is_null() {
+            println!("  _Application QI failed; aborting rung D");
+            return;
+        }
+
+        // (A) SAFE oracle via IDispatch::Invoke(Version) FIRST (expect "16.0").
+        let oracle = match dispid_of(app.disp, "Version") {
+            Ok(id) => {
+                let (hr, mut r) = invoke(app.disp, id, DISPATCH_PROPERTYGET, &mut []);
+                let s = bstr_of_variant(&r);
+                println!(
+                    "  ORACLE IDispatch::Invoke(Version) hr=0x{:08X} retval={s:?}",
+                    hr as u32
+                );
+                clear_variant(&mut r);
+                s
+            }
+            Err(hr) => {
+                println!("  GetIDsOfNames(Version) hr=0x{:08X}; no oracle", hr as u32);
+                None
+            }
+        };
+        io::stdout().flush().ok();
+
+        // (B) Recover Version's oVft; slot = oVft/8.
+        let Some((md, src)) = excel_app_member(app.disp, "Version") else {
+            println!("  Version member not found on the _Application dual face; aborting");
+            return;
+        };
+        let slot = (i64::from(md.o_vft) / 8) as usize;
+        println!(
+            "  Version [from {src}] oVft={ov} invkind={ik}({ikn}) cParams={cp} → slot@oVft/8={slot}",
+            ov = md.o_vft,
+            ik = md.invkind,
+            ikn = invkind_name(md.invkind),
+            cp = md.c_params,
+        );
+        println!(
+            "  >>> ABOUT TO VTABLE-CALL Version at slot={slot} (BSTR* out) on _Application proxy (AV risk) <<<"
+        );
+        io::stdout().flush().ok();
+
+        // (C) ONE guarded vtable call. Version is a propget returning a BSTR; the
+        // dual ABI is `HRESULT get_Version(this, BSTR* pRet)` where BSTR == *mut u16.
+        let mut bstr_out: *mut u16 = ptr::null_mut();
+        // SAFETY: the deliberate isolated risk. `app.app` is the live QI'd
+        // _Application proxy; we read its vtable base + slot (oVft/8) exactly as the
+        // production marshaller does for a BSTR-returning propget, then call
+        // `fn(this, *mut BSTR) -> HRESULT` with a live out-slot. A wrong slot faults
+        // and kills the process by design. On success the marshaler allocated the
+        // BSTR; we free it below.
+        let hr = unsafe {
+            let this = app.app;
+            let vtbl = *this.cast::<*const *const c_void>();
+            let fnptr = *vtbl.add(slot);
+            let f: extern "system" fn(*mut c_void, *mut *mut u16) -> i32 =
+                std::mem::transmute(fnptr);
+            f(this, &mut bstr_out)
+        };
+        // Decode + free the returned BSTR.
+        let decoded = if bstr_out.is_null() {
+            None
+        } else {
+            // SAFETY: `bstr_out` is a NUL-terminated UTF-16 BSTR the marshaler
+            // allocated; read to NUL then free exactly once with SysFreeString.
+            unsafe {
+                let mut len = 0usize;
+                while *bstr_out.add(len) != 0 {
+                    len += 1;
+                }
+                let slice = std::slice::from_raw_parts(bstr_out, len);
+                let s = String::from_utf16_lossy(slice);
+                SysFreeString(bstr_out);
+                Some(s)
+            }
+        };
+        println!(
+            "  VTABLE CALL Version slot={slot} hr=0x{:08X} retval={decoded:?}",
+            hr as u32
+        );
+
+        // (D) Oracle: value equality vs the IDispatch::Invoke BSTR.
+        match (&oracle, &decoded) {
+            (Some(a), Some(b)) if a == b => {
+                println!(
+                    "  ORACLE: MATCH (vtable Version == invoke Version == {a:?}) — slot CORRECT"
+                )
+            }
+            (a, b) => println!(
+                "  ORACLE: MISMATCH/incomplete (invoke={a:?} vtable={b:?} hr=0x{:08X})",
+                hr as u32
+            ),
+        }
+        io::stdout().flush().ok();
+    });
+}
+
+/// Decode a `VT_BSTR` VARIANT to a Rust `String` (does NOT free; caller clears the
+/// VARIANT). Returns None if not a BSTR or null.
+fn bstr_of_variant(v: &VARIANT) -> Option<String> {
+    // SAFETY: read the discriminant then the bstrVal arm of a valid VARIANT.
+    unsafe {
+        if v.Anonymous.Anonymous.vt != VT_BSTR {
+            return None;
+        }
+        let p = v.Anonymous.Anonymous.Anonymous.bstrVal;
+        if p.is_null() {
+            return None;
+        }
+        let mut len = 0usize;
+        while *p.add(len) != 0 {
+            len += 1;
+        }
+        let slice = std::slice::from_raw_parts(p, len);
+        Some(String::from_utf16_lossy(slice))
+    }
 }
