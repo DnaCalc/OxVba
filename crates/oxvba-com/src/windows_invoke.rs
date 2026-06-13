@@ -1655,6 +1655,17 @@ impl ComTransportCounters<'_> {
 /// when ALL hold:
 /// - a vtable slot is present, and the slot index is `>= 7` (oVft `>= 56`), so we
 ///   never call an `IUnknown`/`IDispatch` slot;
+/// - the member is a real custom **interface** dual: `is_dual` AND
+///   `source_typekind == Interface`. A pure dispinterface member (`Dispatch`) has
+///   NO callable vtable slot — its `oVft` is authored for the FDUAL partner, so
+///   the live-recovery path must cross to that partner (slice B) before a slot
+///   can be admitted here;
+/// - `slot < vtable_slot_bound` — THE AV-SAFETY NET. The bound is the source
+///   INTERFACE's `cbSizeVft / 8` (from the partner typeinfo, not the
+///   dispinterface). A slot `>= bound` would over-read the live vtable, which is
+///   the access violation the value-oracle probe root-caused (Recordset.Close at
+///   the wrong slot 98 over-ran the 92-slot vtable). Without a known bound we
+///   decline;
 /// - the member carries its defining **dual interface IID** (S5a), which the
 ///   dispatch site `QueryInterface`s the object for before any slot call — without
 ///   it we cannot obtain a verified vtable pointer, so we must not vtable-call;
@@ -1680,6 +1691,18 @@ fn vtable_gate_admits(
     // Never vtable-call an IUnknown (0..=2) or IDispatch (3..=6) slot.
     if slot < 7 {
         return false;
+    }
+    // A vtable slot is only callable when sourced from a real custom INTERFACE
+    // (FDUAL + TKIND_INTERFACE). A pure dispinterface member must NOT be slot-called.
+    if !spec.is_dual || spec.source_typekind != Some(crate::SourceTypeKind::Interface) {
+        return false;
+    }
+    // AV-SAFETY NET: the slot must be in bounds of the source INTERFACE's live
+    // vtable (cbSizeVft/8). A missing bound or an out-of-range slot declines —
+    // this is the guard that prevents the host access violation.
+    match spec.vtable_slot_bound {
+        Some(bound) if slot < bound => {}
+        _ => return false,
     }
     // S5a HOST-AV SAFETY: a usable dual interface IID is mandatory. We only ever
     // vtable-call after a SUCCESSFUL QueryInterface for this exact IID, so without
@@ -2048,4 +2071,95 @@ where
         request.args.as_slice(),
     )?;
     Ok(Some(value))
+}
+
+#[cfg(all(target_os = "windows", test))]
+mod gate_tests {
+    use super::vtable_gate_admits;
+    use crate::{ComInterfaceIid, ComMemberSpec, SourceTypeKind, TypeLibMemberInvokeKind};
+
+    /// A vtable-eligible spec: a real custom INTERFACE dual, CC_STDCALL, a slot
+    /// at `slot` inside `bound`, a non-null IID, and a no-arg `Long` getter. The
+    /// individual rejection tests then flip ONE field to prove the gate declines.
+    fn eligible_spec(slot: u16, bound: u16) -> ComMemberSpec {
+        ComMemberSpec {
+            name: "Value".to_string(),
+            requires_argument: false,
+            invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+            parameter_names: Vec::new(),
+            is_default_member: false,
+            vtable_slot: Some(slot),
+            parameter_types: Vec::new(),
+            return_type: Some(crate::TypeLibParamType::Long),
+            callconv_is_stdcall: true,
+            interface_iid: Some(ComInterfaceIid {
+                data1: 0x1234_5678,
+                data2: 0x9abc,
+                data3: 0xdef0,
+                data4: [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80],
+            }),
+            is_dual: true,
+            source_typekind: Some(SourceTypeKind::Interface),
+            vtable_slot_bound: Some(bound),
+        }
+    }
+
+    #[test]
+    fn gate_admits_interface_dual_slot_in_bound() {
+        // DAO Field.Value: slot 17, partner cbSizeVft=464 → bound 58. ACCEPT.
+        let spec = eligible_spec(17, 58);
+        assert!(vtable_gate_admits(
+            &spec,
+            0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+    }
+
+    #[test]
+    fn gate_rejects_dispinterface_member() {
+        // A pure dispinterface member (source_typekind == Dispatch) has no
+        // callable vtable slot, even with a slot+IID present. REJECT.
+        let mut spec = eligible_spec(17, 58);
+        spec.source_typekind = Some(SourceTypeKind::Dispatch);
+        assert!(!vtable_gate_admits(
+            &spec,
+            0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+        // Likewise a non-FDUAL member.
+        let mut not_dual = eligible_spec(17, 58);
+        not_dual.is_dual = false;
+        assert!(!vtable_gate_admits(
+            &not_dual,
+            0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+    }
+
+    #[test]
+    fn gate_rejects_slot_at_or_past_bound() {
+        // THE AV-SAFETY NET: slot 98 against a 92-slot bound (the Recordset.Close
+        // over-run the probe root-caused) must REJECT.
+        let over = eligible_spec(98, 92);
+        assert!(!vtable_gate_admits(
+            &over,
+            0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+        // Slot exactly == bound is also out of range (valid indices are 0..bound).
+        let at_bound = eligible_spec(58, 58);
+        assert!(!vtable_gate_admits(
+            &at_bound,
+            0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+        // A missing bound declines too — we never slot-call without a known bound.
+        let mut no_bound = eligible_spec(17, 58);
+        no_bound.vtable_slot_bound = None;
+        assert!(!vtable_gate_admits(
+            &no_bound,
+            0,
+            Some(crate::TypeLibParamType::Long)
+        ));
+    }
 }
