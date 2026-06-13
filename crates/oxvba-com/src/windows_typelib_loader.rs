@@ -1952,7 +1952,11 @@ unsafe fn cross_to_partner_interface(disp_ti: *mut c_void) -> Option<*mut c_void
 /// # Safety
 /// `ptinfo` must be a live ITypeInfo pointer for the duration of the call.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-unsafe fn member_ovft_by_name(ptinfo: *mut c_void, name: &str) -> Option<i16> {
+unsafe fn member_ovft_by_name(
+    ptinfo: *mut c_void,
+    name: &str,
+    invoke_kind: TypeLibMemberInvokeKind,
+) -> Option<i16> {
     if ptinfo.is_null() {
         return None;
     }
@@ -1964,7 +1968,13 @@ unsafe fn member_ovft_by_name(ptinfo: *mut c_void, name: &str) -> Option<i16> {
     let cfuncs = (*pattr).cfuncs;
     ((*vtbl).release_type_attr)(ptinfo, pattr);
 
-    let mut found = None;
+    // A read/write property surfaces as SEPARATE same-named FUNCDESCs — get_X,
+    // put_X, putref_X — each with its OWN oVft. Prefer the FUNCDESC whose INVOKEKIND
+    // matches the dispatched member (so a property-PUT recovers put_X's slot, not
+    // get_X's), falling back to a name-only match for members that surface under a
+    // single invkind.
+    let mut exact: Option<i16> = None;
+    let mut name_only: Option<i16> = None;
     for fi in 0..u32::from(cfuncs) {
         let mut pfuncdesc: *mut FUNCDESC = null_mut();
         if ((*vtbl).get_func_desc)(ptinfo, fi, &mut pfuncdesc) != COM_S_OK || pfuncdesc.is_null() {
@@ -1972,6 +1982,7 @@ unsafe fn member_ovft_by_name(ptinfo: *mut c_void, name: &str) -> Option<i16> {
         }
         let memid = (*pfuncdesc).memid;
         let ovft = (*pfuncdesc).oVft;
+        let func_kind = invkind_to_member_invoke_kind((*pfuncdesc).invkind);
         // Member name via GetDocumentation(memid): name into the first out-arg.
         let mut pname: *mut u16 = null_mut();
         let hr_doc = ((*vtbl).get_documentation)(
@@ -1986,14 +1997,18 @@ unsafe fn member_ovft_by_name(ptinfo: *mut c_void, name: &str) -> Option<i16> {
             && let Some(member_name) = bstr_to_string_and_free(pname)
             && member_name.eq_ignore_ascii_case(name)
         {
-            found = Some(ovft);
+            if func_kind == invoke_kind {
+                exact = Some(ovft);
+            } else if name_only.is_none() {
+                name_only = Some(ovft);
+            }
         }
         ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
-        if found.is_some() {
+        if exact.is_some() {
             break;
         }
     }
-    found
+    exact.or(name_only)
 }
 
 /// Find a member's `oVft` by name, searching (in order) the partner INTERFACE
@@ -2010,9 +2025,10 @@ unsafe fn member_ovft_with_source(
     partner_ti: *mut c_void,
     disp_ti: *mut c_void,
     name: &str,
+    invoke_kind: TypeLibMemberInvokeKind,
 ) -> Option<i16> {
     // 1. the partner INTERFACE's own funcs.
-    if let Some(ovft) = member_ovft_by_name(partner_ti, name) {
+    if let Some(ovft) = member_ovft_by_name(partner_ti, name, invoke_kind) {
         return Some(ovft);
     }
     // 2. walk the base-interface chain via impl-type index 0.
@@ -2035,7 +2051,7 @@ unsafe fn member_ovft_with_source(
             break;
         }
         owned_chain.push(base);
-        if let Some(ovft) = member_ovft_by_name(base, name) {
+        if let Some(ovft) = member_ovft_by_name(base, name, invoke_kind) {
             result = Some(ovft);
             break;
         }
@@ -2050,7 +2066,7 @@ unsafe fn member_ovft_with_source(
     }
     // 3. the dispinterface face lists ALL members with oVft authored for the
     //    partner vtable.
-    member_ovft_by_name(disp_ti, name)
+    member_ovft_by_name(disp_ti, name, invoke_kind)
 }
 
 /// Cross a live FDUAL `dispinterface` typeinfo to its PARTNER `TKIND_INTERFACE`
@@ -2066,6 +2082,7 @@ unsafe fn member_ovft_with_source(
 unsafe fn partner_interface_slot_facts(
     disp_ti: *mut c_void,
     member_name: &str,
+    invoke_kind: TypeLibMemberInvokeKind,
 ) -> Option<(u16, PartnerInterfaceFacts)> {
     let partner_ti = cross_to_partner_interface(disp_ti)?;
     // Read the partner INTERFACE's guid + cbSizeVft (the bound MUST come from the
@@ -2081,8 +2098,10 @@ unsafe fn partner_interface_slot_facts(
         None
     };
     // Resolve the member's oVft from whichever face describes it (partner
-    // INTERFACE, its base chain, or the dispinterface face).
-    let ovft = member_ovft_with_source(partner_ti, disp_ti, member_name);
+    // INTERFACE, its base chain, or the dispinterface face), disambiguating a
+    // read/write property's get/put/putref FUNCDESCs by `invoke_kind` so a PUT
+    // recovers put_X's slot, NOT get_X's.
+    let ovft = member_ovft_with_source(partner_ti, disp_ti, member_name, invoke_kind);
 
     // Release the partner ITypeInfo (the base chain released itself inside the
     // resolver).
@@ -2172,7 +2191,8 @@ pub unsafe fn live_member_metadata_from_dispatch(
         let patched = selected.map(|mut member| {
             if member.is_dual
                 && member.source_typekind == Some(crate::SourceTypeKind::Dispatch)
-                && let Some((slot, facts)) = partner_interface_slot_facts(ptinfo, &member.name)
+                && let Some((slot, facts)) =
+                    partner_interface_slot_facts(ptinfo, &member.name, member.invoke_kind)
             {
                 member.vtable_slot = Some(slot);
                 member.interface_iid = Some(facts.interface_iid);

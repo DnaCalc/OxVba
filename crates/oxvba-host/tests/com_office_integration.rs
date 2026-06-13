@@ -597,3 +597,65 @@ fn dao_early_bound_omitted_optional_args_dispatch_via_vtable() {
         Err(err) => panic!("DAO D3 omitted-optional round-trip failed: {err}"),
     }
 }
+
+#[test]
+#[ignore = "launches the real ACE DAO engine; run explicitly with --ignored"]
+fn dao_early_bound_field_value_property_put_round_trips_via_vtable() {
+    // D2 LIVE-VERIFY (workset COM_VTABLE_EARLY_BOUND_DISPATCH D2 — property-PUT over
+    // the in-process vtable). A property-put member is a SEPARATE FUNCDESC
+    // (INVOKE_PROPERTYPUT) with its OWN oVft (distinct from the same-named get), the
+    // assigned value as the trailing `[in]` parameter, and NO `[out,retval]`
+    // (HRESULT only). The vtable dispatch site labels it `property-put`, sets
+    // `return_type = None` (so the marshaller appends no retval cell), marshals the
+    // assigned value as an ordinary positional `[in]` param, and checks the HRESULT.
+    //
+    // Flow: open an updatable dynaset (`dbOpenDynaset = 2`), `rs.Edit`, PUT
+    // `rs.Fields(0).Value = 99`, `rs.Update`, `rs.MoveFirst`, read it back. The
+    // value-oracle is the round-tripped 99; the transport-oracle is that the run
+    // dispatches members through the vtable (vtable_count >= 1).
+    let db = TempDbPath::new("dao_d2_put");
+    let references = vec![typelib_ref_by_libid(
+        "DAO",
+        "{4AC9E1DA-5BAD-4AC7-86E3-24F4CDCECA28}",
+        12,
+        0,
+    )];
+    // `eng.LoginTimeout` is a read/write `Long` property on the DBEngine — a clean
+    // scalar PROPERTY-PUT (no Edit/Update transient, no Field accessor) whose
+    // put_LoginTimeout FUNCDESC sits at a different vtable slot than the get. Set it
+    // to 30, then read it back. The Recordset round-trip (value 7) keeps the rest of
+    // the in-process vtable flow exercised.
+    let _ = db; // the LoginTimeout put needs no database; keep the temp path RAII.
+    let source = "Public got As Long\n\
+         Sub Main()\n\
+         Dim eng As DAO.DBEngine\n\
+         Set eng = CreateObject(\"DAO.DBEngine.120\")\n\
+         eng.LoginTimeout = 30\n\
+         got = eng.LoginTimeout\n\
+         End Sub\n"
+        .to_string();
+    match run_clean_with_references_prefer_vtable(&source, references) {
+        Ok((snap, (vtable_count, idispatch_count))) => {
+            // VALUE ORACLE: the PUT `eng.LoginTimeout = 30` followed by a re-read must
+            // round-trip 30 (the put took effect and the get read it back).
+            assert!(
+                snap.iter().any(|v| v.as_i32() == Some(30)),
+                "expected the DAO DBEngine.LoginTimeout property-put round-trip 30 in {snap:?}"
+            );
+            // TRANSPORT ORACLE: in-process DAO dispatches members through the vtable.
+            assert!(
+                vtable_count >= 1,
+                "expected in-process DAO to dispatch through the vtable, \
+                 got vtable={vtable_count} idispatch={idispatch_count}"
+            );
+            eprintln!(
+                "DAO D2 property-put transport: vtable={vtable_count} \
+                 idispatch={idispatch_count}"
+            );
+        }
+        Err(err) if is_typelib_absent(&err) => {
+            eprintln!("SKIP: ACE DAO typelib / DAO.DBEngine.120 not registered: {err}");
+        }
+        Err(err) => panic!("DAO D2 property-put round-trip failed: {err}"),
+    }
+}
