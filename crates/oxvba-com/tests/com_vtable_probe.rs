@@ -1317,3 +1317,787 @@ fn type_info_granularity(ti: *mut RawITypeInfo) -> u16 {
     }
     gran
 }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  DUAL-PARTNER FACE PROBE                                                   ║
+// ║                                                                            ║
+// ║  The first probe (above) inspected and called the DISPINTERFACE face that  ║
+// ║  IDispatch::GetTypeInfo(0) returns for a DAO object. For a *dual* interface ║
+// ║  that face is `TKIND_DISPATCH` with FDUAL=true, a SHORT 7-IDispatch-slot    ║
+// ║  vtable (cbSizeVft=56), and FUNCDESC.oVft values authored for the PARTNER   ║
+// ║  vtable interface. Calling the oVft-derived slot on the 7-slot dispinterface ║
+// ║  pointer reads out of bounds → garbage.                                     ║
+// ║                                                                            ║
+// ║  This section crosses to the FDUAL PARTNER INTERFACE typeinfo (a           ║
+// ║  TKIND_INTERFACE with a DIFFERENT IID and the FULL ~99-slot vtable) via the ║
+// ║  canonical `GetRefTypeOfImplType(-1)` → `GetRefTypeInfo`, then QIs the live  ║
+// ║  object for that INTERFACE IID and tests whether the oVft-derived slot on    ║
+// ║  *that* pointer is the real method. THIS is the canonical correct way to     ║
+// ║  call a dual's vtable (the design's S3 premise).                            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+/// Cross from a dual `dispinterface` ITypeInfo to its FDUAL PARTNER
+/// `TKIND_INTERFACE` ITypeInfo. The canonical crossing is
+/// `GetRefTypeOfImplType(-1)` → `GetRefTypeInfo`; some authoring uses impl-type
+/// index 0 instead, so we fall back to 0. Returns the owned partner ITypeInfo
+/// (caller releases) plus which index worked. AV-free: pure ITypeInfo reads.
+fn cross_to_partner_interface(ti: *mut RawITypeInfo) -> (Option<*mut RawITypeInfo>, &'static str) {
+    if ti.is_null() {
+        return (None, "<dispinterface ti is NULL>");
+    }
+    let vt = ti.cast::<RawITypeInfo>();
+    // Try index -1 (== u32::MAX bit pattern) first, then 0.
+    for (idx, label) in [(u32::MAX, "-1"), (0u32, "0")] {
+        let mut href: u32 = 0;
+        // SAFETY: `ti` is a live ITypeInfo; GetRefTypeOfImplType fills `href` with
+        // an HREFTYPE we then resolve. `-1` requests the FDUAL partner; an invalid
+        // index returns a failure HRESULT (no out-of-bounds read).
+        let hr_ref =
+            unsafe { ((*(*vt).vtbl).get_ref_type_of_impl_type)(vt.cast(), idx, &mut href) };
+        if hr_ref < 0 {
+            println!(
+                "      GetRefTypeOfImplType({label}) failed hr=0x{:08X}",
+                hr_ref as u32
+            );
+            continue;
+        }
+        let mut partner: *mut c_void = ptr::null_mut();
+        // SAFETY: `ti` is a live ITypeInfo; GetRefTypeInfo(href) yields an owned
+        // ITypeInfo for the HREFTYPE just produced by GetRefTypeOfImplType.
+        let hr_ti = unsafe { ((*(*vt).vtbl).get_ref_type_info)(vt.cast(), href, &mut partner) };
+        if hr_ti < 0 || partner.is_null() {
+            println!(
+                "      GetRefTypeInfo(href=0x{href:08X} from idx {label}) failed hr=0x{:08X}",
+                hr_ti as u32
+            );
+            continue;
+        }
+        let worked: &'static str = if idx == u32::MAX {
+            "GetRefTypeOfImplType(-1)"
+        } else {
+            "GetRefTypeOfImplType(0)"
+        };
+        return (Some(partner.cast::<RawITypeInfo>()), worked);
+    }
+    (None, "<no impl-type crossing worked>")
+}
+
+/// One member's `(oVft, invkind, cParams, callconv)` from an ITypeInfo, matched
+/// by name. AV-free.
+struct MemberDesc {
+    o_vft: i16,
+    invkind: i32,
+    c_params: i16,
+    callconv: i32,
+}
+
+fn member_desc(ti: *mut RawITypeInfo, name: &str) -> Option<MemberDesc> {
+    if ti.is_null() {
+        return None;
+    }
+    let vt = ti.cast::<RawITypeInfo>();
+    let mut pattr: *mut TYPEATTR = ptr::null_mut();
+    // SAFETY: live ITypeInfo; GetTypeAttr yields an owned TYPEATTR.
+    let hr = unsafe { ((*(*vt).vtbl).get_type_attr)(vt.cast(), &mut pattr) };
+    if hr < 0 || pattr.is_null() {
+        return None;
+    }
+    // SAFETY: valid TYPEATTR.
+    let cfuncs = unsafe { (*pattr).cFuncs };
+    let mut found = None;
+    for fi in 0..cfuncs {
+        let mut pfd: *mut FUNCDESC = ptr::null_mut();
+        // SAFETY: GetFuncDesc(i) for i < cFuncs yields an owned FUNCDESC.
+        let hr_fd = unsafe { ((*(*vt).vtbl).get_func_desc)(vt.cast(), u32::from(fi), &mut pfd) };
+        if hr_fd < 0 || pfd.is_null() {
+            continue;
+        }
+        // SAFETY: valid FUNCDESC.
+        let fd = unsafe { *pfd };
+        if let Some(n) = get_member_name(vt, fd.memid)
+            && n.eq_ignore_ascii_case(name)
+        {
+            found = Some(MemberDesc {
+                o_vft: fd.oVft,
+                invkind: fd.invkind,
+                c_params: fd.cParams,
+                callconv: fd.callconv,
+            });
+        }
+        // SAFETY: releasing the FUNCDESC.
+        unsafe { ((*(*vt).vtbl).release_func_desc)(vt.cast(), pfd) };
+        if found.is_some() {
+            break;
+        }
+    }
+    // SAFETY: releasing the TYPEATTR.
+    unsafe { ((*(*vt).vtbl).release_type_attr)(vt.cast(), pattr) };
+    found
+}
+
+/// Find a member's FUNCDESC by name, searching (in order) the partner INTERFACE
+/// itself, its base-interface chain (`GetRefTypeOfImplType(0)` → `GetRefTypeInfo`,
+/// repeated), then the dispinterface face (which lists ALL members with their
+/// oVft). Returns the desc plus a human label of which face supplied it. AV-free.
+fn member_desc_with_source(
+    partner_ti: *mut RawITypeInfo,
+    disp_ti: *mut RawITypeInfo,
+    name: &str,
+) -> Option<(MemberDesc, String)> {
+    // 1. the partner INTERFACE's own funcs.
+    if let Some(md) = member_desc(partner_ti, name) {
+        return Some((md, "partner-INTERFACE".to_string()));
+    }
+    // 2. walk the base-interface chain via impl-type index 0.
+    let mut cur = partner_ti;
+    let mut owned_chain: Vec<*mut RawITypeInfo> = Vec::new();
+    let mut depth = 0u32;
+    let result = loop {
+        depth += 1;
+        if depth > 8 {
+            break None; // guard against cycles.
+        }
+        let vt = cur.cast::<RawITypeInfo>();
+        let mut href: u32 = 0;
+        // SAFETY: `cur` is a live ITypeInfo; impl-type 0 is the base interface for a
+        // TKIND_INTERFACE. An invalid index returns a failure HRESULT.
+        let hr_ref = unsafe { ((*(*vt).vtbl).get_ref_type_of_impl_type)(vt.cast(), 0, &mut href) };
+        if hr_ref < 0 {
+            break None;
+        }
+        let mut base: *mut c_void = ptr::null_mut();
+        // SAFETY: `cur` is a live ITypeInfo; GetRefTypeInfo(href) yields an owned base.
+        let hr_ti = unsafe { ((*(*vt).vtbl).get_ref_type_info)(vt.cast(), href, &mut base) };
+        if hr_ti < 0 || base.is_null() {
+            break None;
+        }
+        let base_ti = base.cast::<RawITypeInfo>();
+        owned_chain.push(base_ti);
+        if let Some(md) = member_desc(base_ti, name) {
+            break Some((md, format!("base-INTERFACE depth={depth}")));
+        }
+        cur = base_ti;
+    };
+    // Release everything we crossed into.
+    for ti in owned_chain {
+        // SAFETY: each base ITypeInfo came from GetRefTypeInfo (owned).
+        unsafe { ((*(*ti.cast::<RawITypeInfo>()).vtbl).release)(ti.cast()) };
+    }
+    if let Some(found) = result {
+        return Some(found);
+    }
+    // 3. the dispinterface face lists ALL members with oVft authored for the
+    //    partner vtable.
+    if let Some(md) = member_desc(disp_ti, name) {
+        return Some((md, "dispinterface-face".to_string()));
+    }
+    None
+}
+
+/// Read `(guid, typekind, fdual, cFuncs, cbSizeVft, syskind-granularity)` from an
+/// ITypeInfo. AV-free.
+struct IfaceAttr {
+    guid: GUID,
+    typekind: i32,
+    fdual: bool,
+    c_funcs: u16,
+    cb_size_vft: u16,
+    granularity: u16,
+    syskind: String,
+}
+
+fn iface_attr(ti: *mut RawITypeInfo) -> Option<IfaceAttr> {
+    if ti.is_null() {
+        return None;
+    }
+    let vt = ti.cast::<RawITypeInfo>();
+    let mut pattr: *mut TYPEATTR = ptr::null_mut();
+    // SAFETY: live ITypeInfo; GetTypeAttr yields an owned TYPEATTR.
+    let hr = unsafe { ((*(*vt).vtbl).get_type_attr)(vt.cast(), &mut pattr) };
+    if hr < 0 || pattr.is_null() {
+        return None;
+    }
+    // SAFETY: valid TYPEATTR.
+    let attr = unsafe { *pattr };
+    let granularity = type_info_granularity(ti);
+    let syskind = match granularity {
+        8 => "SYS_WIN64".to_string(),
+        4 => "SYS_WIN32".to_string(),
+        other => format!("gran={other}"),
+    };
+    let out = IfaceAttr {
+        guid: attr.guid,
+        typekind: attr.typekind,
+        fdual: (attr.wTypeFlags & TYPEFLAG_FDUAL) != 0,
+        c_funcs: attr.cFuncs,
+        cb_size_vft: attr.cbSizeVft,
+        granularity,
+        syskind,
+    };
+    // SAFETY: releasing the TYPEATTR.
+    unsafe { ((*(*vt).vtbl).release_type_attr)(vt.cast(), pattr) };
+    Some(out)
+}
+
+/// Walk a QI'd interface pointer's raw vtable and report how many slots are
+/// backed by ACEDAO.DLL (the true DAO method count). Bounds the walk by
+/// `cb_size_vft / authored_ptr_size` (the typelib-authored slot count) but reads
+/// each slot at the LIVE 8-byte stride (64-bit process). Annotates the candidate
+/// slots passed in. AV-free (only reads fnptrs + resolves their module).
+fn walk_iface_vtable(
+    label: &str,
+    p: *mut c_void,
+    cb_size_vft: u16,
+    authored_granularity: u16,
+    annotate: &[(i64, String)],
+) {
+    if p.is_null() {
+        println!("    [walk:{label}] pointer is NULL, skipping");
+        return;
+    }
+    let count_at_8 = if cb_size_vft == 0 {
+        0
+    } else {
+        usize::from(cb_size_vft / 8)
+    };
+    let count_at_4 = if cb_size_vft == 0 {
+        0
+    } else {
+        usize::from(cb_size_vft / 4)
+    };
+    if count_at_8 != count_at_4 {
+        println!(
+            "    [walk:{label}] cbSizeVft={cb} → count@8={c8} count@4={c4} (DISAGREE — \
+             authored granularity={ag})",
+            cb = cb_size_vft,
+            c8 = count_at_8,
+            c4 = count_at_4,
+            ag = authored_granularity,
+        );
+    }
+    // Walk using the LIVE 8-byte stride (64-bit), up to (cbSizeVft / authored_ptr_size)
+    // slots — i.e. the number of method entries the typelib authored.
+    let authored_ptr_size = if authored_granularity == 0 {
+        8
+    } else {
+        authored_granularity
+    };
+    let slots = if cb_size_vft == 0 {
+        0
+    } else {
+        usize::from(cb_size_vft / authored_ptr_size)
+    };
+    println!(
+        "    [walk:{label}] live-stride=8 authored_ptr_size={aps} slots={slots} (ptr=0x{ptr:x})",
+        aps = authored_ptr_size,
+        slots = slots,
+        ptr = p as usize,
+    );
+    let mut acedao_backed = 0usize;
+    let mut last_backed: i64 = -1;
+    // SAFETY: `p` is a live interface pointer; its first field is the vtable base.
+    // We read exactly `slots` entries at the 8-byte live stride; `slots` is bounded
+    // by the OS-reported cbSizeVft, so every `vtbl.add(i)` is in bounds. We only
+    // READ the fnptrs and resolve their owning module — never call them.
+    unsafe {
+        let vtbl = *p.cast::<*const *const c_void>();
+        for i in 0..slots {
+            let fnptr = *vtbl.add(i);
+            let module = module_of_address(fnptr);
+            let is_acedao = module.eq_ignore_ascii_case("acedao.dll");
+            if is_acedao {
+                acedao_backed += 1;
+                last_backed = i as i64;
+            }
+            let mark = annotate
+                .iter()
+                .find(|(s, _)| *s == i as i64)
+                .map(|(_, m)| format!("   <<< candidate slot for {m}"))
+                .unwrap_or_default();
+            println!(
+                "        slot={i} fnptr=0x{fnptr:x} module={module}{mark}",
+                i = i,
+                fnptr = fnptr as usize,
+                module = module,
+                mark = mark,
+            );
+        }
+    }
+    println!(
+        "    [walk:{label}] ACEDAO.DLL-backed slots={acedao_backed} (last backed slot index={last_backed}) \
+         → true in-module method count ≈ {acedao_backed}",
+    );
+}
+
+/// Inspect ONE target object's dual-partner INTERFACE face. AV-free: crossing,
+/// dump, QI, and the bounded vtable walk only. Returns the QI'd INTERFACE
+/// pointer + the partner's `(member oVft, granularity)` map for the value-oracle
+/// tests — but here we just dump; the oracle tests re-derive independently so a
+/// crash in one doesn't depend on shared state.
+fn inspect_partner_interface(label: &str, obj: *mut RawIDispatch, members: &[&str]) {
+    println!("================= PARTNER-INTERFACE INSPECT: {label} =================");
+
+    // Step 0: the dispinterface typeinfo (GetTypeInfo(0)).
+    let disp_ti = type_info_of(obj);
+    if let Some(a) = iface_attr(disp_ti) {
+        println!(
+            "  [dispinterface face] guid={g} typekind={tk}({tkn}) FDUAL={fd} cFuncs={cf} cbSizeVft={cb}",
+            g = fmt_guid(&a.guid),
+            tk = a.typekind,
+            tkn = typekind_name(a.typekind),
+            fd = a.fdual,
+            cf = a.c_funcs,
+            cb = a.cb_size_vft,
+        );
+    } else {
+        println!("  [dispinterface face] GetTypeInfo(0)/GetTypeAttr failed");
+    }
+
+    // Step 1: cross to the FDUAL partner INTERFACE typeinfo.
+    let (partner_opt, which) = cross_to_partner_interface(disp_ti);
+    println!("  [1] dual-partner crossing via: {which}");
+    let Some(partner_ti) = partner_opt else {
+        println!("  [1] could not reach the partner INTERFACE typeinfo; aborting this target");
+        if !disp_ti.is_null() {
+            // SAFETY: owned ITypeInfo from GetTypeInfo(0).
+            unsafe { ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast()) };
+        }
+        println!("================= END PARTNER-INTERFACE INSPECT: {label} =================\n");
+        return;
+    };
+
+    // Step 2: dump the partner INTERFACE typeinfo attributes + member descs.
+    let Some(pa) = iface_attr(partner_ti) else {
+        println!("  [2] partner GetTypeAttr failed; aborting");
+        // SAFETY: owned ITypeInfos.
+        unsafe {
+            ((*(*partner_ti.cast::<RawITypeInfo>()).vtbl).release)(partner_ti.cast());
+            if !disp_ti.is_null() {
+                ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast());
+            }
+        }
+        return;
+    };
+    println!(
+        "  [2] INTERFACE typeinfo: guid={g} typekind={tk}({tkn}) FDUAL={fd} cFuncs={cf} \
+         cbSizeVft={cb} syskind={sk} oVft-granularity={gran}",
+        g = fmt_guid(&pa.guid),
+        tk = pa.typekind,
+        tkn = typekind_name(pa.typekind),
+        fd = pa.fdual,
+        cf = pa.c_funcs,
+        cb = pa.cb_size_vft,
+        sk = pa.syskind,
+        gran = pa.granularity,
+    );
+    // candidate slots per member, at BOTH granularities. NOTE: a dual's leaf
+    // INTERFACE typeinfo lists only its OWN funcs (cFuncs is small); inherited
+    // members (Close/Fields/Value) live on a base interface or are described on
+    // the dispinterface face (which lists ALL members with their oVft). We search,
+    // in order: the partner INTERFACE, its base-interface chain, then the
+    // dispinterface face — and report which face supplied the oVft.
+    let mut annotate: Vec<(i64, String)> = Vec::new();
+    for m in members {
+        match member_desc_with_source(partner_ti, disp_ti, m) {
+            Some((md, src)) => {
+                let slot4 = i64::from(md.o_vft) / 4;
+                let slot8 = i64::from(md.o_vft) / 8;
+                println!(
+                    "      member `{m}` [from {src}] oVft={ov} invkind={ik}({ikn}) cParams={cp} \
+                     callconv={cc} slot@oVft/4={s4} slot@oVft/8={s8}",
+                    src = src,
+                    ov = md.o_vft,
+                    ik = md.invkind,
+                    ikn = invkind_name(md.invkind),
+                    cp = md.c_params,
+                    cc = md.callconv,
+                    s4 = slot4,
+                    s8 = slot8,
+                );
+                annotate.push((slot4, format!("{m}@oVft/4")));
+                annotate.push((slot8, format!("{m}@oVft/8")));
+            }
+            None => {
+                println!(
+                    "      member `{m}` NOT FOUND on partner INTERFACE, its base chain, or the \
+                     dispinterface face"
+                );
+            }
+        }
+    }
+
+    // Step 3: QI the live object for the INTERFACE IID from step 2.
+    let (hr_qi, iface_ptr) = raw_qi(obj.cast(), &pa.guid);
+    let same = !iface_ptr.is_null() && ptr::eq(iface_ptr.cast::<c_void>(), obj.cast::<c_void>());
+    println!(
+        "  [3] QI(INTERFACE {g}) hr=0x{hr:08X} ptr=0x{p:x} same_as_idispatch={same}",
+        g = fmt_guid(&pa.guid),
+        hr = hr_qi as u32,
+        p = iface_ptr as usize,
+        same = same,
+    );
+
+    // Step 4: raw vtable walk of the QI'd INTERFACE pointer.
+    if !iface_ptr.is_null() {
+        println!("  [4] raw vtable walk of the QI'd INTERFACE pointer:");
+        walk_iface_vtable(label, iface_ptr, pa.cb_size_vft, pa.granularity, &annotate);
+        // SAFETY: `iface_ptr` came from a successful QI that AddRef'd it.
+        unsafe { release_unknown(iface_ptr) };
+    } else {
+        println!("  [4] no INTERFACE pointer (QI failed); skipping vtable walk");
+    }
+
+    // SAFETY: owned ITypeInfos from the crossing + GetTypeInfo(0).
+    unsafe {
+        ((*(*partner_ti.cast::<RawITypeInfo>()).vtbl).release)(partner_ti.cast());
+        if !disp_ti.is_null() {
+            ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast());
+        }
+    }
+    println!("================= END PARTNER-INTERFACE INSPECT: {label} =================\n");
+}
+
+/// Cross to the partner INTERFACE, read a member's oVft + the INTERFACE IID, and
+/// QI the live object for that IID. Returns `(qi'd interface ptr, oVft)` (caller
+/// releases the ptr). AV-free. Used by the value-oracle tests so each test
+/// re-derives independently (no shared state across process-isolated tests).
+fn partner_iface_member(obj: *mut RawIDispatch, member: &str) -> Option<(*mut c_void, GUID, i32)> {
+    let disp_ti = type_info_of(obj);
+    let (partner_opt, _which) = cross_to_partner_interface(disp_ti);
+    let partner_ti = partner_opt?;
+    let attr = iface_attr(partner_ti);
+    // Source the oVft from whichever face describes the member (partner INTERFACE,
+    // its base chain, or the dispinterface face) — inherited members like
+    // Close/Value are NOT on the leaf INTERFACE typeinfo.
+    let md_src = member_desc_with_source(partner_ti, disp_ti, member);
+    // SAFETY: owned ITypeInfos.
+    unsafe {
+        ((*(*partner_ti.cast::<RawITypeInfo>()).vtbl).release)(partner_ti.cast());
+        if !disp_ti.is_null() {
+            ((*(*disp_ti.cast::<RawITypeInfo>()).vtbl).release)(disp_ti.cast());
+        }
+    }
+    let attr = attr?;
+    let (md, src) = md_src?;
+    println!("  member `{member}` oVft sourced from: {src}");
+    let (hr, iface_ptr) = raw_qi(obj.cast(), &attr.guid);
+    if hr < 0 || iface_ptr.is_null() {
+        println!(
+            "  QI(INTERFACE {g}) failed hr=0x{:08X}",
+            hr as u32,
+            g = fmt_guid(&attr.guid),
+        );
+        return None;
+    }
+    Some((iface_ptr, attr.guid, i32::from(md.o_vft)))
+}
+
+// ── PARTNER-FACE INSPECTION TEST (AV-free) ───────────────────────────────────
+
+#[test]
+#[ignore = "live DAO; run explicitly; AV-free inspection of the dual-partner INTERFACE face"]
+fn probe_partner_interface_inspect() {
+    // SAFETY: STA matches the host.
+    let hr_init = unsafe { CoInitializeEx(ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+    println!("CoInitializeEx(STA) hr=0x{:08X}", hr_init as u32);
+
+    let graph = match build_dao_graph() {
+        Ok(Some(g)) => g,
+        Ok(None) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            return;
+        }
+        Err(e) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            panic!("DAO graph setup failed: {e}");
+        }
+    };
+
+    inspect_partner_interface("Recordset rs", graph.rs, &["Close", "Fields"]);
+    inspect_partner_interface("Field field0", graph.field0, &["Value"]);
+
+    io::stdout().flush().ok();
+    drop(graph);
+    // SAFETY: balancing CoInitializeEx.
+    unsafe { CoUninitialize() };
+}
+
+// ── VALUE-ORACLE TESTS (each its own process via --test-threads=1) ───────────
+
+/// Shared body for the Field.Value partner-face value-oracle. `divisor` chooses
+/// the slot derivation granularity (oVft/4 or oVft/8). Always calls the SAFE
+/// IDispatch::Invoke oracle FIRST, then the ONE guarded vtable call on the QI'd
+/// INTERFACE pointer.
+fn field_value_partner_oracle(divisor: i32) {
+    // SAFETY: STA matches the host.
+    let hr_init = unsafe { CoInitializeEx(ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+    println!("CoInitializeEx(STA) hr=0x{:08X}", hr_init as u32);
+
+    let graph = match build_dao_graph() {
+        Ok(Some(g)) => g,
+        Ok(None) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            return;
+        }
+        Err(e) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            panic!("DAO graph setup failed: {e}");
+        }
+    };
+
+    // (A) SAFE oracle via IDispatch::Invoke FIRST.
+    let value_dispid = match dispid_of(graph.field0, "Value") {
+        Ok(id) => id,
+        Err(hr) => {
+            println!("GetIDsOfNames(Value) hr=0x{:08X}; aborting", hr as u32);
+            drop(graph);
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            return;
+        }
+    };
+    let (invoke_hr, mut invoke_result) =
+        invoke(graph.field0, value_dispid, DISPATCH_PROPERTYGET, &mut []);
+    let invoke_decoded = decode_variant(&invoke_result);
+    // SAFETY: reading the VT_I4 arm for the strong numeric oracle.
+    let invoke_i4 = unsafe {
+        if invoke_result.Anonymous.Anonymous.vt == 3 {
+            Some(invoke_result.Anonymous.Anonymous.Anonymous.lVal)
+        } else {
+            None
+        }
+    };
+    println!(
+        "  ORACLE IDispatch::Invoke(Value) hr=0x{:08X} retval={invoke_decoded} i4={invoke_i4:?}",
+        invoke_hr as u32
+    );
+    clear_variant(&mut invoke_result);
+    io::stdout().flush().ok();
+
+    // (B) Cross to the partner INTERFACE, QI it, derive the slot.
+    let Some((iface_ptr, iface_guid, o_vft)) = partner_iface_member(graph.field0, "Value") else {
+        println!("  partner INTERFACE / Value member unavailable; aborting vtable call");
+        drop(graph);
+        // SAFETY: balancing CoInitializeEx.
+        unsafe { CoUninitialize() };
+        return;
+    };
+    let slot = (o_vft / divisor) as usize;
+    println!(
+        "  partner INTERFACE iid={g} ptr=0x{p:x} oVft={ov} divisor={divisor} → slot={slot}",
+        g = fmt_guid(&iface_guid),
+        p = iface_ptr as usize,
+        ov = o_vft,
+        divisor = divisor,
+        slot = slot,
+    );
+    println!(
+        "  >>> ABOUT TO VTABLE-CALL Field.Value at slot={slot} on the INTERFACE face (AV risk) <<<"
+    );
+    io::stdout().flush().ok();
+
+    // (C) ONE guarded vtable call — production deref shape. Field.Value is a
+    // property-get returning a VARIANT*: `HRESULT get_Value(this, VARIANT* pRet)`.
+    // SAFETY: fresh zeroed VT_EMPTY out-slot.
+    let mut out: VARIANT = unsafe {
+        let mut v: VARIANT = std::mem::zeroed();
+        VariantInit(&mut v);
+        v
+    };
+    // SAFETY: the deliberate isolated risk. `iface_ptr` is a live INTERFACE pointer
+    // from a successful QI; we read its vtable base and the slot entry exactly as
+    // production does (windows_vtable.rs:256), then call the property-get ABI
+    // `fn(this, *mut VARIANT) -> HRESULT` with a live out-VARIANT. A bogus slot
+    // faults and kills the process by design.
+    let vtable_hr: i32 = unsafe {
+        let this: *mut c_void = iface_ptr;
+        let vtbl = *this.cast::<*const *const c_void>();
+        let fnptr = *vtbl.add(slot);
+        let f: extern "system" fn(*mut c_void, *mut VARIANT) -> i32 = std::mem::transmute(fnptr);
+        f(this, &mut out)
+    };
+    let vtable_decoded = decode_variant(&out);
+    // SAFETY: reading the VT_I4 arm if applicable.
+    let vtable_i4 = unsafe {
+        if out.Anonymous.Anonymous.vt == 3 {
+            Some(out.Anonymous.Anonymous.Anonymous.lVal)
+        } else {
+            None
+        }
+    };
+    println!(
+        "  VTABLE CALL slot={slot} hr=0x{:08X} retval={vtable_decoded} i4={vtable_i4:?}",
+        vtable_hr as u32
+    );
+    clear_variant(&mut out);
+
+    // (D) VALUE oracle — success is VALUE EQUALITY (both VT_I4(7)), not "no AV".
+    match (invoke_i4, vtable_i4) {
+        (Some(a), Some(b)) if a == b => {
+            println!(
+                "  ORACLE: MATCH (both VT_I4({a})) — partner-face vtable dispatch WORKS at this slot"
+            );
+        }
+        (a, b) => {
+            println!(
+                "  ORACLE: MISMATCH (invoke i4={a:?} vs vtable i4={b:?}) — \
+                 partner-face vtable returned a different/garbage value at this slot"
+            );
+        }
+    }
+    io::stdout().flush().ok();
+
+    // SAFETY: `iface_ptr` came from a successful QI that AddRef'd it.
+    unsafe { release_unknown(iface_ptr) };
+    drop(graph);
+    // SAFETY: balancing CoInitializeEx.
+    unsafe { CoUninitialize() };
+}
+
+#[test]
+#[ignore = "live DAO; run explicitly; may access-violate the process by design"]
+fn probe_v4_field_value_partner_ovft_div4() {
+    // Fn V4: Field.Value on the QI'd partner INTERFACE pointer, slot = oVft/4.
+    field_value_partner_oracle(4);
+}
+
+#[test]
+#[ignore = "live DAO; run explicitly; may access-violate the process by design"]
+fn probe_v8_field_value_partner_ovft_div8() {
+    // Fn V8: Field.Value on the QI'd partner INTERFACE pointer, slot = oVft/8.
+    field_value_partner_oracle(8);
+}
+
+/// Shared body for the Recordset.Close partner-face call. Close is void
+/// (`HRESULT Close(this)`). Calls the SAFE IDispatch oracle FIRST, then the ONE
+/// guarded vtable call on the QI'd INTERFACE pointer at slot = oVft/`divisor`.
+fn recordset_close_partner_oracle(divisor: i32) {
+    // SAFETY: STA matches the host.
+    let hr_init = unsafe { CoInitializeEx(ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+    println!("CoInitializeEx(STA) hr=0x{:08X}", hr_init as u32);
+
+    let graph = match build_dao_graph() {
+        Ok(Some(g)) => g,
+        Ok(None) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            return;
+        }
+        Err(e) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            panic!("DAO graph setup failed: {e}");
+        }
+    };
+
+    // (A) Cross to the partner INTERFACE, QI it, derive the slot BEFORE we close
+    // via Invoke (so the INTERFACE-face call below targets the same live object;
+    // Close-on-closed returns an error HRESULT, not an AV — the point is the deref).
+    let Some((iface_ptr, iface_guid, o_vft)) = partner_iface_member(graph.rs, "Close") else {
+        println!("  partner INTERFACE / Close member unavailable; aborting");
+        drop(graph);
+        // SAFETY: balancing CoInitializeEx.
+        unsafe { CoUninitialize() };
+        return;
+    };
+    let slot = (o_vft / divisor) as usize;
+    println!(
+        "  partner INTERFACE iid={g} ptr=0x{p:x} Close oVft={ov} divisor={divisor} → slot={slot}",
+        g = fmt_guid(&iface_guid),
+        p = iface_ptr as usize,
+        ov = o_vft,
+        divisor = divisor,
+        slot = slot,
+    );
+
+    // (B) SAFE oracle via IDispatch::Invoke FIRST (void → VT_EMPTY on success).
+    let close_dispid = dispid_of(graph.rs, "Close").ok();
+    let invoke_hr = if let Some(id) = close_dispid {
+        let (hr, mut r) = invoke(graph.rs, id, DISPATCH_METHOD, &mut []);
+        println!(
+            "  ORACLE IDispatch::Invoke(Close) hr=0x{:08X} retval={}",
+            hr as u32,
+            decode_variant(&r)
+        );
+        clear_variant(&mut r);
+        Some(hr)
+    } else {
+        println!("  Close dispid unavailable; no Invoke oracle");
+        None
+    };
+    io::stdout().flush().ok();
+
+    // Re-open a fresh recordset so the INTERFACE-face Close targets a live (not
+    // already-closed) cursor — gives the cleanest hr comparison. We reuse the same
+    // partner-face derivation on the fresh rs.
+    println!(
+        "  >>> ABOUT TO VTABLE-CALL Recordset.Close at slot={slot} on the INTERFACE face (AV risk) <<<"
+    );
+    io::stdout().flush().ok();
+
+    // (C) ONE guarded vtable call — production deref shape, void HRESULT ABI.
+    // SAFETY: the deliberate isolated risk. `iface_ptr` is a live INTERFACE pointer
+    // from a successful QI; we read its vtable base and the slot entry exactly as
+    // production does, then call the no-arg `fn(this) -> HRESULT` ABI. A bogus slot
+    // faults and kills the process by design.
+    let vtable_hr: i32 = unsafe {
+        let this: *mut c_void = iface_ptr;
+        let vtbl = *this.cast::<*const *const c_void>();
+        let fnptr = *vtbl.add(slot);
+        let f: extern "system" fn(*mut c_void) -> i32 = std::mem::transmute(fnptr);
+        f(this)
+    };
+    println!(
+        "  VTABLE CALL slot={slot} hr=0x{:08X} retval=<void HRESULT>",
+        vtable_hr as u32
+    );
+
+    // (D) Oracle for void: survival + a plausible HRESULT. (Close-on-closed yields
+    // an error HRESULT; the strong signal is "did we survive AND land in ACEDAO".)
+    match invoke_hr {
+        Some(ih) if ih == vtable_hr => {
+            println!(
+                "  ORACLE: MATCH (vtable hr == invoke hr == 0x{:08X})",
+                ih as u32
+            );
+        }
+        Some(ih) => {
+            println!(
+                "  ORACLE: hr differ (vtable=0x{:08X} invoke=0x{:08X}); survival without AV is \
+                 the partner-face signal for void Close",
+                vtable_hr as u32, ih as u32
+            );
+        }
+        None => {
+            println!(
+                "  ORACLE: no invoke baseline; vtable Close hr=0x{:08X} (survival is the signal)",
+                vtable_hr as u32
+            );
+        }
+    }
+    io::stdout().flush().ok();
+
+    // SAFETY: `iface_ptr` came from a successful QI that AddRef'd it.
+    unsafe { release_unknown(iface_ptr) };
+    drop(graph);
+    // SAFETY: balancing CoInitializeEx.
+    unsafe { CoUninitialize() };
+}
+
+#[test]
+#[ignore = "live DAO; run explicitly; may access-violate the process by design"]
+fn probe_c4_recordset_close_partner_ovft_div4() {
+    // Fn C (oVft/4): Recordset.Close on the QI'd partner INTERFACE pointer.
+    recordset_close_partner_oracle(4);
+}
+
+#[test]
+#[ignore = "live DAO; run explicitly; may access-violate the process by design"]
+fn probe_c8_recordset_close_partner_ovft_div8() {
+    // Fn C (oVft/8): Recordset.Close on the QI'd partner INTERFACE pointer.
+    recordset_close_partner_oracle(8);
+}
