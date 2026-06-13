@@ -348,6 +348,24 @@ dual-by-GUID `oVft` still mismatches the physical tear-off vtable, only Tier-1 s
 the crashing `*vtbl.add(slot)` read to the offline probe. Value-oracle (not "no AV") is the
 success criterion. Land S1+S2+S7 regardless (close the `is_dual` drop / dispinterface-slot bug).
 
+## OUTCOME (2026-06-13) — DONE + VERIFIED LIVE
+
+The granularity breakthrough closed it. **Root cause of every prior "infeasible" round: `slot
+= oVft / authored-syskind-granularity` (4) instead of `oVft / live-pointer-size` (8 on x64)** —
+oleaut reports `oVft` in live pointer units, so `/4` doubled every slot → OOB (the AV) or
+in-range-wrong (silent garbage). Two value-oracle probes (4f95ea91, d10b7524) proved
+`Field.Value @ slot oVft/8=17 → 7` (MATCH) vs `@ oVft/4=34 → garbage`. Shipped recipe (live
+8-byte units): `slot=oVft/8`, AV-safe bound `slot < cbSizeVft/8` from the **FDUAL partner
+interface** (`GetRefTypeOfImplType(-1)`), QI the interface IID, gate `is_dual &&
+source_typekind==Interface && 7<=slot<bound && stdcall && v1-VARTYPEs && !IID_IProxyManager`.
+Implemented in 9 commits 4f95ea91..d45492b6 (S-A granularity fix … S-G live asserts), incl. a
+hand-rolled FDUAL fixture (the old fixture's `GetTypeInfo` was `E_NOTIMPL` — how the AV shipped
+CI-green). **LIVE (re-verified): DAO `Field.Value` THROUGH the vtable = 7 (vtable_count=3);
+Excel IDispatch (vtable_count=0, proxy-excluded); all 7 live COM tests green, no host AV;
+non-live oxvba-com/hal/host green; clippy `-D warnings` clean.** Unification with Declare =
+status quo (shared `call_via_libffi`). OPEN: PreferVtable default-flip decision; coverage
+follow-ups (property-PUT live, omitted-optional args, OxVba-authored class instances Tier-1b).
+
 ## Cross-refs
 
 `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md` (anticipates default `prefer_vtable`
