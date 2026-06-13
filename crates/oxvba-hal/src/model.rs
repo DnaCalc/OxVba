@@ -227,7 +227,12 @@ impl HostPolicy {
                 deterministic_mode: false,
                 ui_virtualization: UiVirtualizationMode::Disabled,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
-                com_invocation_strategy: ComInvocationStrategy::DispatchOnly,
+                // Normal-operation default: in-process dual-interface members dispatch
+                // through the COM vtable (slot = oVft / live-pointer-size, bound-checked
+                // against the FDUAL partner interface's cbSizeVft); out-of-process
+                // marshaling proxies (IID_IProxyManager) and ineligible shapes fall back
+                // to IDispatch::Invoke. See the COM-vtable-early-bound-dispatch workset.
+                com_invocation_strategy: ComInvocationStrategy::PreferVtable,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
             },
         }
@@ -371,9 +376,10 @@ mod tests {
             policy.unsupported_feature_mode,
             UnsupportedFeatureMode::Runtime
         );
+        // Interactive (normal-operation) default prefers the in-process COM vtable.
         assert_eq!(
             policy.com_invocation_strategy,
-            ComInvocationStrategy::DispatchOnly
+            ComInvocationStrategy::PreferVtable
         );
         assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
     }
