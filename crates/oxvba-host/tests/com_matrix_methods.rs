@@ -110,8 +110,8 @@ fn m4_fso_build_path_and_file_exists() {
     // Build a path from two strings; FileExists on a real temp file (True) and a
     // ghost (False). verdict = IIf(exists1,1,0) + IIf(exists2,0,2) = 1.
     let db = TempDbPath::new("m4_fso");
-    // Write a real file so FileExists is True.
-    std::fs::write(&db.0, b"x").ok();
+    // Write a real file (per leg) so FileExists is True in every differential leg.
+    db.write_all_legs(b"x");
     let lit = db.as_vba_literal();
     let body = format!(
         "Dim verdict As Long\n\

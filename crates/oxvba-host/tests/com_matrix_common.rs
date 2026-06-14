@@ -57,29 +57,57 @@ pub type EarlyRun = Result<(Vec<Variant>, (u64, u64)), String>;
 // the new category files do not depend on the original smoke-baseline file).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The placeholder a side-effecting scenario embeds in any per-run-unique target
+/// (e.g. a DAO `CreateDatabase` path). The differential runner runs the SAME VBA
+/// up to three times (late, early-PreferVtable, early-DispatchOnly); each leg
+/// substitutes its own [`LEG_*`](LEG_LATE) token here so the three legs never
+/// collide on a shared side effect. A source without the marker is unaffected.
+pub const LEG_PLACEHOLDER: &str = "%%LEG%%";
+/// Per-leg substitution token for the late-bound (`run_clean`) leg.
+pub const LEG_LATE: &str = "late";
+/// Per-leg substitution token for the early-bound `PreferVtable` leg.
+pub const LEG_EARLY_VTABLE: &str = "earlyvt";
+/// Per-leg substitution token for the early-bound `DispatchOnly` leg.
+pub const LEG_EARLY_DISPATCH: &str = "earlydo";
+/// The full set of leg tokens — used by [`TempDbPath`] teardown to remove every
+/// per-leg side-effect target a scenario may have produced.
+pub const ALL_LEG_TOKENS: &[&str] = &[LEG_LATE, LEG_EARLY_VTABLE, LEG_EARLY_DISPATCH];
+
+/// Substitute the per-leg token into a scenario source for one differential leg
+/// (a no-op when the source carries no [`LEG_PLACEHOLDER`]).
+fn with_leg_token(source: &str, leg: &str) -> String {
+    source.replace(LEG_PLACEHOLDER, leg)
+}
+
 /// Run a single-module VBA source through the clean Engine under the
 /// interactive-dev policy (which permits real COM activation), returning the
 /// snapshot (module globals followed by `Main`'s locals). This is the LATE-bound
 /// leg's runner: the source uses `Dim x As Object` + `CreateObject`.
 pub fn run_clean(source: &str) -> Result<Vec<Variant>, String> {
+    let source = with_leg_token(source, LEG_LATE);
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .execute_source_with_variant_snapshot_clean(source)
+        .execute_source_with_variant_snapshot_clean(&source)
         .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))
 }
 
 /// Run a single-module VBA source that carries typelib `references` through the
 /// clean Engine under the interactive-dev policy, so a typed receiver resolves to
 /// early-bound COM dispatch (dispatch by dispid). Same snapshot as [`run_clean`].
+///
+/// This is the early-bound leg used by the two-leg error oracle; it substitutes
+/// the `PreferVtable` per-leg token so it does not collide with [`run_clean`]'s
+/// late leg on a shared side effect.
 pub fn run_clean_with_references(
     source: &str,
     references: Vec<ProjectReference>,
 ) -> Result<Vec<Variant>, String> {
+    let source = with_leg_token(source, LEG_EARLY_VTABLE);
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .execute_source_with_references_and_snapshot(source, references)
+        .execute_source_with_references_and_snapshot(&source, references)
         .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))
 }
 
@@ -94,12 +122,13 @@ pub fn run_clean_with_references_prefer_vtable(
     source: &str,
     references: Vec<ProjectReference>,
 ) -> EarlyRun {
+    let source = with_leg_token(source, LEG_EARLY_VTABLE);
     let mut policy = HostPolicy::interactive_dev();
     policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(policy);
     let snapshot = engine
-        .execute_source_with_references_and_snapshot(source, references)
+        .execute_source_with_references_and_snapshot(&source, references)
         .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))?;
     // The engine retains its host services (and thus the COM bridge) after the
     // run, so the accumulated transport counts are still readable here.
@@ -144,27 +173,64 @@ pub fn is_component_absent(err: &str) -> bool {
         || err.to_ascii_lowercase().contains("invalid class string")
 }
 
-/// A unique temp path for a test database, removed up front and on teardown so
-/// the run is repeatable. `tag` keeps concurrent lanes from colliding.
-pub struct TempDbPath(pub PathBuf);
+/// A unique, PER-LEG temp path template for a test database, removed up front and
+/// on teardown so the run is repeatable. `tag` keeps concurrent scenarios from
+/// colliding; the embedded [`LEG_PLACEHOLDER`] keeps the three differential legs
+/// (late / early-vtable / early-dispatch) from colliding on a SHARED side effect
+/// — each leg's runner substitutes its own token, so `eng.CreateDatabase` writes
+/// a distinct file per leg and legs 2-3 no longer fail "Database already exists".
+pub struct TempDbPath {
+    /// Filesystem path template, with [`LEG_PLACEHOLDER`] still un-substituted.
+    template: PathBuf,
+}
 
 impl TempDbPath {
     pub fn new(tag: &str) -> Self {
         let pid = std::process::id();
-        let path = std::env::temp_dir().join(format!("oxvba_{tag}_{pid}.accdb"));
-        let _ = std::fs::remove_file(&path);
-        Self(path)
+        let template =
+            std::env::temp_dir().join(format!("oxvba_{tag}_{pid}_{LEG_PLACEHOLDER}.accdb"));
+        let me = Self { template };
+        me.remove_all_legs();
+        me
     }
 
+    /// The path for one concrete leg (placeholder substituted).
+    fn leg_path(&self, leg: &str) -> PathBuf {
+        PathBuf::from(
+            self.template
+                .to_string_lossy()
+                .replace(LEG_PLACEHOLDER, leg),
+        )
+    }
+
+    fn remove_all_legs(&self) {
+        for leg in ALL_LEG_TOKENS {
+            let _ = std::fs::remove_file(self.leg_path(leg));
+        }
+    }
+
+    /// Pre-create the target file for EVERY leg (read-only scenarios such as a
+    /// `FileSystemObject.FileExists` check, where each leg's substituted literal
+    /// must point at an already-existing file). Returns the count written.
+    pub fn write_all_legs(&self, contents: &[u8]) -> usize {
+        ALL_LEG_TOKENS
+            .iter()
+            .filter(|leg| std::fs::write(self.leg_path(leg), contents).is_ok())
+            .count()
+    }
+
+    /// The VBA string literal for the templated path. Still carries
+    /// [`LEG_PLACEHOLDER`]; each differential-leg runner substitutes its own token
+    /// before executing, so every leg targets a distinct database file.
     pub fn as_vba_literal(&self) -> String {
         // VBA string literal: backslashes are fine; only `"` needs doubling.
-        self.0.to_string_lossy().replace('"', "\"\"")
+        self.template.to_string_lossy().replace('"', "\"\"")
     }
 }
 
 impl Drop for TempDbPath {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        self.remove_all_legs();
     }
 }
 
@@ -182,12 +248,13 @@ pub fn run_clean_with_references_dispatch_only(
     source: &str,
     references: Vec<ProjectReference>,
 ) -> EarlyRun {
+    let source = with_leg_token(source, LEG_EARLY_DISPATCH);
     let mut policy = HostPolicy::interactive_dev();
     policy.com_invocation_strategy = ComInvocationStrategy::DispatchOnly;
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(policy);
     let snap = engine
-        .execute_source_with_references_and_snapshot(source, references)
+        .execute_source_with_references_and_snapshot(&source, references)
         .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))?;
     let counts = engine.host_services().com().com_dispatch_transport_counts();
     Ok((snap, counts))

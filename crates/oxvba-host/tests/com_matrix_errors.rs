@@ -131,10 +131,11 @@ fn e5_excel_open_missing_file_1004() {
 #[ignore = "live COM; run explicitly"]
 fn e6_dao_bad_sql_3000_range() {
     // A malformed SQL statement raises a DAO 3xxx error. This straddles IErrorInfo
-    // (vtable) and EXCEPINFO (IDispatch) Description retrieval. Real VBA number here
-    // is in the 3000-range; we assert the canonical 3129 (invalid SQL statement).
-    // The precise 3xxx may need adjusting to whatever the ACE build reports — the
-    // agreement twin (E6b) is the safety net.
+    // (vtable) and EXCEPINFO (IDispatch) Description retrieval. The live ACE build
+    // reports 3078 ("cannot find the input table or query 'THIS'") for this shape
+    // — the parser treats the first token as a table name — verified equal across
+    // late and early (E6b is the agreement safety net). Both legs now run cleanly
+    // because the differential runner gives each leg a per-leg CreateDatabase path.
     let db = TempDbPath::new("e6_dao");
     let lit = db.as_vba_literal();
     let body = format!(
@@ -148,7 +149,7 @@ fn e6_dao_bad_sql_3000_range() {
     );
     let late = run_clean(&dao_err_late(&body));
     let early = run_clean_with_references(&dao_err_early(&body), dao_ref());
-    run_err_oracle("E6", late, early, 3129);
+    run_err_oracle("E6", late, early, 3078);
 }
 
 // ── E7: DAO CreateDatabase(bad path) → 3024/3044 ─────────────────────────────
@@ -195,7 +196,8 @@ fn e10_dao_fail_then_succeed_clears_error() {
     // A failing Execute followed by a succeeding one: errNum1 must be a DAO 3xxx and
     // errNum2 must be 0 (the stale IErrorInfo must be cleared). A non-zero errNum2 in
     // early-bound would be a guaranteed divergence (vtable-only stale-IErrorInfo
-    // hazard). We assert the FIRST captured number against the real VBA 3129.
+    // hazard). We assert the FIRST captured number against the live ACE 3078 (same
+    // bad-SQL shape as E6), verified equal across late and early.
     let db = TempDbPath::new("e10_dao");
     let lit = db.as_vba_literal();
     let body = format!(
@@ -214,7 +216,7 @@ fn e10_dao_fail_then_succeed_clears_error() {
     );
     let late = run_clean(&dao_err_late(&body));
     let early = run_clean_with_references(&dao_err_early(&body), dao_ref());
-    run_err_oracle("E10", late, early, 3129);
+    run_err_oracle("E10", late, early, 3078);
 }
 
 // ── E11: Dictionary dup key with On Error GoTo handler → 457 ─────────────────
