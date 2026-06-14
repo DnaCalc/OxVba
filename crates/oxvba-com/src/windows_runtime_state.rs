@@ -44,6 +44,28 @@ impl WindowsComSubscriptionTransport {
 pub struct WindowsComClientState {
     inner: ComRuntimeState<WindowsComSubscriptionTransport>,
     host_objects_by_prog_id: BTreeMap<String, ComObjectToken>,
+    /// Per-interface-IID cache of "is this interface marshaled by PSOAInterface?"
+    /// (`HKCR\Interface\{iid}\ProxyStubClsid32 == {00020424-…}`, the oleaut
+    /// universal marshaler whose proxy is a typelib-aligned, vtable-callable slot
+    /// table). The vtable dispatch site reads this when an object is a marshaling
+    /// proxy, to decide whether an out-of-process slot call is ABI-safe (PSOA) or
+    /// must fall back to IDispatch (PSDispatch / any other / missing). Keyed by the
+    /// braced uppercase IID string so the registry read happens once per IID, not
+    /// once per call. Holds no COM references — needs no teardown in `Drop`.
+    psoa_interface_iid_cache: BTreeMap<String, bool>,
+}
+
+impl WindowsComClientState {
+    /// Look up the cached "interface IID is marshaled by PSOAInterface" decision.
+    pub fn psoa_interface_cache_get(&self, iid_braces: &str) -> Option<bool> {
+        self.psoa_interface_iid_cache.get(iid_braces).copied()
+    }
+
+    /// Record the "interface IID is marshaled by PSOAInterface" decision so the
+    /// registry probe runs once per interface IID for the bridge's lifetime.
+    pub fn psoa_interface_cache_put(&mut self, iid_braces: String, is_psoa: bool) {
+        self.psoa_interface_iid_cache.insert(iid_braces, is_psoa);
+    }
 }
 
 impl Deref for WindowsComClientState {

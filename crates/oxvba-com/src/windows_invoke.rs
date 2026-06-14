@@ -1842,18 +1842,15 @@ fn synthesize_trailing_optional_args(
 /// `IProxyManager` — `{00000008-0000-0000-C000-000000000046}`. EVERY COM
 /// marshaling proxy (out-of-process / cross-apartment) implements it; a direct
 /// in-process object does not. A successful `QueryInterface` for it ⇒ the pointer
-/// we hold is a PROXY whose dual-interface vtable slots are `combase.dll` NDR
-/// stubless forwarders (verified live: Excel out-of-process `Application` QI's
-/// the `_Application` dual IID `{000208D5}` to a proxy whose slot fnptrs live in
-/// `combase.dll`). Those forwarders index the proxy's RPC procedure-format table
-/// by slot position, and that table's length is the marshaled RPC interface's
-/// method count — NOT the typelib `_Application` `cbSizeVft/8`. So a typelib
-/// `oVft`-derived slot does NOT validly index the proxy's forwarder table, and a
-/// slot call over-reads it → host access violation (observed for the simplest
-/// case: `Application.Build`, a no-arg `Long`-retval get, slot 69 of bound 474).
-/// This is the in/out-of-process discriminator: a DIRECT in-process interface
-/// (DAO) FAILS this QI and is vtable-callable; an out-of-process proxy SUCCEEDS
-/// it and must fall back to IDispatch.
+/// we hold is a PROXY. This is the in/out-of-process discriminator: a DIRECT
+/// in-process interface (DAO) FAILS this QI and is unconditionally
+/// vtable-callable; an out-of-process proxy SUCCEEDS it, and whether ITS dual
+/// interface is vtable-callable then depends on the interface's proxy/stub CLSID
+/// (`proxy_interface_is_vtable_safe`): a `PSOAInterface` ({00020424-…}, the OLE
+/// Automation universal marshaler) proxy is a TYPELIB-ALIGNED vtable whose slots
+/// match the typelib `oVft` — slot-callable (Excel `_Application` {000208D5} is
+/// PSOA); a `PSDispatch` / any other / missing-CLSID proxy is NOT, and a typelib
+/// slot there would over-read it → host AV, so it falls back to IDispatch.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 const IID_IPROXYMANAGER: windows_sys::core::GUID = windows_sys::core::GUID {
     data1: 0x0000_0008,
@@ -1881,6 +1878,38 @@ unsafe fn dispatch_is_marshaling_proxy(object: *mut core::ffi::c_void) -> bool {
         }
         Err(_) => false,
     }
+}
+
+/// For a marshaling PROXY (the caller already confirmed
+/// [`dispatch_is_marshaling_proxy`]), decide whether the dual interface `iid`'s
+/// vtable slots are SAFE to slot-call: true iff the interface is marshaled by
+/// `PSOAInterface` (`HKCR\Interface\{iid}\ProxyStubClsid32 == {00020424-…}`, the
+/// OLE Automation universal marshaler whose proxy is a typelib-aligned vtable).
+/// `PSDispatch` / any other CLSID / a missing entry ⇒ false (the typelib slot
+/// would over-read a non-aligned proxy vtable and AV the host → IDispatch
+/// fallback). The PSOA/non-PSOA verdict is cached per-IID in the shared state so
+/// the (pure, AV-free) registry probe runs once per interface IID, not per call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn proxy_interface_is_vtable_safe(
+    iid: crate::ComInterfaceIid,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> bool {
+    let iid_braces = crate::windows_typelib_loader::guid_to_string(&iid.to_guid());
+    // Fast path: a prior call already decided this IID. A poisoned lock degrades
+    // to the safe answer (treat as non-PSOA → IDispatch fallback, never a slot
+    // call on an unverified proxy).
+    if let Ok(state) = com_state.lock()
+        && let Some(cached) = state.psoa_interface_cache_get(&iid_braces)
+    {
+        return cached;
+    }
+    // Miss: probe the registry once (pure reads, no COM-object touch → no AV) and
+    // memoize the verdict.
+    let is_psoa = crate::windows_typelib_loader::interface_is_psoa_marshaled(&iid_braces);
+    if let Ok(mut state) = com_state.lock() {
+        state.psoa_interface_cache_put(iid_braces, is_psoa);
+    }
+    is_psoa
 }
 
 /// Attempt an early-bound member call through the COM vtable, with a clean
@@ -1993,46 +2022,43 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
 
     let slot = spec.vtable_slot.expect("gate guaranteed a slot");
 
-    // OUT-OF-PROCESS DISCRIMINATOR (HOST-AV SAFETY). S1 attempted to lift this
-    // exclusion so out-of-process objects would flow into the production
-    // `vtable_invoke` (QI the dual IID, slot-call the proxy). LIVE VERIFICATION
-    // (crash-isolated, `OXVBA_VTABLE_DIAG`) proved out-of-process AVs the host
-    // even with the production marshaller: for Excel `Application` activated via
-    // `CreateObject` (out-of-process), QI for the `_Application` dual IID
-    // `{000208D5}` SUCCEEDS and returns a distinct proxy whose slot fnptrs live in
-    // `combase.dll` — NDR stubless forwarders. Calling even the simplest member
-    // (`Application.Build`: no-arg `Long`-retval get, slot 69 of bound 474)
-    // through that forwarder access-violates (`STATUS_ACCESS_VIOLATION`). The
-    // root cause: a combase forwarder indexes the proxy's RPC procedure-format
-    // table by slot, and that table is sized to the marshaled RPC interface's
-    // method count, NOT the typelib `_Application` `cbSizeVft/8` the gate's bound
-    // came from. So a typelib `oVft`-derived slot does NOT validly index the
-    // proxy's forwarder table; the AV-safety bound (from the typelib) cannot make
-    // an out-of-process slot call safe. Since the default is `PreferVtable`, a
-    // lifted exclusion would AV the HOST in normal operation, not just a test —
-    // so we KEEP a (now precisely-rationalized) marshaling-proxy exclusion: an
-    // out-of-process object falls back to the proven IDispatch path (correct
-    // value, no AV). A DIRECT in-process interface (DAO) FAILS this QI and stays
-    // on the vtable. (Out-of-process via the vtable would require driving the
-    // call through combase's RPC channel by RPC-proc number rather than a raw
-    // typelib-oVft this-call — a separate, larger piece of work.)
+    // The member's typelib-declared DUAL interface IID (the gate proved it is
+    // present and non-null) — both the QI target below and the PSOA registry key.
+    let interface_iid = spec.interface_iid.expect("gate guaranteed an interface IID");
+    let iid = interface_iid.to_guid();
+
+    // OUT-OF-PROCESS DISCRIMINATOR (HOST-AV SAFETY), gated on the interface's
+    // proxy/stub CLSID. An object that answers `QueryInterface(IID_IProxyManager)`
+    // is a marshaling PROXY (out-of-process / cross-apartment). Whether its
+    // dual-interface vtable slots are SAFE to slot-call depends on HOW the
+    // interface is marshaled:
+    //   - PSOAInterface (`{00020424-…}`, the OLE Automation universal marshaler):
+    //     the proxy is a TYPELIB-ALIGNED vtable proxy whose slots line up with the
+    //     typelib `oVft`-derived slots. The bound-checked this-call is ABI-safe —
+    //     Excel `_Application` `{000208D5}` is PSOA, which is why its
+    //     `[propget,lcid]` `Build`/`Version` slot-call correctly (with the S1 LCID
+    //     param-shape fix that injects the hidden LCID ahead of the retval).
+    //   - PSDispatch (`{00020420-…}`) / any other CLSID / a missing entry: the
+    //     proxy is NOT a typelib-aligned vtable (PSDispatch is a 7-slot
+    //     IDispatch-only vtable), so a typelib slot would over-read it and AV the
+    //     host. Fall back to the proven IDispatch path (correct value, no AV).
+    // A DIRECT in-process interface (DAO) FAILS the IProxyManager QI and is NOT a
+    // proxy ⇒ no registry check, vtable as before. The PSOA decision is cached
+    // per-IID in the shared state so the registry probe runs once per interface.
     // SAFETY: `dispatch` is the live, bindings-map-retained interface pointer.
-    if unsafe { dispatch_is_marshaling_proxy(dispatch) } {
+    if unsafe { dispatch_is_marshaling_proxy(dispatch) }
+        && !proxy_interface_is_vtable_safe(interface_iid, com_state)
+    {
         return Ok(None);
     }
 
     // QueryInterface the object for the member's typelib-declared DUAL interface
-    // IID (the gate proved it is present and non-null) — this is how the VBA IDE
-    // holds an early-bound reference. A non-aliasing in-process tear-off is now
-    // ACCEPTED (the old `ptr::eq(dispatch, interface)` aliasing-only restriction is
-    // GONE): the bound check below makes a bound-validated slot on a direct
-    // in-process interface safe and correct. If the QI fails (E_NOINTERFACE /
-    // null) we fall back to IDispatch; we NEVER call a slot on an unverified
-    // pointer (no host AV).
-    let iid = spec
-        .interface_iid
-        .expect("gate guaranteed an interface IID")
-        .to_guid();
+    // IID — this is how the VBA IDE holds an early-bound reference. A non-aliasing
+    // in-process tear-off is ACCEPTED (the old `ptr::eq(dispatch, interface)`
+    // aliasing-only restriction is GONE): the bound check below makes a
+    // bound-validated slot on a QI'd interface (in-process OR a PSOA out-of-process
+    // proxy) safe and correct. If the QI fails (E_NOINTERFACE / null) we fall back
+    // to IDispatch; we NEVER call a slot on an unverified pointer (no host AV).
     // SAFETY: `dispatch` is the live, bindings-map-retained interface pointer for
     // this bound object; QueryInterface reads its IUnknown vtable and, on success,
     // hands back one fresh reference we own (Released below on every path).
@@ -2068,9 +2094,10 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     }
 
     // SAFETY: `interface` is the QI'd dual-interface pointer carrying one reference
-    // we own, on a DIRECT in-process object (not a marshaling proxy — excluded
-    // above), so its vtable is the real custom-slot vtable we can index directly.
-    // The gate + the bound re-check above proved `7 <= slot < cbSizeVft/8` with a
+    // we own, on either a DIRECT in-process object or a PSOA-marshaled proxy (a
+    // PSDispatch / non-typelib-aligned proxy was excluded above). In both admitted
+    // cases its vtable is a typelib-aligned slot table we can index directly. The
+    // gate + the bound re-check above proved `7 <= slot < cbSizeVft/8` with a
     // CC_STDCALL, fully-typed, v1-marshallable signature, so the slot's ABI is
     // `HRESULT slot(this, params…, retval*)` — exactly vtable_invoke's contract.
     let result = unsafe {

@@ -404,7 +404,7 @@ unsafe fn bstr_to_string_and_free(bstr: *mut u16) -> Option<String> {
 // ── GUID helpers ──
 
 #[cfg(target_os = "windows")]
-fn guid_to_string(guid: &windows_sys::core::GUID) -> String {
+pub(crate) fn guid_to_string(guid: &windows_sys::core::GUID) -> String {
     format!(
         "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
         guid.data1,
@@ -421,8 +421,39 @@ fn guid_to_string(guid: &windows_sys::core::GUID) -> String {
     )
 }
 
+/// `PSOAInterface` `{00020424-0000-0000-C000-000000000046}` — the OLE Automation
+/// universal marshaler. An interface registered with this proxy/stub CLSID is
+/// marshaled by a typelib-aligned vtable proxy: its out-of-process proxy's slots
+/// line up with the typelib `oVft`-derived slots, so a bound-checked this-call on
+/// the QI'd interface is ABI-safe (this is what makes Excel `_Application`'s
+/// `[propget,lcid]` members vtable-callable even out-of-process). Contrast
+/// `PSDispatch` `{00020420-…}`, whose proxy is a 7-slot IDispatch-only vtable —
+/// a typelib slot there would over-read and AV the host.
 #[cfg(target_os = "windows")]
-fn reg_query_default_string(subkey: &str) -> Result<String, String> {
+const PSOA_INTERFACE_PROXY_CLSID: &str = "{00020424-0000-0000-C000-000000000046}";
+
+/// True when the interface IID (a braced uppercase GUID string, e.g.
+/// `{000208D5-0000-0000-C000-000000000046}`) is marshaled by `PSOAInterface`:
+/// `HKCR\Interface\{iid}\ProxyStubClsid32` (or its `Wow6432Node` mirror) holds the
+/// PSOA proxy CLSID. A missing entry, `PSDispatch`, or any other CLSID returns
+/// `false`. Pure registry reads — never touches the COM object, so it cannot AV.
+/// The comparison is ASCII-case-insensitive (the registry may store either case).
+#[cfg(target_os = "windows")]
+pub(crate) fn interface_is_psoa_marshaled(iid_braces: &str) -> bool {
+    let reads = [
+        format!("Interface\\{iid_braces}\\ProxyStubClsid32"),
+        format!("Wow6432Node\\Interface\\{iid_braces}\\ProxyStubClsid32"),
+    ];
+    reads.iter().any(|subkey| {
+        matches!(
+            reg_query_default_string(subkey),
+            Ok(clsid) if clsid.trim().eq_ignore_ascii_case(PSOA_INTERFACE_PROXY_CLSID)
+        )
+    })
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn reg_query_default_string(subkey: &str) -> Result<String, String> {
     let wide_subkey: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
     let mut key: HKEY = std::ptr::null_mut();
     // SAFETY: `wide_subkey` is a live NUL-terminated UTF-16 buffer and `key` a live
@@ -1902,11 +1933,12 @@ unsafe fn extract_members_from_typeinfo(
 // The vtable fast path never calls a slot on the raw IDispatch pointer: it
 // QueryInterfaces the object for the member's dual interface IID and calls on that
 // pointer, gated inside `try_vtable_member_spec_invoke_with_shared_state`. That
-// gate keeps a marshaling-proxy exclusion (`dispatch_is_marshaling_proxy` via
-// IID_IProxyManager): S1 verified live that an out-of-process proxy's dual-IID
-// vtable slots are combase NDR forwarders a typelib `oVft` slot cannot index (a
-// slot call AVs the host), so an out-of-process object falls back to IDispatch
-// while a direct in-process interface is vtable-callable.
+// gate discriminates by marshaling: a DIRECT in-process interface (DAO) is
+// vtable-callable; a marshaling proxy (`dispatch_is_marshaling_proxy` via
+// IID_IProxyManager) is vtable-callable ONLY when its interface is marshaled by
+// PSOAInterface (`interface_is_psoa_marshaled`, the typelib-aligned oleaut
+// universal marshaler — Excel `_Application` {000208D5}); a PSDispatch / other /
+// missing-CLSID proxy falls back to IDispatch (a typelib slot would AV the host).
 
 /// A live dispinterface's FDUAL PARTNER `TKIND_INTERFACE` facts, recovered by
 /// crossing the dispinterface typeinfo to its partner interface (workset slice B,
@@ -2949,5 +2981,51 @@ mod tests {
             source_dispatch_path_for_typekind(TKIND_COCLASS),
             TypeLibEventDispatchPath::Dispatch
         );
+    }
+
+    #[test]
+    fn interface_psoa_marshaling_classification() {
+        // The out-of-process vtable gate (`proxy_interface_is_vtable_safe`) admits a
+        // marshaling proxy to the vtable ONLY when its interface is marshaled by
+        // PSOAInterface ({00020424-…}, the typelib-aligned oleaut universal
+        // marshaler). This is the predicate that decides it.
+
+        // A clearly-unregistered IID has no ProxyStubClsid32 → NOT PSOA (false).
+        assert!(
+            !interface_is_psoa_marshaled("{DEADBEEF-0000-0000-0000-000000000000}"),
+            "an unregistered interface IID must not be classified PSOA"
+        );
+
+        // `IDispatch` {00020400} is universally present and marshaled by PSDispatch
+        // ({00020420-…}), NOT PSOA → false. This is the exact PSDispatch case the
+        // gate must reject (a PSDispatch proxy is a 7-slot IDispatch-only vtable; a
+        // typelib slot there would over-read it and AV the host).
+        assert!(
+            !interface_is_psoa_marshaled("{00020400-0000-0000-C000-000000000046}"),
+            "IDispatch (PSDispatch) must not be classified PSOA"
+        );
+
+        // When Excel is installed, `_Application` {000208D5} is PSOA (vtable-safe
+        // out-of-process) and `Range` {00020846} is PSDispatch (NOT vtable-safe) —
+        // the clean in-test proof that the gate admits Application and excludes
+        // Range. Tolerate Excel's absence (the sibling registry tests do the same).
+        let app_psoa = interface_is_psoa_marshaled("{000208D5-0000-0000-C000-000000000046}");
+        let range_psoa = interface_is_psoa_marshaled("{00020846-0000-0000-C000-000000000046}");
+        // Excel is present iff its `_Application` interface's ProxyStubClsid32 key
+        // resolves (the same default-value read the classifier performs).
+        let excel_present = reg_query_default_string(
+            "Interface\\{000208D5-0000-0000-C000-000000000046}\\ProxyStubClsid32",
+        )
+        .is_ok();
+        if excel_present {
+            assert!(
+                app_psoa,
+                "Excel _Application {{000208D5}} must classify PSOA (vtable-safe)"
+            );
+            assert!(
+                !range_psoa,
+                "Excel Range {{00020846}} must classify NON-PSOA (PSDispatch → IDispatch)"
+            );
+        }
     }
 }

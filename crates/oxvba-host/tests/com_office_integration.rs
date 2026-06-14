@@ -359,31 +359,30 @@ fn excel_early_bound_range_value_round_trips() {
          End Sub\n";
     // Run under PreferVtable. Excel via `CreateObject` is OUT-OF-PROCESS, so each
     // object answers the IID_IProxyManager QueryInterface (it is a marshaling
-    // proxy whose dual-IID vtable slots are combase NDR forwarders that a typelib
-    // `oVft` slot does NOT index — verified to AV the host), and the dispatch path
-    // therefore EXCLUDES it from the vtable fast path and falls back to IDispatch.
-    // This is the in/out-of-process discriminator: DAO (in-process) goes through
-    // the vtable, Excel (out-of-process) does not. The 42.5 round-trip is
-    // byte-for-byte identical with ZERO host crash.
+    // proxy). Whether a proxied member takes the vtable now depends on its
+    // interface's proxy/stub CLSID: `_Application`/`_Workbook`/`_Worksheet` are
+    // PSOAInterface ({00020424-…}, typelib-aligned vtable) → those members can
+    // dispatch through the vtable; `Range` is PSDispatch ({00020420-…}, a 7-slot
+    // IDispatch-only proxy) → `Range.Value` get/put MUST fall back to IDispatch (a
+    // typelib slot would over-read the PSDispatch vtable and AV the host). So the
+    // run mixes both transports: PSOA Application/Workbook/Worksheet members on the
+    // vtable, Range on IDispatch. The 42.5 round-trip is byte-for-byte identical
+    // with ZERO host crash.
     match run_clean_with_references_prefer_vtable(source, references) {
         Ok((snap, (vtable_count, idispatch_count))) => {
             assert!(
                 snap.iter().any(|v| v.as_f64() == Some(42.5)),
                 "expected the early-bound Excel Range round-trip 42.5 in {snap:?}"
             );
-            // Out-of-process proxies route ENTIRELY through IDispatch (the
-            // IProxyManager exclude fires); the vtable fast path must never engage.
-            assert_eq!(
-                vtable_count, 0,
-                "out-of-process Excel must dispatch entirely via IDispatch (proxy \
-                 exclude), got vtable={vtable_count} idispatch={idispatch_count}"
-            );
+            // Range is PSDispatch, so `Range.Value` (get + put) MUST dispatch via
+            // IDispatch — at least one IDispatch call is therefore mandatory.
             assert!(
                 idispatch_count >= 1,
-                "expected the run to dispatch at least one COM member via IDispatch"
+                "Range (PSDispatch) must dispatch via IDispatch, got \
+                 vtable={vtable_count} idispatch={idispatch_count}"
             );
             eprintln!(
-                "Excel early-bound transport (out-of-process → IDispatch): \
+                "Excel early-bound transport (PSOA→vtable, Range PSDispatch→IDispatch): \
                  vtable={vtable_count} idispatch={idispatch_count}"
             );
         }
@@ -396,26 +395,33 @@ fn excel_early_bound_range_value_round_trips() {
 
 #[test]
 #[ignore = "launches real Excel; run explicitly with --ignored"]
-fn excel_early_bound_application_out_of_process_falls_back_no_av() {
-    // S1 OUT-OF-PROCESS VALUE ORACLE + HOST-AV GUARD. Excel `Application` is a
+fn excel_early_bound_application_out_of_process_dispatches_via_vtable() {
+    // S3 OUT-OF-PROCESS VALUE ORACLE + HOST-AV GUARD. Excel `Application` is a
     // TRUE dual (TYPEFLAG_FDUAL; its `_Application` partner INTERFACE is the
     // vtable face), and `Application` activated via `CreateObject` is
-    // OUT-OF-PROCESS — so the object QI's as a marshaling proxy whose dual-IID
-    // vtable slots are `combase.dll` NDR forwarders.
+    // OUT-OF-PROCESS — so the object QI's as a marshaling proxy. Its `_Application`
+    // dual IID `{000208D5}` is registered with ProxyStubClsid32
+    // `{00020424-…}` = PSOAInterface, the OLE Automation universal marshaler whose
+    // proxy is a TYPELIB-ALIGNED vtable: the typelib `oVft`-derived slot is the
+    // proxy's real slot, so a bound-checked this-call is ABI-safe out-of-process.
     //
-    // S1 verification (crash-isolated, `OXVBA_VTABLE_DIAG`) established that a
-    // typelib-`oVft`-indexed this-call on that proxy ACCESS-VIOLATES the host —
-    // even the simplest case (`Application.Build`: no-arg `Long`-retval get) — so
-    // the marshaling-proxy exclusion is KEPT. This test is the regression guard
-    // that the kept exclusion holds under `PreferVtable`: an out-of-process object
-    // must fall back to IDispatch (NEVER vtable), the values must be correct, and
-    // the host must NOT crash.
+    // Both members carry a HIDDEN `[lcid]` parameter (`[propget, lcid]`): on the
+    // dispinterface they look param-less, but the partner INTERFACE vtable ABI is
+    // `HRESULT get_X(this, LCID, T* pRet)`. The S1 LCID param-shape fix recovers
+    // that real shape and injects LOCALE_NEUTRAL ahead of the `[out,retval]`, so
+    // the slot call places the retval pointer correctly (the prior mis-placement
+    // is what AV'd the host).
     //
-    // Members exercised (both v1-vtable-eligible were a slot call attempted):
-    //   - `Application.Version` → BSTR retval
-    //   - `Application.Build`   → Long retval
+    // This test is the proof that out-of-process vtable dispatch now WORKS for a
+    // PSOA dual through the production marshaller with the signature honoured: the
+    // members must dispatch THROUGH THE VTABLE (vtable_count >= 1), the values must
+    // equal the IDispatch oracle, and the host must NOT crash.
     //
-    // VALUE ORACLE: read each member early-bound (typed, PreferVtable) and
+    // Members exercised:
+    //   - `Application.Version` → BSTR retval (hidden [lcid])
+    //   - `Application.Build`   → Long retval  (hidden [lcid])
+    //
+    // VALUE ORACLE: read each member early-bound (typed, PreferVtable → vtable) and
     // late-bound (Variant receiver → IDispatch) and assert they agree.
     let references = vec![typelib_ref_by_libid(
         "Excel",
@@ -488,21 +494,21 @@ fn excel_early_bound_application_out_of_process_falls_back_no_av() {
         early_bld, late_bld,
         "Application.Build must agree early-vs-late: early={early_bld:?} late={late_bld:?}"
     );
-    // HOST-AV GUARD: out-of-process must dispatch ENTIRELY via IDispatch (the
-    // marshaling-proxy exclusion fires before any slot call), so the vtable fast
-    // path must never engage for these proxied members.
-    assert_eq!(
-        vtable_count, 0,
-        "out-of-process Excel must fall back to IDispatch (no vtable slot call), \
-         got vtable={vtable_count} idispatch={idispatch_count}"
-    );
+    // TRANSPORT + HOST-AV GUARD: `_Application` is PSOA-marshaled, so the lifted
+    // exclusion admits its proxy to the vtable. `Version` and `Build` (both
+    // `[propget, lcid]`) must dispatch THROUGH THE VTABLE (the LCID param-shape fix
+    // places the retval correctly) — at least one slot call — and the host must
+    // NOT crash. (Application setup also calls IDispatch-only members like
+    // `Visible`/`DisplayAlerts` puts, so idispatch_count may be non-zero too.)
     assert!(
-        idispatch_count >= 1,
-        "expected the run to dispatch at least one COM member via IDispatch"
+        vtable_count >= 1,
+        "out-of-process Excel Application (PSOA dual) must dispatch \
+         Version/Build through the vtable, got vtable={vtable_count} \
+         idispatch={idispatch_count}"
     );
     eprintln!(
-        "Excel Application out-of-process: ver={early_ver:?} build={early_bld:?} \
-         vtable={vtable_count} idispatch={idispatch_count} (proxy exclusion held, no AV)"
+        "Excel Application out-of-process (PSOA → vtable): ver={early_ver:?} \
+         build={early_bld:?} vtable={vtable_count} idispatch={idispatch_count} (no AV)"
     );
 }
 
