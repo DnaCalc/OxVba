@@ -31,7 +31,7 @@ use crate::{ComValue, TypeLibMemberInvokeKind, TypeLibParamType};
 use oxvba_runtime::{ObjectRef, Variant};
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
-use windows_sys::Win32::System::Variant::{VARIANT, VariantClear};
+use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_UNKNOWN, VariantClear};
 
 // ── IErrorInfo + Get/SetErrorInfo ──
 //
@@ -444,25 +444,24 @@ where
         // VT_VARIANT [in] by reference: marshal the value into a heap VARIANT and
         // pass its pointer; we VariantClear it after the call.
         P::Variant => {
-            // HOST-AV SAFETY: an OBJECT inside the `[in]` VARIANT is NOT v1-safe here.
-            // The `add_ref_noop` below places the IDispatch into the cell WITHOUT an
-            // AddRef, yet post-call `free_inbound` does `VariantClear` (which Releases
-            // it) — a net under-ref that can free a still-referenced server object and
-            // leave a dangling pointer (a later read of that object then AVs the host,
-            // e.g. `d.Add "k", obj` then `d("k")`). A correct fix needs the VARIANT cell
-            // to AddRef the object it borrows; until then decline object-bearing VARIANT
-            // args to the proven IDispatch path (which retains correctly). Scalar /
-            // string / numeric VARIANTs carry no reference and stay vtable-safe.
-            if matches!(value, ComValue::Object(_)) {
-                return Err(
-                    "vtable [in] VARIANT carrying an object is not v1-safe (refcount); \
-                     use the IDispatch fallback"
-                        .to_string(),
-                );
-            }
+            // REFCOUNT SAFETY: when the `[in]` VARIANT carries an OBJECT, the cell must
+            // own its OWN reference on that object — `set_variant_from_com_value` places
+            // the IDispatch and the `add_ref` closure below `AddRef`s it (+1), which the
+            // post-call `free_inbound` → `VariantClear` (Release, −1) exactly balances.
+            // (The earlier v1 used an add-ref-noop here, a net under-ref that could free a
+            // still-referenced server object → a dangling pointer + host AV; that decline
+            // is now lifted.) Scalar / string / numeric VARIANTs carry no reference, so
+            // the `AddRef` closure is simply never invoked for them.
             // SAFETY: an all-zero VARIANT is a valid VT_EMPTY VARIANT.
             let mut cell: Box<VARIANT> = Box::new(unsafe { std::mem::zeroed() });
-            let mut add_ref_noop = |_dispatch: *mut c_void| {};
+            let mut add_ref = |dispatch: *mut c_void| {
+                // SAFETY: `dispatch` is the live bindings-map-retained IDispatch the
+                // resolver returned; the cell now holds it, so AddRef gives the cell its
+                // own reference (balanced by VariantClear in `free_inbound`).
+                unsafe {
+                    let _ = crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+                }
+            };
             // SAFETY: `cell` is a fresh zeroed writable VARIANT; the resolver and
             // add-ref closures uphold the helper's object-handle contract.
             unsafe {
@@ -470,7 +469,7 @@ where
                     cell.as_mut(),
                     &value,
                     resolve_object,
-                    &mut add_ref_noop,
+                    &mut add_ref,
                 )?;
             }
             let ptr = cell.as_mut() as *mut VARIANT;
@@ -609,17 +608,53 @@ where
             Variant::from_string(text)
         }
         OutCell::Variant(mut b) => {
-            // SAFETY: on the success path the callee populated this VARIANT per
-            // its declared retval type; variant_to_com_value only reads it.
-            let value = unsafe { crate::variant_to_com_value(b.as_ref()) }
-                .and_then(|value| value.to_variant())
-                .map_err(|detail| validation_failure(label, dispid, detail));
-            // SAFETY: take ownership of any payload the callee wrote, then clear
-            // the cell exactly once.
-            unsafe {
-                let _ = VariantClear(b.as_mut());
+            // SAFETY: on the success path the callee populated this VARIANT per its
+            // declared retval type; reading its discriminant `vt` is always valid.
+            let vt = unsafe { b.Anonymous.Anonymous.vt };
+            if vt == VT_DISPATCH || vt == VT_UNKNOWN {
+                // An object returned INSIDE a VARIANT (`As Object` → VT_DISPATCH) must be
+                // bound through the bindings map, NOT read as a scalar — `variant_to_com_value`
+                // does not register the object. The callee's [out] VARIANT owns one
+                // reference; AddRef a SECOND (which we transfer to `bind_dispatch_result`,
+                // matching the OutCell::Interface ownership contract) and let VariantClear
+                // below release the callee's original — net-balanced.
+                // SAFETY: the VARIANT's payload pointer is the object the callee wrote.
+                let object_ptr = unsafe {
+                    if vt == VT_DISPATCH {
+                        b.Anonymous.Anonymous.Anonymous.pdispVal.cast::<c_void>()
+                    } else {
+                        b.Anonymous.Anonymous.Anonymous.punkVal.cast::<c_void>()
+                    }
+                };
+                if !object_ptr.is_null() {
+                    // SAFETY: `object_ptr` is the live object the callee placed in the
+                    // VARIANT; AddRef gives us the reference we hand to the binding map.
+                    unsafe {
+                        let _ = crate::add_ref_dispatch(object_ptr.cast::<crate::RawIDispatch>());
+                    }
+                }
+                // A null object pointer binds to Nothing, exactly as the OutCell::Interface
+                // path handles a null `[out,retval]` interface.
+                let bound = bind_dispatch_result(object_ptr)
+                    .map_err(|detail| validation_failure(label, dispid, detail));
+                // SAFETY: clear the cell once, releasing the callee's original reference.
+                unsafe {
+                    let _ = VariantClear(b.as_mut());
+                }
+                bound?
+            } else {
+                // SAFETY: on the success path the callee populated this VARIANT per its
+                // declared retval type; variant_to_com_value only reads it.
+                let value = unsafe { crate::variant_to_com_value(b.as_ref()) }
+                    .and_then(|value| value.to_variant())
+                    .map_err(|detail| validation_failure(label, dispid, detail));
+                // SAFETY: take ownership of any payload the callee wrote, then clear
+                // the cell exactly once.
+                unsafe {
+                    let _ = VariantClear(b.as_mut());
+                }
+                value?
             }
-            value?
         }
         OutCell::Interface(b) => {
             // Callee AddRef'd the returned interface; we own that reference and

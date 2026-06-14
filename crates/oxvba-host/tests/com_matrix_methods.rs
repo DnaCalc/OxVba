@@ -318,15 +318,12 @@ fn m11_test_event_server_is_self_object_in_arg() {
     let late = run_clean(late_src);
     let early = run_clean_with_references_prefer_vtable(early_src, tes_ref());
     let do_run = run_clean_with_references_dispatch_only(early_src, tes_ref());
-    // ReturnSelfObject + IsSelf = 2 eligible vtable calls.
-    // RED (flagged DEFERRED gap — Bug-4b, object-as-[in]-interface vtable arg): the
-    // value is correct on both transports (the differential passed) and ReturnSelfObject
-    // vtable-dispatches, but `IsSelf(selfRef)` carries an OBJECT [in] arg. The vtable
-    // marshaller's `P::Object` arm (windows_vtable.rs marshal_inbound_param) passes the
-    // raw IDispatch WITHOUT QueryInterface-ing to the param's declared interface IID, so
-    // the object-arg call declines to IDispatch (correct value, vtable=1 not 2). Closing
-    // it needs per-param GUID FFI (QI the arg to its declared IID) — the known deferred
-    // Bug-4b, left RED on purpose. Same root cause flagged on M10.
+    // ReturnSelfObject + IsSelf = 2 vtable calls. GREEN since FU#2 object-as-COM-value
+    // marshalling: TES declares both the object RETURN (`ReturnSelfObject() As Object`)
+    // and the object [in] ARG (`IsSelf(obj)`) as VARIANT, so both ride the object-in-
+    // VARIANT path — the return binds the VT_DISPATCH through the bindings map and the
+    // [in] arg AddRefs the object into its VARIANT cell (VariantClear-balanced). Identity
+    // (`s.IsSelf(selfRef)`) survives the round-trip, proving the refcounting is correct.
     assert_differential("M11", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 

@@ -56,14 +56,11 @@ fn o2_dictionary_default_vs_explicit_item_identity() {
     let late = run_clean(&dict_late(body));
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
-    // Add + d("k") get + d.Item("k") get = 3 eligible vtable calls.
-    // RED (FU#2 only; value is correct, no AV): FU#1 invoke-kind keying now resolves the
-    // two `Item` gets to their enriched slot, but all three calls here are OBJECT-typed —
-    // `d.Add "k", inner` carries an OBJECT inside the [in] VARIANT value arg, and each
-    // `Item` get RETURNS an object — which the v1 vtable marshaller still declines
-    // (object-as-COM-value needs per-param/retval interface-IID QI, not refcount-safe
-    // yet; windows_vtable.rs marshal_inbound_param). Currently vtable=0. Closes with FU#2
-    // (object-as-COM-value vtable marshalling).
+    // Add + d("k") get + d.Item("k") get = 3 vtable calls. GREEN via FU#1 (invoke-kind
+    // keying resolves the `Item` gets to their enriched slot) + FU#2 (object-as-COM-value
+    // marshalling): `d.Add "k", inner` AddRefs the OBJECT into its [in] VARIANT cell, and
+    // each `Item` get binds the returned object-in-VARIANT through the bindings map. `a Is
+    // b` holds, proving identity + refcount correctness over the vtable.
     assert_differential("O2", late, early, Some(do_run), find_verdict, 1, Some(3));
 }
 
@@ -83,14 +80,11 @@ fn o3_test_event_server_return_self_identity() {
     let late = run_clean(&tes_late(body));
     let early = run_clean_with_references_prefer_vtable(&tes_early(body), tes_ref());
     let do_run = run_clean_with_references_dispatch_only(&tes_early(body), tes_ref());
-    // 2x ReturnSelfObject = 2 eligible vtable calls.
-    // RED (flagged DEFERRED gap — object-returning/object-arg vtable members, Bug-4b
-    // family; value is correct + identity holds on both transports, no AV): TES IS
-    // vtable-callable for SCALAR members (M7 `SumPair` → vtable=1, T6 edge-VT returns →
-    // vtable=5), but `ReturnSelfObject` is an OBJECT-returning member whose v1 vtable
-    // shape declines here, so both calls take IDispatch (vtable=0). The same object-as-
-    // COM-value v1 gap is flagged on M11 (object [in] arg) and O2 (object-in-VARIANT).
-    // Closing it needs the per-param/retval interface-IID FFI work, a deferred follow-up.
+    // 2x ReturnSelfObject = 2 vtable calls. GREEN since FU#2 object-as-COM-value
+    // marshalling: `ReturnSelfObject() As Object` returns the object inside a VARIANT,
+    // which the vtable retval decode now binds through the bindings map (VT_DISPATCH →
+    // bind_dispatch_result, AddRef-balanced). Both retrievals dedup to one handle and
+    // equal the original `s`, proving identity + refcounting hold over the vtable.
     assert_differential("O3", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 
@@ -112,11 +106,10 @@ fn o4_dictionary_arg_in_return_out_identity() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // Add + d("fs") get = 2 eligible vtable calls.
-    // RED (FU#2 only; value correct, no AV): FU#1 invoke-kind keying resolves the
-    // `d("fs")` default-member `Item` get, but both calls are OBJECT-typed — `d.Add
-    // "fs", fso` carries an OBJECT in the [in] VARIANT value and `d("fs")` RETURNS one —
-    // which the v1 vtable marshaller still declines. Currently vtable=0. Closes with FU#2
-    // (object-as-COM-value vtable marshalling).
+    // Add + d("fs") get = 2 vtable calls. GREEN via FU#1 (Item get resolves) + FU#2
+    // (object-as-COM-value): `d.Add "fs", fso` AddRefs the OBJECT into its [in] VARIANT
+    // cell and `d("fs")` binds the returned object-in-VARIANT through the bindings map.
+    // `g Is fso` holds across the arg-in / return-out round-trip.
     assert_differential("O4", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 
