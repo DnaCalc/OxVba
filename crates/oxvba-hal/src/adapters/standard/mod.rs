@@ -1627,7 +1627,7 @@ mod tests {
             .member_specs
             .iter()
             .find(|(_, member)| member.name.eq_ignore_ascii_case(member_name))
-            .map(|(token, _)| *token)
+            .map(|((token, _), _)| *token)
             .ok_or_else(|| {
                 host.com_dispatch_adapter_fault(format!(
                     "member metadata missing for `{member_name}` on object token {object}"
@@ -4752,19 +4752,19 @@ mod tests {
             .member_specs
             .iter()
             .find(|(_, member)| member.name == "Count")
-            .map(|(token, _)| *token)
+            .map(|((token, _), _)| *token)
             .expect("Count member token should be present");
         let fire_changed_pair_token = binding
             .member_specs
             .iter()
             .find(|(_, member)| member.name == "FireChangedPair")
-            .map(|(token, _)| *token)
+            .map(|((token, _), _)| *token)
             .expect("FireChangedPair member token should be present");
         let echo_variant_token = binding
             .member_specs
             .iter()
             .find(|(_, member)| member.name == "EchoVariant")
-            .map(|(token, _)| *token)
+            .map(|((token, _), _)| *token)
             .expect("EchoVariant member token should be present");
         assert!(descriptor.supports_events);
         assert!(descriptor.known_member_tokens.contains(&count_token));

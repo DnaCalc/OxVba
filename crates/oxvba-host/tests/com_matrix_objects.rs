@@ -57,14 +57,13 @@ fn o2_dictionary_default_vs_explicit_item_identity() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // Add + d("k") get + d.Item("k") get = 3 eligible vtable calls.
-    // RED (flagged gaps, NOT a test over-spec; value is correct, no AV): (1) the two
-    // gets are `Item` (default-member + explicit), whose get/put/putref SHARE a memid,
-    // so the memid-only typelib-bind spec lookup declines them to IDispatch (see
-    // properties P1's note); (2) `d.Add "k", inner` carries an OBJECT inside the [in]
-    // VARIANT value arg, which the v1 vtable marshaller declines (object-in-VARIANT is
-    // not refcount-safe — windows_vtable.rs marshal_inbound_param; declining avoids a
-    // host AV). Currently vtable=0. Closing needs invoke-kind-aware spec selection AND
-    // AddRef-correct object-in-VARIANT marshalling (both structural follow-ups).
+    // RED (FU#2 only; value is correct, no AV): FU#1 invoke-kind keying now resolves the
+    // two `Item` gets to their enriched slot, but all three calls here are OBJECT-typed —
+    // `d.Add "k", inner` carries an OBJECT inside the [in] VARIANT value arg, and each
+    // `Item` get RETURNS an object — which the v1 vtable marshaller still declines
+    // (object-as-COM-value needs per-param/retval interface-IID QI, not refcount-safe
+    // yet; windows_vtable.rs marshal_inbound_param). Currently vtable=0. Closes with FU#2
+    // (object-as-COM-value vtable marshalling).
     assert_differential("O2", late, early, Some(do_run), find_verdict, 1, Some(3));
 }
 
@@ -113,10 +112,11 @@ fn o4_dictionary_arg_in_return_out_identity() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // Add + d("fs") get = 2 eligible vtable calls.
-    // RED (flagged gaps — same as O2; value correct, no AV): the `d("fs")` read is
-    // `Item` (shared memid → IDispatch), and `d.Add "fs", fso` carries an OBJECT in the
-    // [in] VARIANT value (declined as not refcount-safe in v1). Currently vtable=0.
-    // Closing needs invoke-kind-aware spec selection + object-in-VARIANT marshalling.
+    // RED (FU#2 only; value correct, no AV): FU#1 invoke-kind keying resolves the
+    // `d("fs")` default-member `Item` get, but both calls are OBJECT-typed — `d.Add
+    // "fs", fso` carries an OBJECT in the [in] VARIANT value and `d("fs")` RETURNS one —
+    // which the v1 vtable marshaller still declines. Currently vtable=0. Closes with FU#2
+    // (object-as-COM-value vtable marshalling).
     assert_differential("O4", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 

@@ -852,7 +852,9 @@ mod tests {
         spec: crate::ComMemberSpec,
     ) -> ObjectRef {
         let mut binding = ComBinding::new(prog_id.to_string(), native_ptr as usize);
-        binding.member_specs.insert(member_token, spec);
+        binding
+            .member_specs
+            .insert((member_token, spec.invoke_kind), spec);
         binding.member_dispids.insert(member_token, dispid);
         crate::insert_bound_object_binding_at_handle_shared(
             bridge.shared_state(),

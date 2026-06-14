@@ -31,19 +31,14 @@ fn p1_dictionary_compare_mode_get_let() {
     let late = run_clean(&dict_late(body));
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
-    // get(before) + put + get(verdict) = 3 eligible vtable calls.
-    // RED (flagged product gap, NOT a test over-spec): the `probe_scripting_dictionary_
-    // vtable_eligibility` probe proved Dictionary IS vtable-callable (FDUAL partner
-    // {42C642C1-…}, cbSizeVft=176 / 22 scrrun.dll-backed slots), and the typelib-bind
-    // partner-crossing fix now vtable-dispatches Dictionary's UNAMBIGUOUS-memid members
-    // (Count/Add/Exists/…). But `CompareMode` exposes get+put FUNCDESCs that SHARE a
-    // memid, and the typelib-bind spec lookup (`member_spec_from_typelib_metadata`) keys
-    // by memid ALONE — it cannot tell get from put, so handing it the wrong-kind slot
-    // would slot-call the wrong ABI (a CORRUPT value the differential caught). The
-    // enrichment therefore declines shared-memid members to IDispatch (correct value,
-    // vtable=0 here). Closing this needs invoke-kind-aware spec selection — but
-    // `binding.member_specs` is keyed by memid, so get/put cannot both be stored: a
-    // structural follow-up, left RED on purpose.
+    // get(before) + put + get(verdict) = 3 vtable calls. GREEN since the FU#1
+    // invoke-kind-aware spec selection: `binding.member_specs` is keyed by
+    // `(memid, invoke_kind)`, so `CompareMode`'s get + put FUNCDESCs (which share a
+    // memid) each carry their own enriched slot. Closing P1 also required two real
+    // marshalling fixes the differential surfaced: (1) an enum retval with
+    // `hreftype == 0` must resolve to `Long` (it was mis-typed `Variant`, so the
+    // 4-byte enum the getter wrote decoded as 0); (2) a `[propput]` value param is
+    // unnamed in the typelib, so the name list is padded to the type count.
     assert_differential("P1", late, early, Some(do_run), find_verdict, 2, Some(3));
 }
 
@@ -63,11 +58,9 @@ fn p2_dictionary_item_indexed_get_and_let() {
     let late = run_clean(&dict_late(body));
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
-    // Add + put_Item + get_Count + get_Item = 4 eligible vtable calls.
-    // RED (flagged gap — see P1's note): Add + get_Count vtable-dispatch (unambiguous
-    // memids), but `Item` get/put/putref SHARE a memid, so the memid-only typelib-bind
-    // spec lookup declines them to IDispatch (correct value). Currently vtable=2.
-    // Closing it needs invoke-kind-aware spec selection (a structural follow-up).
+    // Add + put_Item + get_Count + get_Item = 4 vtable calls. GREEN since FU#1
+    // invoke-kind-aware spec selection: `Item`'s get/put/putref each resolve to their
+    // own enriched slot via the `(memid, invoke_kind)` key.
     assert_differential("P2", late, early, Some(do_run), find_verdict, 20, Some(4));
 }
 
@@ -84,12 +77,9 @@ fn p3_dictionary_default_member_equals_item() {
     let late = run_clean(&dict_late(body));
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
-    // Add + 3 gets (two d("k"), one d.Item("k")) = 4 eligible vtable calls.
-    // RED (flagged gap — see P1's note): only Add vtable-dispatches; the three gets are
-    // all `Item` (default-member d("k") and explicit d.Item("k")), whose get/put/putref
-    // SHARE a memid, so the memid-only typelib-bind spec lookup declines them to
-    // IDispatch (correct value). Currently vtable=1. Closing it needs invoke-kind-aware
-    // spec selection (a structural follow-up).
+    // Add + 3 gets (two d("k"), one d.Item("k")) = 4 vtable calls. GREEN since FU#1
+    // invoke-kind-aware spec selection: the `Item` gets (default-member and explicit)
+    // resolve to the enriched get slot via the `(memid, invoke_kind)` key.
     assert_differential("P3", late, early, Some(do_run), find_verdict, 77, Some(4));
 }
 
@@ -126,12 +116,10 @@ fn p5_dictionary_key_rename_write_only_put() {
     let late = run_clean(&dict_late(body));
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
-    // Add + put_Key + 2 Exists + get_Item = 5 eligible vtable calls.
-    // RED (flagged gap — see P1's note): Add + 2 Exists vtable-dispatch (unambiguous
-    // memids), but `Key` (put) and `Item` (default-member get) SHARE their respective
-    // memids with sibling get/put FUNCDESCs, so the memid-only typelib-bind spec lookup
-    // declines them to IDispatch (correct value). Currently vtable=3. Closing it needs
-    // invoke-kind-aware spec selection (a structural follow-up).
+    // Add + put_Key + 2 Exists + get_Item = 5 vtable calls. GREEN since FU#1
+    // invoke-kind-aware spec selection: write-only `put_Key` and default-member
+    // `Item` get each resolve to their own enriched slot via the `(memid, invoke_kind)`
+    // key (`Key`'s unnamed propput value param is name-padded so the arity check passes).
     assert_differential("P5", late, early, Some(do_run), find_verdict, 55, Some(5));
 }
 

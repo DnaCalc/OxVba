@@ -648,9 +648,13 @@ pub unsafe fn resolve_member_dispid_cached(
     object: ObjectRef,
     binding: &ComBinding,
     member: ComMemberToken,
+    intended_kind: crate::TypeLibMemberInvokeKind,
     fallback_spec: Option<ComMemberSpec>,
 ) -> Result<Option<(i32, ComMemberSpec)>, String> {
-    let spec = if let Some(spec) = binding.member_specs.get(&member).cloned() {
+    // Select the spec for the intended access kind so a read/write property's
+    // get / let / set FUNCDESCs (which share a memid) each resolve to their OWN
+    // vtable slot and ABI param shape rather than collapsing to one.
+    let spec = if let Some(spec) = binding.lookup_member_spec(member, intended_kind).cloned() {
         spec
     } else if let Some(spec) = fallback_spec {
         spec

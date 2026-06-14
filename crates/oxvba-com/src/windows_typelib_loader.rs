@@ -752,7 +752,15 @@ unsafe fn typedesc_to_param_type(
         return typedesc_to_param_type(owner_ptinfo, inner, true);
     }
 
-    if tdesc.vt == VT_USERDEFINED && tdesc.union_field != 0 {
+    if tdesc.vt == VT_USERDEFINED {
+        // The `VT_USERDEFINED` union holds an `HREFTYPE` — and `0` is a VALID
+        // reference token (Scripting `IDictionary`'s `CompareMethod` enum retval
+        // carries `hreftype == 0`), NOT "absent". Resolving it via `GetRefTypeInfo`
+        // yields `TKIND_ENUM → Long`; a stale `union_field != 0` guard here instead
+        // fell through to the `VT_USERDEFINED`-is-unmapped `Variant` default, so an
+        // enum-returning getter was slot-called expecting a 16-byte VARIANT while the
+        // callee wrote a 4-byte enum — decoding the value as 0. Attempt the resolve
+        // for every `VT_USERDEFINED`; fall back to `Variant` only if it truly fails.
         let href = u32::try_from(tdesc.union_field).unwrap_or(0);
         let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
         let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
@@ -1925,6 +1933,16 @@ unsafe fn extract_members_from_typeinfo(
         if parameter_names.len() > parameter_types.len() {
             parameter_names.truncate(parameter_types.len());
         }
+        // A `[propput]`/`[propputref]` VALUE parameter is conventionally UNNAMED in
+        // the typelib, so `GetNames` returns one fewer name than `cParams` declares
+        // ELEMDESCs. Pad the trailing unnamed parameter(s) with a synthesized name so
+        // the parameter-NAME count matches the parameter-TYPE count (the authoritative
+        // arity). Otherwise the IDispatch dispatch path's positional arity check —
+        // which counts `parameter_names` — rejects the put's value argument
+        // (`Key`/`CompareMode` "received 2 arguments but only 1 are defined").
+        while parameter_names.len() < parameter_types.len() {
+            parameter_names.push(format!("rhs{}", parameter_names.len()));
+        }
 
         let invoke_kind = invkind_to_member_invoke_kind(invkind);
         let requires_argument = !parameter_types.is_empty()
@@ -2037,27 +2055,16 @@ unsafe fn enrich_dual_dispinterface_members(
     if let Some((interface_iid, vtable_slot_bound)) = attrs
         && !interface_iid.is_null()
     {
-        // SLOT-SELECTION SAFETY: the typelib-bind spec lookup
-        // (`member_spec_from_typelib_metadata`) keys by memid (`token`) ALONE — when a
-        // read/write property exposes get/put/putref FUNCDESCs that SHARE a memid
-        // (Scripting `Item`, `Key`, `CompareMode`), a token-only `.find` cannot tell
-        // which invoke-kind's spec it returns, so it could hand a GET request the PUT
-        // FUNCDESC's slot (or vice-versa) and slot-call the WRONG ABI → a corrupt value.
-        // Only enrich members whose memid is UNIQUE in this face; a shared-memid member
-        // keeps `vtable_slot = None` and dispatches via IDispatch-by-dispid (always
-        // correct). This caps the typelib-bind vtable fast path at unambiguous members
-        // (Count/Add/Exists/Items/Keys/Remove on Dictionary); get/put-paired properties
-        // remain a flagged follow-up (they need invoke-kind-aware spec selection).
-        let mut memid_counts: std::collections::HashMap<i32, u32> =
-            std::collections::HashMap::new();
-        for member in members.iter() {
-            *memid_counts.entry(member.token).or_insert(0) += 1;
-        }
+        // SLOT-SELECTION: the typelib-bind spec map is keyed by `(memid, invoke_kind)`
+        // (see `ComBinding::member_specs`), so a read/write property's get/put/putref
+        // FUNCDESCs — which SHARE a memid (Scripting `Item`, `Key`, `CompareMode`) — are
+        // each enriched and stored under their own invoke-kind. The dispatch site selects
+        // the matching spec by the call's intended invoke-kind, so a GET request gets the
+        // GET slot and a PUT request gets the PUT slot. Each member resolves its OWN oVft
+        // and ABI param shape below via `member.invoke_kind`, so there is no ambiguity to
+        // guard against — every member with a recoverable slot is enriched.
         for member in members.iter_mut() {
             if member.vtable_slot.is_some() {
-                continue;
-            }
-            if memid_counts.get(&member.token).copied().unwrap_or(0) > 1 {
                 continue;
             }
             // Resolve the member's oVft from whichever face describes it (partner
@@ -2081,6 +2088,10 @@ unsafe fn enrich_dual_dispinterface_members(
             if let Some(shape) =
                 partner_member_param_shape(partner_ti, &member.name, member.invoke_kind)
             {
+                // Adopt the partner's NAMES too (not just the types): a PUT's value
+                // arg is a real partner param the dispinterface FUNCDESC omits, so a
+                // stale name list would mis-count the args on the IDispatch fallback.
+                member.parameter_names = shape.parameter_names;
                 member.parameter_types = shape.parameter_types;
                 member.parameter_optional = shape.parameter_optional;
                 member.parameter_optional_defaults = shape.parameter_optional_defaults;
@@ -2133,6 +2144,13 @@ struct PartnerInterfaceFacts {
 /// already LCID/retval-aware via `extract_members_from_typeinfo`).
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 struct PartnerMemberParamShape {
+    /// The partner FUNCDESC's parameter NAMES, parallel to `parameter_types`. A
+    /// property-PUT's value argument is a real partner-interface param (e.g.
+    /// `put_Item([in] Key, [in] newval)`), so the partner shape carries one MORE
+    /// name than the dispinterface FUNCDESC (whose propput value is implicit). The
+    /// enricher MUST adopt these names alongside the types, or an IDispatch-fallback
+    /// arity check against the stale dispinterface names rejects the value arg.
+    parameter_names: Vec<String>,
     parameter_types: Vec<TypeLibParamType>,
     parameter_optional: Vec<bool>,
     parameter_optional_defaults: Vec<OptionalParamDefault>,
@@ -2319,6 +2337,7 @@ unsafe fn partner_member_param_shape(
             .find(|m| m.name.eq_ignore_ascii_case(name) && m.invoke_kind == invoke_kind)
             .or_else(|| members.iter().find(|m| m.name.eq_ignore_ascii_case(name)))
             .map(|m| PartnerMemberParamShape {
+                parameter_names: m.parameter_names.clone(),
                 parameter_types: m.parameter_types.clone(),
                 parameter_optional: m.parameter_optional.clone(),
                 parameter_optional_defaults: m.parameter_optional_defaults.clone(),
@@ -2509,6 +2528,10 @@ pub unsafe fn live_member_metadata_from_dispatch(
                 // Without this, an `[lcid]` member (Excel `Application.Build`/
                 // `Version`) is slot-called with the wrong arity → host AV.
                 if let Some(shape) = facts.param_shape {
+                    // Adopt the partner's NAMES too — a PUT's value arg is a real
+                    // partner param the dispinterface FUNCDESC omits (see the
+                    // typelib-bind enricher), so a stale name list mis-counts args.
+                    member.parameter_names = shape.parameter_names;
                     member.parameter_types = shape.parameter_types;
                     member.parameter_optional = shape.parameter_optional;
                     member.parameter_optional_defaults = shape.parameter_optional_defaults;

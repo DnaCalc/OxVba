@@ -19,7 +19,14 @@ pub struct ComBinding {
     pub runtime_class_descriptor: Option<&'static RuntimeClassDescriptor>,
     pub runtime_dispatch_plan_cache: RuntimeDispatchPlanCache,
     pub member_dispids: BTreeMap<ComMemberToken, i32>,
-    pub member_specs: BTreeMap<ComMemberToken, ComMemberSpec>,
+    /// Keyed by `(memid, invoke_kind)` so a read/write property's get / let
+    /// (`PropertyPut`) / set (`PropertyPutRef`) FUNCDESCs — which SHARE a single
+    /// memid (Scripting `Item`, `Key`, `CompareMode`) — each retain their own
+    /// spec (own vtable slot + ABI param shape). A memid-only key would collapse
+    /// them, which is why paired members previously declined the vtable fast path
+    /// and fell back to IDispatch. Look up via [`ComBinding::lookup_member_spec`],
+    /// never `.get(&token)` directly.
+    pub member_specs: BTreeMap<(ComMemberToken, TypeLibMemberInvokeKind), ComMemberSpec>,
     pub default_member_token: Option<ComMemberToken>,
     pub direct_dispatch_specs: BTreeMap<ComMemberToken, ComDirectDispatchSpec>,
     pub event_specs: BTreeMap<ComMemberToken, ComEventSpec>,
@@ -42,6 +49,38 @@ impl ComBinding {
             event_specs: BTreeMap::new(),
             event_trigger_specs: BTreeMap::new(),
         }
+    }
+
+    /// Resolve the member spec for `token` under the access `intent`. A read
+    /// (`Method`/`PropertyGet`) request matches either read-side spec; a let
+    /// (`PropertyPut`) request prefers the put spec then the putref; a set
+    /// (`PropertyPutRef`) request prefers the putref then the put. The returned
+    /// spec carries the invoke-kind's OWN vtable slot and ABI param shape, so a
+    /// read/write property dispatches the correct slot for the requested kind
+    /// instead of declining to IDispatch. Falls back to any spec recorded for the
+    /// memid (single-kind members) when no preferred kind is present.
+    pub fn lookup_member_spec(
+        &self,
+        token: ComMemberToken,
+        intent: TypeLibMemberInvokeKind,
+    ) -> Option<&ComMemberSpec> {
+        use TypeLibMemberInvokeKind::{Method, PropertyGet, PropertyPut, PropertyPutRef};
+        let order: &[TypeLibMemberInvokeKind] = match intent {
+            Method | PropertyGet => &[PropertyGet, Method],
+            PropertyPut => &[PropertyPut, PropertyPutRef],
+            PropertyPutRef => &[PropertyPutRef, PropertyPut],
+        };
+        for kind in order {
+            if let Some(spec) = self.member_specs.get(&(token, *kind)) {
+                return Some(spec);
+            }
+        }
+        // Defensive fallback: any spec recorded for this memid (a single-kind
+        // member whose only invoke_kind is not in the preference list above).
+        self.member_specs
+            .iter()
+            .find(|((spec_token, _), _)| *spec_token == token)
+            .map(|(_, spec)| spec)
     }
 
     pub fn resolve_runtime_dispatch_plan(
@@ -94,12 +133,21 @@ impl ComBinding {
                 ComObjectTransportKind::Projection
             },
             supports_events: !self.event_specs.is_empty(),
-            known_member_tokens: self.member_specs.keys().copied().collect(),
+            // Composite-keyed map: project to the distinct memids (a paired
+            // get/put member contributes its token once), preserving the prior
+            // "one token per known member" contract for descriptor consumers.
+            known_member_tokens: self
+                .member_specs
+                .keys()
+                .map(|(token, _)| *token)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             known_event_tokens: self.event_specs.keys().copied().collect(),
             default_member_token: self.default_member_token,
             default_member_name: self
                 .default_member_token
-                .and_then(|token| self.member_specs.get(&token))
+                .and_then(|token| self.lookup_member_spec(token, TypeLibMemberInvokeKind::PropertyGet))
                 .map(|spec| spec.name.clone()),
             typelib_cache_key,
         }
@@ -195,12 +243,12 @@ fn event_specs_from_typelib_metadata(
 
 fn member_specs_from_typelib_metadata(
     blob: &TypeLibMetadataBlob,
-) -> BTreeMap<ComMemberToken, ComMemberSpec> {
+) -> BTreeMap<(ComMemberToken, TypeLibMemberInvokeKind), ComMemberSpec> {
     blob.members
         .iter()
         .map(|member| {
             (
-                member.token.into(),
+                (member.token.into(), member.invoke_kind),
                 ComMemberSpec {
                     name: member.name.clone(),
                     requires_argument: member.requires_argument,
@@ -696,7 +744,7 @@ mod tests {
 
         let specs = member_specs_from_typelib_metadata(&metadata);
         let spec = specs
-            .get(&ComMemberToken::new(7))
+            .get(&(ComMemberToken::new(7), TypeLibMemberInvokeKind::Method))
             .expect("Lookup member spec should be projected from the metadata blob");
         assert_eq!(spec.name, "Lookup");
         assert_eq!(

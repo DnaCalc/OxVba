@@ -129,9 +129,11 @@ pub fn plan_bound_runtime_invoke(
     let has_named_args = args.iter().any(|arg| arg.name.is_some());
     let default_member_spec = if request.member.raw() == 0 {
         binding.default_member_token.and_then(|token| {
+            // The default member is consulted on the read side (a positional /
+            // named call on `obj(...)`); a `Set obj(...) = x` put still routes
+            // through this token but honors its put hint downstream.
             binding
-                .member_specs
-                .get(&token)
+                .lookup_member_spec(token, crate::TypeLibMemberInvokeKind::PropertyGet)
                 .cloned()
                 .map(|spec| (token, spec))
         })
@@ -249,7 +251,7 @@ mod tests {
         let mut binding = ComBinding::new("Test.Dispatch".to_string(), 1);
         binding.default_member_token = Some(ComMemberToken::new(17));
         binding.member_specs.insert(
-            ComMemberToken::new(17),
+            (ComMemberToken::new(17), TypeLibMemberInvokeKind::PropertyPut),
             ComMemberSpec {
                 name: "Value".to_string(),
                 requires_argument: true,
@@ -284,7 +286,7 @@ mod tests {
         let mut binding = ComBinding::new("Test.Dispatch".to_string(), 1);
         binding.default_member_token = Some(ComMemberToken::new(17));
         binding.member_specs.insert(
-            ComMemberToken::new(17),
+            (ComMemberToken::new(17), TypeLibMemberInvokeKind::PropertyGet),
             ComMemberSpec {
                 name: "Value".to_string(),
                 requires_argument: true,

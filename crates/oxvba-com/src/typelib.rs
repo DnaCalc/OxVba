@@ -301,7 +301,7 @@ pub struct TypeLibMemberMetadata {
     pub vtable_slot_bound: Option<u16>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TypeLibMemberInvokeKind {
     PropertyGet,
     Method,

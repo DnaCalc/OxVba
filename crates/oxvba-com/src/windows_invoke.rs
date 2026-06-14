@@ -1413,6 +1413,21 @@ where
 /// existing put marshaling in `invoke_member_spec_variant` (which keys off
 /// `spec.invoke_kind`) honest. A method / get hint (or none) leaves the spec as
 /// resolved.
+/// Map a call-site invoke-kind hint to the [`TypeLibMemberInvokeKind`] a member
+/// spec is resolved under. A put / put-ref hint selects the matching write FUNCDESC;
+/// anything else (get / method / no hint) resolves on the read side (the spec lookup
+/// falls back from `PropertyGet` to `Method`).
+#[cfg(target_os = "windows")]
+fn intended_invoke_kind(hint: Option<crate::ComInvokeKind>) -> crate::TypeLibMemberInvokeKind {
+    match hint {
+        Some(crate::ComInvokeKind::PropertyPut) => crate::TypeLibMemberInvokeKind::PropertyPut,
+        Some(crate::ComInvokeKind::PropertyPutRef) => {
+            crate::TypeLibMemberInvokeKind::PropertyPutRef
+        }
+        _ => crate::TypeLibMemberInvokeKind::PropertyGet,
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn apply_put_hint(
     mut spec: crate::ComMemberSpec,
@@ -1425,6 +1440,14 @@ fn apply_put_hint(
         }
         _ => return spec,
     };
+    // Invoke-kind-keyed resolution already handed us the dedicated put/putref
+    // spec — with its own vtable slot and ABI param shape (index params PLUS the
+    // trailing value). Trust it: re-flavoring it as the same put kind is a no-op,
+    // and clearing its slot/params would needlessly forfeit the vtable fast path.
+    if spec.invoke_kind == put_kind && spec.vtable_slot.is_some() {
+        spec.requires_argument = true;
+        return spec;
+    }
     spec.invoke_kind = put_kind;
     spec.requires_argument = true;
     // The resolved spec describes the GET (the get/put-sharing dispid's canonical
@@ -1464,7 +1487,11 @@ pub fn execute_bound_variant<
 ) -> Result<Variant, String>
 where
     FTryVtable: FnMut(i32, &[i32]) -> Result<Option<i32>, String>,
-    FResolveMember: FnMut(i32, Option<i32>) -> Result<Option<(i32, crate::ComMemberSpec)>, String>,
+    FResolveMember: FnMut(
+        i32,
+        crate::TypeLibMemberInvokeKind,
+        Option<i32>,
+    ) -> Result<Option<(i32, crate::ComMemberSpec)>, String>,
     FInvokeMember:
         FnMut(i32, &crate::ComMemberSpec, &[ComInvokeArg], &str) -> Result<Variant, String>,
     FInvokeDirect: FnMut(
@@ -1483,6 +1510,10 @@ where
     let direct_dispatch_spec = plan.direct_dispatch_spec;
     let legacy_vtable_candidate_args = plan.legacy_vtable_candidate_args;
     let args = request.args.as_slice();
+    // The access kind this call intends, so member-spec resolution selects the
+    // matching get / let / set FUNCDESC (each with its own vtable slot) rather
+    // than collapsing a read/write property to a single spec.
+    let intended_kind = intended_invoke_kind(request.invoke_kind_hint);
 
     if let Some(positional_values) = legacy_vtable_candidate_args.as_ref()
         && let Some(value) = try_vtable_invoke(effective_member.raw(), positional_values)?
@@ -1491,7 +1522,7 @@ where
     }
 
     if let Some((token, spec)) = named_default_member_spec {
-        let (dispid, spec) = resolve_member_dispid(token.raw(), effective_cached_dispid)?
+        let (dispid, spec) = resolve_member_dispid(token.raw(), intended_kind, effective_cached_dispid)?
             .map(|(dispid, _)| (dispid, spec))
             .ok_or_else(|| {
                 "default member identity unavailable for named late-bound dispatch".to_string()
@@ -1501,12 +1532,14 @@ where
     }
 
     if let Some((dispid, spec)) =
-        resolve_member_dispid(effective_member.raw(), effective_cached_dispid)?
+        resolve_member_dispid(effective_member.raw(), intended_kind, effective_cached_dispid)?
     {
-        // A property put/set on a get/put-sharing dispid resolves to the GET spec
-        // (one spec per dispid). Honor the call's put/set hint so the dispatch is a
-        // PROPERTYPUT / PROPERTYPUTREF, not the resolved GET — otherwise the write is
-        // silently demoted to a read and never takes effect.
+        // When the put/set FUNCDESC has its own spec (invoke-kind-keyed), the
+        // resolver already returned it with the correct slot+ABI; `apply_put_hint`
+        // is then a no-op. When only a GET spec exists (the typelib has no separate
+        // put metadata), `apply_put_hint` re-flavors it as a PROPERTYPUT/PUTREF and
+        // declines the vtable so the IDispatch put path takes effect — otherwise the
+        // write would be silently demoted to a read.
         let spec = apply_put_hint(spec, request.invoke_kind_hint);
         return invoke_member_spec(dispid, &spec, args, &binding.prog_id_name);
     }
@@ -2411,24 +2444,26 @@ where
         return Ok(None);
     }
     let dispatch = binding.native_dispatch as *mut crate::RawIDispatch;
-    let mut resolve_member_dispid = |member: i32, _cached_dispid: Option<i32>| {
-        let mut state = com_state.lock().map_err(|_| {
-            "COM-E-STATE-LOCK-POISONED: dispatch_invoke state lock poisoned".to_string()
-        })?;
-        // SAFETY: `dispatch` was recovered from a live bindings-map entry
-        // (checked non-zero above); the bindings map owns one retained
-        // IDispatch reference, keeping the pointer live for this lookup.
-        unsafe {
-            crate::resolve_member_dispid_cached(
-                &mut state,
-                dispatch,
-                request.object.clone(),
-                &binding,
-                crate::ComMemberToken::new(member),
-                None,
-            )
-        }
-    };
+    let mut resolve_member_dispid =
+        |member: i32, intended_kind: crate::TypeLibMemberInvokeKind, _cached_dispid: Option<i32>| {
+            let mut state = com_state.lock().map_err(|_| {
+                "COM-E-STATE-LOCK-POISONED: dispatch_invoke state lock poisoned".to_string()
+            })?;
+            // SAFETY: `dispatch` was recovered from a live bindings-map entry
+            // (checked non-zero above); the bindings map owns one retained
+            // IDispatch reference, keeping the pointer live for this lookup.
+            unsafe {
+                crate::resolve_member_dispid_cached(
+                    &mut state,
+                    dispatch,
+                    request.object.clone(),
+                    &binding,
+                    crate::ComMemberToken::new(member),
+                    intended_kind,
+                    None,
+                )
+            }
+        };
     let mut invoke_member_spec =
         |dispid: i32, spec: &crate::ComMemberSpec, invoke_args: &[ComInvokeArg], prog_id: &str| {
             // Early-bound vtable fast path: when the policy prefers it AND the
