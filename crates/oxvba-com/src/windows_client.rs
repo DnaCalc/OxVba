@@ -581,11 +581,26 @@ pub fn activate_runtime_binding(
     force_registered_test_dispatch: bool,
 ) -> Result<crate::ComBinding, String> {
     let dispatch = activate_runtime_dispatch(prog_id, force_registered_test_dispatch)?;
-    Ok(crate::binding_from_typelib_metadata(
-        prog_id.to_string(),
-        dispatch as usize,
-        metadata,
-    ))
+    let mut binding =
+        crate::binding_from_typelib_metadata(prog_id.to_string(), dispatch as usize, metadata);
+    // Record the canonical IUnknown identity so that a `this`/back-reference
+    // returned by this object (e.g. ReturnSelfObject, ws.Application) dedups to
+    // the original handle in `bind_native_dispatch_result` rather than minting a
+    // fresh one — preserving `Is` identity. Mirrors `bind_host_dispatch_object`:
+    // the retained IUnknown reference is owned by the binding for its lifetime
+    // and released in `release_object_binding`. On QI failure we leave
+    // `native_unknown` at 0 (identity dedup simply won't apply) rather than fail
+    // activation — the dispatch reference stays owned by the binding either way.
+    if !dispatch.is_null() {
+        // SAFETY: `dispatch` is non-null (checked) and carries the single
+        // retained reference handed back by `activate_runtime_dispatch`, now
+        // owned by `binding` via `native_dispatch`, so it is a live `IDispatch`
+        // whose `IUnknown` vtable can be queried.
+        if let Ok(unknown) = unsafe { query_unknown_from_dispatch(dispatch) } {
+            binding.native_unknown = unknown as usize;
+        }
+    }
+    Ok(binding)
 }
 
 #[cfg(target_os = "windows")]
