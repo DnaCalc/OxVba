@@ -1068,6 +1068,22 @@ impl StandardHostServices {
     fn com_dispatch_adapter_fault(&self, message: String) -> HalError {
         let hresult = parse_hresult_hex(&message);
         let arg_err = parse_arg_err(&message);
+        // A dispatch failure that was rendered to a string (the `Message` lane —
+        // e.g. a bound member-spec invoke that raised an `EXCEPINFO`) still
+        // carries the COM codes in its rendered suffix. Recover the real VBA
+        // `Err.Number` from them with the SAME mapping the structured
+        // `InvokeFailure` lane uses, so this lane no longer collapses to 5.
+        let excep_scode = parse_excep_scode(&message);
+        let excep_wcode = parse_excep_wcode(&message);
+        let vba_error_number = oxvba_com::vba_number_from_dispatch_codes(
+            // The bare HRESULT for a DISP_E_EXCEPTION (0x80020009) is not itself
+            // the VBA number — only the EXCEPINFO scode/wcode is — but passing it
+            // matches the structured lane (which falls through to the HRESULT
+            // table only when scode/wcode are absent).
+            hresult,
+            excep_scode,
+            excep_wcode,
+        );
         let label = map_com_hresult_label(hresult, arg_err);
         let mut suffix = String::new();
         if let Some(value) = hresult {
@@ -1087,6 +1103,7 @@ impl StandardHostServices {
             "dispatch_invoke",
             format!("{prefix} {message}"),
         )
+        .with_host_error_code(vba_error_number)
     }
 
     #[cfg(target_os = "windows")]
@@ -1408,6 +1425,42 @@ fn parse_arg_err(message: &str) -> Option<u32> {
         return None;
     }
     digits.parse::<u32>().ok()
+}
+
+/// Recover the `EXCEPINFO.scode` from a rendered dispatch-failure message. Both
+/// the classified suffix (`excep_scode=0x{:08X};`) and the failure `render()`
+/// body (`excep_scode=0x{:08X}`) emit the value as `excep_scode=0x` followed by
+/// up to 8 hex digits, so a single hex-after-marker parse recovers it.
+#[cfg(target_os = "windows")]
+fn parse_excep_scode(message: &str) -> Option<i32> {
+    let marker = "excep_scode=0x";
+    let offset = message.find(marker)?;
+    let start = offset + marker.len();
+    let tail = message.get(start..)?;
+    let hex: String = tail
+        .chars()
+        .take_while(|ch| ch.is_ascii_hexdigit())
+        .take(8)
+        .collect();
+    if hex.is_empty() {
+        return None;
+    }
+    u32::from_str_radix(&hex, 16).ok().map(|value| value as i32)
+}
+
+/// Recover the `EXCEPINFO.wCode` (decimal) from a rendered dispatch-failure
+/// message (`excep_wcode={};` / `excep_wcode={}`).
+#[cfg(target_os = "windows")]
+fn parse_excep_wcode(message: &str) -> Option<u16> {
+    let marker = "excep_wcode=";
+    let offset = message.find(marker)?;
+    let start = offset + marker.len();
+    let tail = message.get(start..)?;
+    let digits: String = tail.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    digits.parse::<u16>().ok()
 }
 
 #[cfg(test)]

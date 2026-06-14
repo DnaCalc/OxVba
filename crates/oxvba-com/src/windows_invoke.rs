@@ -144,19 +144,11 @@ impl ComInvokeFailure {
     /// derived from `scode`); a plain `DISP_E_*`/`E_*` HRESULT maps through the
     /// canonical automation table. See [`map_com_hresult_vba_number`].
     pub fn vba_error_number(&self) -> i32 {
-        if let Some(excep) = &self.excep {
-            if let Some(wcode) = excep.wcode
-                && wcode != 0
-            {
-                return i32::from(wcode);
-            }
-            if let Some(scode) = excep.scode
-                && scode != 0
-            {
-                return automation_scode_to_vba_number(scode as u32);
-            }
-        }
-        map_com_hresult_vba_number(self.hr.map(|hr| hr as u32))
+        vba_number_from_dispatch_codes(
+            self.hr.map(|hr| hr as u32),
+            self.excep.as_ref().and_then(|excep| excep.scode),
+            self.excep.as_ref().and_then(|excep| excep.wcode),
+        )
     }
 
     /// The COM-supplied `EXCEPINFO.bstrDescription`, when present — the text VBA
@@ -246,10 +238,13 @@ pub fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'st
 /// |----------------------------------|--------------|----------------|
 /// | `DISP_E_UNKNOWNNAME`             | `0x80020006` | 438            |
 /// | `DISP_E_MEMBERNOTFOUND`          | `0x80020003` | 438            |
-/// | `DISP_E_BADPARAMCOUNT`           | `0x8002000E` | 450            |
+/// | `DISP_E_BADPARAMCOUNT`           | `0x8002000E` | 449            |
 /// | `DISP_E_PARAMNOTFOUND`           | `0x80020004` | 449            |
 /// | `DISP_E_TYPEMISMATCH`            | `0x80020005` | 13             |
+/// | `DISP_E_BADVARTYPE`              | `0x80020008` | 13             |
 /// | `DISP_E_OVERFLOW`                | `0x8002000A` | 6              |
+/// | `DISP_E_BADINDEX`               | `0x8002000B` | 9              |
+/// | `DISP_E_DIVBYZERO`              | `0x80020012` | 11             |
 /// | `E_NOINTERFACE`                  | `0x80004002` | 430            |
 /// | FACILITY_CONTROL (`0x800Axxxx`)  | —            | `scode & 0xFFFF` |
 /// | (anything else / none)           | —            | 5              |
@@ -257,19 +252,57 @@ pub fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'st
 /// A FACILITY_CONTROL automation HRESULT encodes the VBA number in its low word
 /// (e.g. `0x800A0C84` → `0x0C84` = 3204, `0x800A01C9` → `0x01C9` = 457), which
 /// is why an `EXCEPINFO`-less server error still surfaces its real number.
+///
+/// `DISP_E_BADPARAMCOUNT` maps to 449 ("Argument not optional"): VBA surfaces a
+/// missing required argument (the `Scripting.Dictionary.Add "onlyKey"` shape) as
+/// 449, not 450.
 pub fn map_com_hresult_vba_number(hresult: Option<u32>) -> i32 {
     let Some(hr) = hresult else {
         return 5;
     };
     match hr {
         0x8002_0006 | 0x8002_0003 => 438, // DISP_E_UNKNOWNNAME / DISP_E_MEMBERNOTFOUND
-        0x8002_000E => 450,               // DISP_E_BADPARAMCOUNT
+        0x8002_000E => 449,               // DISP_E_BADPARAMCOUNT (missing required arg → 449)
         0x8002_0004 => 449,               // DISP_E_PARAMNOTFOUND
-        0x8002_0005 => 13,                // DISP_E_TYPEMISMATCH
+        0x8002_0005 | 0x8002_0008 => 13,  // DISP_E_TYPEMISMATCH / DISP_E_BADVARTYPE
         0x8002_000A => 6,                 // DISP_E_OVERFLOW
+        0x8002_000B => 9,                 // DISP_E_BADINDEX (subscript out of range)
+        0x8002_0012 => 11,                // DISP_E_DIVBYZERO
         0x8000_4002 => 430,               // E_NOINTERFACE
         _ => automation_scode_to_vba_number(hr),
     }
+}
+
+/// Derive the VBA `Err.Number` a COM dispatch failure should surface from its
+/// raw `(hr, scode, wcode)` codes — the single source of truth shared by
+/// [`ComInvokeFailure::vba_error_number`] and the message-recovered HAL fault
+/// path (`com_dispatch_adapter_fault`, which only has the rendered codes).
+///
+/// Mirrors the OLE Automation contract: an `EXCEPINFO`-bearing failure carries
+/// the VBA number directly (`wCode` when nonzero, otherwise derived from
+/// `scode`); a plain `DISP_E_*`/`E_*` HRESULT maps through the canonical
+/// automation table. A `None`/zero `scode`/`wcode` falls through to the bare
+/// HRESULT mapping.
+pub fn vba_number_from_dispatch_codes(
+    hr: Option<u32>,
+    scode: Option<i32>,
+    wcode: Option<u16>,
+) -> i32 {
+    if let Some(wcode) = wcode
+        && wcode != 0
+    {
+        return i32::from(wcode);
+    }
+    if let Some(scode) = scode
+        && scode != 0
+    {
+        // An EXCEPINFO scode is itself an HRESULT/SCODE: route it through the
+        // full automation table (DISP_E_* + FACILITY_CONTROL), not just the
+        // FACILITY_CONTROL low-word rule, so e.g. `DISP_E_BADINDEX`
+        // (0x8002000B → subscript-out-of-range 9) surfaces correctly.
+        return map_com_hresult_vba_number(Some(scode as u32));
+    }
+    map_com_hresult_vba_number(hr)
 }
 
 /// Derive the VBA `Err.Number` from an SCODE/HRESULT, honoring the
@@ -2740,7 +2773,7 @@ mod gate_tests {
 mod vba_error_number_tests {
     use super::{
         ComInvokeExceptionInfo, ComInvokeFailure, automation_scode_to_vba_number,
-        map_com_hresult_vba_number,
+        map_com_hresult_vba_number, vba_number_from_dispatch_codes,
     };
 
     fn excep_failure(scode: Option<i32>, wcode: Option<u16>) -> ComInvokeFailure {
@@ -2792,10 +2825,13 @@ mod vba_error_number_tests {
     fn hresult_table_maps_canonical_automation_codes() {
         assert_eq!(map_com_hresult_vba_number(Some(0x8002_0003)), 438); // DISP_E_MEMBERNOTFOUND
         assert_eq!(map_com_hresult_vba_number(Some(0x8002_0006)), 438); // DISP_E_UNKNOWNNAME
-        assert_eq!(map_com_hresult_vba_number(Some(0x8002_000E)), 450); // DISP_E_BADPARAMCOUNT
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_000E)), 449); // DISP_E_BADPARAMCOUNT
         assert_eq!(map_com_hresult_vba_number(Some(0x8002_0004)), 449); // DISP_E_PARAMNOTFOUND
         assert_eq!(map_com_hresult_vba_number(Some(0x8002_0005)), 13); // DISP_E_TYPEMISMATCH
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_0008)), 13); // DISP_E_BADVARTYPE
         assert_eq!(map_com_hresult_vba_number(Some(0x8002_000A)), 6); // DISP_E_OVERFLOW
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_000B)), 9); // DISP_E_BADINDEX
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_0012)), 11); // DISP_E_DIVBYZERO
         assert_eq!(map_com_hresult_vba_number(Some(0x8000_4002)), 430); // E_NOINTERFACE
         // FACILITY_CONTROL on the bare-HRESULT path also yields the low word.
         assert_eq!(map_com_hresult_vba_number(Some(0x800A_0C84)), 3204);
@@ -2827,5 +2863,36 @@ mod vba_error_number_tests {
     #[test]
     fn unmapped_hresult_defaults_to_five() {
         assert_eq!(hresult_failure(0x8007_0057).vba_error_number(), 5);
+    }
+
+    #[test]
+    fn dispatch_codes_helper_matches_failure_priority() {
+        // wcode wins outright.
+        assert_eq!(
+            vba_number_from_dispatch_codes(
+                Some(0x8002_0009),
+                Some(0x800A_0C84u32 as i32),
+                Some(457)
+            ),
+            457
+        );
+        // A FACILITY_CONTROL scode yields its low word even under DISP_E_EXCEPTION.
+        assert_eq!(
+            vba_number_from_dispatch_codes(Some(0x8002_0009), Some(0x800A_01C9u32 as i32), None),
+            457
+        );
+        // A DISP_E_* scode (e.g. BADINDEX from a worksheet index over-read) routes
+        // through the full automation table, not just FACILITY_CONTROL → 9.
+        assert_eq!(
+            vba_number_from_dispatch_codes(Some(0x8002_0009), Some(0x8002_000Bu32 as i32), None),
+            9
+        );
+        // No scode/wcode → the bare HRESULT table (BADPARAMCOUNT → 449).
+        assert_eq!(
+            vba_number_from_dispatch_codes(Some(0x8002_000E), None, None),
+            449
+        );
+        // Nothing at all → 5.
+        assert_eq!(vba_number_from_dispatch_codes(None, None, None), 5);
     }
 }

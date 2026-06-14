@@ -372,14 +372,15 @@ pub fn assert_differential(
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors harness (plan §1.5). The master assertion is split: the late==early
 // transport agreement (always meaningful) PLUS a hard absolute oracle on the real
-// VBA Err.Number — the latter RED until `from_hal` stops flattening to 5.
+// VBA Err.Number, which the COM error plumbing now surfaces end to end.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Errors: assert transport AGREEMENT on `Err.Number`/`Err.Description` AND the real
-/// VBA `Err.Number`. The absolute-number assertion is the RED finding: it fails at
-/// `Some(5)` until `from_hal` stops flattening COM errors
-/// (`oxvba-vm2/src/lib.rs:99`). Tests using this are marked
-/// `#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix"]`.
+/// VBA `Err.Number`. The absolute-number assertion holds because the COM error
+/// plumbing now carries the real number from the dispatch fault
+/// (`ComInvokeFailure::vba_error_number` → `HalError::host_error_code` →
+/// `Fault::from_hal`); a `Some(5)` here would mean a fault path failed to set a
+/// host error code.
 pub fn assert_err_oracle(case: &str, late: &[Variant], early: &[Variant], real_vba_err: i32) {
     let (ln, ld, _) = extract_err(late);
     let (en, ed, _) = extract_err(early);
@@ -391,12 +392,12 @@ pub fn assert_err_oracle(case: &str, late: &[Variant], early: &[Variant], real_v
         ld, ed,
         "{case}: Err.Description late {ld:?} != early {ed:?}"
     );
-    // ABSOLUTE ORACLE — RED until from_hal stops flattening to 5.
+    // ABSOLUTE ORACLE — the real VBA number, surfaced end to end.
     assert_eq!(
         ln,
         Some(real_vba_err),
-        "{case}: Err.Number {ln:?}, real VBA = {real_vba_err}. Some(5) => from_hal->5 \
-         flatten is live (oxvba-vm2/src/lib.rs:99). This RED is the headline finding."
+        "{case}: Err.Number {ln:?}, real VBA = {real_vba_err}. A Some(5) means a COM \
+         dispatch fault path failed to set host_error_code (vba_error_number)."
     );
 }
 

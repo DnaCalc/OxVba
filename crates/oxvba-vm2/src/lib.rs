@@ -2571,6 +2571,20 @@ fn variant_to_object(value: &Variant) -> Result<ObjectRef, Fault> {
     if let Some(object) = value.as_object_ref() {
         return Ok(object);
     }
+    // An unset object variable — a typed object reference holding `Nothing`
+    // (vtype Object, null payload) or a `Dim x As Object` that was never `Set`
+    // (defaults to `Empty`) — is "Object variable or With block variable not
+    // set" (91), distinct from a non-object value (424). Dereferencing an unset
+    // object (`Dim x As Object` / `Set x = Nothing` then `x.Foo`) raises 91.
+    if matches!(
+        value.vtype(),
+        VarType::Object | VarType::Empty | VarType::Null
+    ) {
+        return Err(Fault::new(
+            91,
+            "Object variable or With block variable not set",
+        ));
+    }
     if let Some(raw) = value.as_i32() {
         return Ok(ObjectRef::from_compat_identity(raw));
     }

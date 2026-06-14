@@ -3,18 +3,19 @@
 //! Each scenario triggers a COM error and captures `Err.Number`/`Err.Description`
 //! via `On Error Resume Next`. Two distinct test shapes:
 //!
-//! - **RED tests** assert a SPECIFIC real VBA `Err.Number` (457 dup key, 9
-//!   subscript, 3xxx DAO, …). They are marked
-//!   `#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix"]` and
-//!   assert the CORRECT expected number, so once the main loop fixes `from_hal`
-//!   (`oxvba-vm2/src/lib.rs:99` flattens every COM HAL error to `Fault::new(5)`)
-//!   they flip green merely by removing the RED note. The RED *is* the finding.
+//! - **ORACLE tests** assert a SPECIFIC real VBA `Err.Number` (457 dup key, 9
+//!   subscript, 3xxx DAO, …). The full COM error plumbing
+//!   (`ComInvokeFailure::vba_error_number` → `HalError::host_error_code` →
+//!   `Fault::from_hal`) surfaces the real number on every dispatch-fault path —
+//!   the structured `InvokeFailure` lane AND the rendered `Message` lane (where
+//!   `com_dispatch_adapter_fault` recovers the codes from the rendered text) —
+//!   so these assert the CORRECT expected number directly.
 //! - **AGREEMENT tests** assert only that an error OCCURRED and that late and early
 //!   AGREE on the number; these are normal `#[ignore]` live tests.
 //!
-//! `E9` (Nothing-deref → 91) is the CONTROL: a VM-layer error that should already
-//! be non-5 today, proving the harness can observe a real number and isolating
-//! `from_hal` as the defect — so E9 is a normal (non-RED) `#[ignore]` test.
+//! `E9` (Nothing-deref → 91) is a VM-layer error (NOT routed through `from_hal`):
+//! an unset object-variable deref raises 91 in `variant_to_object`, independent
+//! of the COM number plumbing.
 //!
 //! Live COM — every test is `#[ignore]`. Run explicitly:
 //! ```text
@@ -26,15 +27,14 @@ mod common;
 use common::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RED tests — assert the SPECIFIC real VBA Err.Number. RED until from_hal stops
-// flattening to 5. The expected number is the correct VBA one, so removing the
-// `#[ignore]` RED note flips them green once from_hal is fixed.
+// ORACLE tests — assert the SPECIFIC real VBA Err.Number, now surfaced end to end
+// by the COM error plumbing. Live COM, so still `#[ignore]`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── E1: Dictionary Add dup key → 457 ─────────────────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e1_dictionary_add_duplicate_key_457() {
     // Adding the same key twice raises VBA error 457 (duplicate key).
     let body = "d.Add \"k\", 1\n\
@@ -51,7 +51,7 @@ fn e1_dictionary_add_duplicate_key_457() {
 // ── E2: Dictionary Remove("ghost") → 32811 ───────────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e2_dictionary_remove_missing_key_32811() {
     // Remove of an absent key raises 32811 (element not found). (The asymmetry with
     // Item — which auto-vivifies and does NOT error — is asserted by E2b.)
@@ -68,7 +68,7 @@ fn e2_dictionary_remove_missing_key_32811() {
 // ── E3 (P0): Excel Worksheets(99) → 9 (subscript out of range) ───────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e3_excel_worksheets_bad_index_9() {
     // First live error through a marshalled OOP proxy vtable: Worksheets(99) on a
     // fresh workbook raises VBA 9 (subscript out of range). Host-AV guard.
@@ -88,7 +88,7 @@ fn e3_excel_worksheets_bad_index_9() {
 // ── E4: Excel Range("ZZ") invalid → 1004 ─────────────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e4_excel_invalid_range_1004() {
     // An invalid Range address raises VBA 1004 via the EXCEPINFO path. Range is
     // PSDispatch, so the dispatch must not over-read a 7-slot vtable (AV guard).
@@ -110,7 +110,7 @@ fn e4_excel_invalid_range_1004() {
 // ── E5: Excel Workbooks.Open(missing) → 1004 ─────────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e5_excel_open_missing_file_1004() {
     // Opening a non-existent workbook raises VBA 1004; exercises inbound-BSTR free
     // on the failure path.
@@ -128,13 +128,13 @@ fn e5_excel_open_missing_file_1004() {
 // ── E6 (P0): DAO Execute "BAD SQL" → 3xxx ────────────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e6_dao_bad_sql_3000_range() {
     // A malformed SQL statement raises a DAO 3xxx error. This straddles IErrorInfo
     // (vtable) and EXCEPINFO (IDispatch) Description retrieval. Real VBA number here
     // is in the 3000-range; we assert the canonical 3129 (invalid SQL statement).
-    // The RED note is on the flatten-to-5; the precise 3xxx may also need adjusting
-    // to whatever the ACE build reports — the agreement twin (E6b) is the safety net.
+    // The precise 3xxx may need adjusting to whatever the ACE build reports — the
+    // agreement twin (E6b) is the safety net.
     let db = TempDbPath::new("e6_dao");
     let lit = db.as_vba_literal();
     let body = format!(
@@ -154,7 +154,7 @@ fn e6_dao_bad_sql_3000_range() {
 // ── E7: DAO CreateDatabase(bad path) → 3024/3044 ─────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e7_dao_create_database_bad_path_3024() {
     // CreateDatabase to an unreachable path raises a DAO 30xx (3024 not found /
     // 3044 invalid path). Exercises object-retval failure cleanup (discard_out_cell).
@@ -171,7 +171,7 @@ fn e7_dao_create_database_bad_path_3024() {
 // ── E8 (P0): Dictionary Add("onlyKey") → 449 (arg-count) ─────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e8_dictionary_add_missing_arg_449() {
     // Add with a single argument (missing the required Item) is an argument-count
     // error. The vtable gate vs the IDispatch layer may surface this differently per
@@ -190,7 +190,7 @@ fn e8_dictionary_add_missing_arg_449() {
 // ── E10: DAO fail-then-succeed (stale IErrorInfo) → 3xxx then 0 ──────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e10_dao_fail_then_succeed_clears_error() {
     // A failing Execute followed by a succeeding one: errNum1 must be a DAO 3xxx and
     // errNum2 must be 0 (the stale IErrorInfo must be cleared). A non-zero errNum2 in
@@ -220,7 +220,7 @@ fn e10_dao_fail_then_succeed_clears_error() {
 // ── E11: Dictionary dup key with On Error GoTo handler → 457 ─────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e11_dictionary_dup_key_structured_handler_457() {
     // The same 457 dup-key, but caught by a structured `On Error GoTo` handler
     // (control-flow parity). The handler records the number and resumes.
@@ -242,11 +242,11 @@ fn e11_dictionary_dup_key_structured_handler_457() {
 // ── E12 (GAP): Err.Source parity ─────────────────────────────────────────────
 
 #[test]
-#[ignore = "RED: from_hal flattens COM Err.Number to 5 — pending fix (live COM)"]
+#[ignore = "live COM; run explicitly"]
 fn e12_dictionary_err_source_parity() {
     // GAP 13: bstrSource (EXCEPINFO) vs IErrorInfo::GetSource are different paths and
     // must match. We capture Err.Source into the String global and Err.Number into
-    // the Long; the RED oracle pins the number, and late==early pins Source equality.
+    // the Long; the oracle pins the number, and late==early pins Source equality.
     let body = "d.Add \"k\", 1\n\
          On Error Resume Next\n\
          d.Add \"k\", 2\n\
@@ -259,19 +259,18 @@ fn e12_dictionary_err_source_parity() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONTROL + AGREEMENT tests — normal #[ignore] live tests (NOT RED).
+// VM-layer + AGREEMENT tests — normal #[ignore] live tests.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── E9 (P0 CONTROL): Nothing-deref → 91 (VM-layer, should be non-5 today) ────
+// ── E9 (P0): Nothing-deref → 91 (VM-layer, not routed through from_hal) ──────
 
 #[test]
-#[ignore = "live COM; run explicitly (CONTROL — must be GREEN, proves harness sees a real number)"]
+#[ignore = "live COM; run explicitly"]
 fn e9_nothing_deref_control_91() {
-    // THE CONTROL. Dereferencing an unset object (`d.Count` with d = Nothing) is a
-    // VM-layer error (91, object variable not set) short-circuited BEFORE any COM
-    // call — so it is NOT routed through from_hal and should already be 91, not 5.
-    // If E9 == 91 but E1-E8 == 5, the defect is exactly from_hal. This is a normal
-    // (non-RED) test that MUST pass.
+    // Dereferencing an unset object (`d.Count` with d = Nothing) is a VM-layer
+    // error (91, object variable not set) short-circuited BEFORE any COM call —
+    // so it is NOT routed through from_hal. `variant_to_object` raises 91 for an
+    // unset object-typed/`Empty` receiver, distinct from a non-object value (424).
     let late_src = "Public errNum As Long\n\
          Public errDesc As String\n\
          Sub Main()\n\
@@ -316,8 +315,7 @@ fn e9_nothing_deref_control_91() {
     assert_eq!(
         ln,
         Some(91),
-        "E9 CONTROL: Nothing-deref must report VBA 91 (object variable not set); \
-         got {ln:?}. If this is 5, the VM-layer error is ALSO being flattened."
+        "E9: Nothing-deref must report VBA 91 (object variable not set); got {ln:?}."
     );
 }
 
@@ -344,9 +342,9 @@ fn e2b_dictionary_item_autovivify_no_error_agreement() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn e6b_dao_bad_sql_error_occurs_agreement() {
-    // The non-RED safety net for E6: assert merely that an error OCCURRED
+    // The agreement safety net for E6: assert merely that an error OCCURRED
     // (Err.Number != 0) and that late and early AGREE on the captured number —
-    // independent of the from_hal flatten and of which exact 3xxx the ACE build emits.
+    // independent of which exact 3xxx the ACE build emits.
     let db = TempDbPath::new("e6b_dao");
     let lit = db.as_vba_literal();
     let body = format!(
@@ -364,10 +362,10 @@ fn e6b_dao_bad_sql_error_occurs_agreement() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Runners that thread the env-skip through the RED / agreement oracles.
+// Runners that thread the env-skip through the absolute / agreement oracles.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// RED oracle: skip on absent component/typelib, else assert the absolute number.
+/// Absolute oracle: skip on absent component/typelib, else assert the number.
 fn run_err_oracle(case: &str, late: LateRun, early: LateRun, real_vba_err: i32) {
     let late = match late {
         Ok(s) => s,
