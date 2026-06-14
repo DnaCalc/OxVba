@@ -1154,6 +1154,30 @@ mod tests {
     }
 
     #[test]
+    fn arg_items_leading_omitted_bare_statement_call() {
+        // A statement-form call whose argument list STARTS with omitted positionals
+        // (`obj.Add , , 2` — the Excel `Worksheets.Add , , 2` idiom). Previously the
+        // bare-arg-list parser unconditionally parsed a first expression and raised
+        // "expected expression" on the leading comma; it must instead yield two leading
+        // `Omitted` slots followed by the supplied positional, with NO parse error.
+        let p = crate::parser::parse(&in_sub("obj.Add , , 2\n"));
+        assert!(
+            p.errors().is_empty(),
+            "leading-omitted bare args must parse without error, got {:?}",
+            p.errors()
+        );
+        let call = find_first(p.syntax(), SyntaxKind::CallStmt).expect("call stmt");
+        let items = call.call_arg_list().expect("arg list").arg_items();
+        assert_eq!(items.len(), 3, "two omitted + one supplied");
+        assert!(matches!(items[0], ArgItem::Omitted));
+        assert!(matches!(items[1], ArgItem::Omitted));
+        assert!(matches!(
+            items[2],
+            ArgItem::Positional(_, CallSitePassing::Default)
+        ));
+    }
+
+    #[test]
     fn ctrl_if_elseif_else() {
         let p = crate::parser::parse(&in_sub(
             "If a > 1 Then\nx = 1\nElseIf b Then\nx = 2\nElse\nx = 3\nEnd If\n",

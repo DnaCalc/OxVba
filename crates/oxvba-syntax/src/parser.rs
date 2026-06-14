@@ -655,8 +655,14 @@ impl<'a> Parser<'a> {
 
         self.start_node(SyntaxKind::ArgList);
 
-        // Named arg: name:=expr — check for ColonEq
-        self.parse_bare_arg();
+        // Named arg: name:=expr — check for ColonEq. A LEADING omitted positional
+        // (`Add , , 2` — the first one or two args omitted) starts the list with a
+        // comma, so the first slot has no expression: only parse it when there is one,
+        // mirroring the empty-slot guard in the loop below. (Without this, a leading
+        // `,` fell into `parse_expr_bp` and raised "expected expression".)
+        if !self.at(SyntaxKind::Comma) {
+            self.parse_bare_arg();
+        }
 
         loop {
             self.eat_expr_whitespace();
