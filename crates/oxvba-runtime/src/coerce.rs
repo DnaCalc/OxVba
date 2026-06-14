@@ -90,6 +90,96 @@ pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
             Ok(Variant::from_f64(scaled as f64 / 10_000.0))
         }
 
+        // ── Extended integer source types → floating targets ──
+        // CDbl/CSng over COM edge-VT returns (VT_I1, VT_UI2, VT_UI4, VT_UI8,
+        // VT_I8) lands here. Each widens losslessly into f64 (all magnitudes
+        // fit the 53-bit mantissa except large u64/i64, which round to nearest).
+        (VarType::SignedByte, VarType::Double) => {
+            Ok(Variant::from_f64(f64::from(value.as_i8().unwrap_or(0))))
+        }
+        (VarType::SignedByte, VarType::Single) => {
+            Ok(Variant::from_f32(f32::from(value.as_i8().unwrap_or(0))))
+        }
+        (VarType::UnsignedInteger, VarType::Double) => {
+            Ok(Variant::from_f64(f64::from(value.as_u16().unwrap_or(0))))
+        }
+        (VarType::UnsignedInteger, VarType::Single) => {
+            Ok(Variant::from_f32(f32::from(value.as_u16().unwrap_or(0))))
+        }
+        (VarType::UnsignedLong | VarType::UnsignedInt, VarType::Double) => {
+            Ok(Variant::from_f64(f64::from(value.as_u32().unwrap_or(0))))
+        }
+        (VarType::UnsignedLong | VarType::UnsignedInt, VarType::Single) => {
+            Ok(Variant::from_f32(value.as_u32().unwrap_or(0) as f32))
+        }
+        (VarType::UnsignedLongLong, VarType::Double) => {
+            Ok(Variant::from_f64(value.as_u64().unwrap_or(0) as f64))
+        }
+        (VarType::UnsignedLongLong, VarType::Single) => {
+            Ok(Variant::from_f32(value.as_u64().unwrap_or(0) as f32))
+        }
+        (VarType::LongLong, VarType::Double) => {
+            Ok(Variant::from_f64(value.as_i64().unwrap_or(0) as f64))
+        }
+        (VarType::LongLong, VarType::Single) => {
+            Ok(Variant::from_f32(value.as_i64().unwrap_or(0) as f32))
+        }
+
+        // ── Decimal → numeric targets ──
+        // A VT_DECIMAL carries a 96-bit unsigned magnitude, a base-10 scale
+        // (0..=28), and a sign bit. Floating targets divide the magnitude by
+        // 10^scale; integer targets round-to-nearest then range-check.
+        (
+            VarType::Decimal,
+            VarType::Double
+            | VarType::Single
+            | VarType::Long
+            | VarType::Integer
+            | VarType::Currency
+            | VarType::LongLong
+            | VarType::Boolean,
+        ) => {
+            let dec = value
+                .as_decimal96()
+                .ok_or_else(|| "invalid Decimal variant payload".to_string())?;
+            let f = decimal_to_f64(dec);
+            match target {
+                VarType::Double => Ok(Variant::from_f64(f)),
+                VarType::Single => Ok(Variant::from_f32(f as f32)),
+                VarType::Boolean => Ok(Variant::from_bool(f != 0.0)),
+                VarType::Currency => {
+                    // Currency is a scaled i64 with four implied decimals.
+                    let scaled = (f * 10_000.0).round();
+                    if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
+                        return Err("runtime error: 6 (Overflow)".to_string());
+                    }
+                    Ok(Variant::from_currency_scaled_i64(scaled as i64))
+                }
+                VarType::Long => {
+                    let rounded = f.round();
+                    if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 {
+                        return Err("runtime error: 6 (Overflow)".to_string());
+                    }
+                    Ok(Variant::from_i32(rounded as i32))
+                }
+                VarType::Integer => {
+                    let rounded = f.round();
+                    if rounded < i16::MIN as f64 || rounded > i16::MAX as f64 {
+                        return Err("runtime error: 6 (Overflow)".to_string());
+                    }
+                    Ok(Variant::from_i16(rounded as i16))
+                }
+                VarType::LongLong => {
+                    let rounded = f.round();
+                    if rounded < i64::MIN as f64 || rounded > i64::MAX as f64 {
+                        return Err("runtime error: 6 (Overflow)".to_string());
+                    }
+                    Ok(Variant::from_i64(rounded as i64))
+                }
+                _ => unreachable!("guarded by the match arm pattern"),
+            }
+        }
+
         // ── Empty coerces to zero/false for numeric targets ──
         (VarType::Empty, VarType::Integer) => Ok(Variant::from_i16(0)),
         (VarType::Empty, VarType::Long) => Ok(Variant::from_i32(0)),
@@ -151,6 +241,15 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
         }
     };
     Ok(text)
+}
+
+/// Convert a `Decimal96` to the nearest `f64`. The 96-bit magnitude is divided
+/// by `10^scale`; the sign bit is applied afterwards so a negative zero
+/// magnitude stays at `0.0`. Mirrors the Currency→Double scaling pattern.
+fn decimal_to_f64(dec: crate::decimal::Decimal96) -> f64 {
+    let magnitude = dec.magnitude_u128() as f64;
+    let value = magnitude / 10f64.powi(i32::from(dec.scale()));
+    if dec.is_negative() { -value } else { value }
 }
 
 /// Format a Currency scaled-i64 (four implied decimals) the way VBA's `CStr`
@@ -291,6 +390,69 @@ mod tests {
                 "display text for scaled {scaled}"
             );
         }
+    }
+
+    #[test]
+    fn decimal_to_double_and_single() {
+        use crate::decimal::Decimal96;
+        // 123.45 = magnitude 12345, scale 2.
+        let v = Variant::from_decimal96(Decimal96::from_parts(12_345, 0, 0, 2, false));
+        let out = coerce_to(&v, VarType::Double).expect("Decimal→Double");
+        assert_eq!(out.vtype(), VarType::Double);
+        assert!((out.as_f64().unwrap() - 123.45).abs() < 1e-9);
+
+        let out_single = coerce_to(&v, VarType::Single).expect("Decimal→Single");
+        assert_eq!(out_single.vtype(), VarType::Single);
+        assert!((out_single.as_f32().unwrap() - 123.45_f32).abs() < 1e-4);
+
+        // Negative: -4.25 = magnitude 425, scale 2, negative.
+        let neg = Variant::from_decimal96(Decimal96::from_parts(425, 0, 0, 2, true));
+        let out_neg = coerce_to(&neg, VarType::Double).expect("Decimal→Double");
+        assert!((out_neg.as_f64().unwrap() - (-4.25)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn decimal_to_long_rounds_to_nearest() {
+        use crate::decimal::Decimal96;
+        // 2.5 rounds to 3 (round-half-away-from-zero via f64::round).
+        let v = Variant::from_decimal96(Decimal96::from_parts(25, 0, 0, 1, false));
+        let out = coerce_to(&v, VarType::Long).expect("Decimal→Long");
+        assert_eq!(out.as_i32(), Some(3));
+
+        // Integer-valued decimal.
+        let whole = Variant::from_decimal96(Decimal96::from_parts(1000, 0, 0, 0, false));
+        assert_eq!(
+            coerce_to(&whole, VarType::Long).unwrap().as_i32(),
+            Some(1000)
+        );
+
+        // Negative round.
+        let neg = Variant::from_decimal96(Decimal96::from_parts(75, 0, 0, 1, true));
+        assert_eq!(coerce_to(&neg, VarType::Long).unwrap().as_i32(), Some(-8));
+    }
+
+    #[test]
+    fn decimal_to_integer_overflow_is_error_6() {
+        use crate::decimal::Decimal96;
+        // 40000 exceeds i16::MAX (32767) → overflow.
+        let v = Variant::from_decimal96(Decimal96::from_parts(40_000, 0, 0, 0, false));
+        let err = coerce_to(&v, VarType::Integer).expect_err("should overflow");
+        assert!(err.contains("runtime error: 6"), "got: {err}");
+    }
+
+    #[test]
+    fn decimal_to_boolean_nonzero_is_true() {
+        use crate::decimal::Decimal96;
+        let nonzero = Variant::from_decimal96(Decimal96::from_parts(1, 0, 0, 4, false));
+        assert_eq!(
+            coerce_to(&nonzero, VarType::Boolean).unwrap().as_bool(),
+            Some(true)
+        );
+        let zero = Variant::from_decimal96(Decimal96::from_parts(0, 0, 0, 4, false));
+        assert_eq!(
+            coerce_to(&zero, VarType::Boolean).unwrap().as_bool(),
+            Some(false)
+        );
     }
 
     #[test]
