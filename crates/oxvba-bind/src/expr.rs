@@ -319,22 +319,63 @@ impl<'a> ProcLower<'a> {
         {
             return self.bind_call_route(tok.text, &binding, node.index_arg_list());
         }
-        // `c(i)` on a `Collection` variable is the default member `c.Item(i)`, not
-        // an array subscript. (VBA has no general default-member resolution; this is
-        // scoped strictly to the built-in `Collection` object type.) Lower it to the
-        // same by-name cross-bundle dispatch `c.Item(i)` uses.
+        // `obj(i)` on an Object variable is a DEFAULT-MEMBER call (`obj.Item(i)` /
+        // dispid-0), not an array subscript. VBA resolves `obj(…)` for an object
+        // receiver through its default member. The gate is the receiver's static
+        // type being a scalar `Object` (a typed COM coclass, `Dim As Object`, the
+        // built-in `Collection`, or a referenced coclass). A declared array
+        // (`VarTypeRef::Array`, including `Dim arr() As Object`) and an ambiguous
+        // bare `Variant` (which a `ReDim`/`ParamArray` makes an array, decided at
+        // run time) are NOT objects here and fall through to the array-index path.
+        //   * a typed COM receiver whose default member resolves to a ComMember →
+        //     early-bound dispatch by the default member's dispid;
+        //   * any other late-bound Object → late dispatch of the dispid-0 default
+        //     member, named "Item" (Collection/Dictionary's default).
         if base.kind() == SyntaxKind::IdentExpr
             && let Some(tok) = base.ident_name_token()
             && let Some(sym) = self.resolve(tok.text).and_then(|b| b.symbol)
-            && let VarTypeRef::Object(ty_name) = self.symbol_type(sym)
-            && oxvba_symbol::model::fold_identifier(&ty_name) == "collection"
+            && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
         {
-            let recv = CoreValue::Load(self.place_by_name(tok.text)?);
-            let args = self.bind_extern_args(node.index_arg_list(), &[])?;
-            return Ok(value_bound(
-                self.late_member_call("Item", oxvba_bundle::ProjectMemberKind::Method, recv, args),
-                VarTypeRef::Variant,
-            ));
+            if let Some(binding) = self.g.env.resolve_default_member(&ty)
+                && let DispatchRoute::ComMember {
+                    dispid,
+                    member_kind,
+                    param_by_ref,
+                    ..
+                } = &binding.route
+            {
+                let dispid = *dispid;
+                // `obj(i)` is a value-context read: dispatch the default member as a
+                // Property Get (or Method), never its Let/Set variant (a default
+                // member that shares its dispid across get/put/putref can resolve to
+                // the writer by typelib order).
+                let member_kind = match member_kind {
+                    oxvba_bundle::ProjectMemberKind::Method => {
+                        oxvba_bundle::ProjectMemberKind::Method
+                    }
+                    _ => oxvba_bundle::ProjectMemberKind::PropertyGet,
+                };
+                let by_ref = param_by_ref.clone();
+                let recv = CoreValue::Load(self.place_by_name(tok.text)?);
+                let args = self.bind_args_byref(node.index_arg_list(), &by_ref)?;
+                return Ok(value_bound(
+                    self.early_com_call(dispid, member_kind, recv, args),
+                    VarTypeRef::Variant,
+                ));
+            }
+            if self.is_late_bound_receiver(&ty) {
+                let recv = CoreValue::Load(self.place_by_name(tok.text)?);
+                let args = self.bind_extern_args(node.index_arg_list(), &[])?;
+                return Ok(value_bound(
+                    self.late_member_call(
+                        "Item",
+                        oxvba_bundle::ProjectMemberKind::Method,
+                        recv,
+                        args,
+                    ),
+                    VarTypeRef::Variant,
+                ));
+            }
         }
         // `obj.Member(args)` — a method/property call, or an index into a member
         // array. The member binder decides by resolving the member.

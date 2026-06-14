@@ -1982,17 +1982,37 @@ impl<'h> Vm<'h> {
                 array,
                 indices,
             } => {
-                let arr = self.array_of(*array)?;
-                let bounds = arr
-                    .bounds()
-                    .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
-                let flat = self.flat_index(indices, &bounds)?;
-                let elems = arr.variant_elements().unwrap_or_default();
-                let value = elems
-                    .get(flat)
-                    .cloned()
-                    .ok_or_else(|| Fault::new(9, "subscript out of range"))?;
-                self.set(*dst, value)?;
+                // `x(i…)` where `x` is statically a bare `Variant`/`As Object` is
+                // lowered as an array subscript, but VBA resolves it at run time: if
+                // the value is an OBJECT (not an array) the parentheses are a
+                // DEFAULT-MEMBER call (`x.Item(i…)` / dispid 0). Bind-time handles the
+                // typed-`Object(name)` receiver; this is the late-bound leg, where
+                // `Dim As Object` carries no static class to resolve a default member.
+                let value = self.get(*array)?;
+                if value.as_safearray().is_none() && value.as_object_ref().is_some() {
+                    let object = variant_to_object(self.get(*array)?)?;
+                    let method_args: Vec<CallArg> =
+                        indices.iter().map(|s| CallArg::Slot(*s)).collect();
+                    let result = self.dispatch_by_object(
+                        object,
+                        &ComMemberSelector::DispatchId(0),
+                        Some(ProjectMemberKind::Method),
+                        &method_args,
+                    )?;
+                    self.set(*dst, result)?;
+                } else {
+                    let arr = self.array_of(*array)?;
+                    let bounds = arr
+                        .bounds()
+                        .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
+                    let flat = self.flat_index(indices, &bounds)?;
+                    let elems = arr.variant_elements().unwrap_or_default();
+                    let value = elems
+                        .get(flat)
+                        .cloned()
+                        .ok_or_else(|| Fault::new(9, "subscript out of range"))?;
+                    self.set(*dst, value)?;
+                }
             }
             Op::ArraySet {
                 array,
