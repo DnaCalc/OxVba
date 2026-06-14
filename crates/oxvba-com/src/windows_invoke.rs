@@ -1687,6 +1687,71 @@ pub unsafe fn invoke_dispatch_variant_with_shared_state(
     )
 }
 
+/// The standard OLE Automation enumerator DISPID (`DISPID_NEWENUM`). Invoking it
+/// returns the collection's `IEnumVARIANT` (wrapped in a `VT_UNKNOWN`).
+#[cfg(target_os = "windows")]
+pub const COM_DISPID_NEWENUM: i32 = -4;
+
+/// Snapshot a bound COM collection's elements for VBA `For Each` (BUG 3).
+///
+/// Resolves the bound native `IDispatch` for `object`, invokes `DISPID_NEWENUM`
+/// (`-4`) with `DISPATCH_METHOD | DISPATCH_PROPERTYGET` to obtain the
+/// collection's enumerator, and drives `IEnumVARIANT::Next` to completion. The
+/// enumerator result returns as a `VT_UNKNOWN` whose decode path
+/// (`take_variant_result_variant` → `unknown_to_variant_value`) already
+/// `QueryInterface`s `IEnumVARIANT`, materializes every element into a
+/// SAFEARRAY-backed Variant, and binds object-valued elements as `ObjectRef`s —
+/// releasing the enumerator and each interim reference. We then unwrap that
+/// SAFEARRAY into the element `Vec`.
+///
+/// AV-safety: the decode QI-guards `IEnumVARIANT`; an object that exposes no
+/// enumerator surfaces a clean error (no enumerator interface), which the caller
+/// (vm2) treats as an empty/non-enumerable `For Each` rather than touching an
+/// unverified pointer.
+///
+/// A non-collection scalar result (e.g. a server that answers `DISPID_NEWENUM`
+/// with a number) decodes to a non-array Variant; we surface a clean error in
+/// that case so the caller does not iterate a single scalar as one element.
+///
+/// # Safety
+/// The bridge's bindings map must own one retained `IDispatch` reference for
+/// `object` for the duration of the call (the standard adapter guarantees this
+/// from the VM thread that owns the binding), and the current thread must be
+/// COM-initialized.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+pub unsafe fn enumerate_object_with_shared_state(
+    object: ObjectRef,
+    prog_id_hint: &str,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<Vec<Variant>, String> {
+    // Resolve the live bound dispatch; a projection-only binding (native == 0) or
+    // an unknown handle has nothing to enumerate.
+    let dispatch = crate::resolve_bound_native_dispatch_shared(com_state, object)?;
+    if dispatch.is_null() {
+        return Err(format!(
+            "COM-E-ENUM-NO-DISPATCH: object `{prog_id_hint}` has no live IDispatch to enumerate"
+        ));
+    }
+    let result = invoke_dispatch_variant_with_shared_state(
+        dispatch.cast(),
+        COM_DISPID_NEWENUM,
+        DISPATCH_METHOD | DISPATCH_PROPERTYGET,
+        &[],
+        &[],
+        "for-each-newenum",
+        prog_id_hint,
+        com_state,
+    )
+    .map_err(|failure| render_invoke_fault_message(&failure))?;
+    match result.as_safearray() {
+        Some(array) => Ok(array.variant_elements().unwrap_or_default()),
+        None => Err(format!(
+            "COM-E-ENUM-NOT-COLLECTION: object `{prog_id_hint}` DISPID_NEWENUM did not yield an enumerable collection"
+        )),
+    }
+}
+
 #[cfg(target_os = "windows")]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn invoke_bound_dispatch_variant_with_shared_state<FKnownSpec>(

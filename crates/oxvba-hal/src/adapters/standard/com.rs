@@ -303,6 +303,55 @@ impl ComHal for StandardHostServices {
         Ok(descriptor)
     }
 
+    fn enumerate_object(&self, object: ObjectRef) -> HalResult<Vec<Variant>> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "enumerate_object"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "enumerate_object"));
+        }
+        if !self.native_com_enabled() {
+            // No real COM transport: the VM treats this as a non-enumerable
+            // (empty) `For Each`, matching the prior behaviour for foreign objects.
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "enumerate_object",
+                "COM-E-ENUM-PATH-UNSUPPORTED: COM collection enumeration requires host-backed Windows native mode",
+            ));
+        }
+        self.ensure_thread_com_apartment("enumerate_object")?;
+        #[cfg(target_os = "windows")]
+        {
+            let prog_id_hint = self
+                .com_bridge
+                .describe_object(object.clone())
+                .ok()
+                .flatten()
+                .map(|descriptor| descriptor.prog_id_name)
+                .unwrap_or_default();
+            // SAFETY: `ensure_thread_com_apartment` succeeded above, so this thread is
+            // COM-initialized as the enumerate path requires; the bridge resolves
+            // `object` against its bindings map, whose one retained `IDispatch`
+            // reference keeps the pointer live for the DISPID_NEWENUM invoke and the
+            // IEnumVARIANT drive.
+            let elements = unsafe {
+                oxvba_com::enumerate_object_with_shared_state(
+                    object,
+                    &prog_id_hint,
+                    self.com_bridge.shared_state(),
+                )
+            }
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "enumerate_object", message)
+            })?;
+            Ok(elements)
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
+    }
+
     fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
         let object = request.object.raw();
         let member = request.member.raw();

@@ -2097,10 +2097,21 @@ impl<'h> Vm<'h> {
                 // otherwise the source is an array (SafeArray). The snapshot is taken
                 // at loop entry, matching the existing array behaviour.
                 let elements = if let Some(obj) = source.as_object_ref() {
-                    self.collections
-                        .get(&obj.compat_identity())
-                        .map(CollectionData::values)
-                        .unwrap_or_default()
+                    if let Some(collection) = self.collections.get(&obj.compat_identity()) {
+                        // A VBA built-in `Collection` (or a project instance backed by
+                        // the in-VM store) enumerates its values in insertion order.
+                        collection.values()
+                    } else if obj.is_project_instance() {
+                        // A project instance with no Collection backing has nothing to
+                        // enumerate; preserve the existing empty-iteration behaviour.
+                        Vec::new()
+                    } else {
+                        // A foreign COM collection: snapshot its elements through the
+                        // host's IEnumVARIANT bridge (BUG 3). A host that cannot
+                        // enumerate (no COM transport, or the object exposes no
+                        // enumerator) yields an empty iteration, as before.
+                        self.host.com().enumerate_object(obj).unwrap_or_default()
+                    }
                 } else if let Some(arr) = source.as_safearray() {
                     arr.variant_elements().unwrap_or_default()
                 } else {

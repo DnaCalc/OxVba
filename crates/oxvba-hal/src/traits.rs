@@ -341,6 +341,16 @@ pub trait ComHal: Send + Sync {
         )
     }
     fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>>;
+    /// Snapshot a foreign COM collection's elements via `IEnumVARIANT` (VBA
+    /// `For Each`). Collecting every element up front is intentional: the
+    /// returned `Vec` is the loop's iteration source, so a mid-loop `Exit For`
+    /// works against the snapshot (no live enumerator is held). Object-valued
+    /// elements are bound as `ObjectRef`s like any other COM result. Adapters
+    /// without a real COM transport (null/wasm/replay) return a capability error
+    /// by default, which the VM treats as "not enumerable" (empty iteration).
+    fn enumerate_object(&self, _object: ObjectRef) -> HalResult<Vec<Variant>> {
+        variant_companion_not_overridden(CapabilityId::ComActivationDispatch, "enumerate_object")
+    }
     fn dispatch_invoke_variant(&self, _request: &ComInvokeRequest) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,

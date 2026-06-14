@@ -303,6 +303,10 @@ impl ComHal for RecordingHostServices {
         self.inner.com().describe_object(object)
     }
 
+    fn enumerate_object(&self, object: ObjectRef) -> HalResult<Vec<Variant>> {
+        self.inner.com().enumerate_object(object)
+    }
+
     fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
         self.inner.com().dispatch_invoke_variant(request)
     }

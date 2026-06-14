@@ -112,7 +112,8 @@ pub use windows_connection_point::{
 pub use windows_invoke::try_vtable_member_spec_invoke_with_shared_state;
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
-    ComInvokeExceptionInfo, ComInvokeFailure, ComTransportCounters, execute_bound_variant,
+    COM_DISPID_NEWENUM, ComInvokeExceptionInfo, ComInvokeFailure, ComTransportCounters,
+    enumerate_object_with_shared_state, execute_bound_variant,
     execute_bound_variant_with_shared_state, invoke_bound_dispatch_legacy_i32_result,
     invoke_bound_dispatch_variant_with_shared_state, invoke_direct_dispid_variant,
     invoke_direct_dispid_variant_with_shared_state, invoke_dispatch_legacy_i32_result,
