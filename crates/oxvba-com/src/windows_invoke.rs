@@ -2024,7 +2024,9 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
 
     // The member's typelib-declared DUAL interface IID (the gate proved it is
     // present and non-null) — both the QI target below and the PSOA registry key.
-    let interface_iid = spec.interface_iid.expect("gate guaranteed an interface IID");
+    let interface_iid = spec
+        .interface_iid
+        .expect("gate guaranteed an interface IID");
     let iid = interface_iid.to_guid();
 
     // OUT-OF-PROCESS DISCRIMINATOR (HOST-AV SAFETY), gated on the interface's
@@ -2311,7 +2313,7 @@ where
 
 #[cfg(all(target_os = "windows", test))]
 mod gate_tests {
-    use super::vtable_gate_admits;
+    use super::{is_v1_vtable_vartype, synthesize_trailing_optional_args, vtable_gate_admits};
     use crate::{ComInterfaceIid, ComMemberSpec, SourceTypeKind, TypeLibMemberInvokeKind};
 
     /// A vtable-eligible spec: a real custom INTERFACE dual, CC_STDCALL, a slot
@@ -2547,5 +2549,109 @@ mod gate_tests {
             1,
             Some(crate::TypeLibParamType::Long)
         ));
+    }
+
+    /// COM-matrix A12 (the riskiest seam, always-on regression guard). A
+    /// `[propget, lcid]`-with-a-real-arg member's true vtable ABI is
+    /// `HRESULT get_X(this, <real args...>, LCID, T* pRet)` — the hidden `[lcid]`
+    /// sits AFTER the real positional args and BEFORE the `[out,retval]`. The
+    /// synthesis machinery walks `parameter_optional_defaults[supplied..]` in
+    /// DECLARED order, so the gate must only admit a shape where the lcid is in the
+    /// missing TRAILING run (after every guest-supplied positional). A shape whose
+    /// declared order puts the lcid in the PREFIX (ahead of a still-required real
+    /// arg) must DECLINE — admitting it would pair the synthesized lcid against the
+    /// wrong slot and place the retval pointer one slot early (the host AV).
+    #[test]
+    fn gate_lcid_must_be_trailing_not_prefix() {
+        // lcid-TRAILING: `f(real, [lcid])`. Guest supplies the 1 real arg; the
+        // missing tail is exactly `[Lcid]` -> synthesizable -> ADMIT.
+        let mut trailing = eligible_spec(20, 58);
+        trailing.name = "International".to_string();
+        trailing.invoke_kind = TypeLibMemberInvokeKind::PropertyGet;
+        trailing.requires_argument = true;
+        trailing.parameter_types =
+            vec![crate::TypeLibParamType::Long, crate::TypeLibParamType::Long];
+        trailing.parameter_optional_defaults = vec![
+            crate::OptionalParamDefault::Required,
+            crate::OptionalParamDefault::Lcid,
+        ];
+        trailing.return_type = Some(crate::TypeLibParamType::Variant);
+        assert!(
+            vtable_gate_admits(&trailing, 1, Some(crate::TypeLibParamType::Variant)),
+            "lcid-trailing [Required, Lcid] with 1 supplied real arg must ADMIT \
+             (the tail [Lcid] is synthesizable)"
+        );
+        // And the synthesizer fills exactly one trailing arg: the LCID (VT_I4 = 0).
+        let synth =
+            synthesize_trailing_optional_args(&trailing, 1).expect("trailing lcid must synthesize");
+        assert_eq!(synth.len(), 1, "exactly the hidden lcid is synthesized");
+        assert_eq!(
+            synth[0].as_i32(),
+            Some(0),
+            "the synthesized lcid is LOCALE_NEUTRAL (0)"
+        );
+
+        // lcid-PREFIX: `f([lcid], real)`. The guest's 1 supplied positional fills
+        // index 0 (the lcid slot in this bad shape), leaving the missing tail
+        // `[Required]` -> NOT synthesizable -> DECLINE. The gate must never admit a
+        // member whose lcid is ahead of a still-required real arg.
+        let mut prefix = trailing.clone();
+        prefix.parameter_optional_defaults = vec![
+            crate::OptionalParamDefault::Lcid,
+            crate::OptionalParamDefault::Required,
+        ];
+        assert!(
+            !vtable_gate_admits(&prefix, 1, Some(crate::TypeLibParamType::Variant)),
+            "lcid-prefix [Lcid, Required] must DECLINE (a required real arg is left \
+             unsynthesizable in the missing tail)"
+        );
+    }
+
+    /// COM-matrix A12 (SAFEARRAY / edge-VT decline half). The v1 vtable marshaller
+    /// only handles a fixed scalar/Variant/Object set; every out-of-set VARTYPE —
+    /// `Decimal`, `LongPtr`, and the whole `ByRef*` family (the shapes a SAFEARRAY
+    /// or an out-param would surface as) — must gate the call to the IDispatch
+    /// fallback rather than risk a wrong-ABI vtable call.
+    #[test]
+    fn gate_v1_vtable_vartype_rejects_out_of_set() {
+        // In-set shapes are admitted (sanity).
+        for ok in [
+            crate::TypeLibParamType::Variant,
+            crate::TypeLibParamType::Long,
+            crate::TypeLibParamType::Integer,
+            crate::TypeLibParamType::String,
+            crate::TypeLibParamType::Boolean,
+            crate::TypeLibParamType::Double,
+            crate::TypeLibParamType::Single,
+            crate::TypeLibParamType::Currency,
+            crate::TypeLibParamType::Date,
+            crate::TypeLibParamType::Object,
+            crate::TypeLibParamType::Byte,
+            crate::TypeLibParamType::LongLong,
+        ] {
+            assert!(is_v1_vtable_vartype(ok), "{ok:?} must be in the v1 set");
+        }
+        // Out-of-set shapes (Decimal, LongPtr, ByRef*) — the SAFEARRAY/out-param
+        // decline guard — must NOT be admitted.
+        for bad in [
+            crate::TypeLibParamType::Decimal,
+            crate::TypeLibParamType::LongPtr,
+            crate::TypeLibParamType::ByRefVariant,
+            crate::TypeLibParamType::ByRefLong,
+            crate::TypeLibParamType::ByRefObject,
+            crate::TypeLibParamType::ByRefDecimal,
+        ] {
+            assert!(
+                !is_v1_vtable_vartype(bad),
+                "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
+            );
+        }
+        // And a member whose RETURN VARTYPE is out-of-set declines outright.
+        let mut decimal_ret = eligible_spec(17, 58);
+        decimal_ret.return_type = Some(crate::TypeLibParamType::Decimal);
+        assert!(
+            !vtable_gate_admits(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
+            "a Decimal-returning member must decline the vtable path"
+        );
     }
 }
