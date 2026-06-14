@@ -192,6 +192,16 @@ pub enum OptionalParamDefault {
     /// safe value to synthesize for the slot ABI, so an omitted one of these
     /// declines the vtable path (the IDispatch fallback handles it).
     OptionalNoDefault,
+    /// A hidden `[lcid]` parameter (`PARAMFLAG_FLCID`, `0x0004`): an `LCID` the
+    /// vtable ABI injects ahead of the `[out,retval]`, NEVER supplied by the VBA
+    /// caller (it is invisible at the language level). The vtable dispatch site
+    /// ALWAYS synthesizes it (with `LOCALE_NEUTRAL` / 0) and never consumes a
+    /// guest argument for it — distinct from an OMITTED optional, which the guest
+    /// *could* have supplied. Its `parameter_types` slot is `Long` (`VT_I4`).
+    /// Omitting LCID synthesis is exactly the bug that AV'd out-of-process Excel
+    /// `Application.Build`/`Version` (a `[propget, lcid]` whose true vtable ABI is
+    /// `HRESULT get_X(this, LCID, T* pRet)`).
+    Lcid,
 }
 
 impl ComDefaultValue {

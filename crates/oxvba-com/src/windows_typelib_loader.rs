@@ -1612,6 +1612,10 @@ fn vtable_slot_bound_from_cb_size_vft(cb_size_vft: u16) -> Option<u16> {
     Some(cb_size_vft / LIVE_VTABLE_STRIDE)
 }
 
+/// `PARAMFLAG_FLCID` — the parameter is a hidden `[lcid]` the vtable ABI injects
+/// (an `LCID`/`VT_I4` the COM caller passes, invisible at the VBA language level).
+#[cfg(target_os = "windows")]
+const PARAMFLAG_FLCID: u16 = 0x0004;
 /// `PARAMFLAG_FOPT` — the parameter is `[optional]`.
 #[cfg(target_os = "windows")]
 const PARAMFLAG_FOPT: u16 = 0x0010;
@@ -1644,6 +1648,12 @@ unsafe fn optional_param_default_for(
     is_optional: bool,
 ) -> OptionalParamDefault {
     let flags = param_desc.paramdesc.wparamflags;
+    // A hidden `[lcid]` parameter is never a guest argument: the vtable ABI injects
+    // it (an LCID/VT_I4) ahead of the `[out,retval]`. Classify it FIRST so it is
+    // always synthesized at the dispatch site and never consumes a supplied arg.
+    if (flags & PARAMFLAG_FLCID) != 0 {
+        return OptionalParamDefault::Lcid;
+    }
     if (flags & PARAMFLAG_FHASDEFAULT) != 0 {
         let pdex = param_desc.paramdesc.pparamdescex;
         if !pdex.is_null() {
@@ -1911,6 +1921,26 @@ struct PartnerInterfaceFacts {
     /// AV-safety bound: `cbSizeVft / size_of::<*const c_void>()` of the PARTNER
     /// interface (NOT the dispinterface, whose cbSizeVft=56 is just IDispatch).
     vtable_slot_bound: Option<u16>,
+    /// The partner INTERFACE member's REAL vtable-ABI parameter shape, when the
+    /// member was found on the partner (or its base chain). The dispinterface
+    /// FUNCDESC omits the hidden `[lcid]` and the `[out,retval]` pointer that the
+    /// partner vtable signature carries (e.g. `[propget, lcid]` `get_Build` is
+    /// `(this, LCID, long* pRet)` on the interface but appears param-less on the
+    /// dispinterface). The vtable marshaller MUST use the partner shape — calling
+    /// the dispinterface shape mis-places the retval pointer → host AV. `None` when
+    /// the member could not be matched on the partner; the caller then keeps the
+    /// dispinterface shape (no LCID member is affected — those are interface-only).
+    param_shape: Option<PartnerMemberParamShape>,
+}
+
+/// The partner INTERFACE member's vtable-ABI parameter shape (parallel vectors,
+/// already LCID/retval-aware via `extract_members_from_typeinfo`).
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+struct PartnerMemberParamShape {
+    parameter_types: Vec<TypeLibParamType>,
+    parameter_optional: Vec<bool>,
+    parameter_optional_defaults: Vec<OptionalParamDefault>,
+    return_type: Option<TypeLibParamType>,
 }
 
 /// Cross from a dual `dispinterface` ITypeInfo to its FDUAL PARTNER
@@ -2069,6 +2099,79 @@ unsafe fn member_ovft_with_source(
     member_ovft_by_name(disp_ti, name, invoke_kind)
 }
 
+/// Recover a member's REAL vtable-ABI parameter shape from the partner INTERFACE
+/// (searching the partner itself, then its base-interface chain). This is sourced
+/// from the INTERFACE FUNCDESC — which carries the hidden `[lcid]` param and the
+/// `[out,retval]` pointer the dispinterface FUNCDESC omits — so the marshaller
+/// passes the slot the arguments its vtable ABI actually expects. Returns `None`
+/// when the member is not found on the partner or its bases (the dispinterface
+/// face is NOT consulted here: its param shape is the wrong one to slot-call).
+/// AV-free: pure ITypeInfo reads via `extract_members_from_typeinfo`.
+///
+/// # Safety
+/// `partner_ti` must be a live ITypeInfo pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn partner_member_param_shape(
+    partner_ti: *mut c_void,
+    name: &str,
+    invoke_kind: TypeLibMemberInvokeKind,
+) -> Option<PartnerMemberParamShape> {
+    // Pull the param shape out of an already-extracted member (LCID/retval-aware).
+    let shape_from = |members: &[TypeLibMemberMetadata]| -> Option<PartnerMemberParamShape> {
+        members
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(name) && m.invoke_kind == invoke_kind)
+            .or_else(|| members.iter().find(|m| m.name.eq_ignore_ascii_case(name)))
+            .map(|m| PartnerMemberParamShape {
+                parameter_types: m.parameter_types.clone(),
+                parameter_optional: m.parameter_optional.clone(),
+                parameter_optional_defaults: m.parameter_optional_defaults.clone(),
+                return_type: m.return_type,
+            })
+    };
+
+    // 1. the partner INTERFACE's own funcs.
+    if let Ok(members) = extract_members_from_typeinfo(partner_ti)
+        && let Some(shape) = shape_from(&members)
+    {
+        return Some(shape);
+    }
+    // 2. walk the base-interface chain via impl-type index 0 (same path as the
+    //    oVft resolver), releasing each base after extracting from it.
+    let mut cur = partner_ti;
+    let mut owned_chain: Vec<*mut c_void> = Vec::new();
+    let mut result = None;
+    let mut depth = 0u32;
+    loop {
+        depth += 1;
+        if depth > 8 {
+            break; // guard against cycles.
+        }
+        let vtbl = *(cur as *const *const ITypeInfoVtbl);
+        let mut href: u32 = 0;
+        if ((*vtbl).get_ref_type_of_impl_type)(cur, 0, &mut href) != COM_S_OK {
+            break;
+        }
+        let mut base: *mut c_void = null_mut();
+        if ((*vtbl).get_ref_type_info)(cur, href, &mut base) != COM_S_OK || base.is_null() {
+            break;
+        }
+        owned_chain.push(base);
+        if let Ok(members) = extract_members_from_typeinfo(base)
+            && let Some(shape) = shape_from(&members)
+        {
+            result = Some(shape);
+            break;
+        }
+        cur = base;
+    }
+    for ti in owned_chain {
+        let ti_vtbl = *(ti as *const *const ITypeInfoVtbl);
+        ((*ti_vtbl).release)(ti);
+    }
+    result
+}
+
 /// Cross a live FDUAL `dispinterface` typeinfo to its PARTNER `TKIND_INTERFACE`
 /// and recover the facts needed to vtable-call `member_name`: the partner
 /// INTERFACE IID (to QI for), the member's recovered vtable SLOT (`oVft / 8` from
@@ -2103,6 +2206,11 @@ unsafe fn partner_interface_slot_facts(
     // recovers put_X's slot, NOT get_X's.
     let ovft = member_ovft_with_source(partner_ti, disp_ti, member_name, invoke_kind);
 
+    // Recover the member's REAL vtable-ABI param shape from the partner INTERFACE
+    // (carries the hidden `[lcid]` + `[out,retval]` the dispinterface FUNCDESC
+    // drops). Must be done while `partner_ti` is still live.
+    let param_shape = partner_member_param_shape(partner_ti, member_name, invoke_kind);
+
     // Release the partner ITypeInfo (the base chain released itself inside the
     // resolver).
     let partner_vtbl = *(partner_ti as *const *const ITypeInfoVtbl);
@@ -2118,6 +2226,7 @@ unsafe fn partner_interface_slot_facts(
         PartnerInterfaceFacts {
             interface_iid,
             vtable_slot_bound,
+            param_shape,
         },
     ))
 }
@@ -2198,6 +2307,17 @@ pub unsafe fn live_member_metadata_from_dispatch(
                 member.interface_iid = Some(facts.interface_iid);
                 member.vtable_slot_bound = facts.vtable_slot_bound;
                 member.source_typekind = Some(crate::SourceTypeKind::Interface);
+                // Replace the dispinterface param shape with the partner INTERFACE's
+                // real vtable-ABI shape (hidden `[lcid]` + `[out,retval]`-aware), so
+                // the marshaller passes the slot exactly the args its ABI expects.
+                // Without this, an `[lcid]` member (Excel `Application.Build`/
+                // `Version`) is slot-called with the wrong arity → host AV.
+                if let Some(shape) = facts.param_shape {
+                    member.parameter_types = shape.parameter_types;
+                    member.parameter_optional = shape.parameter_optional;
+                    member.parameter_optional_defaults = shape.parameter_optional_defaults;
+                    member.return_type = shape.return_type;
+                }
             }
             member
         });

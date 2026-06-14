@@ -1772,12 +1772,14 @@ fn vtable_gate_admits(
 }
 
 /// True when every declared parameter from `supplied_count..` (the ones the guest
-/// OMITTED) is a trailing optional the vtable dispatch site can synthesize: it has
-/// a typelib default ([`OptionalParamDefault::HasDefault`]) or is an optional
-/// VARIANT ([`OptionalParamDefault::OptionalVariant`]). A [`Required`] or an
-/// [`OptionalNoDefault`] in the missing tail — or a metadata source that carries
-/// no `parameter_optional_defaults` at all (fixture/catalog) — declines, so a
-/// member with no synthesis metadata keeps the pre-D3 exact-arity behavior.
+/// did not supply) is one the vtable dispatch site can synthesize: a typelib
+/// default ([`OptionalParamDefault::HasDefault`]), an optional VARIANT
+/// ([`OptionalParamDefault::OptionalVariant`]), or a hidden `[lcid]`
+/// ([`OptionalParamDefault::Lcid`], always synthesized with `LOCALE_NEUTRAL`). A
+/// [`Required`] or an [`OptionalNoDefault`] in the missing tail — or a metadata
+/// source that carries no `parameter_optional_defaults` at all (fixture/catalog)
+/// — declines, so a member with no synthesis metadata keeps the pre-D3
+/// exact-arity behavior.
 #[cfg(target_os = "windows")]
 fn trailing_optionals_are_synthesizable(
     spec: &crate::ComMemberSpec,
@@ -1794,15 +1796,18 @@ fn trailing_optionals_are_synthesizable(
                 rule,
                 crate::OptionalParamDefault::HasDefault(_)
                     | crate::OptionalParamDefault::OptionalVariant
+                    | crate::OptionalParamDefault::Lcid
             )
         })
 }
 
-/// Synthesize the trailing omitted positional arguments (declared order) for a
-/// vtable slot call: a `HasDefault` rule materializes its typelib default value, an
-/// `OptionalVariant` rule materializes a `VT_ERROR`/`DISP_E_PARAMNOTFOUND` Variant
-/// (the standard "missing optional" marshaling). Returns `None` if any missing
-/// entry is not synthesizable (the gate already proved otherwise, so this is a
+/// Synthesize the trailing arguments (declared order) the guest did not supply for
+/// a vtable slot call: a `HasDefault` rule materializes its typelib default value,
+/// an `OptionalVariant` rule materializes a `VT_ERROR`/`DISP_E_PARAMNOTFOUND`
+/// Variant (the standard "missing optional" marshaling), and an `Lcid` rule
+/// materializes `LOCALE_NEUTRAL` (0) as the hidden `[lcid]` the vtable ABI injects
+/// ahead of the `[out,retval]`. Returns `None` if any missing entry is not
+/// synthesizable (the gate already proved otherwise, so this is a
 /// belt-and-suspenders decline). The returned vector is appended AFTER the
 /// supplied args, before the marshaller's `[out,retval]` cell.
 #[cfg(target_os = "windows")]
@@ -1821,6 +1826,11 @@ fn synthesize_trailing_optional_args(
             }
             crate::OptionalParamDefault::OptionalVariant => {
                 synthesized.push(Variant::from_error_code(COM_DISP_E_PARAMNOTFOUND));
+            }
+            // LOCALE_NEUTRAL (0). The slot's LCID param is a `Long` in
+            // `parameter_types`, so the marshaller passes this as a VT_I4 by value.
+            crate::OptionalParamDefault::Lcid => {
+                synthesized.push(Variant::from_i32(0));
             }
             crate::OptionalParamDefault::Required
             | crate::OptionalParamDefault::OptionalNoDefault => return None,
