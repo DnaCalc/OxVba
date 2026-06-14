@@ -39,8 +39,11 @@ use std::path::PathBuf;
 
 use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::{Engine, HostConfig};
-use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::{self as sym, ProjectReference};
+
+// Re-exported so category files can name `Variant` in their own local differential
+// helpers (they `use common::*`).
+pub use oxvba_runtime::Variant;
 
 /// A late-bound run result: just the snapshot (or an error string).
 pub type LateRun = Result<Vec<Variant>, String>;
