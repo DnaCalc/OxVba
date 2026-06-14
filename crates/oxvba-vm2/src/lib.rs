@@ -97,7 +97,11 @@ impl Fault {
         }
     }
     fn from_hal(err: oxvba_hal::HalError) -> Self {
-        Fault::new(5, format!("{err:?}"))
+        // A COM dispatch fault carries the real VBA Err.Number it recovered from
+        // the underlying HRESULT/EXCEPINFO; absent one, fall back to VBA error 5
+        // ("invalid procedure call or argument").
+        let code = err.host_error_code.unwrap_or(5);
+        Fault::new(code, err.message)
     }
 }
 

@@ -137,6 +137,36 @@ impl ComInvokeFailure {
         map_com_hresult_label(self.hr.map(|hr| hr as u32), self.arg_err)
     }
 
+    /// The VBA `Err.Number` this COM dispatch failure should surface.
+    ///
+    /// Mirrors the standard OLE Automation contract: an `EXCEPINFO`-bearing
+    /// failure carries the VBA number directly (`wCode` when nonzero, otherwise
+    /// derived from `scode`); a plain `DISP_E_*`/`E_*` HRESULT maps through the
+    /// canonical automation table. See [`map_com_hresult_vba_number`].
+    pub fn vba_error_number(&self) -> i32 {
+        if let Some(excep) = &self.excep {
+            if let Some(wcode) = excep.wcode
+                && wcode != 0
+            {
+                return i32::from(wcode);
+            }
+            if let Some(scode) = excep.scode
+                && scode != 0
+            {
+                return automation_scode_to_vba_number(scode as u32);
+            }
+        }
+        map_com_hresult_vba_number(self.hr.map(|hr| hr as u32))
+    }
+
+    /// The COM-supplied `EXCEPINFO.bstrDescription`, when present — the text VBA
+    /// would surface as `Err.Description` (e.g. "Database already exists.").
+    pub fn vba_description(&self) -> Option<&str> {
+        self.excep
+            .as_ref()
+            .and_then(|excep| excep.description.as_deref())
+    }
+
     pub fn render(&self) -> String {
         let mut message = format!(
             "IDispatch::Invoke({} dispid={}) failed",
@@ -203,6 +233,56 @@ pub fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'st
         Some(_) => "native-failure",
         None => "fault-unspecified",
     }
+}
+
+/// Map a raw COM dispatch HRESULT to the VBA `Err.Number` the runtime should
+/// surface (the non-`EXCEPINFO` path).
+///
+/// This is the canonical OLE Automation mapping VBA itself applies when an
+/// `IDispatch::Invoke` returns a `DISP_E_*`/`E_*` failure that carries no
+/// raised-exception `EXCEPINFO`:
+///
+/// | HRESULT                          | scode        | VBA Err.Number |
+/// |----------------------------------|--------------|----------------|
+/// | `DISP_E_UNKNOWNNAME`             | `0x80020006` | 438            |
+/// | `DISP_E_MEMBERNOTFOUND`          | `0x80020003` | 438            |
+/// | `DISP_E_BADPARAMCOUNT`           | `0x8002000E` | 450            |
+/// | `DISP_E_PARAMNOTFOUND`           | `0x80020004` | 449            |
+/// | `DISP_E_TYPEMISMATCH`            | `0x80020005` | 13             |
+/// | `DISP_E_OVERFLOW`                | `0x8002000A` | 6              |
+/// | `E_NOINTERFACE`                  | `0x80004002` | 430            |
+/// | FACILITY_CONTROL (`0x800Axxxx`)  | —            | `scode & 0xFFFF` |
+/// | (anything else / none)           | —            | 5              |
+///
+/// A FACILITY_CONTROL automation HRESULT encodes the VBA number in its low word
+/// (e.g. `0x800A0C84` → `0x0C84` = 3204, `0x800A01C9` → `0x01C9` = 457), which
+/// is why an `EXCEPINFO`-less server error still surfaces its real number.
+pub fn map_com_hresult_vba_number(hresult: Option<u32>) -> i32 {
+    let Some(hr) = hresult else {
+        return 5;
+    };
+    match hr {
+        0x8002_0006 | 0x8002_0003 => 438, // DISP_E_UNKNOWNNAME / DISP_E_MEMBERNOTFOUND
+        0x8002_000E => 450,               // DISP_E_BADPARAMCOUNT
+        0x8002_0004 => 449,               // DISP_E_PARAMNOTFOUND
+        0x8002_0005 => 13,                // DISP_E_TYPEMISMATCH
+        0x8002_000A => 6,                 // DISP_E_OVERFLOW
+        0x8000_4002 => 430,               // E_NOINTERFACE
+        _ => automation_scode_to_vba_number(hr),
+    }
+}
+
+/// Derive the VBA `Err.Number` from an SCODE/HRESULT, honoring the
+/// FACILITY_CONTROL automation convention (`0x800Axxxx` carries the VBA number
+/// in its low 16 bits). Any other code that is not a recognized FACILITY_CONTROL
+/// automation HRESULT falls back to 5 ("invalid procedure call or argument").
+fn automation_scode_to_vba_number(scode: u32) -> i32 {
+    // FACILITY_CONTROL automation HRESULTs are 0x800A0000..=0x800AFFFF: the low
+    // word is the literal VBA Err.Number the server raised.
+    if (0x800A_0000..=0x800A_FFFF).contains(&scode) {
+        return (scode & 0xFFFF) as i32;
+    }
+    5
 }
 
 #[cfg(target_os = "windows")]
@@ -2653,5 +2733,99 @@ mod gate_tests {
             !vtable_gate_admits(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
             "a Decimal-returning member must decline the vtable path"
         );
+    }
+}
+
+#[cfg(all(target_os = "windows", test))]
+mod vba_error_number_tests {
+    use super::{
+        ComInvokeExceptionInfo, ComInvokeFailure, automation_scode_to_vba_number,
+        map_com_hresult_vba_number,
+    };
+
+    fn excep_failure(scode: Option<i32>, wcode: Option<u16>) -> ComInvokeFailure {
+        ComInvokeFailure {
+            label: "method",
+            dispid: 0,
+            hr: Some(0x8002_0009u32 as i32), // DISP_E_EXCEPTION
+            arg_err: None,
+            excep: Some(ComInvokeExceptionInfo {
+                source: Some("Server".to_string()),
+                description: Some("Database already exists.".to_string()),
+                help_file: None,
+                help_context: None,
+                scode,
+                wcode,
+            }),
+            detail: None,
+        }
+    }
+
+    fn hresult_failure(hr: u32) -> ComInvokeFailure {
+        ComInvokeFailure {
+            label: "method",
+            dispid: 0,
+            hr: Some(hr as i32),
+            arg_err: None,
+            excep: None,
+            detail: None,
+        }
+    }
+
+    #[test]
+    fn facility_control_scode_low_word_is_the_vba_number() {
+        // 0x800A0C84 -> 0x0C84 = 3204 ("Database already exists.")
+        assert_eq!(automation_scode_to_vba_number(0x800A_0C84), 3204);
+        // 0x800A01C9 -> 0x01C9 = 457 (duplicate key in Scripting.Dictionary.Add)
+        assert_eq!(automation_scode_to_vba_number(0x800A_01C9), 457);
+        // 0x800A0009 -> 0x0009 = 9 (subscript out of range)
+        assert_eq!(automation_scode_to_vba_number(0x800A_0009), 9);
+    }
+
+    #[test]
+    fn non_facility_control_scode_falls_back_to_five() {
+        // A non-FACILITY_CONTROL HRESULT carries no VBA number → 5.
+        assert_eq!(automation_scode_to_vba_number(0x8007_0057), 5);
+    }
+
+    #[test]
+    fn hresult_table_maps_canonical_automation_codes() {
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_0003)), 438); // DISP_E_MEMBERNOTFOUND
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_0006)), 438); // DISP_E_UNKNOWNNAME
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_000E)), 450); // DISP_E_BADPARAMCOUNT
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_0004)), 449); // DISP_E_PARAMNOTFOUND
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_0005)), 13); // DISP_E_TYPEMISMATCH
+        assert_eq!(map_com_hresult_vba_number(Some(0x8002_000A)), 6); // DISP_E_OVERFLOW
+        assert_eq!(map_com_hresult_vba_number(Some(0x8000_4002)), 430); // E_NOINTERFACE
+        // FACILITY_CONTROL on the bare-HRESULT path also yields the low word.
+        assert_eq!(map_com_hresult_vba_number(Some(0x800A_0C84)), 3204);
+        // Default (unrecognized / unspecified) → 5.
+        assert_eq!(map_com_hresult_vba_number(Some(0x8000_FFFF)), 5);
+        assert_eq!(map_com_hresult_vba_number(None), 5);
+    }
+
+    #[test]
+    fn excepinfo_scode_takes_priority_over_dispe_exception_hresult() {
+        // DISP_E_EXCEPTION (0x80020009) carries the real number in EXCEPINFO.scode.
+        let failure = excep_failure(Some(0x800A_0C84u32 as i32), None);
+        assert_eq!(failure.vba_error_number(), 3204);
+        assert_eq!(failure.vba_description(), Some("Database already exists."));
+    }
+
+    #[test]
+    fn excepinfo_nonzero_wcode_wins() {
+        // A nonzero wCode is the VBA number directly; scode is then ignored.
+        let failure = excep_failure(Some(0x800A_0C84u32 as i32), Some(457));
+        assert_eq!(failure.vba_error_number(), 457);
+    }
+
+    #[test]
+    fn member_not_found_hresult_surfaces_438() {
+        assert_eq!(hresult_failure(0x8002_0003).vba_error_number(), 438);
+    }
+
+    #[test]
+    fn unmapped_hresult_defaults_to_five() {
+        assert_eq!(hresult_failure(0x8007_0057).vba_error_number(), 5);
     }
 }

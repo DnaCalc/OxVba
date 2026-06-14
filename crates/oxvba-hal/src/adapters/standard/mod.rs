@@ -1092,6 +1092,10 @@ impl StandardHostServices {
     #[cfg(target_os = "windows")]
     fn com_dispatch_invoke_fault(&self, failure: ComInvokeFailure) -> HalError {
         let label = failure.classification_label();
+        // Recover the real VBA Err.Number (and description) the COM server
+        // raised before `failure` is consumed by `render()`.
+        let vba_error_number = failure.vba_error_number();
+        let vba_description = failure.vba_description().map(str::to_string);
         let mut suffix = String::new();
         if let Some(hr) = failure.hr {
             suffix.push_str(&format!("hresult=0x{:08X};", hr as u32));
@@ -1109,12 +1113,23 @@ impl StandardHostServices {
         } else {
             format!("com-dispatch-{label};{suffix}")
         };
+        let rendered = failure.render();
+        // Prefer the server's EXCEPINFO description as the human-facing message
+        // (the text VBA surfaces as Err.Description); keep the classified detail
+        // appended so the diagnostic trail is intact.
+        let message = match vba_description {
+            Some(description) if !description.is_empty() => {
+                format!("{description} [{prefix} {rendered}]")
+            }
+            _ => format!("{prefix} {rendered}"),
+        };
         HalError::adapter_fault(
             self.profile,
             CapabilityId::ComActivationDispatch,
             "dispatch_invoke",
-            format!("{prefix} {}", failure.render()),
+            message,
         )
+        .with_host_error_code(vba_error_number)
     }
 
     fn controlled_dispatch_exception_fault(&self, dispid: i32) -> HalError {

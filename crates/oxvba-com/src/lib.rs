@@ -119,7 +119,7 @@ pub use windows_invoke::{
     invoke_dispatch_legacy_i32_result_positional, invoke_dispatch_variant,
     invoke_dispatch_variant_with_shared_state, invoke_member_spec_legacy_i32_result,
     invoke_member_spec_variant, invoke_member_spec_variant_with_shared_state,
-    map_com_hresult_label, take_excepinfo,
+    map_com_hresult_label, map_com_hresult_vba_number, take_excepinfo,
 };
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{

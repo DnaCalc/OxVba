@@ -143,6 +143,7 @@ pub(crate) fn project_not_found(
         capability: CapabilityId::ProjectCatalog,
         operation,
         message: format!("project `{project_name}` was not found"),
+        host_error_code: None,
     }
 }
 
@@ -157,6 +158,7 @@ pub(crate) fn project_reference_unresolved(
         capability: CapabilityId::ProjectReferenceProvider,
         operation: "resolve_reference",
         message: format!("reference `{referenced_name}` could not be resolved"),
+        host_error_code: None,
     }
 }
 

@@ -24,6 +24,15 @@ pub struct HalError {
     pub capability: CapabilityId,
     pub operation: &'static str,
     pub message: String,
+    /// The host-domain numeric error code this fault should surface to the
+    /// embedder, when one is known.
+    ///
+    /// For COM dispatch faults this is the real VBA `Err.Number` derived from
+    /// the underlying HRESULT / `EXCEPINFO` (e.g. 457 for a duplicate-key
+    /// `Scripting.Dictionary.Add`). It is `None` for faults that have no
+    /// host-specific number, in which case the VM falls back to VBA error 5
+    /// ("invalid procedure call or argument").
+    pub host_error_code: Option<i32>,
 }
 
 impl HalError {
@@ -39,6 +48,7 @@ impl HalError {
             capability,
             operation,
             message: "capability is not supported by active HAL profile".to_string(),
+            host_error_code: None,
         }
     }
 
@@ -54,6 +64,7 @@ impl HalError {
             capability,
             operation,
             message: "operation blocked by host policy".to_string(),
+            host_error_code: None,
         }
     }
 
@@ -70,7 +81,16 @@ impl HalError {
             capability,
             operation,
             message: message.into(),
+            host_error_code: None,
         }
+    }
+
+    /// Attach a host-domain numeric error code (e.g. a VBA `Err.Number`
+    /// recovered from a COM dispatch failure) to this fault.
+    #[must_use]
+    pub fn with_host_error_code(mut self, code: i32) -> Self {
+        self.host_error_code = Some(code);
+        self
     }
 
     pub fn unsupported_profile(
@@ -85,6 +105,7 @@ impl HalError {
             capability,
             operation,
             message: "operation is not implemented for the active profile".to_string(),
+            host_error_code: None,
         }
     }
 }
