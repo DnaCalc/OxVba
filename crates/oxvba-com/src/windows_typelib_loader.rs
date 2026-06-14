@@ -738,6 +738,17 @@ unsafe fn typedesc_to_param_type(
 ) -> TypeLibParamType {
     if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
         let inner = &*(tdesc.union_field as *const TYPEDESC);
+        // A `VARIANT` is ALWAYS pointer-transported in a vtable/dual ABI: even an
+        // `[in]` VARIANT param is declared `VARIANT*`. So the single `VT_PTR →
+        // VT_VARIANT` indirection of an `[in]` param is the NORMAL transport, not an
+        // extra by-ref level — classify it as the by-value `Variant` shape the
+        // marshaller already handles (allocate a heap VARIANT, pass its pointer).
+        // Only a genuine `[out]/[in,out]` VARIANT* (the caller's `is_byref`, sourced
+        // from PARAMFLAG_FOUT) stays `ByRefVariant`. Other pointees keep the existing
+        // "an outer pointer means by-ref" rule (a scalar `[in] long*` IS by-ref).
+        if inner.vt == VT_VARIANT && !is_byref {
+            return TypeLibParamType::Variant;
+        }
         return typedesc_to_param_type(owner_ptinfo, inner, true);
     }
 
@@ -1966,7 +1977,121 @@ unsafe fn extract_members_from_typeinfo(
 
         ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
     }
+
+    // FDUAL DISPINTERFACE-FACE CROSSING (mirrors `live_member_metadata_from_dispatch`'s
+    // slice-B patching, but for the TYPELIB-BIND path). When the bound typeinfo is the
+    // dual's DISPINTERFACE face (`is_dual && TKIND_DISPATCH`), the members above carry
+    // `vtable_slot = None` / `source_typekind = Dispatch` because a dispinterface FUNCDESC's
+    // `oVft` is authored for the FDUAL PARTNER interface — not the 7-slot dispinterface
+    // vtable. A directly-typelib-bound dual object (e.g. `Dim d As Scripting.Dictionary`)
+    // therefore never recovered a callable slot and always fell back to IDispatch, even
+    // though the partner INTERFACE vtable is fully real (the `com_vtable_probe`
+    // `probe_scripting_dictionary_vtable_eligibility` proved Dictionary's partner
+    // `{42C642C1-…}` has cbSizeVft=176 / 22 scrrun.dll-backed slots). Cross to that partner
+    // and patch each member's slot/IID/bound/typekind/param-shape so the vtable gate admits
+    // it — exactly as the live `::<invoke-result>` recovery path does for DAO sub-objects.
+    #[cfg(target_arch = "x86_64")]
+    if is_dual && typekind == TKIND_DISPATCH {
+        // SAFETY: `ptinfo` is the live dispinterface ITypeInfo for this whole function;
+        // the enrichment only performs AV-free ITypeInfo reads (the single partner
+        // crossing + GetTypeAttr/GetFuncDesc), releasing every reference it acquires.
+        unsafe { enrich_dual_dispinterface_members(ptinfo, &mut members) };
+    }
+
     Ok(members)
+}
+
+/// Patch a dual DISPINTERFACE face's members with the partner INTERFACE facts the
+/// vtable gate needs (slot / IID / AV-bound / `Interface` typekind / real param shape).
+/// Crosses to the FDUAL partner ONCE (vs `partner_interface_slot_facts`'s per-member
+/// crossing) and reuses the open partner ITypeInfo for every member's oVft + param-shape
+/// recovery, so a directly-typelib-bound dual (e.g. `Scripting.Dictionary`) recovers
+/// callable slots without N redundant crossings. Members that already carry a slot, or
+/// whose member is absent on every partner face, are left untouched. AV-free.
+///
+/// # Safety
+/// `disp_ti` must be a live dispinterface ITypeInfo pointer for the duration of the call.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn enrich_dual_dispinterface_members(
+    disp_ti: *mut c_void,
+    members: &mut [TypeLibMemberMetadata],
+) {
+    let Some(partner_ti) = cross_to_partner_interface(disp_ti) else {
+        return;
+    };
+    // Read the partner INTERFACE's IID + cbSizeVft-derived AV-bound ONCE (the bound MUST
+    // come from the partner, NOT the dispinterface whose cbSizeVft=56 is just IDispatch).
+    let partner_vtbl = *(partner_ti as *const *const ITypeInfoVtbl);
+    let mut pattr: *mut TYPEATTR = null_mut();
+    let attrs = if ((*partner_vtbl).get_type_attr)(partner_ti, &mut pattr) == COM_S_OK
+        && !pattr.is_null()
+    {
+        let iid = crate::ComInterfaceIid::from_guid(&(*pattr).guid);
+        let bound = vtable_slot_bound_from_cb_size_vft((*pattr).cb_size_vft);
+        ((*partner_vtbl).release_type_attr)(partner_ti, pattr);
+        Some((iid, bound))
+    } else {
+        None
+    };
+
+    if let Some((interface_iid, vtable_slot_bound)) = attrs
+        && !interface_iid.is_null()
+    {
+        // SLOT-SELECTION SAFETY: the typelib-bind spec lookup
+        // (`member_spec_from_typelib_metadata`) keys by memid (`token`) ALONE — when a
+        // read/write property exposes get/put/putref FUNCDESCs that SHARE a memid
+        // (Scripting `Item`, `Key`, `CompareMode`), a token-only `.find` cannot tell
+        // which invoke-kind's spec it returns, so it could hand a GET request the PUT
+        // FUNCDESC's slot (or vice-versa) and slot-call the WRONG ABI → a corrupt value.
+        // Only enrich members whose memid is UNIQUE in this face; a shared-memid member
+        // keeps `vtable_slot = None` and dispatches via IDispatch-by-dispid (always
+        // correct). This caps the typelib-bind vtable fast path at unambiguous members
+        // (Count/Add/Exists/Items/Keys/Remove on Dictionary); get/put-paired properties
+        // remain a flagged follow-up (they need invoke-kind-aware spec selection).
+        let mut memid_counts: std::collections::HashMap<i32, u32> =
+            std::collections::HashMap::new();
+        for member in members.iter() {
+            *memid_counts.entry(member.token).or_insert(0) += 1;
+        }
+        for member in members.iter_mut() {
+            if member.vtable_slot.is_some() {
+                continue;
+            }
+            if memid_counts.get(&member.token).copied().unwrap_or(0) > 1 {
+                continue;
+            }
+            // Resolve the member's oVft from whichever face describes it (partner
+            // INTERFACE, its base chain, or the dispinterface face), disambiguating a
+            // read/write property's get/put/putref FUNCDESCs by `invoke_kind`.
+            let Some(ovft) =
+                member_ovft_with_source(partner_ti, disp_ti, &member.name, member.invoke_kind)
+            else {
+                continue;
+            };
+            let Some(slot) = vtable_slot_index_from_ovft(ovft) else {
+                continue;
+            };
+            member.vtable_slot = Some(slot);
+            member.interface_iid = Some(interface_iid);
+            member.vtable_slot_bound = vtable_slot_bound;
+            member.source_typekind = Some(crate::SourceTypeKind::Interface);
+            // Replace the dispinterface param shape with the partner INTERFACE's real
+            // vtable-ABI shape (hidden `[lcid]` + `[out,retval]`-aware) so the marshaller
+            // passes the slot the args its ABI actually expects.
+            if let Some(shape) =
+                partner_member_param_shape(partner_ti, &member.name, member.invoke_kind)
+            {
+                member.parameter_types = shape.parameter_types;
+                member.parameter_optional = shape.parameter_optional;
+                member.parameter_optional_defaults = shape.parameter_optional_defaults;
+                member.return_type = shape.return_type;
+            }
+        }
+    }
+
+    // Release the partner ITypeInfo (the base chain released itself inside the resolvers).
+    let partner_vtbl = *(partner_ti as *const *const ITypeInfoVtbl);
+    ((*partner_vtbl).release)(partner_ti);
 }
 
 // The vtable fast path never calls a slot on the raw IDispatch pointer: it

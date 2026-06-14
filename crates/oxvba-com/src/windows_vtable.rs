@@ -444,6 +444,22 @@ where
         // VT_VARIANT [in] by reference: marshal the value into a heap VARIANT and
         // pass its pointer; we VariantClear it after the call.
         P::Variant => {
+            // HOST-AV SAFETY: an OBJECT inside the `[in]` VARIANT is NOT v1-safe here.
+            // The `add_ref_noop` below places the IDispatch into the cell WITHOUT an
+            // AddRef, yet post-call `free_inbound` does `VariantClear` (which Releases
+            // it) — a net under-ref that can free a still-referenced server object and
+            // leave a dangling pointer (a later read of that object then AVs the host,
+            // e.g. `d.Add "k", obj` then `d("k")`). A correct fix needs the VARIANT cell
+            // to AddRef the object it borrows; until then decline object-bearing VARIANT
+            // args to the proven IDispatch path (which retains correctly). Scalar /
+            // string / numeric VARIANTs carry no reference and stay vtable-safe.
+            if matches!(value, ComValue::Object(_)) {
+                return Err(
+                    "vtable [in] VARIANT carrying an object is not v1-safe (refcount); \
+                     use the IDispatch fallback"
+                        .to_string(),
+                );
+            }
             // SAFETY: an all-zero VARIANT is a valid VT_EMPTY VARIANT.
             let mut cell: Box<VARIANT> = Box::new(unsafe { std::mem::zeroed() });
             let mut add_ref_noop = |_dispatch: *mut c_void| {};
