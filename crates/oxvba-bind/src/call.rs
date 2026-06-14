@@ -670,8 +670,15 @@ impl<'a> ProcLower<'a> {
         let Some(base) = target.index_base() else {
             return Ok(None);
         };
+        // A member-qualified indexed property put — `recv.Prop(index…) = rhs`. For a
+        // COM / cross-project / late-bound receiver this is a parameterised
+        // Property Let/Set: the accessor takes the index arguments followed by the
+        // assigned value. (P2 `d.Item(k)=v`, P5 `d.Key(o)=n`, P6 `Set d.Item(k)=obj`.)
+        if base.kind() == SyntaxKind::MemberExpr {
+            return self.bind_member_indexed_property_let(target, base, kind, rhs);
+        }
         if base.kind() != SyntaxKind::IdentExpr {
-            return Ok(None); // a member-qualified indexed property is a place store path
+            return Ok(None); // any other base shape is a place store path
         }
         let Some(name) = base.ident_name_token().map(|t| t.text) else {
             return Ok(None);
@@ -710,6 +717,74 @@ impl<'a> ProcLower<'a> {
             callee: CoreCallee::VbaProc { proc: proc_id },
             args,
         })]))
+    }
+
+    /// `recv.Prop(index…) = rhs` — a member-qualified indexed Property Let/Set on a
+    /// COM / cross-project / late-bound receiver. The accessor is called with the
+    /// bound index arguments followed by the assigned value as its trailing
+    /// parameter (the `[propput]`/`[propputref]` value). `kind` is `PropertyLet`
+    /// for a `Let`/value assignment and `PropertySet` for a `Set` (the latter
+    /// routes to PROPERTYPUTREF at the HAL). Returns `None` when the member is not
+    /// such a property (the caller falls back to a place store).
+    fn bind_member_indexed_property_let(
+        &mut self,
+        target: SyntaxNode<'_>,
+        base: SyntaxNode<'_>,
+        kind: ProjectMemberKind,
+        rhs: &CoreValue,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        let Some(member) = base.member_name_token().map(|t| t.text) else {
+            return Ok(None);
+        };
+        let recv = self.member_receiver_bound(base)?;
+        // The index argument list lives on the enclosing IndexExpr (`target`).
+        let arglist = target.index_arg_list();
+        match self.resolve_member(&recv.ty, member, Some(kind)) {
+            // A typed COM receiver: dispatch the put/set by dispid with the index
+            // args (ByRef per the typelib) followed by the value.
+            Some(Binding {
+                route:
+                    DispatchRoute::ComMember {
+                        dispid,
+                        param_by_ref,
+                        ..
+                    },
+                ..
+            }) => {
+                let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
+                args.push(CoreArg::ByVal(rhs.clone()));
+                Ok(Some(vec![CoreStmt::Eval(
+                    self.early_com_call(dispid, kind, recv.value, args),
+                )]))
+            }
+            // A cross-project coclass property: late dispatch by name, index args
+            // coerced to the published param types, then the value.
+            Some(Binding {
+                route:
+                    DispatchRoute::ExternMember {
+                        member: m,
+                        param_types,
+                        ..
+                    },
+                ..
+            }) => {
+                let mut args = self.bind_extern_args(arglist, &param_types)?;
+                args.push(CoreArg::ByVal(rhs.clone()));
+                Ok(Some(vec![CoreStmt::Eval(
+                    self.late_member_call(&m, kind, recv.value, args),
+                )]))
+            }
+            // An untyped / foreign receiver: a late-bound indexed property put.
+            None if self.is_late_bound_receiver(&recv.ty) => {
+                let mut args = self.bind_args(arglist, None)?;
+                args.push(CoreArg::ByVal(rhs.clone()));
+                Ok(Some(vec![CoreStmt::Eval(
+                    self.late_member_call(member, kind, recv.value, args),
+                )]))
+            }
+            // A project member or a plain field/method member → a place store path.
+            _ => Ok(None),
+        }
     }
 
     /// Arguments for a project `VbaProc`: named args are reordered into their
@@ -1107,18 +1182,34 @@ impl<'a> ProcLower<'a> {
                     dispid,
                     member_kind,
                     ..
-                } => Ok(value_bound(
-                    self.early_com_call(*dispid, *member_kind, recv.value, Vec::new()),
-                    VarTypeRef::Variant,
-                )),
+                } => {
+                    // A bare member read is a Property Get (or a parameterless
+                    // method), never Let/Set: a get/put-sharing member can resolve
+                    // to its Let/Set variant by typelib order, so coerce a property
+                    // kind to Get for the read.
+                    let member_kind = match member_kind {
+                        ProjectMemberKind::Method => ProjectMemberKind::Method,
+                        _ => ProjectMemberKind::PropertyGet,
+                    };
+                    Ok(value_bound(
+                        self.early_com_call(*dispid, member_kind, recv.value, Vec::new()),
+                        VarTypeRef::Variant,
+                    ))
+                }
                 // A referenced coclass member: dispatch by name on the receiver,
                 // whose `bundle_id` selects the class table in the object's bundle.
                 DispatchRoute::ExternMember {
                     member: m, kind, ..
-                } => Ok(value_bound(
-                    self.late_member_call(m, *kind, recv.value, Vec::new()),
-                    VarTypeRef::Variant,
-                )),
+                } => {
+                    let kind = match kind {
+                        ProjectMemberKind::Method => ProjectMemberKind::Method,
+                        _ => ProjectMemberKind::PropertyGet,
+                    };
+                    Ok(value_bound(
+                        self.late_member_call(m, kind, recv.value, Vec::new()),
+                        VarTypeRef::Variant,
+                    ))
+                }
                 other => Err(BindError::Unsupported(format!(
                     ".{member} ({other:?} pending)"
                 ))),
@@ -1245,7 +1336,16 @@ impl<'a> ProcLower<'a> {
                     param_by_ref,
                     ..
                 } => {
-                    let (dispid, member_kind) = (*dispid, *member_kind);
+                    let dispid = *dispid;
+                    // A member call in VALUE context is a read: a property is fetched
+                    // through Property Get, never Let/Set. A get/put/putref-sharing
+                    // member (e.g. a dictionary's `Item`) can resolve to its Let/Set
+                    // variant by typelib order; coerce a property kind to Get so the
+                    // read dispatches PROPERTYGET, not a (write) PROPERTYPUT(REF).
+                    let member_kind = match member_kind {
+                        ProjectMemberKind::Method => ProjectMemberKind::Method,
+                        _ => ProjectMemberKind::PropertyGet,
+                    };
                     // Emit ByRef for the typelib's [out]/[in,out] params.
                     let by_ref = param_by_ref.clone();
                     let method_args = self.bind_args_byref(arglist, &by_ref)?;
@@ -1262,9 +1362,16 @@ impl<'a> ProcLower<'a> {
                     param_types,
                     ..
                 } => {
+                    // A value-context member call is a read: coerce a property
+                    // Let/Set kind to Get (a get/put-sharing member could resolve
+                    // to its writer variant by surface order).
+                    let kind = match kind {
+                        ProjectMemberKind::Method => ProjectMemberKind::Method,
+                        _ => ProjectMemberKind::PropertyGet,
+                    };
                     let method_args = self.bind_extern_args(arglist, param_types)?;
                     Ok(value_bound(
-                        self.late_member_call(m, *kind, recv.value, method_args),
+                        self.late_member_call(m, kind, recv.value, method_args),
                         VarTypeRef::Variant,
                     ))
                 }
@@ -1369,7 +1476,7 @@ impl<'a> ProcLower<'a> {
     }
 
     /// Build an early-bound COM dispatch (`recv.member` by dispid), receiver arg0.
-    fn early_com_call(
+    pub(crate) fn early_com_call(
         &self,
         dispid: i32,
         kind: ProjectMemberKind,

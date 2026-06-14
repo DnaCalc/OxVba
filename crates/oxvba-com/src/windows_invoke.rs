@@ -1405,6 +1405,45 @@ where
     )
 }
 
+/// Re-flavor a resolved member spec as a property put / put-ref when the call
+/// site carries that hint. A get/put-sharing dispid resolves to a single
+/// (typically GET) spec; a `CompareMode = x` / `Set Item(k) = obj` request must
+/// still dispatch a PROPERTYPUT / PROPERTYPUTREF. Overriding `invoke_kind` (and
+/// forcing `requires_argument`, since a put always supplies the value) keeps the
+/// existing put marshaling in `invoke_member_spec_variant` (which keys off
+/// `spec.invoke_kind`) honest. A method / get hint (or none) leaves the spec as
+/// resolved.
+#[cfg(target_os = "windows")]
+fn apply_put_hint(
+    mut spec: crate::ComMemberSpec,
+    hint: Option<crate::ComInvokeKind>,
+) -> crate::ComMemberSpec {
+    let put_kind = match hint {
+        Some(crate::ComInvokeKind::PropertyPut) => crate::TypeLibMemberInvokeKind::PropertyPut,
+        Some(crate::ComInvokeKind::PropertyPutRef) => {
+            crate::TypeLibMemberInvokeKind::PropertyPutRef
+        }
+        _ => return spec,
+    };
+    spec.invoke_kind = put_kind;
+    spec.requires_argument = true;
+    // The resolved spec describes the GET (the get/put-sharing dispid's canonical
+    // member): its `vtable_slot` / `parameter_types` / `parameter_names` /
+    // `return_type` are the GET's, not the PUT's. Calling the GET slot as a PUT
+    // would be a slot mismatch, so clear the slot to decline the vtable fast path;
+    // the IDispatch PROPERTYPUT path dispatches the put correctly by dispid alone.
+    spec.vtable_slot = None;
+    // The PUT carries the GET's index params PLUS a trailing implicit value param
+    // the GET's metadata does not enumerate. Clearing the parameter metadata skips
+    // the `canonicalize_member_known_args` arity check (which would reject the value
+    // arg as one-too-many) and lets the IDispatch PROPERTYPUT path pass the
+    // positional `index… , value` list straight through.
+    spec.parameter_names.clear();
+    spec.parameter_types.clear();
+    spec.parameter_optional_defaults.clear();
+    spec
+}
+
 #[cfg(target_os = "windows")]
 #[allow(clippy::too_many_arguments)]
 pub fn execute_bound_variant<
@@ -1457,12 +1496,18 @@ where
             .ok_or_else(|| {
                 "default member identity unavailable for named late-bound dispatch".to_string()
             })?;
+        let spec = apply_put_hint(spec, request.invoke_kind_hint);
         return invoke_member_spec(dispid, &spec, args, &binding.prog_id_name);
     }
 
     if let Some((dispid, spec)) =
         resolve_member_dispid(effective_member.raw(), effective_cached_dispid)?
     {
+        // A property put/set on a get/put-sharing dispid resolves to the GET spec
+        // (one spec per dispid). Honor the call's put/set hint so the dispatch is a
+        // PROPERTYPUT / PROPERTYPUTREF, not the resolved GET — otherwise the write is
+        // silently demoted to a read and never takes effect.
+        let spec = apply_put_hint(spec, request.invoke_kind_hint);
         return invoke_member_spec(dispid, &spec, args, &binding.prog_id_name);
     }
 

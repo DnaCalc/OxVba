@@ -9,7 +9,7 @@ use oxvba_bundle::coreir::{
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
-use oxvba_symbol::binding::DispatchRoute;
+use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::model::fold_identifier;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
@@ -167,6 +167,36 @@ impl<'a> ProcLower<'a> {
                     Ok(Some(vec![CoreStmt::Eval(call)]))
                 };
                 match self.resolve_member(&recv.ty, member, Some(kind)) {
+                    // A typed COM receiver's property put/set: dispatch by dispid
+                    // (the same early-bound call shape as a COM method, with the RHS
+                    // as the single value argument). `kind` (Let → PropertyLet, Set →
+                    // PropertySet) selects PROPERTYPUT vs PROPERTYPUTREF at the HAL.
+                    Some(Binding {
+                        route: DispatchRoute::ComMember { dispid, .. },
+                        ..
+                    }) => {
+                        let call = self.early_com_call(
+                            dispid,
+                            kind,
+                            recv.value,
+                            vec![CoreArg::ByVal(val.value.clone())],
+                        );
+                        Ok(Some(vec![CoreStmt::Eval(call)]))
+                    }
+                    // A cross-project coclass property put/set: late dispatch by name
+                    // in the receiver's bundle.
+                    Some(Binding {
+                        route: DispatchRoute::ExternMember { member: m, .. },
+                        ..
+                    }) => {
+                        let call = self.late_member_call(
+                            &m,
+                            kind,
+                            recv.value,
+                            vec![CoreArg::ByVal(val.value.clone())],
+                        );
+                        Ok(Some(vec![CoreStmt::Eval(call)]))
+                    }
                     Some(binding) if is_property_route(&binding.route) => setter(self, recv.value),
                     // A field/method member → an l-value place store (handled upstream).
                     Some(_) => Ok(None),
@@ -1254,7 +1284,9 @@ impl<'a> ProcLower<'a> {
     }
 }
 
-/// True if a resolved route is a project property accessor (Get/Let/Set).
+/// True if a resolved route is a property accessor (Get/Let/Set) — a project
+/// member, an early-bound COM member, or a cross-project extern member. A
+/// property write goes through a setter call, not a place store.
 fn is_property_route(route: &DispatchRoute) -> bool {
     matches!(
         route,
@@ -1262,6 +1294,16 @@ fn is_property_route(route: &DispatchRoute) -> bool {
             kind: ProjectMemberKind::PropertyGet
                 | ProjectMemberKind::PropertyLet
                 | ProjectMemberKind::PropertySet
+        } | DispatchRoute::ComMember {
+            member_kind: ProjectMemberKind::PropertyGet
+                | ProjectMemberKind::PropertyLet
+                | ProjectMemberKind::PropertySet,
+            ..
+        } | DispatchRoute::ExternMember {
+            kind: ProjectMemberKind::PropertyGet
+                | ProjectMemberKind::PropertyLet
+                | ProjectMemberKind::PropertySet,
+            ..
         }
     )
 }
