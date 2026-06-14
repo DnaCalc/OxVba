@@ -351,6 +351,13 @@ pub trait ComHal: Send + Sync {
     fn enumerate_object(&self, _object: ObjectRef) -> HalResult<Vec<Variant>> {
         variant_companion_not_overridden(CapabilityId::ComActivationDispatch, "enumerate_object")
     }
+    /// The class/type name VBA's `TypeName` reports for a COM object — e.g.
+    /// `"Dictionary"` for a `Scripting.Dictionary`. `None` when the adapter
+    /// cannot determine it (no COM transport, or the object exposes no usable
+    /// type identity), in which case the caller keeps the generic `"Object"`.
+    fn object_type_name(&self, _object: ObjectRef) -> HalResult<Option<String>> {
+        Ok(None)
+    }
     fn dispatch_invoke_variant(&self, _request: &ComInvokeRequest) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,

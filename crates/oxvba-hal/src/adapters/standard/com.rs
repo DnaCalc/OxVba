@@ -352,6 +352,31 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
+    fn object_type_name(&self, object: ObjectRef) -> HalResult<Option<String>> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) || !self.policy.allow_com_activation {
+            // No COM access: caller keeps the generic "Object".
+            return Ok(None);
+        }
+        #[cfg(target_os = "windows")]
+        if self.native_com_enabled() {
+            self.ensure_thread_com_apartment("object_type_name")?;
+            return self
+                .com_bridge
+                .object_type_name(object)
+                .map_err(|message| self.com_dispatch_adapter_fault(message));
+        }
+        // Projection/deterministic path: report the ProgID's trailing segment when
+        // one is registered (e.g. a fixture object), else None.
+        let prog_id_name = projection_prog_id_name(self, &object)?;
+        Ok(prog_id_name.and_then(|name| {
+            name.rsplit('.')
+                .next()
+                .filter(|segment| !segment.is_empty())
+                .map(str::to_string)
+        }))
+    }
+
     fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
         let object = request.object.raw();
         let member = request.member.raw();

@@ -307,6 +307,10 @@ impl ComHal for RecordingHostServices {
         self.inner.com().enumerate_object(object)
     }
 
+    fn object_type_name(&self, object: ObjectRef) -> HalResult<Option<String>> {
+        self.inner.com().object_type_name(object)
+    }
+
     fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
         self.inner.com().dispatch_invoke_variant(request)
     }

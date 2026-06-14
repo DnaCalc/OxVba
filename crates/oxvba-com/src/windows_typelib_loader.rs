@@ -840,6 +840,45 @@ unsafe fn typeinfo_name(ptinfo: *mut c_void) -> Option<String> {
     bstr_to_string_and_free(name_bstr)
 }
 
+/// Read the short type name a live object reports for itself via
+/// `IDispatch::GetTypeInfo(0)` → `ITypeInfo::GetDocumentation(MEMBERID_NIL)`
+/// (BUG 5, `TypeName`). Returns `None` when the object exposes no type info
+/// (`GetTypeInfoCount == 0`, a failing `GetTypeInfo`, or no documented name) so
+/// the caller can fall back to another identity source. The ITypeInfo reference
+/// `GetTypeInfo` retains is released before returning.
+///
+/// # Safety
+/// `dispatch` must be a live `IDispatch` pointer for the duration of the call.
+#[cfg(target_os = "windows")]
+pub unsafe fn live_object_typeinfo_name(
+    dispatch: *mut crate::windows_client::RawIDispatch,
+) -> Option<String> {
+    if dispatch.is_null() {
+        return None;
+    }
+    // SAFETY: `dispatch` is a live IDispatch per this function's contract; its
+    // first field is the IDispatch vtable (RawIDispatchVtbl).
+    let vtbl = unsafe { (*dispatch).vtbl };
+    let mut ptinfo: *mut c_void = null_mut();
+    // SAFETY: `vtbl` came from the live dispatch above; GetTypeInfo writes a
+    // retained ITypeInfo* into `ptinfo` on success (lcid 0x0400 = LOCALE_SYSTEM).
+    let hr = unsafe { ((*vtbl).get_type_info)(dispatch.cast(), 0, 0x0400, &mut ptinfo) };
+    if hr != COM_S_OK || ptinfo.is_null() {
+        return None;
+    }
+    // SAFETY: `ptinfo` is the S_OK/non-null retained ITypeInfo from GetTypeInfo;
+    // `typeinfo_name` only reads its documentation and `release` below balances
+    // the one reference GetTypeInfo retained (it is not used afterward).
+    let name = unsafe { typeinfo_name(ptinfo) };
+    // SAFETY: `ptinfo` is the live retained ITypeInfo; its first field is the
+    // ITypeInfo vtable, and this Release balances GetTypeInfo's retained reference.
+    unsafe {
+        let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+        ((*ti_vtbl).release)(ptinfo);
+    }
+    name
+}
+
 // ── Typelib shape audit ──
 
 #[cfg(target_os = "windows")]

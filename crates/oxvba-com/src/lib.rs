@@ -170,6 +170,8 @@ pub use windows_test_dispatch::{
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub use windows_typelib_loader::live_member_metadata_from_dispatch;
 #[cfg(target_os = "windows")]
+pub use windows_typelib_loader::live_object_typeinfo_name;
+#[cfg(target_os = "windows")]
 pub use windows_variant::{
     VariantResultValue, set_variant_from_com_value, take_variant_result_value,
     take_variant_result_variant, variant_to_com_value, variant_to_variant_value,

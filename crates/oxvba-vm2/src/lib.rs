@@ -1332,7 +1332,35 @@ impl<'h> Vm<'h> {
     /// run the identical body, so a library function behaves the same however it is
     /// routed.
     fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Fault> {
+        // `TypeName` of an object is host-aware (BUG 5): the pure body cannot read
+        // a COM class name and a project instance's name lives in the bundle, so a
+        // bare `oxvba_lib::invoke` would return the generic "Object". Resolve the
+        // real name here, where both the host COM facet and the class table are in
+        // reach; every non-object subtype (numbers/strings/arrays/Nothing/etc.)
+        // and the unresolved-object fallback run the unchanged pure body.
+        if id == NativeImplId::TypeName
+            && let Some(arg) = argv.first()
+            && let Some(object) = arg.as_object_ref()
+            && let Some(name) = self.object_type_name(object)
+        {
+            return Ok(Variant::from_string(name));
+        }
         oxvba_lib::invoke(id, argv, self.host, &mut self.lib).map_err(Fault::from_lib)
+    }
+
+    /// The class/type name `TypeName` reports for an object handle, or `None` to
+    /// fall through to the pure library body (which yields "Object"). A project
+    /// instance reports its VBA class name (from its own bundle); a foreign COM
+    /// object is named by the host (`ComHal::object_type_name`).
+    fn object_type_name(&self, object: ObjectRef) -> Option<String> {
+        if object.is_project_instance() {
+            return self
+                .bundles
+                .get(object.bundle_id() as usize)
+                .and_then(|lb| lb.bundle.classes.get(object.route_key() as usize))
+                .map(|class| class.name.clone());
+        }
+        self.host.com().object_type_name(object).ok().flatten()
     }
 
     fn arg_object(&self, arg: Option<&CallArg>) -> Result<ObjectRef, Fault> {

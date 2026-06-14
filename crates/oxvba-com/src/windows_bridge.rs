@@ -293,6 +293,46 @@ impl WindowsComBridge {
         release_object_binding_shared(&self.state, object)
     }
 
+    /// The class/type name VBA `TypeName` reports for a bound COM object (BUG 5).
+    ///
+    /// The ProgID's trailing segment is the documented VBA answer for the common
+    /// activatable cases (`Scripting.Dictionary` → `"Dictionary"`,
+    /// `Excel.Application` → `"Application"`) and is reliable, so it is the
+    /// baseline. We then consult the live object's own short type name via
+    /// `IDispatch::GetTypeInfo(0)` / `GetDocumentation` and PREFER it only when it
+    /// matches that trailing segment — this keeps the answer authoritative when
+    /// the typeinfo agrees, while avoiding the `IFoo`-dual-interface-name divergence
+    /// (a typeinfo named `"IDictionary"` would otherwise regress `"Dictionary"`).
+    /// `None` when there is no binding to name.
+    pub fn object_type_name(&self, object: ObjectRef) -> Result<Option<String>, String> {
+        let (prog_id_name, dispatch) = {
+            let state = self.lock_state("object_type_name")?;
+            match state.bindings.get(&ComObjectToken::new(object.raw())) {
+                Some(binding) => (binding.prog_id_name.clone(), binding.native_dispatch),
+                None => return Ok(None),
+            }
+        };
+        let trailing = prog_id_name
+            .rsplit('.')
+            .next()
+            .filter(|segment| !segment.is_empty())
+            .map(str::to_string);
+        if dispatch != 0 {
+            // SAFETY: the bindings map owns one retained `IDispatch` reference for
+            // this handle (W1-com-009) and bindings are released only from the VM
+            // thread that is currently inside this call, so the pointer stays live
+            // for the GetTypeInfo lookup.
+            let typeinfo_name =
+                unsafe { crate::live_object_typeinfo_name(dispatch as *mut RawIDispatch) };
+            if let (Some(typeinfo_name), Some(trailing)) = (&typeinfo_name, &trailing)
+                && typeinfo_name.eq_ignore_ascii_case(trailing)
+            {
+                return Ok(Some(typeinfo_name.clone()));
+            }
+        }
+        Ok(trailing)
+    }
+
     /// # Safety
     /// The caller must ensure the current thread is COM-initialized before any native
     /// connection-point transport teardown performed by this release path.
