@@ -57,6 +57,14 @@ fn o2_dictionary_default_vs_explicit_item_identity() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // Add + d("k") get + d.Item("k") get = 3 eligible vtable calls.
+    // RED (flagged gaps, NOT a test over-spec; value is correct, no AV): (1) the two
+    // gets are `Item` (default-member + explicit), whose get/put/putref SHARE a memid,
+    // so the memid-only typelib-bind spec lookup declines them to IDispatch (see
+    // properties P1's note); (2) `d.Add "k", inner` carries an OBJECT inside the [in]
+    // VARIANT value arg, which the v1 vtable marshaller declines (object-in-VARIANT is
+    // not refcount-safe — windows_vtable.rs marshal_inbound_param; declining avoids a
+    // host AV). Currently vtable=0. Closing needs invoke-kind-aware spec selection AND
+    // AddRef-correct object-in-VARIANT marshalling (both structural follow-ups).
     assert_differential("O2", late, early, Some(do_run), find_verdict, 1, Some(3));
 }
 
@@ -77,6 +85,13 @@ fn o3_test_event_server_return_self_identity() {
     let early = run_clean_with_references_prefer_vtable(&tes_early(body), tes_ref());
     let do_run = run_clean_with_references_dispatch_only(&tes_early(body), tes_ref());
     // 2x ReturnSelfObject = 2 eligible vtable calls.
+    // RED (flagged DEFERRED gap — object-returning/object-arg vtable members, Bug-4b
+    // family; value is correct + identity holds on both transports, no AV): TES IS
+    // vtable-callable for SCALAR members (M7 `SumPair` → vtable=1, T6 edge-VT returns →
+    // vtable=5), but `ReturnSelfObject` is an OBJECT-returning member whose v1 vtable
+    // shape declines here, so both calls take IDispatch (vtable=0). The same object-as-
+    // COM-value v1 gap is flagged on M11 (object [in] arg) and O2 (object-in-VARIANT).
+    // Closing it needs the per-param/retval interface-IID FFI work, a deferred follow-up.
     assert_differential("O3", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 
@@ -98,6 +113,10 @@ fn o4_dictionary_arg_in_return_out_identity() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // Add + d("fs") get = 2 eligible vtable calls.
+    // RED (flagged gaps — same as O2; value correct, no AV): the `d("fs")` read is
+    // `Item` (shared memid → IDispatch), and `d.Add "fs", fso` carries an OBJECT in the
+    // [in] VARIANT value (declined as not refcount-safe in v1). Currently vtable=0.
+    // Closing needs invoke-kind-aware spec selection + object-in-VARIANT marshalling.
     assert_differential("O4", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 

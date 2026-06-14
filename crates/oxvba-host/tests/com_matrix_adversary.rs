@@ -272,6 +272,11 @@ fn a11_implicit_default_member_in_expression() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // 2 Add + 3 default-member gets (two in the sum, one in the concat) = 5.
+    // RED (flagged gap — see properties P1's note): the 2 Adds vtable-dispatch
+    // (unambiguous memid), but the 3 default-member `d("…")` gets are `Item`, whose
+    // get/put/putref SHARE a memid, so the memid-only typelib-bind spec lookup declines
+    // them to IDispatch (correct value — verdict 3). Currently vtable=2. Closing it needs
+    // invoke-kind-aware spec selection (a structural follow-up).
     assert_differential("A11", late, early, Some(do_run), find_verdict, 3, Some(5));
 }
 

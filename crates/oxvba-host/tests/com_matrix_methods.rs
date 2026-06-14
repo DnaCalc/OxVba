@@ -51,7 +51,9 @@ fn m1_dictionary_remove_all_void_then_count() {
 #[ignore = "live COM; run explicitly"]
 fn m2_dictionary_add_two_args_then_exists() {
     // Add "k",1 ; b1 = Exists("k") (True), b2 = Exists("z") (False).
-    // verdict = IIf(b1,1,0) + IIf(b2,0,2) = 1. Eligible: Add + 2x Exists = 3.
+    // verdict = IIf(b1,1,0) + IIf(b2,0,2) = 1 + 2 = 3 (b2 is False, so IIf(b2,0,2)
+    // takes the FALSE branch = 2 — the original `= 1` mis-computed this; both
+    // transports agree on 3, which is correct VBA). Eligible: Add + 2x Exists = 3.
     let body = "Dim verdict As Long\n\
          d.Add \"k\", 1\n\
          Dim b1 As Boolean\n\
@@ -62,7 +64,7 @@ fn m2_dictionary_add_two_args_then_exists() {
     let late = run_clean(&dict_late(body));
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
-    assert_differential("M2", late, early, Some(do_run), find_verdict, 1, Some(3));
+    assert_differential("M2", late, early, Some(do_run), find_verdict, 3, Some(3));
 }
 
 // ── M3 (P0): Dictionary Add named-args vs positional ─────────────────────────
@@ -99,6 +101,10 @@ fn m3_dictionary_add_named_vs_positional() {
     let late = run_clean(late_src);
     let early = run_clean_with_references_prefer_vtable(early_src, scripting_ref());
     // The named d2.Add is forced-IDispatch; d1.Add + d1("k") + d2("k") = 3 vtable.
+    // RED (flagged gap — see properties P1's note): only d1.Add vtable-dispatches; the
+    // two default-member `("k")` gets are `Item`, whose get/put/putref SHARE a memid, so
+    // the memid-only typelib-bind spec lookup declines them to IDispatch (correct
+    // value). Currently vtable=1. Closing it needs invoke-kind-aware spec selection.
     assert_differential("M3", late, early, None, find_verdict, 100, Some(3));
 }
 
@@ -108,7 +114,9 @@ fn m3_dictionary_add_named_vs_positional() {
 #[ignore = "live COM; run explicitly"]
 fn m4_fso_build_path_and_file_exists() {
     // Build a path from two strings; FileExists on a real temp file (True) and a
-    // ghost (False). verdict = IIf(exists1,1,0) + IIf(exists2,0,2) = 1.
+    // ghost (False). verdict = IIf(e1,1,0) + IIf(e2,0,2) = 1 + 2 = 3 (e2 is False, so
+    // IIf(e2,0,2) takes the FALSE branch = 2 — the original `= 1` mis-computed this;
+    // both transports agree on 3, which is correct VBA).
     let db = TempDbPath::new("m4_fso");
     // Write a real file (per leg) so FileExists is True in every differential leg.
     db.write_all_legs(b"x");
@@ -127,7 +135,7 @@ fn m4_fso_build_path_and_file_exists() {
     let early = run_clean_with_references_prefer_vtable(&fso_early(&body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&fso_early(&body), scripting_ref());
     // BuildPath + 2x FileExists = 3 eligible vtable calls.
-    assert_differential("M4", late, early, Some(do_run), find_verdict, 1, Some(3));
+    assert_differential("M4", late, early, Some(do_run), find_verdict, 3, Some(3));
 }
 
 // ── M5: Excel Workbooks.Add omitted-optional vs supplied ─────────────────────
@@ -311,6 +319,14 @@ fn m11_test_event_server_is_self_object_in_arg() {
     let early = run_clean_with_references_prefer_vtable(early_src, tes_ref());
     let do_run = run_clean_with_references_dispatch_only(early_src, tes_ref());
     // ReturnSelfObject + IsSelf = 2 eligible vtable calls.
+    // RED (flagged DEFERRED gap — Bug-4b, object-as-[in]-interface vtable arg): the
+    // value is correct on both transports (the differential passed) and ReturnSelfObject
+    // vtable-dispatches, but `IsSelf(selfRef)` carries an OBJECT [in] arg. The vtable
+    // marshaller's `P::Object` arm (windows_vtable.rs marshal_inbound_param) passes the
+    // raw IDispatch WITHOUT QueryInterface-ing to the param's declared interface IID, so
+    // the object-arg call declines to IDispatch (correct value, vtable=1 not 2). Closing
+    // it needs per-param GUID FFI (QI the arg to its declared IID) — the known deferred
+    // Bug-4b, left RED on purpose. Same root cause flagged on M10.
     assert_differential("M11", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 

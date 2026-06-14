@@ -131,6 +131,11 @@ fn t4_dictionary_every_scalar_vt_round_trip() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // 9 Add + 9 Item-get default-member reads = 18 eligible vtable calls.
+    // RED (flagged gap — see properties P1's note): the 9 Adds vtable-dispatch
+    // (unambiguous memid; scalar VARIANT values), but the 9 default-member `d("…")`
+    // reads are `Item`, whose get/put/putref SHARE a memid, so the memid-only
+    // typelib-bind spec lookup declines them to IDispatch (correct value — verdict 511).
+    // Currently vtable=9. Closing it needs invoke-kind-aware spec selection (structural).
     assert_differential("T4", late, early, Some(do_run), find_verdict, 511, Some(18));
 }
 
@@ -142,6 +147,17 @@ fn t5_dictionary_unicode_astral_bstr_round_trip() {
     // U+1F600 (surrogate pair, 2 UTF-16 code units) + an accented ASCII string.
     // verdict bits: 1 = astral value matches, 2 = Len(astral) = 2 (UTF-16 units),
     // 4 = Len("café") = 4. Expected = 7. The astral char is built with ChrW pairs.
+    //
+    // RED (flagged PRODUCT gap — surrogate-half / UTF-16 string representation, NOT a
+    // test bug): the test is authored CORRECTLY — `ChrW(&HD83D) & ChrW(&HDE00)` is the
+    // canonical VBA idiom for an astral char (two surrogate-half UTF-16 units, each
+    // < 65536; this is NOT an invalid astral-codepoint ChrW). But OxVba's `ChrW`
+    // (oxvba-lib pure.rs `wide_char`) decodes via `char::from_u32`, which REJECTS the
+    // surrogate range 0xD800..0xDFFF with "invalid character code" — the late leg fails
+    // before any differential. The root cause is structural: VBA strings are UTF-16 and
+    // CAN hold lone/paired surrogate units, whereas OxVba models strings as Rust `String`
+    // (Unicode scalar values), which cannot represent a lone surrogate. A faithful fix is
+    // a UTF-16 string representation — a substantial follow-up, left RED on purpose.
     let body = "Dim verdict As Long\n\
          Dim astral As String\n\
          astral = ChrW(&HD83D) & ChrW(&HDE00)\n\

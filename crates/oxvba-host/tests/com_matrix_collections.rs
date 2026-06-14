@@ -29,6 +29,11 @@ fn c1_dictionary_numeric_vs_string_key() {
     let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
     let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
     // 2 Add + 2 default-member gets = 4 eligible vtable calls.
+    // RED (flagged gap — see properties P1's note): the 2 Adds vtable-dispatch
+    // (unambiguous memid), but the 2 default-member gets are `Item`, whose
+    // get/put/putref SHARE a memid, so the memid-only typelib-bind spec lookup declines
+    // them to IDispatch (correct value — distinct numeric/string keys still sum to 300).
+    // Currently vtable=2. Closing it needs invoke-kind-aware spec selection (structural).
     assert_differential("C1", late, early, Some(do_run), find_verdict, 300, Some(4));
 }
 

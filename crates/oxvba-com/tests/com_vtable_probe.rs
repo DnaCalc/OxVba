@@ -3093,3 +3093,63 @@ fn bstr_of_variant(v: &VARIANT) -> Option<String> {
         Some(String::from_utf16_lossy(slice))
     }
 }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  SCRIPTING.DICTIONARY VTABLE-ELIGIBILITY PROBE (AV-free inspection)        ║
+// ║                                                                            ║
+// ║  ITEM 1 of the COM-matrix cleanup: the P1–P5 (and C1) Dictionary scenarios ║
+// ║  now produce the CORRECT value and pass the late==early differential, but  ║
+// ║  dispatch via IDispatch (vtable counter = 0). The question this probe       ║
+// ║  answers: is `Scripting.Dictionary`'s typeinfo even vtable-callable?        ║
+// ║                                                                            ║
+// ║  We reuse the AV-free `inspect_target` (GetTypeInfo(0) typekind / FDUAL /   ║
+// ║  cbSizeVft + QI matrix) and `inspect_partner_interface` (the canonical      ║
+// ║  GetRefTypeOfImplType(-1) → GetRefTypeInfo crossing to the FDUAL partner    ║
+// ║  TKIND_INTERFACE) used for DAO. If GetTypeInfo(0) yields a dispinterface     ║
+// ║  with NO FDUAL partner (no usable TKIND_INTERFACE / cbSizeVft), the object   ║
+// ║  is dispinterface-only and IDispatch is the CORRECT (only) transport.        ║
+// ║                                                                            ║
+// ║  Decisive lines to read in the dump:                                        ║
+// ║   - `[C/E] … typekind=… FDUAL=… cbSizeVft=…` on GetTypeInfo(0);              ║
+// ║   - `[1] dual-partner crossing via: …` (whether -1/0 reached a partner);    ║
+// ║   - `[2] INTERFACE typeinfo: … typekind=TKIND_INTERFACE … cbSizeVft=…`.     ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+#[test]
+#[ignore = "live Scripting; run explicitly; AV-free inspection of Dictionary vtable-eligibility"]
+fn probe_scripting_dictionary_vtable_eligibility() {
+    // SAFETY: STA matches the host (oxvba-hal/src/adapters/standard/mod.rs).
+    let hr_init = unsafe { CoInitializeEx(ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+    println!("CoInitializeEx(STA) hr=0x{:08X}", hr_init as u32);
+
+    let disp = match activate_dispatch_by_prog_id("Scripting.Dictionary") {
+        Ok(p) => p,
+        Err(e) if is_not_registered(&e) => {
+            println!("SKIP: Scripting.Dictionary not registered ({e})");
+            // SAFETY: balancing CoInitializeEx; no live COM objects remain.
+            unsafe { CoUninitialize() };
+            return;
+        }
+        Err(e) => {
+            // SAFETY: balancing CoInitializeEx.
+            unsafe { CoUninitialize() };
+            panic!("activate Scripting.Dictionary failed: {e}");
+        }
+    };
+
+    // (1) GetTypeInfo(0) typekind / FDUAL / cbSizeVft + QI matrix (no DAO IIDs).
+    inspect_target("Scripting.Dictionary", disp, &[]);
+
+    // (2) Attempt the canonical FDUAL-partner crossing + a bounded vtable walk for
+    //     the members the matrix exercises (Item/Add/Count/Exists/CompareMode/Key).
+    inspect_partner_interface(
+        "Scripting.Dictionary",
+        disp,
+        &["Item", "Add", "Count", "Exists", "CompareMode", "Key"],
+    );
+
+    io::stdout().flush().ok();
+    // SAFETY: `disp` is the activated IDispatch we own one ref on.
+    unsafe { release_dispatch(disp) };
+    // SAFETY: balancing CoInitializeEx.
+    unsafe { CoUninitialize() };
+}
