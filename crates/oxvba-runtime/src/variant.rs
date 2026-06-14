@@ -531,6 +531,22 @@ impl Variant {
         ))
     }
 
+    /// Build a `String` Variant DIRECTLY from raw UTF-16 code units, preserving any
+    /// lone/paired surrogate halves verbatim. Unlike [`from_string`] (which goes
+    /// through a Rust `&str`/`String` and so can only carry Unicode SCALAR values),
+    /// this is the faithful path for `ChrW(&HD83D)` and code-unit-level string
+    /// concatenation — VBA strings are UTF-16 sequences that may hold unpaired
+    /// surrogates, which a UTF-8 round-trip would replace with U+FFFD.
+    pub fn from_utf16_units(units: &[u16]) -> Self {
+        Self::from_string(BStr::from_utf16_units(units).expect("BSTR allocation should succeed"))
+    }
+
+    /// The String Variant's raw UTF-16 code units (none for a non-string), preserving
+    /// surrogate halves verbatim — the faithful counterpart to a lossy `as_str`.
+    pub fn string_units(&self) -> Option<Vec<u16>> {
+        self.string_core().map(|core| core.payload_units().to_vec())
+    }
+
     pub fn as_bstr(&self) -> Option<BStr> {
         if self.vtype() != VarType::String {
             return None;

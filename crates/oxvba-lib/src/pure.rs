@@ -14,7 +14,15 @@ use oxvba_runtime::{Variant, safe_array::SafeArray, variant::VarType};
 // ── Strings ──────────────────────────────────────────────────────────────────
 
 pub fn len(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vi32(as_str(need(args, 0)?)?.encode_utf16().count() as i32))
+    let value = need(args, 0)?;
+    // Count UTF-16 CODE UNITS (VBA's string length): read them directly off a String
+    // Variant's BSTR so a lone/paired surrogate half counts as one unit each (a UTF-8
+    // round-trip via `as_str` would fold a lone surrogate to U+FFFD). Non-strings coerce.
+    let units = match value.string_units() {
+        Some(units) => units.len(),
+        None => as_str(value)?.encode_utf16().count(),
+    };
+    Ok(vi32(units as i32))
 }
 
 fn chars(s: &str) -> Vec<char> {
@@ -391,11 +399,17 @@ fn wide_char(code: i32) -> LibResult<char> {
     char::from_u32(u32::from(value)).ok_or_else(|| LibError::invalid_call("invalid character code"))
 }
 
-/// `ChrW(code)` — genuine WIDE: the Unicode character whose code point is the
-/// argument's low 16 bits (negatives wrap, surrogates error).
+/// `ChrW(code)` — genuine WIDE: the single UTF-16 CODE UNIT whose value is the
+/// argument's low 16 bits (negatives wrap). Any `0..=65535` is valid — INCLUDING a
+/// lone surrogate half `0xD800..=0xDFFF` — because a VBA string is a UTF-16 code-unit
+/// sequence, not Unicode scalar values. Building the string directly from the unit
+/// (not via `char`) is what lets `ChrW(&HD83D) & ChrW(&HDE00)` form a real astral pair.
 pub fn chr_w(args: &[Variant]) -> LibResult<Variant> {
-    let ch = wide_char(as_i32(need(args, 0)?)?)?;
-    Ok(vstr(ch.to_string()))
+    let code = as_i32(need(args, 0)?)?;
+    if !(-32768..=65535).contains(&code) {
+        return Err(LibError::invalid_call("invalid character code"));
+    }
+    Ok(Variant::from_utf16_units(&[code as u16]))
 }
 
 /// `Chr(code)` — genuine ANSI: codes 0..=255 decode through the live system ANSI
@@ -424,12 +438,16 @@ pub fn chr(args: &[Variant]) -> LibResult<Variant> {
 /// `AscW(s)` — genuine WIDE: the first char's Unicode code point, returned as a VBA
 /// `Integer` (i16) so code points > 32767 come back negative (matching VBA AscW).
 pub fn asc_w(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
-    let ch = s
-        .chars()
-        .next()
-        .ok_or_else(|| LibError::invalid_call("AscW of empty string"))?;
-    Ok(vi32(i32::from((ch as u32 as u16) as i16)))
+    let value = need(args, 0)?;
+    // Read the first UTF-16 CODE UNIT directly (so `AscW(ChrW(n))` round-trips ANY
+    // 0..=65535, including a lone surrogate half a `char`-based read could not carry).
+    // The i16 wrap matches VBA: code points > 32767 come back negative.
+    let unit = match value.string_units() {
+        Some(units) => units.first().copied(),
+        None => as_str(value)?.encode_utf16().next(),
+    }
+    .ok_or_else(|| LibError::invalid_call("AscW of empty string"))?;
+    Ok(vi32(i32::from(unit as i16)))
 }
 
 /// `Asc(s)` — genuine ANSI: the first char's byte in the live system ANSI code page

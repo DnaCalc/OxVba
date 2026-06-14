@@ -275,11 +275,11 @@ fn widening_add(l: &Variant, r: &Variant) -> R {
         return Ok(Variant::null());
     }
     if l.vtype() == VarType::String && r.vtype() == VarType::String {
-        return Ok(Variant::from_string(format!(
-            "{}{}",
-            as_string(l),
-            as_string(r)
-        )));
+        // Code-unit concatenation (see `concat_units`) so a `+` over two strings
+        // preserves surrogate halves exactly, matching `&`.
+        let mut units = concat_units(l);
+        units.extend(concat_units(r));
+        return Ok(Variant::from_utf16_units(&units));
     }
     if l.vtype() == VarType::String || r.vtype() == VarType::String {
         return Ok(Variant::from_f64(num(l)? + num(r)?));
@@ -309,22 +309,29 @@ pub fn pow(l: &Variant, r: &Variant) -> R {
     numeric(l, r, |a, b| Ok(Variant::from_f64(a.powf(b))))
 }
 
+/// The operand's UTF-16 code units for concatenation: a String Variant's units are
+/// read VERBATIM off its BSTR (preserving lone/paired surrogate halves), while a
+/// non-string coerces through its VBA string form (which carries no surrogates).
+/// Concatenating at the code-unit level is what lets `ChrW(&HD83D) & ChrW(&HDE00)`
+/// form a real astral pair — a Rust-`String` round-trip would fold each half to U+FFFD.
+fn concat_units(v: &Variant) -> Vec<u16> {
+    v.string_units()
+        .unwrap_or_else(|| as_string(v).encode_utf16().collect())
+}
+
 /// VBA `&`: `Null & Null` is `Null`; otherwise `Null` acts as `""`.
 pub fn concat(l: &Variant, r: &Variant) -> R {
     if is_null(l) && is_null(r) {
         return Ok(Variant::null());
     }
-    let ls = if is_null(l) {
-        String::new()
-    } else {
-        as_string(l)
-    };
-    let rs = if is_null(r) {
-        String::new()
-    } else {
-        as_string(r)
-    };
-    Ok(Variant::from_string(format!("{ls}{rs}")))
+    let mut units = Vec::new();
+    if !is_null(l) {
+        units.extend(concat_units(l));
+    }
+    if !is_null(r) {
+        units.extend(concat_units(r));
+    }
+    Ok(Variant::from_utf16_units(&units))
 }
 
 // ── Comparison ────────────────────────────────────────────────────────────────
