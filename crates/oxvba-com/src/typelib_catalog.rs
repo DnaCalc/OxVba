@@ -258,6 +258,7 @@ pub(crate) fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> Com
         is_default_member: member.is_default_member,
         vtable_slot: member.vtable_slot,
         parameter_types: member.parameter_types.clone(),
+        parameter_iids: member.parameter_iids.clone(),
         parameter_optional_defaults: member.parameter_optional_defaults.clone(),
         return_type: member.return_type,
         callconv_is_stdcall: member.callconv_is_stdcall,

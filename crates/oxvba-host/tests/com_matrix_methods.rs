@@ -266,10 +266,13 @@ fn m9_dao_login_timeout_put_round_trip() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn m10_dao_fields_append_object_in_arg() {
-    // GAP 1: marshal_inbound_param P::Object passes IDispatch with NO QI to the
-    // declared param IID (windows_vtable.rs:437); ACE expects Field* -> AV if the QI
-    // is missing. Late (VT_DISPATCH) works; an early divergence indicts the missing
-    // QI. verdict = db.TableDefs("T2").Fields.Count = 1.
+    // FU#2 tail (Bug-4b bare-interface arg): `Fields.Append([in] Field*)` carries an
+    // object as a SPECIFIC interface. The vtable marshaller now types an `[in] IFoo*`
+    // param as `Object` (not `ByRefObject`), recovers its declared IID from the FUNCDESC,
+    // and QueryInterfaces the supplied object to it before passing — so the callee
+    // receives the `Field` vtable it expects (raw IDispatch would AV ACE). Late
+    // (VT_DISPATCH) and early agree on the value with no host AV. verdict =
+    // db.TableDefs("T2").Fields.Count = 1.
     let db = TempDbPath::new("m10_dao");
     let lit = db.as_vba_literal();
     let body = format!(

@@ -257,6 +257,9 @@ fn member_specs_from_typelib_metadata(
                     is_default_member: member.is_default_member,
                     vtable_slot: member.vtable_slot,
                     parameter_types: member.parameter_types.clone(),
+                    // Bug-4b: carry the per-parameter object-arg interface IIDs so the
+                    // vtable marshaller can QI each object arg to its declared interface.
+                    parameter_iids: member.parameter_iids.clone(),
                     // D3: carry the per-parameter omitted-optional synthesis rules
                     // so the vtable gate can admit a call that drops trailing
                     // optionals (with a default or a VARIANT) and the dispatch site
@@ -386,6 +389,14 @@ pub struct ComMemberSpec {
     /// Per-parameter VARTYPEs carried from the FUNCDESC, left-to-right (the
     /// `[out,retval]` parameter is surfaced as `return_type`, not here).
     pub parameter_types: Vec<TypeLibParamType>,
+    /// Per-parameter interface IID (parallel to `parameter_types`), `Some` only for an
+    /// OBJECT-typed `[in]` parameter declared as a specific interface (`IFoo*`). The
+    /// vtable marshaller `QueryInterface`s the supplied object for this exact IID before
+    /// passing it, so the callee receives the interface vtable it expects (passing a raw
+    /// `IDispatch` where `IFoo*` is declared would call the wrong vtable → host AV). An
+    /// empty vec, or a `None` entry, means "no recovered IID" and the vtable gate declines
+    /// that object arg to the IDispatch path. (Bug-4b: bare-interface `[in]` object arg.)
+    pub parameter_iids: Vec<Option<crate::ComInterfaceIid>>,
     /// Per-parameter (parallel to `parameter_types`) synthesis rule for an OMITTED
     /// trailing positional argument on the vtable slot path (D3). When the guest
     /// supplies fewer positionals than `parameter_types.len()`, the vtable gate
@@ -653,6 +664,7 @@ mod tests {
                 parameter_optional_defaults: Vec::new(),
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::String],
+                parameter_iids: Vec::new(),
                 return_type: Some(TypeLibParamType::Long),
                 callconv_is_stdcall: true,
                 is_dual: true,
@@ -727,6 +739,7 @@ mod tests {
                 parameter_optional_defaults: Vec::new(),
                 is_default_member: false,
                 parameter_types: vec![TypeLibParamType::String],
+                parameter_iids: Vec::new(),
                 return_type: Some(TypeLibParamType::Long),
                 callconv_is_stdcall: true,
                 is_dual: true,

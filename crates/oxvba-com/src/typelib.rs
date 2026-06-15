@@ -272,6 +272,13 @@ pub struct TypeLibMemberMetadata {
     pub parameter_optional_defaults: Vec<OptionalParamDefault>,
     pub is_default_member: bool,
     pub parameter_types: Vec<TypeLibParamType>,
+    /// Per-parameter interface IID (parallel to `parameter_types`), `Some` only for an
+    /// OBJECT-typed parameter declared as a specific interface (`IFoo*`). Recovered from
+    /// the FUNCDESC param `TYPEDESC` (`VT_PTR`/`VT_USERDEFINED` → `GetRefTypeInfo` →
+    /// `GetTypeAttr` → guid). Empty for fixture/catalog metadata. Surfaced onto
+    /// [`crate::ComMemberSpec::parameter_iids`] so the vtable marshaller can `QueryInterface`
+    /// an object arg to its declared interface before passing it (Bug-4b).
+    pub parameter_iids: Vec<Option<ComInterfaceIid>>,
     pub return_type: Option<TypeLibParamType>,
     /// True when `FUNCDESC::callconv == CC_STDCALL` (4) — the only convention
     /// the x64 vtable marshaller may call through. Fixture/catalog metadata
@@ -501,6 +508,7 @@ mod tests {
                     parameter_optional_defaults: Vec::new(),
                     is_default_member: true,
                     parameter_types: Vec::new(),
+                    parameter_iids: Vec::new(),
                     return_type: Some(TypeLibParamType::Long),
                     callconv_is_stdcall: true,
                     is_dual: true,
@@ -519,6 +527,7 @@ mod tests {
                     parameter_optional_defaults: Vec::new(),
                     is_default_member: false,
                     parameter_types: vec![TypeLibParamType::Variant],
+                    parameter_iids: Vec::new(),
                     return_type: Some(TypeLibParamType::Variant),
                     callconv_is_stdcall: false,
                     is_dual: true,

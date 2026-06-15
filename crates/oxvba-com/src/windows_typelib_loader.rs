@@ -749,6 +749,16 @@ unsafe fn typedesc_to_param_type(
         if inner.vt == VT_VARIANT && !is_byref {
             return TypeLibParamType::Variant;
         }
+        // An object INTERFACE pointer (`IFoo*`) for an `[in]` (non-`PARAMFLAG_FOUT`) param
+        // is the NORMAL by-VALUE interface transport — the single `VT_PTR` IS the interface
+        // pointer, not an extra by-ref level — so classify it as `Object` (the vtable
+        // marshaller QIs it to the declared IID and passes the pointer). A scalar `[in]
+        // long*`, or any `[out]/[in,out]` pointer (`is_byref`), keeps the "outer pointer ⇒
+        // by-ref" rule. (Bug-4b: an [in] interface arg previously mis-typed as `ByRefObject`,
+        // which the vtable gate declined.)
+        if !is_byref && matches!(typedesc_to_param_type(owner_ptinfo, inner, false), TypeLibParamType::Object) {
+            return TypeLibParamType::Object;
+        }
         return typedesc_to_param_type(owner_ptinfo, inner, true);
     }
 
@@ -824,6 +834,75 @@ unsafe fn retval_typedesc_to_param_type(
         return typedesc_to_param_type(owner_ptinfo, tdesc, false);
     }
     vt_to_param_type(tdesc.vt, false)
+}
+
+/// Recover the interface IID an object-typed parameter's `TYPEDESC` declares, for the
+/// per-parameter `QueryInterface` the vtable marshaller performs (Bug-4b): `VT_DISPATCH`/
+/// `VT_UNKNOWN` map to the well-known IIDs, a `VT_PTR` is stripped, and a `VT_USERDEFINED`
+/// interface/dispinterface yields its `guid` (an `ALIAS` is followed). Returns `None` for
+/// a non-object param (the caller stores `None`, and the gate declines that object arg to
+/// the IDispatch path rather than slot-calling with an unknown interface layout).
+///
+/// # Safety
+/// `owner_ptinfo` must be a live `ITypeInfo` for any `GetRefTypeInfo` it performs.
+#[cfg(target_os = "windows")]
+unsafe fn typedesc_to_iid(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> Option<crate::ComInterfaceIid> {
+    // IID_IDispatch {00020400-0000-0000-C000-000000000046} / IID_IUnknown {0000...0046}.
+    const IID_IDISPATCH: crate::ComInterfaceIid = crate::ComInterfaceIid {
+        data1: 0x0002_0400,
+        data2: 0,
+        data3: 0,
+        data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+    };
+    const IID_IUNKNOWN: crate::ComInterfaceIid = crate::ComInterfaceIid {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+    };
+    match tdesc.vt {
+        VT_DISPATCH => Some(IID_IDISPATCH),
+        VT_UNKNOWN => Some(IID_IUNKNOWN),
+        VT_PTR if tdesc.union_field != 0 => {
+            let inner = &*(tdesc.union_field as *const TYPEDESC);
+            typedesc_to_iid(owner_ptinfo, inner)
+        }
+        VT_USERDEFINED => {
+            let href = u32::try_from(tdesc.union_field).unwrap_or(0);
+            let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
+            if ((*vtbl).get_ref_type_info)(owner_ptinfo, href, &mut ref_ptinfo) != COM_S_OK
+                || ref_ptinfo.is_null()
+            {
+                return None;
+            }
+            let ref_vtbl = *(ref_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
+            let result = if ((*ref_vtbl).get_type_attr)(ref_ptinfo, &mut ref_attr) == COM_S_OK
+                && !ref_attr.is_null()
+            {
+                let typekind = (*ref_attr).typekind;
+                let r = if typekind == TKIND_INTERFACE || typekind == TKIND_DISPATCH {
+                    let iid = crate::ComInterfaceIid::from_guid(&(*ref_attr).guid);
+                    (!iid.is_null()).then_some(iid)
+                } else if typekind == TKIND_ALIAS {
+                    typedesc_to_iid(ref_ptinfo, &(*ref_attr).tdesc_alias)
+                } else {
+                    None
+                };
+                ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
+                r
+            } else {
+                None
+            };
+            ((*ref_vtbl).release)(ref_ptinfo);
+            result
+        }
+        _ => None,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1872,6 +1951,7 @@ unsafe fn extract_members_from_typeinfo(
         // parameter while the ABI return is HRESULT; expose that as return_type
         // and do not count it as a callable input parameter.
         let mut parameter_types = Vec::new();
+        let mut parameter_iids: Vec<Option<crate::ComInterfaceIid>> = Vec::new();
         let mut parameter_optional = Vec::new();
         let mut parameter_optional_defaults = Vec::new();
         let mut retval_return_type = None;
@@ -1906,7 +1986,18 @@ unsafe fn extract_members_from_typeinfo(
             // D3: per-parameter omitted-optional synthesis rule (default value /
             // VARIANT-missing / non-synthesizable / required) for the vtable path.
             let optional_default = optional_param_default_for(param_desc, param_type, is_optional);
+            // Bug-4b: an OBJECT-typed param carries the declared interface IID so the
+            // vtable marshaller can QI the supplied object to it; scalars store `None`.
+            let param_iid = if matches!(
+                param_type,
+                TypeLibParamType::Object | TypeLibParamType::ByRefObject
+            ) {
+                typedesc_to_iid(ptinfo, &param_desc.tdesc)
+            } else {
+                None
+            };
             parameter_types.push(param_type);
+            parameter_iids.push(param_iid);
             parameter_optional.push(is_optional);
             parameter_optional_defaults.push(optional_default);
         }
@@ -1985,6 +2076,7 @@ unsafe fn extract_members_from_typeinfo(
             parameter_optional_defaults,
             is_default_member,
             parameter_types,
+            parameter_iids,
             return_type,
             callconv_is_stdcall,
             is_dual,
@@ -2093,6 +2185,7 @@ unsafe fn enrich_dual_dispinterface_members(
                 // stale name list would mis-count the args on the IDispatch fallback.
                 member.parameter_names = shape.parameter_names;
                 member.parameter_types = shape.parameter_types;
+                member.parameter_iids = shape.parameter_iids;
                 member.parameter_optional = shape.parameter_optional;
                 member.parameter_optional_defaults = shape.parameter_optional_defaults;
                 member.return_type = shape.return_type;
@@ -2152,6 +2245,7 @@ struct PartnerMemberParamShape {
     /// arity check against the stale dispinterface names rejects the value arg.
     parameter_names: Vec<String>,
     parameter_types: Vec<TypeLibParamType>,
+    parameter_iids: Vec<Option<crate::ComInterfaceIid>>,
     parameter_optional: Vec<bool>,
     parameter_optional_defaults: Vec<OptionalParamDefault>,
     return_type: Option<TypeLibParamType>,
@@ -2339,6 +2433,7 @@ unsafe fn partner_member_param_shape(
             .map(|m| PartnerMemberParamShape {
                 parameter_names: m.parameter_names.clone(),
                 parameter_types: m.parameter_types.clone(),
+                parameter_iids: m.parameter_iids.clone(),
                 parameter_optional: m.parameter_optional.clone(),
                 parameter_optional_defaults: m.parameter_optional_defaults.clone(),
                 return_type: m.return_type,

@@ -2024,6 +2024,18 @@ fn vtable_gate_admits(
     {
         return false;
     }
+    // Bug-4b: an OBJECT `[in]` arg is only vtable-safe when its declared interface IID
+    // was recovered — the marshaller `QueryInterface`s the supplied object to it so the
+    // callee receives the exact vtable. Without an IID (empty/`None` `parameter_iids`,
+    // e.g. fixture/catalog metadata) we cannot prove the pointer's interface layout, so
+    // decline to the IDispatch path rather than slot-call with a raw `IDispatch`.
+    for (i, p) in spec.parameter_types.iter().enumerate() {
+        if matches!(p, crate::TypeLibParamType::Object)
+            && spec.parameter_iids.get(i).copied().flatten().is_none()
+        {
+            return false;
+        }
+    }
     true
 }
 
@@ -2363,6 +2375,7 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
             interface,
             slot,
             &spec.parameter_types,
+            &spec.parameter_iids,
             return_type,
             spec.invoke_kind,
             &variant_args,
@@ -2586,6 +2599,7 @@ mod gate_tests {
             is_default_member: false,
             vtable_slot: Some(slot),
             parameter_types: Vec::new(),
+            parameter_iids: Vec::new(),
             parameter_optional_defaults: Vec::new(),
             return_type: Some(crate::TypeLibParamType::Long),
             callconv_is_stdcall: true,

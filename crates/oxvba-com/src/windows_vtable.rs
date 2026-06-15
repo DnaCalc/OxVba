@@ -168,6 +168,10 @@ enum InboundOwned {
     Bstr(windows_sys::core::BSTR),
     /// A VARIANT cell we populated (VT_VARIANT [in] param); `VariantClear` after.
     Variant(Box<VARIANT>),
+    /// An interface pointer we obtained by `QueryInterface`-ing an `[in]` object arg to
+    /// its declared param IID (Bug-4b); we own that one reference and `Release` it after
+    /// the call (the callee only borrowed it).
+    Interface(*mut c_void),
 }
 
 /// The retval out-cell, sized to the member's return VARTYPE. The trailing
@@ -217,6 +221,7 @@ pub(crate) unsafe fn vtable_invoke<FResolveObject, FBindDispatch>(
     this: *mut c_void,
     slot: u16,
     parameter_types: &[TypeLibParamType],
+    parameter_iids: &[Option<crate::ComInterfaceIid>],
     return_type: Option<TypeLibParamType>,
     _invoke_kind: TypeLibMemberInvokeKind,
     args: &[Variant],
@@ -282,8 +287,12 @@ where
     let mut inbound_owned: Vec<InboundOwned> = Vec::with_capacity(args.len());
     ffi_args.push(FfiArg::Pointer(this));
 
-    for (param_type, arg) in parameter_types.iter().zip(args.iter()) {
-        match marshal_inbound_param(*param_type, arg, resolve_object) {
+    for (i, (param_type, arg)) in parameter_types.iter().zip(args.iter()).enumerate() {
+        // The per-parameter declared interface IID for an object arg (Bug-4b); `None`
+        // for scalars or when no IID was recovered. `get(i)` tolerates synthesized
+        // trailing optionals (which extend `args` beyond `parameter_iids`).
+        let param_iid = parameter_iids.get(i).copied().flatten();
+        match marshal_inbound_param(*param_type, arg, param_iid, resolve_object) {
             Ok((ffi_arg, owned)) => {
                 ffi_args.push(ffi_arg);
                 inbound_owned.push(owned);
@@ -364,6 +373,7 @@ fn validation_failure(
 fn marshal_inbound_param<FResolveObject>(
     param_type: TypeLibParamType,
     arg: &Variant,
+    param_iid: Option<crate::ComInterfaceIid>,
     resolve_object: &mut FResolveObject,
 ) -> Result<(FfiArg, InboundOwned), String>
 where
@@ -432,14 +442,33 @@ where
                 InboundOwned::Bstr(bstr),
             )
         }
-        // Interface [in]: pass the resolved IDispatch pointer with NO extra
-        // AddRef (the callee borrows it for the duration of the call).
+        // Interface [in]: QueryInterface the resolved object for the parameter's
+        // DECLARED interface IID (Bug-4b) so the callee receives the exact vtable it
+        // expects — passing a raw IDispatch where `IFoo*` is declared would call the
+        // wrong vtable and AV the host. We own the QI'd reference and Release it after
+        // the call (InboundOwned::Interface). When no IID was recovered (None — e.g.
+        // fixture/catalog metadata), the vtable gate has already declined this member,
+        // so this falls back to the borrowed raw IDispatch only on a path the gate
+        // never admits for a real slot call.
         P::Object => {
             let object = arg.as_object_ref().ok_or_else(|| {
                 "vtable VT_DISPATCH parameter expects an object argument".to_string()
             })?;
             let dispatch = resolve_object(object)?;
-            (FfiArg::Pointer(dispatch), InboundOwned::None)
+            match param_iid {
+                Some(iid) => {
+                    // SAFETY: `dispatch` is the live bindings-map-retained object pointer
+                    // the resolver returned; QueryInterface reads its IUnknown vtable and
+                    // hands back one fresh reference we own (Released in `free_inbound`).
+                    let interface =
+                        unsafe { crate::query_interface_pointer(dispatch, &iid.to_guid()) }?;
+                    (
+                        FfiArg::Pointer(interface),
+                        InboundOwned::Interface(interface),
+                    )
+                }
+                None => (FfiArg::Pointer(dispatch), InboundOwned::None),
+            }
         }
         // VT_VARIANT [in] by reference: marshal the value into a heap VARIANT and
         // pass its pointer; we VariantClear it after the call.
@@ -498,6 +527,9 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
             InboundOwned::Variant(mut cell) => unsafe {
                 let _ = VariantClear(cell.as_mut());
             },
+            // SAFETY: an Interface entry is the single reference our QueryInterface
+            // handed us; the callee only borrowed it, so we Release it exactly once.
+            InboundOwned::Interface(interface) => unsafe { crate::release_unknown(interface) },
         }
     }
 }
@@ -791,6 +823,7 @@ mod tests {
                 this,
                 DUAL_SLOT_GET_COUNT,
                 &[],
+                &[],
                 Some(TypeLibParamType::Long),
                 TypeLibMemberInvokeKind::PropertyGet,
                 &[],
@@ -821,6 +854,7 @@ mod tests {
                 this,
                 DUAL_SLOT_EXISTS,
                 &[TypeLibParamType::Long],
+                &[],
                 Some(TypeLibParamType::Boolean),
                 TypeLibMemberInvokeKind::Method,
                 &[Variant::from_i32(42)],
@@ -839,6 +873,7 @@ mod tests {
                 this,
                 DUAL_SLOT_EXISTS,
                 &[TypeLibParamType::Long],
+                &[],
                 Some(TypeLibParamType::Boolean),
                 TypeLibMemberInvokeKind::Method,
                 &[Variant::from_i32(7)],
@@ -865,6 +900,7 @@ mod tests {
                 this,
                 DUAL_SLOT_PUT_VALUE,
                 &[TypeLibParamType::Variant],
+                &[],
                 None,
                 TypeLibMemberInvokeKind::PropertyPut,
                 &[Variant::from_i32(1234)],
@@ -897,6 +933,7 @@ mod tests {
                 this,
                 DUAL_SLOT_LOOKUP,
                 &[TypeLibParamType::String],
+                &[],
                 Some(TypeLibParamType::Object),
                 TypeLibMemberInvokeKind::PropertyGet,
                 &[Variant::from_string("alpha")],
@@ -934,6 +971,7 @@ mod tests {
                 this,
                 DUAL_SLOT_GET_PRICE,
                 &[],
+                &[],
                 Some(TypeLibParamType::Currency),
                 TypeLibMemberInvokeKind::PropertyGet,
                 &[],
@@ -970,6 +1008,7 @@ mod tests {
             vtable_invoke(
                 this,
                 DUAL_SLOT_GET_CREATED,
+                &[],
                 &[],
                 Some(TypeLibParamType::Date),
                 TypeLibMemberInvokeKind::PropertyGet,
@@ -1010,6 +1049,7 @@ mod tests {
                 this,
                 DUAL_SLOT_GET_OWNER,
                 &[],
+                &[],
                 Some(TypeLibParamType::Object),
                 TypeLibMemberInvokeKind::PropertyGet,
                 &[],
@@ -1044,6 +1084,7 @@ mod tests {
             vtable_invoke(
                 this,
                 DUAL_SLOT_RAISE_ERROR,
+                &[],
                 &[],
                 Some(TypeLibParamType::Long),
                 TypeLibMemberInvokeKind::Method,
