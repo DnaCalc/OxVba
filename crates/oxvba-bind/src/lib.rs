@@ -284,6 +284,13 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
             }
         }
     }
+    // A COM coclass source reads LIBRARY-WIDE typelib events, so an event name shared
+    // across source interfaces (e.g. `SheetChange` on both `AppEvents` and
+    // `WorkbookEvents`, which Excel assigns the same dispid) yields one route per
+    // occurrence — all identical `(binding, event, handler)`. Collapse them so a
+    // single `WithEvents` field advises its connection point exactly once.
+    let mut seen = std::collections::HashSet::new();
+    routes.retain(|route| seen.insert((route.binding, route.event, route.handler)));
     routes
 }
 

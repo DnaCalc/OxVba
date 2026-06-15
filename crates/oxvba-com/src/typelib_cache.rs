@@ -75,6 +75,7 @@ mod tests {
             member_name_to_token: Vec::new(),
             members: Vec::new(),
             events: Vec::new(),
+            coclass_names: Vec::new(),
         }
     }
 

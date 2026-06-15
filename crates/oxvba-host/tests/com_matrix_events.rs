@@ -202,15 +202,16 @@ fn v7_excel_new_workbook_oop_event() {
     // cross-apartment sink. Wire app, Workbooks.Add, pump. fired >= 1. fired == 0 is
     // a silent total failure of the OOP event story. verdict = IIf(mFired >= 1, 1, 0).
     //
-    // RED (flagged PRODUCT gap — out-of-process COM event delivery; triaged, NOT a test
-    // bug): this scenario WEDGES the host on a live run (Excel launches, the Workbooks.Add
-    // + 50×DoEvents pump never returns a delivered event within ~180s). The in-process
-    // event story is solid (V1–V6 connection-point/source-interface paths), but a
-    // cross-process Excel connection-point sink — a marshalled `Advise` on an OOP proxy +
-    // an STA message pump that actually dispatches the inbound RPC into the VBA sink — is
-    // a substantial unfinished feature, orthogonal to the vtable work in this round. Left
-    // RED/flagged for a dedicated OOP-event follow-up. Run-cost: wedges; excluded from the
-    // green count.
+    // GREEN (verified live, ~3s). Out-of-process Excel `Application.NewWorkbook` is
+    // delivered end-to-end: the agile (free-threaded-marshaler) sink advises Excel's
+    // `AppEvents` connection point without deadlocking; the source binding's event
+    // metadata is recovered from the live object's typelib (Excel's CLSID has no
+    // `\TypeLib` registry subkey); the inbound RPC fires the sink on an MTA worker, the
+    // object-typed `Wb` argument is handed to the VM thread via the Global Interface
+    // Table, and the VM pump dispatches `appEv_NewWorkbook`. (Was previously a ~56-min
+    // wedge: out-of-process COM dispatch walked the MARSHALLED Excel typelib
+    // cross-process per call; fixed by declining marshaling proxies to late-bound
+    // IDispatch before any live-typelib recovery.)
     let main_src = "Public result As Long\n\
          Sub Main()\n\
          Dim s As New Sink\n\
@@ -243,14 +244,21 @@ fn v7_excel_new_workbook_oop_event() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn v8_excel_sheet_change_oop_object_arg() {
-    // 2-arg OOP event + object-arg re-entry into a PSDispatch Range from inside the
-    // handler. Write to C-column cell, handler reads Target.Column (== 3).
-    // verdict = IIf(mCol = 3, 1, 0).
+    // 2-arg OOP event + object-arg re-entry into a Range from inside the handler.
+    // Write to C-column cell, handler reads Target.Column (== 3). verdict = IIf(mCol = 3, 1, 0).
     //
-    // RED (flagged PRODUCT gap — same OOP-event delivery follow-up as V7; triaged): a
-    // cross-process Workbook.SheetChange connection-point sink wedges the host the same
-    // way V7 does. Left RED/flagged for the dedicated out-of-process-event follow-up;
-    // excluded from the green count.
+    // RED (narrowed to ONE residual; runs FAST now, ~3s — no longer a wedge). The OOP
+    // event DELIVERY works exactly as V7: the `Workbook.SheetChange` connection point is
+    // advised (events recovered from the live Workbook's typelib), the event fires, and
+    // BOTH object args (`Sh` Worksheet, `Target` Range) are marshalled across the
+    // apartment via the GIT and delivered to the handler as live objects. The residual is
+    // a BINDER gap, not an event gap: `Target.Column` — where `Target` is typed
+    // `As Excel.Range` — does not lower to a COM member call, because `Excel.Range` is an
+    // INTERFACE, not an owned COCLASS (the `ComTypeLibProvider` resolves members on a
+    // coclass-typed receiver like `Excel.Application` but not on an interface-typed one),
+    // so `.Column` yields nothing and `mCol` stays 0. Follow-up: resolve member access on
+    // COM interface-typed receivers. (The event machinery and arg marshalling are proven
+    // by the GIT-revived `Target` arriving as a live object.)
     let main_src = "Public result As Long\n\
          Sub Main()\n\
          Dim s As New Sink\n\

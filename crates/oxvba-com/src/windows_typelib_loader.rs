@@ -2807,6 +2807,40 @@ pub fn enumerate_typelib_events_for_coclass(
     Ok(Vec::new())
 }
 
+/// The COCLASS type names defined in this typelib (e.g. `["Application", "Workbook", …]`
+/// for Excel). Lets the symbol provider own every `<reference_name>.<coclass>` of a
+/// library-level reference, so `WithEvents x As Excel.Application` (and compile-time
+/// `Dim x As Excel.Workbook`) resolve even when the reference names no single coclass.
+#[cfg(target_os = "windows")]
+fn enumerate_typelib_coclass_names(ptlib: *mut c_void) -> Vec<String> {
+    let mut names = Vec::new();
+    // SAFETY: `ptlib` is a live ITypeLib from the loader (same contract as
+    // `enumerate_typelib_events`); its first field is the ITypeLibVtbl, and each retained
+    // ITypeInfo this reads is Released before the next iteration.
+    unsafe {
+        let vtbl = *(ptlib as *const *const ITypeLibVtbl);
+        let count = ((*vtbl).get_type_info_count)(ptlib);
+        for i in 0..count {
+            let mut typekind: u32 = 0;
+            if ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) != COM_S_OK
+                || typekind != TKIND_COCLASS
+            {
+                continue;
+            }
+            let mut ptinfo: *mut c_void = std::ptr::null_mut();
+            if ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) != COM_S_OK || ptinfo.is_null() {
+                continue;
+            }
+            if let Some(name) = typeinfo_name(ptinfo) {
+                names.push(name);
+            }
+            let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+            ((*ti_vtbl).release)(ptinfo);
+        }
+    }
+    names
+}
+
 /// Extracts event metadata from a coclass ITypeInfo by walking source interfaces.
 #[cfg(target_os = "windows")]
 unsafe fn extract_events_from_coclass(
@@ -3076,6 +3110,7 @@ pub fn build_metadata_blob_from_typelib(
     } else {
         enumerate_typelib_events(ptlib)?
     };
+    let coclass_names = enumerate_typelib_coclass_names(ptlib);
     let activation_prog_id = if let Some(coclass_name) = requested_coclass_name(&identity) {
         extract_coclass_prog_id_for_name(ptlib, coclass_name)
             .or_else(|| Some(identity.reference_name.clone()))
@@ -3091,6 +3126,148 @@ pub fn build_metadata_blob_from_typelib(
         member_name_to_token,
         members,
         events,
+        coclass_names,
+    })
+}
+
+/// Recovers a [`TypeLibMetadataBlob`] from a live activated `IDispatch` when the
+/// object's ProgID cannot be resolved to a typelib through the registry. That is
+/// the case for `Excel.Application` (and other coclasses) whose
+/// `HKCR\CLSID\{clsid}` key carries no `\TypeLib` subkey: the registry-driven
+/// [`resolve_typelib_identity_from_prog_id`] fails, so the activation path hands
+/// us `None` metadata and the binding ends up with empty `member_specs`/`event_specs`.
+///
+/// We instead walk `IDispatch::GetTypeInfo(0)` → `ITypeInfo::GetContainingTypeLib`
+/// to reach the object's own typelib — exactly how an early-bound client finds it —
+/// then scope member/event enumeration to the ProgID's coclass (e.g. `Application`)
+/// the same way the registry path would. This is what populates a runtime binding's
+/// `event_specs`, so `WithEvents` on an out-of-process object can subscribe.
+///
+/// Returns `None` if the object exposes no type info or the typelib cannot be reached.
+///
+/// # Safety
+/// `dispatch` must be a live `IDispatch` pointer for the duration of the call.
+#[cfg(target_os = "windows")]
+pub unsafe fn build_metadata_blob_from_dispatch(
+    dispatch: *mut crate::windows_client::RawIDispatch,
+    prog_id_name: &str,
+) -> Option<TypeLibMetadataBlob> {
+    if dispatch.is_null() {
+        return None;
+    }
+    let (reference_name, prog_id_coclass) = split_prog_id_name(prog_id_name).ok()?;
+
+    // SAFETY: `dispatch` is a live IDispatch per this function's contract; its
+    // first field is the IDispatch vtable (RawIDispatchVtbl).
+    let vtbl = unsafe { (*dispatch).vtbl };
+    let mut ptinfo: *mut c_void = null_mut();
+    // SAFETY: `vtbl` came from the live dispatch above; GetTypeInfo writes a
+    // retained ITypeInfo* into `ptinfo` on success (lcid 0x0400 = LOCALE_SYSTEM).
+    let hr = unsafe { ((*vtbl).get_type_info)(dispatch.cast(), 0, 0x0400, &mut ptinfo) };
+    if hr != COM_S_OK || ptinfo.is_null() {
+        return None;
+    }
+
+    // Scope member/event enumeration to the object's OWN coclass. The live default
+    // interface's name follows the COM dual convention `_<Coclass>` (e.g. Excel's
+    // `_Application`, `_Workbook`), so stripping the leading underscore yields the
+    // coclass whose `[source]` interface carries the events. This is the reliable
+    // source for an invoke-result object (e.g. a Workbook returned by `Workbooks.Add`)
+    // whose ProgID hint is a synthetic `…::<invoke-result>` string; the ProgID's own
+    // coclass is only the fallback (e.g. an explicit `CreateObject` ProgID).
+    // SAFETY: `ptinfo` is the live retained ITypeInfo from GetTypeInfo above.
+    let typeinfo_coclass = unsafe { typeinfo_name(ptinfo) }
+        .map(|name| name.strip_prefix('_').unwrap_or(&name).to_string())
+        .filter(|name| !name.is_empty());
+    let requested_coclass = typeinfo_coclass.or(prog_id_coclass);
+
+    // SAFETY: `ptinfo` is the S_OK/non-null retained ITypeInfo from GetTypeInfo;
+    // its first pointer-sized field is the ITypeInfo vtable (oaidl.h prefix).
+    let ti_vtbl = unsafe { *(ptinfo as *const *const ITypeInfoVtbl) };
+    let mut ptlib: *mut c_void = null_mut();
+    let mut _index: u32 = 0;
+    // SAFETY: vtable call on the live ITypeInfo; on S_OK it stores a retained
+    // ITypeLib* into `ptlib` and the containing index into `_index`.
+    let hr = unsafe { ((*ti_vtbl).get_containing_type_lib)(ptinfo, &mut ptlib, &mut _index) };
+    // SAFETY: `ptinfo` is the live retained ITypeInfo; this Release balances the
+    // reference GetTypeInfo retained and the pointer is unused afterward.
+    unsafe { ((*ti_vtbl).release)(ptinfo) };
+    if hr != COM_S_OK || ptlib.is_null() {
+        return None;
+    }
+
+    let request = crate::typelib::TypeLibResolveRequest {
+        reference_name,
+        requested_coclass,
+        importlib_hint: None,
+        libid_hint: None,
+        major_version_hint: None,
+        minor_version_hint: None,
+        lcid_hint: None,
+    };
+    // Recover the typelib identity (libid + version) from the containing typelib, but
+    // do NOT enumerate the containing typelib directly: for an out-of-process object
+    // `GetContainingTypeLib` can return a cross-process PROXY whose per-member
+    // reflection is a marshalled RPC round-trip — enumerating Excel's 471-member
+    // `Application` coclass that way takes ~13 minutes. Instead reload the SAME typelib
+    // LOCALLY from the registry by libid and enumerate that copy in-process (fast).
+    // SAFETY: `ptlib` is the live retained ITypeLib from GetContainingTypeLib above.
+    let identity = unsafe { extract_typelib_identity(ptlib, &request) }.ok();
+    // SAFETY: `ptlib` is the live retained ITypeLib from GetContainingTypeLib; its
+    // first field is the ITypeLib vtable, and this Release balances that retained
+    // reference. The containing typelib is not used past this point.
+    unsafe {
+        let lib_vtbl = *(ptlib as *const *const ITypeLibVtbl);
+        ((*lib_vtbl).release)(ptlib);
+    }
+    let identity = identity?;
+    let local = identity
+        .libid
+        .as_deref()
+        .and_then(crate::windows_client::parse_guid_canonical)
+        .and_then(|guid| {
+            load_typelib_from_registry(
+                &guid,
+                identity.major_version,
+                identity.minor_version,
+                identity.lcid.unwrap_or(0),
+            )
+            .ok()
+        });
+    let local_ptlib = local?;
+
+    // Recover EVENTS ONLY — deliberately NOT the member set. The sole purpose of
+    // dispatch-recovery is to let `WithEvents` subscribe to an out-of-process object's
+    // events; the object itself dispatches its members late-bound (IDispatch), exactly
+    // as it did before recovery existed. Populating `member_specs` here would route the
+    // object's own calls through the early-bound vtable path, and an out-of-process
+    // vtable call is orders of magnitude slower than late-bound IDispatch (per-member
+    // cross-apartment marshalling — `app.Visible = False` measured at ~11 minutes via
+    // the vtable vs milliseconds late-bound). Enumerating only the coclass's source
+    // events keeps recovery cheap and the object on its fast dispatch path.
+    let events = match identity.requested_coclass.as_deref() {
+        Some(coclass) => {
+            let scoped = enumerate_typelib_events_for_coclass(local_ptlib, coclass)
+                .unwrap_or_default();
+            if scoped.is_empty() {
+                enumerate_typelib_events(local_ptlib).unwrap_or_default()
+            } else {
+                scoped
+            }
+        }
+        None => enumerate_typelib_events(local_ptlib).unwrap_or_default(),
+    };
+    let coclass_names = enumerate_typelib_coclass_names(local_ptlib);
+    // SAFETY: `local_ptlib` is the live ITypeLib just loaded from the registry; this is
+    // its single owning Release.
+    unsafe { release_typelib(local_ptlib) };
+    Some(TypeLibMetadataBlob {
+        identity,
+        activation_prog_id: None,
+        member_name_to_token: Vec::new(),
+        members: Vec::new(),
+        events,
+        coclass_names,
     })
 }
 

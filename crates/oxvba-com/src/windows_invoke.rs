@@ -2133,7 +2133,7 @@ const IID_IPROXYMANAGER: windows_sys::core::GUID = windows_sys::core::GUID {
 /// # Safety
 /// `object` must be a live COM interface pointer for the duration of the call.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-unsafe fn dispatch_is_marshaling_proxy(object: *mut core::ffi::c_void) -> bool {
+pub unsafe fn dispatch_is_marshaling_proxy(object: *mut core::ffi::c_void) -> bool {
     // SAFETY: `object` is a live interface pointer per this fn's contract;
     // query_interface_pointer reads its IUnknown vtable and, on success, hands
     // back one owned reference we Release immediately.

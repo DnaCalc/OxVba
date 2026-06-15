@@ -35,6 +35,23 @@ impl ComTypeLibProvider {
         self.type_names.contains(&folded)
     }
 
+    /// Whether this typelib's library reference defines a coclass `<reference>.<coclass>`
+    /// (e.g. `Excel.Application` for the `Excel` library). Used to resolve a `WithEvents`
+    /// EVENT SOURCE by coclass name even when the blob is a library-level reference that
+    /// names no single coclass. Scoped to the event-source path: member resolution stays
+    /// keyed on [`owns`] so a library reference does not lump every coclass's members.
+    fn owns_coclass_source(&self, type_name: &str) -> bool {
+        if self.owns(type_name) {
+            return true;
+        }
+        let folded = fold_identifier(type_name);
+        let reference = fold_identifier(&self.blob.identity.reference_name);
+        self.blob
+            .coclass_names
+            .iter()
+            .any(|coclass| folded == format!("{reference}.{}", fold_identifier(coclass)))
+    }
+
     pub fn activation_prog_id(&self) -> Option<&str> {
         self.blob.activation_prog_id.as_deref()
     }
@@ -109,7 +126,7 @@ impl Provider for ComTypeLibProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        if !self.owns(type_name) {
+        if !self.owns_coclass_source(type_name) {
             return None;
         }
         // The event `token` is the value the runtime keys subscriptions on (it is

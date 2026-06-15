@@ -553,6 +553,21 @@ impl WindowsComBridge {
             Some(DynamicCallKind::PropertySet) => return Ok(None),
             _ => K::Method,
         };
+        // OUT-OF-PROCESS FAST-DECLINE (PERFORMANCE — the decisive guard). Recovering a
+        // member's FUNCDESC from the LIVE object's ITypeInfo below means walking that
+        // typeinfo, and for an out-of-process object the ITypeInfo is a MARSHALLED
+        // proxy whose every read is a cross-apartment RPC — locating one member in
+        // Excel's 471-member `_Application` took ~5 MINUTES per call. The proxy is then
+        // declined for the slot-call anyway (S1: a marshaling proxy's dual-IID vtable
+        // slots are combase NDR forwarders a typelib `oVft` cannot index), so this
+        // whole live-recovery is pure waste for a proxy. Decline FIRST, on a cheap
+        // `QueryInterface(IID_IProxyManager)` probe, so an out-of-process object goes
+        // straight to the fast, correct IDispatch path. A direct in-process interface
+        // (DAO) fails the proxy probe and proceeds to the in-proc vtable as before.
+        // SAFETY: `dispatch` is the live, bindings-map-retained IDispatch for this call.
+        if unsafe { crate::windows_invoke::dispatch_is_marshaling_proxy(dispatch.cast()) } {
+            return Ok(None);
+        }
         // SAFETY: `dispatch` is the live, bindings-map-retained IDispatch for this
         // call (the caller guarded `native_dispatch != 0` and the retained
         // reference keeps it alive for this lookup).

@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
-type DispatchEventCallback = Arc<dyn Fn(&[ComValue]) -> bool + Send + Sync>;
+type DispatchEventCallback = Arc<dyn Fn(&[ComValue], &[(usize, u32)]) -> bool + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowsComSubscriptionTransport {
@@ -154,7 +154,7 @@ fn callback_sink(
     // reference is gone is reported unconsumed — the runtime that would
     // drain it no longer exists.
     let com_state = Arc::downgrade(&com_state);
-    Arc::new(move |args: &[ComValue]| {
+    Arc::new(move |args: &[ComValue], marshals: &[(usize, u32)]| {
         let Some(com_state) = com_state.upgrade() else {
             return false;
         };
@@ -162,7 +162,7 @@ fn callback_sink(
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        state.queue_callback_for_subscription(subscription, args)
+        state.queue_callback_for_subscription_with_marshals(subscription, args, marshals)
     })
 }
 
@@ -412,6 +412,22 @@ pub fn release_object_binding(
     state: &mut WindowsComClientState,
     object: ObjectRef,
 ) -> Result<ReleasedWindowsComObject, String> {
+    // Revoke GIT registrations for any of this object's event callbacks that were
+    // queued but never pumped, so a purged callback does not pin its object arguments
+    // in the Global Interface Table (which would hold a COM reference forever and can
+    // keep an out-of-process source from shutting down).
+    let orphan_cookies: Vec<u32> = state
+        .callbacks
+        .values()
+        .filter(|callback| callback.object == object.raw())
+        .flat_map(|callback| callback.pending_marshals.iter().map(|(_, cookie)| *cookie))
+        .collect();
+    for cookie in orphan_cookies {
+        // SAFETY: bindings are released on the COM-initialized VM thread; each cookie was
+        // registered by our own sink and is revoked at most once (the callback that owns
+        // it is removed by `release_object_state` below, so it cannot also be revived).
+        unsafe { crate::windows_connection_point::revoke_git_cookie(cookie) };
+    }
     let Some((binding, transports, stale_callbacks)) =
         state.release_object_state(ComObjectToken::new(object.raw()))
     else {
@@ -459,7 +475,55 @@ pub fn resolve_subscription_transport(
 pub fn take_polled_callback_payload(
     state: &mut WindowsComClientState,
 ) -> Option<crate::ComCallbackPayload> {
+    // Revive any cross-apartment object event arguments for the callback about to be
+    // dispatched: the agile sink registered them in the GIT on its (MTA) delivery
+    // thread and queued `Nothing` placeholders; here, on the VM/STA thread, we
+    // unmarshal each into a thread-correct binding so the handler receives the real
+    // object (e.g. the new `Workbook`, the changed `Range`).
+    resolve_pending_event_marshals_for_next(state);
     state.take_polled_callback()
+}
+
+/// The callback token `take_polled_callback` will next consume: the one already
+/// marked pumped (by a prior `DoEvents`) if any, otherwise the front of the queue.
+fn next_pollable_callback(state: &WindowsComClientState) -> Option<ComCallbackToken> {
+    state
+        .last_pumped_callback
+        .or_else(|| state.pending_callbacks.front().copied())
+}
+
+/// Unmarshals the GIT-registered object arguments of the next pollable callback into
+/// thread-correct bindings on the current (VM/STA) apartment, overwriting their
+/// `Nothing` placeholders. A cookie that fails to revive leaves `Nothing` in place
+/// (the handler then sees `Nothing` for that argument rather than the event failing).
+fn resolve_pending_event_marshals_for_next(state: &mut WindowsComClientState) {
+    let Some(token) = next_pollable_callback(state) else {
+        return;
+    };
+    let marshals = match state.callbacks.get(&token) {
+        Some(callback) if !callback.pending_marshals.is_empty() => callback.pending_marshals.clone(),
+        _ => return,
+    };
+    for (arg_index, cookie) in marshals {
+        // SAFETY: the VM thread is COM-initialized before any event poll; the cookie was
+        // registered by our own sink and is consumed (revoked) exactly once here.
+        let dispatch = unsafe { crate::windows_connection_point::take_dispatch_from_git(cookie) };
+        let Some(dispatch) = dispatch else {
+            continue;
+        };
+        // SAFETY: `take_dispatch_from_git` returned a live `IDispatch` carrying one retained
+        // reference owned by us; `bind_native_dispatch_result` takes ownership of it.
+        let object = unsafe { bind_native_dispatch_result(state, dispatch, "<com-event-arg>") };
+        let value = ComEventCallbackValue::from_com_value(&ComValue::Object(object));
+        if let Some(callback) = state.callbacks.get_mut(&token)
+            && let Some(slot) = callback.args.get_mut(arg_index)
+        {
+            *slot = value;
+        }
+    }
+    if let Some(callback) = state.callbacks.get_mut(&token) {
+        callback.pending_marshals.clear();
+    }
 }
 
 pub fn callback_subscription_token(
@@ -839,16 +903,50 @@ pub unsafe fn subscribe_event_shared(
 ) -> Result<(ComSubscriptionToken, WindowsComSubscriptionTransport, usize), String> {
     let (binding, expected_arity, subscription) = {
         let mut state = lock_state(com_state, "subscribe_event")?;
-        let Some(binding) = state
-            .bindings
-            .get(&ComObjectToken::new(object.raw()))
-            .cloned()
-        else {
+        let token = ComObjectToken::new(object.raw());
+        if !state.bindings.contains_key(&token) {
             return Err(format!(
                 "COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {}",
                 object.raw()
             ));
-        };
+        }
+        // Lazily recover event metadata from the live object when this binding carries
+        // none for the requested event. An object returned by a method call (e.g. a
+        // Workbook from `Workbooks.Add`) is bound with no typelib metadata, so its
+        // `event_specs` start empty; recover them from the object's own type
+        // information (the same path a `CreateObject`'d source uses) so `WithEvents`
+        // on the returned object can subscribe.
+        let needs_recovery = state.bindings.get(&token).is_some_and(|binding| {
+            binding.native_dispatch != 0
+                && event_signature_arity_for_binding(binding, event).is_none()
+        });
+        if needs_recovery {
+            let (dispatch, prog_id) = {
+                let binding = state.bindings.get(&token).expect("binding present");
+                (binding.native_dispatch, binding.prog_id_name.clone())
+            };
+            // SAFETY: `dispatch` is the live `IDispatch` this binding retains for its
+            // lifetime (released only on the VM thread, which is the thread inside this
+            // call); recovery only reads its type information.
+            let recovered = unsafe {
+                crate::windows_typelib_loader::build_metadata_blob_from_dispatch(
+                    dispatch as *mut RawIDispatch,
+                    &prog_id,
+                )
+            }
+            .map(|blob| binding_from_typelib_metadata(prog_id, dispatch, Some(&blob)));
+            if let Some(recovered) = recovered
+                && let Some(stored) = state.bindings.get_mut(&token)
+            {
+                for (event_token, spec) in recovered.event_specs {
+                    stored.event_specs.entry(event_token).or_insert(spec);
+                }
+                if stored.member_specs.is_empty() {
+                    stored.member_specs = recovered.member_specs;
+                }
+            }
+        }
+        let binding = state.bindings.get(&token).cloned().expect("binding present");
         let Some(expected_arity) = event_signature_arity_for_binding(&binding, event) else {
             return Err(format!(
                 "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
@@ -1007,7 +1105,7 @@ mod tests {
             "the event sink must not keep the shared state alive"
         );
         // A late event after teardown is reported unconsumed, not a panic.
-        assert!(!sink(&[]));
+        assert!(!sink(&[], &[]));
     }
 
     #[test]

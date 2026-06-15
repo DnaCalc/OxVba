@@ -34,6 +34,13 @@ pub struct TypeLibMetadataBlob {
     pub member_name_to_token: Vec<(String, i32)>,
     pub members: Vec<TypeLibMemberMetadata>,
     pub events: Vec<TypeLibEventMetadata>,
+    /// The COCLASS type names this typelib defines (e.g. `["Application", "Workbook",
+    /// "Worksheet", …]` for Excel). A library-level reference (no `requested_coclass`)
+    /// otherwise only answers to its reference name + one arbitrary coclass's ProgID, so
+    /// `WithEvents x As Excel.Application` (and compile-time `Dim x As Excel.Workbook`)
+    /// could not resolve. The symbol provider owns `<reference_name>.<coclass>` for each
+    /// of these, so every coclass in the referenced library is bindable by name.
+    pub coclass_names: Vec<String>,
 }
 
 /// A COM interface IID in its canonical `{data1-data2-data3-data4}` field layout
@@ -537,6 +544,7 @@ mod tests {
                 },
             ],
             events: Vec::new(),
+            coclass_names: Vec::new(),
         };
 
         let descriptor = runtime_class_descriptor_from_typelib_metadata(&metadata);

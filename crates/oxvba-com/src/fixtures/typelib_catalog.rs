@@ -2396,6 +2396,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
         member_name_to_token,
         members,
         events,
+        coclass_names: Vec::new(),
     }
 }
 

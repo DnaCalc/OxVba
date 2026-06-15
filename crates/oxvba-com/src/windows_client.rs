@@ -581,8 +581,27 @@ pub fn activate_runtime_binding(
     force_registered_test_dispatch: bool,
 ) -> Result<crate::ComBinding, String> {
     let dispatch = activate_runtime_dispatch(prog_id, force_registered_test_dispatch)?;
-    let mut binding =
-        crate::binding_from_typelib_metadata(prog_id.to_string(), dispatch as usize, metadata);
+    // When the ProgID could not be resolved to a typelib through the registry the
+    // caller hands us `metadata = None` — the case for `Excel.Application`, whose
+    // `HKCR\CLSID\{clsid}` key carries no `\TypeLib` subkey. Recover the typelib
+    // from the live dispatch's own type information so the binding still gets
+    // member/event specs; without this an out-of-process object's `event_specs`
+    // stay empty and a `WithEvents` subscription on it cannot resolve.
+    let recovered_metadata = if metadata.is_none() && !dispatch.is_null() {
+        // SAFETY: `dispatch` is the live IDispatch just activated (non-null
+        // checked) and is owned by us for the duration of this call.
+        unsafe {
+            crate::windows_typelib_loader::build_metadata_blob_from_dispatch(dispatch, prog_id)
+        }
+    } else {
+        None
+    };
+    let effective_metadata = metadata.or(recovered_metadata.as_ref());
+    let mut binding = crate::binding_from_typelib_metadata(
+        prog_id.to_string(),
+        dispatch as usize,
+        effective_metadata,
+    );
     // Record the canonical IUnknown identity so that a `this`/back-reference
     // returned by this object (e.g. ReturnSelfObject, ws.Application) dedups to
     // the original handle in `bind_native_dispatch_result` rather than minting a

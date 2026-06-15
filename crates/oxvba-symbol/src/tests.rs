@@ -404,6 +404,7 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 parameter_optional: vec![false],
                 is_default_member: false,
                 parameter_types: vec![TypeLibParamType::ByRefLong],
+                parameter_iids: vec![None],
                 return_type: None,
                 callconv_is_stdcall: true,
                 is_dual: true,
@@ -422,6 +423,7 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 parameter_optional: vec![false],
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::Long],
+                parameter_iids: vec![None],
                 return_type: Some(TypeLibParamType::Variant),
                 callconv_is_stdcall: true,
                 is_dual: true,
@@ -439,6 +441,7 @@ fn widget_blob() -> TypeLibMetadataBlob {
             connection_point_iid: Some("{iid}".into()),
             dispatch_member_id: Some(9),
         }],
+        coclass_names: Vec::new(),
     }
 }
 
