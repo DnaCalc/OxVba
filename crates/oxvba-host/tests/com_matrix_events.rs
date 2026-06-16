@@ -200,8 +200,11 @@ fn v6_multi_sink_fan_out() {
 #[ignore = "live COM; run explicitly"]
 fn v7_excel_new_workbook_oop_event() {
     // THE out-of-process flagship: a marshalled connection point + STA pump +
-    // cross-apartment sink. Wire app, Workbooks.Add, pump. fired >= 1. fired == 0 is
-    // a silent total failure of the OOP event story. verdict = IIf(mFired >= 1, 1, 0).
+    // cross-apartment sink. Wire app, Workbooks.Add, pump. The handler also dereferences
+    // the marshalled `Wb` (reads `Wb.Name`), so the verdict requires the GIT-revived
+    // Workbook to be a live object, not Nothing / a dead proxy — a bare fire-count
+    // (mFired >= 1) would pass even if the object arg were broken.
+    // verdict = IIf(mFired >= 1 And mWbOk >= 1, 1, 0).
     //
     // GREEN (verified live, ~3s). Out-of-process Excel `Application.NewWorkbook` is
     // delivered end-to-end: the agile (free-threaded-marshaler) sink advises Excel's
@@ -219,6 +222,7 @@ fn v7_excel_new_workbook_oop_event() {
          result = s.Run()\n\
          End Sub\n";
     let sink = "Private mFired As Long\n\
+         Private mWbOk As Long\n\
          Private app As Excel.Application\n\
          Private WithEvents appEv As Excel.Application\n\
          Public Function Run() As Long\n\
@@ -232,10 +236,11 @@ fn v7_excel_new_workbook_oop_event() {
          DoEvents\n\
          Next i\n\
          app.Quit\n\
-         Run = IIf(mFired >= 1, 1, 0)\n\
+         Run = IIf(mFired >= 1 And mWbOk >= 1, 1, 0)\n\
          End Function\n\
          Private Sub appEv_NewWorkbook(ByVal Wb As Excel.Workbook)\n\
          mFired = mFired + 1\n\
+         If Len(Wb.Name) > 0 Then mWbOk = mWbOk + 1\n\
          End Sub\n";
     run_manifest_case_excel("V7", main_src, sink, 1);
 }
@@ -293,30 +298,31 @@ fn v8_excel_sheet_change_oop_object_arg() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn v9_handler_re_entrancy() {
-    // `pumping` re-entrancy guard. FireValueChanged 3; the handler, while v > 1,
-    // re-fires v-1, so the deepest delivered value is 1 and the LAST handler to set
-    // mN (as the stack unwinds) leaves mN at the final value. We assert mMax == 3
-    // (the first delivery) and mMin == 1 (the deepest), proving the chain ran fully.
-    // verdict = IIf(mMax = 3 And mMin = 1, 1, 0).
-    let sink = "Private mMax As Long\n\
-         Private mMin As Long\n\
+    // `pumping` re-entrancy guard. FireValueChanged 3; the handler appends "(v", re-fires
+    // v-1 (while v > 1) and calls DoEvents, then appends "v)". With the guard the nested
+    // DoEvents is a NO-OP, so each handler invocation completes before the next is delivered
+    // (flat FIFO drain) -> "(33)(22)(11)". WITHOUT the guard the nested DoEvents pumps
+    // re-entrantly, interleaving the markers -> "(3(2(11)2)3)". The EXACT log thus
+    // distinguishes the two drain strategies; an order/set-insensitive check (e.g. max/min)
+    // could not, and would pass whether or not the guard exists.
+    // verdict = IIf(mLog = "(33)(22)(11)", 1, 0).
+    let sink = "Private mLog As String\n\
          Private WithEvents src As OxVba.TestEventServer\n\
          Public Sub Wire()\n\
          Set src = New OxVba.TestEventServer\n\
-         mMin = 999\n\
          src.FireValueChanged 3\n\
          DoEvents\n\
          End Sub\n\
          Public Function Result() As Long\n\
-         Result = IIf(mMax = 3 And mMin = 1, 1, 0)\n\
+         Result = IIf(mLog = \"(33)(22)(11)\", 1, 0)\n\
          End Function\n\
          Private Sub src_OnValueChanged(ByVal value As Long)\n\
-         If value > mMax Then mMax = value\n\
-         If value < mMin Then mMin = value\n\
+         mLog = mLog & \"(\" & CStr(value)\n\
          If value > 1 Then\n\
          src.FireValueChanged value - 1\n\
          DoEvents\n\
          End If\n\
+         mLog = mLog & CStr(value) & \")\"\n\
          End Sub\n";
     run_event_case_result("V9", sink, 1);
 }
@@ -326,24 +332,28 @@ fn v9_handler_re_entrancy() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn v10_handler_error_swallowed_bridge_intact() {
-    // The COM pump SWALLOWS a handler error (pump_com_events `let _ =`), unlike a
-    // project RaiseEvent which propagates. The asymmetry is the contract: after a
-    // handler that raises, a subsequent Ping() must still be 42 (bridge intact).
-    // The handler raises 5 but Wire continues; verdict = IIf(pingOk = 42, 1, 0).
+    // The COM pump SWALLOWS a handler error (pump_com_events `let _ =`), unlike a project
+    // RaiseEvent which propagates. The handler sets mEntered BEFORE raising, so the verdict
+    // requires both (a) the handler actually ran (mEntered = 1 — distinguishes "error
+    // swallowed" from "event never delivered", which the old mPing-only check could not)
+    // and (b) the bridge stayed intact afterwards (Ping() = 42). No `On Error` wraps the
+    // fire: the pump swallows the handler error so it never reaches Wire, hence a regression
+    // that PROPAGATED it would surface as an uncaught error (test failure) instead of being
+    // masked. verdict = IIf(mEntered = 1 And mPing = 42, 1, 0).
     let sink = "Private mPing As Long\n\
+         Private mEntered As Long\n\
          Private WithEvents src As OxVba.TestEventServer\n\
          Public Sub Wire()\n\
          Set src = New OxVba.TestEventServer\n\
-         On Error Resume Next\n\
          src.FireValueChanged 1\n\
          DoEvents\n\
-         On Error GoTo 0\n\
          mPing = src.Ping()\n\
          End Sub\n\
          Public Function Result() As Long\n\
-         Result = IIf(mPing = 42, 1, 0)\n\
+         Result = IIf(mEntered = 1 And mPing = 42, 1, 0)\n\
          End Function\n\
          Private Sub src_OnValueChanged(ByVal value As Long)\n\
+         mEntered = mEntered + 1\n\
          Err.Raise 5\n\
          End Sub\n";
     run_event_case_result("V10", sink, 1);

@@ -249,20 +249,25 @@ struct WindowsDispatchEventSink {
     on_event: DispatchEventCallback,
     /// The thread that CREATED (advised) this sink — the subscriber's own thread.
     /// `windows_dispatch_event_sink_invoke` compares the calling thread to this to choose
-    /// the rgvarg layout. EMPIRICALLY (verified live, Excel `Workbook.SheetChange`): a
-    /// DIRECT in-process source fires on this same thread and presents the standard reversed
-    /// IDispatch arg layout, while an OUT-OF-PROCESS source's marshaled call to our agile
-    /// sink arrives on a different (RPC worker) thread and was observed to present DECLARED
-    /// (forward) order.
+    /// the rgvarg layout. The two layouts and the rule are PROVEN by a live per-slot rgvarg
+    /// dump (in-proc `OnPairChanged(10,11)` and OOP Excel `Workbook.SheetChange(Sh,Target)`):
+    ///   - a DIRECT in-process IDispatch call fires on this same thread and builds rgvarg in
+    ///     the standard REVERSED convention (`rgvarg[0]` = last declared arg) — confirmed:
+    ///     `rgvarg[0]=11(=b)`, `rgvarg[1]=10(=a)`;
+    ///   - an OUT-OF-PROCESS call, marshaled to our agile sink through the oleaut IDispatch
+    ///     proxy/stub, lands on a different (RPC worker) thread and is reconstructed by the
+    ///     stub in DECLARED (forward) order (`rgvarg[0]` = first declared arg) — confirmed:
+    ///     `rgvarg[0]`=Sh(Worksheet, no `.Column`), `rgvarg[1]`=Target(Range, has `.Column`).
+    /// So the layout tracks the TRANSPORT (direct vs oleaut-remoted), and the calling-thread
+    /// vs advise-thread comparison is a reliable proxy for it (direct calls stay on the
+    /// advise/STA thread; remoted calls arrive on an RPC worker). Apartment type cannot be
+    /// substituted — an agile call reports neutral, not MTA.
     ///
-    /// NOTE this is a transport HEURISTIC, not a contract guarantee. The IDispatch
-    /// rgvarg-reversed convention is transport-invariant, so "forward-for-OOP" is not
-    /// explained by the contract alone and the thread→layout inference is known to be wrong
-    /// for at least one untested topology (an in-process FREE-THREADED source firing off the
-    /// advise thread would deliver reversed args on a different thread, yet be read forward).
-    /// Apartment type cannot be substituted — an agile call reports neutral, not MTA. The
-    /// robust resolution is a live per-slot rgvarg dump confirming the layout per transport;
-    /// see docs/COM_OOP_EVENT_SINK_MARSHALLING.md.
+    /// KNOWN (non-VBA) GAP: the thread proxy breaks only for an in-process FREE-THREADED
+    /// source that fires a multi-arg event DIRECTLY (reversed) from a non-advise thread —
+    /// it would be misread as forward. No VBA-reachable source does this: project class
+    /// instances and ordinary in-proc COM servers raise events on the calling (VM/STA)
+    /// thread. See docs/COM_OOP_EVENT_SINK_MARSHALLING.md.
     created_thread_id: u32,
     /// The aggregated free-threaded marshaler's inner `IUnknown` (one owned reference),
     /// or null if aggregation failed (the sink then falls back to standard marshalling —
@@ -554,15 +559,12 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     let mut args = Vec::with_capacity(cargs);
     let mut marshals: Vec<(usize, u32)> = Vec::new();
     // Recover the args into DECLARED order, `args[i]` = the i-th declared event parameter.
-    // The observed DISPPARAMS layout depends on how the call reached us: a DIRECT in-process
-    // source call arrives on the SAME (subscriber) thread in the standard IDispatch REVERSED
-    // order (`rgvarg[0]` is the last declared arg); a marshaled call to our agile sink from
-    // an OUT-OF-PROCESS source arrives on a DIFFERENT (RPC worker) thread and was observed
-    // (live, Excel `Workbook.SheetChange`) to present FORWARD order. We pick the layout by
-    // comparing the calling thread to the sink's creation thread — see `created_thread_id`
-    // for why this is an empirical heuristic, not a contract guarantee, and for its known
-    // untested-topology gap. (Single-arg events cannot reveal the order; it surfaced with
-    // the first 2-arg event.)
+    // The DISPPARAMS layout depends on the TRANSPORT (proven by a live per-slot dump — see
+    // `created_thread_id`): a DIRECT in-process call presents the standard IDispatch REVERSED
+    // order (`rgvarg[0]` = last declared arg) on the advise thread; an OOP call marshaled to
+    // our agile sink through the oleaut IDispatch stub presents DECLARED (forward) order on an
+    // RPC worker thread. The calling-thread vs advise-thread comparison reliably distinguishes
+    // them. (Single-arg events cannot reveal the order; it surfaced with the first 2-arg event.)
     // SAFETY: GetCurrentThreadId has no preconditions.
     let forward = unsafe { GetCurrentThreadId() } != (*sink).created_thread_id;
     for arg_index in 0..cargs {

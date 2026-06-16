@@ -151,14 +151,29 @@ cannot reveal the order; the first 2-arg event exposed it. V8 now green — the 
 `Range` is the real `Target` and `Target.Column == 3`; V1–V6 (in-proc, incl. the 2-arg
 arg-order pin V3) stay green.
 
-**Caveat — this is an empirical heuristic, not a contract guarantee.** The IDispatch
-`rgvarg`-reversed convention is *transport-invariant* (a faithful proxy/stub preserves the
-array order), so "forward-for-OOP" is not predicted by the contract and the thread→layout
-inference is known to be wrong for at least one *untested* topology: an in-process
-FREE-THREADED source firing off the advise thread would deliver reversed args on a different
-thread, yet be read forward. The two transports the matrix exercises (in-proc same-thread,
-OOP RPC-worker) happen to fall on the heuristic's correct side. The robust resolution is a
-live per-slot `rgvarg` `vt`/identity dump confirming the layout per transport before relying
-on the thread rule; until then the heuristic is retained because changing it (e.g. to
-unconditional un-reverse) would break the live-green V8 OOP path AND the in-proc V3 pin. See
-the `created_thread_id` doc-comment in `windows_connection_point.rs`.
+**The forward/reverse split is PROVEN by a live per-slot `rgvarg` dump** (temporary
+instrumentation, since removed), and tracks the TRANSPORT, not anything contract-level:
+
+```
+in-proc  OnPairChanged(a=10, b=11):  forward=false  cur==created
+  rgvarg[0] vt=I4 lVal=11   (= b, the LAST declared arg)   -> REVERSED (IDispatch convention)
+  rgvarg[1] vt=I4 lVal=10   (= a, the FIRST declared arg)
+
+OOP      Workbook.SheetChange(Sh, Target):  forward=true  cur != created
+  rgvarg[0] vt=DISPATCH  has_Column=false  (= Sh, a Worksheet; FIRST declared arg)  -> FORWARD
+  rgvarg[1] vt=DISPATCH  has_Column=true   (= Target, a Range; LAST declared arg)
+```
+
+A DIRECT in-process IDispatch call builds `rgvarg` in the standard reversed convention; an
+OOP call marshaled to our agile sink through the **oleaut IDispatch proxy/stub** is
+reconstructed by the stub in DECLARED (forward) order. So "forward-for-OOP" is real (not a
+compensating bug), and the calling-thread vs advise-thread comparison is a reliable proxy for
+the transport (direct calls stay on the advise/STA thread; remoted calls arrive on an RPC
+worker). This is why "always un-reverse" is wrong — it would break the OOP path — and why the
+thread rule is correct for every transport VBA actually uses.
+
+**Known (non-VBA) gap:** the thread proxy would misread an in-process FREE-THREADED source
+that fires a multi-arg event DIRECTLY (reversed) from a non-advise thread as forward. No
+VBA-reachable source does this — project class instances and ordinary in-proc COM servers
+raise events on the calling (VM/STA) thread. Documented in the `created_thread_id`
+doc-comment in `windows_connection_point.rs`.
