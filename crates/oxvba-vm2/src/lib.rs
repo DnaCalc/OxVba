@@ -63,6 +63,8 @@ use arith::CmpOp;
 /// VBA `Missing` (an omitted optional argument): vbError `&H80020004`.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
 
+type ProjectEventSink<'h> = dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h;
+
 /// A VBA run-time error surfaced to the embedder (uncaught by any handler).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmError {
@@ -346,6 +348,8 @@ pub struct Vm<'h> {
     /// outlives its object until VM drop — bounded by `New Collection` count, and
     /// consistent with the object-cycle-leak stance). See `collection.rs`.
     collections: HashMap<i32, CollectionData>,
+    /// Optional host/wrapper event publication hook for project `RaiseEvent`.
+    project_event_sink: Option<Box<ProjectEventSink<'h>>>,
 }
 
 /// A cross-bundle link failure (an unresolved/mismatched import).
@@ -480,6 +484,7 @@ impl<'h> Vm<'h> {
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
             collections: HashMap::new(),
+            project_event_sink: None,
         })
     }
 
@@ -608,6 +613,17 @@ impl<'h> Vm<'h> {
         result.map_err(vm_error_from_fault)
     }
 
+    pub fn set_project_event_sink<F>(&mut self, sink: F)
+    where
+        F: FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h,
+    {
+        self.project_event_sink = Some(Box::new(sink));
+    }
+
+    pub fn clear_project_event_sink(&mut self) {
+        self.project_event_sink = None;
+    }
+
     /// Drive the instruction stream until `Halt`, a `Return` from the entry
     /// frame, the end of the ops, or an uncaught error.
     pub fn run(&mut self) -> Result<(), VmError> {
@@ -692,6 +708,15 @@ impl<'h> Vm<'h> {
     fn set(&mut self, slot: usize, value: Variant) -> Result<(), Fault> {
         let place = self.target(slot)?;
         self.write_place(place, value)
+    }
+
+    fn proc_args_to_values(&self, args: &[ProcArg]) -> Result<Vec<Variant>, Fault> {
+        args.iter()
+            .map(|arg| match arg {
+                ProcArg::ByVal(slot) | ProcArg::ByRef(slot) => self.cloned(*slot),
+                ProcArg::Omitted => Ok(Variant::from_error_code(MISSING_ARG)),
+            })
+            .collect()
     }
 
     /// The `VB_PredeclaredId` singleton of class `class_idx` in `bundle`, creating it
@@ -2579,8 +2604,14 @@ impl<'h> Vm<'h> {
                 event,
                 args,
             } => {
-                let source_id = object_identity(&self.cloned(*source)?);
+                let source_object = variant_to_object(&self.cloned(*source)?)?;
+                let source_id = source_object.raw();
                 let event_id = *event;
+                let external_args = if self.project_event_sink.is_some() {
+                    Some(self.proc_args_to_values(args)?)
+                } else {
+                    None
+                };
                 // Collect subscribers (sink Me + handler + sink bundle) whose binding
                 // holds this source and routes this event. The route + handler live in
                 // the SINK's bundle (a cross-bundle WithEvents sink), and the raised
@@ -2614,6 +2645,11 @@ impl<'h> Vm<'h> {
                     // propagates to the raiser. `args` follow the event signature and
                     // resolve in the raiser's bundle before the dispatch.
                     self.run_proc_in_bundle(handler, sink, args, sink_bundle, false, false)?;
+                }
+                if let (Some(sink), Some(external_args)) =
+                    (self.project_event_sink.as_mut(), external_args)
+                {
+                    sink(source_object, event_id, external_args).map_err(Fault::from_string)?;
                 }
             }
 

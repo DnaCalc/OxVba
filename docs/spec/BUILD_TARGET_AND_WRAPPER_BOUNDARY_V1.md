@@ -39,7 +39,7 @@ This separation is required so wrapper/native-hosting lanes do not overload sema
 | `Bundle` | Canonical OxVBA bundle artifact | emits `.oxb`; current stable default except `OutputType=Addin`, where `oxvba build` packages the bundle into a generated `.xll` |
 | `WrapperExe` | Native executable wrapper over a canonical `.oxb` payload | planned delivery lane |
 | `WrapperLibrary` | Native DLL/shared-library wrapper over a canonical `.oxb` payload | planned delivery lane |
-| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | bounded Windows DLL lane active: package/descriptor/IDL/shim source, compiled `.tlb`, and compiled in-process COM DLL with per-user class/typelib registration and late-bound `IDispatch` activation/dispatch |
+| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | bounded Windows DLL lane active: package/descriptor/IDL/shim source, compiled `.tlb`, and compiled in-process COM DLL with per-user class/typelib registration, late-bound `IDispatch` activation/dispatch, and dispatch-backed connection-point event publication |
 
 Default: `Bundle`
 
@@ -96,7 +96,7 @@ The WrappedComServer lane produces a Windows desktop in-process COM server wrapp
 - registration plan and, where selected, registry script or registration-free manifest
 - build transcript, diagnostics, and debug symbols where available
 
-The first physical tier must provide standard in-process COM activation and late-bound dispatch for the scoped class set before any broader server/export row can move beyond planned/subset status. Later tiers add generated type libraries, dual-interface vtable projection, and connection-point events.
+The first physical tier must provide standard in-process COM activation and late-bound dispatch for the scoped class set before any broader server/export row can move beyond planned/subset status. Later tiers add generated type libraries, dispatch-backed connection-point events, and then dual-interface vtable projection.
 
 Current `oxvba build --target WrappedComServer` output emits the canonical
 `.oxb` package, deterministic COM descriptor JSON, IDL, compiled `.tlb`,
@@ -104,13 +104,17 @@ auditable shim source, and a compiled Windows in-process COM DLL. The generated
 DLL embeds the package and descriptor, exports `DllGetClassObject`,
 `DllCanUnloadNow`, `DllRegisterServer`, and `DllUnregisterServer`, registers
 creatable classes and the generated type library under `HKCU\Software\Classes`,
-and supports late-bound `IDispatch` activation/member dispatch through the clean
-package-backed runtime session.
+supports late-bound `IDispatch` activation/member dispatch through the clean
+package-backed runtime session, and exposes source dispinterfaces through
+standard COM connection points for project `RaiseEvent` publication.
 
 The active subset is still intentionally bounded. Early-bound client parity,
-dual-interface vtable projection, connection-point events, registration-free
-manifests, and named Office/VBA client evidence remain follow-on work beyond the
-current late-bound DLL and registered typelib slice.
+dual-interface vtable projection, registration-free manifests, and broader
+Office/VBA client parity remain follow-on work beyond the current dispatch-backed
+DLL, registered typelib, and connection-point event slice. Excel/VBA evidence
+for this slice uses a typed dispatch-only interface and `WithEvents` sink for
+member invocation and connection-point subscription; it does not claim
+dual-interface vtable calls.
 
 The lane is Windows-only unless a future workset defines a portable equivalent. Bitness, toolchain availability, registration scope, and administrative requirements must be reported through build-plan/build-result surfaces rather than inferred from CLI text.
 

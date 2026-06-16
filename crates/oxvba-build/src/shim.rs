@@ -24,14 +24,15 @@ const SHIM_TEMPLATE: &str = r##"//! Auto-generated OxVBA WrappedComServer shim s
 //! This is a real in-process COM DLL shim over the clean OxVBA package runtime.
 //! It currently implements class factory activation, IUnknown/IDispatch,
 //! per-user registration, generated type-library registration, and late-bound
-//! Invoke. Connection-point event sources are described by artifacts but are not
-//! yet compiled into this shim.
+//! Invoke. Source dispinterfaces are exposed through connection points; dual
+//! interface vtable slots remain outside this dispatch-backed wrapper tier.
 
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case)]
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::OnceLock;
@@ -61,7 +62,7 @@ use windows_sys::Win32::System::Registry::{
     RegDeleteTreeW, RegSetValueExW,
 };
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
-use windows_sys::Win32::System::Variant::{VARIANT, VT_EMPTY};
+use windows_sys::Win32::System::Variant::{VARIANT, VT_EMPTY, VariantClear};
 use windows_sys::core::GUID;
 
 const PROJECT_NAME: &str = "__PROJECT_NAME__";
@@ -80,6 +81,8 @@ const E_INVALIDARG: i32 = 0x8007_0057u32 as i32;
 const E_OUTOFMEMORY: i32 = 0x8007_000Eu32 as i32;
 const CLASS_E_NOAGGREGATION: i32 = 0x8004_0110u32 as i32;
 const CLASS_E_CLASSNOTAVAILABLE: i32 = 0x8004_0111u32 as i32;
+const CONNECT_E_NOCONNECTION: i32 = 0x8004_0004u32 as i32;
+const CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
 const DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
 const DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
 const SELFREG_E_CLASS: i32 = 0x8004_0201u32 as i32;
@@ -102,6 +105,24 @@ const IID_IDISPATCH: GUID = GUID {
     data3: 0x0000,
     data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
 };
+const IID_NULL: GUID = GUID {
+    data1: 0,
+    data2: 0,
+    data3: 0,
+    data4: [0; 8],
+};
+const IID_ICONNECTIONPOINTCONTAINER: GUID = GUID {
+    data1: 0xB196_B284,
+    data2: 0xBAB4,
+    data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
+const IID_ICONNECTIONPOINT: GUID = GUID {
+    data1: 0xB196_B286,
+    data2: 0xBAB4,
+    data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
 
 static GLOBAL_REF_COUNT: AtomicU32 = AtomicU32::new(0);
 static DESCRIPTOR: OnceLock<Result<ComServerDescriptor, String>> = OnceLock::new();
@@ -109,6 +130,7 @@ static mut MODULE_HANDLE: HMODULE = ptr::null_mut();
 
 thread_local! {
     static SESSION: RefCell<Option<ProjectRuntimeSession>> = RefCell::new(None);
+    static WRAPPERS: RefCell<HashMap<i32, Vec<*mut DispatchObject>>> = RefCell::new(HashMap::new());
 }
 
 #[repr(C)]
@@ -150,6 +172,29 @@ struct IDispatchVtbl {
 }
 
 #[repr(C)]
+struct IConnectionPointContainerVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    enum_connection_points: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+    find_connection_point:
+        unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+}
+
+#[repr(C)]
+struct IConnectionPointVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_connection_interface: unsafe extern "system" fn(*mut c_void, *mut GUID) -> i32,
+    get_connection_point_container:
+        unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+    advise: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut u32) -> i32,
+    unadvise: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+    enum_connections: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+}
+
+#[repr(C)]
 struct IUnknownVtbl {
     query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
@@ -164,11 +209,32 @@ struct ClassFactory {
 }
 
 #[repr(C)]
+struct ConnectionPointContainer {
+    vtbl: *const IConnectionPointContainerVtbl,
+    owner: *mut DispatchObject,
+}
+
+#[repr(C)]
+struct ConnectionPoint {
+    vtbl: *const IConnectionPointVtbl,
+    owner: *mut DispatchObject,
+}
+
+struct ConnectionSink {
+    cookie: u32,
+    dispatch: *mut c_void,
+}
+
+#[repr(C)]
 struct DispatchObject {
     vtbl: *const IDispatchVtbl,
+    cpc: ConnectionPointContainer,
+    cp: ConnectionPoint,
     ref_count: AtomicU32,
     class_index: usize,
     object: ObjectRef,
+    sinks: RefCell<Vec<ConnectionSink>>,
+    next_cookie: AtomicU32,
 }
 
 static CLASS_FACTORY_VTBL: IClassFactoryVtbl = IClassFactoryVtbl {
@@ -187,6 +253,26 @@ static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
     get_type_info: dispatch_get_type_info,
     get_ids_of_names: dispatch_get_ids_of_names,
     invoke: dispatch_invoke,
+};
+
+static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl =
+    IConnectionPointContainerVtbl {
+        query_interface: cpc_query_interface,
+        add_ref: cpc_add_ref,
+        release: cpc_release,
+        enum_connection_points: cpc_enum_connection_points,
+        find_connection_point: cpc_find_connection_point,
+    };
+
+static CONNECTION_POINT_VTBL: IConnectionPointVtbl = IConnectionPointVtbl {
+    query_interface: cp_query_interface,
+    add_ref: cp_add_ref,
+    release: cp_release,
+    get_connection_interface: cp_get_connection_interface,
+    get_connection_point_container: cp_get_connection_point_container,
+    advise: cp_advise,
+    unadvise: cp_unadvise,
+    enum_connections: cp_enum_connections,
 };
 
 #[unsafe(no_mangle)]
@@ -355,11 +441,19 @@ unsafe extern "system" fn dispatch_query_interface(
         .ok()
         .and_then(|descriptor| descriptor.classes.get(object.class_index))
         .is_some_and(|class| guid_matches_text(&*riid, &class.default_interface_iid));
+    let supports_connection_points = descriptor()
+        .ok()
+        .and_then(|descriptor| descriptor.classes.get(object.class_index))
+        .is_some_and(|class| class.source_interface_iid.is_some());
 
     if guid_eq(&*riid, &IID_IUNKNOWN) || guid_eq(&*riid, &IID_IDISPATCH) || supports_default_interface
     {
         dispatch_add_ref(this);
         *out = this;
+        S_OK
+    } else if guid_eq(&*riid, &IID_ICONNECTIONPOINTCONTAINER) && supports_connection_points {
+        dispatch_add_ref(this);
+        *out = (&mut (*(this.cast::<DispatchObject>())).cpc as *mut ConnectionPointContainer).cast();
         S_OK
     } else {
         E_NOINTERFACE
@@ -386,6 +480,8 @@ unsafe extern "system" fn dispatch_release(this: *mut c_void) -> u32 {
     let remaining = previous - 1;
     if remaining == 0 {
         fence(Ordering::Acquire);
+        unregister_dispatch_wrapper(object);
+        release_connection_sinks(object);
         GLOBAL_REF_COUNT.fetch_sub(1, Ordering::AcqRel);
         drop(Box::from_raw(object));
     }
@@ -550,6 +646,192 @@ unsafe extern "system" fn dispatch_invoke(
     }
 }
 
+unsafe extern "system" fn cpc_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || riid.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    let owner = (*(this.cast::<ConnectionPointContainer>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    if guid_eq(&*riid, &IID_IUNKNOWN) {
+        dispatch_add_ref(owner.cast());
+        *out = owner.cast();
+        S_OK
+    } else if guid_eq(&*riid, &IID_ICONNECTIONPOINTCONTAINER) {
+        dispatch_add_ref(owner.cast());
+        *out = this;
+        S_OK
+    } else {
+        E_NOINTERFACE
+    }
+}
+
+unsafe extern "system" fn cpc_add_ref(this: *mut c_void) -> u32 {
+    let owner = (*(this.cast::<ConnectionPointContainer>())).owner;
+    dispatch_add_ref(owner.cast())
+}
+
+unsafe extern "system" fn cpc_release(this: *mut c_void) -> u32 {
+    let owner = (*(this.cast::<ConnectionPointContainer>())).owner;
+    dispatch_release(owner.cast())
+}
+
+unsafe extern "system" fn cpc_enum_connection_points(
+    _this: *mut c_void,
+    out: *mut *mut c_void,
+) -> i32 {
+    if !out.is_null() {
+        *out = ptr::null_mut();
+    }
+    E_NOTIMPL
+}
+
+unsafe extern "system" fn cpc_find_connection_point(
+    this: *mut c_void,
+    iid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || iid.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    let owner = (*(this.cast::<ConnectionPointContainer>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    let Some(source_iid) = source_iid_for_object(&*owner) else {
+        return E_NOINTERFACE;
+    };
+    if guid_matches_text(&*iid, source_iid) {
+        dispatch_add_ref(owner.cast());
+        *out = (&mut (*owner).cp as *mut ConnectionPoint).cast();
+        S_OK
+    } else {
+        E_NOINTERFACE
+    }
+}
+
+unsafe extern "system" fn cp_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || riid.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    if guid_eq(&*riid, &IID_IUNKNOWN) {
+        dispatch_add_ref(owner.cast());
+        *out = owner.cast();
+        S_OK
+    } else if guid_eq(&*riid, &IID_ICONNECTIONPOINT) {
+        dispatch_add_ref(owner.cast());
+        *out = this;
+        S_OK
+    } else {
+        E_NOINTERFACE
+    }
+}
+
+unsafe extern "system" fn cp_add_ref(this: *mut c_void) -> u32 {
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    dispatch_add_ref(owner.cast())
+}
+
+unsafe extern "system" fn cp_release(this: *mut c_void) -> u32 {
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    dispatch_release(owner.cast())
+}
+
+unsafe extern "system" fn cp_get_connection_interface(this: *mut c_void, iid: *mut GUID) -> i32 {
+    if this.is_null() || iid.is_null() {
+        return E_POINTER;
+    }
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    let Some(source_iid) = source_iid_for_object(&*owner).and_then(parse_guid_text) else {
+        return E_FAIL;
+    };
+    *iid = source_iid;
+    S_OK
+}
+
+unsafe extern "system" fn cp_get_connection_point_container(
+    this: *mut c_void,
+    out: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    dispatch_add_ref(owner.cast());
+    *out = (&mut (*owner).cpc as *mut ConnectionPointContainer).cast();
+    S_OK
+}
+
+unsafe extern "system" fn cp_advise(
+    this: *mut c_void,
+    sink_unknown: *mut c_void,
+    cookie_out: *mut u32,
+) -> i32 {
+    if this.is_null() || sink_unknown.is_null() || cookie_out.is_null() {
+        return E_POINTER;
+    }
+    *cookie_out = 0;
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    let mut dispatch: *mut c_void = ptr::null_mut();
+    let hr = query_interface(sink_unknown, &IID_IDISPATCH, &mut dispatch);
+    if hr < 0 || dispatch.is_null() {
+        return CONNECT_E_CANNOTCONNECT;
+    }
+    let cookie = (*owner).next_cookie.fetch_add(1, Ordering::Relaxed);
+    (*owner).sinks.borrow_mut().push(ConnectionSink { cookie, dispatch });
+    *cookie_out = cookie;
+    S_OK
+}
+
+unsafe extern "system" fn cp_unadvise(this: *mut c_void, cookie: u32) -> i32 {
+    if this.is_null() {
+        return E_POINTER;
+    }
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    let mut sinks = (*owner).sinks.borrow_mut();
+    let Some(index) = sinks.iter().position(|sink| sink.cookie == cookie) else {
+        return CONNECT_E_NOCONNECTION;
+    };
+    let sink = sinks.remove(index);
+    release_unknown(sink.dispatch);
+    S_OK
+}
+
+unsafe extern "system" fn cp_enum_connections(_this: *mut c_void, out: *mut *mut c_void) -> i32 {
+    if !out.is_null() {
+        *out = ptr::null_mut();
+    }
+    E_NOTIMPL
+}
+
 fn descriptor() -> Result<&'static ComServerDescriptor, i32> {
     DESCRIPTOR
         .get_or_init(|| serde_json::from_str(DESCRIPTOR_JSON).map_err(|err| err.to_string()))
@@ -566,9 +848,12 @@ fn with_session<R>(
             let package = oxvba_bundle::BundlePackage::from_bytes(BUNDLE_BYTES)
                 .map_err(|err| err.to_string())?;
             let engine = Engine::new(HostConfig { enable_jit: false });
-            let session = engine
+            let mut session = engine
                 .prepare_bundle_package_session(package)
                 .map_err(|err| err.to_string())?;
+            session.set_project_event_sink(|source, event_id, args| unsafe {
+                fire_project_event(source, event_id, args)
+            });
             *slot.borrow_mut() = Some(session);
         }
         let mut borrowed = slot.borrow_mut();
@@ -643,13 +928,198 @@ unsafe fn allocate_factory(class_index: usize) -> *mut c_void {
 
 unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mut c_void {
     GLOBAL_REF_COUNT.fetch_add(1, Ordering::AcqRel);
-    Box::into_raw(Box::new(DispatchObject {
+    let raw = Box::into_raw(Box::new(DispatchObject {
         vtbl: &DISPATCH_VTBL,
+        cpc: ConnectionPointContainer {
+            vtbl: &CONNECTION_POINT_CONTAINER_VTBL,
+            owner: ptr::null_mut(),
+        },
+        cp: ConnectionPoint {
+            vtbl: &CONNECTION_POINT_VTBL,
+            owner: ptr::null_mut(),
+        },
         ref_count: AtomicU32::new(1),
         class_index,
         object,
-    }))
-    .cast()
+        sinks: RefCell::new(Vec::new()),
+        next_cookie: AtomicU32::new(1),
+    }));
+    (*raw).cpc.owner = raw;
+    (*raw).cp.owner = raw;
+    register_dispatch_wrapper(raw);
+    raw.cast()
+}
+
+unsafe fn register_dispatch_wrapper(object: *mut DispatchObject) {
+    if object.is_null() {
+        return;
+    }
+    let raw = (*object).object.raw();
+    WRAPPERS.with(|wrappers| {
+        wrappers.borrow_mut().entry(raw).or_default().push(object);
+    });
+}
+
+unsafe fn unregister_dispatch_wrapper(object: *mut DispatchObject) {
+    if object.is_null() {
+        return;
+    }
+    let raw = (*object).object.raw();
+    WRAPPERS.with(|wrappers| {
+        let mut wrappers = wrappers.borrow_mut();
+        if let Some(list) = wrappers.get_mut(&raw) {
+            list.retain(|item| *item != object);
+            if list.is_empty() {
+                wrappers.remove(&raw);
+            }
+        }
+    });
+}
+
+unsafe fn release_connection_sinks(object: *mut DispatchObject) {
+    if object.is_null() {
+        return;
+    }
+    for sink in (*object).sinks.get_mut().drain(..) {
+        release_unknown(sink.dispatch);
+    }
+}
+
+fn source_iid_for_object(object: &DispatchObject) -> Option<&str> {
+    descriptor()
+        .ok()
+        .and_then(|descriptor| descriptor.classes.get(object.class_index))
+        .and_then(|class| class.source_interface_iid.as_deref())
+}
+
+unsafe fn fire_project_event(
+    source: ObjectRef,
+    event_id: i32,
+    args: Vec<Variant>,
+) -> Result<(), String> {
+    let wrappers = WRAPPERS.with(|wrappers| {
+        wrappers
+            .borrow()
+            .get(&source.raw())
+            .cloned()
+            .unwrap_or_default()
+    });
+    for wrapper in wrappers {
+        if !wrapper.is_null() {
+            fire_event_on_wrapper(wrapper, event_id, &args)?;
+        }
+    }
+    Ok(())
+}
+
+unsafe fn fire_event_on_wrapper(
+    object: *mut DispatchObject,
+    event_id: i32,
+    args: &[Variant],
+) -> Result<(), String> {
+    let descriptor = descriptor().map_err(|_| "COM descriptor unavailable".to_string())?;
+    let Some(class) = descriptor.classes.get((*object).class_index) else {
+        return Ok(());
+    };
+    if !class.events.iter().any(|event| event.dispid == event_id) {
+        return Ok(());
+    }
+    if (*object).sinks.borrow().is_empty() {
+        return Ok(());
+    }
+
+    let mut variants: Vec<VARIANT> = (0..args.len()).map(|_| std::mem::zeroed()).collect();
+    for (logical_index, value) in args.iter().enumerate() {
+        let com_index = args.len() - 1 - logical_index;
+        let runtime_result = RuntimeCallResult::value(value.clone());
+        let mut resolve_object = |object: ObjectRef| resolve_runtime_object(object);
+        let mut add_ref_dispatch = |_dispatch: *mut c_void| {};
+        if let Err(err) = runtime_call_result_to_variant(
+            &runtime_result,
+            &mut variants[com_index],
+            &mut resolve_object,
+            &mut add_ref_dispatch,
+        ) {
+            for variant in &mut variants {
+                VariantClear(variant);
+            }
+            return Err(err);
+        }
+    }
+    let sinks: Vec<*mut c_void> = {
+        let borrowed = (*object).sinks.borrow();
+        borrowed
+            .iter()
+            .map(|sink| {
+                add_ref_unknown(sink.dispatch);
+                sink.dispatch
+            })
+            .collect()
+    };
+    if sinks.is_empty() {
+        for variant in &mut variants {
+            VariantClear(variant);
+        }
+        return Ok(());
+    }
+
+    let mut params = DISPPARAMS {
+        rgvarg: if variants.is_empty() {
+            ptr::null_mut()
+        } else {
+            variants.as_mut_ptr()
+        },
+        rgdispidNamedArgs: ptr::null_mut(),
+        cArgs: variants.len() as u32,
+        cNamedArgs: 0,
+    };
+
+    let mut first_error: Option<String> = None;
+    for sink in sinks {
+        let hr = invoke_dispatch_sink(sink, event_id, &mut params);
+        release_unknown(sink);
+        if hr < 0 && first_error.is_none() {
+            first_error = Some(format!(
+                "event sink Invoke(dispid={event_id}) failed with HRESULT 0x{:08X}",
+                hr as u32
+            ));
+        }
+    }
+    for variant in &mut variants {
+        VariantClear(variant);
+    }
+    if let Some(message) = first_error {
+        Err(message)
+    } else {
+        Ok(())
+    }
+}
+
+unsafe fn invoke_dispatch_sink(
+    dispatch: *mut c_void,
+    event_id: i32,
+    params: *mut DISPPARAMS,
+) -> i32 {
+    if dispatch.is_null() {
+        return E_POINTER;
+    }
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    if vtbl.is_null() {
+        return E_POINTER;
+    }
+    let mut excep_info: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    ((*vtbl).invoke)(
+        dispatch,
+        event_id,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD as u16,
+        params,
+        ptr::null_mut(),
+        &mut excep_info,
+        &mut arg_err,
+    )
 }
 
 unsafe fn write_runtime_exception(
@@ -864,6 +1334,27 @@ unsafe fn release_unknown(ptr: *mut c_void) {
     if !vtbl.is_null() {
         ((*vtbl).release)(ptr);
     }
+}
+
+unsafe fn add_ref_unknown(ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+    let vtbl = *(ptr.cast::<*const IUnknownVtbl>());
+    if !vtbl.is_null() {
+        ((*vtbl).add_ref)(ptr);
+    }
+}
+
+unsafe fn query_interface(ptr: *mut c_void, iid: &GUID, out: *mut *mut c_void) -> i32 {
+    if ptr.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    let vtbl = *(ptr.cast::<*const IUnknownVtbl>());
+    if vtbl.is_null() {
+        return E_POINTER;
+    }
+    ((*vtbl).query_interface)(ptr, iid, out)
 }
 
 unsafe fn wide_ptr_to_string(ptr: *const u16) -> Option<String> {

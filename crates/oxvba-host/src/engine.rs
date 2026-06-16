@@ -143,6 +143,17 @@ impl ProjectRuntimeSession {
             .invoke_project_member_values(object, member_name, kind_hint, args)
             .map_err(runtime_diagnostic)
     }
+
+    pub fn set_project_event_sink<F>(&mut self, sink: F)
+    where
+        F: FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'static,
+    {
+        self.vm.set_project_event_sink(sink);
+    }
+
+    pub fn clear_project_event_sink(&mut self) {
+        self.vm.clear_project_event_sink();
+    }
 }
 
 impl Default for Engine {
@@ -509,5 +520,64 @@ End Function
             )
             .expect("invoke Add");
         assert_eq!(result.as_i32(), Some(5));
+    }
+
+    #[test]
+    fn package_session_project_event_sink_receives_raise_event() {
+        let mut attrs = ModuleAttributes::named("Notifier");
+        attrs.vb_exposed = true;
+        attrs.vb_creatable = true;
+        let manifest = SymbolProjectManifest {
+            project_name: "DemoServer".to_string(),
+            project_kind: ProjectKind::Library,
+            modules: vec![ModuleUnit {
+                module_name: "Notifier".to_string(),
+                module_kind: ModuleKind::Class,
+                attributes: attrs,
+                source: r#"
+Public Event Changed(ByVal value As Long)
+
+Public Sub Fire(ByVal value As Long)
+    RaiseEvent Changed(value)
+End Sub
+"#
+                .to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: Default::default(),
+        };
+        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
+        let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind");
+        let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_bundle_package_session(BundlePackage::single(bundle))
+            .expect("prepare session");
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_sink = seen.clone();
+        session.set_project_event_sink(move |source, event_id, args| {
+            seen_sink.lock().expect("seen lock").push((
+                source.raw(),
+                event_id,
+                args.first().and_then(Variant::as_i32),
+            ));
+            Ok(())
+        });
+
+        let object = session
+            .create_class_instance("Notifier")
+            .expect("create class instance");
+        let raw = object.raw();
+        session
+            .invoke_member_values(
+                object,
+                "Fire",
+                Some(ProjectMemberKind::Method),
+                vec![Variant::from_i32(42)],
+            )
+            .expect("invoke Fire");
+
+        assert_eq!(*seen.lock().expect("seen lock"), vec![(raw, 0, Some(42))]);
     }
 }

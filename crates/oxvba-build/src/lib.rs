@@ -299,12 +299,10 @@ End Sub
 
         let idl = std::fs::read_to_string(&output.idl_path).expect("idl should exist");
         assert!(idl.contains("library DemoServerLib"));
-        assert!(idl.contains("interface ICalculator : IDispatch"));
+        assert!(idl.contains("dispinterface ICalculator"));
         assert!(idl.contains("dispinterface _CalculatorEvents"));
-        assert!(
-            idl.contains("HRESULT Add([in] long a, [in] long b, [out, retval] long* pRetVal);")
-        );
-        assert!(idl.contains("HRESULT Fire([in] long value);"));
+        assert!(idl.contains("long Add([in] long a, [in] long b);"));
+        assert!(idl.contains("void Fire([in] long value);"));
         assert!(idl.contains("void Changed"));
 
         let shim_source =

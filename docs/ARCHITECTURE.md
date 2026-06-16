@@ -36,8 +36,8 @@ Workspace crates and current roles:
   `.oxb` bundle package, projects deterministic COM descriptors from the export
   surface, writes IDL/shim-source artifacts, compiles a generated type library,
   and compiles a bounded Windows in-process COM DLL with per-user class/typelib
-  registration and late-bound `IDispatch` dispatch over package-backed runtime
-  sessions.
+  registration, late-bound `IDispatch` dispatch, and source-dispinterface
+  connection-point event publication over package-backed runtime sessions.
 - `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
   reference-closure loading.
 - `oxvba-cli`: CLI bootstrap/run/build surface.

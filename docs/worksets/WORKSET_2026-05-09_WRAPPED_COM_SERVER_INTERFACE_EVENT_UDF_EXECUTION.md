@@ -22,6 +22,13 @@ calls with direct native compiled entry points.
 
 OxVba already has important substrate:
 
+- 2026-06-17 clean reimplementation update: `oxvba-build` now emits a usable
+  dispatch-backed `WrappedComServer` DLL for `OutputType=ComServer` projects,
+  including per-user registration, generated TypeLib registration, late-bound
+  `IDispatch` activation/member dispatch, and connection-point event
+  publication. Current evidence includes a controlled raw COM sink and an
+  Excel/VBA typed dispatch-interface `WithEvents` sink; this does not claim
+  dual-interface vtable calls.
 - Runtime values are OLE Automation shaped (`BStr`, 16-byte `Variant`, retained
   SAFEARRAY metadata, exact scalar COM VARTYPE carriers).
 - `ObjectRef` is IUnknown-like and now carries descriptor-backed
@@ -73,14 +80,12 @@ OxVba already has important substrate:
   default property get/let, object return, array return, error/`EXCEPINFO`, and
   registered `CoCreateInstance` activation slices. Office/VBA project-reference
   evidence remains outside the implemented subset.
-- COM-0009 now has the first dual-interface projection evidence:
-  generated wrapped objects expose deterministic custom `I<ClassName>` IIDs,
-  `QueryInterface` returns the class interface, the generated vtable has an
-  `IUnknown`/`IDispatch` prefix followed by a bounded no-arg scalar method slot,
-  and the Windows DLL test calls `Widget.Ping` through that vtable slot and
-  asserts the result equals the `IDispatch::Invoke` result from the same object.
-  Broader argument/property/byref/object/array/error vtable parity remains
-  outside the implemented subset.
+- COM-0009 has historical pre-clean dual-interface projection evidence, but the
+  clean 2026-06-17 `WrappedComServer` reimplementation does not carry that
+  vtable tier. The active clean path emits dispatch-only default interfaces and
+  returns `IDispatch` for those interface IIDs until a real dual-interface
+  vtable implementation lands. Broader argument/property/byref/object/array/error
+  vtable parity remains outside the implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -88,9 +93,10 @@ OxVba already has important substrate:
   It also has controlled runtime connection-point evidence for
   `IConnectionPointContainer::FindConnectionPoint`, `IConnectionPoint::Advise`,
   sink `IDispatch::Invoke` payload delivery from `Widget.FireChanged(123)`,
-  `Unadvise`, and no callback after unsubscribe. `bd-wcs1.8.3` publishes a
-  reproducible controlled-sink evidence capture; Office/VBA `WithEvents`
-  coverage remains outside the implemented subset.
+  `Unadvise`, and no callback after unsubscribe. The clean 2026-06-17
+  `WrappedComServer` smoke additionally proves Excel/VBA `WithEvents`
+  subscription against the generated TypeLib/source interface with typed
+  dispatch-interface method invocation.
 - PH-0011 now has the first descriptor metadata slice: host-call descriptors in
   `descriptor_inventory.host_calls` carry stable identities, entry/slot/type
   metadata, argument-name slots, and conservative UDF policy fields for
@@ -128,12 +134,12 @@ OxVba already has important substrate:
 
 The missing truth is also explicit:
 
-- `oxvba build` does not yet register a usable in-process COM server DLL for
-  `OutputType=ComServer`.
+- The clean `oxvba build --target WrappedComServer` lane now registers a usable
+  in-process COM server DLL for the bounded dispatch-backed subset.
 - Office/VBA early-bound project-reference evidence is not part of COM-0007 and
   remains deferred beyond the current COM-0008 controlled TypeLib-aware subset.
 - Broader dual-interface argument/property/byref/object/array/error parity and
-  Office/VBA `WithEvents` event proof are not yet implemented.
+  Office/VBA early-bound/vtable event-client parity are not yet implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.

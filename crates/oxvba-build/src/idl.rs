@@ -45,17 +45,17 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
     idl.push_str(&format!(
         r#"    [
         uuid({iid}),
-        dual,
-        oleautomation,
         helpstring("{help} Interface")
     ]
-    interface {interface_name} : IDispatch
+    dispinterface {interface_name}
     {{
+        properties:
+        methods:
 "#,
         iid = class.default_interface_iid,
     ));
     for member in &class.members {
-        idl.push_str(&generate_member_idl(member));
+        idl.push_str(&generate_dispatch_member_idl(member));
     }
     idl.push_str("    };\n\n");
 
@@ -88,7 +88,7 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
     ]
     coclass {class_name}
     {{
-        [default] interface {interface_name};
+        [default] dispinterface {interface_name};
 "#,
         clsid = class.clsid,
     ));
@@ -102,10 +102,10 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
     idl
 }
 
-fn generate_member_idl(member: &ComMemberDescriptor) -> String {
+fn generate_dispatch_member_idl(member: &ComMemberDescriptor) -> String {
     let name = sanitize_ident(&member.name);
     let attr = member_attributes(member);
-    let mut params: Vec<String> = member
+    let params: Vec<String> = member
         .parameter_types
         .iter()
         .enumerate()
@@ -126,15 +126,20 @@ fn generate_member_idl(member: &ComMemberDescriptor) -> String {
 
     match member.invoke_kind {
         ComInvokeKind::PropertyGet | ComInvokeKind::Method => {
-            if let Some(return_type) = member.return_type {
-                params.push(format!("[out, retval] {}* pRetVal", idl_type(return_type)));
-            } else if member.invoke_kind == ComInvokeKind::PropertyGet {
-                params.push("[out, retval] VARIANT* pRetVal".to_string());
-            }
-            format!("        {attr} HRESULT {name}({});\n", params.join(", "))
+            let return_type = member.return_type.map(idl_type).unwrap_or(
+                if member.invoke_kind == ComInvokeKind::PropertyGet {
+                    "VARIANT"
+                } else {
+                    "void"
+                },
+            );
+            format!(
+                "        {attr} {return_type} {name}({});\n",
+                params.join(", ")
+            )
         }
         ComInvokeKind::PropertyPut | ComInvokeKind::PropertyPutRef => {
-            format!("        {attr} HRESULT {name}({});\n", params.join(", "))
+            format!("        {attr} void {name}({});\n", params.join(", "))
         }
     }
 }
