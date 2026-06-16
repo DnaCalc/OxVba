@@ -101,8 +101,15 @@ into the MTA cannot be touched from the STA. Fix: register each object arg in th
 process **Global Interface Table** on the delivery thread, queue a `Nothing`
 placeholder plus `(arg_index, cookie)`, and revive it into a thread-correct binding
 on the VM thread at poll time (`GetInterfaceFromGlobal`), revoking the cookie.
-Callbacks purged before they are pumped revoke their cookies so the GIT never pins a
-source object. Also: a `WithEvents` source that reads LIBRARY-WIDE typelib events can
+A callback discarded before it is pumped must revoke its cookies so the GIT never
+pins a source object (which would hold a COM reference forever and can keep an
+out-of-process source from shutting down). EVERY teardown path funnels through
+`revoke_marshal_cookies`: unsubscribe (`remove_subscription_callbacks`), release
+(`release_callback` / `release_object_binding`), a declined queue (`callback_sink`
+when the subscription is already gone), and client `WindowsComClientState::drop`.
+The revoke is double-revoke-safe — poll-revival clears `pending_marshals` and every
+teardown removes the callback from the map, so each cookie is revoked at most once.
+Also: a `WithEvents` source that reads LIBRARY-WIDE typelib events can
 produce duplicate routes for a name shared across source interfaces (`SheetChange` on
 both `AppEvents` and `WorkbookEvents`, same dispid) — `build_event_routes` dedupes
 `(binding, event, handler)` so the connection point is advised exactly once.
@@ -143,3 +150,15 @@ reports neutral, not MTA — but the thread identity is exact.) Single-arg event
 cannot reveal the order; the first 2-arg event exposed it. V8 now green — the GIT-revived
 `Range` is the real `Target` and `Target.Column == 3`; V1–V6 (in-proc, incl. the 2-arg
 arg-order pin V3) stay green.
+
+**Caveat — this is an empirical heuristic, not a contract guarantee.** The IDispatch
+`rgvarg`-reversed convention is *transport-invariant* (a faithful proxy/stub preserves the
+array order), so "forward-for-OOP" is not predicted by the contract and the thread→layout
+inference is known to be wrong for at least one *untested* topology: an in-process
+FREE-THREADED source firing off the advise thread would deliver reversed args on a different
+thread, yet be read forward. The two transports the matrix exercises (in-proc same-thread,
+OOP RPC-worker) happen to fall on the heuristic's correct side. The robust resolution is a
+live per-slot `rgvarg` `vt`/identity dump confirming the layout per transport before relying
+on the thread rule; until then the heuristic is retained because changing it (e.g. to
+unconditional un-reverse) would break the live-green V8 OOP path AND the in-proc V3 pin. See
+the `created_thread_id` doc-comment in `windows_connection_point.rs`.

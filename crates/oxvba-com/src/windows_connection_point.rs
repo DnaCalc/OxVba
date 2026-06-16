@@ -247,12 +247,22 @@ struct WindowsDispatchEventSink {
     expected_arity: usize,
     connection_point_iid: Option<GUID>,
     on_event: DispatchEventCallback,
-    /// The thread that CREATED (advised) this sink — the subscriber's own thread. A DIRECT
-    /// in-process source fires the event on this same thread (reversed IDispatch arg
-    /// layout); an OUT-OF-PROCESS source's marshaled call to our agile sink arrives on a
-    /// different (RPC worker) thread (forward layout). `windows_dispatch_event_sink_invoke`
-    /// compares the two to pick the arg order — more reliable than apartment type, which
-    /// reports neutral for an agile call.
+    /// The thread that CREATED (advised) this sink — the subscriber's own thread.
+    /// `windows_dispatch_event_sink_invoke` compares the calling thread to this to choose
+    /// the rgvarg layout. EMPIRICALLY (verified live, Excel `Workbook.SheetChange`): a
+    /// DIRECT in-process source fires on this same thread and presents the standard reversed
+    /// IDispatch arg layout, while an OUT-OF-PROCESS source's marshaled call to our agile
+    /// sink arrives on a different (RPC worker) thread and was observed to present DECLARED
+    /// (forward) order.
+    ///
+    /// NOTE this is a transport HEURISTIC, not a contract guarantee. The IDispatch
+    /// rgvarg-reversed convention is transport-invariant, so "forward-for-OOP" is not
+    /// explained by the contract alone and the thread→layout inference is known to be wrong
+    /// for at least one untested topology (an in-process FREE-THREADED source firing off the
+    /// advise thread would deliver reversed args on a different thread, yet be read forward).
+    /// Apartment type cannot be substituted — an agile call reports neutral, not MTA. The
+    /// robust resolution is a live per-slot rgvarg dump confirming the layout per transport;
+    /// see docs/COM_OOP_EVENT_SINK_MARSHALLING.md.
     created_thread_id: u32,
     /// The aggregated free-threaded marshaler's inner `IUnknown` (one owned reference),
     /// or null if aggregation failed (the sink then falls back to standard marshalling —
@@ -543,15 +553,16 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     }
     let mut args = Vec::with_capacity(cargs);
     let mut marshals: Vec<(usize, u32)> = Vec::new();
-    // Recover the args in DECLARED (forward) order, `args[i]` = the i-th declared event
-    // parameter. The DISPPARAMS layout depends on how the call reached us: a marshaled
-    // call to our agile sink from an OUT-OF-PROCESS source arrives on a DIFFERENT (RPC
-    // worker) thread than the one that advised the sink, with args in FORWARD order; a
-    // DIRECT in-process source call arrives on the SAME (subscriber) thread, in the
-    // standard IDispatch REVERSED order (`rgvarg[0]` is the last declared arg). Pick the
-    // layout by comparing the calling thread to the sink's creation thread. (Single-arg
-    // events cannot reveal the difference; it surfaced with the first 2-arg event — Excel
-    // `Workbook.SheetChange(Sh, Target)`.)
+    // Recover the args into DECLARED order, `args[i]` = the i-th declared event parameter.
+    // The observed DISPPARAMS layout depends on how the call reached us: a DIRECT in-process
+    // source call arrives on the SAME (subscriber) thread in the standard IDispatch REVERSED
+    // order (`rgvarg[0]` is the last declared arg); a marshaled call to our agile sink from
+    // an OUT-OF-PROCESS source arrives on a DIFFERENT (RPC worker) thread and was observed
+    // (live, Excel `Workbook.SheetChange`) to present FORWARD order. We pick the layout by
+    // comparing the calling thread to the sink's creation thread — see `created_thread_id`
+    // for why this is an empirical heuristic, not a contract guarantee, and for its known
+    // untested-topology gap. (Single-arg events cannot reveal the order; it surfaced with
+    // the first 2-arg event.)
     // SAFETY: GetCurrentThreadId has no preconditions.
     let forward = unsafe { GetCurrentThreadId() } != (*sink).created_thread_id;
     for arg_index in 0..cargs {
@@ -563,13 +574,18 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
         let variant = rgvarg.add(raw_index);
         // Object-typed arguments belong to the source's apartment; register them in
         // the GIT here (on the delivery thread, where they are valid) and queue a
-        // `Nothing` placeholder for the VM thread to revive at poll time. Falling
-        // through to `variant_to_com_value` (which cannot carry an object) is the
-        // path for every scalar/string argument.
-        if let Some(punk) = object_arg_ptr(&*variant)
-            && let Some(cookie) = register_object_in_git(punk)
-        {
-            marshals.push((arg_index, cookie));
+        // `Nothing` placeholder for the VM thread to revive at poll time. If
+        // registration fails (a pure IUnknown with no IDispatch, or a GIT failure),
+        // degrade THIS argument to `Nothing` rather than failing the entire event:
+        // falling through to `variant_to_com_value` (which cannot carry an object)
+        // would return DISP_E_TYPEMISMATCH and abort the whole inbound Invoke over a
+        // single un-revivable object arg. This mirrors
+        // `resolve_pending_event_marshals_for_next`, which also leaves `Nothing` on a
+        // revive miss. `variant_to_com_value` then handles every scalar/string arg.
+        if let Some(punk) = object_arg_ptr(&*variant) {
+            if let Some(cookie) = register_object_in_git(punk) {
+                marshals.push((arg_index, cookie));
+            }
             args.push(ComValue::Object(
                 oxvba_runtime::ObjectRef::from_compat_identity(0),
             ));
