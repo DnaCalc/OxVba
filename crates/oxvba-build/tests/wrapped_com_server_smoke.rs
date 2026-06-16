@@ -47,18 +47,46 @@ End Function
         })
         .expect("WrappedComServer build should compile a DLL");
     assert!(output.dll_target_path.exists());
+    assert!(output.tlb_target_path.exists());
+
+    let descriptor_text =
+        std::fs::read_to_string(&output.descriptor_path).expect("descriptor should exist");
+    let descriptor: oxvba_build::ComServerDescriptor =
+        serde_json::from_str(&descriptor_text).expect("descriptor should parse");
+    let class = descriptor
+        .classes
+        .iter()
+        .find(|class| class.class_name == "Calculator")
+        .expect("Calculator descriptor");
 
     let dll_path = output
         .dll_target_path
         .display()
         .to_string()
         .replace('\'', "''");
+    let tlb_path = output
+        .tlb_target_path
+        .display()
+        .to_string()
+        .replace('\'', "''");
+    let libid = descriptor.libid.replace('\'', "''");
+    let clsid = class.clsid.replace('\'', "''");
+    let version = format!("{}.{}", descriptor.version_major, descriptor.version_minor);
     let script = format!(
         r#"
 $dll = '{}'
+$tlb = '{}'
+$libid = '{}'
+$clsid = '{}'
+$version = '{}'
 $register = Start-Process -FilePath regsvr32.exe -ArgumentList @('/s', $dll) -Wait -PassThru -WindowStyle Hidden
 if ($register.ExitCode -ne 0) {{ throw "regsvr32 register failed with exit code $($register.ExitCode)" }}
 try {{
+    $wsh = New-Object -ComObject WScript.Shell
+    $classTypeLib = $wsh.RegRead("HKCU\Software\Classes\CLSID\{{$clsid}}\TypeLib\")
+    if ($classTypeLib -ne "{{$libid}}") {{ throw "expected CLSID TypeLib {{$libid}}, got $classTypeLib" }}
+    $registeredTlb = $wsh.RegRead("HKCU\Software\Classes\TypeLib\{{$libid}}\$version\0\win64\")
+    if ($registeredTlb -ne $tlb) {{ throw "expected registered TLB $tlb, got $registeredTlb" }}
     $obj = New-Object -ComObject DemoServer.Calculator
     $result = $obj.Add(2, 3)
     if ($result -ne 5) {{ throw "expected Add(2,3)=5, got $result" }}
@@ -66,7 +94,7 @@ try {{
     Start-Process -FilePath regsvr32.exe -ArgumentList @('/u', '/s', $dll) -Wait -PassThru -WindowStyle Hidden | Out-Null
 }}
 "#,
-        dll_path
+        dll_path, tlb_path, libid, clsid, version
     );
     let status = Command::new("powershell")
         .arg("-NoProfile")

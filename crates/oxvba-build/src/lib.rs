@@ -17,7 +17,7 @@ pub use com_descriptor::{
     ComClassDescriptor, ComEventDescriptor, ComInvokeKind, ComMemberDescriptor, ComParamType,
     ComServerDescriptor,
 };
-pub use compile::{ShimCompileError, compile_shim_dll};
+pub use compile::{ShimCompileError, compile_shim_dll, compile_typelib};
 pub use identity::deterministic_uuid;
 pub use idl::generate_idl;
 pub use shim::generate_shim_source;
@@ -114,16 +114,18 @@ pub fn build_wrapped_com_server(
 
     let idl_path = options.out_dir.join(format!("{artifact_stem}.idl"));
     write_text(&idl_path, &generate_idl(&descriptor))?;
+    let tlb_target_path = options.out_dir.join(format!("{artifact_stem}.tlb"));
 
     let shim_source_path = options
         .out_dir
         .join(format!("{artifact_stem}_com_server.rs"));
     write_text(
         &shim_source_path,
-        &generate_shim_source(&descriptor, &oxb_path, &descriptor_path),
+        &generate_shim_source(&descriptor, &oxb_path, &descriptor_path, &tlb_target_path),
     )?;
     let dll_target_path = options.out_dir.join(format!("{artifact_stem}.dll"));
     if options.compile_dll {
+        compile_typelib(&idl_path, &tlb_target_path)?;
         compile_shim_dll(&shim_source_path, &dll_target_path)?;
     }
 
@@ -133,7 +135,7 @@ pub fn build_wrapped_com_server(
         idl_path,
         shim_source_path,
         dll_target_path,
-        tlb_target_path: options.out_dir.join(format!("{artifact_stem}.tlb")),
+        tlb_target_path,
     })
 }
 
@@ -311,6 +313,7 @@ End Sub
         assert!(shim_source.contains("DllRegisterServer"));
         assert!(shim_source.contains("MS-OAUT"));
         assert!(!output.dll_target_path.exists());
+        assert!(!output.tlb_target_path.exists());
     }
 
     #[test]

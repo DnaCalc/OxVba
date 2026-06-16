@@ -6,6 +6,7 @@ pub fn generate_shim_source(
     descriptor: &ComServerDescriptor,
     oxb_path: &Path,
     descriptor_path: &Path,
+    tlb_path: &Path,
 ) -> String {
     SHIM_TEMPLATE
         .replace("__PROJECT_NAME__", &descriptor.project_name)
@@ -15,15 +16,16 @@ pub fn generate_shim_source(
             "__DESCRIPTOR_PATH__",
             &descriptor_path.display().to_string(),
         )
+        .replace("__TLB_PATH__", &tlb_path.display().to_string())
 }
 
 const SHIM_TEMPLATE: &str = r##"//! Auto-generated OxVBA WrappedComServer shim source for `__PROJECT_NAME__`.
 //!
 //! This is a real in-process COM DLL shim over the clean OxVBA package runtime.
 //! It currently implements class factory activation, IUnknown/IDispatch,
-//! per-user registration, and late-bound Invoke. Type library emission and
-//! connection-point event sources are generated as artifacts but are not yet
-//! compiled into this shim.
+//! per-user registration, generated type-library registration, and late-bound
+//! Invoke. Connection-point event sources are described by artifacts but are not
+//! yet compiled into this shim.
 
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case)]
@@ -48,9 +50,12 @@ use oxvba_runtime::{
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HMODULE};
 use windows_sys::Win32::System::Com::{
     DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-    DISPPARAMS, EXCEPINFO,
+    DISPPARAMS, EXCEPINFO, SYS_WIN64,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
+use windows_sys::Win32::System::Ole::{
+    LoadTypeLibEx, REGKIND_NONE, RegisterTypeLibForUser, UnRegisterTypeLibForUser,
+};
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteKeyW,
     RegDeleteTreeW, RegSetValueExW,
@@ -63,6 +68,7 @@ const PROJECT_NAME: &str = "__PROJECT_NAME__";
 const LIBID: &str = "__LIBID__";
 const BUNDLE_BYTES: &[u8] = include_bytes!(r#"__OXB_PATH__"#);
 const DESCRIPTOR_JSON: &str = include_str!(r#"__DESCRIPTOR_PATH__"#);
+const TLB_PATH: &str = r#"__TLB_PATH__"#;
 
 const S_OK: i32 = 0;
 const S_FALSE: i32 = 1;
@@ -141,6 +147,13 @@ struct IDispatchVtbl {
         *mut EXCEPINFO,
         *mut u32,
     ) -> i32,
+}
+
+#[repr(C)]
+struct IUnknownVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
 }
 
 #[repr(C)]
@@ -660,6 +673,7 @@ unsafe fn arg_count(params: *mut DISPPARAMS) -> usize {
 unsafe fn register_server() -> Result<(), i32> {
     let module_path = module_path()?;
     let descriptor = descriptor()?;
+    register_typelib()?;
     for class in descriptor.classes.iter().filter(|class| class.creatable) {
         let clsid_key = format!("Software\\Classes\\CLSID\\{{{}}}", class.clsid);
         set_key_default(&clsid_key, class.description.as_deref().unwrap_or(&class.class_name))?;
@@ -673,6 +687,14 @@ unsafe fn register_server() -> Result<(), i32> {
             "Apartment",
         )?;
         set_key_default(&format!("{clsid_key}\\ProgID"), &class.prog_id)?;
+        set_key_default(
+            &format!("{clsid_key}\\TypeLib"),
+            &format!("{{{}}}", descriptor.libid),
+        )?;
+        set_key_default(
+            &format!("{clsid_key}\\Version"),
+            &format!("{}.{}", descriptor.version_major, descriptor.version_minor),
+        )?;
         set_key_default(&format!("Software\\Classes\\{}", class.prog_id), &class.class_name)?;
         set_key_default(
             &format!("Software\\Classes\\{}\\CLSID", class.prog_id),
@@ -689,7 +711,37 @@ unsafe fn unregister_server() -> Result<(), i32> {
         delete_tree(&clsid_key);
         delete_tree(&format!("Software\\Classes\\{}", class.prog_id));
     }
+    unregister_typelib(descriptor);
     Ok(())
+}
+
+unsafe fn register_typelib() -> Result<(), i32> {
+    let path_w = wide_null(TLB_PATH);
+    let mut typelib: *mut c_void = ptr::null_mut();
+    let hr = LoadTypeLibEx(path_w.as_ptr(), REGKIND_NONE, &mut typelib);
+    if hr < 0 || typelib.is_null() {
+        return Err(SELFREG_E_CLASS);
+    }
+    let hr = RegisterTypeLibForUser(typelib, path_w.as_ptr(), ptr::null());
+    release_unknown(typelib);
+    if hr < 0 {
+        Err(SELFREG_E_CLASS)
+    } else {
+        Ok(())
+    }
+}
+
+unsafe fn unregister_typelib(descriptor: &ComServerDescriptor) {
+    let Some(libid) = parse_guid_text(&descriptor.libid) else {
+        return;
+    };
+    UnRegisterTypeLibForUser(
+        &libid,
+        descriptor.version_major,
+        descriptor.version_minor,
+        0,
+        SYS_WIN64,
+    );
 }
 
 unsafe fn set_key_default(path: &str, value: &str) -> Result<(), i32> {
@@ -762,6 +814,31 @@ fn guid_matches_text(guid: &GUID, text: &str) -> bool {
     guid_to_string(guid).eq_ignore_ascii_case(text.trim_matches(|ch| ch == '{' || ch == '}'))
 }
 
+fn parse_guid_text(text: &str) -> Option<GUID> {
+    let text = text.trim_matches(|ch| ch == '{' || ch == '}');
+    let parts: Vec<&str> = text.split('-').collect();
+    if parts.len() != 5 || parts[3].len() != 4 || parts[4].len() != 12 {
+        return None;
+    }
+    let data1 = u32::from_str_radix(parts[0], 16).ok()?;
+    let data2 = u16::from_str_radix(parts[1], 16).ok()?;
+    let data3 = u16::from_str_radix(parts[2], 16).ok()?;
+    let tail = format!("{}{}", parts[3], parts[4]);
+    if tail.len() != 16 {
+        return None;
+    }
+    let mut data4 = [0u8; 8];
+    for index in 0..8 {
+        data4[index] = u8::from_str_radix(&tail[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(GUID {
+        data1,
+        data2,
+        data3,
+        data4,
+    })
+}
+
 fn guid_to_string(guid: &GUID) -> String {
     format!(
         "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
@@ -777,6 +854,16 @@ fn guid_to_string(guid: &GUID) -> String {
         guid.data4[6],
         guid.data4[7],
     )
+}
+
+unsafe fn release_unknown(ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+    let vtbl = *(ptr.cast::<*const IUnknownVtbl>());
+    if !vtbl.is_null() {
+        ((*vtbl).release)(ptr);
+    }
 }
 
 unsafe fn wide_ptr_to_string(ptr: *const u16) -> Option<String> {
