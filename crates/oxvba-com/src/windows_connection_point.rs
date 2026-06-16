@@ -60,6 +60,7 @@ const IID_IMARSHAL: GUID = GUID {
 #[cfg(target_os = "windows")]
 unsafe extern "system" {
     fn CoCreateFreeThreadedMarshaler(punkouter: *mut c_void, ppunkmarshal: *mut *mut c_void) -> i32;
+    fn GetCurrentThreadId() -> u32;
 }
 
 // ── Global Interface Table: cross-apartment handoff of object event arguments ──
@@ -246,6 +247,13 @@ struct WindowsDispatchEventSink {
     expected_arity: usize,
     connection_point_iid: Option<GUID>,
     on_event: DispatchEventCallback,
+    /// The thread that CREATED (advised) this sink — the subscriber's own thread. A DIRECT
+    /// in-process source fires the event on this same thread (reversed IDispatch arg
+    /// layout); an OUT-OF-PROCESS source's marshaled call to our agile sink arrives on a
+    /// different (RPC worker) thread (forward layout). `windows_dispatch_event_sink_invoke`
+    /// compares the two to pick the arg order — more reliable than apartment type, which
+    /// reports neutral for an agile call.
+    created_thread_id: u32,
     /// The aggregated free-threaded marshaler's inner `IUnknown` (one owned reference),
     /// or null if aggregation failed (the sink then falls back to standard marshalling —
     /// fine in-process). `QueryInterface(IID_IMarshal)` delegates here so COM marshals the
@@ -275,6 +283,8 @@ fn create_dispatch_event_sink(config: DispatchEventSinkConfig) -> *mut c_void {
         expected_arity: config.expected_arity,
         connection_point_iid: config.connection_point_iid,
         on_event: config.on_event,
+        // SAFETY: GetCurrentThreadId has no preconditions and cannot fail.
+        created_thread_id: unsafe { GetCurrentThreadId() },
         ftm: std::ptr::null_mut(),
     });
     let raw = Box::into_raw(sink);
@@ -533,9 +543,24 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     }
     let mut args = Vec::with_capacity(cargs);
     let mut marshals: Vec<(usize, u32)> = Vec::new();
-    for idx in (0..cargs).rev() {
-        let variant = rgvarg.add(idx);
-        let arg_index = cargs.saturating_sub(1).saturating_sub(idx);
+    // Recover the args in DECLARED (forward) order, `args[i]` = the i-th declared event
+    // parameter. The DISPPARAMS layout depends on how the call reached us: a marshaled
+    // call to our agile sink from an OUT-OF-PROCESS source arrives on a DIFFERENT (RPC
+    // worker) thread than the one that advised the sink, with args in FORWARD order; a
+    // DIRECT in-process source call arrives on the SAME (subscriber) thread, in the
+    // standard IDispatch REVERSED order (`rgvarg[0]` is the last declared arg). Pick the
+    // layout by comparing the calling thread to the sink's creation thread. (Single-arg
+    // events cannot reveal the difference; it surfaced with the first 2-arg event — Excel
+    // `Workbook.SheetChange(Sh, Target)`.)
+    // SAFETY: GetCurrentThreadId has no preconditions.
+    let forward = unsafe { GetCurrentThreadId() } != (*sink).created_thread_id;
+    for arg_index in 0..cargs {
+        let raw_index = if forward {
+            arg_index
+        } else {
+            cargs.saturating_sub(1).saturating_sub(arg_index)
+        };
+        let variant = rgvarg.add(raw_index);
         // Object-typed arguments belong to the source's apartment; register them in
         // the GIT here (on the delivery thread, where they are valid) and queue a
         // `Nothing` placeholder for the VM thread to revive at poll time. Falling

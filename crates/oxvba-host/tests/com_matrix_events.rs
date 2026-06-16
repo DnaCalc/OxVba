@@ -247,18 +247,17 @@ fn v8_excel_sheet_change_oop_object_arg() {
     // 2-arg OOP event + object-arg re-entry into a Range from inside the handler.
     // Write to C-column cell, handler reads Target.Column (== 3). verdict = IIf(mCol = 3, 1, 0).
     //
-    // RED (narrowed to ONE residual; runs FAST now, ~3s — no longer a wedge). The OOP
-    // event DELIVERY works exactly as V7: the `Workbook.SheetChange` connection point is
-    // advised (events recovered from the live Workbook's typelib), the event fires, and
-    // BOTH object args (`Sh` Worksheet, `Target` Range) are marshalled across the
-    // apartment via the GIT and delivered to the handler as live objects. The residual is
-    // a BINDER gap, not an event gap: `Target.Column` — where `Target` is typed
-    // `As Excel.Range` — does not lower to a COM member call, because `Excel.Range` is an
-    // INTERFACE, not an owned COCLASS (the `ComTypeLibProvider` resolves members on a
-    // coclass-typed receiver like `Excel.Application` but not on an interface-typed one),
-    // so `.Column` yields nothing and `mCol` stays 0. Follow-up: resolve member access on
-    // COM interface-typed receivers. (The event machinery and arg marshalling are proven
-    // by the GIT-revived `Target` arriving as a live object.)
+    // GREEN (verified live, ~3s). Out-of-process `Workbook.SheetChange(Sh, Target)` is
+    // delivered end-to-end: the connection point is advised (events recovered from the
+    // live Workbook's typelib), the event fires, and BOTH object args (the `Sh` Worksheet
+    // and the `Target` Range) are marshalled across the apartment via the Global
+    // Interface Table and revived as live objects on the VM thread; the handler reads the
+    // revived `Target` Range's member `.Column` (late-bound, == 3). This first 2-arg event
+    // also pinned a sink arg-ORDER subtlety: an OUT-OF-PROCESS source's marshaled call to
+    // our agile sink arrives in DECLARED (forward) order on an RPC-worker thread, while a
+    // DIRECT in-process source call (matrix V1–V6) arrives in the standard IDispatch
+    // REVERSED order on the subscriber thread. The sink now picks the layout by comparing
+    // the calling thread to its creation thread (single-arg V1–V7 cannot reveal order).
     let main_src = "Public result As Long\n\
          Sub Main()\n\
          Dim s As New Sink\n\

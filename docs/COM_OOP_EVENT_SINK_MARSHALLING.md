@@ -124,11 +124,22 @@ proxy was declined for the slot-call anyway. Fixes:
     recovery — so an out-of-process object goes straight to fast IDispatch. A direct
     in-process interface (DAO) still vtable-calls as before.
 
-### V8 residual (binder follow-up, not an event gap)
+### Layer 5 — multi-arg event sink arg ORDER (V8 green)
 
-V8's `Target.Column` — `Target` typed `As Excel.Range` — does not lower to a COM call
-because `Excel.Range` is an **interface**, not an owned **coclass**; the
-`ComTypeLibProvider` resolves members on a coclass-typed receiver (`Excel.Application`)
-but not on an interface-typed one, so `.Column` yields nothing and `mCol` stays 0. The
-event itself is delivered and the `Range` arg arrives as a live GIT-revived object.
-Follow-up: resolve member access on COM interface-typed receivers.
+V8 (`Workbook.SheetChange(Sh, Target)`) initially failed with `Target.Column` →
+`DISP_E_UNKNOWNNAME`: the handler's `Target` was the **Worksheet**, not the **Range**.
+Root cause was NOT the binder (it late-binds `.Column` on an `As Excel.Range` receiver
+correctly — `is_late_bound_receiver` is true for any non-project-class Object) — it was
+the **sink arg order**, and the order is delivery-dependent:
+  * an OUT-OF-PROCESS source's marshaled call to our agile (FTM) sink arrives in DECLARED
+    (forward) order, on an RPC-worker thread;
+  * a DIRECT in-process source call (the matrix fixture, V1–V6) arrives in the standard
+    IDispatch caller-side REVERSED order (`rgvarg[0]` = last arg), on the subscriber thread.
+
+The sink can't assume one order. It picks the layout by comparing the calling thread to the
+thread that created/advised the sink: same thread ⇒ direct ⇒ reversed (un-reverse); a
+different thread ⇒ marshaled ⇒ forward. (Apartment type is unreliable — an agile call
+reports neutral, not MTA — but the thread identity is exact.) Single-arg events (V1–V7)
+cannot reveal the order; the first 2-arg event exposed it. V8 now green — the GIT-revived
+`Range` is the real `Target` and `Target.Column == 3`; V1–V6 (in-proc, incl. the 2-arg
+arg-order pin V3) stay green.
