@@ -1557,9 +1557,10 @@ pub fn collection_item(args: &[Variant]) -> LibResult<Variant> {
 pub fn collection_remove(args: &[Variant]) -> LibResult<Variant> {
     let mut items = collection_elems(need(args, 0)?);
     let index = as_usize(need(args, 1)?)?;
-    if index >= 1 && index <= items.len() {
-        items.remove(index - 1);
+    if index == 0 || index > items.len() {
+        return Err(LibError::new(9, "subscript out of range"));
     }
+    items.remove(index - 1);
     Ok(Variant::from_safearray(SafeArray::from_variants(items)))
 }
 
@@ -1613,6 +1614,19 @@ mod tests {
 
     fn isnum(v: Variant) -> bool {
         is_numeric(&[v]).unwrap().as_bool().unwrap()
+    }
+
+    #[test]
+    fn collection_remove_rejects_out_of_range_indices() {
+        let c = collection_add(&[Variant::empty(), Variant::from_i32(9)]).unwrap();
+        assert_eq!(
+            collection_remove(&[c.clone(), Variant::from_i32(0)]).unwrap_err(),
+            LibError::new(9, "subscript out of range")
+        );
+        assert_eq!(
+            collection_remove(&[c, Variant::from_i32(2)]).unwrap_err(),
+            LibError::new(9, "subscript out of range")
+        );
     }
 
     #[test]

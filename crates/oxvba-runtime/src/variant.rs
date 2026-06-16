@@ -245,12 +245,28 @@ impl Variant {
     pub fn from_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
         let core = VariantCore::from_wire_bytes(bytes)?;
         match core.vtype {
+            VarType::String | VarType::Object | VarType::ArrayVariant => Err(format!(
+                "pointer-carrying VARIANT wire bytes for {:?} require trusted in-process provenance",
+                core.vtype
+            )),
+            _ => Ok(Self::from_core(core)),
+        }
+    }
+
+    /// Rebuilds a Variant from wire bytes that may contain process-local pointer
+    /// carriers (`BSTR`, runtime object identity, or OxVba-owned SAFEARRAY).
+    ///
+    /// # Safety
+    /// For `String`, `Object`, and `ArrayVariant` payloads, the pointer encoded in
+    /// the wire bytes must have been produced by `Variant::to_wire_bytes` in this
+    /// process and the source allocation/object must still be live for the whole
+    /// call. Arbitrary or stale pointer bytes are undefined behavior.
+    pub unsafe fn from_trusted_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
+        let core = VariantCore::from_wire_bytes(bytes)?;
+        match core.vtype {
             VarType::String => {
                 let ptr = bytes_to_raw_bstr(core.data_bytes());
-                // SAFETY: ASSUMPTION — wire bytes with vtype String must carry a BSTR
-                // pointer written by `to_wire_bytes` from a Variant still alive in this
-                // process; `from_wire_bytes` is a safe fn, so nothing enforces that the
-                // pointee is live before this deep clone reads it.
+                // SAFETY: guaranteed by this unsafe fn's caller.
                 let text = unsafe { raw_bstr_to_bstr(ptr) };
                 let cloned = text.raw_bstr();
                 core::mem::forget(text);
@@ -261,11 +277,7 @@ impl Variant {
             }
             VarType::Object => {
                 let ptr = bytes_to_raw_iunknown(core.data_bytes());
-                // SAFETY: ASSUMPTION — wire bytes with vtype Object must carry a runtime
-                // IUnknown pointer to an object still retained elsewhere in this process
-                // (e.g. by the source Variant of `to_wire_bytes`); the AddRef taken here
-                // is only sound while that object is alive, and `from_wire_bytes` being a
-                // safe fn leaves this to caller convention.
+                // SAFETY: guaranteed by this unsafe fn's caller.
                 let object = unsafe { ObjectRef::from_raw_iunknown_addref(ptr) };
                 Ok(match object {
                     Some(value) => Self::from_object_ref(value),
@@ -274,11 +286,7 @@ impl Variant {
             }
             VarType::ArrayVariant => {
                 let ptr = bytes_to_raw_safearray(core.data_bytes());
-                // SAFETY: ASSUMPTION — wire bytes with vtype ArrayVariant must carry a
-                // pointer to a live OxVba-owned SAFEARRAY descriptor (the source Variant
-                // of `to_wire_bytes` kept alive); `clone_from_raw_safearray` validates the
-                // owner-prefix provenance marker, but reading that marker already requires
-                // the pointee to be live, which a safe `from_wire_bytes` cannot enforce.
+                // SAFETY: guaranteed by this unsafe fn's caller.
                 let Some(array) = (unsafe { SafeArray::clone_from_raw_safearray(ptr) }) else {
                     return Ok(Self::from_core(VariantCore::from_bytes(
                         VarType::ArrayVariant,
@@ -791,8 +799,19 @@ mod tests {
     fn string_variant_wire_roundtrip_clones_bstr_payload() {
         let original = Variant::from_string("A\0BC");
         let wire = original.to_wire_bytes();
-        let roundtrip = Variant::from_wire_bytes(wire).expect("wire roundtrip");
+        // SAFETY: `wire` was just produced from `original`, which stays live for
+        // the full call.
+        let roundtrip = unsafe { Variant::from_trusted_wire_bytes(wire) }.expect("wire roundtrip");
         assert_eq!(roundtrip.as_bstr(), Some(BStr::from("A\0BC")));
+    }
+
+    #[test]
+    fn safe_variant_wire_rejects_pointer_carriers() {
+        let wire = Variant::from_string("A\0BC").to_wire_bytes();
+        assert_eq!(
+            Variant::from_wire_bytes(wire).expect_err("safe wire must reject pointers"),
+            "pointer-carrying VARIANT wire bytes for String require trusted in-process provenance"
+        );
     }
 
     #[test]
