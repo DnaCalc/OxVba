@@ -22,7 +22,16 @@ macro_rules! native_impl_ids {
         /// The exhaustive `intrinsic_entry` match in `oxvba-symbol` and the dispatch
         /// match in `oxvba-lib` then make each variant's name/signature/body a
         /// compile-time obligation — there is no hand-maintained roster to keep in sync.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            Hash,
+            serde::Serialize,
+            serde::Deserialize,
+        )]
         pub enum NativeImplId {
             $( $(#[$attr])* $variant, )+
         }
@@ -666,7 +675,7 @@ impl NativeImplId {
 /// (Strings/Math/…) and built-in classes (`Collection`, …) — appear as members
 /// of the synthetic `VBA` library bundle and dispatch through the ordinary
 /// cross-bundle machinery, instead of via a bespoke `CoreCallee::Native` route.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NativeBody {
     /// A pure/host library function (`oxvba-lib`); the VM runs it with no frame,
     /// exactly as `Op::CallNative` runs a `NativeCallee::Builtin`.
@@ -685,7 +694,7 @@ pub enum NativeBody {
 /// `run_native_method` instead of pushing a bytecode frame; this is how the
 /// synthetic `VBA` library bundle's classes get native method bodies while
 /// dispatching through the ordinary class machinery.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NativeMethodId {
     /// `Collection.Add(item, [key], [before], [after])`.
     CollectionAdd,

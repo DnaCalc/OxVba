@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// What a `CallNative` targets — the dispatch route for a non-VBA-procedure call.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NativeCallee {
     /// A fixed base-library / built-in function with a native body.
     Builtin(NativeImplId),
@@ -42,7 +42,7 @@ pub enum NativeCallee {
 /// A resolved `Declare` pointer-argument write-back: after the native call, read the
 /// pinned buffer at the `arg_index`-th argument's pointer and store it into
 /// `target_slot`. `kind` selects the read-back projection (string vs byte buffer).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclarePtrWriteback {
     pub arg_index: usize,
     pub target_slot: usize,
@@ -52,7 +52,7 @@ pub struct DeclarePtrWriteback {
 /// A single argument to a `CallNative`. Positional by default; `Omitted`
 /// preserves alignment for trailing/optional VBA arguments; `Named` carries a
 /// `name := value` argument for late-bound dispatch.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CallArg {
     Slot(usize),
     /// A `ByRef` argument backed by the caller's slot `s`: the callee writes back
@@ -76,7 +76,7 @@ pub enum CallArg {
 /// writes through the parameter are immediately visible to the caller (and the
 /// reverse), for the duration of the call. `ByVal(slot)` copies the value in;
 /// `Omitted` leaves an optional parameter unset.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ProcArg {
     ByVal(usize),
     ByRef(usize),
@@ -84,7 +84,7 @@ pub enum ProcArg {
 }
 
 /// One instruction of the clean bundle.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     // ── Loads ────────────────────────────────────────────────
     LoadI32 {

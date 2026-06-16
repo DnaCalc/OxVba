@@ -30,10 +30,16 @@ Workspace crates and current roles:
   COM wire translation (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`), typelib
   loading, and runtime state/metadata.
 - `oxvba-host`: engine orchestration — bind/linearize/execute pipeline, host
-  policy, snapshots, error routing.
+  policy, snapshots, package-backed runtime sessions, error routing.
+- `oxvba-build`: clean wrapper build orchestration. The current
+  `WrappedComServer` slice validates `.basproj` target shape, emits a versioned
+  `.oxb` bundle package, projects deterministic COM descriptors from the export
+  surface, writes IDL/shim-source artifacts, and compiles a bounded Windows
+  in-process COM DLL with per-user registration and late-bound `IDispatch`
+  dispatch over package-backed runtime sessions.
 - `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
   reference-closure loading.
-- `oxvba-cli`: CLI bootstrap/run surface.
+- `oxvba-cli`: CLI bootstrap/run/build surface.
 
 ## Current Execution Shape
 

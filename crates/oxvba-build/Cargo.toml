@@ -1,0 +1,22 @@
+[package]
+name = "oxvba-build"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Clean OxVBA build target orchestration and wrapper artifact generation."
+
+[dependencies]
+oxvba-bind.workspace = true
+oxvba-bundle.workspace = true
+oxvba-com.workspace = true
+oxvba-diagnostics.workspace = true
+oxvba-project.workspace = true
+oxvba-symbol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

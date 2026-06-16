@@ -138,6 +138,14 @@ impl Fault {
     }
 }
 
+fn vm_error_from_fault(fault: Fault) -> VmError {
+    VmError {
+        code: fault.code,
+        message: fault.message,
+        diagnostic: fault.diagnostic,
+    }
+}
+
 /// `On Error` handler state for the current procedure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ErrorMode {
@@ -485,6 +493,119 @@ impl<'h> Vm<'h> {
     pub fn slot(&self, slot: usize) -> Option<&Variant> {
         let place = self.target(slot).ok()?;
         self.read_place(place).ok()
+    }
+
+    /// Allocate a project-class instance in a linked bundle without running the
+    /// package entry point. This is the activation primitive used by wrapper
+    /// hosts such as an in-process COM class factory.
+    pub fn create_project_instance(
+        &mut self,
+        bundle: usize,
+        class_name: &str,
+    ) -> Result<ObjectRef, VmError> {
+        let class_idx = self
+            .bundles
+            .get(bundle)
+            .and_then(|loaded| {
+                loaded
+                    .bundle
+                    .classes
+                    .iter()
+                    .position(|class| class.name.eq_ignore_ascii_case(class_name))
+            })
+            .ok_or_else(|| VmError {
+                code: 5,
+                message: format!("unknown project class `{class_name}` in bundle {bundle}"),
+                diagnostic: None,
+            })?;
+        let descriptor = *self.bundles[bundle]
+            .class_descriptors
+            .get(class_idx)
+            .ok_or_else(|| VmError {
+                code: 5,
+                message: format!("unknown project class `{class_name}` in bundle {bundle}"),
+                diagnostic: None,
+            })?;
+        let meta = self.bundles[bundle]
+            .bundle
+            .classes
+            .get(class_idx)
+            .ok_or_else(|| VmError {
+                code: 5,
+                message: format!("unknown project class `{class_name}` in bundle {bundle}"),
+                diagnostic: None,
+            })?;
+        let has_terminate = meta.terminate.is_some();
+        let initialize = meta.initialize;
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            class_idx as i32,
+            bundle as i32,
+            has_terminate,
+            descriptor,
+        );
+        if let Some(init) = initialize {
+            let saved_cur = self.cur;
+            self.cur = bundle;
+            let result = self.run_proc_with_values(
+                init,
+                Variant::from_object_ref(object.clone()),
+                Vec::new(),
+                false,
+                false,
+            );
+            self.cur = saved_cur;
+            result.map_err(vm_error_from_fault)?;
+        }
+        Ok(object)
+    }
+
+    /// Invoke a member on a project-class object using already-marshaled Variant
+    /// values in declaration order. Named/default-argument policy is owned by the
+    /// boundary caller; this method is the final VM execution hop.
+    pub fn invoke_project_member_values(
+        &mut self,
+        object: ObjectRef,
+        member_name: &str,
+        kind_hint: Option<ProjectMemberKind>,
+        args: Vec<Variant>,
+    ) -> Result<Variant, VmError> {
+        if !object.is_project_instance() {
+            return Err(VmError {
+                code: 438,
+                message: "object is not an OxVBA project instance".to_string(),
+                diagnostic: None,
+            });
+        }
+        let class_idx = object.route_key() as usize;
+        let obj_bundle = object.bundle_id() as usize;
+        let proc = self
+            .bundles
+            .get(obj_bundle)
+            .and_then(|loaded| loaded.bundle.classes.get(class_idx))
+            .and_then(|class| {
+                class
+                    .methods
+                    .iter()
+                    .find(|method| {
+                        method.name.eq_ignore_ascii_case(member_name)
+                            && kind_hint.is_none_or(|kind| kind == method.kind)
+                    })
+                    .map(|method| method.proc)
+            })
+            .ok_or_else(|| VmError {
+                code: 438,
+                message: format!("Object doesn't support `{member_name}`"),
+                diagnostic: None,
+            })?;
+        let saved_cur = self.cur;
+        self.cur = obj_bundle;
+        let result =
+            self.run_proc_with_values(proc, Variant::from_object_ref(object), args, false, true);
+        self.cur = saved_cur;
+        result.map_err(vm_error_from_fault)
     }
 
     /// Drive the instruction stream until `Halt`, a `Return` from the entry

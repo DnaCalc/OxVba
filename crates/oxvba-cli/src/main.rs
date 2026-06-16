@@ -1,14 +1,16 @@
 //! `oxvba` — command-line driver for the clean execution stack.
 //!
-//! Two subcommands run VBA through `oxvba_bind` → `oxvba_bundle::linearize` →
-//! `oxvba_vm2`:
+//! The run subcommands execute VBA through `oxvba_bind` →
+//! `oxvba_bundle::linearize` → `oxvba_vm2`:
 //!   * `run <source.bas>` — execute a single source module.
 //!   * `run-project [path] [--entry M.P]` — load a `.basproj`/`.vbp` (and its
 //!     transitive project-reference graph) into a closure and execute it.
+//!   * `build <project> --target WrappedComServer --out-dir <dir>` — emit the
+//!     clean package and wrapper artifacts for an in-process COM DLL target.
 //!
-//! Both accept the shared runner-bootstrap flags (HAL profile / host policy /
-//! capability overrides). The legacy `compile`/`build`/COM-management/native-export
-//! subcommands were removed with the legacy compiler and host execution paths.
+//! The run commands accept the shared runner-bootstrap flags (HAL profile / host
+//! policy / capability overrides). The legacy compiler and host execution paths
+//! remain removed; `build` is the clean wrapper-artifact lane.
 
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -29,6 +31,7 @@ fn main() {
     let cli_args: Vec<String> = env::args().skip(1).collect();
     match cli_args.first().map(String::as_str) {
         Some("run-project") => run_project(cli_args),
+        Some("build") => run_build(cli_args),
         Some("run") | None => run_execute(cli_args),
         Some("help") | Some("--help") | Some("-h") => print_usage(),
         Some(other) => {
@@ -43,7 +46,8 @@ fn print_usage() {
     eprintln!(
         "usage:\n  \
          oxvba run <source.bas> [--dump-values] [--jit] [bootstrap options]\n  \
-         oxvba run-project [path] [--entry <Module.Procedure>] [--dump-values] [--jit] [bootstrap options]\n\n\
+         oxvba run-project [path] [--entry <Module.Procedure>] [--dump-values] [--jit] [bootstrap options]\n  \
+         oxvba build <project.basproj|project.vbp> --target WrappedComServer --out-dir <dir>\n\n\
          diagnostics:\n  \
          --diagnostic-format <human|json>\n\n\
          bootstrap options:\n  \
@@ -206,6 +210,43 @@ fn run_project(args: Vec<String>) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// build subcommand: emit clean wrapper artifacts
+// ---------------------------------------------------------------------------
+
+fn run_build(args: Vec<String>) {
+    let parsed = parse_build_args_from(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba build <project.basproj|project.vbp> --target WrappedComServer --out-dir <dir> [--diagnostic-format <human|json>]"
+        );
+        std::process::exit(2);
+    });
+
+    match oxvba_build::build_wrapped_com_server(&oxvba_build::WrappedComServerBuildOptions {
+        project_path: parsed.project_path,
+        out_dir: parsed.out_dir,
+        compile_dll: true,
+    }) {
+        Ok(output) => {
+            println!("OXB:{}", output.oxb_path.display());
+            println!("COM_DESCRIPTOR:{}", output.descriptor_path.display());
+            println!("IDL:{}", output.idl_path.display());
+            println!("SHIM_SOURCE:{}", output.shim_source_path.display());
+            println!("DLL_TARGET:{}", output.dll_target_path.display());
+            println!("TLB_TARGET:{}", output.tlb_target_path.display());
+        }
+        Err(err) => {
+            let diagnostic = OxDiagnostic::error(
+                "BUILD-E-WRAPPED-COM-SERVER",
+                OxDiagnosticPhase::Host,
+                format!("WrappedComServer build failed: {err}"),
+            );
+            emit_diagnostic("oxvba build", &diagnostic, parsed.diagnostic_format);
+            std::process::exit(1);
+        }
+    }
+}
+
 /// Resolve a run-project input to a concrete `.basproj`/`.vbp` file. A directory
 /// is searched for a unique project file; a directory with no project file (or a
 /// non-project file argument) returns `None`.
@@ -313,6 +354,13 @@ struct RunProjectArgs {
     entry_point_override: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct BuildArgs {
+    project_path: PathBuf,
+    out_dir: PathBuf,
+    diagnostic_format: DiagnosticFormat,
+}
+
 fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     let mut iter = args.into_iter();
     if iter.next()? != "run" {
@@ -355,6 +403,55 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
         enable_jit,
         diagnostic_format,
         bootstrap,
+    })
+}
+
+fn parse_build_args_from(args: Vec<String>) -> Option<BuildArgs> {
+    let mut iter = args.into_iter();
+    if iter.next()? != "build" {
+        return None;
+    }
+    let collected: Vec<String> = iter.collect();
+    let mut project_path: Option<PathBuf> = None;
+    let mut target: Option<String> = None;
+    let mut out_dir: Option<PathBuf> = None;
+    let mut diagnostic_format = DiagnosticFormat::Human;
+
+    let mut i = 0;
+    while i < collected.len() {
+        let arg = collected[i].as_str();
+        match arg {
+            "--target" => {
+                i += 1;
+                target = Some(collected.get(i)?.clone());
+            }
+            "--out-dir" => {
+                i += 1;
+                out_dir = Some(PathBuf::from(collected.get(i)?));
+            }
+            "--diagnostic-format" => {
+                i += 1;
+                diagnostic_format = parse_diagnostic_format(collected.get(i)?)?;
+            }
+            _ if !arg.starts_with('-') && project_path.is_none() => {
+                project_path = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    if !target
+        .as_deref()
+        .is_some_and(|target| target.eq_ignore_ascii_case("WrappedComServer"))
+    {
+        return None;
+    }
+
+    Some(BuildArgs {
+        project_path: project_path?,
+        out_dir: out_dir?,
+        diagnostic_format,
     })
 }
 
@@ -682,6 +779,37 @@ mod tests {
         assert!(parsed.enable_jit);
         assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Json);
         assert_eq!(parsed.input_path, Some(PathBuf::from(".")));
+    }
+
+    #[test]
+    fn parse_build_args_for_wrapped_com_server() {
+        let args = vec![
+            "build".to_string(),
+            "demo.basproj".to_string(),
+            "--target".to_string(),
+            "WrappedComServer".to_string(),
+            "--out-dir".to_string(),
+            "target/oxvba-build/demo".to_string(),
+            "--diagnostic-format".to_string(),
+            "json".to_string(),
+        ];
+        let parsed = parse_build_args_from(args).expect("args should parse");
+        assert_eq!(parsed.project_path, PathBuf::from("demo.basproj"));
+        assert_eq!(parsed.out_dir, PathBuf::from("target/oxvba-build/demo"));
+        assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Json);
+    }
+
+    #[test]
+    fn reject_build_args_without_wrapped_com_server_target() {
+        let args = vec![
+            "build".to_string(),
+            "demo.basproj".to_string(),
+            "--target".to_string(),
+            "Bundle".to_string(),
+            "--out-dir".to_string(),
+            "target/oxvba-build/demo".to_string(),
+        ];
+        assert!(parse_build_args_from(args).is_none());
     }
 
     #[test]

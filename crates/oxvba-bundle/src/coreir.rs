@@ -233,7 +233,7 @@ pub enum PtrKind {
 
 /// The payload a `Declare` pointer-argument write-back reads back from the pinned
 /// pointer after the native call: a string (BSTR/UTF-16 cell) or a byte buffer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PtrWritebackKind {
     String,
     ByteArray,

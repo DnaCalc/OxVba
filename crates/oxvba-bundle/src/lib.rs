@@ -9,7 +9,8 @@
 //!
 //! A program reaches this bundle through `coreir` + `linearize` (the binder that
 //! builds `coreir` from source is the remaining upstream piece), then runs on
-//! `oxvba-vm2`; serialization (`.oxb`) is a later concern.
+//! `oxvba-vm2`. The `.oxb` carrier is a versioned [`BundlePackage`] over one or
+//! more linked bundles so wrapper targets can embed the same executable package.
 
 pub mod coreir;
 pub mod isa;
@@ -30,17 +31,20 @@ pub use coreir::{
 
 use oxvba_runtime::DynLinkSymbol;
 
+pub const BUNDLE_PACKAGE_FORMAT: &str = "oxvba.bundle-package";
+pub const BUNDLE_PACKAGE_VERSION: u32 = 1;
+
 // ── Shared scalar enums (the bundle's own clean copies) ──────────────────────
 
 /// String comparison mode for `=`/`<>`/`InStr`/`Like` (`Option Compare`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum StringCompareMode {
     Binary,
     Text,
 }
 
 /// Target type of a fixed-scalar narrowing coercion (`CoerceNumeric`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NumericCoerceTarget {
     Boolean,
     Byte,
@@ -58,7 +62,7 @@ pub enum NumericCoerceTarget {
 /// from the operands' static types (the same runtime tags can mean different regimes,
 /// so only the binder knows); the VM and the future Cranelift JIT read it off the op,
 /// with no separate coercion node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NumericMode {
     /// A `Variant` operand: widen the result (Integer→Long→Double) on overflow; never
     /// raises. The VBA "Variant arithmetic" regime.
@@ -77,7 +81,7 @@ pub enum NumericMode {
 /// `Lines(i).Words(j).Rect.X` reads back without a per-field fault. A UDT field
 /// that is itself an *array* of UDT stays `Variant` (unallocated until its own
 /// `ReDim`). This variant makes `ArrayElementType` non-`Copy`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ArrayElementType {
     Variant,
     Integer,
@@ -97,7 +101,7 @@ pub enum ArrayElementType {
 }
 
 /// Assignment intent on a `ValidateAssignment` (Let vs Set vs implicit).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AssignmentIntent {
     Implicit,
     Let,
@@ -105,7 +109,7 @@ pub enum AssignmentIntent {
 }
 
 /// The static kind of an assignment target (drives Let/Set legality).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AssignmentTargetKind {
     Variant,
     Object,
@@ -113,7 +117,7 @@ pub enum AssignmentTargetKind {
 }
 
 /// How a project/COM member call resolves its accessor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ProjectMemberKind {
     Method,
     PropertyGet,
@@ -122,7 +126,7 @@ pub enum ProjectMemberKind {
 }
 
 /// Selector for a COM/late-bound member dispatch (`CallNative`'s `ComDispatch`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ComMemberSelector {
     DispatchId(i32),
     Name(String),
@@ -131,7 +135,7 @@ pub enum ComMemberSelector {
 // ── Declare (`Declare Lib`) descriptors ──────────────────────────────────────
 
 /// Parameter / return type of a `Declare Lib` external call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeclareParamType {
     Long,
     Integer,
@@ -153,7 +157,7 @@ pub enum DeclareParamType {
 /// `param_by_ref`/`param_types` drive native marshaling; the per-call-site
 /// write-back *target* is the `CallArg::ByRef` slot at the call site (vm2's
 /// `declare_call`), so the descriptor carries no write-back slot of its own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExternalCallDescriptor {
     pub descriptor_id: u32,
     pub declared_name: String,
@@ -173,7 +177,7 @@ pub struct ExternalCallDescriptor {
 // ── Procedure / source / hosting metadata ────────────────────────────────────
 
 /// The kind of a compiled procedure (a `CallProc` target).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ProcedureKind {
     Sub,
     Function,
@@ -189,7 +193,7 @@ pub enum ProcedureKind {
 /// either a module global (`slot < Bundle::global_count`) or a current-frame
 /// local (`slot - global_count`); see [`Bundle::global_count`]. `ByRef`
 /// parameters alias the caller's place rather than copying (true aliasing).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProcedureDescriptor {
     pub name: String,
     pub entry_pc: usize,
@@ -210,7 +214,7 @@ pub struct ProcedureDescriptor {
 }
 
 /// pc → source line, for diagnostics / error reporting / debugging.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SourceLineMapping {
     pub pc: usize,
     pub line: usize,
@@ -218,7 +222,7 @@ pub struct SourceLineMapping {
 
 /// COM-server export descriptor (hosting metadata): a project class exposed as a
 /// COM coclass. Carried for COM-server build targets; not used by VM execution.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ComClassExport {
     pub class_name: String,
     pub prog_id: Option<String>,
@@ -228,7 +232,7 @@ pub struct ComClassExport {
 /// A late-bound-callable member of a project class: its name, accessor kind, and
 /// the procedure that implements it. Early-bound calls lower directly to
 /// `CallProc`; this table backs dispatch on an `Object`/`Variant` receiver.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassMethod {
     pub name: String,
     pub kind: ProjectMemberKind,
@@ -241,7 +245,7 @@ pub struct ClassMethod {
 /// `Class_Terminate` when the last reference is released. Methods/properties are
 /// ordinary procedures called with the instance as a hidden `Me` argument; field
 /// state is reached via [`Op::FieldGet`]/[`Op::FieldSet`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassDescriptor {
     pub name: String,
     /// `Class_Initialize` procedure index (run on `New`), if any.
@@ -258,7 +262,7 @@ pub struct ClassDescriptor {
 /// sink binding is `binding`, run the sink's handler procedure `handler` (with
 /// the sink instance as `Me`). `binding` matches the token a `WithEventsSet`
 /// stores; `event` is the source class's stable id for that event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EventRoute {
     pub binding: i32,
     pub event: i32,
@@ -269,7 +273,7 @@ pub struct EventRoute {
 
 /// A complete, runnable program: the instruction stream plus the metadata the VM
 /// and (future) JIT need. This is the in-memory executable semantic package.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Bundle {
     /// The flat instruction stream; jumps/calls target indices into this vec.
     pub ops: Vec<Op>,
@@ -312,7 +316,7 @@ pub struct Bundle {
 /// A stable, cross-bundle reference token for an exported member. These are
 /// *names*, not private indices — a bundle's internal proc/class indices are not
 /// part of its public contract (that is the whole point of separate compilation).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ExportToken {
     /// A hidden-module / free function (a `TKIND_MODULE` member): the owning
     /// module, the member name, and its accessor kind. Matched case-insensitively.
@@ -350,7 +354,7 @@ impl ExportToken {
 }
 
 /// What an export token resolves to inside its own bundle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ExportTarget {
     /// A procedure index into the exporting bundle's `procedures`.
     Proc(usize),
@@ -359,7 +363,7 @@ pub enum ExportTarget {
 }
 
 /// One exported member of a bundle.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BundleExport {
     pub token: ExportToken,
     pub target: ExportTarget,
@@ -367,7 +371,7 @@ pub struct BundleExport {
 
 /// A cross-bundle reference a bundle makes (resolved at link time to a
 /// `(bundle, target)` pair).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BundleImport {
     /// The referenced unit (project) name.
     pub unit: String,
@@ -402,3 +406,106 @@ impl Bundle {
             .find(|d| d.descriptor_id == descriptor_id)
     }
 }
+
+/// A versioned `.oxb` payload. A package carries one bundle per project in
+/// link order, with `entry_bundle` identifying the project that should act as
+/// the runtime entry/activation owner. Wrapper targets embed this package
+/// directly instead of reconstructing execution facts from source.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BundlePackage {
+    pub format: String,
+    pub version: u32,
+    pub entry_bundle: usize,
+    pub bundles: Vec<Bundle>,
+}
+
+impl BundlePackage {
+    pub fn new(bundles: Vec<Bundle>, entry_bundle: usize) -> Self {
+        Self {
+            format: BUNDLE_PACKAGE_FORMAT.to_string(),
+            version: BUNDLE_PACKAGE_VERSION,
+            entry_bundle,
+            bundles,
+        }
+    }
+
+    pub fn single(bundle: Bundle) -> Self {
+        Self::new(vec![bundle], 0)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, BundlePackageError> {
+        serde_json::to_vec_pretty(self).map_err(BundlePackageError::Serialize)
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BundlePackageError> {
+        let package: Self =
+            serde_json::from_slice(bytes).map_err(BundlePackageError::Deserialize)?;
+        package.validate()?;
+        Ok(package)
+    }
+
+    pub fn validate(&self) -> Result<(), BundlePackageError> {
+        if self.format != BUNDLE_PACKAGE_FORMAT {
+            return Err(BundlePackageError::UnsupportedFormat {
+                found: self.format.clone(),
+            });
+        }
+        if self.version != BUNDLE_PACKAGE_VERSION {
+            return Err(BundlePackageError::UnsupportedVersion {
+                found: self.version,
+            });
+        }
+        if self.bundles.is_empty() {
+            return Err(BundlePackageError::EmptyPackage);
+        }
+        if self.entry_bundle >= self.bundles.len() {
+            return Err(BundlePackageError::InvalidEntryBundle {
+                entry_bundle: self.entry_bundle,
+                bundle_count: self.bundles.len(),
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum BundlePackageError {
+    Serialize(serde_json::Error),
+    Deserialize(serde_json::Error),
+    UnsupportedFormat {
+        found: String,
+    },
+    UnsupportedVersion {
+        found: u32,
+    },
+    EmptyPackage,
+    InvalidEntryBundle {
+        entry_bundle: usize,
+        bundle_count: usize,
+    },
+}
+
+impl std::fmt::Display for BundlePackageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Serialize(err) => write!(f, "failed to serialize bundle package: {err}"),
+            Self::Deserialize(err) => write!(f, "failed to deserialize bundle package: {err}"),
+            Self::UnsupportedFormat { found } => {
+                write!(f, "unsupported bundle package format `{found}`")
+            }
+            Self::UnsupportedVersion { found } => {
+                write!(f, "unsupported bundle package version {found}")
+            }
+            Self::EmptyPackage => write!(f, "bundle package contains no bundles"),
+            Self::InvalidEntryBundle {
+                entry_bundle,
+                bundle_count,
+            } => write!(
+                f,
+                "bundle package entry bundle {entry_bundle} is outside bundle count {bundle_count}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BundlePackageError {}

@@ -20,7 +20,7 @@ use oxvba_hal::{
     },
     traits::HostServices,
 };
-use oxvba_runtime::Variant;
+use oxvba_runtime::{ObjectRef, Variant};
 
 use crate::runner::RuntimeProfileId;
 
@@ -97,6 +97,10 @@ fn linearize_diagnostic(err: oxvba_bundle::LinearizeError) -> OxDiagnostic {
     .with_help("This indicates the binder emitted invalid Core IR; reduce the source to a regression case.")
 }
 
+fn runtime_diagnostic(err: oxvba_vm2::VmError) -> PhaseDiagnostic {
+    PhaseDiagnostic::from_diagnostic(err.to_diagnostic())
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
     pub enable_jit: bool,
@@ -107,6 +111,38 @@ pub struct Engine {
     runtime_profile: RuntimeProfileId,
     host_callbacks: Option<Arc<dyn HostCallbacks>>,
     host_services: Arc<dyn HostServices>,
+}
+
+pub struct ProjectRuntimeSession {
+    vm: oxvba_vm2::Vm<'static>,
+    entry_bundle: usize,
+}
+
+impl ProjectRuntimeSession {
+    pub fn entry_bundle(&self) -> usize {
+        self.entry_bundle
+    }
+
+    pub fn create_class_instance(
+        &mut self,
+        class_name: &str,
+    ) -> Result<ObjectRef, PhaseDiagnostic> {
+        self.vm
+            .create_project_instance(self.entry_bundle, class_name)
+            .map_err(runtime_diagnostic)
+    }
+
+    pub fn invoke_member_values(
+        &mut self,
+        object: ObjectRef,
+        member_name: &str,
+        kind_hint: Option<oxvba_bundle::ProjectMemberKind>,
+        args: Vec<Variant>,
+    ) -> Result<Variant, PhaseDiagnostic> {
+        self.vm
+            .invoke_project_member_values(object, member_name, kind_hint, args)
+            .map_err(runtime_diagnostic)
+    }
 }
 
 impl Default for Engine {
@@ -257,6 +293,39 @@ impl Engine {
         self.host_services.descriptor()
     }
 
+    /// Prepare a package-backed runtime session without running a startup entry.
+    /// Wrapper targets use this for activation-style hosts: the package is linked
+    /// once, then class factories create project-class instances on demand.
+    ///
+    /// The current VM borrows bundles and host services. A loaded in-process COM
+    /// server is process-lifetime, so this method intentionally promotes the
+    /// package bundles and host-service Arc to `'static` for the session.
+    pub fn prepare_bundle_package_session(
+        &self,
+        package: oxvba_bundle::BundlePackage,
+    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
+        if self.config.enable_jit {
+            return Err(jit_not_implemented_diagnostic());
+        }
+        package.validate().map_err(|err| {
+            PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                "BUND-E-PACKAGE",
+                OxDiagnosticPhase::Bundle,
+                err.to_string(),
+            ))
+        })?;
+        let entry_bundle = package.entry_bundle;
+        let leaked_bundles: &'static [oxvba_bundle::Bundle] =
+            Box::leak(package.bundles.into_boxed_slice());
+        let bundle_refs: Vec<&'static oxvba_bundle::Bundle> = leaked_bundles.iter().collect();
+        let leaked_host_services: &'static mut Arc<dyn HostServices> =
+            Box::leak(Box::new(self.host_services.clone()));
+        let host_services: &'static dyn HostServices = &**leaked_host_services;
+        let vm = oxvba_vm2::Vm::link(&bundle_refs, host_services)
+            .map_err(|err| PhaseDiagnostic::from_diagnostic(err.to_diagnostic()))?;
+        Ok(ProjectRuntimeSession { vm, entry_bundle })
+    }
+
     /// Execute a **clean-path** project closure (the leaf-first, entry-last output of
     /// `oxvba_project::load_project_closure`): `oxvba_bind::bind_projects` (one bundle
     /// per project) → `linearize` each → `oxvba_vm2::Vm::link` (multi-bundle image,
@@ -380,6 +449,11 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
+    use oxvba_bundle::{BundlePackage, ProjectMemberKind};
+    use oxvba_runtime::Variant;
+    use oxvba_symbol::manifest::{
+        ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
+    };
 
     #[test]
     fn phase_diagnostic_exposes_stable_code() {
@@ -390,5 +464,50 @@ mod tests {
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert_eq!(err.diagnostic().code.as_str(), "RUN-E-JIT-NOT-IMPLEMENTED");
         assert!(err.message().contains("JIT execution"));
+    }
+
+    #[test]
+    fn package_session_can_create_class_and_invoke_member() {
+        let mut attrs = ModuleAttributes::named("Calculator");
+        attrs.vb_exposed = true;
+        attrs.vb_creatable = true;
+        let manifest = SymbolProjectManifest {
+            project_name: "DemoServer".to_string(),
+            project_kind: ProjectKind::Library,
+            modules: vec![ModuleUnit {
+                module_name: "Calculator".to_string(),
+                module_kind: ModuleKind::Class,
+                attributes: attrs,
+                source: r#"
+Public Function Add(ByVal a As Long, ByVal b As Long) As Long
+    Add = a + b
+End Function
+"#
+                .to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: Default::default(),
+        };
+        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
+        let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind");
+        let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_bundle_package_session(BundlePackage::single(bundle))
+            .expect("prepare session");
+
+        let object = session
+            .create_class_instance("Calculator")
+            .expect("create class instance");
+        let result = session
+            .invoke_member_values(
+                object,
+                "Add",
+                Some(ProjectMemberKind::Method),
+                vec![Variant::from_i32(2), Variant::from_i32(3)],
+            )
+            .expect("invoke Add");
+        assert_eq!(result.as_i32(), Some(5));
     }
 }

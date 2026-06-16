@@ -7,6 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+oxvba-build.workspace = true
 oxvba-diagnostics.workspace = true
 oxvba-host.workspace = true
 oxvba-hal.workspace = true

@@ -50,6 +50,7 @@ pub struct ProjectExportSurface {
 pub struct SurfaceType {
     /// Display name (the class/module name).
     pub name: String,
+    pub description: Option<String>,
     pub kind: SurfaceTypeKind,
     /// True if this type's members resolve **unqualified** in a referencing
     /// project: hidden `TKIND_MODULE`s and `GlobalMultiUse`/`GlobalSingleUse`
@@ -271,6 +272,7 @@ pub fn synthesize_export_surface(
         };
         types.push(SurfaceType {
             name: scan.module_name.clone(),
+            description: attrs.description.clone(),
             kind,
             global_namespace,
             // Only an exposed class can be a predeclared coclass in the surface; a
