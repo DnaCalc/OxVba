@@ -154,6 +154,17 @@ pub fn typelib_ref_by_libid(name: &str, guid: &str, major: u16, minor: u16) -> P
 /// typed receiver had no COM members and the member call failed to bind/dispatch.
 pub fn is_typelib_absent(err: &str) -> bool {
     let lower = err.to_ascii_lowercase();
+    // A poisoned typelib-state lock is a genuine IN-RUN defect (a prior panic poisoned the
+    // typelib-cache mutex), NOT an absent component. Exclude it before the broad
+    // typelib-absence match below — otherwise the bare "typelib" substring would demote a
+    // real runtime failure to an environment SKIP and make a broken feature read green.
+    // (Any future COM-E-TYPELIB-* prefix that denotes a runtime failure rather than
+    // non-registration must be added here too. COM-E-TYPELIB-IDENTITY-UNRESOLVED is
+    // deliberately NOT excluded: an unresolved libid is exactly how bind-time absence of an
+    // unregistered typelib reference surfaces, which is a legitimate skip.)
+    if lower.contains("com-e-typelib-state-poisoned") {
+        return false;
+    }
     lower.contains("loadregtypelib")
         || lower.contains("type library")
         || lower.contains("typelib")
