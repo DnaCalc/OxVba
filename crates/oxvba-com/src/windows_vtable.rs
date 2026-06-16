@@ -650,6 +650,19 @@ where
                 // reference; AddRef a SECOND (which we transfer to `bind_dispatch_result`,
                 // matching the OutCell::Interface ownership contract) and let VariantClear
                 // below release the callee's original — net-balanced.
+                //
+                // KNOWN LATENT AV (VT_UNKNOWN only, narrow, deferred — see code review): the
+                // `add_ref_dispatch` cast and `bind_dispatch_result` store the raw pointer as
+                // the binding's `native_dispatch` WITHOUT QI'ing it for IDispatch (unlike the
+                // proven IDispatch result path's `query_dispatch_from_unknown`). Object
+                // IDENTITY is fine (`native_unknown` is derived via `QI(IUnknown)`, valid on a
+                // bare IUnknown), but a LATER late-bound member call on a VT_UNKNOWN payload
+                // that does NOT implement IDispatch would invoke IDispatch vtable slots on a
+                // 3-slot IUnknown vtable → host AV. Automation duals alias IUnknown==IDispatch
+                // so the common path is safe. The correct fix is to carry an "is-dispatchable"
+                // flag on the binding and raise a clean runtime error (not an AV) at the
+                // member-dispatch boundary — binding-model work pending live verification, NOT
+                // a blind QI-or-Nothing here (that would regress pure-IUnknown identity).
                 // SAFETY: the VARIANT's payload pointer is the object the callee wrote.
                 let object_ptr = unsafe {
                     if vt == VT_DISPATCH {

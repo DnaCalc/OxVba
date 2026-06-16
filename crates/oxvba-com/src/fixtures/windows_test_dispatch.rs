@@ -1351,21 +1351,14 @@ unsafe fn raw_dispatch_invoke_event(
     if dispatch.is_null() {
         return Err("event sink dispatch pointer is null".to_string());
     }
-    // Deliver the event arguments to the sink in DECLARED (forward) order —
-    // `rgvarg[i]` is the i-th declared event parameter. This matches the order a
-    // source dispinterface's marshalled call actually presents to our agile
-    // (free-threaded-marshaler) sink, verified live against Excel
-    // `Workbook.SheetChange(Sh, Target)`: see `windows_dispatch_event_sink_invoke`,
-    // which reads `args[i] = rgvarg[i]`. (Earlier this fixture reversed the args to
-    // mimic the IDispatch *caller-side* convention; that disagreed with the
-    // marshalled delivery the sink is built for and only surfaced with the first
-    // 2-arg event.)
     // Build the event-call DISPPARAMS the way a spec-compliant IDispatch caller does:
     // rgvarg in REVERSED order (`rgvarg[0]` is the LAST declared argument). This in-proc
-    // fixture calls the sink DIRECTLY (same apartment), so the sink receives exactly this
-    // reversed layout — matching a real in-process source. (An out-of-process source's
-    // call is instead marshaled to our agile sink and arrives forward; the sink picks the
-    // layout by the calling thread's apartment — see windows_dispatch_event_sink_invoke.)
+    // fixture calls the sink DIRECTLY (same apartment) on the advise thread, so the sink
+    // receives exactly this reversed layout — matching a real in-process source — and
+    // un-reverses it (same-thread => reversed; see `windows_dispatch_event_sink_invoke`).
+    // (An out-of-process source's call is instead marshaled to our agile sink and was
+    // observed to arrive in forward order on a different thread; the sink disambiguates by
+    // comparing the calling thread to its creation thread.)
     let mut variants: Vec<VARIANT> = vec![std::mem::zeroed(); args.len()];
     for (idx, value) in args.iter().enumerate() {
         let slot = args.len().saturating_sub(1).saturating_sub(idx);

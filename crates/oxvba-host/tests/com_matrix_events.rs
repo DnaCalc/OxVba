@@ -77,8 +77,9 @@ fn v2_on_value_changed_ordered_lossless() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn v3_on_pair_changed_arg_order_pin() {
-    // Arg-order pin (windows_connection_point.rs:288 reverse-iter). FirePairChanged 10
-    // raises (10, 11). The a/a+1 invariant catches reversal regardless of value:
+    // Arg-order pin (windows_dispatch_event_sink_invoke's same-thread reverse branch in
+    // windows_connection_point.rs). FirePairChanged 10 raises (10, 11). The a/a+1 invariant
+    // catches reversal regardless of value:
     // verdict = IIf(mA = 10 And mB = 11 And (mB - mA) = 1, 1, 0).
     let sink = "Private mA As Long\n\
          Private mB As Long\n\
@@ -134,7 +135,7 @@ fn v4_unsubscribe_set_nothing() {
 fn v5_replace_source_pre_teardown() {
     // Pre-teardown of the old advise on WithEventsSet. Wire a -> fire 1 (delivered),
     // swap src to b, a.fire 50 (ignored — a is no longer the subscribed source),
-    // b.fire 2 (delivered). log == "1;2". verdict = IIf(mLog = "1;2", 1, 0).
+    // b.fire 2 (delivered). log == "1;2;". verdict = IIf(mLog = "1;2;", 1, 0).
     let sink = "Private mLog As String\n\
          Private a As OxVba.TestEventServer\n\
          Private b As OxVba.TestEventServer\n\
@@ -371,8 +372,11 @@ fn v11_byref_event_arg_documented_gap() {
 fn v12_subscription_lifetime_terminate_unadvise() {
     // Terminate-drain vs Unadvise ordering: a sink released before the fire must not
     // receive delivery and must not AV into the freed sink. Main creates an inner
-    // sink, releases it (Set inner = Nothing), THEN fires on a server it still holds,
-    // and confirms no crash + the outer counter untouched. verdict = 1 (reached, no AV).
+    // sink, releases it (Set inner = Nothing), THEN fires on a server it still holds.
+    // This is purely a NO-AV / reached-completion guard: result is set to 1
+    // unconditionally after the fire, and the freed sink's mGot is unobservable (it lives
+    // on the released instance, and the snapshot captures only module globals + Main's
+    // locals), so non-delivery is NOT independently verified here. verdict = 1.
     let main_src = "Public result As Long\n\
          Sub Main()\n\
          Dim srv As New OxVba.TestEventServer\n\

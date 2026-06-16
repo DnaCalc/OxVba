@@ -217,11 +217,24 @@ struct LoadedBundle<'h> {
 
 impl<'h> LoadedBundle<'h> {
     fn load(bundle: &'h Bundle) -> Self {
-        let event_routes = bundle
-            .event_routes
-            .iter()
-            .map(|route| ((route.binding, route.event), route.handler))
-            .collect();
+        // INVARIANT: build_event_routes (binder) dedups so each (binding, event) maps to
+        // exactly ONE handler — VBA permits a single `<field>_<Event>` handler per
+        // field+event. The subscribe path consults the full route Vec (one binding has many
+        // events); this map is only the dispatch-time (binding, event) -> handler lookup. A
+        // collision would mean the binder dedup invariant broke, so flag it in debug builds
+        // rather than silently keeping the last writer.
+        let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
+        for route in &bundle.event_routes {
+            let prev = event_routes.insert((route.binding, route.event), route.handler);
+            debug_assert!(
+                prev.is_none() || prev == Some(route.handler),
+                "bundle event_routes: (binding={}, event={}) bound to two different handlers \
+                 ({prev:?} then {}) — build_event_routes dedup invariant violated",
+                route.binding,
+                route.event,
+                route.handler
+            );
+        }
         // Leak one `&'static RuntimeClassDescriptor` per class (descriptors live
         // for the VM's lifetime; `from_project_instance` requires `'static`).
         let class_descriptors = bundle
