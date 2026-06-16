@@ -1,5 +1,6 @@
 //! Error types for the `.basproj` project system.
 
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -131,4 +132,141 @@ pub enum BasProjError {
 
     #[error("ComServer project has no creatable classes")]
     ComServerNoCreatableClasses,
+}
+
+impl BasProjError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        let (code, help) = match self {
+            BasProjError::XmlParse(_) => ("PROJ-E-XML-PARSE", Some("Fix the .basproj XML syntax.")),
+            BasProjError::VbpParse(_) => ("PROJ-E-VBP-PARSE", Some("Fix the .vbp syntax.")),
+            BasProjError::VbpUnsupported(_) => (
+                "PROJ-E-VBP-UNSUPPORTED",
+                Some(
+                    "Convert this project shape to .basproj or narrow the unsupported .vbp feature.",
+                ),
+            ),
+            BasProjError::MissingAttribute { .. } => (
+                "PROJ-E-MISSING-ATTRIBUTE",
+                Some("Add the required XML attribute to the project file."),
+            ),
+            BasProjError::MissingProperty(_) => (
+                "PROJ-E-MISSING-PROPERTY",
+                Some("Add the required project property."),
+            ),
+            BasProjError::MissingMetadata { .. } => (
+                "PROJ-E-MISSING-METADATA",
+                Some("Add the required metadata item to the module/reference entry."),
+            ),
+            BasProjError::InvalidOutputType(_) => (
+                "PROJ-E-INVALID-OUTPUT-TYPE",
+                Some("Use one of the supported OutputType values."),
+            ),
+            BasProjError::InvalidBuildTarget(_) => (
+                "PROJ-E-INVALID-BUILD-TARGET",
+                Some("Use one of the supported BuildTarget values."),
+            ),
+            BasProjError::InvalidRuntimeFlavor(_) => (
+                "PROJ-E-INVALID-RUNTIME-FLAVOR",
+                Some("Use one of the supported RuntimeFlavor values."),
+            ),
+            BasProjError::EntryPointRequired(_) => (
+                "PROJ-E-ENTRYPOINT-REQUIRED",
+                Some("Set EntryPoint to a public procedure such as ModuleName.Main."),
+            ),
+            BasProjError::EntryPointInvalid(_) => (
+                "PROJ-E-ENTRYPOINT-INVALID",
+                Some("Use an entry point in ModuleName.ProcedureName form."),
+            ),
+            BasProjError::EntryPointNotFound(_) => (
+                "PROJ-E-ENTRYPOINT-NOT-FOUND",
+                Some("Check the entry point spelling and module inclusion."),
+            ),
+            BasProjError::EntryPointAmbiguous(_) => (
+                "PROJ-E-ENTRYPOINT-AMBIGUOUS",
+                Some("Qualify the entry point with its module name."),
+            ),
+            BasProjError::TopLevelMainlineUnsupported { .. } => (
+                "PROJ-E-TOP-LEVEL-MAINLINE-UNSUPPORTED",
+                Some("Move executable top-level statements into an explicit procedure."),
+            ),
+            BasProjError::ProjectDiscoveryAmbiguous { .. } => (
+                "PROJ-E-DISCOVERY-AMBIGUOUS",
+                Some("Pass the exact project file path."),
+            ),
+            BasProjError::UnsupportedPath { .. } => (
+                "PROJ-E-UNSUPPORTED-PATH",
+                Some("Use a .basproj or .vbp project file."),
+            ),
+            BasProjError::HostProjectEditUnsupportedWorkspace { .. } => (
+                "PROJ-E-HOST-EDIT-UNSUPPORTED-WORKSPACE",
+                Some("Use a .basproj workspace for host project edits."),
+            ),
+            BasProjError::HostProjectEditPlanInvalid(_) => ("PROJ-E-HOST-EDIT-PLAN-INVALID", None),
+            BasProjError::DuplicateExportName(_) => (
+                "PROJ-E-DUPLICATE-EXPORT-NAME",
+                Some("Give each native export a unique exported name."),
+            ),
+            BasProjError::Io { .. } => ("PROJ-E-IO", None),
+            BasProjError::ModuleSourceNotFound(_) => (
+                "PROJ-E-MODULE-SOURCE-NOT-FOUND",
+                Some("Check the module Include path relative to the project file."),
+            ),
+            BasProjError::ModuleSourceInvalid { .. } => ("PROJ-E-MODULE-SOURCE-INVALID", None),
+            BasProjError::ImportFileNotFound(_) => (
+                "PROJ-E-IMPORT-FILE-NOT-FOUND",
+                Some("Check the import Include path relative to the project file."),
+            ),
+            BasProjError::CyclicProjectReference { .. } => (
+                "PROJ-E-CYCLIC-PROJECT-REFERENCE",
+                Some(
+                    "Remove the project-reference cycle or split shared code into an acyclic dependency.",
+                ),
+            ),
+            BasProjError::ProjectReferenceNotFound { .. } => (
+                "PROJ-E-PROJECT-REFERENCE-NOT-FOUND",
+                Some("Check the referenced project path."),
+            ),
+            BasProjError::NativeReferenceNotFound { .. } => (
+                "PROJ-E-NATIVE-REFERENCE-NOT-FOUND",
+                Some("Check the native library path."),
+            ),
+            BasProjError::ExportProcedureNotFound { .. } => (
+                "PROJ-E-EXPORT-PROCEDURE-NOT-FOUND",
+                Some("Check the exported module and procedure names."),
+            ),
+            BasProjError::ExportModuleNotProcedural { .. } => (
+                "PROJ-E-EXPORT-MODULE-NOT-PROCEDURAL",
+                Some("Native exports must target a procedural module."),
+            ),
+            BasProjError::ExportProcedureNotPublic { .. } => (
+                "PROJ-E-EXPORT-PROCEDURE-NOT-PUBLIC",
+                Some("Make the exported procedure Public."),
+            ),
+            BasProjError::ComClassNotExposed { .. } => (
+                "PROJ-E-COM-CLASS-NOT-EXPOSED",
+                Some("Expose the class in the project COM server surface."),
+            ),
+            BasProjError::ComServerNoCreatableClasses => (
+                "PROJ-E-COM-SERVER-NO-CREATABLE-CLASSES",
+                Some("Add at least one creatable public class to the ComServer project."),
+            ),
+        };
+        let mut diagnostic =
+            Diagnostic::error(code, DiagnosticPhase::ProjectLoad, self.to_string());
+        if let Some(help) = help {
+            diagnostic = diagnostic.with_help(help);
+        }
+        diagnostic
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BasProjError;
+
+    #[test]
+    fn invalid_output_type_has_stable_code() {
+        let diagnostic = BasProjError::InvalidOutputType("Macro".to_string()).to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "PROJ-E-INVALID-OUTPUT-TYPE");
+    }
 }

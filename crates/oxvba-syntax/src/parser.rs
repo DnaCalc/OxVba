@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::green::{Checkpoint, GreenNode, GreenNodeBuilder};
 use crate::lexer;
 use crate::syntax_kind::SyntaxKind;
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, DiagnosticSource, SourceSpan};
 
 /// The result of parsing VBA source code.
 pub struct Parse {
@@ -15,6 +16,28 @@ pub struct Parse {
 pub struct ParseError {
     pub offset: u32,
     pub message: String,
+}
+
+impl ParseError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        self.to_diagnostic_with_context(None, None)
+    }
+
+    pub fn to_diagnostic_with_context(
+        &self,
+        module: Option<&str>,
+        source_text: Option<&str>,
+    ) -> Diagnostic {
+        let mut source = DiagnosticSource::new().with_span(SourceSpan::point(self.offset));
+        if let Some(module) = module {
+            source = source.with_module(module);
+        }
+        if let Some(source_text) = source_text {
+            source = source.with_source_text(source_text);
+        }
+        Diagnostic::error("SYN-E-PARSE", DiagnosticPhase::Syntax, self.message.clone())
+            .with_source(source)
+    }
 }
 
 impl Parse {
@@ -2732,6 +2755,24 @@ mod tests {
         assert_eq!(p.syntax().kind(), SyntaxKind::SourceFile);
         assert_eq!(p.syntax().text(), "");
         assert!(p.errors().is_empty());
+    }
+
+    #[test]
+    fn parse_error_diagnostic_carries_source_location() {
+        let error = ParseError {
+            offset: 13,
+            message: "expected Identifier".to_string(),
+        };
+        let diagnostic =
+            error.to_diagnostic_with_context(Some("Main"), Some("Sub Main()\n  Dim\nEnd Sub\n"));
+        assert_eq!(diagnostic.code.as_str(), "SYN-E-PARSE");
+        let source = diagnostic
+            .source
+            .as_ref()
+            .expect("parse diagnostic should carry source");
+        assert_eq!(source.module.as_deref(), Some("Main"));
+        assert_eq!(source.line, Some(2));
+        assert_eq!(source.column, Some(3));
     }
 
     #[test]

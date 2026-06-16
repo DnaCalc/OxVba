@@ -436,7 +436,11 @@ pub fn build_resolution_environment(
             cond_comp::preprocess(&module.source, &active_cc).map_err(SymbolModelError::Syntax)?;
         let parse = oxvba_syntax::parse(&source);
         if !parse.errors().is_empty() {
-            return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
+            return Err(SymbolModelError::Parse {
+                module: module.module_name.clone(),
+                source_text: source,
+                errors: parse.errors().to_vec(),
+            });
         }
         let scan = scanner::scan_module(
             &mut symbols,
@@ -477,7 +481,11 @@ pub fn build_resolution_environment(
                 .map_err(SymbolModelError::Syntax)?;
             let parse = oxvba_syntax::parse(&source);
             if !parse.errors().is_empty() {
-                return Err(SymbolModelError::Syntax(format!("{:?}", parse.errors())));
+                return Err(SymbolModelError::Parse {
+                    module: module.module_name.clone(),
+                    source_text: source,
+                    errors: parse.errors().to_vec(),
+                });
             }
             let scan = scanner::scan_module(
                 &mut symbols,

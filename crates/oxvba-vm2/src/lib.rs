@@ -41,6 +41,7 @@ use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
     DynamicMemberSelector, DynamicValue,
 };
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::{LibContext, LibError};
@@ -67,6 +68,30 @@ const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
 pub struct VmError {
     pub code: i32,
     pub message: String,
+    pub diagnostic: Option<Box<Diagnostic>>,
+}
+
+impl VmError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        if let Some(diagnostic) = &self.diagnostic {
+            let diagnostic = diagnostic.as_ref().clone();
+            if diagnostic.vba_error_number.is_some() {
+                return diagnostic;
+            }
+            return diagnostic.with_vba_error_number(self.code);
+        }
+        if let Some(code) = extract_prefixed_code(&self.message, "COM-E-") {
+            Diagnostic::error(code, DiagnosticPhase::Com, self.message.clone())
+                .with_vba_error_number(self.code)
+        } else {
+            Diagnostic::error(
+                "RUN-E-VBA-ERROR",
+                DiagnosticPhase::Runtime,
+                self.message.clone(),
+            )
+            .with_vba_error_number(self.code)
+        }
+    }
 }
 
 /// An in-flight raised error (caught by `On Error` if a handler is active).
@@ -74,6 +99,7 @@ pub struct VmError {
 struct Fault {
     code: i32,
     message: String,
+    diagnostic: Option<Box<Diagnostic>>,
 }
 
 impl Fault {
@@ -81,6 +107,7 @@ impl Fault {
         Self {
             code,
             message: message.into(),
+            diagnostic: None,
         }
     }
     fn from_string(message: String) -> Self {
@@ -94,6 +121,7 @@ impl Fault {
         Fault {
             code: err.code,
             message: err.message,
+            diagnostic: None,
         }
     }
     fn from_hal(err: oxvba_hal::HalError) -> Self {
@@ -101,7 +129,12 @@ impl Fault {
         // the underlying HRESULT/EXCEPINFO; absent one, fall back to VBA error 5
         // ("invalid procedure call or argument").
         let code = err.host_error_code.unwrap_or(5);
-        Fault::new(code, err.message)
+        let diagnostic = err.to_diagnostic().with_vba_error_number(code);
+        Fault {
+            code,
+            message: err.message,
+            diagnostic: Some(Box::new(diagnostic)),
+        }
     }
 }
 
@@ -311,6 +344,12 @@ pub struct Vm<'h> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkError {
     pub message: String,
+}
+
+impl LinkError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        Diagnostic::error("RUN-E-LINK", DiagnosticPhase::Runtime, self.message.clone())
+    }
 }
 
 /// Run a single bundle from its entry point, returning the VM (for slot inspection).
@@ -625,12 +664,17 @@ impl<'h> Vm<'h> {
     /// `Class_Terminate`s drained (fixing the legacy error-path gap).
     fn dispatch_fault(&mut self, fault: Fault) -> Result<(), VmError> {
         let (code, message) = (fault.code, fault.message.clone());
+        let diagnostic = fault.diagnostic.clone();
         let handled = self.route_fault(fault, 1);
         self.maybe_drain();
         if handled {
             Ok(())
         } else {
-            Err(VmError { code, message })
+            Err(VmError {
+                code,
+                message,
+                diagnostic,
+            })
         }
     }
 

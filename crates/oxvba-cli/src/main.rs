@@ -13,6 +13,9 @@
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+use oxvba_diagnostics::{
+    Diagnostic as OxDiagnostic, DiagnosticPhase as OxDiagnosticPhase, DiagnosticReport,
+};
 use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
@@ -41,6 +44,8 @@ fn print_usage() {
         "usage:\n  \
          oxvba run <source.bas> [--dump-values] [--jit] [bootstrap options]\n  \
          oxvba run-project [path] [--entry <Module.Procedure>] [--dump-values] [--jit] [bootstrap options]\n\n\
+         diagnostics:\n  \
+         --diagnostic-format <human|json>\n\n\
          bootstrap options:\n  \
          --profile <id>  --policy <preset>  --config <path>  --runtime-class <class>\n  \
          --allow-interaction|--allow-process-spawn|--allow-filesystem-mutation <bool>\n  \
@@ -55,7 +60,18 @@ fn print_usage() {
 // ---------------------------------------------------------------------------
 
 fn run_execute(cli_args: Vec<String>) {
-    let args = parse_run_args_from(cli_args);
+    let args = if cli_args.is_empty() {
+        None
+    } else {
+        Some(parse_run_args_from(cli_args).unwrap_or_else(|| {
+            eprintln!("usage: oxvba run <source.bas> [--diagnostic-format <human|json>] [bootstrap options]");
+            std::process::exit(2);
+        }))
+    };
+    let diagnostic_format = args
+        .as_ref()
+        .map(|a| a.diagnostic_format)
+        .unwrap_or_default();
     let config = HostConfig {
         enable_jit: args.as_ref().map(|a| a.enable_jit).unwrap_or(false),
     };
@@ -63,7 +79,12 @@ fn run_execute(cli_args: Vec<String>) {
     if let Some(run_args) = args.as_ref() {
         let resolved = resolve_runner_bootstrap(&run_args.bootstrap, |key| env::var(key).ok())
             .unwrap_or_else(|err| {
-                eprintln!("oxvba: bootstrap failed: {err}");
+                let diagnostic = OxDiagnostic::error(
+                    "HOST-E-BOOTSTRAP",
+                    OxDiagnosticPhase::Host,
+                    format!("bootstrap failed: {err}"),
+                );
+                emit_diagnostic("oxvba", &diagnostic, diagnostic_format);
                 std::process::exit(2);
             });
         engine.set_runtime_profile(resolved.runtime_profile);
@@ -85,7 +106,11 @@ fn run_execute(cli_args: Vec<String>) {
             }
         }
         Err(err) => {
-            eprintln!("oxvba: execution failed: {err}");
+            emit_diagnostic(
+                "oxvba: execution failed",
+                err.diagnostic(),
+                diagnostic_format,
+            );
             std::process::exit(1);
         }
     }
@@ -98,7 +123,7 @@ fn run_execute(cli_args: Vec<String>) {
 fn run_project(args: Vec<String>) {
     let parsed = parse_run_project_args_from(args).unwrap_or_else(|| {
         eprintln!(
-            "usage: oxvba run-project [path] [--entry <Module.Procedure>] [bootstrap options]"
+            "usage: oxvba run-project [path] [--entry <Module.Procedure>] [--diagnostic-format <human|json>] [bootstrap options]"
         );
         std::process::exit(2);
     });
@@ -110,14 +135,24 @@ fn run_project(args: Vec<String>) {
             .as_deref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| ".".to_string());
-        eprintln!("oxvba run-project: no .basproj or .vbp project file found at {location}");
+        let diagnostic = OxDiagnostic::error(
+            "PROJ-E-PROJECT-FILE-NOT-FOUND",
+            OxDiagnosticPhase::ProjectLoad,
+            format!("no .basproj or .vbp project file found at {location}"),
+        )
+        .with_help("Pass an explicit .basproj or .vbp path, or run from a directory containing exactly one project file.");
+        emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
         std::process::exit(1);
     };
 
     // The single-project view supplies the runner-bootstrap fallbacks (default
     // profile / policy declared in the project file).
     let loaded = load_project_for_bootstrap(&project_file).unwrap_or_else(|err| {
-        eprintln!("oxvba run-project: {err}");
+        emit_diagnostic(
+            "oxvba run-project",
+            &err.to_diagnostic(),
+            parsed.diagnostic_format,
+        );
         std::process::exit(1);
     });
 
@@ -127,7 +162,12 @@ fn run_project(args: Vec<String>) {
     let resolved =
         resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| env::var(key).ok())
             .unwrap_or_else(|err| {
-                eprintln!("oxvba run-project: bootstrap failed: {err}");
+                let diagnostic = OxDiagnostic::error(
+                    "HOST-E-BOOTSTRAP",
+                    OxDiagnosticPhase::Host,
+                    format!("bootstrap failed: {err}"),
+                );
+                emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
                 std::process::exit(2);
             });
     engine.set_runtime_profile(resolved.runtime_profile);
@@ -141,7 +181,11 @@ fn run_project(args: Vec<String>) {
         parsed.entry_point_override.as_deref(),
     )
     .unwrap_or_else(|err| {
-        eprintln!("oxvba run-project: {err}");
+        emit_diagnostic(
+            "oxvba run-project",
+            &err.to_diagnostic(),
+            parsed.diagnostic_format,
+        );
         std::process::exit(1);
     });
 
@@ -152,7 +196,11 @@ fn run_project(args: Vec<String>) {
             }
         }
         Err(err) => {
-            eprintln!("oxvba run-project: {err}");
+            emit_diagnostic(
+                "oxvba run-project",
+                err.diagnostic(),
+                parsed.diagnostic_format,
+            );
             std::process::exit(1);
         }
     }
@@ -218,9 +266,31 @@ fn print_values(values: &[Variant]) {
     println!("VALUES:{payload}");
 }
 
+fn emit_diagnostic(prefix: &str, diagnostic: &OxDiagnostic, format: DiagnosticFormat) {
+    match format {
+        DiagnosticFormat::Human => eprintln!("{prefix}: {}", diagnostic.render_human()),
+        DiagnosticFormat::Json => {
+            match DiagnosticReport::single(diagnostic.clone()).to_json_pretty() {
+                Ok(json) => eprintln!("{json}"),
+                Err(err) => eprintln!(
+                    "{prefix}: failed to serialize diagnostic JSON: {err}; {}",
+                    diagnostic.render_human()
+                ),
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // argument parsing
 // ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum DiagnosticFormat {
+    #[default]
+    Human,
+    Json,
+}
 
 #[derive(Debug, Clone)]
 struct RunArgs {
@@ -228,6 +298,7 @@ struct RunArgs {
     dump_values: bool,
     dump_bootstrap: bool,
     enable_jit: bool,
+    diagnostic_format: DiagnosticFormat,
     bootstrap: RunnerBootstrapOptions,
 }
 
@@ -237,6 +308,7 @@ struct RunProjectArgs {
     enable_jit: bool,
     dump_values: bool,
     dump_bootstrap: bool,
+    diagnostic_format: DiagnosticFormat,
     bootstrap: RunnerBootstrapOptions,
     entry_point_override: Option<String>,
 }
@@ -251,6 +323,7 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     let mut dump_values = false;
     let mut dump_bootstrap = false;
     let mut enable_jit = false;
+    let mut diagnostic_format = DiagnosticFormat::Human;
     let mut bootstrap = RunnerBootstrapOptions::default();
 
     let mut i = 0;
@@ -260,6 +333,10 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
             "--dump-values" => dump_values = true,
             "--dump-bootstrap" => dump_bootstrap = true,
             "--jit" => enable_jit = true,
+            "--diagnostic-format" => {
+                i += 1;
+                diagnostic_format = parse_diagnostic_format(collected.get(i)?)?;
+            }
             _ => match consume_bootstrap_flag(&mut bootstrap, arg, collected.get(i + 1)) {
                 Some(Ok(())) => i += 1,
                 Some(Err(())) => return None,
@@ -276,6 +353,7 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
         dump_values,
         dump_bootstrap,
         enable_jit,
+        diagnostic_format,
         bootstrap,
     })
 }
@@ -290,6 +368,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     let mut enable_jit = false;
     let mut dump_values = false;
     let mut dump_bootstrap = false;
+    let mut diagnostic_format = DiagnosticFormat::Human;
     let mut bootstrap = RunnerBootstrapOptions::default();
     let mut entry_point_override: Option<String> = None;
 
@@ -300,6 +379,10 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
             "--jit" => enable_jit = true,
             "--dump-values" => dump_values = true,
             "--dump-bootstrap" => dump_bootstrap = true,
+            "--diagnostic-format" => {
+                i += 1;
+                diagnostic_format = parse_diagnostic_format(collected.get(i)?)?;
+            }
             "--entry" => {
                 i += 1;
                 entry_point_override = Some(collected.get(i)?.clone());
@@ -321,6 +404,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         enable_jit,
         dump_values,
         dump_bootstrap,
+        diagnostic_format,
         bootstrap,
         entry_point_override,
     })
@@ -463,6 +547,14 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
+fn parse_diagnostic_format(value: &str) -> Option<DiagnosticFormat> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "human" => Some(DiagnosticFormat::Human),
+        "json" => Some(DiagnosticFormat::Json),
+        _ => None,
+    }
+}
+
 fn parse_runtime_class(value: &str) -> Option<HalRuntimeClass> {
     match value.trim().to_ascii_lowercase().as_str() {
         "host-native" => Some(HalRuntimeClass::HostNative),
@@ -527,6 +619,8 @@ mod tests {
         let args = vec![
             "run".to_string(),
             "Cargo.toml".to_string(),
+            "--diagnostic-format".to_string(),
+            "json".to_string(),
             "--profile".to_string(),
             "linux-stdio".to_string(),
             "--policy".to_string(),
@@ -539,6 +633,7 @@ mod tests {
         ];
         let parsed = parse_run_args_from(args).expect("args should parse");
         assert!(parsed.dump_bootstrap);
+        assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Json);
         assert_eq!(parsed.bootstrap.profile.as_deref(), Some("linux-stdio"));
         assert_eq!(parsed.bootstrap.policy_preset.as_deref(), Some("strict-ci"));
         assert_eq!(parsed.bootstrap.overrides.allow_dynamic_link, Some(false));
@@ -575,6 +670,8 @@ mod tests {
             ".".to_string(),
             "--entry".to_string(),
             "Startup.Boot".to_string(),
+            "--diagnostic-format".to_string(),
+            "json".to_string(),
             "--profile".to_string(),
             "windows-stdio".to_string(),
             "--jit".to_string(),
@@ -583,7 +680,19 @@ mod tests {
         assert_eq!(parsed.entry_point_override.as_deref(), Some("Startup.Boot"));
         assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
         assert!(parsed.enable_jit);
+        assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Json);
         assert_eq!(parsed.input_path, Some(PathBuf::from(".")));
+    }
+
+    #[test]
+    fn reject_unknown_diagnostic_format() {
+        let args = vec![
+            "run".to_string(),
+            "Cargo.toml".to_string(),
+            "--diagnostic-format".to_string(),
+            "sarif".to_string(),
+        ];
+        assert!(parse_run_args_from(args).is_none());
     }
 
     #[test]

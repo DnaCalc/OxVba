@@ -5,6 +5,8 @@
 
 use std::collections::BTreeMap;
 
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase};
+use oxvba_syntax::ParseError;
 use thiserror::Error;
 
 use crate::providers::declare::DeclareSymbol;
@@ -183,6 +185,12 @@ pub struct Symbol {
 pub enum SymbolModelError {
     #[error("syntax parse failed: {0}")]
     Syntax(String),
+    #[error("syntax parse failed in module {module}: {errors:?}")]
+    Parse {
+        module: String,
+        source_text: String,
+        errors: Vec<ParseError>,
+    },
     #[error("duplicate symbol `{name}` in {namespace:?} namespace")]
     DuplicateSymbol {
         name: String,
@@ -190,6 +198,49 @@ pub enum SymbolModelError {
     },
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
+}
+
+impl SymbolModelError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        match self {
+            SymbolModelError::Syntax(message) => Diagnostic::error(
+                "SYM-E-SYNTAX",
+                DiagnosticPhase::Symbol,
+                format!("syntax preprocessing failed: {message}"),
+            ),
+            SymbolModelError::Parse {
+                module,
+                source_text,
+                errors,
+            } => {
+                let Some(first) = errors.first() else {
+                    return Diagnostic::error(
+                        "SYN-E-PARSE",
+                        DiagnosticPhase::Syntax,
+                        format!("parse failed in module {module}"),
+                    );
+                };
+                let mut diagnostic =
+                    first.to_diagnostic_with_context(Some(module), Some(source_text.as_str()));
+                if errors.len() > 1 {
+                    diagnostic = diagnostic
+                        .with_note(format!("{} additional parse error(s)", errors.len() - 1));
+                }
+                diagnostic
+            }
+            SymbolModelError::DuplicateSymbol { name, namespace } => Diagnostic::error(
+                "SYM-E-DUPLICATE-SYMBOL",
+                DiagnosticPhase::Symbol,
+                format!("duplicate symbol `{name}` in {namespace:?} namespace"),
+            )
+            .with_help("Rename one declaration or move it to a different namespace/scope."),
+            SymbolModelError::UnknownScope(scope) => Diagnostic::error(
+                "SYM-E-UNKNOWN-SCOPE",
+                DiagnosticPhase::Symbol,
+                format!("internal symbol table referenced unknown scope {scope:?}"),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

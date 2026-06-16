@@ -19,6 +19,7 @@ use crate::{
     resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
     take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
 use oxvba_runtime::{ObjectRef, Variant};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -41,6 +42,19 @@ pub struct WindowsComBridge {
 pub enum WindowsComBridgeDispatchError {
     Message(String),
     InvokeFailure(ComInvokeFailure),
+}
+
+impl WindowsComBridgeDispatchError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        match self {
+            WindowsComBridgeDispatchError::Message(message) => {
+                let code = extract_prefixed_code(message, "COM-E-")
+                    .unwrap_or_else(|| "COM-E-DISPATCH".to_string());
+                Diagnostic::error(code, DiagnosticPhase::Com, message.clone())
+            }
+            WindowsComBridgeDispatchError::InvokeFailure(failure) => failure.to_diagnostic(),
+        }
+    }
 }
 
 impl WindowsComBridge {

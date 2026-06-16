@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use oxvba_diagnostics::{Diagnostic as OxDiagnostic, DiagnosticPhase as OxDiagnosticPhase};
 use oxvba_hal::{
     adapters::builder::HostBuilder,
     callbacks::HostCallbacks,
@@ -36,20 +37,21 @@ pub enum DiagnosticPhase {
 pub struct PhaseDiagnostic {
     phase: DiagnosticPhase,
     message: String,
+    diagnostic: Box<OxDiagnostic>,
 }
 
 impl PhaseDiagnostic {
-    pub(crate) fn compile(message: impl Into<String>) -> Self {
+    pub(crate) fn from_diagnostic(diagnostic: OxDiagnostic) -> Self {
+        let phase = if diagnostic.phase.is_runtime() {
+            DiagnosticPhase::Runtime
+        } else {
+            DiagnosticPhase::CompileTime
+        };
+        let message = diagnostic.message.clone();
         Self {
-            phase: DiagnosticPhase::CompileTime,
-            message: message.into(),
-        }
-    }
-
-    pub(crate) fn runtime(message: impl Into<String>) -> Self {
-        Self {
-            phase: DiagnosticPhase::Runtime,
-            message: message.into(),
+            phase,
+            message,
+            diagnostic: Box::new(diagnostic),
         }
     }
 
@@ -59,6 +61,10 @@ impl PhaseDiagnostic {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn diagnostic(&self) -> &OxDiagnostic {
+        &self.diagnostic
     }
 }
 
@@ -73,6 +79,23 @@ impl std::fmt::Display for PhaseDiagnostic {
 }
 
 impl std::error::Error for PhaseDiagnostic {}
+
+fn jit_not_implemented_diagnostic() -> PhaseDiagnostic {
+    PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+        "RUN-E-JIT-NOT-IMPLEMENTED",
+        OxDiagnosticPhase::Runtime,
+        JIT_NOT_IMPLEMENTED_MESSAGE,
+    ))
+}
+
+fn linearize_diagnostic(err: oxvba_bundle::LinearizeError) -> OxDiagnostic {
+    OxDiagnostic::error(
+        "BUND-E-MALFORMED-CORE",
+        OxDiagnosticPhase::Bundle,
+        err.to_string(),
+    )
+    .with_help("This indicates the binder emitted invalid Core IR; reduce the source to a regression case.")
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
@@ -243,20 +266,21 @@ impl Engine {
         closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         if self.config.enable_jit {
-            return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+            return Err(jit_not_implemented_diagnostic());
         }
         let typelibs = oxvba_symbol::CatalogTypeLibResolver;
         let programs = oxvba_bind::bind_projects(closure, &typelibs)
-            .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
         let bundles: Vec<oxvba_bundle::Bundle> = programs
             .iter()
             .map(oxvba_bundle::linearize)
             .collect::<Result<_, _>>()
-            .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(linearize_diagnostic(e)))?;
         let refs: Vec<&oxvba_bundle::Bundle> = bundles.iter().collect();
         let mut vm = oxvba_vm2::Vm::link(&refs, &*self.host_services)
-            .map_err(|e| PhaseDiagnostic::runtime(e.message))?;
-        vm.run().map_err(|e| PhaseDiagnostic::runtime(e.message))?;
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
+        vm.run()
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
         // The entry project's globals are the result snapshot (entry bundle is last;
         // after `run` the cursor rests in it).
         let entry_globals = bundles.last().map(|b| b.global_count).unwrap_or(0);
@@ -298,7 +322,7 @@ impl Engine {
         references: Vec<oxvba_symbol::manifest::ProjectReference>,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         if self.config.enable_jit {
-            return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+            return Err(jit_not_implemented_diagnostic());
         }
         use oxvba_symbol::manifest as sym;
         let manifest = sym::SymbolProjectManifest {
@@ -328,16 +352,17 @@ impl Engine {
         manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         if self.config.enable_jit {
-            return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+            return Err(jit_not_implemented_diagnostic());
         }
         let typelibs = oxvba_symbol::CatalogTypeLibResolver;
         let program = oxvba_bind::bind_program(manifest, &typelibs)
-            .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
         let bundle = oxvba_bundle::linearize(&program)
-            .map_err(|e| PhaseDiagnostic::compile(format!("{e:?}")))?;
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(linearize_diagnostic(e)))?;
         let mut vm = oxvba_vm2::Vm::link(&[&bundle], &*self.host_services)
-            .map_err(|e| PhaseDiagnostic::runtime(e.message))?;
-        vm.run().map_err(|e| PhaseDiagnostic::runtime(e.message))?;
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
+        vm.run()
+            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
         // Snapshot = module globals + the entry frame's locals (the script's variables).
         let local_count = program
             .entry
@@ -349,5 +374,21 @@ impl Engine {
             .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
             .collect();
         Ok(values)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DiagnosticPhase, Engine, HostConfig};
+
+    #[test]
+    fn phase_diagnostic_exposes_stable_code() {
+        let engine = Engine::new(HostConfig { enable_jit: true });
+        let err = engine
+            .execute_source_with_variant_snapshot_clean("Sub Main()\nEnd Sub\n")
+            .expect_err("JIT path should return a diagnostic");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert_eq!(err.diagnostic().code.as_str(), "RUN-E-JIT-NOT-IMPLEMENTED");
+        assert!(err.message().contains("JIT execution"));
     }
 }

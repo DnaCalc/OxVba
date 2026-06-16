@@ -3,6 +3,8 @@
 ## Current Workspace
 
 Workspace crates and current roles:
+- `oxvba-diagnostics`: shared structured diagnostic model used by compiler,
+  project loading, host/CLI, runtime, HAL, and COM boundaries.
 - `oxvba-syntax`: lossless lexer/parser and green/red syntax-tree
   infrastructure (CST).
 - `oxvba-runtime`: canonical runtime value substrate centered on `Variant`,

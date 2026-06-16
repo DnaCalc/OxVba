@@ -1,6 +1,7 @@
 //! Deterministic HAL error taxonomy.
 
 use crate::model::{CapabilityId, HalProfileId};
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase};
 use thiserror::Error;
 
 pub type HalResult<T> = Result<T, HalError>;
@@ -107,6 +108,19 @@ impl HalError {
             message: "operation is not implemented for the active profile".to_string(),
             host_error_code: None,
         }
+    }
+
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        let mut diagnostic =
+            Diagnostic::error(self.stable_code, DiagnosticPhase::Hal, self.message.clone())
+                .with_metadata("kind", format!("{:?}", self.kind))
+                .with_metadata("profile", format!("{:?}", self.profile))
+                .with_metadata("capability", format!("{:?}", self.capability))
+                .with_metadata("operation", self.operation);
+        if let Some(code) = self.host_error_code {
+            diagnostic = diagnostic.with_vba_error_number(code);
+        }
+        diagnostic
     }
 }
 

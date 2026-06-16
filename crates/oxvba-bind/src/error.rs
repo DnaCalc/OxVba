@@ -1,5 +1,6 @@
 //! Binder errors.
 
+use oxvba_diagnostics::{Diagnostic, DiagnosticCause, DiagnosticPhase};
 use oxvba_symbol::SymbolModelError;
 
 /// An error raised while binding the CST + resolution into Core IR.
@@ -23,4 +24,58 @@ pub enum BindError {
     /// A construct the binder does not yet lower.
     #[error("unsupported construct: {0}")]
     Unsupported(String),
+}
+
+impl BindError {
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        match self {
+            BindError::Symbol(err) => err.to_diagnostic().with_cause(DiagnosticCause {
+                code: Some("BIND-E-SYMBOL-MODEL".into()),
+                message: "binder could not build the resolution environment".to_string(),
+            }),
+            BindError::Parse { module, message } => Diagnostic::error(
+                "BIND-E-PARSE",
+                DiagnosticPhase::Bind,
+                format!("parse error in module {module}: {message}"),
+            ),
+            BindError::Unresolved { name, context } => Diagnostic::error(
+                "BIND-E-UNRESOLVED-NAME",
+                DiagnosticPhase::Bind,
+                format!("unresolved name `{name}` ({context})"),
+            )
+            .with_help("Check the declaration spelling, module visibility, and project references."),
+            BindError::InvalidAssignment(message) => Diagnostic::error(
+                "BIND-E-INVALID-ASSIGNMENT",
+                DiagnosticPhase::Bind,
+                format!("invalid assignment: {message}"),
+            )
+            .with_help("Check whether the target is assignable and whether Set/Let semantics match the value."),
+            BindError::Malformed(message) => Diagnostic::error(
+                "BIND-E-MALFORMED-CONSTRUCT",
+                DiagnosticPhase::Bind,
+                format!("malformed construct: {message}"),
+            ),
+            BindError::Unsupported(message) => Diagnostic::error(
+                "BIND-E-UNSUPPORTED-CONSTRUCT",
+                DiagnosticPhase::Bind,
+                format!("unsupported construct: {message}"),
+            )
+            .with_help("This construct is parsed but not yet lowered by the clean binder."),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BindError;
+
+    #[test]
+    fn unresolved_name_has_stable_code() {
+        let diagnostic = BindError::Unresolved {
+            name: "Missing".to_string(),
+            context: "expression".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-UNRESOLVED-NAME");
+    }
 }

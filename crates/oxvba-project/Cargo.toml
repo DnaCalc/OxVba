@@ -7,6 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+oxvba-diagnostics.workspace = true
 oxvba-symbol.workspace = true
 quick-xml.workspace = true
 thiserror.workspace = true

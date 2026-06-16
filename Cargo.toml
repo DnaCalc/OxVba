@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/oxvba-diagnostics",
     "crates/oxvba-hal",
     "crates/oxvba-syntax",
     "crates/oxvba-runtime",
@@ -46,6 +47,7 @@ unwrap_used = "allow"
 
 [workspace.dependencies]
 oxvba-syntax = { path = "crates/oxvba-syntax" }
+oxvba-diagnostics = { path = "crates/oxvba-diagnostics" }
 oxvba-hal = { path = "crates/oxvba-hal" }
 oxvba-runtime = { path = "crates/oxvba-runtime" }
 oxvba-jit = { path = "crates/oxvba-jit" }

@@ -4,6 +4,7 @@ use crate::{
     ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
     take_variant_result_value, take_variant_result_variant,
 };
+use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
 use oxvba_runtime::{ObjectRef, Variant};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
@@ -203,6 +204,27 @@ impl ComInvokeFailure {
             message.push_str(&format!(" detail=\"{}\"", sanitize_error_text(detail)));
         }
         message
+    }
+
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        let rendered = self.render();
+        let code = self
+            .detail
+            .as_deref()
+            .and_then(|detail| extract_prefixed_code(detail, "COM-E-"))
+            .unwrap_or_else(|| "COM-E-DISPATCH-INVOKE-FAILED".to_string());
+        let mut diagnostic = Diagnostic::error(code, DiagnosticPhase::Com, rendered)
+            .with_metadata("label", self.label)
+            .with_metadata("classification", self.classification_label())
+            .with_metadata("dispid", self.dispid.to_string())
+            .with_vba_error_number(self.vba_error_number());
+        if let Some(hr) = self.hr {
+            diagnostic = diagnostic.with_metadata("hresult", format!("0x{:08X}", hr as u32));
+        }
+        if let Some(arg_err) = self.arg_err {
+            diagnostic = diagnostic.with_metadata("arg_err", arg_err.to_string());
+        }
+        diagnostic
     }
 }
 

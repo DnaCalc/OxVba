@@ -11,6 +11,7 @@ default = []
 fixture-typelibs = []
 
 [dependencies]
+oxvba-diagnostics.workspace = true
 oxvba-runtime.workspace = true
 thiserror.workspace = true
 

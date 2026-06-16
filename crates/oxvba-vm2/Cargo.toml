@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Interpreter over the clean oxvba-bundle — the Phase 1 reference runtime."
 
 [dependencies]
+oxvba-diagnostics.workspace = true
 oxvba-bundle.workspace = true
 oxvba-lib.workspace = true
 oxvba-runtime.workspace = true

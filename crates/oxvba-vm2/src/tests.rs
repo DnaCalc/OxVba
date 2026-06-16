@@ -31,6 +31,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::run;
 
+#[test]
+fn vm_error_diagnostic_preserves_com_prefix() {
+    let err = crate::VmError {
+        code: 438,
+        message: "COM-E-DYNAMIC-NAME-UNRESOLVED: missing member".to_string(),
+        diagnostic: None,
+    };
+    let diagnostic = err.to_diagnostic();
+    assert_eq!(diagnostic.code.as_str(), "COM-E-DYNAMIC-NAME-UNRESOLVED");
+    assert_eq!(diagnostic.vba_error_number, Some(438));
+}
+
 /// A host that delivers a single COM event callback (for `subscription` 7,
 /// arg = `arg`) once a subscription exists, delegating everything else to a
 /// `NullHostServices`.
