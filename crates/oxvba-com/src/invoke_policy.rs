@@ -53,6 +53,7 @@ pub fn canonicalize_member_known_args(
     spec: &ComMemberSpec,
     args: &[ComInvokeArg],
 ) -> Result<Vec<ComInvokeArg>, String> {
+    let _ = validate_named_arg_order(args)?;
     if spec.parameter_names.is_empty() || args.is_empty() {
         return Ok(args.to_vec());
     }
@@ -229,6 +230,41 @@ mod tests {
         assert_eq!(args.len(), 2);
         assert_eq!(args[0], ComInvokeArg::omitted_named("lhs"));
         assert_eq!(args[1], ComInvokeArg::named_value(ComValue::I32(7), "rhs"));
+    }
+
+    #[test]
+    fn canonicalize_member_known_args_rejects_positional_after_named() {
+        let spec = ComMemberSpec {
+            name: "SumPair".to_string(),
+            requires_argument: true,
+            invoke_kind: TypeLibMemberInvokeKind::Method,
+            parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
+            is_default_member: false,
+            vtable_slot: None,
+            parameter_types: vec![],
+            parameter_iids: vec![],
+            parameter_optional_defaults: vec![],
+            return_type: None,
+            callconv_is_stdcall: true,
+            interface_iid: None,
+            is_dual: false,
+            source_typekind: None,
+            vtable_slot_bound: None,
+        };
+
+        let err = canonicalize_member_known_args(
+            &spec,
+            &[
+                ComInvokeArg::named_value(ComValue::I32(7), "rhs"),
+                ComInvokeArg::positional_value(ComValue::I32(3)),
+            ],
+        )
+        .expect_err("positional arguments after named arguments should be invalid");
+
+        assert_eq!(
+            err,
+            "named COM invoke arguments must trail positional arguments"
+        );
     }
 
     #[test]

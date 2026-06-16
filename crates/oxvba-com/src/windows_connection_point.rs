@@ -572,74 +572,6 @@ fn map_event_arg_raw_indices(
     Ok(raw_by_declared)
 }
 
-#[cfg(test)]
-#[allow(clippy::undocumented_unsafe_blocks)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn event_arg_map_unreverses_plain_positional_args() {
-        unsafe {
-            let mut variants: [VARIANT; 2] = std::mem::zeroed();
-            let params = DISPPARAMS {
-                rgvarg: variants.as_mut_ptr(),
-                rgdispidNamedArgs: std::ptr::null_mut(),
-                cArgs: 2,
-                cNamedArgs: 0,
-            };
-            assert_eq!(map_event_arg_raw_indices(&params, 2), Ok(vec![1, 0]));
-        }
-    }
-
-    #[test]
-    fn event_arg_map_uses_named_dispids_as_declared_positions() {
-        unsafe {
-            let mut variants: [VARIANT; 2] = std::mem::zeroed();
-            let mut named = [0, 1];
-            let params = DISPPARAMS {
-                rgvarg: variants.as_mut_ptr(),
-                rgdispidNamedArgs: named.as_mut_ptr(),
-                cArgs: 2,
-                cNamedArgs: 2,
-            };
-            assert_eq!(map_event_arg_raw_indices(&params, 2), Ok(vec![0, 1]));
-        }
-    }
-
-    #[test]
-    fn event_arg_map_combines_named_and_positional_rules() {
-        unsafe {
-            let mut variants: [VARIANT; 4] = std::mem::zeroed();
-            let mut named = [2, 3];
-            let params = DISPPARAMS {
-                rgvarg: variants.as_mut_ptr(),
-                rgdispidNamedArgs: named.as_mut_ptr(),
-                cArgs: 4,
-                cNamedArgs: 2,
-            };
-            assert_eq!(map_event_arg_raw_indices(&params, 4), Ok(vec![3, 2, 0, 1]));
-        }
-    }
-
-    #[test]
-    fn event_arg_map_rejects_unknown_named_dispid_with_raw_argerr() {
-        unsafe {
-            let mut variants: [VARIANT; 1] = std::mem::zeroed();
-            let mut named = [7];
-            let params = DISPPARAMS {
-                rgvarg: variants.as_mut_ptr(),
-                rgdispidNamedArgs: named.as_mut_ptr(),
-                cArgs: 1,
-                cNamedArgs: 1,
-            };
-            assert_eq!(
-                map_event_arg_raw_indices(&params, 1),
-                Err((COM_DISP_E_PARAMNOTFOUND, Some(0)))
-            );
-        }
-    }
-}
-
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     this: *mut c_void,
@@ -913,4 +845,72 @@ unsafe extern "system" fn windows_single_i32_source_event_sink_changed(
     // Source-interface i32 events carry no object arguments, so no GIT marshals.
     let _ = ((*sink).on_event)(&args, &[]);
     COM_S_OK
+}
+
+#[cfg(test)]
+#[allow(clippy::undocumented_unsafe_blocks)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_arg_map_unreverses_plain_positional_args() {
+        unsafe {
+            let mut variants: [VARIANT; 2] = std::mem::zeroed();
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: std::ptr::null_mut(),
+                cArgs: 2,
+                cNamedArgs: 0,
+            };
+            assert_eq!(map_event_arg_raw_indices(&params, 2), Ok(vec![1, 0]));
+        }
+    }
+
+    #[test]
+    fn event_arg_map_uses_named_dispids_as_declared_positions() {
+        unsafe {
+            let mut variants: [VARIANT; 2] = std::mem::zeroed();
+            let mut named = [0, 1];
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: named.as_mut_ptr(),
+                cArgs: 2,
+                cNamedArgs: 2,
+            };
+            assert_eq!(map_event_arg_raw_indices(&params, 2), Ok(vec![0, 1]));
+        }
+    }
+
+    #[test]
+    fn event_arg_map_combines_named_and_positional_rules() {
+        unsafe {
+            let mut variants: [VARIANT; 4] = std::mem::zeroed();
+            let mut named = [2, 3];
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: named.as_mut_ptr(),
+                cArgs: 4,
+                cNamedArgs: 2,
+            };
+            assert_eq!(map_event_arg_raw_indices(&params, 4), Ok(vec![3, 2, 0, 1]));
+        }
+    }
+
+    #[test]
+    fn event_arg_map_rejects_unknown_named_dispid_with_raw_argerr() {
+        unsafe {
+            let mut variants: [VARIANT; 1] = std::mem::zeroed();
+            let mut named = [7];
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: named.as_mut_ptr(),
+                cArgs: 1,
+                cNamedArgs: 1,
+            };
+            assert_eq!(
+                map_event_arg_raw_indices(&params, 1),
+                Err((COM_DISP_E_PARAMNOTFOUND, Some(0)))
+            );
+        }
+    }
 }
