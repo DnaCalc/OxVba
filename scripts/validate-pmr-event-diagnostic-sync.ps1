@@ -35,7 +35,7 @@ try {
     }
 
     $activeFiles = @(
-        "docs/DIAGNOSTIC_TAXONOMY.md",
+        "docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md",
         "docs/spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md",
         "docs/spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md",
         "docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md",
