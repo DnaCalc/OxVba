@@ -288,7 +288,10 @@ mod tests {
         let mut binding = ComBinding::new("Test.Dispatch".to_string(), 1);
         binding.default_member_token = Some(ComMemberToken::new(17));
         binding.member_specs.insert(
-            (ComMemberToken::new(17), TypeLibMemberInvokeKind::PropertyPut),
+            (
+                ComMemberToken::new(17),
+                TypeLibMemberInvokeKind::PropertyPut,
+            ),
             ComMemberSpec {
                 name: "Value".to_string(),
                 requires_argument: true,
@@ -324,7 +327,10 @@ mod tests {
         let mut binding = ComBinding::new("Test.Dispatch".to_string(), 1);
         binding.default_member_token = Some(ComMemberToken::new(17));
         binding.member_specs.insert(
-            (ComMemberToken::new(17), TypeLibMemberInvokeKind::PropertyGet),
+            (
+                ComMemberToken::new(17),
+                TypeLibMemberInvokeKind::PropertyGet,
+            ),
             ComMemberSpec {
                 name: "Value".to_string(),
                 requires_argument: true,

@@ -353,7 +353,13 @@ fn norm_units(units: &[u16], mode: StringCompareMode) -> Vec<u16> {
     match mode {
         StringCompareMode::Text => units
             .iter()
-            .map(|&u| if (0x41..=0x5A).contains(&u) { u + 0x20 } else { u })
+            .map(|&u| {
+                if (0x41..=0x5A).contains(&u) {
+                    u + 0x20
+                } else {
+                    u
+                }
+            })
             .collect(),
         StringCompareMode::Binary => units.to_vec(),
     }
@@ -590,14 +596,31 @@ mod tests {
         // Distinct halves are NOT equal (the lossy path returned True here pre-fix), and a
         // lone high surrogate is not the replacement char either.
         let eq = compare(&high, &low, mode, CmpOp::Eq).unwrap();
-        assert_eq!(int(&eq).unwrap(), 0, "ChrW(&HD800) = ChrW(&HDC00) must be False");
+        assert_eq!(
+            int(&eq).unwrap(),
+            0,
+            "ChrW(&HD800) = ChrW(&HDC00) must be False"
+        );
         let eq_repl = compare(&high, &replacement, mode, CmpOp::Eq).unwrap();
-        assert_eq!(int(&eq_repl).unwrap(), 0, "ChrW(&HD800) = ChrW(&HFFFD) must be False");
+        assert_eq!(
+            int(&eq_repl).unwrap(),
+            0,
+            "ChrW(&HD800) = ChrW(&HFFFD) must be False"
+        );
 
         // A lone-surrogate string equals itself, and ordering is by code unit.
-        let eq_self =
-            compare(&high, &Variant::from_utf16_units(&[0xD800]), mode, CmpOp::Eq).unwrap();
-        assert_ne!(int(&eq_self).unwrap(), 0, "a lone-surrogate string equals itself");
+        let eq_self = compare(
+            &high,
+            &Variant::from_utf16_units(&[0xD800]),
+            mode,
+            CmpOp::Eq,
+        )
+        .unwrap();
+        assert_ne!(
+            int(&eq_self).unwrap(),
+            0,
+            "a lone-surrogate string equals itself"
+        );
         let lt = compare(&high, &low, mode, CmpOp::Lt).unwrap();
         assert_ne!(int(&lt).unwrap(), 0, "0xD800 < 0xDC00 by code unit");
 

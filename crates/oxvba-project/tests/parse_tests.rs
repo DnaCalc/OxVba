@@ -653,7 +653,11 @@ fn missing_output_type_is_error() {
 fn invalid_project_enum_properties_are_errors() {
     for (property, value, expected) in [
         ("OutputType", "DefinitelyNotExe", "invalid OutputType"),
-        ("BuildTarget", "NativeImageEventually", "invalid BuildTarget"),
+        (
+            "BuildTarget",
+            "NativeImageEventually",
+            "invalid BuildTarget",
+        ),
         ("RuntimeFlavor", "Turbo", "invalid RuntimeFlavor"),
     ] {
         let xml = format!(

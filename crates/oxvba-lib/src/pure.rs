@@ -63,7 +63,13 @@ fn norm_compare_units(units: Vec<u16>, text: bool) -> Vec<u16> {
     if text {
         units
             .into_iter()
-            .map(|u| if (0x41..=0x5A).contains(&u) { u + 0x20 } else { u })
+            .map(|u| {
+                if (0x41..=0x5A).contains(&u) {
+                    u + 0x20
+                } else {
+                    u
+                }
+            })
             .collect()
     } else {
         units
@@ -1715,7 +1721,13 @@ mod tests {
         let low = Variant::from_utf16_units(&[0xDC00]);
         let same = Variant::from_utf16_units(&[0xD800]);
         // Distinct halves are unequal; 0xD800 < 0xDC00 by code unit, equal halves compare 0.
-        assert_eq!(str_comp(&[high.clone(), low.clone()]).unwrap().as_i32().unwrap(), -1);
+        assert_eq!(
+            str_comp(&[high.clone(), low.clone()])
+                .unwrap()
+                .as_i32()
+                .unwrap(),
+            -1
+        );
         assert_eq!(str_comp(&[low, high.clone()]).unwrap().as_i32().unwrap(), 1);
         assert_eq!(str_comp(&[high, same]).unwrap().as_i32().unwrap(), 0);
         // Text mode (compare = 1) still ASCII case-folds without disturbing surrogates.

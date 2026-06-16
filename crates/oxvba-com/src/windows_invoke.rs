@@ -1522,18 +1522,21 @@ where
     }
 
     if let Some((token, spec)) = named_default_member_spec {
-        let (dispid, spec) = resolve_member_dispid(token.raw(), intended_kind, effective_cached_dispid)?
-            .map(|(dispid, _)| (dispid, spec))
-            .ok_or_else(|| {
-                "default member identity unavailable for named late-bound dispatch".to_string()
-            })?;
+        let (dispid, spec) =
+            resolve_member_dispid(token.raw(), intended_kind, effective_cached_dispid)?
+                .map(|(dispid, _)| (dispid, spec))
+                .ok_or_else(|| {
+                    "default member identity unavailable for named late-bound dispatch".to_string()
+                })?;
         let spec = apply_put_hint(spec, request.invoke_kind_hint);
         return invoke_member_spec(dispid, &spec, args, &binding.prog_id_name);
     }
 
-    if let Some((dispid, spec)) =
-        resolve_member_dispid(effective_member.raw(), intended_kind, effective_cached_dispid)?
-    {
+    if let Some((dispid, spec)) = resolve_member_dispid(
+        effective_member.raw(),
+        intended_kind,
+        effective_cached_dispid,
+    )? {
         // When the put/set FUNCDESC has its own spec (invoke-kind-keyed), the
         // resolver already returned it with the correct slot+ABI; `apply_put_hint`
         // is then a no-op. When only a GET spec exists (the typelib has no separate
@@ -2458,7 +2461,9 @@ where
     }
     let dispatch = binding.native_dispatch as *mut crate::RawIDispatch;
     let mut resolve_member_dispid =
-        |member: i32, intended_kind: crate::TypeLibMemberInvokeKind, _cached_dispid: Option<i32>| {
+        |member: i32,
+         intended_kind: crate::TypeLibMemberInvokeKind,
+         _cached_dispid: Option<i32>| {
             let mut state = com_state.lock().map_err(|_| {
                 "COM-E-STATE-LOCK-POISONED: dispatch_invoke state lock poisoned".to_string()
             })?;

@@ -147,7 +147,9 @@ impl ComBinding {
             default_member_token: self.default_member_token,
             default_member_name: self
                 .default_member_token
-                .and_then(|token| self.lookup_member_spec(token, TypeLibMemberInvokeKind::PropertyGet))
+                .and_then(|token| {
+                    self.lookup_member_spec(token, TypeLibMemberInvokeKind::PropertyGet)
+                })
                 .map(|spec| spec.name.clone()),
             typelib_cache_key,
         }

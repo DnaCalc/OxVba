@@ -756,7 +756,12 @@ unsafe fn typedesc_to_param_type(
         // long*`, or any `[out]/[in,out]` pointer (`is_byref`), keeps the "outer pointer ⇒
         // by-ref" rule. (Bug-4b: an [in] interface arg previously mis-typed as `ByRefObject`,
         // which the vtable gate declined.)
-        if !is_byref && matches!(typedesc_to_param_type(owner_ptinfo, inner, false), TypeLibParamType::Object) {
+        if !is_byref
+            && matches!(
+                typedesc_to_param_type(owner_ptinfo, inner, false),
+                TypeLibParamType::Object
+            )
+        {
             return TypeLibParamType::Object;
         }
         return typedesc_to_param_type(owner_ptinfo, inner, true);
@@ -3251,8 +3256,8 @@ pub unsafe fn build_metadata_blob_from_dispatch(
     // events keeps recovery cheap and the object on its fast dispatch path.
     let events = match identity.requested_coclass.as_deref() {
         Some(coclass) => {
-            let scoped = enumerate_typelib_events_for_coclass(local_ptlib, coclass)
-                .unwrap_or_default();
+            let scoped =
+                enumerate_typelib_events_for_coclass(local_ptlib, coclass).unwrap_or_default();
             if scoped.is_empty() {
                 enumerate_typelib_events(local_ptlib).unwrap_or_default()
             } else {

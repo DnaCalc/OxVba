@@ -541,7 +541,9 @@ fn resolve_pending_event_marshals_for_next(state: &mut WindowsComClientState) {
         return;
     };
     let marshals = match state.callbacks.get(&token) {
-        Some(callback) if !callback.pending_marshals.is_empty() => callback.pending_marshals.clone(),
+        Some(callback) if !callback.pending_marshals.is_empty() => {
+            callback.pending_marshals.clone()
+        }
         _ => return,
     };
     for (arg_index, cookie) in marshals {
@@ -999,7 +1001,11 @@ pub unsafe fn subscribe_event_shared(
                 }
             }
         }
-        let binding = state.bindings.get(&token).cloned().expect("binding present");
+        let binding = state
+            .bindings
+            .get(&token)
+            .cloned()
+            .expect("binding present");
         let Some(expected_arity) = event_signature_arity_for_binding(&binding, event) else {
             return Err(format!(
                 "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
