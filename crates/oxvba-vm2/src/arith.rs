@@ -343,6 +343,22 @@ fn norm(s: String, mode: StringCompareMode) -> String {
     }
 }
 
+/// Case-fold UTF-16 code units the same way [`norm`] folds a `String` — ASCII A–Z
+/// only — but at the code-unit level so lone surrogate halves survive. Comparing the
+/// lossy `as_string` would fold every unpaired surrogate to U+FFFD and make distinct
+/// surrogate strings (e.g. `ChrW(&HD800)` vs `ChrW(&HDC00)`) compare EQUAL, which
+/// contradicts VBA's binary UTF-16 code-unit string semantics (and FU#3's concat
+/// fidelity). Binary mode passes the units through verbatim.
+fn norm_units(units: &[u16], mode: StringCompareMode) -> Vec<u16> {
+    match mode {
+        StringCompareMode::Text => units
+            .iter()
+            .map(|&u| if (0x41..=0x5A).contains(&u) { u + 0x20 } else { u })
+            .collect(),
+        StringCompareMode::Binary => units.to_vec(),
+    }
+}
+
 fn cmp_order(
     l: &Variant,
     r: &Variant,
@@ -350,7 +366,12 @@ fn cmp_order(
 ) -> Result<std::cmp::Ordering, ArithError> {
     let both_string = l.vtype() == VarType::String && r.vtype() == VarType::String;
     if both_string {
-        return Ok(norm(as_string(l), mode).cmp(&norm(as_string(r), mode)));
+        // Compare at the UTF-16 code-unit level (faithful to lone surrogate halves)
+        // rather than via the lossy `as_string`. Both are String Variants here, so
+        // `string_units` is `Some`.
+        let lu = l.string_units().unwrap_or_default();
+        let ru = r.string_units().unwrap_or_default();
+        return Ok(norm_units(&lu, mode).cmp(&norm_units(&ru, mode)));
     }
     match (num(l), num(r)) {
         (Ok(a), Ok(b)) => Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)),
@@ -549,5 +570,39 @@ mod tests {
             Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_i32(7)]));
         let result = not(&allocated).expect("Not on an array must not fault");
         assert!(int(&result).is_ok());
+    }
+
+    /// FU#3 fidelity: string comparison distinguishes lone surrogate halves instead of
+    /// folding them to U+FFFD. `ChrW(&HD800)` and `ChrW(&HDC00)` are distinct UTF-16 code
+    /// units and must compare UNEQUAL — the pre-fix lossy `as_string` path folded both to
+    /// U+FFFD and reported them equal. Also pins round-trip, ordering, and concat parity.
+    #[test]
+    fn lone_surrogate_strings_compare_by_code_unit() {
+        let high = Variant::from_utf16_units(&[0xD800]);
+        let low = Variant::from_utf16_units(&[0xDC00]);
+        let replacement = Variant::from_utf16_units(&[0xFFFD]);
+        let mode = StringCompareMode::Binary;
+
+        // Each half survives verbatim (faithful round-trip).
+        assert_eq!(high.string_units(), Some(vec![0xD800]));
+        assert_eq!(low.string_units(), Some(vec![0xDC00]));
+
+        // Distinct halves are NOT equal (the lossy path returned True here pre-fix), and a
+        // lone high surrogate is not the replacement char either.
+        let eq = compare(&high, &low, mode, CmpOp::Eq).unwrap();
+        assert_eq!(int(&eq).unwrap(), 0, "ChrW(&HD800) = ChrW(&HDC00) must be False");
+        let eq_repl = compare(&high, &replacement, mode, CmpOp::Eq).unwrap();
+        assert_eq!(int(&eq_repl).unwrap(), 0, "ChrW(&HD800) = ChrW(&HFFFD) must be False");
+
+        // A lone-surrogate string equals itself, and ordering is by code unit.
+        let eq_self =
+            compare(&high, &Variant::from_utf16_units(&[0xD800]), mode, CmpOp::Eq).unwrap();
+        assert_ne!(int(&eq_self).unwrap(), 0, "a lone-surrogate string equals itself");
+        let lt = compare(&high, &low, mode, CmpOp::Lt).unwrap();
+        assert_ne!(int(&lt).unwrap(), 0, "0xD800 < 0xDC00 by code unit");
+
+        // Concatenating the two halves yields the real surrogate PAIR verbatim.
+        let pair = concat(&high, &low).unwrap();
+        assert_eq!(pair.string_units(), Some(vec![0xD800, 0xDC00]));
     }
 }

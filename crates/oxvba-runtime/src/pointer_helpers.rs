@@ -518,7 +518,9 @@ impl PointerRegistry {
                 // allocation and is readable. Embedded NULs are legal — the
                 // length comes from the prefix, not from NUL scanning.
                 let slice = unsafe { std::slice::from_raw_parts(value.0, len) };
-                Ok(Variant::from_string(BStr::from_utf16_lossy(slice)))
+                // Preserve the BSTR's units VERBATIM (lone surrogate halves included),
+                // matching the COM decode path; `from_utf16_lossy` would fold them to U+FFFD.
+                Ok(Variant::from_string(BStr::from_utf16_units(slice)?))
             }
             #[cfg(target_os = "windows")]
             PointerEntry::BstrCell(value) => {
@@ -542,7 +544,8 @@ impl PointerRegistry {
                 // NUL-scanned; the registry guard held by the caller keeps the
                 // entry alive for the duration of this borrow.
                 let slice = unsafe { std::slice::from_raw_parts(*value.cell, len) };
-                Ok(Variant::from_string(BStr::from_utf16_lossy(slice)))
+                // Verbatim units (surrogate halves preserved), matching the COM decode path.
+                Ok(Variant::from_string(BStr::from_utf16_units(slice)?))
             }
             #[cfg(not(target_os = "windows"))]
             PointerEntry::Utf16(value) => {
@@ -550,7 +553,7 @@ impl PointerRegistry {
                     .iter()
                     .position(|unit| *unit == 0)
                     .unwrap_or(value.len());
-                Ok(Variant::from_string(BStr::from_utf16_lossy(&value[..end])))
+                Ok(Variant::from_string(BStr::from_utf16_units(&value[..end])?))
             }
             other => Err(format!(
                 "pointer helper entry {other:?} cannot be read back as a string payload"
