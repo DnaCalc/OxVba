@@ -77,8 +77,9 @@ fn v2_on_value_changed_ordered_lossless() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn v3_on_pair_changed_arg_order_pin() {
-    // Arg-order pin (windows_dispatch_event_sink_invoke's same-thread reverse branch in
-    // windows_connection_point.rs). FirePairChanged 10 raises (10, 11). The a/a+1 invariant
+    // Positional DISPPARAMS arg-order pin. FirePairChanged 10 raises (10, 11).
+    // The in-proc fixture sends plain positional IDispatch args, so rgvarg is
+    // last-to-first and the sink must recover declared order. The a/a+1 invariant
     // catches reversal regardless of value:
     // verdict = IIf(mA = 10 And mB = 11 And (mB - mA) = 1, 1, 0).
     let sink = "Private mA As Long\n\
@@ -258,12 +259,10 @@ fn v8_excel_sheet_change_oop_object_arg() {
     // live Workbook's typelib), the event fires, and BOTH object args (the `Sh` Worksheet
     // and the `Target` Range) are marshalled across the apartment via the Global
     // Interface Table and revived as live objects on the VM thread; the handler reads the
-    // revived `Target` Range's member `.Column` (late-bound, == 3). This first 2-arg event
-    // also pinned a sink arg-ORDER subtlety: an OUT-OF-PROCESS source's marshaled call to
-    // our agile sink arrives in DECLARED (forward) order on an RPC-worker thread, while a
-    // DIRECT in-process source call (matrix V1–V6) arrives in the standard IDispatch
-    // REVERSED order on the subscriber thread. The sink now picks the layout by comparing
-    // the calling thread to its creation thread (single-arg V1–V7 cannot reveal order).
+    // revived `Target` Range's member `.Column` (late-bound, == 3). This also pins the
+    // named-argument path: Excel delivers SheetChange with rgdispidNamedArgs mapping the
+    // raw slots to declared parameter positions (`Sh` -> 0, `Target` -> 1), rather than as
+    // plain positional reversed args.
     let main_src = "Public result As Long\n\
          Sub Main()\n\
          Dim s As New Sink\n\

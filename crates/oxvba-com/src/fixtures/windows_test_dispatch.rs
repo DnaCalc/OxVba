@@ -1351,14 +1351,10 @@ unsafe fn raw_dispatch_invoke_event(
     if dispatch.is_null() {
         return Err("event sink dispatch pointer is null".to_string());
     }
-    // Build the event-call DISPPARAMS the way a spec-compliant IDispatch caller does:
-    // rgvarg in REVERSED order (`rgvarg[0]` is the LAST declared argument). This in-proc
-    // fixture calls the sink DIRECTLY (same apartment) on the advise thread, so the sink
-    // receives exactly this reversed layout — matching a real in-process source — and
-    // un-reverses it (same-thread => reversed; see `windows_dispatch_event_sink_invoke`).
-    // (An out-of-process source's call is instead marshaled to our agile sink and was
-    // observed to arrive in forward order on a different thread; the sink disambiguates by
-    // comparing the calling thread to its creation thread.)
+    // Build the event-call DISPPARAMS the way a plain positional IDispatch caller does:
+    // rgvarg in reverse order (`rgvarg[0]` is the last declared argument). Excel's
+    // multi-arg events can instead use named DISPIDs, which the sink maps through
+    // rgdispidNamedArgs before applying this positional rule.
     let mut variants: Vec<VARIANT> = vec![std::mem::zeroed(); args.len()];
     for (idx, value) in args.iter().enumerate() {
         let slot = args.len().saturating_sub(1).saturating_sub(idx);

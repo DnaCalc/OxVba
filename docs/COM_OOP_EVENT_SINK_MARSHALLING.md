@@ -76,9 +76,8 @@ Verified by re-running matrix V1–V6 (in-proc, no regression) and V7/V8 (OOP Ex
 ## Follow-on layers (after the FTM fix)
 
 The FTM aggregation removed the `Advise` deadlock, but three further layers gated
-real delivery. With all of them fixed, **V7 (`Application.NewWorkbook`) passes live
-end-to-end in ~3 s**; V8 (`Workbook.SheetChange`) delivers identically and its one
-residual is a binder gap, not an event gap.
+real delivery. With all of them fixed, **V7 (`Application.NewWorkbook`) and V8
+(`Workbook.SheetChange`) pass live end-to-end in ~3 s**.
 
 ### Layer 2 — the source binding had no event metadata
 
@@ -131,49 +130,49 @@ proxy was declined for the slot-call anyway. Fixes:
     recovery — so an out-of-process object goes straight to fast IDispatch. A direct
     in-process interface (DAO) still vtable-calls as before.
 
-### Layer 5 — multi-arg event sink arg ORDER (V8 green)
+### Layer 5 — multi-arg event sink argument mapping (V8 green)
 
 V8 (`Workbook.SheetChange(Sh, Target)`) initially failed with `Target.Column` →
 `DISP_E_UNKNOWNNAME`: the handler's `Target` was the **Worksheet**, not the **Range**.
 Root cause was NOT the binder (it late-binds `.Column` on an `As Excel.Range` receiver
 correctly — `is_late_bound_receiver` is true for any non-project-class Object) — it was
-the **sink arg order**, and the order is delivery-dependent:
-  * an OUT-OF-PROCESS source's marshaled call to our agile (FTM) sink arrives in DECLARED
-    (forward) order, on an RPC-worker thread;
-  * a DIRECT in-process source call (the matrix fixture, V1–V6) arrives in the standard
-    IDispatch caller-side REVERSED order (`rgvarg[0]` = last arg), on the subscriber thread.
+the sink's incomplete `DISPPARAMS` mapping.
 
-The sink can't assume one order. It picks the layout by comparing the calling thread to the
-thread that created/advised the sink: same thread ⇒ direct ⇒ reversed (un-reverse); a
-different thread ⇒ marshaled ⇒ forward. (Apartment type is unreliable — an agile call
-reports neutral, not MTA — but the thread identity is exact.) Single-arg events (V1–V7)
-cannot reveal the order; the first 2-arg event exposed it. V8 now green — the GIT-revived
-`Range` is the real `Target` and `Target.Column == 3`; V1–V6 (in-proc, incl. the 2-arg
-arg-order pin V3) stay green.
-
-**The forward/reverse split is PROVEN by a live per-slot `rgvarg` dump** (temporary
-instrumentation, since removed), and tracks the TRANSPORT, not anything contract-level:
+The first diagnosis treated the raw slots as transport-dependent: in-proc events looked
+reversed, while out-of-process Excel looked forward. A standalone `windows`-crate Excel
+event probe on 2026-06-16 showed the missing field: Excel's multi-arg events arrive with
+`cNamedArgs=2` and `rgdispidNamedArgs=[0,1]`. The raw values are therefore named
+arguments whose DISPIDs identify declared parameter positions, not positional arguments
+that changed order during COM marshalling:
 
 ```
-in-proc  OnPairChanged(a=10, b=11):  forward=false  cur==created
-  rgvarg[0] vt=I4 lVal=11   (= b, the LAST declared arg)   -> REVERSED (IDispatch convention)
-  rgvarg[1] vt=I4 lVal=10   (= a, the FIRST declared arg)
+in-proc  OnPairChanged(a=10, b=11)
+  cArgs=2  cNamedArgs=0
+  rgvarg[0]=11 (= b, last declared arg)
+  rgvarg[1]=10 (= a, first declared arg)
 
-OOP      Workbook.SheetChange(Sh, Target):  forward=true  cur != created
-  rgvarg[0] vt=DISPATCH  has_Column=false  (= Sh, a Worksheet; FIRST declared arg)  -> FORWARD
-  rgvarg[1] vt=DISPATCH  has_Column=true   (= Target, a Range; LAST declared arg)
+Excel   Workbook.SheetChange(Sh, Target)
+  cArgs=2  cNamedArgs=2  rgdispidNamedArgs[0]=0  rgdispidNamedArgs[1]=1
+  rgvarg[0]=Sh      (= declared arg 0)
+  rgvarg[1]=Target  (= declared arg 1)
 ```
 
-A DIRECT in-process IDispatch call builds `rgvarg` in the standard reversed convention; an
-OOP call marshaled to our agile sink through the **oleaut IDispatch proxy/stub** is
-reconstructed by the stub in DECLARED (forward) order. So "forward-for-OOP" is real (not a
-compensating bug), and the calling-thread vs advise-thread comparison is a reliable proxy for
-the transport (direct calls stay on the advise/STA thread; remoted calls arrive on an RPC
-worker). This is why "always un-reverse" is wrong — it would break the OOP path — and why the
-thread rule is correct for every transport VBA actually uses.
+This aligns with the public Automation contract:
+  * positional `rgvarg` entries are stored last-to-first;
+  * named entries are matched through `rgdispidNamedArgs`, whose values are the
+    zero-based argument positions.
 
-**Known (non-VBA) gap:** the thread proxy would misread an in-process FREE-THREADED source
-that fires a multi-arg event DIRECTLY (reversed) from a non-advise thread as forward. No
-VBA-reachable source does this — project class instances and ordinary in-proc COM servers
-raise events on the calling (VM/STA) thread. Documented in the `created_thread_id`
-doc-comment in `windows_connection_point.rs`.
+References:
+  * `IDispatch::Invoke` documents the reversed positional `rgvarg` convention:
+    <https://learn.microsoft.com/windows/win32/api/oaidl/nf-oaidl-idispatch-invoke>
+  * `Passing Parameters` documents named-argument matching through
+    `rgdispidNamedArgs`: <https://learn.microsoft.com/previous-versions/windows/desktop/automat/passing-parameters>
+  * .NET's `ComEventsSink` follows the same split: copy named arguments by DISPID,
+    then copy remaining positional arguments in reverse order:
+    <https://github.com/dotnet/runtime/blob/main/src/libraries/Common/src/System/Runtime/InteropServices/ComEventsSink.cs>
+
+The OxVba sink now maps event arguments directly from those rules: named slots first,
+then remaining positional slots in reverse order. No thread, apartment, or in-proc/OOP
+heuristic is involved. V8 is green because the GIT-revived `Range` is the real
+`Target` and `Target.Column == 3`; V1–V6 stay green because the in-proc fixture uses
+plain positional IDispatch calls and still exercises the reversed positional path.

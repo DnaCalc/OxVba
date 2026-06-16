@@ -3,10 +3,11 @@
 use crate::ComValue;
 use crate::windows_client::{
     COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,
-    COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_TYPEMISMATCH, COM_DISP_E_UNKNOWNNAME, COM_E_INVALIDARG,
-    COM_E_NOINTERFACE, COM_E_NOTIMPL, COM_S_OK, IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH,
-    IID_IUNKNOWN, RawIConnectionPoint, RawIConnectionPointContainer, RawIDispatch,
-    RawIDispatchVtbl, parse_guid_canonical, release_connection_point,
+    COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_PARAMNOTFOUND, COM_DISP_E_TYPEMISMATCH,
+    COM_DISP_E_UNKNOWNNAME, COM_E_INVALIDARG, COM_E_NOINTERFACE, COM_E_NOTIMPL, COM_S_OK,
+    IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH, IID_IUNKNOWN, RawIConnectionPoint,
+    RawIConnectionPointContainer, RawIDispatch, RawIDispatchVtbl, parse_guid_canonical,
+    release_connection_point,
 };
 use crate::windows_variant::variant_to_com_value;
 use std::ffi::c_void;
@@ -59,8 +60,8 @@ const IID_IMARSHAL: GUID = GUID {
 // the inner IUnknown we own.
 #[cfg(target_os = "windows")]
 unsafe extern "system" {
-    fn CoCreateFreeThreadedMarshaler(punkouter: *mut c_void, ppunkmarshal: *mut *mut c_void) -> i32;
-    fn GetCurrentThreadId() -> u32;
+    fn CoCreateFreeThreadedMarshaler(punkouter: *mut c_void, ppunkmarshal: *mut *mut c_void)
+    -> i32;
 }
 
 // ── Global Interface Table: cross-apartment handoff of object event arguments ──
@@ -233,7 +234,12 @@ unsafe fn object_arg_ptr(variant: &VARIANT) -> Option<*mut c_void> {
             }
             (*pp).cast::<c_void>()
         } else {
-            variant.Anonymous.Anonymous.Anonymous.pdispVal.cast::<c_void>()
+            variant
+                .Anonymous
+                .Anonymous
+                .Anonymous
+                .pdispVal
+                .cast::<c_void>()
         }
     };
     if ptr.is_null() { None } else { Some(ptr) }
@@ -247,29 +253,6 @@ struct WindowsDispatchEventSink {
     expected_arity: usize,
     connection_point_iid: Option<GUID>,
     on_event: DispatchEventCallback,
-    /// The thread that CREATED (advised) this sink — the subscriber's own thread.
-    /// `windows_dispatch_event_sink_invoke` compares the calling thread to this to choose
-    /// the rgvarg layout. The two layouts and the rule are PROVEN by a live per-slot rgvarg
-    /// dump (in-proc `OnPairChanged(10,11)` and OOP Excel `Workbook.SheetChange(Sh,Target)`):
-    ///   - a DIRECT in-process IDispatch call fires on this same thread and builds rgvarg in
-    ///     the standard REVERSED convention (`rgvarg[0]` = last declared arg) — confirmed:
-    ///     `rgvarg[0]=11(=b)`, `rgvarg[1]=10(=a)`;
-    ///   - an OUT-OF-PROCESS call, marshaled to our agile sink through the oleaut IDispatch
-    ///     proxy/stub, lands on a different (RPC worker) thread and is reconstructed by the
-    ///     stub in DECLARED (forward) order (`rgvarg[0]` = first declared arg) — confirmed:
-    ///     `rgvarg[0]`=Sh(Worksheet, no `.Column`), `rgvarg[1]`=Target(Range, has `.Column`).
-    ///
-    /// So the layout tracks the TRANSPORT (direct vs oleaut-remoted), and the calling-thread
-    /// vs advise-thread comparison is a reliable proxy for it (direct calls stay on the
-    /// advise/STA thread; remoted calls arrive on an RPC worker). Apartment type cannot be
-    /// substituted — an agile call reports neutral, not MTA.
-    ///
-    /// KNOWN (non-VBA) GAP: the thread proxy breaks only for an in-process FREE-THREADED
-    /// source that fires a multi-arg event DIRECTLY (reversed) from a non-advise thread —
-    /// it would be misread as forward. No VBA-reachable source does this: project class
-    /// instances and ordinary in-proc COM servers raise events on the calling (VM/STA)
-    /// thread. See docs/COM_OOP_EVENT_SINK_MARSHALLING.md.
-    created_thread_id: u32,
     /// The aggregated free-threaded marshaler's inner `IUnknown` (one owned reference),
     /// or null if aggregation failed (the sink then falls back to standard marshalling —
     /// fine in-process). `QueryInterface(IID_IMarshal)` delegates here so COM marshals the
@@ -299,8 +282,6 @@ fn create_dispatch_event_sink(config: DispatchEventSinkConfig) -> *mut c_void {
         expected_arity: config.expected_arity,
         connection_point_iid: config.connection_point_iid,
         on_event: config.on_event,
-        // SAFETY: GetCurrentThreadId has no preconditions and cannot fail.
-        created_thread_id: unsafe { GetCurrentThreadId() },
         ftm: std::ptr::null_mut(),
     });
     let raw = Box::into_raw(sink);
@@ -531,6 +512,134 @@ unsafe extern "system" fn windows_dispatch_event_sink_get_ids_of_names(
     COM_DISP_E_UNKNOWNNAME
 }
 
+fn map_event_arg_raw_indices(
+    params: &DISPPARAMS,
+    expected_arity: usize,
+) -> Result<Vec<usize>, (i32, Option<u32>)> {
+    let cargs = params.cArgs as usize;
+    let named_count = params.cNamedArgs as usize;
+    if cargs != expected_arity
+        || named_count > cargs
+        || (cargs > 0 && params.rgvarg.is_null())
+        || (named_count > 0 && params.rgdispidNamedArgs.is_null())
+    {
+        return Err((COM_DISP_E_BADPARAMCOUNT, None));
+    }
+
+    let mut raw_by_declared = vec![usize::MAX; expected_arity];
+    let mut used = vec![false; expected_arity];
+
+    // Automation stores named-argument values in the matching leading rgvarg
+    // slots and identifies their declared parameter positions through
+    // rgdispidNamedArgs. Excel SheetChange(Sh, Target) uses this form:
+    // cNamedArgs=2, rgdispidNamedArgs=[0,1], rgvarg=[Sh,Target]. Positional
+    // args remain the usual last-to-first rgvarg layout. References:
+    // https://learn.microsoft.com/windows/win32/api/oaidl/nf-oaidl-idispatch-invoke
+    // https://learn.microsoft.com/previous-versions/windows/desktop/automat/passing-parameters
+    // .NET's ComEventsSink follows the same split in
+    // dotnet/runtime:src/libraries/Common/src/System/Runtime/InteropServices/ComEventsSink.cs.
+    for raw_index in 0..named_count {
+        // SAFETY: `named_count > 0` was null-checked above, and callers pass a
+        // DISPPARAMS whose named-argument array is valid for cNamedArgs elements.
+        let dispid = unsafe { *params.rgdispidNamedArgs.add(raw_index) };
+        if dispid < 0 {
+            return Err((COM_DISP_E_PARAMNOTFOUND, Some(raw_index as u32)));
+        }
+        let declared_index = dispid as usize;
+        if declared_index >= expected_arity || used[declared_index] {
+            return Err((COM_DISP_E_PARAMNOTFOUND, Some(raw_index as u32)));
+        }
+        raw_by_declared[declared_index] = raw_index;
+        used[declared_index] = true;
+    }
+
+    let mut declared_index = 0usize;
+    for raw_index in (named_count..cargs).rev() {
+        while declared_index < expected_arity && used[declared_index] {
+            declared_index += 1;
+        }
+        if declared_index >= expected_arity {
+            return Err((COM_DISP_E_BADPARAMCOUNT, None));
+        }
+        raw_by_declared[declared_index] = raw_index;
+        used[declared_index] = true;
+        declared_index += 1;
+    }
+
+    if used.iter().any(|slot_used| !slot_used) {
+        return Err((COM_DISP_E_BADPARAMCOUNT, None));
+    }
+    Ok(raw_by_declared)
+}
+
+#[cfg(test)]
+#[allow(clippy::undocumented_unsafe_blocks)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_arg_map_unreverses_plain_positional_args() {
+        unsafe {
+            let mut variants: [VARIANT; 2] = std::mem::zeroed();
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: std::ptr::null_mut(),
+                cArgs: 2,
+                cNamedArgs: 0,
+            };
+            assert_eq!(map_event_arg_raw_indices(&params, 2), Ok(vec![1, 0]));
+        }
+    }
+
+    #[test]
+    fn event_arg_map_uses_named_dispids_as_declared_positions() {
+        unsafe {
+            let mut variants: [VARIANT; 2] = std::mem::zeroed();
+            let mut named = [0, 1];
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: named.as_mut_ptr(),
+                cArgs: 2,
+                cNamedArgs: 2,
+            };
+            assert_eq!(map_event_arg_raw_indices(&params, 2), Ok(vec![0, 1]));
+        }
+    }
+
+    #[test]
+    fn event_arg_map_combines_named_and_positional_rules() {
+        unsafe {
+            let mut variants: [VARIANT; 4] = std::mem::zeroed();
+            let mut named = [2, 3];
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: named.as_mut_ptr(),
+                cArgs: 4,
+                cNamedArgs: 2,
+            };
+            assert_eq!(map_event_arg_raw_indices(&params, 4), Ok(vec![3, 2, 0, 1]));
+        }
+    }
+
+    #[test]
+    fn event_arg_map_rejects_unknown_named_dispid_with_raw_argerr() {
+        unsafe {
+            let mut variants: [VARIANT; 1] = std::mem::zeroed();
+            let mut named = [7];
+            let params = DISPPARAMS {
+                rgvarg: variants.as_mut_ptr(),
+                rgdispidNamedArgs: named.as_mut_ptr(),
+                cArgs: 1,
+                cNamedArgs: 1,
+            };
+            assert_eq!(
+                map_event_arg_raw_indices(&params, 1),
+                Err((COM_DISP_E_PARAMNOTFOUND, Some(0)))
+            );
+        }
+    }
+}
+
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     this: *mut c_void,
@@ -554,26 +663,32 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     } else {
         ((*pparams).cArgs as usize, (*pparams).rgvarg)
     };
-    if cargs != (*sink).expected_arity || (cargs > 0 && rgvarg.is_null()) {
+    if pparams.is_null() {
+        if (*sink).expected_arity != 0 {
+            return COM_DISP_E_BADPARAMCOUNT;
+        }
+    } else if cargs != (*sink).expected_arity || (cargs > 0 && rgvarg.is_null()) {
         return COM_DISP_E_BADPARAMCOUNT;
     }
+    let raw_indices = if pparams.is_null() {
+        Vec::new()
+    } else {
+        match map_event_arg_raw_indices(&*pparams, (*sink).expected_arity) {
+            Ok(indices) => indices,
+            Err((hr, arg_err)) => {
+                if let Some(raw_index) = arg_err {
+                    if !puargerr.is_null() {
+                        *puargerr = raw_index;
+                    }
+                }
+                return hr;
+            }
+        }
+    };
     let mut args = Vec::with_capacity(cargs);
     let mut marshals: Vec<(usize, u32)> = Vec::new();
-    // Recover the args into DECLARED order, `args[i]` = the i-th declared event parameter.
-    // The DISPPARAMS layout depends on the TRANSPORT (proven by a live per-slot dump — see
-    // `created_thread_id`): a DIRECT in-process call presents the standard IDispatch REVERSED
-    // order (`rgvarg[0]` = last declared arg) on the advise thread; an OOP call marshaled to
-    // our agile sink through the oleaut IDispatch stub presents DECLARED (forward) order on an
-    // RPC worker thread. The calling-thread vs advise-thread comparison reliably distinguishes
-    // them. (Single-arg events cannot reveal the order; it surfaced with the first 2-arg event.)
-    // SAFETY: GetCurrentThreadId has no preconditions.
-    let forward = unsafe { GetCurrentThreadId() } != (*sink).created_thread_id;
     for arg_index in 0..cargs {
-        let raw_index = if forward {
-            arg_index
-        } else {
-            cargs.saturating_sub(1).saturating_sub(arg_index)
-        };
+        let raw_index = raw_indices[arg_index];
         let variant = rgvarg.add(raw_index);
         // Object-typed arguments belong to the source's apartment; register them in
         // the GIT here (on the delivery thread, where they are valid) and queue a
@@ -598,7 +713,7 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
             Ok(value) => value,
             Err(_) => {
                 if !puargerr.is_null() {
-                    *puargerr = u32::try_from(arg_index).unwrap_or(u32::MAX);
+                    *puargerr = u32::try_from(raw_index).unwrap_or(u32::MAX);
                 }
                 return COM_DISP_E_TYPEMISMATCH;
             }
