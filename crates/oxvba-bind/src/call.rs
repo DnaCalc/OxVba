@@ -577,9 +577,15 @@ impl<'a> ProcLower<'a> {
         let mut slots: Vec<Option<CoreArg>> = (0..n).map(|_| None).collect();
         let mut extra: Vec<CoreArg> = Vec::new();
         let mut pos = 0usize;
+        let mut seen_named = false;
         for item in items {
             match item {
                 ArgItem::Positional(expr, passing) => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
                     let arg = self.bind_extern_one(expr, param_types.get(pos), passing)?;
                     if pos < n {
                         slots[pos] = Some(arg)
@@ -589,6 +595,11 @@ impl<'a> ProcLower<'a> {
                     pos += 1;
                 }
                 ArgItem::Omitted => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
                     if pos < n {
                         slots[pos] = Some(CoreArg::Omitted)
                     } else {
@@ -597,12 +608,19 @@ impl<'a> ProcLower<'a> {
                     pos += 1;
                 }
                 ArgItem::Named { name, value } => {
+                    seen_named = true;
                     let folded = fold_identifier(name.text);
                     match param_names
                         .iter()
                         .position(|p| fold_identifier(p) == folded)
                     {
                         Some(i) => {
+                            if slots[i].is_some() {
+                                return Err(BindError::Unsupported(format!(
+                                    "duplicate argument for parameter {}",
+                                    param_names[i]
+                                )));
+                            }
                             slots[i] = Some(self.bind_extern_one(
                                 value,
                                 param_types.get(i),
@@ -810,9 +828,15 @@ impl<'a> ProcLower<'a> {
         let mut slots: Vec<Option<CoreArg>> = (0..fixed_count).map(|_| None).collect();
         let mut tail: Vec<CoreArg> = Vec::new();
         let mut pos = 0usize;
+        let mut seen_named = false;
         for item in items {
             match item {
                 ArgItem::Positional(expr, passing) => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
                     if pos < fixed_count {
                         slots[pos] =
                             Some(self.bind_one_arg(expr, signature.params.get(pos), passing)?);
@@ -824,6 +848,11 @@ impl<'a> ProcLower<'a> {
                     pos += 1;
                 }
                 ArgItem::Omitted => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
                     if pos < fixed_count {
                         slots[pos] = Some(CoreArg::Omitted);
                     } else {
@@ -832,6 +861,7 @@ impl<'a> ProcLower<'a> {
                     pos += 1;
                 }
                 ArgItem::Named { name, value } => {
+                    seen_named = true;
                     let folded = fold_identifier(name.text);
                     match signature
                         .params
@@ -844,6 +874,12 @@ impl<'a> ProcLower<'a> {
                             ));
                         }
                         Some(i) if i < fixed_count => {
+                            if slots[i].is_some() {
+                                return Err(BindError::Unsupported(format!(
+                                    "duplicate argument for parameter {}",
+                                    signature.params[i].name
+                                )));
+                            }
                             // A named arg has no call-site `ByVal`/`ByRef` modifier.
                             slots[i] = Some(self.bind_one_arg(
                                 value,

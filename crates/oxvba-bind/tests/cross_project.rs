@@ -102,6 +102,13 @@ fn link_run_global0_i32(closure_leaf_first: &[SymbolProjectManifest]) -> Option<
     vm.slot(0).and_then(|v| v.as_i32())
 }
 
+fn bind_projects_error(closure_leaf_first: &[SymbolProjectManifest]) -> String {
+    format!(
+        "{:?}",
+        bind_projects(closure_leaf_first, &NullTypeLibs).expect_err("bind_projects should fail")
+    )
+}
+
 // ── The Lib + App two-project fixture ────────────────────────────────────────
 
 /// A reusable `Lib` project: a hidden-module function + a `Const`/`Enum`, a
@@ -260,6 +267,54 @@ fn cross_bundle_free_function_reorders_named_args() {
     );
     // a - b = 10 - 3 = 7 (NOT source order 3 - 10 = -7).
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(7));
+}
+
+#[test]
+fn cross_bundle_free_function_rejects_duplicate_named_arg_mapping() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function Diff(ByVal a As Long, ByVal b As Long) As Long\nDiff = a - b\nEnd Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = Diff(1, a:=2)\nEnd Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    let err = bind_projects_error(&[lib, app]);
+    assert!(
+        err.contains("duplicate argument for parameter a"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn cross_bundle_free_function_rejects_positional_after_named_arg() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function Diff(ByVal a As Long, ByVal b As Long) As Long\nDiff = a - b\nEnd Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\nr = Diff(b:=2, 1)\nEnd Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    let err = bind_projects_error(&[lib, app]);
+    assert!(
+        err.contains("positional argument cannot follow named argument"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

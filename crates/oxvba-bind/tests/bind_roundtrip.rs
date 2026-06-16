@@ -44,6 +44,13 @@ fn bind(source: &str) -> CoreProgram {
     bind_program(&manifest(source), &NullTypeLibs).expect("bind_program")
 }
 
+fn bind_error(source: &str) -> String {
+    format!(
+        "{:?}",
+        bind_program(&manifest(source), &NullTypeLibs).expect_err("bind should fail")
+    )
+}
+
 /// Bind + linearize + run; read `Main`'s first local as a number.
 fn run_main_local0(source: &str) -> Option<f64> {
     let program = bind(source);
@@ -513,6 +520,26 @@ fn named_arguments_reordered() {
     // call-site order.
     let src = "Sub Main()\n    Dim r As Long\n    r = Diff(b:=2, a:=10)\nEnd Sub\n\nFunction Diff(a As Long, b As Long) As Long\n    Diff = a - b\nEnd Function\n";
     assert_eq!(run_main_local0(src), Some(8.0));
+}
+
+#[test]
+fn duplicate_named_argument_is_bind_error() {
+    let src = "Sub Main()\n    Dim x As Long\n    x = 1\n    Call Fill(x, target := x)\nEnd Sub\n\nSub Fill(ByRef target As Long, ByVal value As Long)\n    target = value\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("duplicate argument for parameter target"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn positional_after_named_argument_is_bind_error() {
+    let src = "Sub Main()\n    Dim x As Long\n    x = 1\n    Call Fill(value := 9, x)\nEnd Sub\n\nSub Fill(ByRef target As Long, ByVal value As Long)\n    target = value\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("positional argument cannot follow named argument"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
