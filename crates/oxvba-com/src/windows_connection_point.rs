@@ -676,10 +676,10 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
         match map_event_arg_raw_indices(&*pparams, (*sink).expected_arity) {
             Ok(indices) => indices,
             Err((hr, arg_err)) => {
-                if let Some(raw_index) = arg_err {
-                    if !puargerr.is_null() {
-                        *puargerr = raw_index;
-                    }
+                if let Some(raw_index) = arg_err
+                    && !puargerr.is_null()
+                {
+                    *puargerr = raw_index;
                 }
                 return hr;
             }
@@ -687,8 +687,7 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     };
     let mut args = Vec::with_capacity(cargs);
     let mut marshals: Vec<(usize, u32)> = Vec::new();
-    for arg_index in 0..cargs {
-        let raw_index = raw_indices[arg_index];
+    for (arg_index, raw_index) in raw_indices.iter().copied().enumerate().take(cargs) {
         let variant = rgvarg.add(raw_index);
         // Object-typed arguments belong to the source's apartment; register them in
         // the GIT here (on the delivery thread, where they are valid) and queue a
