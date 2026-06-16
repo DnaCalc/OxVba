@@ -45,6 +45,31 @@ fn norm_compare(s: String, text: bool) -> String {
     if text { s.to_ascii_lowercase() } else { s }
 }
 
+/// The operand's UTF-16 code units for comparison: a String reads its BSTR units VERBATIM
+/// (lone surrogate halves preserved); a non-string coerces through its VBA string form
+/// (which carries no surrogates). Mirrors the VM operator path (`arith::cmp_order`) so
+/// `StrComp` distinguishes distinct lone surrogate halves instead of folding both to U+FFFD
+/// via a lossy `as_str` round-trip — VBA strings are binary UTF-16 code-unit sequences.
+fn compare_units(value: &Variant) -> LibResult<Vec<u16>> {
+    match value.string_units() {
+        Some(units) => Ok(units),
+        None => Ok(as_str(value)?.encode_utf16().collect()),
+    }
+}
+
+/// Case-fold UTF-16 code units the same way [`norm_compare`] folds a `String` — ASCII A–Z
+/// only — but at the code-unit level so surrogate halves survive. Binary mode is verbatim.
+fn norm_compare_units(units: Vec<u16>, text: bool) -> Vec<u16> {
+    if text {
+        units
+            .into_iter()
+            .map(|u| if (0x41..=0x5A).contains(&u) { u + 0x20 } else { u })
+            .collect()
+    } else {
+        units
+    }
+}
+
 pub fn left(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let n = as_usize(need(args, 1)?)?;
@@ -301,8 +326,8 @@ pub fn trim(args: &[Variant], left: bool, right: bool) -> LibResult<Variant> {
 /// `StrComp(s1, s2, [compare])` — optional trailing compare mode (0=binary, 1=text).
 pub fn str_comp(args: &[Variant]) -> LibResult<Variant> {
     let text = text_compare(args, 2)?;
-    let a = norm_compare(as_str(need(args, 0)?)?, text);
-    let b = norm_compare(as_str(need(args, 1)?)?, text);
+    let a = norm_compare_units(compare_units(need(args, 0)?)?, text);
+    let b = norm_compare_units(compare_units(need(args, 1)?)?, text);
     Ok(vi32(match a.cmp(&b) {
         std::cmp::Ordering::Less => -1,
         std::cmp::Ordering::Equal => 0,
@@ -1665,6 +1690,30 @@ mod tests {
         assert_eq!(asc_("\u{8000}", true), (0x8000_u16 as i16) as i32);
         // Asc of an unmappable char is 63 ("?").
         assert_eq!(asc_("\u{4E2D}", false), 63);
+    }
+
+    #[test]
+    fn str_comp_distinguishes_lone_surrogates() {
+        // VBA strings are binary UTF-16 code-unit sequences; StrComp must NOT fold distinct
+        // lone surrogate halves to U+FFFD (the lossy `as_str` path did, making them compare
+        // equal). Binary mode (no third arg).
+        let high = Variant::from_utf16_units(&[0xD800]);
+        let low = Variant::from_utf16_units(&[0xDC00]);
+        let same = Variant::from_utf16_units(&[0xD800]);
+        // Distinct halves are unequal; 0xD800 < 0xDC00 by code unit, equal halves compare 0.
+        assert_eq!(str_comp(&[high.clone(), low.clone()]).unwrap().as_i32().unwrap(), -1);
+        assert_eq!(str_comp(&[low, high.clone()]).unwrap().as_i32().unwrap(), 1);
+        assert_eq!(str_comp(&[high, same]).unwrap().as_i32().unwrap(), 0);
+        // Text mode (compare = 1) still ASCII case-folds without disturbing surrogates.
+        let upper = Variant::from_string("A".to_string());
+        let lower = Variant::from_string("a".to_string());
+        assert_eq!(
+            str_comp(&[upper, lower, Variant::from_i32(1)])
+                .unwrap()
+                .as_i32()
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
