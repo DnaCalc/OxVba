@@ -258,6 +258,7 @@ struct WindowsDispatchEventSink {
     ///     proxy/stub, lands on a different (RPC worker) thread and is reconstructed by the
     ///     stub in DECLARED (forward) order (`rgvarg[0]` = first declared arg) — confirmed:
     ///     `rgvarg[0]`=Sh(Worksheet, no `.Column`), `rgvarg[1]`=Target(Range, has `.Column`).
+    ///
     /// So the layout tracks the TRANSPORT (direct vs oleaut-remoted), and the calling-thread
     /// vs advise-thread comparison is a reliable proxy for it (direct calls stay on the
     /// advise/STA thread; remoted calls arrive on an RPC worker). Apartment type cannot be

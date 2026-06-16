@@ -2846,6 +2846,9 @@ fn enumerate_typelib_coclass_names(ptlib: *mut c_void) -> Vec<String> {
 unsafe fn extract_events_from_coclass(
     ptinfo: *mut c_void,
 ) -> Result<Vec<TypeLibEventMetadata>, String> {
+    // The coclass type name (e.g. `Application`), stamped on every event so a library-wide
+    // enumeration can later be scoped per coclass by the symbol provider.
+    let coclass_name = typeinfo_name(ptinfo);
     let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
     let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
     let hr = ((*vtbl).get_type_attr)(ptinfo, &mut pattr);
@@ -2914,6 +2917,7 @@ unsafe fn extract_events_from_coclass(
                     dispatch_path,
                     connection_point_iid: iid.clone(),
                     dispatch_member_id: Some(member.token),
+                    coclass: coclass_name.clone(),
                 });
             }
         }

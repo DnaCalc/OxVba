@@ -350,6 +350,12 @@ pub struct TypeLibEventMetadata {
     pub dispatch_path: TypeLibEventDispatchPath,
     pub connection_point_iid: Option<String>,
     pub dispatch_member_id: Option<i32>,
+    /// The COCLASS this event's source interface belongs to (e.g. `Application` for
+    /// `AppEvents.NewWorkbook`), or `None` when not recovered from a coclass walk. A
+    /// library-wide blob enumerates EVERY coclass into one `events` Vec, so the symbol
+    /// provider uses this to scope a `WithEvents x As Lib.Coclass` field to only that
+    /// coclass's source events instead of the whole library's union.
+    pub coclass: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

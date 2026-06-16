@@ -440,6 +440,7 @@ fn widget_blob() -> TypeLibMetadataBlob {
             dispatch_path: TypeLibEventDispatchPath::SourceInterface,
             connection_point_iid: Some("{iid}".into()),
             dispatch_member_id: Some(9),
+            coclass: None,
         }],
         coclass_names: Vec::new(),
     }

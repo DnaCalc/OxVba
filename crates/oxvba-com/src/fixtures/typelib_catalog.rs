@@ -2137,6 +2137,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
                 connection_point_iid: Some(IID_OXVBA_TEST_DISPATCH_EVENTS_STR.to_string()),
                 dispatch_member_id: Some(TEST_EVENT_CHANGED),
+                coclass: None,
             },
             TypeLibEventMetadata {
                 name: "ChangedSourceInterface".to_string(),
@@ -2145,6 +2146,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_path: TypeLibEventDispatchPath::SourceInterface,
                 connection_point_iid: Some(IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR.to_string()),
                 dispatch_member_id: None,
+                coclass: None,
             },
             TypeLibEventMetadata {
                 name: "ChangedPair".to_string(),
@@ -2153,6 +2155,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
                 connection_point_iid: Some(IID_OXVBA_TEST_DISPATCH_EVENTS_STR.to_string()),
                 dispatch_member_id: Some(TEST_EVENT_CHANGED_PAIR),
+                coclass: None,
             },
         ];
         if identity
@@ -2308,6 +2311,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
                 connection_point_iid: Some(IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string()),
                 dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_SIMPLE),
+                coclass: None,
             },
             TypeLibEventMetadata {
                 name: "OnValueChanged".to_string(),
@@ -2316,6 +2320,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
                 connection_point_iid: Some(IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string()),
                 dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_VALUE_CHANGED),
+                coclass: None,
             },
             TypeLibEventMetadata {
                 name: "OnPairChanged".to_string(),
@@ -2324,6 +2329,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
                 connection_point_iid: Some(IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string()),
                 dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_PAIR_CHANGED),
+                coclass: None,
             },
         ];
         let member_name_to_token = members
