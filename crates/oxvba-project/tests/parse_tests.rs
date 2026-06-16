@@ -649,6 +649,32 @@ fn missing_output_type_is_error() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+#[test]
+fn invalid_project_enum_properties_are_errors() {
+    for (property, value, expected) in [
+        ("OutputType", "DefinitelyNotExe", "invalid OutputType"),
+        ("BuildTarget", "NativeImageEventually", "invalid BuildTarget"),
+        ("RuntimeFlavor", "Turbo", "invalid RuntimeFlavor"),
+    ] {
+        let xml = format!(
+            r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>BadEnum</ProjectName>
+    <{property}>{value}</{property}>
+  </PropertyGroup>
+</Project>"#
+        );
+
+        let err = parse_basproj_xml(&xml).expect_err("invalid enum value should fail");
+        let message = err.to_string();
+        assert!(
+            message.contains(expected) && message.contains(value),
+            "got: {message}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Addin no longer requires EntryPoint
 // ---------------------------------------------------------------------------

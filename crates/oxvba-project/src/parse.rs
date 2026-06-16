@@ -106,7 +106,7 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
                 let text = text.trim().to_string();
                 if !text.is_empty() {
                     if let Some(ref prop_name) = current_property {
-                        apply_property(&mut properties, prop_name, &text);
+                        apply_property(&mut properties, prop_name, &text)?;
                     }
                     if let Some(ref meta_name) = current_item_metadata_name
                         && let Some(ref mut ctx) = current_item
@@ -140,7 +140,11 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
                             if let Some(ref ctx) = current_item
                                 && ctx.tag == tag
                             {
-                                let ctx = current_item.take().unwrap();
+                                let Some(ctx) = current_item.take() else {
+                                    return Err(BasProjError::XmlParse(format!(
+                                        "unexpected closing item tag </{tag}>"
+                                    )));
+                                };
                                 emit_item(
                                     ctx,
                                     &mut modules,
@@ -249,7 +253,11 @@ fn extract_include_attr(e: &quick_xml::events::BytesStart<'_>) -> Result<String,
     })
 }
 
-fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
+fn apply_property(
+    props: &mut BasProjProperties,
+    name: &str,
+    value: &str,
+) -> Result<(), BasProjError> {
     match name {
         "OutputType" => {
             props.output_type = match value {
@@ -259,7 +267,7 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
                 "Addin" => Some(OutputType::Addin),
                 "ComServer" => Some(OutputType::ComServer),
                 "ComExe" => Some(OutputType::ComExe),
-                _ => None,
+                _ => return Err(BasProjError::InvalidOutputType(value.to_string())),
             };
         }
         "BuildTarget" => {
@@ -268,7 +276,7 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
                 "WrapperExe" => Some(BuildTarget::WrapperExe),
                 "WrapperLibrary" => Some(BuildTarget::WrapperLibrary),
                 "WrappedComServer" | "WrapperComServer" => Some(BuildTarget::WrappedComServer),
-                _ => None,
+                _ => return Err(BasProjError::InvalidBuildTarget(value.to_string())),
             };
         }
         "ProjectName" => props.project_name = Some(value.to_string()),
@@ -277,7 +285,7 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
             props.runtime_flavor = match value {
                 "Lite" => Some(RuntimeFlavor::Lite),
                 "Jit" => Some(RuntimeFlavor::Jit),
-                _ => None,
+                _ => return Err(BasProjError::InvalidRuntimeFlavor(value.to_string())),
             };
         }
         "DefaultRuntimeProfile" => props.default_runtime_profile = Some(value.to_string()),
@@ -286,6 +294,7 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
         "DefineConstants" => props.define_constants = Some(value.to_string()),
         _ => {} // Unknown properties are silently ignored
     }
+    Ok(())
 }
 
 fn emit_item(

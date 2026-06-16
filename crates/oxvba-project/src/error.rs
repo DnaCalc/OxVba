@@ -29,6 +29,12 @@ pub enum BasProjError {
     #[error("invalid OutputType: {0}")]
     InvalidOutputType(String),
 
+    #[error("invalid BuildTarget: {0}")]
+    InvalidBuildTarget(String),
+
+    #[error("invalid RuntimeFlavor: {0}")]
+    InvalidRuntimeFlavor(String),
+
     #[error("EntryPoint is required for OutputType={0}")]
     EntryPointRequired(String),
 
