@@ -69,11 +69,11 @@ pub fn scan_module(
     module_syntax: SyntaxNode<'_>,
     project_scope: ScopeId,
 ) -> Result<ModuleScan, SymbolModelError> {
-    let module_name = if module.attributes.vb_name.is_empty() {
-        module.module_name.clone()
-    } else {
-        module.attributes.vb_name.clone()
-    };
+    let module_name = source_vb_name_attribute(module_syntax)
+        .or_else(|| {
+            (!module.attributes.vb_name.is_empty()).then(|| module.attributes.vb_name.clone())
+        })
+        .unwrap_or_else(|| module.module_name.clone());
     let module_symbol = symbols.declare_symbol(
         project_scope,
         SymbolNamespace::Module,
@@ -631,6 +631,30 @@ fn option_private_module(root: SyntaxNode<'_>) -> bool {
                 .iter()
                 .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Module"))
     })
+}
+
+fn source_vb_name_attribute(root: SyntaxNode<'_>) -> Option<String> {
+    root.child_nodes().into_iter().find_map(|node| {
+        (node.kind() == SyntaxKind::AttributeStmt)
+            .then(|| node.text())
+            .and_then(|text| parse_vb_name_attribute(&text))
+    })
+}
+
+fn parse_vb_name_attribute(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("attribute vb_name") {
+        return None;
+    }
+    let (_, value) = trimmed.split_once('=')?;
+    Some(unquote_attribute_value(value.trim()))
+}
+
+fn unquote_attribute_value(value: &str) -> String {
+    let inner = value.strip_prefix('"').unwrap_or(value);
+    let inner = inner.strip_suffix('"').unwrap_or(inner);
+    inner.replace("\"\"", "\"")
 }
 
 fn collect_default_member_attributes(node: SyntaxNode<'_>, attrs: &mut BTreeSet<String>) {

@@ -793,6 +793,23 @@ mod tests {
     }
 
     #[test]
+    fn source_vb_name_attribute_names_exported_module() {
+        let s = synth(vec![proc_mod(
+            "StorageName",
+            "Attribute VB_Name = \"PublicName\"\nPublic Sub Ping()\nEnd Sub\n",
+            false,
+        )]);
+        assert!(
+            find_type(&s, "PublicName").is_some(),
+            "source Attribute VB_Name should name the exported module"
+        );
+        assert!(
+            find_type(&s, "StorageName").is_none(),
+            "storage/manifest fallback name should not leak when VB_Name is present"
+        );
+    }
+
+    #[test]
     fn public_enum_members_are_global_namespace_consts() {
         let s = synth(vec![proc_mod(
             "Lib",
