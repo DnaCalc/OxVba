@@ -90,12 +90,13 @@ OxVba already has important substrate:
 - COM-0009 now has clean 2026-06-17 dual-interface projection evidence for the
   first bounded scalar tier: classes whose public member surface fits slot 7
   no-argument `Long` return plus optional slot 8 two-`Long` inputs returning
-  `Long` are emitted as dual interfaces, `QueryInterface` returns a real vtable
-  subobject, and both supported vtable calls return the same results as
+  `Long` plus optional contiguous slot 9 two-`Double` inputs returning `Double`
+  are emitted as dual interfaces, `QueryInterface` returns a real vtable
+  subobject, and the supported vtable calls return the same results as
   `IDispatch::Invoke` on the same wrapped object. Broader
   property/byref/object/array/error vtable parity, optional/default arguments,
-  non-`Long` scalar signatures, and arbitrary vtable slot counts remain outside
-  the implemented subset.
+  scalar signatures outside these exact bounded slots, and arbitrary vtable slot
+  counts remain outside the implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -156,9 +157,9 @@ The missing truth is also explicit:
   version matrices, localization-sensitive type-info selection, and
   Excel-facing error-description parity remain deferred.
 - Broader dual-interface property/byref/object/array/error parity,
-  optional/default arguments, non-`Long` scalar signatures, arbitrary vtable slot
-  counts, and Office/VBA early-bound/vtable event-client parity are not yet
-  implemented.
+  optional/default arguments, scalar signatures outside the exact bounded
+  `Long`/`Double` slots, arbitrary vtable slot counts, and Office/VBA
+  early-bound/vtable event-client parity are not yet implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.
@@ -749,6 +750,8 @@ First executable beads:
 - `bd-wcs1.7.1` - generate one Automation-safe dual-interface vtable projection
 - `bd-wcs1.7.2` - prove dispatch/vtable equivalence for the same wrapped member
 - `bd-l7xl` - widen bounded WrappedComServer dual vtable to a two-`Long`
+  argument scalar slot
+- `bd-3wy1` - widen bounded WrappedComServer dual vtable to a two-`Double`
   argument scalar slot
 - `bd-wcs1.8.1` - publish event source dispinterfaces and connection-point
   descriptors
