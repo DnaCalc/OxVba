@@ -15,7 +15,10 @@ for a bounded Automation subset.
 The generated DLL exports the standard in-process COM entry points, registers
 creatable classes and the generated type library under
 `HKCU\Software\Classes`, activates by ProgID/CLSID, and dispatches scalar
-`IDispatch::Invoke` calls through the package-backed runtime session. For
+`IDispatch::Invoke` calls through the package-backed runtime session. Live
+generated objects also publish one dispatch type info:
+`IDispatch::GetTypeInfo(0)` returns the generated default-interface
+`ITypeInfo`, and invalid type-info indices return `DISP_E_BADINDEX`. For
 classes with project events, it exposes the generated source dispinterface
 through `IConnectionPointContainer`/`IConnectionPoint` and publishes
 `RaiseEvent` payloads to advised `IDispatch` sinks with Automation argument
@@ -39,7 +42,11 @@ that interface IID. The supported vtable ABI is intentionally narrow:
 - `cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocapture`:
   passed, 1 Windows COM smoke test, including generated `.tlb` existence,
   `CLSID\TypeLib` registration, TypeLib `win64` path registration, ProgID
-  activation, late-bound `Add(2, 3)`, late-bound `Pinger.Ping()`, raw COM
+  activation, late-bound `Add(2, 3)`, live `IDispatch::GetTypeInfoCount`,
+  `IDispatch::GetTypeInfo(0)` returning default-interface `ITypeInfo`,
+  `ITypeInfo::GetTypeAttr().guid` matching the generated default-interface IID,
+  `IDispatch::GetTypeInfo(1)` returning `DISP_E_BADINDEX`, late-bound
+  `Pinger.Ping()`, raw COM
   `IConnectionPointContainer::EnumConnectionPoints` /
   `IConnectionPoint::Advise` / `IConnectionPoint::EnumConnections` /
   `RaiseEvent Changed(42)` / sink `Invoke` / `Unadvise`, raw COM
@@ -58,6 +65,9 @@ that interface IID. The supported vtable ABI is intentionally narrow:
   - `regsvr32.exe /s DemoServer.dll` succeeded.
   - `New-Object -ComObject DemoServer.Calculator` succeeded.
   - late-bound `$obj.Add(2, 3)` returned `5`.
+  - raw COM `IDispatch::GetTypeInfo(0)` returned the generated
+    default-interface `ITypeInfo`; `GetTypeInfo(1)` returned
+    `DISP_E_BADINDEX`.
   - late-bound `$pinger.Ping()` returned `42`.
   - a raw COM sink advised the generated source interface and observed
     `Changed(42)`.
@@ -75,13 +85,16 @@ that interface IID. The supported vtable ABI is intentionally narrow:
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
 late-bound activation, bounded dual-interface vtable, connection-point
-enumeration/event, and Excel/VBA early-bound/`WithEvents` smoke.
+enumeration/event, live dispatch type-info publication, and Excel/VBA
+early-bound/`WithEvents` smoke.
 
 Residual: broader dual-interface argument/property/byref/object/array/error
 parity remains outside this clean slice. COM event evidence covers a single
 generated source connection point and snapshot enumeration of advised dispatch
 sinks; multi-source event selection, richer payload families, and broader
-callback ordering cases remain outside this slice. Excel/VBA evidence here
-covers typed dispatch-interface calls and `WithEvents`, but not broken reference
-repair, broader Office version matrices, or Excel-facing error description
-parity; the vtable evidence is the controlled raw-COM `IPinger` call.
+callback ordering cases remain outside this slice. Dispatch type-info evidence
+here covers the generated default-interface `ITypeInfo`, but not `ITypeComp` or
+localization-sensitive type-info selection. Excel/VBA evidence here covers typed
+dispatch-interface calls and `WithEvents`, but not broken reference repair,
+broader Office version matrices, or Excel-facing error description parity; the
+vtable evidence is the controlled raw-COM `IPinger` call.

@@ -10,7 +10,8 @@ Matrix rows: `COM-0007`, `COM-0008`, `COM-0009`, `COM-0010`, `PH-0011`
 The wrapped COM/server/UDF workset has an implemented subset with evidence for:
 
 - WrappedComServer late-bound DLL publication and registered activation.
-- Generated TypeLib publication and controlled TypeLib-aware client calls.
+- Generated TypeLib publication, live generated-object dispatch type-info
+  publication, and controlled TypeLib-aware client calls.
 - One Automation-safe dual-interface vtable path with dispatch/vtable parity.
 - Source dispinterface metadata and controlled connection-point event delivery.
 - Host-call descriptor metadata, typed host UDF catalog enumeration, and scalar
@@ -28,6 +29,8 @@ The wrapped COM/server/UDF workset has an implemented subset with evidence for:
   `docs/evidence/conformance/WRAPPED_COM_SERVER_LATEBOUND_COM0007_2026-05-09.md`
 - `COM-0008`:
   `docs/evidence/conformance/WRAPPED_COM_SERVER_TYPELIB_COM0008_2026-05-09.md`
+  and
+  `docs/evidence/conformance/WRAPPED_COM_SERVER_DISPATCH_TYPEINFO_COM0008_2026-06-17.md`
 - `COM-0009`:
   `docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_INTERFACE_COM0009_2026-05-09.md`
 - `COM-0010`:
@@ -79,6 +82,9 @@ cargo test -p oxvba-host embedded::tests --quiet
 - Superseded 2026-06-17: clean `COM-0008` evidence now covers Office/VBA
   project-reference dispatch-interface calls for method, property, object
   return, array return, and external Automation error behavior.
+- Superseded 2026-06-17: clean `COM-0008` evidence now covers generated-object
+  `IDispatch::GetTypeInfoCount`, `IDispatch::GetTypeInfo(0)` default-interface
+  `ITypeInfo` publication, and `DISP_E_BADINDEX` for invalid type-info indices.
 - Superseded 2026-06-17: clean `COM-0010` evidence now covers Office/VBA
   `WithEvents` client proof and bounded connection enumerators. Multi-event
   selection and richer event payload ordering remain outside the current
