@@ -94,14 +94,18 @@ OxVba already has important substrate:
   are emitted as dual interfaces. A separate bounded `Long` property shape also
   emits dual interfaces for slot 7 property get plus slot 8 property put, and a
   separate object-return shape emits slot 7 `As Object` return as
-  `IDispatch**` plus an optional no-argument `Long` proof slot.
+  `IDispatch**` plus an optional no-argument `Long` proof slot. A separate
+  same-server object-argument shape emits slot 7 no-argument `Long` return plus
+  slot 8 `As Object` argument returning `Long` as `IDispatch*` plus
+  `[out, retval] long*`.
   `QueryInterface` returns a real vtable subobject, and the supported vtable
   calls return the same results as `IDispatch::Invoke` on the same wrapped
   object. Broader indexed/default property, non-`Long` property,
-  byref/object-argument/array/error vtable parity, optional/default arguments,
-  scalar signatures outside these exact bounded slots, object identity
-  equivalence beyond the returned-object behavioral proof, and arbitrary vtable
-  slot counts remain outside the implemented subset.
+  byref/foreign object-argument/array/error vtable parity, optional/default
+  arguments, scalar signatures outside these exact bounded slots, object
+  identity equivalence beyond same-server generated-object argument/return
+  behavioral proofs, and arbitrary vtable slot counts remain outside the
+  implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -763,6 +767,8 @@ First executable beads:
   property get/put shape
 - `bd-e7tj` - add bounded WrappedComServer dual vtable support for an `As Object`
   return shape
+- `bd-0id1` - add bounded WrappedComServer dual vtable support for a same-server
+  `As Object` argument shape
 - `bd-wcs1.8.1` - publish event source dispinterfaces and connection-point
   descriptors
 - `bd-wcs1.8.2` - implement `Advise`/`Unadvise` and fire `RaiseEvent` into a sink

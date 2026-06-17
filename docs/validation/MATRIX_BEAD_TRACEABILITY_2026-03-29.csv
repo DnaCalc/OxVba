@@ -73,6 +73,7 @@ bd-l7xl,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.cs
 bd-3wy1,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0009,Clean WrappedComServer bounded dual vtable widening to a two-Double argument scalar slot.
 bd-bgd9,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0009,Clean WrappedComServer bounded dual vtable support for a Long property get/put shape.
 bd-e7tj,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0009,Clean WrappedComServer bounded dual vtable support for an object-return shape.
+bd-0id1,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0009,Clean WrappedComServer bounded dual vtable support for a same-server object-argument shape.
 bd-wcs1.8.1,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Wrapped event source dispinterface and coclass source metadata publication.
 bd-wcs1.8.2,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Connection point Advise/Unadvise and RaiseEvent sink dispatch.
 bd-wcs1.8.3,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Controlled sink event oracle evidence capture and COM-0010 subset documentation.
