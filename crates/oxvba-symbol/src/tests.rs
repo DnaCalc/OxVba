@@ -897,6 +897,39 @@ fn scanner_rejects_defdec_declared_decimal_storage() {
 }
 
 #[test]
+fn scanner_rejects_explicit_declared_decimal_storage() {
+    let src = "Sub Main()\r\n    Dim alpha As Decimal\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("As Decimal should not become an object type"),
+        Err(err) => err,
+    };
+    assert!(matches!(err, SymbolModelError::UnsupportedDeclaredDecimal));
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-UNSUPPORTED-DECLARED-DECIMAL"
+    );
+}
+
+#[test]
+fn scanner_allows_qualified_decimal_type_reference() {
+    let src = "Public alpha As SomeLib.Decimal\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+    let alpha = env.resolve(&ctx, "alpha").expect("alpha resolves");
+    let alpha_symbol = env
+        .symbols
+        .symbol(alpha.symbol.expect("alpha symbol"))
+        .expect("alpha symbol");
+    assert_eq!(
+        &alpha_symbol.imp,
+        &SymbolImpl::DeclaredType(VarTypeRef::Object("somelib.decimal".into()))
+    );
+}
+
+#[test]
 fn scanner_declares_enum_members() {
     let src = "Public Enum Color\r\n    Red\r\n    Green = 5\r\n    Blue\r\nEnd Enum\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

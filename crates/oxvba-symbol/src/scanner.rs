@@ -83,6 +83,7 @@ pub fn scan_module(
     project_scope: ScopeId,
 ) -> Result<ModuleScan, SymbolModelError> {
     let source_attributes = source_module_attributes(module_syntax);
+    reject_unsupported_declared_decimal_storage(module_syntax)?;
     let default_types = module_default_types(module_syntax)?;
     let module_name = source_attributes
         .vb_name
@@ -803,6 +804,23 @@ fn deftype_statement_type(name: &str) -> Result<Option<VarTypeRef>, SymbolModelE
     Ok(Some(ty))
 }
 
+fn reject_unsupported_declared_decimal_storage(
+    node: SyntaxNode<'_>,
+) -> Result<(), SymbolModelError> {
+    // Microsoft Learn "Decimal data type" documents Decimal as a Variant-only
+    // subtype, not ordinary declared storage:
+    // learn.microsoft.com/office/vba/language/reference/user-interface-help/decimal-data-type
+    // Reject bare `As Decimal` explicitly so it cannot fall through as an
+    // unresolved object type named "decimal".
+    if node.kind() == SyntaxKind::TypeRef && type_ref_name(node).eq_ignore_ascii_case("decimal") {
+        return Err(SymbolModelError::UnsupportedDeclaredDecimal);
+    }
+    for child in node.child_nodes() {
+        reject_unsupported_declared_decimal_storage(child)?;
+    }
+    Ok(())
+}
+
 fn significant_tokens_deep(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
     let mut out = Vec::new();
     collect_significant_tokens(node, &mut out);
@@ -1251,14 +1269,18 @@ fn strip_leading_new_keyword(s: &str) -> &str {
     s
 }
 
-fn type_ref_node(node: SyntaxNode<'_>) -> VarTypeRef {
+fn type_ref_name(node: SyntaxNode<'_>) -> String {
     let text = node.text();
     let name = strip_leading_new_keyword(&text)
         .split_whitespace()
         .next()
         .unwrap_or("")
         .trim();
-    let name = normalize_identifier_token(name);
+    normalize_identifier_token(name).to_string()
+}
+
+fn type_ref_node(node: SyntaxNode<'_>) -> VarTypeRef {
+    let name = type_ref_name(node);
     match name.to_ascii_lowercase().as_str() {
         "boolean" => VarTypeRef::Builtin(BuiltinType::Boolean),
         "byte" => VarTypeRef::Builtin(BuiltinType::Byte),

@@ -200,6 +200,8 @@ pub enum SymbolModelError {
     DuplicateDefTypeLetter { letter: char },
     #[error("unsupported DefDec directive")]
     UnsupportedDefDec,
+    #[error("unsupported declared Decimal storage")]
+    UnsupportedDeclaredDecimal,
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -248,6 +250,12 @@ impl SymbolModelError {
                 "SYM-E-UNSUPPORTED-DEFDEC",
                 DiagnosticPhase::Symbol,
                 "DefDec would require declared Decimal storage, but Decimal is only supported as a Variant subtype",
+            )
+            .with_help("Use Variant storage with CDec(...) or an explicit supported declared type."),
+            SymbolModelError::UnsupportedDeclaredDecimal => Diagnostic::error(
+                "SYM-E-UNSUPPORTED-DECLARED-DECIMAL",
+                DiagnosticPhase::Symbol,
+                "Decimal is only supported as a Variant subtype, not as ordinary declared storage",
             )
             .with_help("Use Variant storage with CDec(...) or an explicit supported declared type."),
             SymbolModelError::UnknownScope(scope) => Diagnostic::error(
