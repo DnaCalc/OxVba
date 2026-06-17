@@ -588,6 +588,46 @@ fn cross_project_predeclared_instance_persists_state() {
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(2));
 }
 
+#[test]
+fn cross_project_default_member_bare_let_get_preserves_object_reference() {
+    // A referenced coclass publishes a VB_UserMemId=0 scalar property. The active
+    // project should use that default member in Let/value contexts while `Set`
+    // assignments keep the cross-bundle object reference.
+    let widget = || {
+        class_module(
+            "Widget",
+            "Private mV As Long\n\
+             Public Property Get Value() As Long\nValue = mV\nEnd Property\n\
+             Attribute Value.VB_UserMemId = 0\n\
+             Public Property Let Value(ByVal v As Long)\nmV = v\nEnd Property\n\
+             Attribute Value.VB_UserMemId = 0\n",
+            true,
+        )
+    };
+    let lib = project("Lib", vec![widget()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             \x20   Dim src As Widget\n\
+             \x20   Dim dst As Widget\n\
+             \x20   Dim mirror As Widget\n\
+             \x20   Set src = New Lib.Widget\n\
+             \x20   Set dst = New Lib.Widget\n\
+             \x20   src = 7\n\
+             \x20   dst = src\n\
+             \x20   Set mirror = dst\n\
+             \x20   mirror = 9\n\
+             \x20   r = dst\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![widget()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(9));
+}
+
 // ── Multi-level chain + diamond ──────────────────────────────────────────────
 
 #[test]
