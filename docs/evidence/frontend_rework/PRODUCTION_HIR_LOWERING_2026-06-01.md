@@ -623,9 +623,22 @@ parameters, and Function/Property Get return types, and keeps constants/UDT fiel
 DefType rule. `scanner_applies_deftype_to_variables_params_and_returns` and
 `scanner_honors_type_precedence_over_deftype` prove the symbol facts; the clean-stack
 `scalar_deftype_defaults_affect_variables_params_and_returns` regression proves those facts reach
-runtime coercion for a numeric DefType route. Remaining boundaries are explicit: duplicate-range
-diagnostics, `DefDec`, and broader assignment/coercion gaps such as numeric-to-String store
-conversion remain later type/diagnostic work.
+runtime coercion for a numeric DefType route. Follow-up clean-stack type/coercion cleanup adds an
+explicit variable-length String store target (`CoerceTarget::String` / `Op::CoerceString`) that
+delegates to the runtime `Variant` string coercion helper, so declared `As String` and `DefStr`
+variables, `ByVal` parameters, and Function returns store BSTR-backed String Variants instead of
+retaining numeric payloads. Because this extends the serialized clean-bundle instruction set,
+`BUNDLE_PACKAGE_VERSION` is now `2`, with
+`bundle_package_uses_current_version_and_rejects_previous_version` covering the version gate.
+`scalar_string_store_coerces_numeric_values` and
+`scalar_deftype_string_defaults_affect_variables_params_and_returns` prove the explicit and DefStr
+routes through bind -> bundle linearization -> VM execution. Checks passed: `cargo test -p
+oxvba-bind scalar_string_store_coerces_numeric_values --quiet`; `cargo test -p oxvba-bind
+scalar_deftype_string_defaults_affect_variables_params_and_returns --quiet`; `cargo test -p
+oxvba-bind --quiet`; `cargo test -p oxvba-vm2 --quiet`; `cargo test -p oxvba-bundle --quiet`;
+`cargo check --workspace`; `cargo fmt --check -p oxvba-bundle -p oxvba-vm2 -p oxvba-bind`; `git
+diff --check`; `./scripts/check-governance.ps1`. Remaining boundaries are explicit:
+duplicate-range diagnostics, `DefDec`, and broader declaration/type diagnostics remain later work.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
