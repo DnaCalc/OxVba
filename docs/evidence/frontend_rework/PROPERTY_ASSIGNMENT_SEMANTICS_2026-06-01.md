@@ -145,8 +145,11 @@ The 2026-06-01 continuation added:
   property setter path. The binder resolves the project/class property accessor, binds index
   arguments against the accessor signature, appends/replaces the trailing assigned-value argument,
   and emits the project member dispatch instead of falling through to array/place assignment.
-  Regression coverage proves the setter receives the index before the assigned value and that the
-  paired indexed `Property Get` still reads through the property accessor.
+  Regression coverage proves the value `Property Let` setter receives the index before the
+  assigned value, the paired indexed `Property Get` still reads through the property accessor,
+  object-valued indexed `Property Set` carries the object value in the trailing parameter slot, and
+  interface-typed receivers dispatch indexed property gets/lets through the implementing accessor
+  name.
 
 ## Checks
 
@@ -193,6 +196,8 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-bind indexed_property_get_let_roundtrip --quiet`
+- `cargo test -p oxvba-bind indexed_property --quiet`
+- `cargo test -p oxvba-bind implements_indexed_property_through_interface_var --quiet`
 - `cargo test -p oxvba-bind --quiet`
 - `cargo check --workspace`
 - `cargo fmt --check -p oxvba-bind`
@@ -345,6 +350,7 @@ The 2026-06-01 continuation added:
   real production ownership gap in the reimplemented binder: COM, cross-project, and late-bound
   receivers already used property put/set dispatch, but `ProjectMember` receivers returned `None`
   and then failed as non-assignable property-get places. The new branch keeps that route in
-  symbol/signature-owned binder lowering. This closes the project-class indexed `Property Let`
-  subset only; broader host/reference/imported-COM writeback breadth and terminal rewrite
-  retirement remain open.
+  symbol/signature-owned binder lowering. Follow-up coverage proves the same route for object
+  `Property Set` and interface-typed receivers. This closes the project-class/interface indexed
+  property setter subset only; broader host/reference/imported-COM writeback breadth and terminal
+  rewrite retirement remain open.
