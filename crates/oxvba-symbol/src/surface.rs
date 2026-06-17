@@ -167,7 +167,7 @@ pub fn synthesize_export_surface(
         let attrs = &module.attributes;
         // `Option Private Module` makes every Public member project-private — the
         // whole module is absent from the cross-project surface.
-        if attrs.option_private_module {
+        if attrs.option_private_module || scan.option_private_module {
             continue;
         }
         let is_class = module.module_kind == ModuleKind::Class;
@@ -772,6 +772,23 @@ mod tests {
         assert!(
             find_type(&s, "Internals").is_none(),
             "Option Private Module is project-private"
+        );
+    }
+
+    #[test]
+    fn source_option_private_module_is_project_private() {
+        let s = synth(vec![proc_mod(
+            "Internals",
+            "Option Private Module\nPublic Const K As Long = 7\nPublic Sub I()\nEnd Sub\n",
+            false,
+        )]);
+        assert!(
+            find_type(&s, "Internals").is_none(),
+            "source Option Private Module should hide the module"
+        );
+        assert!(
+            s.consts.is_empty(),
+            "source Option Private Module should hide public constants"
         );
     }
 

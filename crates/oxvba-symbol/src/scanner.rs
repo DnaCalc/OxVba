@@ -34,6 +34,10 @@ pub struct ModuleScan {
     /// names, source order). Published per coclass in the export surface so a
     /// referrer mangles dispatch on an interface-typed receiver.
     pub implements: Vec<String>,
+    /// Source-owned `Option Private Module`. The project loader also projects this
+    /// into `ModuleAttributes`; keeping it here makes direct symbol/binder
+    /// manifests obey the directive without relying on loader preprocessing.
+    pub option_private_module: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +97,8 @@ pub fn scan_module(
         module_symbol,
         members: Vec::new(),
         implements: Vec::new(),
+        option_private_module: module.attributes.option_private_module
+            || option_private_module(module_syntax),
     };
     let default_member_attrs = default_member_attributes(module_syntax);
     let mut ctx = ScanCtx {
@@ -612,6 +618,19 @@ fn default_member_attributes(root: SyntaxNode<'_>) -> BTreeSet<String> {
     let mut attrs = BTreeSet::new();
     collect_default_member_attributes(root, &mut attrs);
     attrs
+}
+
+fn option_private_module(root: SyntaxNode<'_>) -> bool {
+    root.child_nodes().into_iter().any(|node| {
+        if node.kind() != SyntaxKind::OptionStmt {
+            return false;
+        }
+        let toks = node.child_tokens();
+        toks.iter().any(|t| t.kind == SyntaxKind::KwPrivate)
+            && toks
+                .iter()
+                .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Module"))
+    })
 }
 
 fn collect_default_member_attributes(node: SyntaxNode<'_>, attrs: &mut BTreeSet<String>) {
