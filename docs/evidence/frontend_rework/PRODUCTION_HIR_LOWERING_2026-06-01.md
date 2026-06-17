@@ -608,6 +608,12 @@ constants from the published reference surface. A follow-up source-attribute sli
 module-name attribute over loader/manifest fallback names, and
 `source_vb_name_attribute_names_exported_module` proves the published surface uses the VBA semantic
 module name rather than the storage/manifest fallback when callers build direct symbol manifests.
+The same scanner attribute record now carries source `VB_Exposed`, `VB_Creatable`,
+`VB_PredeclaredId`, and `VB_GlobalNamespace`; export-surface synthesis uses those source facts for
+class publication, creatability, predeclared singletons, and global class-member injection before
+falling back to loader metadata. `source_boolean_module_attributes_shape_class_surface` proves a
+direct manifest with false loader flags still publishes the class according to its exported source
+headers.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
