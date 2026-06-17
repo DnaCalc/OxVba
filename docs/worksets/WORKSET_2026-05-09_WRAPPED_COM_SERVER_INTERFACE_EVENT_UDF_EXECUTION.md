@@ -80,9 +80,13 @@ OxVba already has important substrate:
   `ITypeInfo`, and uses those TypeLib-derived DISPIDs to call scalar methods,
   default property get/let, object return, array return, error/`EXCEPINFO`, and
   registered `CoCreateInstance` activation slices. The clean 2026-06-17
-  `WrappedComServer` Excel smoke additionally references the generated TypeLib
-  from a workbook VBA project and proves typed method, property put/get, object
-  return, array return, and external Automation error `440` behavior.
+  `WrappedComServer` smoke also proves live generated-object
+  `IDispatch::GetTypeInfoCount`, `IDispatch::GetTypeInfo(0)` returning the
+  generated default-interface `ITypeInfo`, `TYPEATTR.guid` agreement with the
+  descriptor default-interface IID, and `DISP_E_BADINDEX` for invalid type-info
+  indices. The same clean smoke references the generated TypeLib from a workbook
+  VBA project and proves typed method, property put/get, object return, array
+  return, and external Automation error `440` behavior.
 - COM-0009 now has clean 2026-06-17 dual-interface projection evidence for the
   first bounded shape: classes with exactly one no-argument `Long` method are
   emitted as dual interfaces, `QueryInterface` returns a real vtable subobject,
@@ -144,10 +148,11 @@ The missing truth is also explicit:
 - The clean `oxvba build --target WrappedComServer` lane now registers a usable
   in-process COM server DLL for the bounded dispatch-backed subset plus the
   first raw-COM dual vtable slot.
-- Office/VBA early-bound project-reference evidence is now covered for the clean
-  COM-0008 dispatch-backed subset; broken/missing reference repair, broader
-  Office version matrices, and Excel-facing error-description parity remain
-  deferred.
+- Office/VBA early-bound project-reference evidence and generated-object
+  dispatch type-info publication are now covered for the clean COM-0008
+  dispatch-backed subset; broken/missing reference repair, broader Office
+  version matrices, localization-sensitive type-info selection, and
+  Excel-facing error-description parity remain deferred.
 - Broader dual-interface argument/property/byref/object/array/error parity and
   Office/VBA early-bound/vtable event-client parity are not yet implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
@@ -735,6 +740,8 @@ First executable beads:
 - `bd-wcs1.6.2` - add Office/VBA early-bound oracle for wrapped class calls
 - `bd-9h5j` - prove clean Excel/VBA project-reference early-bound method,
   property, object, array, and Automation-error calls
+- `bd-47j0` - return generated default-interface type info from
+  `IDispatch::GetTypeInfo`
 - `bd-wcs1.7.1` - generate one Automation-safe dual-interface vtable projection
 - `bd-wcs1.7.2` - prove dispatch/vtable equivalence for the same wrapped member
 - `bd-wcs1.8.1` - publish event source dispinterfaces and connection-point
