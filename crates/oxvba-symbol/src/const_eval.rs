@@ -16,7 +16,7 @@ use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
 use oxvba_runtime::CurrencyValue;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::model::{ScopeId, SymbolId, SymbolImpl, SymbolNamespace, SymbolTable};
+use crate::model::{ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolNamespace, SymbolTable};
 use crate::providers::vba_library;
 use crate::scanner::parameter_name_token;
 use crate::signature::{BuiltinType, VarTypeRef};
@@ -192,7 +192,7 @@ fn collect_consts<'a>(
 /// The `Procedure` scope under `module_scope` whose name folds to `name` — for
 /// resolving proc-level const declarators in the right scope.
 fn proc_scope_under(symbols: &SymbolTable, module_scope: ScopeId, name: &str) -> Option<ScopeId> {
-    let folded = crate::model::fold_identifier(name.trim_start_matches('[').trim_end_matches(']'));
+    let folded = crate::model::fold_identifier(normalize_identifier_text(name));
     symbols.scopes().iter().find_map(|s| {
         if s.parent != Some(module_scope) || s.kind != crate::model::ScopeKind::Procedure {
             return None;
@@ -441,17 +441,21 @@ fn eval_inner(
             if let Ok(Some(sym)) =
                 symbols.resolve_in_scope_chain(scope, SymbolNamespace::Local, tok.text)
             {
-                if let Some(v) = values.get(&sym) {
-                    return ConstEval::Value(v.clone());
-                }
-                if const_syms.is_some_and(|s| s.contains(&sym)) {
-                    return ConstEval::Pending;
+                match eval_resolved_const(sym, values, const_syms) {
+                    ConstEval::Unresolvable => {}
+                    resolved => return resolved,
                 }
             }
             match vba_library::library_constant(tok.text) {
                 Some(v) => ConstEval::Value(v),
                 None => ConstEval::Unresolvable,
             }
+        }
+        SyntaxKind::MemberExpr => {
+            let Some(sym) = resolve_qualified_const_symbol(symbols, scope, node) else {
+                return ConstEval::Unresolvable;
+            };
+            eval_resolved_const(sym, values, const_syms)
         }
         SyntaxKind::BinaryExpr => {
             let (Some(op_tok), Some(lhs_n), Some(rhs_n)) =
@@ -475,6 +479,142 @@ fn eval_inner(
         }
         _ => ConstEval::Unresolvable,
     }
+}
+
+fn eval_resolved_const(
+    sym: SymbolId,
+    values: &HashMap<SymbolId, CoreConst>,
+    const_syms: Option<&HashSet<SymbolId>>,
+) -> ConstEval {
+    if let Some(v) = values.get(&sym) {
+        return ConstEval::Value(v.clone());
+    }
+    if const_syms.is_some_and(|s| s.contains(&sym)) {
+        return ConstEval::Pending;
+    }
+    ConstEval::Unresolvable
+}
+
+/// Resolve `Module.Const` / `Project.Module.Const` in a constant expression.
+///
+/// The provider chain is not available while constants are folded, so this mirrors
+/// the active-project qualified-member rule against the symbol table: the module
+/// qualifier is looked up among siblings of the declaring module's project scope.
+/// Referenced projects fold in their own parent scope; cross-project publication
+/// still flows through export surfaces after this pass.
+fn resolve_qualified_const_symbol(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    node: SyntaxNode<'_>,
+) -> Option<SymbolId> {
+    let parts = qualified_ident_parts(node)?;
+    let module_scope = enclosing_module_scope(symbols, scope)?;
+    let project_scope = symbols.scope(module_scope).ok()?.parent?;
+    let (module_name, member_name) = match parts.as_slice() {
+        [module_name, member_name] if !module_qualifier_shadowed(symbols, scope, module_name) => {
+            (*module_name, *member_name)
+        }
+        [project_name, module_name, member_name]
+            if scope_name_matches(symbols, project_scope, project_name) =>
+        {
+            (*module_name, *member_name)
+        }
+        _ => return None,
+    };
+    let target_module = sibling_module_scope(symbols, project_scope, module_name)?;
+    symbols
+        .find_in_scope(target_module, SymbolNamespace::Local, member_name)
+        .ok()
+        .flatten()
+}
+
+fn module_qualifier_shadowed(symbols: &SymbolTable, scope: ScopeId, name: &str) -> bool {
+    [SymbolNamespace::Local, SymbolNamespace::Parameter]
+        .iter()
+        .any(|namespace| {
+            symbols
+                .resolve_in_scope_chain(scope, *namespace, name)
+                .ok()
+                .flatten()
+                .is_some()
+        })
+}
+
+fn qualified_ident_parts(node: SyntaxNode<'_>) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    collect_qualified_ident_parts(node, &mut parts).then_some(parts)
+}
+
+fn collect_qualified_ident_parts<'a>(node: SyntaxNode<'a>, parts: &mut Vec<&'a str>) -> bool {
+    match node.kind() {
+        SyntaxKind::IdentExpr => {
+            let Some(tok) = node.ident_name_token() else {
+                return false;
+            };
+            parts.push(normalize_identifier_text(tok.text));
+            true
+        }
+        SyntaxKind::MemberExpr => {
+            if node.member_has_leading_dot() || node.member_is_bang() {
+                return false;
+            }
+            let (Some(receiver), Some(member)) = (node.member_receiver(), node.member_name_token())
+            else {
+                return false;
+            };
+            if !collect_qualified_ident_parts(receiver, parts) {
+                return false;
+            }
+            parts.push(normalize_identifier_text(member.text));
+            true
+        }
+        _ => false,
+    }
+}
+
+fn enclosing_module_scope(symbols: &SymbolTable, scope: ScopeId) -> Option<ScopeId> {
+    let mut current = Some(scope);
+    while let Some(scope_id) = current {
+        let scope = symbols.scope(scope_id).ok()?;
+        if scope.kind == ScopeKind::Module {
+            return Some(scope_id);
+        }
+        current = scope.parent;
+    }
+    None
+}
+
+fn scope_name_matches(symbols: &SymbolTable, scope: ScopeId, name: &str) -> bool {
+    let Some(scope_name) = symbols
+        .scope(scope)
+        .ok()
+        .and_then(|s| s.name)
+        .and_then(|id| symbols.name(id))
+    else {
+        return false;
+    };
+    scope_name.folded == crate::model::fold_identifier(name)
+}
+
+fn sibling_module_scope(
+    symbols: &SymbolTable,
+    project_scope: ScopeId,
+    module_name: &str,
+) -> Option<ScopeId> {
+    let target = crate::model::fold_identifier(module_name);
+    symbols.scopes().iter().find_map(|scope| {
+        if scope.kind != ScopeKind::Module || scope.parent != Some(project_scope) {
+            return None;
+        }
+        let name = scope.name.and_then(|id| symbols.name(id))?;
+        (name.folded == target).then_some(scope.id)
+    })
+}
+
+fn normalize_identifier_text(text: &str) -> &str {
+    text.strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(text)
 }
 
 fn opt(c: Option<CoreConst>) -> ConstEval {

@@ -188,6 +188,26 @@ fn module_qualified_const_and_variable() {
 }
 
 #[test]
+fn module_qualified_const_initializer_folds() {
+    // A local `Const` initializer is folded in the symbol layer before binding;
+    // qualified module constants must therefore resolve there too, not only in
+    // ordinary expression binding.
+    let src = "Sub Main()\n    Dim r As Long\n    Const X As Long = Mod1.K + 1\n    r = X\nEnd Sub\n\
+               Public Const K As Long = 10\n";
+    assert_eq!(run_main_local0(src), Some(11.0));
+}
+
+#[test]
+fn module_qualified_const_initializer_respects_local_shadowing() {
+    let src = "Sub Main()\n    Const Mod1 As Long = 1\n    Const X As Long = Mod1.K + 1\n    Dim r As Long\n    r = X\nEnd Sub\n\
+               Public Const K As Long = 10\n";
+    assert!(
+        bind_program(&manifest(src), &NullTypeLibs).is_err(),
+        "a local const named like the module must shadow the module qualifier"
+    );
+}
+
+#[test]
 fn integer_division() {
     assert_eq!(
         run_main_local0(&main_sub("    Dim r As Long\n    r = 7 \\ 2\n")),

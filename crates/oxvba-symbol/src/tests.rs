@@ -380,6 +380,31 @@ fn const_and_enum_values_fold_into_the_type_system() {
 }
 
 #[test]
+fn module_qualified_const_values_fold_across_modules() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module("ModA", "Public Const Derived As Long = ModB.Base + 1\n"),
+            module(
+                "ModB",
+                "Public Const Base As Long = 7\n\
+                 Public Const X As Long = ModA.Derived + 1\n\
+                 Public Const Y As Long = Proj.ModA.Derived + 2\n",
+            ),
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let val = |module: &str, name: &str| -> Option<CoreConst> {
+        let b = env.resolve_qualified(&[module, name])?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("ModB", "Base"), Some(CoreConst::I32(7)));
+    assert_eq!(val("ModA", "Derived"), Some(CoreConst::I32(8)));
+    assert_eq!(val("ModB", "X"), Some(CoreConst::I32(9)));
+    assert_eq!(val("ModB", "Y"), Some(CoreConst::I32(10)));
+}
+
+#[test]
 fn typed_const_values_preserve_exact_type_system_carriers() {
     let m = manifest(
         "Proj",
