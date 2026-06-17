@@ -96,9 +96,11 @@ OxVba already has important substrate:
   `IConnectionPointContainer::FindConnectionPoint`, `IConnectionPoint::Advise`,
   sink `IDispatch::Invoke` payload delivery from `Widget.FireChanged(123)`,
   `Unadvise`, and no callback after unsubscribe. The clean 2026-06-17
-  `WrappedComServer` smoke additionally proves Excel/VBA `WithEvents`
-  subscription against the generated TypeLib/source interface with typed
-  dispatch-interface method invocation.
+  `WrappedComServer` smoke additionally proves
+  `IConnectionPointContainer::EnumConnectionPoints`,
+  `IConnectionPoint::EnumConnections`, and Excel/VBA `WithEvents` subscription
+  against the generated TypeLib/source interface with typed dispatch-interface
+  method invocation.
 - PH-0011 now has the first descriptor metadata slice: host-call descriptors in
   `descriptor_inventory.host_calls` carry stable identities, entry/slot/type
   metadata, argument-name slots, and conservative UDF policy fields for
@@ -126,9 +128,10 @@ OxVba already has important substrate:
   (`bd-sg5h`) for execution after the next WrappedComServer workset.
 - Final implemented-subset terminal audit is published at
   `docs/evidence/conformance/WRAPPED_COM_SERVER_TERMINAL_AUDIT_2026-05-09.md`.
-  It confirms the terminal checks passed and keeps the remaining Office/VBA,
-  broader dual-interface, richer event, and richer host-UDF gaps explicit in
-  the validation rows.
+  It confirms the historical terminal checks passed. The 2026-06-17 clean
+  implementation supersedes its Office/VBA `WithEvents` and connection-point
+  enumeration caveats while keeping broader dual-interface, richer event, and
+  richer host-UDF gaps explicit in the validation rows.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -428,7 +431,7 @@ Implement:
 - `IConnectionPoint::GetConnectionInterface`
 - `IConnectionPoint::Advise`
 - `IConnectionPoint::Unadvise`
-- bounded `EnumConnections` behavior or explicit unsupported surface
+- bounded `EnumConnections` snapshot behavior
 - `RaiseEvent` -> sink `IDispatch::Invoke(event_dispid, ...)`
 
 Microsoft's COM connection point docs define this as the standard connectable
@@ -732,6 +735,8 @@ First executable beads:
   descriptors
 - `bd-wcs1.8.2` - implement `Advise`/`Unadvise` and fire `RaiseEvent` into a sink
 - `bd-wcs1.8.3` - add VBA/controlled sink event oracle evidence
+- `bd-i91u` - implement bounded `EnumConnectionPoints`/`EnumConnections`
+  enumeration in the clean generated shim
 - `bd-wcs1.9.1` - add host-callable UDF descriptors to bundle/project metadata
 - `bd-wcs1.9.2` - expose typed host UDF catalog/invoke API with caller context and
   volatile/dependency sinks

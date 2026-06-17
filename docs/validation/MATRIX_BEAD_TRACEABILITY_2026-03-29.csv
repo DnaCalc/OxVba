@@ -76,4 +76,5 @@ bd-wcs1.9.3,bd-wcs1.9,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX
 bd-wcs1.9.4,bd-wcs1.9,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0007,Direct-host WrappedComServer build execution and artifact verification residual.
 bd-wcs1.10.1,bd-wcs1.10,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv;docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,COM-0007;COM-0008;COM-0009;COM-0010;PH-0011,Validation matrices and bead traceability refreshed for wrapped COM/event/UDF implemented subset evidence.
 bd-wcs1.10.2,bd-wcs1.10,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv;docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,COM-0007;COM-0008;COM-0009;COM-0010;PH-0011,Final evidence and terminal audit for implemented wrapped COM/server/UDF subset.
+bd-i91u,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Clean WrappedComServer bounded connection-point enumeration for the generated source connection point and current advised dispatch sink snapshot.
 
