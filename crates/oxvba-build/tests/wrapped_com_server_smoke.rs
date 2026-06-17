@@ -28,9 +28,33 @@ fn wrapped_com_server_dll_registers_and_dispatches_late_bound() {
         &class_path,
         r#"
 Public Event Changed(ByVal value As Long)
+Private mValue As Long
 
 Public Function Add(ByVal a As Long, ByVal b As Long) As Long
     Add = a + b
+End Function
+
+Public Property Get Value() As Long
+    Value = mValue
+End Property
+
+Public Property Let Value(ByVal newValue As Long)
+    mValue = newValue
+End Property
+
+Public Function ReturnSelf() As Object
+    Set ReturnSelf = Me
+End Function
+
+Public Function Numbers() As Variant
+    Dim values(0 To 1) As Long
+    values(0) = 7
+    values(1) = 8
+    Numbers = values
+End Function
+
+Public Function Boom() As Long
+    Err.Raise 5, , "boom"
 End Function
 
 Public Sub FireChanged(ByVal value As Long)
@@ -142,11 +166,11 @@ if ($ping -ne 42) {{ throw "expected Ping()=42, got $ping" }}
     // SAFETY: this raw COM helper creates the same wrapped object through COM, then
     // releases the dispatch and custom interface pointers it obtains.
     unsafe { controlled_dual_vtable_smoke(pinger_class) };
-    excel_vba_connection_point_smoke(&temp.path, &output.tlb_target_path);
+    excel_vba_early_bound_and_connection_point_smoke(&temp.path, &output.tlb_target_path);
     drop(registration);
 }
 
-fn excel_vba_connection_point_smoke(work_dir: &Path, tlb_path: &Path) {
+fn excel_vba_early_bound_and_connection_point_smoke(work_dir: &Path, tlb_path: &Path) {
     let class_source_path = work_dir.join("EventSink.cls");
     let module_source_path = work_dir.join("ExcelClient.bas");
     let script_path = work_dir.join("excel_client_smoke.ps1");
@@ -167,13 +191,41 @@ End Sub
 Public Function RunOxVbaWrappedComServerSmoke() As String
     On Error GoTo Fail
     Dim sink As EventSink
+    Dim calc As Calculator
+    Dim returned As Object
+    Dim values As Variant
+    Dim ignored As Long
+
     Set sink = New EventSink
-    Set sink.Calc = New Calculator
+    Set calc = New Calculator
+    Set sink.Calc = calc
+
     If sink.Calc.Add(20, 22) <> 42 Then
         Err.Raise 5, , "Add returned wrong value"
     End If
+    calc.Value = 123
+    If calc.Value <> 123 Then
+        Err.Raise 5, , "Value property returned wrong value"
+    End If
+    Set returned = calc.ReturnSelf()
+    If returned.Add(3, 4) <> 7 Then
+        Err.Raise 5, , "ReturnSelf returned wrong object"
+    End If
+    values = calc.Numbers()
+    If values(0) <> 7 Or values(1) <> 8 Then
+        Err.Raise 5, , "Numbers returned wrong array"
+    End If
+    On Error Resume Next
+    ignored = calc.Boom()
+    If Err.Number <> 440 Then
+        RunOxVbaWrappedComServerSmoke = "ERR:expected Boom Automation error 440, got " & CStr(Err.Number)
+        Exit Function
+    End If
+    Err.Clear
+    On Error GoTo Fail
+
     sink.Calc.FireChanged 77
-    RunOxVbaWrappedComServerSmoke = "OK:" & CStr(sink.LastValue)
+    RunOxVbaWrappedComServerSmoke = "OK:" & CStr(sink.LastValue) & ":" & CStr(calc.Value)
     Exit Function
 Fail:
     RunOxVbaWrappedComServerSmoke = "ERR:" & CStr(Err.Number) & ":" & Err.Description
@@ -213,8 +265,8 @@ try {
     $stage = "run Excel VBA client"
     $macroName = "'" + $wb.Name + "'!ExcelClient.RunOxVbaWrappedComServerSmoke"
     $result = $excel.Run($macroName)
-    if ([string]$result -ne "OK:77") {
-        throw "expected Changed event payload OK:77, got $result"
+    if ([string]$result -ne "OK:77:123") {
+        throw "expected early-bound/WithEvents result OK:77:123, got $result"
     }
     "ok"
 } catch {
