@@ -655,8 +655,11 @@ through the lossy display helper into spaces. Regression coverage:
 Checks passed for the fixed-length follow-up: `cargo test -p oxvba-bind fixed_length_string --quiet`;
 `cargo test -p oxvba-bind --quiet`; `cargo test -p oxvba-vm2 --quiet`; `cargo check --workspace`;
 `cargo fmt --check -p oxvba-vm2 -p oxvba-bind`; `git diff --check`; `./scripts/check-governance.ps1`.
-Remaining boundaries are explicit: `DefDec` and broader
-declaration/type diagnostics remain later work.
+Follow-up DefDec cleanup makes that boundary explicit in the clean scanner: `DefDec` now reports
+`SYM-E-UNSUPPORTED-DEFDEC` because the current type model follows the VBA Decimal policy of
+supporting Decimal as a Variant subtype/runtime payload rather than ordinary declared storage.
+`scanner_rejects_defdec_declared_decimal_storage` covers the diagnostic. Broader declaration/type
+diagnostics remain later work.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
