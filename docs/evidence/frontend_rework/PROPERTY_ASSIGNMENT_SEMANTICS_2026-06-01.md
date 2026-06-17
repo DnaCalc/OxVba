@@ -429,3 +429,15 @@ The 2026-06-01 continuation added:
   `cargo test -p oxvba-symbol --quiet`, `cargo test -p oxvba-bind --quiet`,
   `cargo check --workspace`, `cargo fmt --check -p oxvba-bind -p oxvba-symbol`,
   `git diff --check`, and `./scripts/check-governance.ps1`.
+- Terminal reconciliation on 2026-06-17 reviewed the current reimplemented crate graph after the
+  old compiler paths were deleted. The historical `property_*_pmr_*`, `pmr_project*`,
+  `oxvba-compiler/src/project.rs`, and property/default-member rewrite-helper carriers referenced
+  above no longer exist under `crates/`; the live production route is the `oxvba-symbol` provider
+  chain plus `oxvba-bind` lowering into package bytecode. The executable evidence now covers the
+  scoped active-project, interface, referenced-project, imported-COM, host-injected, and
+  late-bound default-member/property Let/Get/Set lanes added in this continuation. Remaining
+  broader COM/host work belongs to the reference/COM activation/member-binding beads, not this
+  property/default-member production-semantics bead. Reconciliation checks:
+  `rg -n "property_.*pmr|pmr_project|rewrite_.*property|rewrite_.*default" crates -g "*.rs"`
+  found no live rewrite carrier, `cargo test --workspace --quiet` passed, and
+  `cargo fmt --all --check` passed.

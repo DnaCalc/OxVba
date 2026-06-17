@@ -297,3 +297,13 @@ The audit result records completed reopened delivery work and remaining broader 
   referenced helper module/procedure on the existing compatibility path. Used referenced procedural
   helpers and non-predeclared referenced class modules remain reference-project symbol composition
   residuals, not accepted HIR-safe shapes.
+- Terminal property/default-member reconciliation, 2026-06-17: this audit predates the clean
+  compiler/runtime reimplementation and still records historical `project.rs`/PMR rewrite
+  residuals. The current crate graph no longer contains `oxvba-compiler/src/project.rs`,
+  `property_*_pmr_*`, `pmr_project*`, or property/default-member rewrite helper carriers under
+  `crates/`. The scoped `bd-aprs.8.7` surface now routes through `oxvba-symbol` providers and
+  `oxvba-bind` lowering, with active-project, interface, referenced-project, imported-COM,
+  host-injected, late-bound, and Excel Range default-member evidence recorded in
+  `PROPERTY_ASSIGNMENT_SEMANTICS_2026-06-01.md`. Broader reference/COM activation and member
+  parity remains tracked separately rather than as a property/default-member rewrite-retirement
+  blocker.
