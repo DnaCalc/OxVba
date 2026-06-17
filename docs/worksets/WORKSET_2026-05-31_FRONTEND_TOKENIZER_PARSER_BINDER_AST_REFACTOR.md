@@ -1479,6 +1479,18 @@ Candidate bead units:
   property/default-member route. Closing FE-7.3.a/FE-8.5.c requires either native frontend/HIR
   ownership of those rows or an explicitly named compatibility quarantine that is outside the
   accepted production replacement surface.
+
+  Terminal reconciliation, 2026-06-17: after the clean compiler/runtime reimplementation and
+  deletion of the old compiler paths, the historical `property_*_pmr_*`, `pmr_project*`,
+  `oxvba-compiler/src/project.rs`, and property/default-member rewrite-helper carriers no longer
+  exist in `crates/`. The live implementation for the scoped FE-7.3.a surface is the
+  `oxvba-symbol` provider chain plus `oxvba-bind` lowering into package bytecode. The current
+  evidence covers active-project property/default members, indexed/named Let/Set writeback,
+  missing-accessor diagnostics, interface receivers, referenced-project default members,
+  imported-COM default members, host-injected COM default members, late-bound dispatch id `0`, and
+  the Excel Range default-member Let/Get oracle probe. FE-7.3.a is therefore no longer open on
+  rewrite-carrier retirement; broader COM/host activation and member breadth remains in
+  FE-7.6.a / `bd-aprs.8.8`, and FE-8.5.c owns any remaining lowering-specific expansion.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
   `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
   to FE-8.5.h.
