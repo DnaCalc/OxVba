@@ -1,6 +1,6 @@
 use crate::com_descriptor::{
-    ComClassDescriptor, ComEventDescriptor, ComInvokeKind, ComMemberDescriptor, ComParamType,
-    ComServerDescriptor,
+    ComClassDescriptor, ComEventDescriptor, ComImplementedInterfaceProfile, ComInvokeKind,
+    ComMemberDescriptor, ComParamType, ComServerDescriptor,
 };
 
 pub fn generate_idl(descriptor: &ComServerDescriptor) -> String {
@@ -27,6 +27,10 @@ library {library_name}
         major = descriptor.version_major,
         minor = descriptor.version_minor,
     ));
+
+    for profile in implemented_interface_profiles(descriptor) {
+        idl.push_str(&generate_implemented_interface_profile_idl(profile));
+    }
 
     for class in &descriptor.classes {
         idl.push_str(&generate_class_idl(class));
@@ -126,8 +130,106 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
             sanitize_ident(source_name)
         ));
     }
+    for profile in &class.implemented_interfaces {
+        idl.push_str(&format!(
+            "        interface {};\n",
+            implemented_interface_idl_name(*profile)
+        ));
+    }
     idl.push_str("    };\n\n");
     idl
+}
+
+fn implemented_interface_profiles(
+    descriptor: &ComServerDescriptor,
+) -> Vec<ComImplementedInterfaceProfile> {
+    let mut profiles = Vec::new();
+    for class in &descriptor.classes {
+        for profile in &class.implemented_interfaces {
+            if !profiles.contains(profile) {
+                profiles.push(*profile);
+            }
+        }
+    }
+    profiles
+}
+
+fn implemented_interface_idl_name(profile: ComImplementedInterfaceProfile) -> &'static str {
+    match profile {
+        ComImplementedInterfaceProfile::IdtExtensibility2 => "IDTExtensibility2",
+        ComImplementedInterfaceProfile::IRtdServer => "IRtdServer",
+    }
+}
+
+fn generate_implemented_interface_profile_idl(profile: ComImplementedInterfaceProfile) -> String {
+    match profile {
+        ComImplementedInterfaceProfile::IdtExtensibility2 => {
+            // Microsoft Learn documents IDTExtensibility2 as the standard Office/VS
+            // add-in lifecycle interface:
+            // https://learn.microsoft.com/dotnet/api/extensibility.idtextensibility2
+            r#"    [
+        object,
+        uuid(B65AD801-ABAF-11D0-BB8B-00A0C90F2744),
+        dual,
+        oleautomation,
+        pointer_default(unique),
+        helpstring("IDTExtensibility2 Interface")
+    ]
+    interface IDTExtensibility2 : IDispatch
+    {
+        [id(1)] HRESULT OnConnection([in] IDispatch* Application, [in] long ConnectMode, [in] IDispatch* AddInInst, [in, out] SAFEARRAY(VARIANT)** custom);
+        [id(2)] HRESULT OnDisconnection([in] long RemoveMode, [in, out] SAFEARRAY(VARIANT)** custom);
+        [id(3)] HRESULT OnAddInsUpdate([in, out] SAFEARRAY(VARIANT)** custom);
+        [id(4)] HRESULT OnStartupComplete([in, out] SAFEARRAY(VARIANT)** custom);
+        [id(5)] HRESULT OnBeginShutdown([in, out] SAFEARRAY(VARIANT)** custom);
+    };
+
+"#
+            .to_string()
+        }
+        ComImplementedInterfaceProfile::IRtdServer => {
+            // Microsoft Learn documents IRtdServer as Excel's RTD server
+            // interface and IRTDUpdateEvent as its callback object:
+            // https://learn.microsoft.com/office/vba/api/excel.irtdserver
+            // https://learn.microsoft.com/dotnet/api/microsoft.office.interop.excel.irtdupdateevent
+            r#"    [
+        object,
+        uuid(A43788C1-D91B-11D3-8F39-00C04F3651B8),
+        dual,
+        oleautomation,
+        pointer_default(unique),
+        helpstring("IRTDUpdateEvent Interface")
+    ]
+    interface IRTDUpdateEvent : IDispatch
+    {
+        [id(10)] HRESULT UpdateNotify();
+        [id(11), propget] HRESULT HeartbeatInterval([out, retval] long* result);
+        [id(11), propput] HRESULT HeartbeatInterval([in] long value);
+        [id(12)] HRESULT Disconnect();
+    };
+
+    [
+        object,
+        uuid(EC0E6191-DB51-11D3-8F3E-00C04F3651B8),
+        dual,
+        oleautomation,
+        pointer_default(unique),
+        helpstring("IRtdServer Interface")
+    ]
+    interface IRtdServer : IDispatch
+    {
+        [id(10)] HRESULT ServerStart([in] IRTDUpdateEvent* CallbackObject, [out, retval] long* result);
+        [id(11)] HRESULT ConnectData([in] long TopicID, [in] SAFEARRAY(VARIANT)* Strings, [in, out] VARIANT_BOOL* GetNewValues, [out, retval] VARIANT* result);
+        [id(12)] HRESULT RefreshData([in, out] long* TopicCount, [out, retval] SAFEARRAY(VARIANT)** result);
+        [id(13)] HRESULT DisconnectData([in] long TopicID);
+        [id(14)] HRESULT Heartbeat([out, retval] long* result);
+        [id(15)] HRESULT ServerTerminate();
+    };
+
+"#
+            .to_string()
+        }
+    }
 }
 
 fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {

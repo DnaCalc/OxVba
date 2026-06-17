@@ -38,7 +38,11 @@ Workspace crates and current roles:
   and compiles a bounded Windows in-process COM DLL with per-user class/typelib
   registration, late-bound `IDispatch` dispatch, source-dispinterface
   connection-point event publication, and one Automation-safe dual-interface
-  vtable method shape over package-backed runtime sessions.
+  vtable method shape over package-backed runtime sessions. It also exposes
+  Office-first implemented-interface profiles for `IDTExtensibility2` and
+  `IRtdServer` when classes declare the corresponding `Implements` clauses,
+  including raw native vtable entry points and Excel add-in registration
+  metadata for the add-in profile.
 - `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
   reference-closure loading.
 - `oxvba-cli`: CLI bootstrap/run/build surface.

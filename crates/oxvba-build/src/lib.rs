@@ -14,8 +14,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub use com_descriptor::{
-    ComClassDescriptor, ComEventDescriptor, ComInvokeKind, ComMemberDescriptor, ComParamType,
-    ComServerDescriptor,
+    ComClassDescriptor, ComEventDescriptor, ComImplementedInterfaceProfile, ComInvokeKind,
+    ComMemberDescriptor, ComParamType, ComServerDescriptor,
 };
 pub use compile::{ShimCompileError, compile_shim_dll, compile_typelib};
 pub use identity::deterministic_uuid;
@@ -67,6 +67,22 @@ pub enum BuildError {
     NoComClasses { project_name: String },
     #[error("ComServer project {project_name} has no creatable classes")]
     NoCreatableClasses { project_name: String },
+    #[error("class `{class_name}` implements `{interface}` but does not implement `{method_name}`")]
+    MissingImplementedInterfaceMember {
+        class_name: String,
+        interface: &'static str,
+        method_name: &'static str,
+    },
+    #[error(
+        "class `{class_name}` implements `{interface}` but `{method_name}` has {found_params} parameter(s); expected {expected_params}"
+    )]
+    InvalidImplementedInterfaceMemberArity {
+        class_name: String,
+        interface: &'static str,
+        method_name: &'static str,
+        expected_params: usize,
+        found_params: usize,
+    },
     #[error("failed to serialize COM server descriptor: {0}")]
     DescriptorSerialize(serde_json::Error),
     #[error("{0}")]
@@ -192,7 +208,76 @@ fn build_com_descriptor(
         .export_surfaces()
         .first()
         .expect("resolution environment always includes active export surface");
-    Ok(ComServerDescriptor::from_surface(surface))
+    let descriptor = ComServerDescriptor::from_surface(surface);
+    validate_implemented_interface_profiles(&descriptor, &env)?;
+    Ok(descriptor)
+}
+
+fn validate_implemented_interface_profiles(
+    descriptor: &ComServerDescriptor,
+    env: &oxvba_symbol::provider::ResolutionEnvironment,
+) -> Result<(), BuildError> {
+    use oxvba_symbol::model::{SymbolImpl, SymbolNamespace};
+
+    for class in &descriptor.classes {
+        let Some(class_scope) = env.module_scope(&class.class_name) else {
+            continue;
+        };
+        for profile in &class.implemented_interfaces {
+            for (method_name, expected_params) in profile_required_methods(*profile) {
+                let symbol = match env.symbols.find_in_scope(
+                    class_scope,
+                    SymbolNamespace::Procedure,
+                    method_name,
+                ) {
+                    Ok(Some(symbol)) => symbol,
+                    _ => {
+                        return Err(BuildError::MissingImplementedInterfaceMember {
+                            class_name: class.class_name.clone(),
+                            interface: profile.vba_name(),
+                            method_name,
+                        });
+                    }
+                };
+                if let Some(symbol) = env.symbols.symbol(symbol)
+                    && let SymbolImpl::Signature(signature_id) = symbol.imp
+                    && let Some(signature) = env.signatures.get(signature_id)
+                    && signature.params.len() != *expected_params
+                {
+                    return Err(BuildError::InvalidImplementedInterfaceMemberArity {
+                        class_name: class.class_name.clone(),
+                        interface: profile.vba_name(),
+                        method_name,
+                        expected_params: *expected_params,
+                        found_params: signature.params.len(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn profile_required_methods(
+    profile: ComImplementedInterfaceProfile,
+) -> &'static [(&'static str, usize)] {
+    match profile {
+        ComImplementedInterfaceProfile::IdtExtensibility2 => &[
+            ("IDTExtensibility2_OnConnection", 4),
+            ("IDTExtensibility2_OnDisconnection", 2),
+            ("IDTExtensibility2_OnAddInsUpdate", 1),
+            ("IDTExtensibility2_OnStartupComplete", 1),
+            ("IDTExtensibility2_OnBeginShutdown", 1),
+        ],
+        ComImplementedInterfaceProfile::IRtdServer => &[
+            ("IRtdServer_ServerStart", 1),
+            ("IRtdServer_ConnectData", 3),
+            ("IRtdServer_RefreshData", 1),
+            ("IRtdServer_DisconnectData", 1),
+            ("IRtdServer_Heartbeat", 0),
+            ("IRtdServer_ServerTerminate", 0),
+        ],
+    }
 }
 
 fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), BuildError> {
@@ -235,6 +320,8 @@ mod tests {
         let counter_path = temp.path.join("Counter.cls");
         let returner_path = temp.path.join("Returner.cls");
         let object_relay_path = temp.path.join("ObjectRelay.cls");
+        let addin_path = temp.path.join("OfficeAddin.cls");
+        let rtd_path = temp.path.join("RtdTicker.cls");
         let out_dir = temp.path.join("out");
 
         write(
@@ -306,6 +393,55 @@ End Function
 "#,
         );
         write(
+            &addin_path,
+            r#"
+Implements IDTExtensibility2
+
+Private Sub IDTExtensibility2_OnConnection(ByVal Application As Variant, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnDisconnection(ByVal RemoveMode As Long, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnAddInsUpdate(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnStartupComplete(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnBeginShutdown(ByVal custom As Variant)
+End Sub
+"#,
+        );
+        write(
+            &rtd_path,
+            r#"
+Implements IRtdServer
+
+Private Function IRtdServer_ServerStart(ByVal CallbackObject As Variant) As Long
+    IRtdServer_ServerStart = 1
+End Function
+
+Private Function IRtdServer_ConnectData(ByVal TopicID As Long, ByVal Strings As Variant, ByVal GetNewValues As Boolean) As Variant
+    IRtdServer_ConnectData = TopicID + 100
+End Function
+
+Private Function IRtdServer_RefreshData(ByVal TopicCount As Long) As Variant
+    IRtdServer_RefreshData = Array(7, "value")
+End Function
+
+Private Sub IRtdServer_DisconnectData(ByVal TopicID As Long)
+End Sub
+
+Private Function IRtdServer_Heartbeat() As Long
+    IRtdServer_Heartbeat = 1
+End Function
+
+Private Sub IRtdServer_ServerTerminate()
+End Sub
+"#,
+        );
+        write(
             &project_path,
             r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -348,6 +484,20 @@ End Function
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.ObjectRelay</ProgId>
       <Description>ObjectRelay class</Description>
+    </ClassModule>
+    <ClassModule Include="OfficeAddin.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.OfficeAddin</ProgId>
+      <Description>Office add-in class</Description>
+    </ClassModule>
+    <ClassModule Include="RtdTicker.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.RtdTicker</ProgId>
+      <Description>RTD ticker class</Description>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -458,6 +608,29 @@ End Function
         assert!(
             idl.contains("HRESULT EchoPing([in] IDispatch* other, [out, retval] long* result);")
         );
+        let addin = descriptor
+            .classes
+            .iter()
+            .find(|class| class.class_name == "OfficeAddin")
+            .expect("OfficeAddin descriptor");
+        assert_eq!(
+            addin.implemented_interfaces.as_slice(),
+            [ComImplementedInterfaceProfile::IdtExtensibility2]
+        );
+        let rtd = descriptor
+            .classes
+            .iter()
+            .find(|class| class.class_name == "RtdTicker")
+            .expect("RtdTicker descriptor");
+        assert_eq!(
+            rtd.implemented_interfaces.as_slice(),
+            [ComImplementedInterfaceProfile::IRtdServer]
+        );
+        assert!(idl.contains("interface IDTExtensibility2 : IDispatch"));
+        assert!(idl.contains("interface IRTDUpdateEvent : IDispatch"));
+        assert!(idl.contains("interface IRtdServer : IDispatch"));
+        assert!(idl.contains("interface IDTExtensibility2;"));
+        assert!(idl.contains("interface IRtdServer;"));
 
         let shim_source =
             std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");
@@ -465,8 +638,127 @@ End Function
         assert!(shim_source.contains("DllRegisterServer"));
         assert!(shim_source.contains("MS-OAUT"));
         assert!(shim_source.contains("BoundedDualInterface"));
+        assert!(shim_source.contains("IDTE_VTBL"));
+        assert!(shim_source.contains("RTD_SERVER_VTBL"));
         assert!(!output.dll_target_path.exists());
         assert!(!output.tlb_target_path.exists());
+    }
+
+    #[test]
+    fn wrapped_com_server_rejects_incomplete_office_profile_implementation() {
+        let temp =
+            TestDir::new("wrapped_com_server_rejects_incomplete_office_profile_implementation");
+        let project_path = temp.path.join("Demo.basproj");
+        let class_path = temp.path.join("OfficeAddin.cls");
+
+        write(
+            &class_path,
+            r#"
+Implements IDTExtensibility2
+
+Private Sub IDTExtensibility2_OnConnection(ByVal Application As Variant, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+End Sub
+"#,
+        );
+        write(
+            &project_path,
+            r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>ComServer</OutputType>
+    <BuildTarget>WrappedComServer</BuildTarget>
+    <ProjectName>DemoServer</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClassModule Include="OfficeAddin.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.OfficeAddin</ProgId>
+    </ClassModule>
+  </ItemGroup>
+</Project>
+"#,
+        );
+
+        let err = build_wrapped_com_server(&WrappedComServerBuildOptions {
+            project_path,
+            out_dir: temp.path.join("out"),
+            compile_dll: false,
+        })
+        .expect_err("incomplete IDTExtensibility2 implementation should be rejected");
+        assert!(matches!(
+            err,
+            BuildError::MissingImplementedInterfaceMember {
+                class_name,
+                interface: "IDTExtensibility2",
+                method_name: "IDTExtensibility2_OnDisconnection",
+            } if class_name == "OfficeAddin"
+        ));
+    }
+
+    #[test]
+    fn wrapped_com_server_rejects_wrong_office_profile_method_arity() {
+        let temp = TestDir::new("wrapped_com_server_rejects_wrong_office_profile_method_arity");
+        let project_path = temp.path.join("Demo.basproj");
+        let class_path = temp.path.join("OfficeAddin.cls");
+
+        write(
+            &class_path,
+            r#"
+Implements IDTExtensibility2
+
+Private Sub IDTExtensibility2_OnConnection(ByVal Application As Variant, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnDisconnection(ByVal RemoveMode As Long, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnAddInsUpdate()
+End Sub
+
+Private Sub IDTExtensibility2_OnStartupComplete(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnBeginShutdown(ByVal custom As Variant)
+End Sub
+"#,
+        );
+        write(
+            &project_path,
+            r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>ComServer</OutputType>
+    <BuildTarget>WrappedComServer</BuildTarget>
+    <ProjectName>DemoServer</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClassModule Include="OfficeAddin.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.OfficeAddin</ProgId>
+    </ClassModule>
+  </ItemGroup>
+</Project>
+"#,
+        );
+
+        let err = build_wrapped_com_server(&WrappedComServerBuildOptions {
+            project_path,
+            out_dir: temp.path.join("out"),
+            compile_dll: false,
+        })
+        .expect_err("wrong IDTExtensibility2 method arity should be rejected");
+        assert!(matches!(
+            err,
+            BuildError::InvalidImplementedInterfaceMemberArity {
+                class_name,
+                interface: "IDTExtensibility2",
+                method_name: "IDTExtensibility2_OnAddInsUpdate",
+                expected_params: 1,
+                found_params: 0,
+            } if class_name == "OfficeAddin"
+        ));
     }
 
     #[test]

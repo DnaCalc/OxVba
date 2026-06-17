@@ -9,12 +9,26 @@ use std::sync::{Arc, Mutex};
 use windows_sys::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
     CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
-    TYPEATTR,
+    SAFEARRAY, TYPEATTR,
 };
+use windows_sys::Win32::System::Ole::SafeArrayDestroy;
 use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_I4, VT_R8, VariantClear};
 use windows_sys::core::GUID;
 
 type SeenEvents = Arc<Mutex<Vec<(i32, Option<i32>)>>>;
+
+const IID_IDTEXTENSIBILITY2: GUID = GUID {
+    data1: 0xB65A_D801,
+    data2: 0xABAF,
+    data3: 0x11D0,
+    data4: [0xBB, 0x8B, 0x00, 0xA0, 0xC9, 0x0F, 0x27, 0x44],
+};
+const IID_IRTDSERVER: GUID = GUID {
+    data1: 0xEC0E_6191,
+    data2: 0xDB51,
+    data3: 0x11D3,
+    data4: [0x8F, 0x3E, 0x00, 0xC0, 0x4F, 0x36, 0x51, 0xB8],
+};
 
 #[test]
 #[ignore = "builds/registers an in-process COM DLL; run manually on Windows"]
@@ -26,6 +40,8 @@ fn wrapped_com_server_dll_registers_and_dispatches_late_bound() {
     let counter_path = temp.path.join("Counter.cls");
     let returner_path = temp.path.join("Returner.cls");
     let object_relay_path = temp.path.join("ObjectRelay.cls");
+    let addin_path = temp.path.join("OfficeAddin.cls");
+    let rtd_path = temp.path.join("RtdTicker.cls");
     let out_dir = temp.path.join("out");
 
     write(
@@ -121,6 +137,55 @@ End Function
 "#,
     );
     write(
+        &addin_path,
+        r#"
+Implements IDTExtensibility2
+
+Private Sub IDTExtensibility2_OnConnection(ByVal Application As Variant, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnDisconnection(ByVal RemoveMode As Long, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnAddInsUpdate(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnStartupComplete(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnBeginShutdown(ByVal custom As Variant)
+End Sub
+"#,
+    );
+    write(
+        &rtd_path,
+        r#"
+Implements IRtdServer
+
+Private Function IRtdServer_ServerStart(ByVal CallbackObject As Variant) As Long
+    IRtdServer_ServerStart = 1
+End Function
+
+Private Function IRtdServer_ConnectData(ByVal TopicID As Long, ByVal Strings As Variant, ByVal GetNewValues As Boolean) As Variant
+    IRtdServer_ConnectData = TopicID + 100
+End Function
+
+Private Function IRtdServer_RefreshData(ByVal TopicCount As Long) As Variant
+    IRtdServer_RefreshData = Array(7, "value")
+End Function
+
+Private Sub IRtdServer_DisconnectData(ByVal TopicID As Long)
+End Sub
+
+Private Function IRtdServer_Heartbeat() As Long
+    IRtdServer_Heartbeat = 1
+End Function
+
+Private Sub IRtdServer_ServerTerminate()
+End Sub
+"#,
+    );
+    write(
         &project_path,
         r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -158,6 +223,18 @@ End Function
       <VBCreatable>True</VBCreatable>
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.ObjectRelay</ProgId>
+    </ClassModule>
+    <ClassModule Include="OfficeAddin.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.OfficeAddin</ProgId>
+    </ClassModule>
+    <ClassModule Include="RtdTicker.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.RtdTicker</ProgId>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -203,6 +280,16 @@ End Function
         .iter()
         .find(|class| class.class_name == "ObjectRelay")
         .expect("ObjectRelay descriptor");
+    let addin_class = descriptor
+        .classes
+        .iter()
+        .find(|class| class.class_name == "OfficeAddin")
+        .expect("OfficeAddin descriptor");
+    let rtd_class = descriptor
+        .classes
+        .iter()
+        .find(|class| class.class_name == "RtdTicker")
+        .expect("RtdTicker descriptor");
 
     let registration = RegisteredDll::register(&output.dll_target_path);
     let tlb_path = output
@@ -272,6 +359,9 @@ if ($relayEcho -ne 42) {{ throw "expected ObjectRelay.EchoPing(ObjectRelay)=42, 
     // SAFETY: this raw COM helper creates and releases the ObjectRelay dispatch
     // and default-interface pointers it obtains.
     unsafe { controlled_object_argument_vtable_smoke(object_relay_class) };
+    // SAFETY: this raw COM helper creates and releases the Office profile
+    // interface pointers and returned RTD SAFEARRAY it obtains.
+    unsafe { controlled_office_profile_vtable_smoke(addin_class, rtd_class) };
     excel_vba_early_bound_and_connection_point_smoke(&temp.path, &output.tlb_target_path);
     drop(registration);
 }
@@ -1024,6 +1114,239 @@ unsafe fn controlled_object_argument_vtable_smoke_inner(
     })();
     release_unknown(object);
     result
+}
+
+unsafe fn controlled_office_profile_vtable_smoke(
+    addin_class: &oxvba_build::ComClassDescriptor,
+    rtd_class: &oxvba_build::ComClassDescriptor,
+) {
+    let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+    let should_uninitialize = hr >= 0;
+    let result = controlled_office_profile_vtable_smoke_inner(addin_class, rtd_class);
+    if should_uninitialize {
+        CoUninitialize();
+    }
+    result.expect("controlled Office profile vtable smoke");
+}
+
+unsafe fn controlled_office_profile_vtable_smoke_inner(
+    addin_class: &oxvba_build::ComClassDescriptor,
+    rtd_class: &oxvba_build::ComClassDescriptor,
+) -> Result<(), String> {
+    let addin = activate_dispatch(addin_class)?;
+    let addin_result = (|| {
+        let mut idte: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hr = query_interface(addin, &IID_IDTEXTENSIBILITY2, &mut idte);
+        if hr < 0 || idte.is_null() {
+            return Err(format!(
+                "QueryInterface(IDTExtensibility2) failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        let result = controlled_idte_vtable(idte);
+        release_unknown(idte);
+        result
+    })();
+    release_unknown(addin);
+    addin_result?;
+
+    let rtd = activate_dispatch(rtd_class)?;
+    let rtd_result = (|| {
+        let mut server: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hr = query_interface(rtd, &IID_IRTDSERVER, &mut server);
+        if hr < 0 || server.is_null() {
+            return Err(format!(
+                "QueryInterface(IRtdServer) failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        let result = controlled_rtd_vtable(server);
+        release_unknown(server);
+        result
+    })();
+    release_unknown(rtd);
+    rtd_result
+}
+
+unsafe fn activate_dispatch(
+    class: &oxvba_build::ComClassDescriptor,
+) -> Result<*mut std::ffi::c_void, String> {
+    let mut clsid = GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    let progid = wide_null(&class.prog_id);
+    let hr = CLSIDFromProgID(progid.as_ptr(), &mut clsid);
+    if hr < 0 {
+        return Err(format!("CLSIDFromProgID failed: 0x{:08X}", hr as u32));
+    }
+    let mut object: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = CoCreateInstance(
+        &clsid,
+        std::ptr::null_mut(),
+        CLSCTX_INPROC_SERVER,
+        &IID_IDISPATCH,
+        &mut object,
+    );
+    if hr < 0 || object.is_null() {
+        return Err(format!("CoCreateInstance failed: 0x{:08X}", hr as u32));
+    }
+    Ok(object)
+}
+
+unsafe fn controlled_idte_vtable(idte: *mut std::ffi::c_void) -> Result<(), String> {
+    let vtbl = *(idte.cast::<*const IdtExtensibility2Vtbl>());
+    let mut count = 0u32;
+    let hr = ((*vtbl).get_type_info_count)(idte, &mut count);
+    if hr < 0 || count != 1 {
+        return Err(format!(
+            "IDTExtensibility2 GetTypeInfoCount failed/count mismatch: hr=0x{:08X}, count={count}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).on_connection)(
+        idte,
+        std::ptr::null_mut(),
+        3,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDTExtensibility2 OnConnection failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).on_disconnection)(idte, 2, std::ptr::null_mut());
+    if hr < 0 {
+        return Err(format!(
+            "IDTExtensibility2 OnDisconnection failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).on_addins_update)(idte, std::ptr::null_mut());
+    if hr < 0 {
+        return Err(format!(
+            "IDTExtensibility2 OnAddInsUpdate failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).on_startup_complete)(idte, std::ptr::null_mut());
+    if hr < 0 {
+        return Err(format!(
+            "IDTExtensibility2 OnStartupComplete failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).on_begin_shutdown)(idte, std::ptr::null_mut());
+    if hr < 0 {
+        return Err(format!(
+            "IDTExtensibility2 OnBeginShutdown failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    Ok(())
+}
+
+unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), String> {
+    let vtbl = *(server.cast::<*const RtdServerVtbl>());
+    let mut count = 0u32;
+    let hr = ((*vtbl).get_type_info_count)(server, &mut count);
+    if hr < 0 || count != 1 {
+        return Err(format!(
+            "IRtdServer GetTypeInfoCount failed/count mismatch: hr=0x{:08X}, count={count}",
+            hr as u32
+        ));
+    }
+
+    let mut start = 0i32;
+    let hr = ((*vtbl).server_start)(server, std::ptr::null_mut(), &mut start);
+    if hr < 0 || start != 1 {
+        return Err(format!(
+            "IRtdServer ServerStart failed/value mismatch: hr=0x{:08X}, value={start}",
+            hr as u32
+        ));
+    }
+
+    let mut new_values = 0i16;
+    let mut connect_value: VARIANT = std::mem::zeroed();
+    let hr = ((*vtbl).connect_data)(
+        server,
+        42,
+        std::ptr::null_mut(),
+        &mut new_values,
+        &mut connect_value,
+    );
+    if hr < 0 {
+        VariantClear(&mut connect_value);
+        return Err(format!(
+            "IRtdServer ConnectData failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let connected = if connect_value.Anonymous.Anonymous.vt == VT_I4 {
+        connect_value.Anonymous.Anonymous.Anonymous.lVal
+    } else {
+        let vt = connect_value.Anonymous.Anonymous.vt;
+        VariantClear(&mut connect_value);
+        return Err(format!(
+            "IRtdServer ConnectData returned VT {vt}, expected VT_I4"
+        ));
+    };
+    VariantClear(&mut connect_value);
+    if connected != 142 || new_values != -1 {
+        return Err(format!(
+            "IRtdServer ConnectData expected value/newValues 142/-1, got {connected}/{new_values}"
+        ));
+    }
+
+    let mut topic_count = 0i32;
+    let mut data: *mut SAFEARRAY = std::ptr::null_mut();
+    let hr = ((*vtbl).refresh_data)(server, &mut topic_count, &mut data);
+    if hr < 0 || data.is_null() {
+        return Err(format!(
+            "IRtdServer RefreshData failed: hr=0x{:08X}, data={data:p}",
+            hr as u32
+        ));
+    }
+    let destroy_hr = SafeArrayDestroy(data.cast_const());
+    if destroy_hr < 0 {
+        return Err(format!(
+            "SafeArrayDestroy(RefreshData result) failed: 0x{:08X}",
+            destroy_hr as u32
+        ));
+    }
+    if topic_count != 1 {
+        return Err(format!(
+            "IRtdServer RefreshData expected TopicCount=1, got {topic_count}"
+        ));
+    }
+
+    let mut heartbeat = 0i32;
+    let hr = ((*vtbl).heartbeat)(server, &mut heartbeat);
+    if hr < 0 || heartbeat != 1 {
+        return Err(format!(
+            "IRtdServer Heartbeat failed/value mismatch: hr=0x{:08X}, value={heartbeat}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).disconnect_data)(server, 42);
+    if hr < 0 {
+        return Err(format!(
+            "IRtdServer DisconnectData failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let hr = ((*vtbl).server_terminate)(server);
+    if hr < 0 {
+        return Err(format!(
+            "IRtdServer ServerTerminate failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    Ok(())
 }
 
 unsafe fn assert_dispatch_type_info(
@@ -1950,6 +2273,107 @@ struct ObjectArgumentDualVtbl {
     ) -> i32,
     slot0: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
     slot1: unsafe extern "system" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, *mut i32) -> i32,
+}
+
+#[repr(C)]
+struct IdtExtensibility2Vtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    on_connection: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *mut std::ffi::c_void,
+        i32,
+        *mut std::ffi::c_void,
+        *mut *mut SAFEARRAY,
+    ) -> i32,
+    on_disconnection:
+        unsafe extern "system" fn(*mut std::ffi::c_void, i32, *mut *mut SAFEARRAY) -> i32,
+    on_addins_update: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut SAFEARRAY) -> i32,
+    on_startup_complete:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut SAFEARRAY) -> i32,
+    on_begin_shutdown: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut SAFEARRAY) -> i32,
+}
+
+#[repr(C)]
+struct RtdServerVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    server_start:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, *mut i32) -> i32,
+    connect_data: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *mut SAFEARRAY,
+        *mut i16,
+        *mut VARIANT,
+    ) -> i32,
+    refresh_data:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32, *mut *mut SAFEARRAY) -> i32,
+    disconnect_data: unsafe extern "system" fn(*mut std::ffi::c_void, i32) -> i32,
+    heartbeat: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
+    server_terminate: unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
 }
 
 #[repr(C)]

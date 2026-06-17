@@ -40,12 +40,13 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering, fence};
 
 use oxvba_build::{
-    ComClassDescriptor, ComInvokeKind, ComMemberDescriptor, ComParamType, ComServerDescriptor,
+    ComClassDescriptor, ComImplementedInterfaceProfile, ComInvokeKind, ComMemberDescriptor,
+    ComParamType, ComServerDescriptor,
 };
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_com::{
     disp_params_to_runtime_call_frame, runtime_call_error_to_excepinfo,
-    runtime_call_result_to_variant,
+    runtime_call_result_to_variant, variant_to_com_value,
 };
 use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession};
 use oxvba_runtime::{
@@ -54,19 +55,21 @@ use oxvba_runtime::{
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HMODULE};
 use windows_sys::Win32::System::Com::{
     DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-    DISPPARAMS, EXCEPINFO, SYS_WIN64,
+    DISPPARAMS, EXCEPINFO, SAFEARRAY, SYS_WIN64,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows_sys::Win32::System::Ole::{
-    LoadTypeLibEx, REGKIND_NONE, RegisterTypeLibForUser, UnRegisterTypeLibForUser,
+    LoadTypeLibEx, REGKIND_NONE, RegisterTypeLibForUser, SafeArrayGetDim, SafeArrayGetLBound,
+    SafeArrayGetUBound, UnRegisterTypeLibForUser,
 };
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteKeyW,
-    RegDeleteTreeW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, KEY_WRITE, REG_DWORD, REG_SZ, RegCloseKey, RegCreateKeyExW,
+    RegDeleteKeyW, RegDeleteTreeW, RegSetValueExW,
 };
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_UNKNOWN, VariantClear,
+    VARIANT, VT_ARRAY, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_I4, VT_UNKNOWN, VT_VARIANT,
+    VariantClear,
 };
 use windows_sys::core::GUID;
 
@@ -88,6 +91,7 @@ const CLASS_E_NOAGGREGATION: i32 = 0x8004_0110u32 as i32;
 const CLASS_E_CLASSNOTAVAILABLE: i32 = 0x8004_0111u32 as i32;
 const CONNECT_E_NOCONNECTION: i32 = 0x8004_0004u32 as i32;
 const CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
+const DISPID_UNKNOWN: i32 = -1;
 const DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
 const DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
 const DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
@@ -141,6 +145,18 @@ const IID_IENUMCONNECTIONS: GUID = GUID {
     data2: 0xBAB4,
     data3: 0x101A,
     data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
+const IID_IDTEXTENSIBILITY2: GUID = GUID {
+    data1: 0xB65A_D801,
+    data2: 0xABAF,
+    data3: 0x11D0,
+    data4: [0xBB, 0x8B, 0x00, 0xA0, 0xC9, 0x0F, 0x27, 0x44],
+};
+const IID_IRTDSERVER: GUID = GUID {
+    data1: 0xEC0E_6191,
+    data2: 0xDB51,
+    data3: 0x11D3,
+    data4: [0x8F, 0x3E, 0x00, 0xC0, 0x4F, 0x36, 0x51, 0xB8],
 };
 
 static GLOBAL_REF_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -306,6 +322,12 @@ struct BoundedDualInterface {
     owner: *mut DispatchObject,
 }
 
+#[repr(C)]
+struct OfficeInterfaceFace {
+    vtbl: *const c_void,
+    owner: *mut DispatchObject,
+}
+
 struct ConnectionSink {
     cookie: u32,
     dispatch: *mut c_void,
@@ -315,6 +337,8 @@ struct ConnectionSink {
 struct DispatchObject {
     vtbl: *const IDispatchVtbl,
     dual: BoundedDualInterface,
+    idte: OfficeInterfaceFace,
+    rtd: OfficeInterfaceFace,
     cpc: ConnectionPointContainer,
     cp: ConnectionPoint,
     ref_count: AtomicU32,
@@ -331,6 +355,12 @@ enum BoundedDualInterfaceShape {
     LongProperty,
     ObjectReturnMethods,
     ObjectArgumentMethods,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OfficeInterfaceProfile {
+    IdtExtensibility2,
+    IRtdServer,
 }
 
 #[repr(C)]
@@ -454,6 +484,81 @@ struct ObjectArgumentDualVtbl {
     slot1: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut i32) -> i32,
 }
 
+#[repr(C)]
+struct IdtExtensibility2Vtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut DISPPARAMS,
+        *mut VARIANT,
+        *mut EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    on_connection: unsafe extern "system" fn(
+        *mut c_void,
+        *mut c_void,
+        i32,
+        *mut c_void,
+        *mut *mut SAFEARRAY,
+    ) -> i32,
+    on_disconnection:
+        unsafe extern "system" fn(*mut c_void, i32, *mut *mut SAFEARRAY) -> i32,
+    on_addins_update: unsafe extern "system" fn(*mut c_void, *mut *mut SAFEARRAY) -> i32,
+    on_startup_complete: unsafe extern "system" fn(*mut c_void, *mut *mut SAFEARRAY) -> i32,
+    on_begin_shutdown: unsafe extern "system" fn(*mut c_void, *mut *mut SAFEARRAY) -> i32,
+}
+
+#[repr(C)]
+struct RtdServerVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut DISPPARAMS,
+        *mut VARIANT,
+        *mut EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    server_start: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut i32) -> i32,
+    connect_data:
+        unsafe extern "system" fn(*mut c_void, i32, *mut SAFEARRAY, *mut i16, *mut VARIANT) -> i32,
+    refresh_data: unsafe extern "system" fn(*mut c_void, *mut i32, *mut *mut SAFEARRAY) -> i32,
+    disconnect_data: unsafe extern "system" fn(*mut c_void, i32) -> i32,
+    heartbeat: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
+    server_terminate: unsafe extern "system" fn(*mut c_void) -> i32,
+}
+
 static CLASS_FACTORY_VTBL: IClassFactoryVtbl = IClassFactoryVtbl {
     query_interface: factory_query_interface,
     add_ref: factory_add_ref,
@@ -519,6 +624,37 @@ static OBJECT_ARGUMENT_DUAL_VTBL: ObjectArgumentDualVtbl = ObjectArgumentDualVtb
     invoke: dual_invoke,
     slot0: dual_slot7_long_return,
     slot1: dual_slot8_object_arg_long_return,
+};
+
+static IDTE_VTBL: IdtExtensibility2Vtbl = IdtExtensibility2Vtbl {
+    query_interface: office_query_interface,
+    add_ref: office_add_ref,
+    release: office_release,
+    get_type_info_count: office_get_type_info_count,
+    get_type_info: office_get_type_info,
+    get_ids_of_names: office_get_ids_of_names,
+    invoke: office_invoke,
+    on_connection: idte_on_connection,
+    on_disconnection: idte_on_disconnection,
+    on_addins_update: idte_on_addins_update,
+    on_startup_complete: idte_on_startup_complete,
+    on_begin_shutdown: idte_on_begin_shutdown,
+};
+
+static RTD_SERVER_VTBL: RtdServerVtbl = RtdServerVtbl {
+    query_interface: office_query_interface,
+    add_ref: office_add_ref,
+    release: office_release,
+    get_type_info_count: office_get_type_info_count,
+    get_type_info: office_get_type_info,
+    get_ids_of_names: office_get_ids_of_names,
+    invoke: office_invoke,
+    server_start: rtd_server_start,
+    connect_data: rtd_connect_data,
+    refresh_data: rtd_refresh_data,
+    disconnect_data: rtd_disconnect_data,
+    heartbeat: rtd_heartbeat,
+    server_terminate: rtd_server_terminate,
 };
 
 static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl =
@@ -731,6 +867,10 @@ unsafe extern "system" fn dispatch_query_interface(
     };
     let supports_default_interface = guid_matches_text(&*riid, &class.default_interface_iid);
     let supports_connection_points = class.source_interface_iid.is_some();
+    let supports_idte =
+        class_supports_implemented_interface_profile(class, ComImplementedInterfaceProfile::IdtExtensibility2);
+    let supports_rtd =
+        class_supports_implemented_interface_profile(class, ComImplementedInterfaceProfile::IRtdServer);
 
     if guid_eq(&*riid, &IID_IUNKNOWN) || guid_eq(&*riid, &IID_IDISPATCH) {
         dispatch_add_ref(this);
@@ -744,6 +884,14 @@ unsafe extern "system" fn dispatch_query_interface(
         } else {
             *out = this;
         }
+        S_OK
+    } else if guid_eq(&*riid, &IID_IDTEXTENSIBILITY2) && supports_idte {
+        dispatch_add_ref(this);
+        *out = (&mut (*(this.cast::<DispatchObject>())).idte as *mut OfficeInterfaceFace).cast();
+        S_OK
+    } else if guid_eq(&*riid, &IID_IRTDSERVER) && supports_rtd {
+        dispatch_add_ref(this);
+        *out = (&mut (*(this.cast::<DispatchObject>())).rtd as *mut OfficeInterfaceFace).cast();
         S_OK
     } else if guid_eq(&*riid, &IID_ICONNECTIONPOINTCONTAINER) && supports_connection_points {
         dispatch_add_ref(this);
@@ -1437,6 +1585,552 @@ unsafe fn dual_owner(this: *mut c_void) -> Result<*mut DispatchObject, i32> {
     }
 }
 
+unsafe extern "system" fn office_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    match office_owner(this) {
+        Ok(owner) => dispatch_query_interface(owner.cast(), riid, out),
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn office_add_ref(this: *mut c_void) -> u32 {
+    match office_owner(this) {
+        Ok(owner) => dispatch_add_ref(owner.cast()),
+        Err(_) => 0,
+    }
+}
+
+unsafe extern "system" fn office_release(this: *mut c_void) -> u32 {
+    match office_owner(this) {
+        Ok(owner) => dispatch_release(owner.cast()),
+        Err(_) => 0,
+    }
+}
+
+unsafe extern "system" fn office_get_type_info_count(
+    this: *mut c_void,
+    count: *mut u32,
+) -> i32 {
+    if this.is_null() || count.is_null() {
+        return E_POINTER;
+    }
+    *count = 1;
+    S_OK
+}
+
+unsafe extern "system" fn office_get_type_info(
+    this: *mut c_void,
+    index: u32,
+    _lcid: u32,
+    info: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || info.is_null() {
+        return E_POINTER;
+    }
+    *info = ptr::null_mut();
+    if index != 0 {
+        return DISP_E_BADINDEX;
+    }
+    let Ok(profile) = office_profile(this) else {
+        return E_FAIL;
+    };
+    type_info_for_iid(profile_iid(profile), info)
+}
+
+unsafe extern "system" fn office_get_ids_of_names(
+    this: *mut c_void,
+    _riid: *const GUID,
+    names: *const *const u16,
+    name_count: u32,
+    _lcid: u32,
+    dispids: *mut i32,
+) -> i32 {
+    if this.is_null() || names.is_null() || dispids.is_null() || name_count == 0 {
+        return E_POINTER;
+    }
+    let Ok(profile) = office_profile(this) else {
+        return E_FAIL;
+    };
+    let Some(name) = wide_ptr_to_string(*names) else {
+        return DISP_E_UNKNOWNNAME;
+    };
+    let Some(dispid) = office_dispid_for_name(profile, &name) else {
+        return DISP_E_UNKNOWNNAME;
+    };
+    *dispids = dispid;
+    for index in 1..name_count as usize {
+        *dispids.add(index) = DISPID_UNKNOWN;
+    }
+    S_OK
+}
+
+unsafe extern "system" fn office_invoke(
+    this: *mut c_void,
+    dispid: i32,
+    _riid: *const GUID,
+    _lcid: u32,
+    _flags: u16,
+    params: *mut DISPPARAMS,
+    result: *mut VARIANT,
+    excep_info: *mut EXCEPINFO,
+    arg_err: *mut u32,
+) -> i32 {
+    if this.is_null() {
+        return E_POINTER;
+    }
+    if !result.is_null() {
+        (*result).Anonymous.Anonymous.vt = VT_EMPTY;
+    }
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    let Ok(profile) = office_profile(this) else {
+        return E_FAIL;
+    };
+    let Some(method_name) = office_method_for_dispid(profile, dispid) else {
+        return DISP_E_MEMBERNOTFOUND;
+    };
+    let args = match office_disp_params_to_args(params) {
+        Ok(args) => args,
+        Err(message) => return write_runtime_exception(message, excep_info, arg_err, arg_count(params)),
+    };
+    let runtime_value = match invoke_office_member(owner, method_name, args) {
+        Ok(value) => value,
+        Err(hr) => return hr,
+    };
+    if result.is_null() {
+        return S_OK;
+    }
+    write_runtime_value_to_variant(runtime_value, result, excep_info, arg_err, arg_count(params))
+}
+
+unsafe extern "system" fn idte_on_connection(
+    this: *mut c_void,
+    application: *mut c_void,
+    connect_mode: i32,
+    addin_inst: *mut c_void,
+    custom: *mut *mut SAFEARRAY,
+) -> i32 {
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    let args = vec![
+        external_dispatch_arg(application),
+        Variant::from_i32(connect_mode),
+        external_dispatch_arg(addin_inst),
+        safearray_ptr_ref_to_variant(custom),
+    ];
+    invoke_office_member(owner, "IDTExtensibility2_OnConnection", args)
+        .map(|_| S_OK)
+        .unwrap_or_else(|hr| hr)
+}
+
+unsafe extern "system" fn idte_on_disconnection(
+    this: *mut c_void,
+    remove_mode: i32,
+    custom: *mut *mut SAFEARRAY,
+) -> i32 {
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    let args = vec![Variant::from_i32(remove_mode), safearray_ptr_ref_to_variant(custom)];
+    invoke_office_member(owner, "IDTExtensibility2_OnDisconnection", args)
+        .map(|_| S_OK)
+        .unwrap_or_else(|hr| hr)
+}
+
+unsafe extern "system" fn idte_on_addins_update(
+    this: *mut c_void,
+    custom: *mut *mut SAFEARRAY,
+) -> i32 {
+    invoke_idte_custom_only(this, "IDTExtensibility2_OnAddInsUpdate", custom)
+}
+
+unsafe extern "system" fn idte_on_startup_complete(
+    this: *mut c_void,
+    custom: *mut *mut SAFEARRAY,
+) -> i32 {
+    invoke_idte_custom_only(this, "IDTExtensibility2_OnStartupComplete", custom)
+}
+
+unsafe extern "system" fn idte_on_begin_shutdown(
+    this: *mut c_void,
+    custom: *mut *mut SAFEARRAY,
+) -> i32 {
+    invoke_idte_custom_only(this, "IDTExtensibility2_OnBeginShutdown", custom)
+}
+
+unsafe fn invoke_idte_custom_only(
+    this: *mut c_void,
+    method_name: &'static str,
+    custom: *mut *mut SAFEARRAY,
+) -> i32 {
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    invoke_office_member(owner, method_name, vec![safearray_ptr_ref_to_variant(custom)])
+        .map(|_| S_OK)
+        .unwrap_or_else(|hr| hr)
+}
+
+unsafe extern "system" fn rtd_server_start(
+    this: *mut c_void,
+    callback_object: *mut c_void,
+    result: *mut i32,
+) -> i32 {
+    if result.is_null() {
+        return E_POINTER;
+    }
+    *result = 0;
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    match invoke_office_i32_member(
+        owner,
+        "IRtdServer_ServerStart",
+        vec![external_dispatch_arg(callback_object)],
+    ) {
+        Ok(value) => {
+            *result = value;
+            S_OK
+        }
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn rtd_connect_data(
+    this: *mut c_void,
+    topic_id: i32,
+    strings: *mut SAFEARRAY,
+    get_new_values: *mut i16,
+    result: *mut VARIANT,
+) -> i32 {
+    if get_new_values.is_null() || result.is_null() {
+        return E_POINTER;
+    }
+    (*result).Anonymous.Anonymous.vt = VT_EMPTY;
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    let args = vec![
+        Variant::from_i32(topic_id),
+        safearray_ptr_to_variant(strings),
+        Variant::from_bool(*get_new_values != 0),
+    ];
+    let runtime_value = match invoke_office_member(owner, "IRtdServer_ConnectData", args) {
+        Ok(value) => value,
+        Err(hr) => return hr,
+    };
+    // Excel's RTD contract lets the server set this ByRef flag. The current
+    // synchronous snapshot slice has no callback-backed cache, so every
+    // successful ConnectData response is treated as a fresh value.
+    *get_new_values = -1;
+    write_runtime_value_to_variant(runtime_value, result, ptr::null_mut(), ptr::null_mut(), 0)
+}
+
+unsafe extern "system" fn rtd_refresh_data(
+    this: *mut c_void,
+    topic_count: *mut i32,
+    result: *mut *mut SAFEARRAY,
+) -> i32 {
+    if topic_count.is_null() || result.is_null() {
+        return E_POINTER;
+    }
+    *result = ptr::null_mut();
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    let runtime_value = match invoke_office_member(
+        owner,
+        "IRtdServer_RefreshData",
+        vec![Variant::from_i32(*topic_count)],
+    ) {
+        Ok(value) => value,
+        Err(hr) => return hr,
+    };
+    let mut variant: VARIANT = std::mem::zeroed();
+    let hr = write_runtime_value_to_variant(
+        runtime_value,
+        &mut variant,
+        ptr::null_mut(),
+        ptr::null_mut(),
+        0,
+    );
+    if hr < 0 {
+        return hr;
+    }
+    let vt = variant.Anonymous.Anonymous.vt;
+    if vt != (VT_ARRAY | VT_VARIANT) {
+        let _ = VariantClear(&mut variant);
+        return DISP_E_TYPEMISMATCH;
+    }
+    let parray = variant.Anonymous.Anonymous.Anonymous.parray;
+    if parray.is_null() {
+        variant.Anonymous.Anonymous.vt = VT_EMPTY;
+        return E_FAIL;
+    }
+    *topic_count = rtd_topic_count_from_safearray(parray).unwrap_or(0);
+    *result = parray;
+    variant.Anonymous.Anonymous.vt = VT_EMPTY;
+    S_OK
+}
+
+unsafe extern "system" fn rtd_disconnect_data(this: *mut c_void, topic_id: i32) -> i32 {
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    invoke_office_member(
+        owner,
+        "IRtdServer_DisconnectData",
+        vec![Variant::from_i32(topic_id)],
+    )
+    .map(|_| S_OK)
+    .unwrap_or_else(|hr| hr)
+}
+
+unsafe extern "system" fn rtd_heartbeat(this: *mut c_void, result: *mut i32) -> i32 {
+    if result.is_null() {
+        return E_POINTER;
+    }
+    *result = 0;
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    match invoke_office_i32_member(owner, "IRtdServer_Heartbeat", Vec::new()) {
+        Ok(value) => {
+            *result = value;
+            S_OK
+        }
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn rtd_server_terminate(this: *mut c_void) -> i32 {
+    let Ok(owner) = office_owner(this) else {
+        return E_FAIL;
+    };
+    invoke_office_member(owner, "IRtdServer_ServerTerminate", Vec::new())
+        .map(|_| S_OK)
+        .unwrap_or_else(|hr| hr)
+}
+
+unsafe fn office_owner(this: *mut c_void) -> Result<*mut DispatchObject, i32> {
+    if this.is_null() {
+        return Err(E_POINTER);
+    }
+    let owner = (*(this.cast::<OfficeInterfaceFace>())).owner;
+    if owner.is_null() {
+        Err(E_FAIL)
+    } else {
+        Ok(owner)
+    }
+}
+
+unsafe fn office_profile(this: *mut c_void) -> Result<OfficeInterfaceProfile, i32> {
+    if this.is_null() {
+        return Err(E_POINTER);
+    }
+    let vtbl = (*(this.cast::<OfficeInterfaceFace>())).vtbl;
+    if ptr::eq(vtbl, (&IDTE_VTBL as *const IdtExtensibility2Vtbl).cast()) {
+        Ok(OfficeInterfaceProfile::IdtExtensibility2)
+    } else if ptr::eq(vtbl, (&RTD_SERVER_VTBL as *const RtdServerVtbl).cast()) {
+        Ok(OfficeInterfaceProfile::IRtdServer)
+    } else {
+        Err(E_FAIL)
+    }
+}
+
+fn profile_iid(profile: OfficeInterfaceProfile) -> GUID {
+    match profile {
+        OfficeInterfaceProfile::IdtExtensibility2 => IID_IDTEXTENSIBILITY2,
+        OfficeInterfaceProfile::IRtdServer => IID_IRTDSERVER,
+    }
+}
+
+fn office_dispid_for_name(profile: OfficeInterfaceProfile, name: &str) -> Option<i32> {
+    profile_methods(profile)
+        .iter()
+        .find(|(method_name, _, _)| method_name.eq_ignore_ascii_case(name))
+        .map(|(_, dispid, _)| *dispid)
+}
+
+fn office_method_for_dispid(profile: OfficeInterfaceProfile, dispid: i32) -> Option<&'static str> {
+    profile_methods(profile)
+        .iter()
+        .find(|(_, method_dispid, _)| *method_dispid == dispid)
+        .map(|(_, _, vba_name)| *vba_name)
+}
+
+fn profile_methods(
+    profile: OfficeInterfaceProfile,
+) -> &'static [(&'static str, i32, &'static str)] {
+    match profile {
+        OfficeInterfaceProfile::IdtExtensibility2 => &[
+            ("OnConnection", 1, "IDTExtensibility2_OnConnection"),
+            ("OnDisconnection", 2, "IDTExtensibility2_OnDisconnection"),
+            ("OnAddInsUpdate", 3, "IDTExtensibility2_OnAddInsUpdate"),
+            ("OnStartupComplete", 4, "IDTExtensibility2_OnStartupComplete"),
+            ("OnBeginShutdown", 5, "IDTExtensibility2_OnBeginShutdown"),
+        ],
+        OfficeInterfaceProfile::IRtdServer => &[
+            ("ServerStart", 10, "IRtdServer_ServerStart"),
+            ("ConnectData", 11, "IRtdServer_ConnectData"),
+            ("RefreshData", 12, "IRtdServer_RefreshData"),
+            ("DisconnectData", 13, "IRtdServer_DisconnectData"),
+            ("Heartbeat", 14, "IRtdServer_Heartbeat"),
+            ("ServerTerminate", 15, "IRtdServer_ServerTerminate"),
+        ],
+    }
+}
+
+unsafe fn office_disp_params_to_args(params: *const DISPPARAMS) -> Result<Vec<Variant>, String> {
+    if params.is_null() {
+        return Ok(Vec::new());
+    }
+    let params = &*params;
+    let arg_count = params.cArgs as usize;
+    if arg_count == 0 {
+        return Ok(Vec::new());
+    }
+    if params.rgvarg.is_null() {
+        return Err("IDispatch::Invoke DISPPARAMS had cArgs > 0 with null rgvarg".to_string());
+    }
+    let mut args = Vec::with_capacity(arg_count);
+    for com_index in (0..arg_count).rev() {
+        let variant = &*params.rgvarg.add(com_index);
+        args.push(office_variant_to_arg(variant)?);
+    }
+    Ok(args)
+}
+
+unsafe fn office_variant_to_arg(variant: &VARIANT) -> Result<Variant, String> {
+    let vt = variant.Anonymous.Anonymous.vt;
+    if vt == VT_DISPATCH
+        || vt == VT_UNKNOWN
+        || vt == (VT_BYREF | VT_DISPATCH)
+        || vt == (VT_BYREF | VT_UNKNOWN)
+    {
+        return Ok(Variant::empty());
+    }
+    variant_to_com_value(variant).and_then(|value| value.to_variant())
+}
+
+unsafe fn invoke_office_i32_member(
+    owner: *mut DispatchObject,
+    method_name: &'static str,
+    args: Vec<Variant>,
+) -> Result<i32, i32> {
+    let value = invoke_office_member(owner, method_name, args)?;
+    variant_to_i32(&value).ok_or(DISP_E_TYPEMISMATCH)
+}
+
+unsafe fn invoke_office_member(
+    owner: *mut DispatchObject,
+    method_name: &'static str,
+    args: Vec<Variant>,
+) -> Result<Variant, i32> {
+    if owner.is_null() {
+        return Err(E_POINTER);
+    }
+    with_session(|session| {
+        session
+            .invoke_member_values(
+                (*owner).object.clone(),
+                method_name,
+                Some(ProjectMemberKind::Method),
+                args,
+            )
+            .map_err(|err| err.to_string())
+    })
+    .map_err(|_| E_FAIL)
+}
+
+unsafe fn write_runtime_value_to_variant(
+    value: Variant,
+    result: *mut VARIANT,
+    excep_info: *mut EXCEPINFO,
+    arg_err: *mut u32,
+    arg_count: usize,
+) -> i32 {
+    let runtime_result = RuntimeCallResult::value(value);
+    let mut resolve_object = |object: ObjectRef| resolve_runtime_object(object);
+    let mut add_ref_dispatch = |_dispatch: *mut c_void| {};
+    match runtime_call_result_to_variant(
+        &runtime_result,
+        result,
+        &mut resolve_object,
+        &mut add_ref_dispatch,
+    ) {
+        Ok(()) => S_OK,
+        Err(message) => write_runtime_exception(message, excep_info, arg_err, arg_count),
+    }
+}
+
+fn variant_to_i32(value: &Variant) -> Option<i32> {
+    value
+        .as_i32()
+        .or_else(|| value.as_i16().map(i32::from))
+        .or_else(|| value.as_bool().map(|value| if value { 1 } else { 0 }))
+}
+
+unsafe fn external_dispatch_arg(_dispatch: *mut c_void) -> Variant {
+    // This profile slice proves the native interface ABI and synchronous Office
+    // lifecycle/RTD calls. Binding inbound Office IDispatch pointers into the
+    // HAL COM-client object table is a separate object-carrier expansion.
+    Variant::empty()
+}
+
+unsafe fn safearray_ptr_ref_to_variant(array_ref: *mut *mut SAFEARRAY) -> Variant {
+    if array_ref.is_null() {
+        return Variant::empty();
+    }
+    safearray_ptr_to_variant(*array_ref)
+}
+
+unsafe fn safearray_ptr_to_variant(array: *mut SAFEARRAY) -> Variant {
+    if array.is_null() {
+        return Variant::empty();
+    }
+    let mut variant: VARIANT = std::mem::zeroed();
+    variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+    variant.Anonymous.Anonymous.Anonymous.parray = array;
+    variant_to_com_value(&variant)
+        .and_then(|value| value.to_variant())
+        .unwrap_or_else(|_| Variant::empty())
+}
+
+unsafe fn rtd_topic_count_from_safearray(array: *mut SAFEARRAY) -> Option<i32> {
+    if array.is_null() {
+        return None;
+    }
+    let dims = SafeArrayGetDim(array.cast_const());
+    if dims == 0 {
+        return Some(0);
+    }
+    if dims >= 2 {
+        let mut lower = 0i32;
+        let mut upper = -1i32;
+        if SafeArrayGetLBound(array.cast_const(), 2, &mut lower) >= 0
+            && SafeArrayGetUBound(array.cast_const(), 2, &mut upper) >= 0
+            && upper >= lower
+        {
+            return Some(upper - lower + 1);
+        }
+    }
+    let mut lower = 0i32;
+    let mut upper = -1i32;
+    if SafeArrayGetLBound(array.cast_const(), 1, &mut lower) >= 0
+        && SafeArrayGetUBound(array.cast_const(), 1, &mut upper) >= 0
+        && upper >= lower
+    {
+        return Some((upper - lower + 1) / 2);
+    }
+    Some(0)
+}
+
 unsafe fn object_ref_from_generated_interface(interface: *mut c_void) -> Result<ObjectRef, i32> {
     if interface.is_null() {
         return Err(E_POINTER);
@@ -1994,6 +2688,13 @@ fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
     bounded_dual_interface_shape(class).is_some()
 }
 
+fn class_supports_implemented_interface_profile(
+    class: &ComClassDescriptor,
+    profile: ComImplementedInterfaceProfile,
+) -> bool {
+    class.implemented_interfaces.contains(&profile)
+}
+
 fn class_supports_bounded_dual_scalar_methods(class: &ComClassDescriptor) -> bool {
     !class.members.is_empty()
         && class.members.len() <= 3
@@ -2209,6 +2910,14 @@ unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mu
             vtbl: dual_vtbl,
             owner: ptr::null_mut(),
         },
+        idte: OfficeInterfaceFace {
+            vtbl: (&IDTE_VTBL as *const IdtExtensibility2Vtbl).cast(),
+            owner: ptr::null_mut(),
+        },
+        rtd: OfficeInterfaceFace {
+            vtbl: (&RTD_SERVER_VTBL as *const RtdServerVtbl).cast(),
+            owner: ptr::null_mut(),
+        },
         cpc: ConnectionPointContainer {
             vtbl: &CONNECTION_POINT_CONTAINER_VTBL,
             owner: ptr::null_mut(),
@@ -2224,6 +2933,8 @@ unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mu
         next_cookie: AtomicU32::new(1),
     }));
     (*raw).dual.owner = raw;
+    (*raw).idte.owner = raw;
+    (*raw).rtd.owner = raw;
     (*raw).cpc.owner = raw;
     (*raw).cp.owner = raw;
     register_dispatch_wrapper(raw);
@@ -2346,6 +3057,13 @@ unsafe fn type_info_for_object(object: &DispatchObject, info: *mut *mut c_void) 
     // IDispatch::GetTypeInfo(0) returns an ITypeInfo for this object's default
     // dispatch interface. The generated TypeLib is already the registration
     // source of truth, so ask oleaut32 for the matching interface by IID.
+    type_info_for_iid(interface_iid, info)
+}
+
+unsafe fn type_info_for_iid(interface_iid: GUID, info: *mut *mut c_void) -> i32 {
+    if info.is_null() {
+        return E_POINTER;
+    }
     let path_w = wide_null(TLB_PATH);
     let mut typelib: *mut c_void = ptr::null_mut();
     let hr = LoadTypeLibEx(path_w.as_ptr(), REGKIND_NONE, &mut typelib);
@@ -2544,6 +3262,17 @@ unsafe fn register_server() -> Result<(), i32> {
             &format!("Software\\Classes\\{}\\CLSID", class.prog_id),
             &format!("{{{}}}", class.clsid),
         )?;
+        if class_supports_implemented_interface_profile(
+            class,
+            ComImplementedInterfaceProfile::IdtExtensibility2,
+        ) {
+            let addin_key = format!("Software\\Microsoft\\Office\\Excel\\Addins\\{}", class.prog_id);
+            let friendly_name = class.description.as_deref().unwrap_or(&class.class_name);
+            set_key_default(&addin_key, friendly_name)?;
+            set_key_value(&addin_key, "FriendlyName", friendly_name)?;
+            set_key_value(&addin_key, "Description", friendly_name)?;
+            set_key_dword(&addin_key, "LoadBehavior", 3)?;
+        }
     }
     Ok(())
 }
@@ -2554,6 +3283,15 @@ unsafe fn unregister_server() -> Result<(), i32> {
         let clsid_key = format!("Software\\Classes\\CLSID\\{{{}}}", class.clsid);
         delete_tree(&clsid_key);
         delete_tree(&format!("Software\\Classes\\{}", class.prog_id));
+        if class_supports_implemented_interface_profile(
+            class,
+            ComImplementedInterfaceProfile::IdtExtensibility2,
+        ) {
+            delete_tree(&format!(
+                "Software\\Microsoft\\Office\\Excel\\Addins\\{}",
+                class.prog_id
+            ));
+        }
     }
     unregister_typelib(descriptor);
     Ok(())
@@ -2594,6 +3332,42 @@ unsafe fn set_key_default(path: &str, value: &str) -> Result<(), i32> {
 
 unsafe fn set_key_value(path: &str, name: &str, value: &str) -> Result<(), i32> {
     set_key_value_raw(path, Some(name), value)
+}
+
+unsafe fn set_key_dword(path: &str, name: &str, value: u32) -> Result<(), i32> {
+    let path_w = wide_null(path);
+    let mut key: HKEY = ptr::null_mut();
+    let status = RegCreateKeyExW(
+        HKEY_CURRENT_USER,
+        path_w.as_ptr(),
+        0,
+        ptr::null(),
+        0,
+        KEY_WRITE,
+        ptr::null(),
+        &mut key,
+        ptr::null_mut(),
+    );
+    if status != ERROR_SUCCESS {
+        return Err(SELFREG_E_CLASS);
+    }
+
+    let name_w = wide_null(name);
+    let bytes = value.to_le_bytes();
+    let status = RegSetValueExW(
+        key,
+        name_w.as_ptr(),
+        0,
+        REG_DWORD,
+        bytes.as_ptr(),
+        bytes.len() as u32,
+    );
+    RegCloseKey(key);
+    if status == ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(SELFREG_E_CLASS)
+    }
 }
 
 unsafe fn set_key_value_raw(path: &str, name: Option<&str>, value: &str) -> Result<(), i32> {

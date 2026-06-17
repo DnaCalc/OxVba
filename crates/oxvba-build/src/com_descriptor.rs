@@ -23,8 +23,15 @@ pub struct ComClassDescriptor {
     pub default_interface_iid: String,
     pub source_interface_name: Option<String>,
     pub source_interface_iid: Option<String>,
+    pub implemented_interfaces: Vec<ComImplementedInterfaceProfile>,
     pub members: Vec<ComMemberDescriptor>,
     pub events: Vec<ComEventDescriptor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ComImplementedInterfaceProfile {
+    IdtExtensibility2,
+    IRtdServer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -107,6 +114,7 @@ impl ComServerDescriptor {
                 let source_interface_iid = source_interface_name
                     .as_ref()
                     .map(|name| deterministic_uuid(&surface.project_name, name));
+                let implemented_interfaces = implemented_interface_profiles(&ty.implements);
                 Some(ComClassDescriptor {
                     class_name: class_name.clone(),
                     description: ty.description.clone(),
@@ -120,6 +128,7 @@ impl ComServerDescriptor {
                     ),
                     source_interface_name,
                     source_interface_iid,
+                    implemented_interfaces,
                     members: ty
                         .members
                         .iter()
@@ -163,6 +172,43 @@ impl ComServerDescriptor {
 
     pub fn creatable_classes(&self) -> impl Iterator<Item = &ComClassDescriptor> {
         self.classes.iter().filter(|class| class.creatable)
+    }
+}
+
+impl ComImplementedInterfaceProfile {
+    pub fn vba_name(self) -> &'static str {
+        match self {
+            Self::IdtExtensibility2 => "IDTExtensibility2",
+            Self::IRtdServer => "IRtdServer",
+        }
+    }
+}
+
+fn implemented_interface_profiles(implements: &[String]) -> Vec<ComImplementedInterfaceProfile> {
+    let mut profiles = Vec::new();
+    for iface in implements {
+        if let Some(profile) = implemented_interface_profile(iface)
+            && !profiles.contains(&profile)
+        {
+            profiles.push(profile);
+        }
+    }
+    profiles
+}
+
+fn implemented_interface_profile(raw: &str) -> Option<ComImplementedInterfaceProfile> {
+    let bare = raw
+        .rsplit(['.', ':'])
+        .next()
+        .unwrap_or(raw)
+        .trim()
+        .replace('_', "");
+    if bare.eq_ignore_ascii_case("IDTExtensibility2") {
+        Some(ComImplementedInterfaceProfile::IdtExtensibility2)
+    } else if bare.eq_ignore_ascii_case("IRtdServer") || bare.eq_ignore_ascii_case("IRTDServer") {
+        Some(ComImplementedInterfaceProfile::IRtdServer)
+    } else {
+        None
     }
 }
 
