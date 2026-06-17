@@ -1548,7 +1548,9 @@ Candidate bead units:
 	  compile-derived bundle-module metadata preservation; clean-stack continuation now records source
 	  `Option Private Module` in `ModuleScan` and makes export-surface synthesis honor that scanner
 	  fact as well as loader-provided `ModuleAttributes`, and `Attribute VB_Name` is now likewise
-	  scanner-owned for direct symbol manifests and exported module identity, enum constants, basic DefType default-table preservation
+	  scanner-owned for direct symbol manifests and exported module identity; source Boolean module
+	  attributes (`VB_Exposed`, `VB_Creatable`, `VB_PredeclaredId`, `VB_GlobalNamespace`) now shape
+	  class export surfaces before loader-metadata fallback, enum constants, basic DefType default-table preservation
   for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations,
   visibility-prefixed procedural-module scalar fields, and known DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
