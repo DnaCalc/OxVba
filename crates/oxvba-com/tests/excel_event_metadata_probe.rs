@@ -85,3 +85,180 @@ fn probe_excel_application_event_metadata() {
         blob.events.len()
     );
 }
+
+#[test]
+#[ignore = "live registered Excel typelib; run explicitly"]
+fn resolve_excel_irtdserver_interface_metadata() {
+    let request = oxvba_com::TypeLibResolveRequest {
+        reference_name: "Excel".to_string(),
+        requested_coclass: None,
+        importlib_hint: None,
+        libid_hint: Some("00020813-0000-0000-C000-000000000046".to_string()),
+        major_version_hint: Some(1),
+        minor_version_hint: Some(9),
+        lcid_hint: Some(0),
+    };
+
+    let metadata = oxvba_com::resolve_typelib_interface_metadata(&request, "IRtdServer")
+        .expect("resolve Excel IRtdServer interface metadata");
+    assert_eq!(metadata.name, "IRtdServer");
+    assert_eq!(
+        metadata.iid.map(|iid| format!(
+            "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+            iid.data1,
+            iid.data2,
+            iid.data3,
+            iid.data4[0],
+            iid.data4[1],
+            iid.data4[2],
+            iid.data4[3],
+            iid.data4[4],
+            iid.data4[5],
+            iid.data4[6],
+            iid.data4[7]
+        )),
+        Some("EC0E6191-DB51-11D3-8F3E-00C04F3651B8".to_string())
+    );
+    assert!(
+        metadata
+            .members
+            .iter()
+            .any(|member| member.name == "ServerStart" && member.vtable_slot == Some(7))
+    );
+    assert!(
+        metadata
+            .members
+            .iter()
+            .any(|member| member.name == "RefreshData" && member.vtable_slot == Some(9))
+    );
+    let server_start = metadata
+        .members
+        .iter()
+        .find(|member| member.name == "ServerStart")
+        .expect("ServerStart metadata");
+    assert!(
+        server_start
+            .parameter_iids
+            .first()
+            .and_then(|iid| *iid)
+            .is_some()
+    );
+    let connect_data = metadata
+        .members
+        .iter()
+        .find(|member| member.name == "ConnectData")
+        .expect("ConnectData metadata");
+    assert_eq!(
+        connect_data.parameter_wire_types.get(1),
+        Some(&oxvba_com::TypeLibWireType::SafeArrayVariant)
+    );
+    let refresh_data = metadata
+        .members
+        .iter()
+        .find(|member| member.name == "RefreshData")
+        .expect("RefreshData metadata");
+    assert_eq!(
+        refresh_data.return_wire_type.as_ref(),
+        Some(&oxvba_com::TypeLibWireType::ByRefSafeArrayVariant)
+    );
+}
+
+#[test]
+#[ignore = "live registered Add-In Designer typelib; run explicitly"]
+fn resolve_addin_designer_idtextensibility2_interface_metadata() {
+    let request = oxvba_com::TypeLibResolveRequest {
+        reference_name: "AddInDesignerObjects".to_string(),
+        requested_coclass: None,
+        importlib_hint: None,
+        libid_hint: Some("AC0714F2-3D04-11D1-AE7D-00A0C90F26F4".to_string()),
+        major_version_hint: Some(1),
+        minor_version_hint: Some(0),
+        lcid_hint: Some(0),
+    };
+
+    let metadata = oxvba_com::resolve_typelib_interface_metadata(&request, "IDTExtensibility2")
+        .or_else(|| oxvba_com::resolve_typelib_interface_metadata(&request, "_IDTExtensibility2"))
+        .expect("resolve Add-In Designer IDTExtensibility2 interface metadata");
+    let on_connection = metadata
+        .members
+        .iter()
+        .find(|member| member.name == "OnConnection")
+        .expect("OnConnection metadata");
+    assert_eq!(on_connection.vtable_slot, Some(7));
+    assert!(matches!(
+        on_connection.parameter_wire_types.as_slice(),
+        [
+            oxvba_com::TypeLibWireType::InterfacePointer { .. },
+            oxvba_com::TypeLibWireType::InterfacePointer { .. },
+            oxvba_com::TypeLibWireType::InterfacePointer { .. },
+            oxvba_com::TypeLibWireType::SafeArrayVariant,
+        ]
+    ));
+    let on_disconnection = metadata
+        .members
+        .iter()
+        .find(|member| member.name == "OnDisconnection")
+        .expect("OnDisconnection metadata");
+    assert_eq!(on_disconnection.vtable_slot, Some(8));
+    assert!(matches!(
+        on_disconnection.parameter_wire_types.as_slice(),
+        [
+            oxvba_com::TypeLibWireType::InterfacePointer { .. }
+                | oxvba_com::TypeLibWireType::Automation(oxvba_com::TypeLibParamType::Object),
+            oxvba_com::TypeLibWireType::SafeArrayVariant,
+        ]
+    ));
+}
+
+#[test]
+#[ignore = "live registered Office typelib; run explicitly"]
+fn resolve_office_iribbonextensibility_interface_metadata() {
+    let request = oxvba_com::TypeLibResolveRequest {
+        reference_name: "Office".to_string(),
+        requested_coclass: None,
+        importlib_hint: None,
+        libid_hint: Some("2DF8D04C-5BFA-101B-BDE5-00AA0044DE52".to_string()),
+        major_version_hint: Some(2),
+        minor_version_hint: Some(8),
+        lcid_hint: Some(0),
+    };
+
+    let metadata = oxvba_com::resolve_typelib_interface_metadata(&request, "IRibbonExtensibility")
+        .expect("resolve Office IRibbonExtensibility interface metadata");
+    assert_eq!(metadata.name, "IRibbonExtensibility");
+    assert_eq!(
+        metadata.iid.map(|iid| format!(
+            "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+            iid.data1,
+            iid.data2,
+            iid.data3,
+            iid.data4[0],
+            iid.data4[1],
+            iid.data4[2],
+            iid.data4[3],
+            iid.data4[4],
+            iid.data4[5],
+            iid.data4[6],
+            iid.data4[7]
+        )),
+        Some("000C0396-0000-0000-C000-000000000046".to_string())
+    );
+    let get_custom_ui = metadata
+        .members
+        .iter()
+        .find(|member| member.name == "GetCustomUI")
+        .expect("GetCustomUI metadata");
+    assert_eq!(get_custom_ui.vtable_slot, Some(7));
+    assert_eq!(
+        get_custom_ui.parameter_wire_types.as_slice(),
+        [oxvba_com::TypeLibWireType::Automation(
+            oxvba_com::TypeLibParamType::String
+        )]
+    );
+    assert_eq!(
+        get_custom_ui.return_wire_type.as_ref(),
+        Some(&oxvba_com::TypeLibWireType::Automation(
+            oxvba_com::TypeLibParamType::String
+        ))
+    );
+}

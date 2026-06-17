@@ -66,8 +66,9 @@ pub use runtime_state::{
 };
 pub use typelib::{
     ComDefaultValue, ComInterfaceIid, OptionalParamDefault, SourceTypeKind, TypeLibCacheScope,
-    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-    TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibInterfaceMetadata,
+    TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType,
+    TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibWireType,
     runtime_class_descriptor_from_typelib_metadata,
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
@@ -78,7 +79,8 @@ pub use typelib_catalog::{
     member_spec_from_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
     resolve_default_member_token_and_spec_from_typelib_metadata, resolve_known_typelib_identity,
     resolve_member_token_and_spec_from_typelib_metadata_name,
-    resolve_typelib_identity_for_prog_id_name, source_interface_event_spec_supported,
+    resolve_typelib_identity_for_prog_id_name, resolve_typelib_interface_metadata,
+    resolve_typelib_interface_metadata_from_identity, source_interface_event_spec_supported,
 };
 #[cfg(target_os = "windows")]
 pub use windows_bridge::{WindowsComBridge, WindowsComBridgeDispatchError};

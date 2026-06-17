@@ -6,13 +6,16 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering, fence};
 use std::sync::{Arc, Mutex};
 
+use windows_sys::Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen};
 use windows_sys::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED,
-    CoCreateInstance, CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET,
-    DISPATCH_PROPERTYPUT, SAFEARRAY, TYPEATTR,
+    CLSCTX_INPROC_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
+    CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
+    SAFEARRAY, TYPEATTR,
 };
 use windows_sys::Win32::System::Ole::SafeArrayDestroy;
-use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_I4, VT_R8, VariantClear};
+use windows_sys::Win32::System::Variant::{
+    VARIANT, VT_BSTR, VT_DISPATCH, VT_I4, VT_R8, VariantClear,
+};
 use windows_sys::core::GUID;
 
 type SeenEvents = Arc<Mutex<Vec<(i32, Option<i32>)>>>;
@@ -22,6 +25,18 @@ const IID_IDTEXTENSIBILITY2: GUID = GUID {
     data2: 0xABAF,
     data3: 0x11D0,
     data4: [0xBB, 0x8B, 0x00, 0xA0, 0xC9, 0x0F, 0x27, 0x44],
+};
+const IID_EXCEL_APPLICATION: GUID = GUID {
+    data1: 0x0002_08D5,
+    data2: 0,
+    data3: 0,
+    data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+};
+const IID_IRIBBONEXTENSIBILITY: GUID = GUID {
+    data1: 0x000C_0396,
+    data2: 0,
+    data3: 0,
+    data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
 };
 const IID_IRTDSERVER: GUID = GUID {
     data1: 0xEC0E_6191,
@@ -139,7 +154,7 @@ End Function
     write(
         &addin_path,
         r#"
-Implements IDTExtensibility2
+Implements AddInDesignerObjects.IDTExtensibility2
 
 Private mApplicationNameLength As Long
 
@@ -167,7 +182,7 @@ End Function
     write(
         &rtd_path,
         r#"
-Implements IRtdServer
+Implements Excel.IRtdServer
 
 Private Function IRtdServer_ServerStart(ByVal CallbackObject As Variant) As Long
     IRtdServer_ServerStart = 1
@@ -205,6 +220,12 @@ End Sub
       <Guid>{00020813-0000-0000-C000-000000000046}</Guid>
       <VersionMajor>1</VersionMajor>
       <VersionMinor>9</VersionMinor>
+      <Lcid>0</Lcid>
+    </COMReference>
+    <COMReference Include="AddInDesignerObjects">
+      <Guid>{AC0714F2-3D04-11D1-AE7D-00A0C90F26F4}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
       <Lcid>0</Lcid>
     </COMReference>
     <ClassModule Include="Calculator.cls">
@@ -303,6 +324,20 @@ End Sub
         .iter()
         .find(|class| class.class_name == "RtdTicker")
         .expect("RtdTicker descriptor");
+    assert_eq!(
+        addin_class
+            .implemented_interfaces
+            .first()
+            .map(|interface| interface.name.as_str()),
+        Some("IDTExtensibility2")
+    );
+    assert_eq!(
+        rtd_class
+            .implemented_interfaces
+            .first()
+            .map(|interface| interface.name.as_str()),
+        Some("IRtdServer")
+    );
 
     let registration = RegisteredDll::register(&output.dll_target_path);
     let tlb_path = output
@@ -372,9 +407,9 @@ if ($relayEcho -ne 42) {{ throw "expected ObjectRelay.EchoPing(ObjectRelay)=42, 
     // SAFETY: this raw COM helper creates and releases the ObjectRelay dispatch
     // and default-interface pointers it obtains.
     unsafe { controlled_object_argument_vtable_smoke(object_relay_class) };
-    // SAFETY: this raw COM helper creates and releases the Office profile
-    // interface pointers and returned RTD SAFEARRAY it obtains.
-    unsafe { controlled_office_profile_vtable_smoke(addin_class, rtd_class) };
+    // SAFETY: this raw COM helper creates and releases imported Office interface
+    // pointers and the returned RTD SAFEARRAY it obtains.
+    unsafe { controlled_imported_office_interface_vtable_smoke(addin_class, rtd_class) };
     excel_vba_early_bound_and_connection_point_smoke(&temp.path, &output.tlb_target_path);
     drop(registration);
 }
@@ -567,6 +602,248 @@ if ($failure -ne $null) {
             "Excel VBA COM server event smoke returned unexpected output: {stdout}"
         );
     }
+}
+
+#[test]
+#[ignore = "requires desktop Excel; registers and loads an in-process Excel COM add-in"]
+fn wrapped_com_server_excel_addin_receives_usable_application_object() {
+    let temp = TestDir::new_in_repo_target("excel_addin_application_object");
+    let project_path = temp.path.join("OxVbaExcelAddinSmoke.basproj");
+    let addin_path = temp.path.join("ExcelAddin.cls");
+    let out_dir = temp.path.join("out");
+    let prog_id = "OxVbaExcelAddinSmoke.ExcelAddin";
+
+    write(
+        &addin_path,
+        r#"
+Implements AddInDesignerObjects.IDTExtensibility2
+
+Private Sub IDTExtensibility2_OnConnection(ByVal HostApplication As Excel.Application, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+    If Len(HostApplication.Name) = 0 Then
+        Err.Raise 5
+    End If
+    If HostApplication.COMAddIns.Count <= 0 Then
+        Err.Raise 6
+    End If
+End Sub
+
+Private Sub IDTExtensibility2_OnDisconnection(ByVal RemoveMode As Long, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnAddInsUpdate(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnStartupComplete(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnBeginShutdown(ByVal custom As Variant)
+End Sub
+"#,
+    );
+    write(
+        &project_path,
+        r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>ComServer</OutputType>
+    <BuildTarget>WrappedComServer</BuildTarget>
+    <ProjectName>OxVbaExcelAddinSmoke</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <COMReference Include="Excel">
+      <Guid>{00020813-0000-0000-C000-000000000046}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>9</VersionMinor>
+      <Lcid>0</Lcid>
+    </COMReference>
+    <COMReference Include="AddInDesignerObjects">
+      <Guid>{AC0714F2-3D04-11D1-AE7D-00A0C90F26F4}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+    </COMReference>
+    <ClassModule Include="ExcelAddin.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>OxVbaExcelAddinSmoke.ExcelAddin</ProgId>
+    </ClassModule>
+  </ItemGroup>
+</Project>
+"#,
+    );
+
+    let output =
+        oxvba_build::build_wrapped_com_server(&oxvba_build::WrappedComServerBuildOptions {
+            project_path,
+            out_dir,
+            compile_dll: true,
+        })
+        .expect("WrappedComServer build should compile an Excel add-in DLL");
+
+    let script_path = temp.path.join("excel_addin_smoke.ps1");
+    write(
+        &script_path,
+        r#"
+param(
+  [Parameter(Mandatory=$true)][string]$DllPath,
+  [Parameter(Mandatory=$true)][string]$ProgId
+)
+$ErrorActionPreference = 'Stop'
+$key = "HKCU:\Software\Microsoft\Office\Excel\Addins\$ProgId"
+$excel = $null
+try {
+  $register = Start-Process -FilePath regsvr32.exe -ArgumentList @('/s', $DllPath) -Wait -PassThru
+  if ($register.ExitCode -ne 0) {
+    throw "regsvr32 failed with exit code $($register.ExitCode)"
+  }
+  New-Item -Path $key -Force | Out-Null
+  Set-ItemProperty -Path $key -Name FriendlyName -Value 'OxVba Excel Add-in Smoke'
+  Set-ItemProperty -Path $key -Name Description -Value 'OxVba Excel Add-in Smoke'
+  Set-ItemProperty -Path $key -Name LoadBehavior -Type DWord -Value 3
+
+  $excel = New-Object -ComObject Excel.Application
+  $excel.DisplayAlerts = $false
+  $addin = $excel.COMAddIns.Item($ProgId)
+  $addin.Connect = $true
+  if (-not $addin.Connect) {
+    throw "Excel left COMAddIn.Connect false"
+  }
+  "OK:ExcelAddInConnected"
+} finally {
+  try {
+    if ($excel -ne $null) {
+      $excel.Quit() | Out-Null
+      [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
+    }
+  } catch {}
+  try { Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+  try { Start-Process -FilePath regsvr32.exe -ArgumentList @('/u', '/s', $DllPath) -Wait | Out-Null } catch {}
+}
+"#,
+    );
+
+    let output_ps = Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(&script_path)
+        .arg("-DllPath")
+        .arg(&output.dll_target_path)
+        .arg("-ProgId")
+        .arg(prog_id)
+        .output()
+        .expect("PowerShell should run Excel add-in smoke script");
+    let stdout = String::from_utf8_lossy(&output_ps.stdout);
+    let stderr = String::from_utf8_lossy(&output_ps.stderr);
+    assert!(
+        output_ps.status.success(),
+        "Excel add-in smoke failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("OK:ExcelAddInConnected"),
+        "Excel add-in smoke returned unexpected output: {stdout}"
+    );
+}
+
+#[test]
+#[ignore = "builds/registers an in-process COM DLL and calls Office IRibbonExtensibility"]
+fn wrapped_com_server_ribbon_extensibility_returns_custom_ui_xml() {
+    let temp = TestDir::new_in_repo_target("ribbon_extensibility");
+    let project_path = temp.path.join("RibbonSmoke.basproj");
+    let class_path = temp.path.join("RibbonAddin.cls");
+    let out_dir = temp.path.join("out");
+
+    write(
+        &class_path,
+        r#"
+Implements AddInDesignerObjects.IDTExtensibility2
+Implements Office.IRibbonExtensibility
+
+Private mPressed As Long
+
+Private Sub IDTExtensibility2_OnConnection(ByVal HostApplication As Variant, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnDisconnection(ByVal RemoveMode As Long, ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnAddInsUpdate(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnStartupComplete(ByVal custom As Variant)
+End Sub
+
+Private Sub IDTExtensibility2_OnBeginShutdown(ByVal custom As Variant)
+End Sub
+
+Private Function IRibbonExtensibility_GetCustomUI(ByVal RibbonID As String) As String
+    IRibbonExtensibility_GetCustomUI = "<customUI xmlns=""http://schemas.microsoft.com/office/2009/07/customui""><ribbon/></customUI>"
+End Function
+
+Public Sub OnHello(ByVal control As Variant)
+    mPressed = 1
+End Sub
+
+Public Function Pressed() As Long
+    Pressed = mPressed
+End Function
+"#,
+    );
+    write(
+        &project_path,
+        r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>ComServer</OutputType>
+    <BuildTarget>WrappedComServer</BuildTarget>
+    <ProjectName>RibbonSmoke</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <COMReference Include="AddInDesignerObjects">
+      <Guid>{AC0714F2-3D04-11D1-AE7D-00A0C90F26F4}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+    </COMReference>
+    <COMReference Include="Office">
+      <Guid>{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}</Guid>
+      <VersionMajor>2</VersionMajor>
+      <VersionMinor>8</VersionMinor>
+      <Lcid>0</Lcid>
+    </COMReference>
+    <ClassModule Include="RibbonAddin.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>RibbonSmoke.RibbonAddin</ProgId>
+    </ClassModule>
+  </ItemGroup>
+</Project>
+"#,
+    );
+
+    let output =
+        oxvba_build::build_wrapped_com_server(&oxvba_build::WrappedComServerBuildOptions {
+            project_path,
+            out_dir,
+            compile_dll: true,
+        })
+        .expect("WrappedComServer build should compile a ribbon COM DLL");
+    let descriptor_text =
+        std::fs::read_to_string(&output.descriptor_path).expect("descriptor should exist");
+    let descriptor: oxvba_build::ComServerDescriptor =
+        serde_json::from_str(&descriptor_text).expect("descriptor should parse");
+    let class = descriptor
+        .classes
+        .iter()
+        .find(|class| class.class_name == "RibbonAddin")
+        .expect("RibbonAddin descriptor");
+    let _registration = RegisteredDll::register(&output.dll_target_path);
+    // SAFETY: these helpers own and release the COM object/interface/BSTRs they create.
+    unsafe {
+        controlled_ribbon_extensibility_vtable_smoke(class);
+        controlled_ribbon_callback_variant_dispatch_argument_smoke(class);
+    };
 }
 
 struct RegisteredDll {
@@ -1129,20 +1406,20 @@ unsafe fn controlled_object_argument_vtable_smoke_inner(
     result
 }
 
-unsafe fn controlled_office_profile_vtable_smoke(
+unsafe fn controlled_imported_office_interface_vtable_smoke(
     addin_class: &oxvba_build::ComClassDescriptor,
     rtd_class: &oxvba_build::ComClassDescriptor,
 ) {
     let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
     let should_uninitialize = hr >= 0;
-    let result = controlled_office_profile_vtable_smoke_inner(addin_class, rtd_class);
+    let result = controlled_imported_office_interface_vtable_smoke_inner(addin_class, rtd_class);
     if should_uninitialize {
         CoUninitialize();
     }
-    result.expect("controlled Office profile vtable smoke");
+    result.expect("controlled imported Office interface vtable smoke");
 }
 
-unsafe fn controlled_office_profile_vtable_smoke_inner(
+unsafe fn controlled_imported_office_interface_vtable_smoke_inner(
     addin_class: &oxvba_build::ComClassDescriptor,
     rtd_class: &oxvba_build::ComClassDescriptor,
 ) -> Result<(), String> {
@@ -1209,36 +1486,94 @@ unsafe fn activate_dispatch(
     Ok(object)
 }
 
-unsafe fn activate_excel_application() -> Result<*mut std::ffi::c_void, String> {
-    let mut clsid = GUID {
-        data1: 0,
-        data2: 0,
-        data3: 0,
-        data4: [0; 8],
-    };
-    let progid = wide_null("Excel.Application");
-    let hr = CLSIDFromProgID(progid.as_ptr(), &mut clsid);
-    if hr < 0 {
-        return Err(format!(
-            "CLSIDFromProgID(Excel.Application) failed: 0x{:08X}",
-            hr as u32
-        ));
+unsafe fn controlled_ribbon_extensibility_vtable_smoke(class: &oxvba_build::ComClassDescriptor) {
+    let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+    let should_uninitialize = hr >= 0;
+    let result = controlled_ribbon_extensibility_vtable_smoke_inner(class);
+    if should_uninitialize {
+        CoUninitialize();
     }
-    let mut object: *mut std::ffi::c_void = std::ptr::null_mut();
-    let hr = CoCreateInstance(
-        &clsid,
-        std::ptr::null_mut(),
-        CLSCTX_LOCAL_SERVER,
-        &IID_IDISPATCH,
-        &mut object,
-    );
-    if hr < 0 || object.is_null() {
-        return Err(format!(
-            "CoCreateInstance(Excel.Application) failed: 0x{:08X}",
-            hr as u32
-        ));
+    result.expect("controlled IRibbonExtensibility vtable smoke");
+}
+
+unsafe fn controlled_ribbon_callback_variant_dispatch_argument_smoke(
+    class: &oxvba_build::ComClassDescriptor,
+) {
+    let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+    let should_uninitialize = hr >= 0;
+    let result = controlled_ribbon_callback_variant_dispatch_argument_smoke_inner(class);
+    if should_uninitialize {
+        CoUninitialize();
     }
-    Ok(object)
+    result.expect("controlled ribbon callback VT_DISPATCH Variant argument smoke");
+}
+
+unsafe fn controlled_ribbon_callback_variant_dispatch_argument_smoke_inner(
+    class: &oxvba_build::ComClassDescriptor,
+) -> Result<(), String> {
+    let dispatch = activate_dispatch(class)?;
+    let result = (|| {
+        let on_hello = class
+            .members
+            .iter()
+            .find(|member| member.name == "OnHello")
+            .map(|member| member.dispid)
+            .ok_or_else(|| "OnHello member missing".to_string())?;
+        let pressed = class
+            .members
+            .iter()
+            .find(|member| member.name == "Pressed")
+            .map(|member| member.dispid)
+            .ok_or_else(|| "Pressed member missing".to_string())?;
+        invoke_void_method_variant_dispatch_arg(dispatch, on_hello, dispatch)?;
+        let value = invoke_i4_method_result(dispatch, pressed)?;
+        if value != 1 {
+            return Err(format!("Pressed returned {value}, expected 1"));
+        }
+        Ok(())
+    })();
+    release_unknown(dispatch);
+    result
+}
+
+unsafe fn controlled_ribbon_extensibility_vtable_smoke_inner(
+    class: &oxvba_build::ComClassDescriptor,
+) -> Result<(), String> {
+    let dispatch = activate_dispatch(class)?;
+    let result = (|| {
+        let mut ribbon: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hr = query_interface(dispatch, &IID_IRIBBONEXTENSIBILITY, &mut ribbon);
+        if hr < 0 || ribbon.is_null() {
+            return Err(format!(
+                "QueryInterface(IRibbonExtensibility) failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        let vtbl = *(ribbon.cast::<*const RibbonExtensibilityVtbl>());
+        let mut ribbon_id_units = "Microsoft.Excel.Workbook"
+            .encode_utf16()
+            .collect::<Vec<_>>();
+        let ribbon_id =
+            SysAllocStringLen(ribbon_id_units.as_mut_ptr(), ribbon_id_units.len() as u32);
+        if ribbon_id.is_null() {
+            release_unknown(ribbon);
+            return Err("SysAllocStringLen failed for RibbonID".to_string());
+        }
+        let mut custom_ui: *mut u16 = std::ptr::null_mut();
+        let hr = ((*vtbl).get_custom_ui)(ribbon, ribbon_id.cast_mut(), &mut custom_ui);
+        SysFreeString(ribbon_id);
+        release_unknown(ribbon);
+        if hr < 0 {
+            return Err(format!("GetCustomUI failed: 0x{:08X}", hr as u32));
+        }
+        let xml = bstr_to_string_and_free(custom_ui);
+        if !xml.contains("<customUI") || !xml.contains("<ribbon/>") {
+            return Err(format!("unexpected custom UI XML: {xml:?}"));
+        }
+        Ok(())
+    })();
+    release_unknown(dispatch);
+    result
 }
 
 unsafe fn controlled_idte_vtable(
@@ -1261,10 +1596,15 @@ unsafe fn controlled_idte_vtable(
         .find(|member| member.name == "ApplicationNameLength")
         .map(|member| member.dispid)
         .ok_or_else(|| "ApplicationNameLength descriptor missing".to_string())?;
-    let excel = activate_excel_application()?;
-    let hr = ((*vtbl).on_connection)(idte, excel, 3, std::ptr::null_mut(), std::ptr::null_mut());
-    let _ = invoke_dispatch_method_by_name(excel, "Quit");
-    release_unknown(excel);
+    let application = NamedDispatch::new("OxVba Test Application");
+    let hr = ((*vtbl).on_connection)(
+        idte,
+        application.cast(),
+        3,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    release_unknown(application.cast());
     if hr < 0 {
         return Err(format!(
             "IDTExtensibility2 OnConnection failed: 0x{:08X}",
@@ -1782,49 +2122,6 @@ unsafe fn invoke_i4_method_result(
     value
 }
 
-unsafe fn invoke_dispatch_method_by_name(
-    dispatch: *mut std::ffi::c_void,
-    name: &str,
-) -> Result<(), String> {
-    let dispid = get_dispid_by_name(dispatch, name)?;
-    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
-    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
-        rgvarg: std::ptr::null_mut(),
-        rgdispidNamedArgs: std::ptr::null_mut(),
-        cArgs: 0,
-        cNamedArgs: 0,
-    };
-    let hr = ((*vtbl).invoke)(
-        dispatch,
-        dispid,
-        &IID_NULL,
-        0,
-        DISPATCH_METHOD,
-        &mut params,
-        std::ptr::null_mut(),
-        std::ptr::null_mut(),
-        std::ptr::null_mut(),
-    );
-    if hr < 0 {
-        Err(format!("Invoke({name}) failed: 0x{:08X}", hr as u32))
-    } else {
-        Ok(())
-    }
-}
-
-unsafe fn get_dispid_by_name(dispatch: *mut std::ffi::c_void, name: &str) -> Result<i32, String> {
-    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
-    let wide = wide_null(name);
-    let name_ptr = wide.as_ptr();
-    let mut dispid = 0i32;
-    let hr = ((*vtbl).get_ids_of_names)(dispatch, &IID_NULL, &name_ptr, 1, 0, &mut dispid);
-    if hr < 0 {
-        Err(format!("GetIDsOfNames({name}) failed: 0x{:08X}", hr as u32))
-    } else {
-        Ok(dispid)
-    }
-}
-
 unsafe fn invoke_dispatch_object_method_result(
     dispatch: *mut std::ffi::c_void,
     dispid: i32,
@@ -1923,6 +2220,43 @@ unsafe fn invoke_i4_method_object_result(
     };
     VariantClear(&mut result);
     value
+}
+
+unsafe fn invoke_void_method_variant_dispatch_arg(
+    dispatch: *mut std::ffi::c_void,
+    dispid: i32,
+    object_arg: *mut std::ffi::c_void,
+) -> Result<(), String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut arg: VARIANT = std::mem::zeroed();
+    arg.Anonymous.Anonymous.vt = VT_DISPATCH;
+    add_ref_unknown(object_arg);
+    arg.Anonymous.Anonymous.Anonymous.pdispVal = object_arg.cast();
+    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+        rgvarg: &mut arg,
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 1,
+        cNamedArgs: 0,
+    };
+    let hr = ((*vtbl).invoke)(
+        dispatch,
+        dispid,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD,
+        &mut params,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    VariantClear(&mut arg);
+    if hr < 0 {
+        return Err(format!(
+            "Invoke(VT_DISPATCH Variant argument method) failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    Ok(())
 }
 
 unsafe fn invoke_i4_property_get(
@@ -2418,12 +2752,48 @@ struct IdtExtensibility2Vtbl {
         *mut std::ffi::c_void,
         *mut *mut SAFEARRAY,
     ) -> i32,
-    on_disconnection:
-        unsafe extern "system" fn(*mut std::ffi::c_void, i32, *mut *mut SAFEARRAY) -> i32,
-    on_addins_update: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut SAFEARRAY) -> i32,
-    on_startup_complete:
-        unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut SAFEARRAY) -> i32,
-    on_begin_shutdown: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut SAFEARRAY) -> i32,
+    on_disconnection: unsafe extern "system" fn(*mut std::ffi::c_void, i32, *mut SAFEARRAY) -> i32,
+    on_addins_update: unsafe extern "system" fn(*mut std::ffi::c_void, *mut SAFEARRAY) -> i32,
+    on_startup_complete: unsafe extern "system" fn(*mut std::ffi::c_void, *mut SAFEARRAY) -> i32,
+    on_begin_shutdown: unsafe extern "system" fn(*mut std::ffi::c_void, *mut SAFEARRAY) -> i32,
+}
+
+#[repr(C)]
+struct RibbonExtensibilityVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    get_custom_ui: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u16, *mut *mut u16) -> i32,
 }
 
 #[repr(C)]
@@ -2560,6 +2930,141 @@ struct TestSink {
     vtbl: *const IDispatchVtbl,
     ref_count: AtomicU32,
     seen: SeenEvents,
+}
+
+#[repr(C)]
+struct NamedDispatch {
+    vtbl: *const IDispatchVtbl,
+    ref_count: AtomicU32,
+    name: Vec<u16>,
+}
+
+impl NamedDispatch {
+    unsafe fn new(name: &str) -> *mut Self {
+        Box::into_raw(Box::new(Self {
+            vtbl: &NAMED_DISPATCH_VTBL,
+            ref_count: AtomicU32::new(1),
+            name: name.encode_utf16().collect(),
+        }))
+    }
+}
+
+static NAMED_DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
+    query_interface: named_dispatch_query_interface,
+    add_ref: named_dispatch_add_ref,
+    release: named_dispatch_release,
+    get_type_info_count: named_dispatch_get_type_info_count,
+    get_type_info: named_dispatch_get_type_info,
+    get_ids_of_names: named_dispatch_get_ids_of_names,
+    invoke: named_dispatch_invoke,
+};
+
+unsafe extern "system" fn named_dispatch_query_interface(
+    this: *mut std::ffi::c_void,
+    riid: *const GUID,
+    out: *mut *mut std::ffi::c_void,
+) -> i32 {
+    if this.is_null() || riid.is_null() || out.is_null() {
+        return 0x8000_4003u32 as i32;
+    }
+    *out = std::ptr::null_mut();
+    if guid_eq(&*riid, &IID_IUNKNOWN)
+        || guid_eq(&*riid, &IID_IDISPATCH)
+        || guid_eq(&*riid, &IID_EXCEL_APPLICATION)
+    {
+        named_dispatch_add_ref(this);
+        *out = this;
+        0
+    } else {
+        0x8000_4002u32 as i32
+    }
+}
+
+unsafe extern "system" fn named_dispatch_add_ref(this: *mut std::ffi::c_void) -> u32 {
+    let dispatch = this.cast::<NamedDispatch>();
+    (*dispatch).ref_count.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+unsafe extern "system" fn named_dispatch_release(this: *mut std::ffi::c_void) -> u32 {
+    let dispatch = this.cast::<NamedDispatch>();
+    let previous = (*dispatch).ref_count.fetch_sub(1, Ordering::Release);
+    let remaining = previous.saturating_sub(1);
+    if remaining == 0 {
+        fence(Ordering::Acquire);
+        drop(Box::from_raw(dispatch));
+    }
+    remaining
+}
+
+unsafe extern "system" fn named_dispatch_get_type_info_count(
+    _this: *mut std::ffi::c_void,
+    count: *mut u32,
+) -> i32 {
+    if !count.is_null() {
+        *count = 0;
+    }
+    0
+}
+
+unsafe extern "system" fn named_dispatch_get_type_info(
+    _this: *mut std::ffi::c_void,
+    _index: u32,
+    _lcid: u32,
+    out: *mut *mut std::ffi::c_void,
+) -> i32 {
+    if !out.is_null() {
+        *out = std::ptr::null_mut();
+    }
+    0x8000_4001u32 as i32
+}
+
+unsafe extern "system" fn named_dispatch_get_ids_of_names(
+    _this: *mut std::ffi::c_void,
+    _riid: *const GUID,
+    names: *const *const u16,
+    name_count: u32,
+    _lcid: u32,
+    dispids: *mut i32,
+) -> i32 {
+    if names.is_null() || dispids.is_null() || name_count == 0 {
+        return 0x8000_4003u32 as i32;
+    }
+    let Some(name) = wide_ptr_to_string(*names) else {
+        return 0x8002_0006u32 as i32;
+    };
+    if name.eq_ignore_ascii_case("Name") {
+        *dispids = 1;
+        for index in 1..name_count as usize {
+            *dispids.add(index) = -1;
+        }
+        0
+    } else {
+        0x8002_0006u32 as i32
+    }
+}
+
+unsafe extern "system" fn named_dispatch_invoke(
+    this: *mut std::ffi::c_void,
+    dispid: i32,
+    _riid: *const GUID,
+    _lcid: u32,
+    flags: u16,
+    _params: *mut windows_sys::Win32::System::Com::DISPPARAMS,
+    result: *mut VARIANT,
+    _excep_info: *mut windows_sys::Win32::System::Com::EXCEPINFO,
+    _arg_err: *mut u32,
+) -> i32 {
+    if dispid != 1 || (flags & DISPATCH_PROPERTYGET) == 0 {
+        return 0x8002_0003u32 as i32;
+    }
+    if result.is_null() {
+        return 0;
+    }
+    let dispatch = this.cast::<NamedDispatch>();
+    (*result).Anonymous.Anonymous.vt = VT_BSTR;
+    (*result).Anonymous.Anonymous.Anonymous.bstrVal =
+        SysAllocStringLen((*dispatch).name.as_ptr(), (*dispatch).name.len() as u32);
+    0
 }
 
 impl TestSink {
@@ -2776,12 +3281,48 @@ fn wide_null(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+unsafe fn wide_ptr_to_string(ptr: *const u16) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let mut len = 0usize;
+    while *ptr.add(len) != 0 {
+        len += 1;
+    }
+    Some(String::from_utf16_lossy(std::slice::from_raw_parts(
+        ptr, len,
+    )))
+}
+
+unsafe fn bstr_to_string_and_free(ptr: *mut u16) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    let len = usize::try_from(SysStringLen(ptr)).unwrap_or(0);
+    let value = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len));
+    SysFreeString(ptr);
+    value
+}
+
 struct TestDir {
     path: PathBuf,
 }
 
 impl TestDir {
     fn new(name: &str) -> Self {
+        Self::new_in(std::env::temp_dir(), name)
+    }
+
+    fn new_in_repo_target(name: &str) -> Self {
+        let target_root = std::env::current_dir()
+            .expect("read test current directory")
+            .join("target")
+            .join("oxvba-build-tests");
+        std::fs::create_dir_all(&target_root).expect("create repo target test root");
+        Self::new_in(target_root, name)
+    }
+
+    fn new_in(root: PathBuf, name: &str) -> Self {
         let unique = format!(
             "oxvba_build_{name}_{}_{}",
             std::process::id(),
@@ -2790,7 +3331,7 @@ impl TestDir {
                 .expect("system time should be after unix epoch")
                 .as_nanos()
         );
-        let path = std::env::temp_dir().join(unique);
+        let path = root.join(unique);
         std::fs::create_dir_all(&path).expect("create test dir");
         Self { path }
     }

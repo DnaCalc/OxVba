@@ -12,6 +12,7 @@
 use crate::typelib::{
     OptionalParamDefault, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+    TypeLibWireType,
 };
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
@@ -809,6 +810,88 @@ unsafe fn typedesc_to_param_type(
     apply_byref_param_type(vt_to_param_type(tdesc.vt, false), is_byref)
 }
 
+#[cfg(target_os = "windows")]
+unsafe fn typedesc_to_wire_type(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+    is_byref: bool,
+) -> TypeLibWireType {
+    if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
+        let inner = &*(tdesc.union_field as *const TYPEDESC);
+        if inner.vt == VT_SAFEARRAY || inner.vt == VT_CARRAY {
+            return if is_byref {
+                TypeLibWireType::ByRefSafeArrayVariant
+            } else {
+                TypeLibWireType::SafeArrayVariant
+            };
+        }
+        if inner.vt == VT_PTR && inner.union_field != 0 {
+            let nested = &*(inner.union_field as *const TYPEDESC);
+            if nested.vt == VT_SAFEARRAY || nested.vt == VT_CARRAY {
+                return TypeLibWireType::ByRefSafeArrayVariant;
+            }
+        }
+    }
+    if tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY {
+        return TypeLibWireType::SafeArrayVariant;
+    }
+    let param_type = typedesc_to_param_type(owner_ptinfo, tdesc, is_byref);
+    if matches!(
+        param_type,
+        TypeLibParamType::Object | TypeLibParamType::ByRefObject
+    ) && let Some(name) = typedesc_to_interface_binding_name(owner_ptinfo, tdesc)
+    {
+        return TypeLibWireType::InterfacePointer { name };
+    }
+    TypeLibWireType::Automation(param_type)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typedesc_to_interface_binding_name(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> Option<String> {
+    match tdesc.vt {
+        VT_DISPATCH => Some("IDispatch".to_string()),
+        VT_UNKNOWN => Some("IUnknown".to_string()),
+        VT_PTR if tdesc.union_field != 0 => {
+            let inner = &*(tdesc.union_field as *const TYPEDESC);
+            typedesc_to_interface_binding_name(owner_ptinfo, inner)
+        }
+        VT_USERDEFINED => {
+            let href = u32::try_from(tdesc.union_field).unwrap_or(0);
+            let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
+            if ((*vtbl).get_ref_type_info)(owner_ptinfo, href, &mut ref_ptinfo) != COM_S_OK
+                || ref_ptinfo.is_null()
+            {
+                return None;
+            }
+            let ref_vtbl = *(ref_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
+            let result = if ((*ref_vtbl).get_type_attr)(ref_ptinfo, &mut ref_attr) == COM_S_OK
+                && !ref_attr.is_null()
+            {
+                let typekind = (*ref_attr).typekind;
+                let name = if typekind == TKIND_INTERFACE || typekind == TKIND_DISPATCH {
+                    qualified_typeinfo_binding_name(ref_ptinfo)
+                } else if typekind == TKIND_ALIAS {
+                    typedesc_to_interface_binding_name(ref_ptinfo, &(*ref_attr).tdesc_alias)
+                } else {
+                    None
+                };
+                ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
+                name
+            } else {
+                None
+            };
+            ((*ref_vtbl).release)(ref_ptinfo);
+            result
+        }
+        _ => None,
+    }
+}
+
 /// Resolve a `[out,retval]` parameter's INNER TYPEDESC to the member's by-VALUE
 /// language return type. A dual member encodes its return as `[out,retval] T*`,
 /// so the retval handler strips the outer pointer and passes the inner here.
@@ -839,6 +922,24 @@ unsafe fn retval_typedesc_to_param_type(
         return typedesc_to_param_type(owner_ptinfo, tdesc, false);
     }
     vt_to_param_type(tdesc.vt, false)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn retval_typedesc_to_wire_type(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> TypeLibWireType {
+    if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
+        let inner = &*(tdesc.union_field as *const TYPEDESC);
+        if inner.vt == VT_SAFEARRAY || inner.vt == VT_CARRAY {
+            return TypeLibWireType::ByRefSafeArrayVariant;
+        }
+        return retval_typedesc_to_wire_type(owner_ptinfo, inner);
+    }
+    if tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY {
+        return TypeLibWireType::ByRefSafeArrayVariant;
+    }
+    TypeLibWireType::Automation(retval_typedesc_to_param_type(owner_ptinfo, tdesc))
 }
 
 /// Recover the interface IID an object-typed parameter's `TYPEDESC` declares, for the
@@ -941,6 +1042,40 @@ unsafe fn typeinfo_name(ptinfo: *mut c_void) -> Option<String> {
         return None;
     }
     bstr_to_string_and_free(name_bstr)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typeinfo_library_name(ptinfo: *mut c_void) -> Option<String> {
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut ptlib: *mut c_void = std::ptr::null_mut();
+    let mut index = 0u32;
+    let hr = ((*vtbl).get_containing_type_lib)(ptinfo, &mut ptlib, &mut index);
+    if hr != COM_S_OK || ptlib.is_null() {
+        return None;
+    }
+    let lib_vtbl = *(ptlib as *const *const ITypeLibVtbl);
+    let mut name_bstr: *mut u16 = std::ptr::null_mut();
+    let _ = ((*lib_vtbl).get_documentation)(
+        ptlib,
+        -1,
+        &mut name_bstr,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    ((*lib_vtbl).release)(ptlib);
+    bstr_to_string_and_free(name_bstr)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn qualified_typeinfo_binding_name(ptinfo: *mut c_void) -> Option<String> {
+    let lib = typeinfo_library_name(ptinfo)?;
+    let type_name = typeinfo_name(ptinfo)?;
+    let coclass_like = type_name.strip_prefix('_').unwrap_or(&type_name);
+    if lib.trim().is_empty() || coclass_like.trim().is_empty() {
+        return None;
+    }
+    Some(format!("{}.{}", lib.trim(), coclass_like.trim()))
 }
 
 /// Read the short type name a live object reports for itself via
@@ -1956,10 +2091,12 @@ unsafe fn extract_members_from_typeinfo(
         // parameter while the ABI return is HRESULT; expose that as return_type
         // and do not count it as a callable input parameter.
         let mut parameter_types = Vec::new();
+        let mut parameter_wire_types = Vec::new();
         let mut parameter_iids: Vec<Option<crate::ComInterfaceIid>> = Vec::new();
         let mut parameter_optional = Vec::new();
         let mut parameter_optional_defaults = Vec::new();
         let mut retval_return_type = None;
+        let mut retval_return_wire_type = None;
         let optional_count = u32::try_from(fd.cparams_opt.max(0)).unwrap_or(0);
         let optional_start = cparams.saturating_sub(optional_count);
         for p in 0..cparams {
@@ -1978,7 +2115,9 @@ unsafe fn extract_members_from_typeinfo(
                 } else {
                     vt_to_param_type(vt, false)
                 };
+                let retval_wire_type = retval_typedesc_to_wire_type(ptinfo, &param_desc.tdesc);
                 retval_return_type = Some(retval_type);
+                retval_return_wire_type = Some(retval_wire_type);
                 continue;
             }
             let is_byref = (flags & 0x0002) != 0; // PARAMFLAG_FOUT
@@ -1987,6 +2126,7 @@ unsafe fn extract_members_from_typeinfo(
             } else {
                 vt_to_param_type(vt, is_byref)
             };
+            let param_wire_type = typedesc_to_wire_type(ptinfo, &param_desc.tdesc, is_byref);
             let is_optional = (flags & PARAMFLAG_FOPT) != 0 || p >= optional_start;
             // D3: per-parameter omitted-optional synthesis rule (default value /
             // VARIANT-missing / non-synthesizable / required) for the vtable path.
@@ -2002,6 +2142,7 @@ unsafe fn extract_members_from_typeinfo(
                 None
             };
             parameter_types.push(param_type);
+            parameter_wire_types.push(param_wire_type);
             parameter_iids.push(param_iid);
             parameter_optional.push(is_optional);
             parameter_optional_defaults.push(optional_default);
@@ -2023,6 +2164,13 @@ unsafe fn extract_members_from_typeinfo(
                     ptinfo,
                     &fd.elemdescfunc.tdesc,
                 ))
+            }
+        });
+        let return_wire_type = retval_return_wire_type.or_else(|| {
+            if ret_vt == VT_VOID || ret_vt == VT_HRESULT {
+                None
+            } else {
+                Some(retval_typedesc_to_wire_type(ptinfo, &fd.elemdescfunc.tdesc))
             }
         });
 
@@ -2081,8 +2229,10 @@ unsafe fn extract_members_from_typeinfo(
             parameter_optional_defaults,
             is_default_member,
             parameter_types,
+            parameter_wire_types,
             parameter_iids,
             return_type,
+            return_wire_type,
             callconv_is_stdcall,
             is_dual,
             interface_iid,

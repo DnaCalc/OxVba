@@ -38,12 +38,22 @@ Workspace crates and current roles:
   and compiles a bounded Windows in-process COM DLL with per-user class/typelib
   registration, late-bound `IDispatch` dispatch, source-dispinterface
   connection-point event publication, and one Automation-safe dual-interface
-  vtable method shape over package-backed runtime sessions. It also exposes
-  Office-first implemented-interface profiles for `IDTExtensibility2` and
-  `IRtdServer` when classes declare the corresponding `Implements` clauses,
-  including raw native vtable entry points, host-native COM object binding for
-  the `IDTExtensibility2.OnConnection` `Excel.Application` argument, and Excel
-  add-in registration metadata for the add-in profile.
+  vtable method shape over package-backed runtime sessions. Implemented COM
+  interfaces are represented in the descriptor as interface/method metadata
+  (name, IID, DISPIDs, vtable slots, VBA-facing parameter and return shapes,
+  COM wire shapes such as typed interface pointers and SAFEARRAY variants, and
+  mapped VBA member names). Non-profile `Implements` clauses can resolve
+  imported COM interfaces from referenced type libraries into the same
+  descriptor shape. The descriptor reports required native wire features by
+  shape rather than by interface-name allowlist. The native backend composes
+  vtable data from precompiled slot+shape thunks for imported dual/Automation
+  interfaces resolved from referenced typelibs, including the Office
+  `IDTExtensibility2`, Office `IRibbonExtensibility`, Excel `IRtdServer`, and
+  Excel `IRTDUpdateEvent` shapes covered by the current tests. Descriptor and
+  IDL generation no longer carry
+  hardcoded IDTE/RTD profile tables; Office-specific behavior that remains is
+  registration policy for Excel add-in classes that implement
+  `IDTExtensibility2`.
 - `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
   reference-closure loading.
 - `oxvba-cli`: CLI bootstrap/run/build surface.

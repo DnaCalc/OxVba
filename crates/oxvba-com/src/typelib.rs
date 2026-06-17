@@ -43,6 +43,13 @@ pub struct TypeLibMetadataBlob {
     pub coclass_names: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibInterfaceMetadata {
+    pub name: String,
+    pub iid: Option<ComInterfaceIid>,
+    pub members: Vec<TypeLibMemberMetadata>,
+}
+
 /// A COM interface IID in its canonical `{data1-data2-data3-data4}` field layout
 /// (the same byte layout as `windows_sys::core::GUID`), stored platform-neutrally
 /// so it can ride on the metadata blob / `ComMemberSpec` (which derive
@@ -119,6 +126,14 @@ pub enum TypeLibParamType {
     ByRefBoolean,
     ByRefLongLong,
     ByRefLongPtr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeLibWireType {
+    Automation(TypeLibParamType),
+    InterfacePointer { name: String },
+    SafeArrayVariant,
+    ByRefSafeArrayVariant,
 }
 
 impl TypeLibParamType {
@@ -279,6 +294,10 @@ pub struct TypeLibMemberMetadata {
     pub parameter_optional_defaults: Vec<OptionalParamDefault>,
     pub is_default_member: bool,
     pub parameter_types: Vec<TypeLibParamType>,
+    /// ABI wire shapes that cannot be recovered from `parameter_types` alone.
+    /// A missing/empty vector means older fixture metadata, so callers should
+    /// fall back to `Automation(parameter_types[i])`.
+    pub parameter_wire_types: Vec<TypeLibWireType>,
     /// Per-parameter interface IID (parallel to `parameter_types`), `Some` only for an
     /// OBJECT-typed parameter declared as a specific interface (`IFoo*`). Recovered from
     /// the FUNCDESC param `TYPEDESC` (`VT_PTR`/`VT_USERDEFINED` → `GetRefTypeInfo` →
@@ -287,6 +306,7 @@ pub struct TypeLibMemberMetadata {
     /// an object arg to its declared interface before passing it (Bug-4b).
     pub parameter_iids: Vec<Option<ComInterfaceIid>>,
     pub return_type: Option<TypeLibParamType>,
+    pub return_wire_type: Option<TypeLibWireType>,
     /// True when `FUNCDESC::callconv == CC_STDCALL` (4) — the only convention
     /// the x64 vtable marshaller may call through. Fixture/catalog metadata
     /// that never drives a real vtable call leaves this `false`.
@@ -521,8 +541,10 @@ mod tests {
                     parameter_optional_defaults: Vec::new(),
                     is_default_member: true,
                     parameter_types: Vec::new(),
+                    parameter_wire_types: Vec::new(),
                     parameter_iids: Vec::new(),
                     return_type: Some(TypeLibParamType::Long),
+                    return_wire_type: None,
                     callconv_is_stdcall: true,
                     is_dual: true,
                     interface_iid: None,
@@ -540,8 +562,10 @@ mod tests {
                     parameter_optional_defaults: Vec::new(),
                     is_default_member: false,
                     parameter_types: vec![TypeLibParamType::Variant],
+                    parameter_wire_types: Vec::new(),
                     parameter_iids: Vec::new(),
                     return_type: Some(TypeLibParamType::Variant),
+                    return_wire_type: None,
                     callconv_is_stdcall: false,
                     is_dual: true,
                     interface_iid: None,

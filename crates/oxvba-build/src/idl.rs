@@ -1,6 +1,7 @@
 use crate::com_descriptor::{
-    ComClassDescriptor, ComEventDescriptor, ComImplementedInterfaceProfile, ComInvokeKind,
-    ComMemberDescriptor, ComParamType, ComServerDescriptor,
+    ComClassDescriptor, ComEventDescriptor, ComImplementedInterfaceDescriptor,
+    ComImplementedInterfaceMethodDescriptor, ComInvokeKind, ComMemberDescriptor, ComParamType,
+    ComServerDescriptor, ComWireType,
 };
 
 pub fn generate_idl(descriptor: &ComServerDescriptor) -> String {
@@ -28,8 +29,8 @@ library {library_name}
         minor = descriptor.version_minor,
     ));
 
-    for profile in implemented_interface_profiles(descriptor) {
-        idl.push_str(&generate_implemented_interface_profile_idl(profile));
+    for interface in implemented_interfaces(descriptor) {
+        idl.push_str(&generate_implemented_interface_idl(interface));
     }
 
     for class in &descriptor.classes {
@@ -130,104 +131,117 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
             sanitize_ident(source_name)
         ));
     }
-    for profile in &class.implemented_interfaces {
+    for interface in &class.implemented_interfaces {
         idl.push_str(&format!(
             "        interface {};\n",
-            implemented_interface_idl_name(*profile)
+            sanitize_ident(&interface.name)
         ));
     }
     idl.push_str("    };\n\n");
     idl
 }
 
-fn implemented_interface_profiles(
+fn implemented_interfaces(
     descriptor: &ComServerDescriptor,
-) -> Vec<ComImplementedInterfaceProfile> {
-    let mut profiles = Vec::new();
+) -> Vec<&ComImplementedInterfaceDescriptor> {
+    let mut interfaces = Vec::new();
     for class in &descriptor.classes {
-        for profile in &class.implemented_interfaces {
-            if !profiles.contains(profile) {
-                profiles.push(*profile);
+        for interface in &class.implemented_interfaces {
+            if !interfaces
+                .iter()
+                .any(|existing: &&ComImplementedInterfaceDescriptor| existing.iid == interface.iid)
+            {
+                interfaces.push(interface);
             }
         }
     }
-    profiles
+    interfaces
 }
 
-fn implemented_interface_idl_name(profile: ComImplementedInterfaceProfile) -> &'static str {
-    match profile {
-        ComImplementedInterfaceProfile::IdtExtensibility2 => "IDTExtensibility2",
-        ComImplementedInterfaceProfile::IRtdServer => "IRtdServer",
+fn generate_implemented_interface_idl(interface: &ComImplementedInterfaceDescriptor) -> String {
+    let interface_name = sanitize_ident(&interface.name);
+    let mut idl = format!(
+        r#"    [
+        object,
+        uuid({iid}),
+        dual,
+        oleautomation,
+        pointer_default(unique),
+        helpstring("{help} Interface")
+    ]
+    interface {interface_name} : IDispatch
+    {{
+"#,
+        iid = interface.iid,
+        help = escape_helpstring(&interface.name),
+    );
+    for method in &interface.methods {
+        idl.push_str(&generate_implemented_member_idl(method));
+    }
+    idl.push_str("    };\n\n");
+    idl
+}
+
+fn generate_implemented_member_idl(method: &ComImplementedInterfaceMethodDescriptor) -> String {
+    let name = sanitize_ident(&method.name);
+    let attr = implemented_member_attributes(method);
+    let mut params: Vec<String> = method
+        .parameter_wire_types
+        .iter()
+        .enumerate()
+        .map(|(index, wire_type)| {
+            let name = method
+                .parameter_names
+                .get(index)
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| sanitize_ident(name))
+                .unwrap_or_else(|| format!("arg{index}"));
+            implemented_idl_param(wire_type, &name)
+        })
+        .collect();
+    if matches!(
+        method.invoke_kind,
+        ComInvokeKind::Method | ComInvokeKind::PropertyGet
+    ) && let Some(return_wire_type) = &method.return_wire_type
+    {
+        params.push(implemented_idl_retval(return_wire_type));
+    }
+    format!("        {attr} HRESULT {name}({});\n", params.join(", "))
+}
+
+fn implemented_member_attributes(method: &ComImplementedInterfaceMethodDescriptor) -> String {
+    let mut attrs = vec![format!("id({})", method.dispid)];
+    match method.invoke_kind {
+        ComInvokeKind::PropertyGet => attrs.push("propget".to_string()),
+        ComInvokeKind::PropertyPut => attrs.push("propput".to_string()),
+        ComInvokeKind::PropertyPutRef => attrs.push("propputref".to_string()),
+        ComInvokeKind::Method => {}
+    }
+    format!("[{}]", attrs.join(", "))
+}
+
+fn implemented_idl_param(wire_type: &ComWireType, name: &str) -> String {
+    match wire_type {
+        ComWireType::Automation(param) if param.is_by_ref() => {
+            format!("[in, out] {}* {name}", idl_type(*param))
+        }
+        ComWireType::Automation(param) => format!("[in] {} {name}", idl_type(*param)),
+        ComWireType::InterfacePointer { .. } => format!("[in] IDispatch* {name}"),
+        ComWireType::SafeArrayVariant => format!("[in] SAFEARRAY(VARIANT)* {name}"),
+        ComWireType::ByRefSafeArrayVariant => {
+            format!("[in, out] SAFEARRAY(VARIANT)** {name}")
+        }
     }
 }
 
-fn generate_implemented_interface_profile_idl(profile: ComImplementedInterfaceProfile) -> String {
-    match profile {
-        ComImplementedInterfaceProfile::IdtExtensibility2 => {
-            // Microsoft Learn documents IDTExtensibility2 as the standard Office/VS
-            // add-in lifecycle interface:
-            // https://learn.microsoft.com/dotnet/api/extensibility.idtextensibility2
-            r#"    [
-        object,
-        uuid(B65AD801-ABAF-11D0-BB8B-00A0C90F2744),
-        dual,
-        oleautomation,
-        pointer_default(unique),
-        helpstring("IDTExtensibility2 Interface")
-    ]
-    interface IDTExtensibility2 : IDispatch
-    {
-        [id(1)] HRESULT OnConnection([in] IDispatch* Application, [in] long ConnectMode, [in] IDispatch* AddInInst, [in, out] SAFEARRAY(VARIANT)** custom);
-        [id(2)] HRESULT OnDisconnection([in] long RemoveMode, [in, out] SAFEARRAY(VARIANT)** custom);
-        [id(3)] HRESULT OnAddInsUpdate([in, out] SAFEARRAY(VARIANT)** custom);
-        [id(4)] HRESULT OnStartupComplete([in, out] SAFEARRAY(VARIANT)** custom);
-        [id(5)] HRESULT OnBeginShutdown([in, out] SAFEARRAY(VARIANT)** custom);
-    };
-
-"#
-            .to_string()
+fn implemented_idl_retval(wire_type: &ComWireType) -> String {
+    match wire_type {
+        ComWireType::Automation(param) => {
+            format!("[out, retval] {}* result", idl_type(*param))
         }
-        ComImplementedInterfaceProfile::IRtdServer => {
-            // Microsoft Learn documents IRtdServer as Excel's RTD server
-            // interface and IRTDUpdateEvent as its callback object:
-            // https://learn.microsoft.com/office/vba/api/excel.irtdserver
-            // https://learn.microsoft.com/dotnet/api/microsoft.office.interop.excel.irtdupdateevent
-            r#"    [
-        object,
-        uuid(A43788C1-D91B-11D3-8F39-00C04F3651B8),
-        dual,
-        oleautomation,
-        pointer_default(unique),
-        helpstring("IRTDUpdateEvent Interface")
-    ]
-    interface IRTDUpdateEvent : IDispatch
-    {
-        [id(10)] HRESULT UpdateNotify();
-        [id(11), propget] HRESULT HeartbeatInterval([out, retval] long* result);
-        [id(11), propput] HRESULT HeartbeatInterval([in] long value);
-        [id(12)] HRESULT Disconnect();
-    };
-
-    [
-        object,
-        uuid(EC0E6191-DB51-11D3-8F3E-00C04F3651B8),
-        dual,
-        oleautomation,
-        pointer_default(unique),
-        helpstring("IRtdServer Interface")
-    ]
-    interface IRtdServer : IDispatch
-    {
-        [id(10)] HRESULT ServerStart([in] IRTDUpdateEvent* CallbackObject, [out, retval] long* result);
-        [id(11)] HRESULT ConnectData([in] long TopicID, [in] SAFEARRAY(VARIANT)* Strings, [in, out] VARIANT_BOOL* GetNewValues, [out, retval] VARIANT* result);
-        [id(12)] HRESULT RefreshData([in, out] long* TopicCount, [out, retval] SAFEARRAY(VARIANT)** result);
-        [id(13)] HRESULT DisconnectData([in] long TopicID);
-        [id(14)] HRESULT Heartbeat([out, retval] long* result);
-        [id(15)] HRESULT ServerTerminate();
-    };
-
-"#
-            .to_string()
+        ComWireType::InterfacePointer { .. } => "[out, retval] IDispatch** result".to_string(),
+        ComWireType::SafeArrayVariant | ComWireType::ByRefSafeArrayVariant => {
+            "[out, retval] SAFEARRAY(VARIANT)** result".to_string()
         }
     }
 }
@@ -475,26 +489,6 @@ fn idl_type(param: ComParamType) -> &'static str {
 }
 
 impl ComParamType {
-    fn is_by_ref(self) -> bool {
-        matches!(
-            self,
-            Self::ByRefVariant
-                | Self::ByRefLong
-                | Self::ByRefInteger
-                | Self::ByRefString
-                | Self::ByRefDouble
-                | Self::ByRefSingle
-                | Self::ByRefCurrency
-                | Self::ByRefDate
-                | Self::ByRefDecimal
-                | Self::ByRefObject
-                | Self::ByRefByte
-                | Self::ByRefBoolean
-                | Self::ByRefLongLong
-                | Self::ByRefLongPtr
-        )
-    }
-
     fn base_type(self) -> Self {
         match self {
             Self::ByRefVariant => Self::Variant,

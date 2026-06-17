@@ -1,8 +1,8 @@
 use crate::ComMemberToken;
 use crate::runtime_state::{ComEventPath, ComEventSpec, ComMemberSpec};
 use crate::typelib::{
-    TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest,
-    TypeLibResolvedIdentity,
+    TypeLibEventMetadata, TypeLibInterfaceMetadata, TypeLibMemberMetadata, TypeLibMetadataBlob,
+    TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +132,68 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             coclass_names: Vec::new(),
         },
     }
+}
+
+pub fn resolve_typelib_interface_metadata(
+    request: &TypeLibResolveRequest,
+    interface_name: &str,
+) -> Option<TypeLibInterfaceMetadata> {
+    let identity = resolve_known_typelib_identity(request)?;
+    resolve_typelib_interface_metadata_from_identity(&identity, interface_name)
+}
+
+pub fn resolve_typelib_interface_metadata_from_identity(
+    identity: &TypeLibResolvedIdentity,
+    interface_name: &str,
+) -> Option<TypeLibInterfaceMetadata> {
+    #[cfg(target_os = "windows")]
+    {
+        resolve_live_typelib_interface_metadata(identity, interface_name)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (identity, interface_name);
+        None
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_live_typelib_interface_metadata(
+    identity: &TypeLibResolvedIdentity,
+    interface_name: &str,
+) -> Option<TypeLibInterfaceMetadata> {
+    use crate::windows_typelib_loader;
+
+    let ptlib = if let Some(ref libid_str) = identity.libid {
+        let guid = crate::windows_client::parse_guid_canonical(libid_str)?;
+        windows_typelib_loader::load_typelib_from_registry(
+            &guid,
+            identity.major_version,
+            identity.minor_version,
+            identity.lcid.unwrap_or(0),
+        )
+        .ok()?
+    } else {
+        windows_typelib_loader::load_typelib_from_path(&identity.importlib).ok()?
+    };
+
+    let members =
+        windows_typelib_loader::enumerate_typelib_members_for_interface(ptlib, interface_name).ok();
+    // SAFETY: `ptlib` is the live ITypeLib* reference obtained from this function's
+    // load call above. The enumeration only borrows it, and this is the single
+    // owning Release for the successful load path.
+    unsafe { windows_typelib_loader::release_typelib(ptlib) };
+
+    let members = members?;
+    if members.is_empty() {
+        return None;
+    }
+    let iid = members.iter().find_map(|member| member.interface_iid);
+    Some(TypeLibInterfaceMetadata {
+        name: interface_name.to_string(),
+        iid,
+        members,
+    })
 }
 
 #[cfg(target_os = "windows")]
