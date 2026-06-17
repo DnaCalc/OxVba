@@ -757,10 +757,11 @@ Required newly explicit delivery beads:
   splitting, plus untyped Date literal constants through `DateConst`/`LoadConstDate`, plus
   unambiguous numeric month/day Date literals such as `#2/28/2026#`, with ambiguous numeric Date
   literals such as `#2/3/2026#` rejected by the canonical parser rather than silently interpreted
-  through a culture-specific order.
+  through a culture-specific order, plus same-project module-/project-qualified constants such as
+  `Const X As Long = ModA.K + 1` through the compile-time constant evaluator.
   Remaining work: full VBA
-  compile-time expression/name evaluation beyond source-prior constants, typed constant coercion
-  outside the covered exact and string-to-declared-scalar carriers,
+  compile-time expression/name evaluation beyond source-prior and covered module-qualified
+  constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic and
   deterministic string-Date store subset,
   full platform `LongPtr` semantics, lossless
@@ -1280,9 +1281,10 @@ Candidate bead units:
   `#...#` `Date` literal constants through `LoadConstCurrency`/`LoadConstDate`, with default-route
   and VM execution coverage. Follow-up Single-carrier work routes declared `Single` constants
   through `LoadConstF32` and bumps strict bundle format to v17. Full constant evaluation beyond
-  source-prior constants, typed constant coercion, broader Date/Currency expression coercion beyond
-  the covered numeric arithmetic subset, locale-sensitive Date literal breadth, and full platform
-  `LongPtr` semantics remain broader FE-8.5 work. Later FE-8.5.e continuation adds that bounded
+  source-prior and covered same-project module-qualified constants, typed constant coercion,
+  broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
+  locale-sensitive Date literal breadth, and full platform `LongPtr` semantics remain broader
+  FE-8.5 work. Later FE-8.5.e continuation adds that bounded
   Date/Currency arithmetic-expression subset for source-prior constants, literal numeric operands,
   and deterministic `#...#` Date literal operands, keeping final bytecode on
   `LoadConstCurrency`/`LoadConstDate`. Later continuation also applies `Const` name
@@ -1303,6 +1305,9 @@ Candidate bead units:
   equality/inequality folding: `Option Compare Text` uses ASCII case-insensitive comparison for the
   covered constant subset, while `Option Compare Database` now reports an explicit unsupported
   Access-collation diagnostic pending Access collation semantics.
+  Later same-project qualified-name work folds `Module.Const` and `Project.Module.Const` references
+  in constant expressions before binding while preserving local/parameter module-qualifier
+  shadowing.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
