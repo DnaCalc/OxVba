@@ -1545,8 +1545,9 @@ Candidate bead units:
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
   `Option Compare Database` HIR/default routing with the current binary-runtime compare
 	  approximation, `Option Private Module` single-source/default HIR routing plus bound-module and
-	  compile-derived bundle-module metadata preservation with project privacy enforcement left in the
-	  project route, enum constants, basic DefType default-table preservation
+	  compile-derived bundle-module metadata preservation; clean-stack continuation now records source
+	  `Option Private Module` in `ModuleScan` and makes export-surface synthesis honor that scanner
+	  fact as well as loader-provided `ModuleAttributes`, enum constants, basic DefType default-table preservation
   for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations,
   visibility-prefixed procedural-module scalar fields, and known DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
