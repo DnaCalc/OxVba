@@ -84,6 +84,7 @@ pub fn scan_module(
 ) -> Result<ModuleScan, SymbolModelError> {
     let source_attributes = source_module_attributes(module_syntax);
     reject_unsupported_declared_decimal_storage(module_syntax)?;
+    reject_unsupported_option_compare_database(module_syntax)?;
     let default_types = module_default_types(module_syntax)?;
     let module_name = source_attributes
         .vb_name
@@ -667,6 +668,29 @@ fn option_private_module(root: SyntaxNode<'_>) -> bool {
                 .iter()
                 .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Module"))
     })
+}
+
+fn reject_unsupported_option_compare_database(
+    root: SyntaxNode<'_>,
+) -> Result<(), SymbolModelError> {
+    for node in root.child_nodes() {
+        if node.kind() != SyntaxKind::OptionStmt {
+            continue;
+        }
+        let toks = node.child_tokens();
+        let is_compare = toks.iter().any(|t| t.kind == SyntaxKind::KwCompare);
+        let is_database = toks
+            .iter()
+            .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Database"));
+        if is_compare && is_database {
+            // Microsoft Learn "Option Compare statement" documents Database as
+            // Microsoft Access-only and dependent on database locale/collation:
+            // learn.microsoft.com/office/vba/language/reference/user-interface-help/option-compare-statement
+            // Do not silently approximate it with Binary/Text semantics.
+            return Err(SymbolModelError::UnsupportedOptionCompareDatabase);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default)]

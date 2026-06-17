@@ -954,6 +954,24 @@ fn scanner_allows_qualified_decimal_type_reference() {
 }
 
 #[test]
+fn scanner_rejects_option_compare_database_collation() {
+    let src = "Option Compare Database\r\nSub Main()\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Option Compare Database should not use Binary as an approximation"),
+        Err(err) => err,
+    };
+    assert!(matches!(
+        err,
+        SymbolModelError::UnsupportedOptionCompareDatabase
+    ));
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE"
+    );
+}
+
+#[test]
 fn scanner_declares_enum_members() {
     let src = "Public Enum Color\r\n    Red\r\n    Green = 5\r\n    Blue\r\nEnd Enum\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

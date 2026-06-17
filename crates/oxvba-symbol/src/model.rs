@@ -202,6 +202,8 @@ pub enum SymbolModelError {
     UnsupportedDefDec,
     #[error("unsupported declared Decimal storage")]
     UnsupportedDeclaredDecimal,
+    #[error("unsupported Option Compare Database directive")]
+    UnsupportedOptionCompareDatabase,
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -258,6 +260,12 @@ impl SymbolModelError {
                 "Decimal is only supported as a Variant subtype, not as ordinary declared storage",
             )
             .with_help("Use Variant storage with CDec(...) or an explicit supported declared type."),
+            SymbolModelError::UnsupportedOptionCompareDatabase => Diagnostic::error(
+                "SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE",
+                DiagnosticPhase::Symbol,
+                "Option Compare Database requires Microsoft Access database collation, which this target does not implement",
+            )
+            .with_help("Use Option Compare Binary or Option Compare Text, or compile with an Access collation implementation."),
             SymbolModelError::UnknownScope(scope) => Diagnostic::error(
                 "SYM-E-UNKNOWN-SCOPE",
                 DiagnosticPhase::Symbol,
