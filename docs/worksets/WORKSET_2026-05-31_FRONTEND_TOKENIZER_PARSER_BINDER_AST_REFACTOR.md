@@ -1690,7 +1690,8 @@ Candidate bead units:
   now report missing `PtrSafe` and invalid ordinal-alias policy errors from the HIR production
   route instead of using legacy fallback solely to reject them. Follow-up bundle fact routing proves accepted `Declare PtrSafe`
   module facts, including `LongPtr`, are sourced from HIR `BoundModule` construction rather than
-  `resolve_symbols` fallback. Follow-up retirement-inventory cleanup replaces the misleading `Xor`
+  `resolve_symbols` fallback. Follow-up type-suffix routing accepts `Declare PtrSafe Function Name&`
+  and preserves the return suffix as `DeclareParamType::Long` before DefType fallback. Follow-up retirement-inventory cleanup replaces the misleading `Xor`
   fallback probe with the tracked project-construction `New` residual so operator work is not
   nudged toward incomplete truthiness-only semantics. Follow-up console-input routing
   covers `Input a[, b...]` through existing host bytecode without claiming file `Input #` or
