@@ -1173,6 +1173,16 @@ fn scalar_numeric_month_day_date_const_carrier_executes() {
 }
 
 #[test]
+fn scalar_ambiguous_numeric_date_literal_rejected() {
+    let err = run_result("Sub Main()\nDim stamp As Date\nstamp = #2/3/2026#\nEnd Sub")
+        .expect_err("ambiguous numeric Date literal should be rejected");
+    assert!(
+        err.contains("date literal `#2/3/2026#`"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn scalar_untyped_date_const_carrier_executes() {
     let snap =
         run("Const CStamp = #2026-02-28#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub");

@@ -694,16 +694,20 @@ pub mod date {
                 let year = year.parse::<i32>().ok()?;
                 year.saturating_mul(10_000) + month.saturating_mul(100) + day
             }
-            [month, day, year] if is_unambiguous_numeric_month_day(month, day) => {
-                let month = month.parse::<i32>().ok()?;
+            [day, month, year] if parse_month_token(month).is_some() => {
                 let day = day.parse::<i32>().ok()?;
+                let month = parse_month_token(month)?;
                 let year = year.parse::<i32>().ok()?;
                 year.saturating_mul(10_000) + month.saturating_mul(100) + day
             }
-            [day, month, year] => {
-                let day = day.parse::<i32>().ok()?;
-                let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
+            [first, second, year] => {
+                let first = first.parse::<i32>().ok()?;
+                let second = second.parse::<i32>().ok()?;
                 let year = year.parse::<i32>().ok()?;
+                let (month, day) = match unambiguous_numeric_date_order(first, second)? {
+                    NumericDateOrder::MonthDayYear => (first, second),
+                    NumericDateOrder::DayMonthYear => (second, first),
+                };
                 year.saturating_mul(10_000) + month.saturating_mul(100) + day
             }
             _ => return None,
@@ -712,11 +716,23 @@ pub mod date {
         Some(packed)
     }
 
-    fn is_unambiguous_numeric_month_day(month: &str, day: &str) -> bool {
-        let (Ok(month), Ok(day)) = (month.parse::<i32>(), day.parse::<i32>()) else {
-            return false;
-        };
-        (1..=12).contains(&month) && day > 12
+    enum NumericDateOrder {
+        MonthDayYear,
+        DayMonthYear,
+    }
+
+    fn unambiguous_numeric_date_order(first: i32, second: i32) -> Option<NumericDateOrder> {
+        let first_can_be_month = (1..=12).contains(&first);
+        let second_can_be_month = (1..=12).contains(&second);
+        match (first_can_be_month, second_can_be_month) {
+            // `#2/3/2026#` is locale-sensitive; `#2/2/2026#` has the same result
+            // in either numeric order, so it remains deterministic.
+            (true, true) if first == second => Some(NumericDateOrder::MonthDayYear),
+            (true, true) => None,
+            (true, false) => Some(NumericDateOrder::MonthDayYear),
+            (false, true) => Some(NumericDateOrder::DayMonthYear),
+            (false, false) => None,
+        }
     }
 
     fn parse_month_token(text: &str) -> Option<i32> {
@@ -774,5 +790,25 @@ pub mod date {
         let day_of_year = (153 * month_index + 2) / 5 + i64::from(day) - 1;
         let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
         era * 146_097 + day_of_era - 719_468
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::date::parse_date_literal_serial_bits;
+
+    #[test]
+    fn date_literals_accept_unambiguous_numeric_orders() {
+        let expected = Some(46_081.0f64.to_bits());
+        assert_eq!(parse_date_literal_serial_bits("#2026-02-28#"), expected);
+        assert_eq!(parse_date_literal_serial_bits("#2/28/2026#"), expected);
+        assert_eq!(parse_date_literal_serial_bits("#28/2/2026#"), expected);
+    }
+
+    #[test]
+    fn date_literals_reject_ambiguous_numeric_orders() {
+        assert_eq!(parse_date_literal_serial_bits("#2/3/2026#"), None);
+        assert_eq!(parse_date_literal_serial_bits("#12/11/2026#"), None);
+        assert!(parse_date_literal_serial_bits("#1/1/2026#").is_some());
     }
 }
