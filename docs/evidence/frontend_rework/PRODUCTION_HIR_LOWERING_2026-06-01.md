@@ -752,6 +752,19 @@ same month/day values such as `#1/1/2026#` still parse. Coverage:
 `cargo test -p oxvba-bind date --quiet`; `cargo test -p oxvba-symbol --quiet`;
 `cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol -p oxvba-bind`;
 `cargo check --workspace`; `git diff --check`; `./scripts/check-governance.ps1`.
+The runtime Date coercion follow-up moves that deterministic date parser into `oxvba-runtime`
+and reuses it from vm2 `CoerceNumeric(Date)`, so `Dim stamp As Date: stamp = "2026-02-28"`
+stores `Variant::from_date_f64(46081.0)` instead of requiring a numeric serial string. Excel 16.0
+accepted the same ISO text and displayed `2026/02/28`. Ambiguous numeric date text remains rejected
+in OxVba because Excel resolves it through host locale/order (`"2/3/2026"` displayed as
+`2026/02/03` in the local probe), and this runtime subset deliberately avoids hidden
+locale-sensitive parsing. Coverage: runtime date parser tests,
+`scalar_string_date_store_coerces_deterministic_text`,
+`scalar_ambiguous_string_date_store_rejected`; checks passed:
+`cargo test -p oxvba-runtime --quiet`; `cargo test -p oxvba-symbol --quiet`;
+`cargo test -p oxvba-bind --quiet`; `cargo test -p oxvba-vm2 --quiet`;
+`cargo fmt --check -p oxvba-runtime -p oxvba-symbol -p oxvba-vm2 -p oxvba-bind`;
+`cargo check --workspace`; `git diff --check`; `./scripts/check-governance.ps1`.
 A subsequent `Single` carrier slice adds
 `BoundExpr::SingleConst(u32)` and
 serialized `LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As
@@ -759,8 +772,8 @@ Single = 1.5!`. Later scalar-to-string concat work lets covered typed and untype
 fold source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
 `LoadConstString "v7True"`. Later exact-carrier and string-to-declared-scalar follow-ups narrow the
 typed constant coercion residual; broader constant-name/expression parity, coercions outside those
-covered carrier paths, Date/Currency expression coercion beyond the covered numeric arithmetic
-subset, and full platform `LongPtr` semantics remain open.
+covered carrier paths, Date/Currency expression coercion beyond the covered numeric arithmetic and
+deterministic string-Date store subset, and full platform `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for class/project field semantics remain open.
 
