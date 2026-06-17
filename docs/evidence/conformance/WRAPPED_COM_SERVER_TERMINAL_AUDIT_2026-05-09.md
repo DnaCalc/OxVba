@@ -76,10 +76,12 @@ cargo test -p oxvba-host embedded::tests --quiet
 
 ## Residuals
 
-- Office/VBA project-reference evidence remains outside the current `COM-0008`
-  implemented subset.
-- Office/VBA `WithEvents` client proof, connection enumerators, multi-event
-  selection, and richer event payload ordering remain outside the current
+- Superseded 2026-06-17: clean `COM-0008` evidence now covers Office/VBA
+  project-reference dispatch-interface calls for method, property, object
+  return, array return, and external Automation error behavior.
+- Superseded 2026-06-17: clean `COM-0010` evidence now covers Office/VBA
+  `WithEvents` client proof and bounded connection enumerators. Multi-event
+  selection and richer event payload ordering remain outside the current
   `COM-0010` implemented subset.
 - Broader dual-interface argument/property/byref/object/array/error vtable
   parity remains outside `COM-0009`.

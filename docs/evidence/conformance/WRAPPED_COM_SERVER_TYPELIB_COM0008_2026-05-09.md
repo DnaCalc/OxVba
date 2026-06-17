@@ -1,7 +1,8 @@
 # WrappedComServer typelib COM-0008 evidence
 
 Date: 2026-05-09
-Beads: `bd-wcs1.6.1`, `bd-wcs1.6.2`
+Refreshed: 2026-06-17
+Beads: `bd-wcs1.6.1`, `bd-wcs1.6.2`, `bd-9h5j`
 Matrix row: `COM-0008`
 
 ## Scope
@@ -14,14 +15,17 @@ registry metadata alongside CLSID/ProgID registration, and that a controlled
 client can bind through the generated `IWidget` type info before invoking the
 wrapped class.
 
-This is not Office/VBA oracle evidence. The client execution path is explicitly
-bounded to TypeLib-derived DISPIDs plus `IDispatch::Invoke`.
+The original 2026-05-09 client execution path was explicitly bounded to
+TypeLib-derived DISPIDs plus `IDispatch::Invoke`. The 2026-06-17 clean smoke now
+adds Office/VBA project-reference evidence through Excel; see
+`docs/evidence/conformance/WRAPPED_COM_SERVER_EXCEL_EARLY_BOUND_COM0008_2026-06-17.md`.
 
 ## Commands
 
 ```powershell
 cargo test -p oxvba-build generate_typelib --quiet
 cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_exports --quiet
+cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocapture
 ```
 
 ## Verified behavior
@@ -50,10 +54,15 @@ cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_ex
   the deterministic TypeLib LIBID.
 - Generated `DllUnregisterServer` removes the per-user TypeLib tree during test
   cleanup.
+- 2026-06-17 clean Excel smoke references the generated `.tlb` with
+  `VBProject.References.AddFromFile`, compiles typed VBA against the generated
+  `Calculator` class, and proves early-bound method, property put/get, object
+  return, array return, and external Automation error `440` behavior.
 
 ## Residual
 
 `COM-0008` is an `implemented-subset` for controlled TypeLib-aware
-dispatch-backed early binding. Office/VBA project-reference evidence and broken
-or missing reference behavior are still outside this subset and remain deferred
-until a later oracle bead.
+dispatch-backed early binding plus bounded Office/VBA project-reference calls.
+Broken or missing reference behavior, broader Office version matrices,
+Excel-facing error description parity, and VBA dual/vtable calls remain outside
+this subset.

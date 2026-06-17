@@ -44,7 +44,8 @@ that interface IID. The supported vtable ABI is intentionally narrow:
   `IConnectionPoint::Advise` / `IConnectionPoint::EnumConnections` /
   `RaiseEvent Changed(42)` / sink `Invoke` / `Unadvise`, raw COM
   `QueryInterface(IPinger)` plus slot-7 vtable call, and an Excel/VBA typed
-  dispatch-interface `WithEvents` client receiving `Changed(77)`.
+  dispatch-interface client covering method, property, object return, array
+  return, external Automation error, and `WithEvents` receiving `Changed(77)`.
 - `cargo test -p oxvba-cli`: passed, 9 tests.
 - `cargo check --workspace`: passed.
 - `./scripts/meta-check.ps1 -Fast -NoArtifacts`: passed, including governance,
@@ -66,19 +67,21 @@ that interface IID. The supported vtable ABI is intentionally narrow:
   - a raw COM client queried the generated `IPinger` IID, called the custom
     vtable slot, and observed the same `42` result as the dispatch path.
   - Excel/VBA referenced `DemoServer.tlb`, created a typed `WithEvents`
-    `Calculator` sink, invoked `Add`/`FireChanged`, and observed
-    `Changed(77)`.
+    `Calculator` sink, invoked early-bound `Add`, `Value` property put/get,
+    `ReturnSelf`, `Numbers`, `Boom`, and `FireChanged`, then observed
+    `Changed(77)` plus Excel's external Automation error `440` for `Boom`.
   - `regsvr32.exe /u /s DemoServer.dll` was run after the smoke.
 
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
 late-bound activation, bounded dual-interface vtable, connection-point
-enumeration/event, and Excel/VBA `WithEvents` smoke.
+enumeration/event, and Excel/VBA early-bound/`WithEvents` smoke.
 
 Residual: broader dual-interface argument/property/byref/object/array/error
 parity remains outside this clean slice. COM event evidence covers a single
 generated source connection point and snapshot enumeration of advised dispatch
 sinks; multi-source event selection, richer payload families, and broader
 callback ordering cases remain outside this slice. Excel/VBA evidence here
-covers typed dispatch-interface calls and `WithEvents`; the vtable evidence is
-the controlled raw-COM `IPinger` call.
+covers typed dispatch-interface calls and `WithEvents`, but not broken reference
+repair, broader Office version matrices, or Excel-facing error description
+parity; the vtable evidence is the controlled raw-COM `IPinger` call.
