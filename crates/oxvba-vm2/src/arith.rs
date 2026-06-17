@@ -530,17 +530,18 @@ pub fn coerce_string(v: &Variant) -> R {
     coerce_to(v, VarType::String).map_err(ArithError::from)
 }
 
-/// Pad with trailing spaces or truncate to a fixed character length.
-pub fn coerce_fixed_string(v: &Variant, len: usize) -> Variant {
-    let mut s: Vec<char> = as_string(v).chars().collect();
-    if s.len() > len {
-        s.truncate(len);
+/// Pad with trailing spaces or truncate to a fixed UTF-16 code-unit length.
+pub fn coerce_fixed_string(v: &Variant, len: usize) -> R {
+    let text = coerce_string(v)?;
+    let mut units = text.string_units().ok_or_else(ArithError::type_mismatch)?;
+    if units.len() > len {
+        units.truncate(len);
     } else {
-        while s.len() < len {
-            s.push(' ');
+        while units.len() < len {
+            units.push(0x20);
         }
     }
-    Variant::from_string(s.into_iter().collect::<String>())
+    Ok(Variant::from_utf16_units(&units))
 }
 
 #[cfg(test)]

@@ -1076,6 +1076,27 @@ fn scalar_string_store_coerces_numeric_values() {
 }
 
 #[test]
+fn fixed_length_string_store_coerces_numeric_values() {
+    let snap = run("Public outLocal As Variant\n\
+         Sub Main()\n\
+             Dim sample As String * 3\n\
+             sample = 7\n\
+             outLocal = sample\n\
+         End Sub\n");
+    assert_eq!(snap[0], Variant::from_string(BStr::from("7  ")));
+}
+
+#[test]
+fn fixed_length_string_store_rejects_null() {
+    let err = run_result("Sub Main()\nDim sample As String * 3\nsample = Null\nEnd Sub")
+        .expect_err("fixed-length String assignment from Null should be a runtime error");
+    assert!(
+        err.contains("runtime error: 13"),
+        "expected type mismatch error 13, got: {err}"
+    );
+}
+
+#[test]
 fn scalar_deftype_string_defaults_affect_variables_params_and_returns() {
     let snap = run("DefStr M, P, R\n\
          Public outLocal As Variant\n\
