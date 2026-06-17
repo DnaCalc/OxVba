@@ -400,3 +400,13 @@ The 2026-06-01 continuation added:
   `cargo test -p oxvba-bind --quiet`, `cargo test -p oxvba-vm2 --quiet`,
   `cargo check --workspace`, `cargo fmt --check -p oxvba-bind -p oxvba-vm2`, `git diff --check`,
   and `./scripts/check-governance.ps1`.
+- Reference-project breadth review on 2026-06-17 added a cross-bundle regression for the same
+  bare default-member semantics. A referenced `Lib.Widget` publishes `Value` with
+  `VB_UserMemId = 0`; the active project executes `src = 7`, `dst = src`, `Set mirror = dst`,
+  `mirror = 9`, and `r = dst`. The row proves the referenced-project export surface already
+  carries default-member metadata through `ExternMember` binding, and the clean binder's
+  value-context rule now works across bundle boundaries without another production change.
+  Checks: focused `cross_project_default_member_bare_let_get_preserves_object_reference` filter,
+  `cargo test -p oxvba-bind --test cross_project --quiet`,
+  `cargo test -p oxvba-bind --quiet`, `cargo fmt --check -p oxvba-bind`, and
+  `git diff --check`.
