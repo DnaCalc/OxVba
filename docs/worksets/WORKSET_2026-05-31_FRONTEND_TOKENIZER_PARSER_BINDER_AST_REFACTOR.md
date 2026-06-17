@@ -1618,7 +1618,7 @@ Candidate bead units:
   source-backed `Currency` scaled and `Date` serial optional-default descriptors, default-route HIR
   metadata, deterministic `#...#` Date literal optional defaults, bounded Date/Currency arithmetic
   numeric constant-expression defaults (`+`, `-`, unary `-`, `*`, and guarded `/`) over numeric
-  literals/module constants,
+  literals/module constants, direct `Single` optional-default metadata through an f32 carrier,
   explicit i64 optional-default descriptors for covered `LongLong` and `LongPtr`
   source-prior integer constant expressions with package-VM omitted-argument binding for
   `LongLong`,
