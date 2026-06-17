@@ -37,7 +37,9 @@ that interface IID. The supported vtable ABI is intentionally narrow: slot 7
 `HRESULT Method(long, long, [out, retval] long*)`, optionally followed by slot 9
 `HRESULT Method(double, double, [out, retval] double*)`; or, for a separate
 property-only shape, slot 7 `[propget] HRESULT Property(long*)` followed by slot
-8 `[propput] HRESULT Property(long)`.
+8 `[propput] HRESULT Property(long)`; or, for a separate object-return shape,
+slot 7 `HRESULT Method(IDispatch**)`, optionally followed by slot 8
+`HRESULT Method(long*)`.
 
 ## Evidence
 
@@ -58,7 +60,8 @@ property-only shape, slot 7 `[propget] HRESULT Property(long*)` followed by slot
   Excel/VBA typed dispatch-interface/dual-interface client covering method,
   property, object return, array return, dual `Pinger.Ping()`,
   `Pinger.AddPair(19, 23)`, `Pinger.Average(10.5, 21.5)`, external Automation
-  error, dual `Counter.Value` get/let, and `WithEvents` receiving
+  error, dual `Counter.Value` get/let, dual `Returner.ReturnSelf() As Object`
+  returning a callable dispatch object, and `WithEvents` receiving
   `Changed(77)`.
 - `cargo test -p oxvba-cli`: passed, 9 tests.
 - `cargo check --workspace`: passed.
@@ -104,16 +107,25 @@ raw COM `ICounter` slot-7 `HRESULT value(long*)` and slot-8
 `HRESULT value(long)`, dispatch/vtable parity for both property directions, and
 Excel/VBA early-bound calls to `Counter.Value`.
 
+The same live smoke now also proves bare `As Object` source metadata exports as
+an object boundary type, late-bound `Returner.ReturnSelf().Ping()`, raw COM
+`IReturner` slot-7 `HRESULT ReturnSelf(IDispatch**)`, dispatch `VT_DISPATCH`
+return behavior for the same member, vtable-returned and dispatch-returned
+objects callable through `IDispatch`, and Excel/VBA early-bound calls to
+`Returner.ReturnSelf().Ping()`.
+
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
 late-bound activation, bounded dual-interface vtable including the two-`Long`
 argument slot, the two-`Double` argument slot, and the two-slot `Long` property
-shape, connection-point enumeration/event, live dispatch type-info publication,
-and Excel/VBA early-bound/`WithEvents` smoke.
+shape plus the object-return `IDispatch**` shape, connection-point
+enumeration/event, live dispatch type-info publication, and Excel/VBA
+early-bound/`WithEvents` smoke.
 
 Residual: broader dual-interface indexed/default property, non-`Long` property,
-ByRef, object, array, and error parity, optional/default arguments, scalar
-signatures outside the exact bounded `Long` and `Double` slots, and arbitrary
+ByRef, object argument, array, and error parity, optional/default arguments,
+scalar signatures outside the exact bounded `Long` and `Double` slots, object
+identity equivalence beyond the returned-object behavioral proof, and arbitrary
 vtable slot counts remain outside this clean slice. COM event evidence covers a
 single generated source connection point and snapshot enumeration of advised
 dispatch sinks; multi-source event selection, richer payload families, and

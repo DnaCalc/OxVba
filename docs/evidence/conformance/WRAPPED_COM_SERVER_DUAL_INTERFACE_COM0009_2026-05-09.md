@@ -2,7 +2,7 @@
 
 Date: 2026-05-09
 Refreshed: 2026-06-17
-Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`, `bd-3wy1`, `bd-bgd9`
+Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`, `bd-3wy1`, `bd-bgd9`, `bd-e7tj`
 Matrix row: `COM-0009`
 
 ## Scope
@@ -23,8 +23,11 @@ refresh adds a third bounded scalar slot,
 `docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_VTABLE_SCALAR_ARGS_COM0009_2026-06-17.md`.
 The `bd-bgd9` refresh adds a separate two-slot `Long` property vtable shape,
 `[propget] HRESULT Property(LONG*)` plus `[propput] HRESULT Property(LONG)`.
-Broader parameters, indexed/default or non-`Long` property vtable slots, object
-returns, arrays, records, and arbitrary native structs remain outside this bead.
+The `bd-e7tj` refresh adds a separate object-return method vtable shape,
+`HRESULT Method(IDispatch**)`, with an optional no-argument `Long` slot for a
+returned-object behavioral proof. Broader parameters, indexed/default or
+non-`Long` property vtable slots, object argument slots, arrays, records, and
+arbitrary native structs remain outside this bead.
 
 ## Commands
 
@@ -70,6 +73,11 @@ cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocaptu
   property shape, proves raw COM property get/put vtable calls agree with
   dispatch property get/put on the same object, and proves Excel/VBA early-bound
   `counter.Value` write/read through the generated TypeLib.
+- The clean smoke also publishes a separate `Returner.ReturnSelf() As Object`
+  dual object-return shape, proves raw COM vtable `IDispatch**` return and
+  dispatch `VT_DISPATCH` return both produce usable returned dispatch objects,
+  and proves Excel/VBA early-bound `ReturnSelf().Ping()` through the generated
+  TypeLib.
 - Existing TypeLib generation and dispatch-backed wrapped server tests remain
   green after the dual-interface projection change.
 
@@ -78,8 +86,10 @@ cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocaptu
 `COM-0009` is an `implemented-subset` for the bounded scalar dual-interface
 tier: slot 7 no-argument `Long` return, slot 8 two `Long` inputs returning
 `Long`, slot 9 two `Double` inputs returning `Double`, plus a separate slot 7
-`Long` property get and slot 8 `Long` property put shape. Indexed/default
-properties, non-`Long` property signatures, object `Set`/`PutRef` properties,
-ByRef writebacks, object identity equivalence, arrays, error parity,
-optional/default arguments, scalar signatures outside these exact slots, and
-arbitrary additional vtable slots remain deferred.
+`Long` property get and slot 8 `Long` property put shape, plus a separate slot 7
+`Object` return method shape with optional slot 8 no-argument `Long` return.
+Indexed/default properties, non-`Long` property signatures, object
+`Set`/`PutRef` properties, ByRef writebacks, object argument slots, object
+identity equivalence beyond the returned-object behavioral proof, arrays, error
+parity, optional/default arguments, scalar signatures outside these exact slots,
+and arbitrary additional vtable slots remain deferred.

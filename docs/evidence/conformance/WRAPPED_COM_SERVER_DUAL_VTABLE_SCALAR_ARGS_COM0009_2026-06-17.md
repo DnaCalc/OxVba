@@ -1,14 +1,13 @@
-# WrappedComServer dual vtable scalar-member COM-0009 evidence
+# WrappedComServer bounded dual vtable COM-0009 evidence
 
 Date: 2026-06-17
-Beads: `bd-l7xl`, `bd-3wy1`, `bd-bgd9`
+Beads: `bd-l7xl`, `bd-3wy1`, `bd-bgd9`, `bd-e7tj`
 Matrix row: `COM-0009`
 
 ## Scope
 
 This evidence covers the clean `WrappedComServer` bounded dual-interface vtable
-expansion from one no-argument scalar method to two bounded scalar member
-shapes.
+expansion from one no-argument scalar method to three bounded member shapes.
 
 The scalar method shape is a contiguous prefix:
 
@@ -21,9 +20,20 @@ The scalar property shape is a separate vtable layout:
 - slot 7: `[propget] HRESULT value([out, retval] long* result)`
 - slot 8: `[propput] HRESULT value(long newValue)`
 
+The object-return method shape is also a separate vtable layout:
+
+- slot 7: `HRESULT ReturnSelf([out, retval] IDispatch** result)`
+- optional slot 8: `HRESULT Ping([out, retval] long* result)`
+
 Only classes whose generated TypeLib surface exactly fits the bounded contiguous
-method ABI prefix or the bounded `Long` property ABI are published as dual
-interfaces. Other generated classes remain dispatch-only `dispinterface`s.
+method ABI prefix, the bounded `Long` property ABI, or the bounded object-return
+ABI are published as dual interfaces. Other generated classes remain
+dispatch-only `dispinterface`s.
+
+The `bd-e7tj` slice also fixes source-surface metadata so bare `As Object`
+remains a COM object boundary type (`IDispatch*` / `IDispatch**`) while still
+late-binding as an untyped object in the binder when it is not a known project
+class.
 
 ## Command
 
@@ -63,12 +73,24 @@ Result: passed on Windows with Excel installed.
 - Excel/VBA references the same `.tlb`, creates `Dim counter As Counter`, and
   successfully executes early-bound `counter.Value = 271` plus
   `counter.Value` readback.
+- Generated IDL publishes `IReturner : IDispatch` for a dedicated
+  `Returner.ReturnSelf() As Object` class, with slot 7 emitted as
+  `HRESULT ReturnSelf(IDispatch** result)` and optional slot 8 emitted as
+  `HRESULT Ping(long* result)`.
+- Raw COM `QueryInterface(IReturner)` returns the generated object-return
+  vtable subobject; raw slot 7 returns a non-null `IDispatch*`, and invoking
+  `Ping()` through that returned dispatch object returns `42`.
+- The same object-return member is invoked through `IDispatch::Invoke`, returns
+  `VT_DISPATCH`, and the returned dispatch object also answers `Ping() = 42`.
+- Excel/VBA references the same `.tlb`, creates `Dim returner As Returner`,
+  executes `Set returnedFromReturner = returner.ReturnSelf()`, and successfully
+  calls `returnedFromReturner.Ping()`.
 
 ## Residual
 
 `COM-0009` remains an implemented subset. Indexed/default properties,
 non-`Long` property signatures, object `Set`/`PutRef` properties, ByRef
-writebacks, object identity equivalence across vtable returns/arguments, arrays,
-error parity, optional/default arguments, scalar signatures outside the exact
-`Long` and `Double` slots above, and arbitrary numbers of vtable slots remain
-outside this bounded tier.
+writebacks, object argument slots, object identity equivalence beyond the
+returned-object behavioral proof, arrays, error parity, optional/default
+arguments, scalar signatures outside the exact `Long` and `Double` slots above,
+and arbitrary numbers of vtable slots remain outside this bounded tier.
