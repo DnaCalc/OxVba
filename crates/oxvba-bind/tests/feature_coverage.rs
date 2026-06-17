@@ -390,6 +390,42 @@ fn scalar_type_char_const_carriers_execute() {
 }
 
 #[test]
+fn scalar_deftype_defaults_affect_variables_params_and_returns() {
+    let snap = run("DefSng F, P, S\n\
+         Public outSample As Variant\n\
+         Public outParam As Variant\n\
+         Public outFunction As Variant\n\
+         Sub Main()\n\
+             Dim sample\n\
+             sample = 7\n\
+             outSample = sample\n\
+             Take 9\n\
+             outFunction = FormatIt()\n\
+         End Sub\n\
+         Sub Take(ByVal payload)\n\
+             outParam = payload\n\
+         End Sub\n\
+         Function FormatIt()\n\
+             FormatIt = 8\n\
+         End Function\n");
+    assert_eq!(
+        snap[0].as_f32(),
+        Some(7.0),
+        "DefSng S should type the local sample as Single: {snap:?}"
+    );
+    assert_eq!(
+        snap[1].as_f32(),
+        Some(9.0),
+        "DefSng P should type the parameter payload as Single: {snap:?}"
+    );
+    assert_eq!(
+        snap[2].as_f32(),
+        Some(8.0),
+        "DefSng F should type the function return as Single: {snap:?}"
+    );
+}
+
+#[test]
 fn scalar_boolean_const_expression_executes() {
     let snap = run(
         "Const Prefix As String = \"re\"\nConst Enabled As Boolean = True\nConst CFlag As Boolean = Enabled = Not False And 2 > 1 And Prefix & \"ady\" = \"ready\"\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",

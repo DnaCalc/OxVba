@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use oxvba_bundle::ProjectMemberKind;
 use oxvba_bundle::coreir::CoreConst;
+use oxvba_bundle::{DeclareParamType, ProjectMemberKind};
 use oxvba_com::{
     SourceTypeKind, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
@@ -720,6 +720,131 @@ fn scanner_reads_per_declarator_types_from_structured_cst() {
     };
     assert_eq!(type_of("a"), VarTypeRef::Builtin(BuiltinType::Long));
     assert_eq!(type_of("b"), VarTypeRef::Builtin(BuiltinType::String));
+}
+
+#[test]
+fn scanner_applies_deftype_to_variables_params_and_returns() {
+    let src = "DefLng A-Z\r\n\
+               Public fieldValue\r\n\
+               Function Fold(value)\r\n\
+                   Dim localValue\r\n\
+                   Fold = value\r\n\
+               End Function\r\n\
+               Property Get Count()\r\n\
+                   Count = 1\r\n\
+               End Property\r\n\
+               Private Declare PtrSafe Function Fetch Lib \"kernel32\" ()\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+
+    let field = env.resolve(&ctx, "fieldValue").expect("field resolves");
+    let field_symbol = env
+        .symbols
+        .symbol(field.symbol.expect("field symbol"))
+        .expect("field symbol");
+    assert_eq!(
+        &field_symbol.imp,
+        &SymbolImpl::DeclaredType(VarTypeRef::Builtin(BuiltinType::Long))
+    );
+
+    let fold = env.resolve(&ctx, "Fold").expect("function resolves");
+    let fold_symbol = env
+        .symbols
+        .symbol(fold.symbol.expect("function symbol"))
+        .expect("function symbol");
+    let SymbolImpl::Signature(fold_sig) = &fold_symbol.imp else {
+        panic!("expected Fold signature");
+    };
+    let fold_sig = env.signatures.get(*fold_sig).expect("Fold signature");
+    assert_eq!(
+        fold_sig.return_type,
+        Some(VarTypeRef::Builtin(BuiltinType::Long))
+    );
+    assert_eq!(
+        fold_sig.params[0].ty,
+        VarTypeRef::Builtin(BuiltinType::Long)
+    );
+
+    let count = env.resolve(&ctx, "Count").expect("property resolves");
+    let count_symbol = env
+        .symbols
+        .symbol(count.symbol.expect("property symbol"))
+        .expect("property symbol");
+    let SymbolImpl::Property(group) = &count_symbol.imp else {
+        panic!("expected Count property");
+    };
+    let get_sig = env
+        .signatures
+        .get(group.get.expect("property get signature"))
+        .expect("property get signature");
+    assert_eq!(
+        get_sig.return_type,
+        Some(VarTypeRef::Builtin(BuiltinType::Long))
+    );
+
+    let fetch = env.resolve(&ctx, "Fetch").expect("Declare resolves");
+    let fetch_symbol = env
+        .symbols
+        .symbol(fetch.symbol.expect("Declare symbol"))
+        .expect("Declare symbol");
+    let SymbolImpl::Declare(fetch_decl) = &fetch_symbol.imp else {
+        panic!("expected Declare symbol");
+    };
+    assert_eq!(fetch_decl.return_type, Some(DeclareParamType::Long));
+}
+
+#[test]
+fn scanner_honors_type_precedence_over_deftype() {
+    let src = "DefLng A-Z\r\n\
+               Public implicitValue\r\n\
+               Public suffixedValue$\r\n\
+               Public explicitValue As Double\r\n\
+               Function Suffixed$()\r\n\
+               End Function\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+
+    let type_of = |name: &str| {
+        let binding = env.resolve(&ctx, name).expect("resolves");
+        match &env
+            .symbols
+            .symbol(binding.symbol.expect("symbol"))
+            .expect("symbol")
+            .imp
+        {
+            SymbolImpl::DeclaredType(ty) => ty.clone(),
+            other => panic!("expected declared type, got {other:?}"),
+        }
+    };
+    assert_eq!(
+        type_of("implicitValue"),
+        VarTypeRef::Builtin(BuiltinType::Long)
+    );
+    assert_eq!(
+        type_of("suffixedValue"),
+        VarTypeRef::Builtin(BuiltinType::String)
+    );
+    assert_eq!(
+        type_of("explicitValue"),
+        VarTypeRef::Builtin(BuiltinType::Double)
+    );
+
+    let binding = env.resolve(&ctx, "Suffixed").expect("function resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("function symbol"))
+        .expect("function symbol");
+    let SymbolImpl::Signature(sig) = &symbol.imp else {
+        panic!("expected signature");
+    };
+    assert_eq!(
+        env.signatures.get(*sig).expect("signature").return_type,
+        Some(VarTypeRef::Builtin(BuiltinType::String))
+    );
 }
 
 #[test]

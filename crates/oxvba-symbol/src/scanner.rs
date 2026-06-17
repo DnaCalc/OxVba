@@ -83,6 +83,7 @@ pub fn scan_module(
     project_scope: ScopeId,
 ) -> Result<ModuleScan, SymbolModelError> {
     let source_attributes = source_module_attributes(module_syntax);
+    let default_types = module_default_types(module_syntax);
     let module_name = source_attributes
         .vb_name
         .clone()
@@ -125,6 +126,7 @@ pub fn scan_module(
         scan: &mut scan,
         module_name: &module_name,
         default_member_attrs,
+        default_types,
         proc_is_static: false,
     };
     ctx.walk(module_scope, module_syntax, true)?;
@@ -138,6 +140,7 @@ struct ScanCtx<'a> {
     scan: &'a mut ModuleScan,
     module_name: &'a str,
     default_member_attrs: BTreeSet<String>,
+    default_types: DefaultTypeTable,
     /// Set while walking the body of a `Static Sub/Function/Property`, so every
     /// proc-local declarator becomes a `StaticLocal` even without its own
     /// `Static` keyword. VBA has no nested procedures, so a single flag (no
@@ -234,7 +237,8 @@ impl ScanCtx<'_> {
                         continue;
                     };
                     let name = normalize_identifier_token(token.text);
-                    let declared_type = declared_var_type(declarator);
+                    let declared_type =
+                        declared_var_type_with_default(declarator, &self.default_types, !is_const);
                     let (ns, kind) = if is_const {
                         // A `Const` is a constant at any scope (module- or proc-level):
                         // namespace `Local`, kind `Const`. Its value is folded by the
@@ -405,7 +409,7 @@ impl ScanCtx<'_> {
                         SymbolKind::Parameter,
                         name,
                         provenance(self.module_name, param_token),
-                        SymbolImpl::DeclaredType(param_type(param)),
+                        SymbolImpl::DeclaredType(self.param_type(param)),
                     )?;
                 }
             }
@@ -455,7 +459,7 @@ impl ScanCtx<'_> {
                     .map(|t| normalize_identifier_token(t.text).to_string())
                     .unwrap_or_default();
                 param_names.push(name);
-                param_types.push(declare_param_type(&param_type(param)));
+                param_types.push(declare_param_type(&self.param_type(param)));
                 param_by_ref.push(parameter_passing_mode(param) == PassingMode::ByRef);
                 param_optional.push(parameter_has_modifier(param, SyntaxKind::KwOptional));
                 if parameter_has_modifier(param, SyntaxKind::KwParamArray) {
@@ -463,9 +467,15 @@ impl ScanCtx<'_> {
                 }
             }
         }
-        let return_type = node
-            .return_type()
-            .map(|t| declare_param_type(&type_ref_node(t)));
+        let return_type = if is_function {
+            Some(declare_param_type(&declare_return_type(
+                node,
+                name_token,
+                &self.default_types,
+            )))
+        } else {
+            None
+        };
 
         let descriptor_id = *self.next_descriptor_id;
         *self.next_descriptor_id += 1;
@@ -514,7 +524,7 @@ impl ScanCtx<'_> {
                     .or_else(|| optional.then_some(DefaultValue::VariantMissing));
                 params.push(Param {
                     name,
-                    ty: param_type(param),
+                    ty: self.param_type(param),
                     mode: parameter_passing_mode(param),
                     optional,
                     param_array: parameter_has_modifier(param, SyntaxKind::KwParamArray),
@@ -525,18 +535,26 @@ impl ScanCtx<'_> {
         // An array return (`Function F() As Byte()`) is typed `Array(element)`, so a
         // whole-array `F = arr` assignment is a copy, not a scalar coercion (the proc
         // decl carries the return's `ArrayBounds` as a direct child).
-        let return_type = node.return_type().map(type_ref_node).map(|t| {
-            if node.array_bounds().is_some() {
-                VarTypeRef::Array(Box::new(t))
-            } else {
-                t
-            }
-        });
+        let return_type = proc_return_type(node, &self.default_types);
         Signature {
             params,
             return_type,
             call_shape,
         }
+    }
+
+    fn param_type(&self, node: SyntaxNode<'_>) -> VarTypeRef {
+        let base = node
+            .child_nodes()
+            .into_iter()
+            .find(|child| child.kind() == SyntaxKind::TypeRef)
+            .map(type_ref_node)
+            .or_else(|| type_suffix_type(node))
+            .or_else(|| {
+                parameter_name_token(node).and_then(|token| self.default_types.type_for(token.text))
+            })
+            .unwrap_or(VarTypeRef::Variant);
+        fixed_string_refine(base, node)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -648,6 +666,147 @@ fn option_private_module(root: SyntaxNode<'_>) -> bool {
                 .iter()
                 .any(|t| t.kind == SyntaxKind::Ident && t.text.eq_ignore_ascii_case("Module"))
     })
+}
+
+#[derive(Debug, Clone, Default)]
+struct DefaultTypeTable {
+    ascii: [Option<VarTypeRef>; 26],
+    extended_alpha: Option<VarTypeRef>,
+}
+
+impl DefaultTypeTable {
+    fn set_range(&mut self, start: char, end: char, ty: &VarTypeRef) {
+        let Some(start) = ascii_letter_index(start) else {
+            return;
+        };
+        let Some(end) = ascii_letter_index(end) else {
+            return;
+        };
+        let (lo, hi) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        for idx in lo..=hi {
+            if self.ascii[idx].is_none() {
+                self.ascii[idx] = Some(ty.clone());
+            }
+        }
+        // Microsoft Learn "Deftype statements"
+        // (learn.microsoft.com/office/vba/language/concepts/getting-started/deftype-statements)
+        // documents A-Z as also covering extended alphabetic names.
+        // Full duplicate-range diagnostics belong to the diagnostics pass; this
+        // scanner keeps the first definition instead of silently changing it.
+        if lo == 0 && hi == 25 && self.extended_alpha.is_none() {
+            self.extended_alpha = Some(ty.clone());
+        }
+    }
+
+    fn type_for(&self, name: &str) -> Option<VarTypeRef> {
+        let normalized = normalize_identifier_token(name);
+        let first = normalized.chars().next()?;
+        if let Some(idx) = ascii_letter_index(first) {
+            return self.ascii[idx].clone();
+        }
+        first.is_alphabetic().then(|| self.extended_alpha.clone())?
+    }
+}
+
+fn module_default_types(root: SyntaxNode<'_>) -> DefaultTypeTable {
+    let mut table = DefaultTypeTable::default();
+    for node in root.child_nodes() {
+        let Some((ty, ranges)) = parse_deftype_directive(node) else {
+            continue;
+        };
+        for (start, end) in ranges {
+            table.set_range(start, end, &ty);
+        }
+    }
+    table
+}
+
+fn parse_deftype_directive(node: SyntaxNode<'_>) -> Option<(VarTypeRef, Vec<(char, char)>)> {
+    let tokens = significant_tokens_deep(node);
+    let first = tokens.first()?;
+    if first.kind != SyntaxKind::Ident {
+        return None;
+    }
+    let ty = deftype_statement_type(first.text)?;
+    let mut ranges = Vec::new();
+    let mut i = 1usize;
+    while i < tokens.len() {
+        if tokens[i].kind == SyntaxKind::Comma {
+            i += 1;
+            continue;
+        }
+        let Some(start) = letter_token(tokens[i]) else {
+            i += 1;
+            continue;
+        };
+        let mut end = start;
+        if tokens
+            .get(i + 1)
+            .is_some_and(|t| t.kind == SyntaxKind::Minus)
+            && let Some(next) = tokens.get(i + 2).and_then(|token| letter_token(*token))
+        {
+            end = next;
+            i += 2;
+        }
+        ranges.push((start, end));
+        i += 1;
+    }
+    (!ranges.is_empty()).then_some((ty, ranges))
+}
+
+fn deftype_statement_type(name: &str) -> Option<VarTypeRef> {
+    let ty = match name.to_ascii_lowercase().as_str() {
+        "defbool" => VarTypeRef::Builtin(BuiltinType::Boolean),
+        "defbyte" => VarTypeRef::Builtin(BuiltinType::Byte),
+        "defint" => VarTypeRef::Builtin(BuiltinType::Integer),
+        "deflng" => VarTypeRef::Builtin(BuiltinType::Long),
+        "deflnglng" => VarTypeRef::Builtin(BuiltinType::LongLong),
+        "deflngptr" => VarTypeRef::Builtin(BuiltinType::LongPtr),
+        "defcur" => VarTypeRef::Builtin(BuiltinType::Currency),
+        "defsng" => VarTypeRef::Builtin(BuiltinType::Single),
+        "defdbl" => VarTypeRef::Builtin(BuiltinType::Double),
+        "defdate" => VarTypeRef::Builtin(BuiltinType::Date),
+        "defstr" => VarTypeRef::Builtin(BuiltinType::String),
+        "defobj" => VarTypeRef::Object("object".to_string()),
+        "defvar" => VarTypeRef::Variant,
+        // Decimal is a Variant subtype in VBA but not a declared type in the
+        // current OxVba type model; keep DefDec as unsupported for FE-8.5.f.
+        "defdec" => return None,
+        _ => return None,
+    };
+    Some(ty)
+}
+
+fn significant_tokens_deep(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
+    let mut out = Vec::new();
+    collect_significant_tokens(node, &mut out);
+    out
+}
+
+fn collect_significant_tokens<'a>(node: SyntaxNode<'a>, out: &mut Vec<SyntaxToken<'a>>) {
+    for child in node.children() {
+        match child {
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => out.push(token),
+            SyntaxElement::Node(node) => collect_significant_tokens(node, out),
+            _ => {}
+        }
+    }
+}
+
+fn letter_token(token: SyntaxToken<'_>) -> Option<char> {
+    if !matches!(token.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent) {
+        return None;
+    }
+    normalize_identifier_token(token.text).chars().next()
+}
+
+fn ascii_letter_index(ch: char) -> Option<usize> {
+    let ch = ch.to_ascii_uppercase();
+    ch.is_ascii_uppercase().then(|| (ch as u8 - b'A') as usize)
 }
 
 fn source_module_attributes(root: SyntaxNode<'_>) -> ScannedModuleAttributes {
@@ -893,16 +1052,6 @@ fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
     }
 }
 
-fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
-    let base = node
-        .child_nodes()
-        .into_iter()
-        .find(|child| child.kind() == SyntaxKind::TypeRef)
-        .map(type_ref_node)
-        .unwrap_or(VarTypeRef::Variant);
-    fixed_string_refine(base, node)
-}
-
 /// A declarator's declared type, refining `As String * N` to a fixed-length string,
 /// and wrapping an **array** declarator (`x()` or `x(1 To 3)`) in [`VarTypeRef::Array`]
 /// of its element type. The array wrap matters because the binder distinguishes a
@@ -911,15 +1060,102 @@ fn param_type(node: SyntaxNode<'_>) -> VarTypeRef {
 /// without it a `Dim x() As Byte` would be typed as a scalar `Byte` and a whole-array
 /// assignment would wrongly coerce the array to that scalar.
 fn declared_var_type(declarator: SyntaxNode<'_>) -> VarTypeRef {
+    declared_var_type_with_default(declarator, &DefaultTypeTable::default(), false)
+}
+
+fn declared_var_type_with_default(
+    declarator: SyntaxNode<'_>,
+    default_types: &DefaultTypeTable,
+    apply_default_type: bool,
+) -> VarTypeRef {
     let base = declarator
         .declared_type()
         .map(type_ref_node)
+        .or_else(|| type_suffix_type(declarator))
+        .or_else(|| {
+            apply_default_type
+                .then(|| declarator.declarator_name())
+                .flatten()
+                .and_then(|token| default_types.type_for(token.text))
+        })
         .unwrap_or(VarTypeRef::Variant);
     let element = fixed_string_refine(base, declarator);
     if declarator.array_bounds().is_some() {
         return VarTypeRef::Array(Box::new(element));
     }
     element
+}
+
+fn proc_return_type(node: SyntaxNode<'_>, default_types: &DefaultTypeTable) -> Option<VarTypeRef> {
+    let returns_value = node.kind() == SyntaxKind::FunctionDecl
+        || (node.kind() == SyntaxKind::PropertyDecl
+            && property_accessor(node) == PropertyAccessor::Get);
+    if !returns_value {
+        return None;
+    }
+    let explicit = node.return_type().map(type_ref_node);
+    let base = explicit
+        .or_else(|| type_suffix_type_after_proc_name(node))
+        .or_else(|| {
+            node.proc_name_token()
+                .and_then(|token| default_types.type_for(token.text))
+        })
+        .unwrap_or(VarTypeRef::Variant);
+    if node.return_type().is_some() && node.array_bounds().is_some() {
+        Some(VarTypeRef::Array(Box::new(base)))
+    } else {
+        Some(base)
+    }
+}
+
+fn declare_return_type(
+    node: SyntaxNode<'_>,
+    name_token: SyntaxToken<'_>,
+    default_types: &DefaultTypeTable,
+) -> VarTypeRef {
+    node.return_type()
+        .map(type_ref_node)
+        .or_else(|| default_types.type_for(name_token.text))
+        .unwrap_or(VarTypeRef::Variant)
+}
+
+fn type_suffix_type(node: SyntaxNode<'_>) -> Option<VarTypeRef> {
+    node.child_tokens()
+        .into_iter()
+        .find(|token| token.kind == SyntaxKind::TypeSuffix)
+        .and_then(|token| type_suffix_ref(token.text))
+}
+
+fn type_suffix_type_after_proc_name(node: SyntaxNode<'_>) -> Option<VarTypeRef> {
+    let name = node.proc_name_token()?;
+    let mut after_name = false;
+    for token in node.child_tokens() {
+        if !after_name {
+            after_name = token.offset == name.offset && token.text == name.text;
+            continue;
+        }
+        if token.kind == SyntaxKind::TypeSuffix {
+            return type_suffix_ref(token.text);
+        }
+        if !token.kind.is_trivia() {
+            return None;
+        }
+    }
+    None
+}
+
+fn type_suffix_ref(suffix: &str) -> Option<VarTypeRef> {
+    let builtin = match suffix {
+        "%" => BuiltinType::Integer,
+        "&" => BuiltinType::Long,
+        "^" => BuiltinType::LongLong,
+        "!" => BuiltinType::Single,
+        "#" => BuiltinType::Double,
+        "@" => BuiltinType::Currency,
+        "$" => BuiltinType::String,
+        _ => return None,
+    };
+    Some(VarTypeRef::Builtin(builtin))
 }
 
 fn fixed_string_refine(base: VarTypeRef, node: SyntaxNode<'_>) -> VarTypeRef {
