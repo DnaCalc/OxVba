@@ -1258,6 +1258,23 @@ constant expressions:
   already folded scalar constants used as `&` operands. `Const CText As String = Prefix & CNumber &
   CFlag` and the untyped equivalent now substitute as `LoadConstString "v7True"` through direct HIR,
   default-route, route-audit, and VM execution paths.
+- A follow-up type-system carrier pass applies declared `Const` types when the symbol layer publishes
+  folded constant metadata, so `Single`, `Currency`, `Date`, `String`, Boolean, integer, `LongLong`,
+  and `LongPtr` constants no longer rely on later assignment coercion to recover their declared
+  carrier. `typed_const_values_preserve_exact_type_system_carriers` proves `CoreConst::F32`,
+  `CoreConst::Currency`, `CoreConst::Date`, and folded string concatenation over exact carriers in
+  `ResolutionEnvironment::const_value`; `scalar_typed_const_exact_carriers_preserve_variant_values`
+  proves assigning those constants to `Variant` preserves `Variant::from_f32`,
+  `Variant::from_currency_scaled_i64`, and `Variant::from_date_f64`. The binder constant type helper
+  now reports `I64` constants as `LongLong` and recognizes `F32`/`Currency` constants, matching
+  their serialized load ops. Checks passed for the carrier-metadata follow-up:
+  `cargo test -p oxvba-symbol typed_const_values_preserve_exact_type_system_carriers --quiet`;
+  `cargo test -p oxvba-bind scalar_typed_const_exact_carriers_preserve_variant_values --quiet`;
+  `cargo test -p oxvba-bind scalar_longlong_const_carrier_executes --quiet`;
+  `cargo test -p oxvba-bind scalar_type_char_const_carriers_execute --quiet`;
+  `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`;
+  `cargo fmt --check -p oxvba-symbol -p oxvba-bind`; `cargo check --workspace`;
+  `git diff --check`; `./scripts/check-governance.ps1`.
 - A follow-up untyped `String` expression pass applies that fold before generic binary-expression
   lowering, so `Const Prefix = "re"` followed by `Const CText = Prefix & "ady"` also substitutes as
   `LoadConstString "ready"` through direct HIR, default-route, route-audit, and VM execution paths.
@@ -1265,9 +1282,8 @@ constant expressions:
   procedure-local scoping, conditional-branch source mapping, locale-sensitive string comparison,
   Date/Currency expression coercion beyond the covered numeric arithmetic subset, locale-sensitive
   Date literal breadth, or names beyond source-prior constants and the already handled
-  enum/literal/type-character route, plus typed constant coercion outside the covered
-  scalar-to-string concat operands and exact scalar carrier subset and full `LongPtr` platform
-  semantics, remain future FE-8.5 work.
+  enum/literal/type-character route, plus typed constant coercion outside the covered declared
+  scalar carriers and full `LongPtr` platform semantics, remain future FE-8.5 work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
