@@ -681,6 +681,25 @@ fn indexed_property_get_let_roundtrip() {
 }
 
 #[test]
+fn indexed_property_set_roundtrip() {
+    // `Set b.Item(3) = t` must select the indexed Property Set accessor, carrying
+    // the index argument before the object value argument.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Dim t As Thing\n    Dim got As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b.Item(3) = t\n    Set got = b.Item(2)\n    r = got.GetVal()\nEnd Sub\n";
+    let box_cls = "Private stored As Thing\n\n\
+                   Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = stored\nEnd Property\n\n\
+                   Public Property Set Item(ByVal i As Long, ByVal v As Thing)\n    Set stored = v\nEnd Property\n";
+    let thing = "Public Function GetVal() As Long\n    GetVal = 23\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, box_cls),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        Some(23.0)
+    );
+}
+
+#[test]
 fn method_mutates_instance_field_across_calls() {
     // Two `c.Inc` statement-calls mutate the same instance's field; Total() reads it.
     let main = "Sub Main()\n    Dim r As Long\n    Dim c As Counter\n    Set c = New Counter\n    c.Inc\n    c.Inc\n    r = c.Total()\nEnd Sub\n";
@@ -861,6 +880,24 @@ fn implements_property_through_interface_var() {
             ("CBox", ModuleKind::Class, cbox),
         ]),
         Some(10.0)
+    );
+}
+
+#[test]
+fn implements_indexed_property_through_interface_var() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim s As IShape\n    Set s = New CBox\n    s.Size(3) = 10\n    r = s.Size(2)\nEnd Sub\n";
+    let ishape = "Public Property Get Size(ByVal i As Long) As Long\nEnd Property\n\n\
+                  Public Property Let Size(ByVal i As Long, ByVal v As Long)\nEnd Property\n";
+    let cbox = "Implements IShape\n\nPrivate mS As Long\n\n\
+                Private Property Get IShape_Size(ByVal i As Long) As Long\n    IShape_Size = mS + i\nEnd Property\n\n\
+                Private Property Let IShape_Size(ByVal i As Long, ByVal v As Long)\n    mS = v + i\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("IShape", ModuleKind::Class, ishape),
+            ("CBox", ModuleKind::Class, cbox),
+        ]),
+        Some(15.0)
     );
 }
 
