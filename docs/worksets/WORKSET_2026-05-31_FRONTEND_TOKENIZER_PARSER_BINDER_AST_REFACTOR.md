@@ -1556,7 +1556,9 @@ Candidate bead units:
 	  module-scope scalar declarations, and `Declare Function` default returns, and clean-stack
 	  scalar coercion now stores declared variable-length `String` and `DefStr` values as
 	  BSTR-backed String Variants through an explicit `CoerceString` VM op with clean bundle
-	  package format version `2`; duplicate source DefType letter ranges now fail with
+	  package format version `2`, while fixed-length `String * N` stores share the same runtime
+	  string-coercion authority before UTF-16 padding/truncation so invalid assignments such as
+	  `Null` raise error 13 instead of becoming spaces; duplicate source DefType letter ranges now fail with
 	  `SYM-E-DUPLICATE-DEFTYPE-RANGE`; enum constants,
 	  basic DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
