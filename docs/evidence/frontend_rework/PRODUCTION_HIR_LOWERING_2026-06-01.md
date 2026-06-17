@@ -603,7 +603,11 @@ cross-project export boundary from loader-only metadata to the scanner-owned mod
 fact alongside `ModuleAttributes`. The regression
 `source_option_private_module_is_project_private` proves a direct symbol manifest with the source
 directive, but no pre-populated manifest flag, hides both the procedural module and its public
-constants from the published reference surface.
+constants from the published reference surface. A follow-up source-attribute slice moved
+`Attribute VB_Name` to the same scanner-owned boundary: `scan_module` now prefers the source
+module-name attribute over loader/manifest fallback names, and
+`source_vb_name_attribute_names_exported_module` proves the published surface uses the VBA semantic
+module name rather than the storage/manifest fallback when callers build direct symbol manifests.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
