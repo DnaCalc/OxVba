@@ -410,3 +410,10 @@ The 2026-06-01 continuation added:
   `cargo test -p oxvba-bind --test cross_project --quiet`,
   `cargo test -p oxvba-bind --quiet`, `cargo fmt --check -p oxvba-bind`, and
   `git diff --check`.
+- Imported-COM breadth review on 2026-06-17 added a structural binder regression for a typed COM
+  receiver with a synthetic default `Value` property sharing dispid `0` across `PropertyGet` and
+  `PropertyPut`. The source `w = 10; Set w2 = w; r = w2` now proves the binder emits exactly one
+  early-bound default `PropertyLet` and one early-bound default `PropertyGet`, while the intervening
+  `Set` assignment remains an object-reference store and does not trigger a default-member call.
+  Checks: focused `typed_com_default_member_bare_let_get_lowers_to_early_com` filter,
+  `cargo test -p oxvba-bind --quiet`, `cargo fmt --check -p oxvba-bind`, and `git diff --check`.
