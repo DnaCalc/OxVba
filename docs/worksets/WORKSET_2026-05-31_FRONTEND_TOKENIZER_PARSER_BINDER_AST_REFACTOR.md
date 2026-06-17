@@ -719,8 +719,9 @@ Required newly explicit delivery beads:
   `Option Explicit` HIR-bound module flag plus route audit and lightweight-default route admission,
   `Option Base 0/1`,
   `Option Compare Binary`, `Option Compare Text` compare-mode bytecode, `Option Compare Database`
-  HIR/default routing with the current binary-runtime compare approximation, `Option Private
-  Module` single-source/default HIR routing with project privacy enforcement left in the project
+  explicit scanner diagnostic (`SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE`) instead of a
+  binary-runtime approximation, `Option Private Module` single-source/default HIR routing with
+  project privacy enforcement left in the project
   route, simple constants, enum constants, basic DefType default-table preservation for local
   untyped `Dim`, parameters, and function returns, module-scope scalar `Dim` declarations including
   visibility-prefixed procedural-module scalar fields, known DefType default-route eligibility,
@@ -1299,8 +1300,8 @@ Candidate bead units:
   concat bytecode; the next slice applies the same fold to untyped string expression constants.
   Later option/constant integration threads module compare mode into Boolean constant string
   equality/inequality folding: `Option Compare Text` uses ASCII case-insensitive comparison for the
-  covered constant subset, while `Option Compare Database` remains on the current binary
-  approximation pending Access collation semantics.
+  covered constant subset, while `Option Compare Database` now reports an explicit unsupported
+  Access-collation diagnostic pending Access collation semantics.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
@@ -1312,9 +1313,9 @@ Candidate bead units:
   The next continuation adds route-audit and lowering evidence for local multidimensional
   dynamic/fixed element access.
   Follow-up default-route correction allows `Option Base 0`, `Option Base 1`, default-equivalent
-  `Option Compare Binary`, `Option Compare Text`, and `Option Compare Database` on otherwise
-  completed lightweight HIR sources. Database compare currently uses the runtime's binary compare
-  approximation rather than Access collation. Follow-up FE-8.5.e work preserves the
+  `Option Compare Binary` and `Option Compare Text` on otherwise completed lightweight HIR sources,
+  while `Option Compare Database` now reports an explicit unsupported Access-collation diagnostic
+  instead of using the runtime's binary compare approximation. Follow-up FE-8.5.e work preserves the
 	  `Option Explicit` HIR-bound module flag, adds route-audit coverage, and admits otherwise
 	  completed `Option Explicit` sources to the lightweight default HIR route. `Option Private Module`
 	  now routes through single-source/default HIR for otherwise completed sources, is preserved on
@@ -1545,8 +1546,9 @@ Candidate bead units:
   work has already been done: `Option Explicit` HIR-bound module flag plus route audit and
   lightweight-default route admission,
   `Option Base`, `Option Compare Binary`, `Option Compare Text` compare-mode bytecode,
-  `Option Compare Database` HIR/default routing with the current binary-runtime compare
-	  approximation, `Option Private Module` single-source/default HIR routing plus bound-module and
+  `Option Compare Database` explicit scanner diagnostic
+	  (`SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE`) instead of a binary-runtime approximation,
+	  `Option Private Module` single-source/default HIR routing plus bound-module and
 	  compile-derived bundle-module metadata preservation; clean-stack continuation now records source
 	  `Option Private Module` in `ModuleScan` and makes export-surface synthesis honor that scanner
 	  fact as well as loader-provided `ModuleAttributes`, and `Attribute VB_Name` is now likewise
@@ -1562,7 +1564,8 @@ Candidate bead units:
 	  string-coercion authority before UTF-16 padding/truncation so invalid assignments such as
 	  `Null` raise error 13 instead of becoming spaces; duplicate source DefType letter ranges now fail with
 	  `SYM-E-DUPLICATE-DEFTYPE-RANGE`, and `DefDec` now fails explicitly with
-	  `SYM-E-UNSUPPORTED-DEFDEC` rather than being silently ignored, while bare explicit
+	  `SYM-E-UNSUPPORTED-DEFDEC` rather than being silently ignored, `Option Compare Database`
+	  now fails explicitly with `SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE`, while bare explicit
 	  `As Decimal` now fails with `SYM-E-UNSUPPORTED-DECLARED-DECIMAL` instead of being treated
 	  as an unresolved object type; enum constants,
 	  basic DefType default-route eligibility,
