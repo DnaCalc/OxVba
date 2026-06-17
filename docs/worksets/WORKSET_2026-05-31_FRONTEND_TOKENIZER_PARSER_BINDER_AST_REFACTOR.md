@@ -1559,7 +1559,8 @@ Candidate bead units:
 	  package format version `2`, while fixed-length `String * N` stores share the same runtime
 	  string-coercion authority before UTF-16 padding/truncation so invalid assignments such as
 	  `Null` raise error 13 instead of becoming spaces; duplicate source DefType letter ranges now fail with
-	  `SYM-E-DUPLICATE-DEFTYPE-RANGE`; enum constants,
+	  `SYM-E-DUPLICATE-DEFTYPE-RANGE`, and `DefDec` now fails explicitly with
+	  `SYM-E-UNSUPPORTED-DEFDEC` rather than being silently ignored; enum constants,
 	  basic DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
