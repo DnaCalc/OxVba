@@ -938,6 +938,14 @@ The latest FE-8.5 slice removes the basic declared external call residual:
 - Follow-up typed-signature declaration proof confirms multi-argument external functions with
   non-`Long` parameter and return metadata, such as `String` and `Integer`, preserve
   `DeclareParamType` descriptors through HIR and remain on the audited HIR production route.
+- Follow-up type-suffix declaration proof accepts `Declare PtrSafe Function Name& Lib ...`,
+  preserves the return suffix as `DeclareParamType::Long` before DefType fallback, and carries it
+  into the clean external-call descriptor. Evidence: `structures_declare_function_type_suffix`;
+  `declare_function_type_suffix_supplies_return_type`;
+  `declare_function_type_suffix_emits_external_return_type`; `cargo test -p oxvba-syntax
+  --quiet`; `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`;
+  `cargo fmt --check -p oxvba-syntax -p oxvba-symbol -p oxvba-bind`;
+  `cargo check --workspace`; `git diff --check`; `./scripts/check-governance.ps1`.
 - Follow-up native declaration proof confirms a `kernel32` `Declare PtrSafe Function` with a
   `LongPtr` parameter preserves native FFI lane selection and `DeclareParamType::LongPtr` metadata
   through HIR on native-FFI targets, with a matching route-audit fixture for the accepted source.
