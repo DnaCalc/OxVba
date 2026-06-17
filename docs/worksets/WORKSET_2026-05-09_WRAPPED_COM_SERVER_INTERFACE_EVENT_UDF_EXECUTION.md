@@ -60,9 +60,9 @@ OxVba already has important substrate:
   coverage exercises `DllGetClassObject`, `CreateInstance`, `LockServer`, and
   `DllCanUnloadNow` without claiming `Invoke` success yet.
 - Generated `IDispatch::GetIDsOfNames` and `Invoke` now route through the
-  emitted member descriptor table and COM call-frame marshaling helpers for the
-  first scalar method slice; object-return, array-return, and richer error
-  evidence remain in the later late-bound validation bead.
+  emitted member descriptor table and COM call-frame marshaling helpers. The
+  original first scalar method slice has since been expanded by later evidence
+  to include object-return, array-return, and supported error behavior.
 - COM-0007 now has controlled Windows client evidence for emitted DLL exports,
   `LoadLibraryW`, `DllGetClassObject`, `IClassFactory::CreateInstance`,
   `LockServer`, `DllCanUnloadNow`, `GetIDsOfNames`, method `Invoke`, property
@@ -92,13 +92,16 @@ OxVba already has important substrate:
   no-argument `Long` return plus optional slot 8 two-`Long` inputs returning
   `Long` plus optional contiguous slot 9 two-`Double` inputs returning `Double`
   are emitted as dual interfaces. A separate bounded `Long` property shape also
-  emits dual interfaces for slot 7 property get plus slot 8 property put.
+  emits dual interfaces for slot 7 property get plus slot 8 property put, and a
+  separate object-return shape emits slot 7 `As Object` return as
+  `IDispatch**` plus an optional no-argument `Long` proof slot.
   `QueryInterface` returns a real vtable subobject, and the supported vtable
   calls return the same results as `IDispatch::Invoke` on the same wrapped
   object. Broader indexed/default property, non-`Long` property,
-  byref/object/array/error vtable parity, optional/default arguments, scalar
-  signatures outside these exact bounded slots, and arbitrary vtable slot counts
-  remain outside the implemented subset.
+  byref/object-argument/array/error vtable parity, optional/default arguments,
+  scalar signatures outside these exact bounded slots, object identity
+  equivalence beyond the returned-object behavioral proof, and arbitrary vtable
+  slot counts remain outside the implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -758,6 +761,8 @@ First executable beads:
   argument scalar slot
 - `bd-bgd9` - add bounded WrappedComServer dual vtable support for a `Long`
   property get/put shape
+- `bd-e7tj` - add bounded WrappedComServer dual vtable support for an `As Object`
+  return shape
 - `bd-wcs1.8.1` - publish event source dispinterfaces and connection-point
   descriptors
 - `bd-wcs1.8.2` - implement `Advise`/`Unadvise` and fire `RaiseEvent` into a sink
