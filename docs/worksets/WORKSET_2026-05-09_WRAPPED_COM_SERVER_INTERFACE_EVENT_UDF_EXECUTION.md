@@ -91,12 +91,14 @@ OxVba already has important substrate:
   first bounded scalar tier: classes whose public member surface fits slot 7
   no-argument `Long` return plus optional slot 8 two-`Long` inputs returning
   `Long` plus optional contiguous slot 9 two-`Double` inputs returning `Double`
-  are emitted as dual interfaces, `QueryInterface` returns a real vtable
-  subobject, and the supported vtable calls return the same results as
-  `IDispatch::Invoke` on the same wrapped object. Broader
-  property/byref/object/array/error vtable parity, optional/default arguments,
-  scalar signatures outside these exact bounded slots, and arbitrary vtable slot
-  counts remain outside the implemented subset.
+  are emitted as dual interfaces. A separate bounded `Long` property shape also
+  emits dual interfaces for slot 7 property get plus slot 8 property put.
+  `QueryInterface` returns a real vtable subobject, and the supported vtable
+  calls return the same results as `IDispatch::Invoke` on the same wrapped
+  object. Broader indexed/default property, non-`Long` property,
+  byref/object/array/error vtable parity, optional/default arguments, scalar
+  signatures outside these exact bounded slots, and arbitrary vtable slot counts
+  remain outside the implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -156,10 +158,11 @@ The missing truth is also explicit:
   dispatch-backed subset; broken/missing reference repair, broader Office
   version matrices, localization-sensitive type-info selection, and
   Excel-facing error-description parity remain deferred.
-- Broader dual-interface property/byref/object/array/error parity,
-  optional/default arguments, scalar signatures outside the exact bounded
-  `Long`/`Double` slots, arbitrary vtable slot counts, and Office/VBA
-  early-bound/vtable event-client parity are not yet implemented.
+- Broader dual-interface byref/object/array/error parity, optional/default
+  arguments, indexed/default properties, non-`Long` property signatures, scalar
+  signatures outside the exact bounded `Long`/`Double` slots, arbitrary vtable
+  slot counts, and Office/VBA early-bound/vtable event-client parity are not yet
+  implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.
@@ -753,6 +756,8 @@ First executable beads:
   argument scalar slot
 - `bd-3wy1` - widen bounded WrappedComServer dual vtable to a two-`Double`
   argument scalar slot
+- `bd-bgd9` - add bounded WrappedComServer dual vtable support for a `Long`
+  property get/put shape
 - `bd-wcs1.8.1` - publish event source dispinterfaces and connection-point
   descriptors
 - `bd-wcs1.8.2` - implement `Advise`/`Unadvise` and fire `RaiseEvent` into a sink
