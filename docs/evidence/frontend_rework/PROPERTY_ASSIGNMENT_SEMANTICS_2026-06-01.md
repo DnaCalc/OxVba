@@ -140,6 +140,13 @@ The 2026-06-01 continuation added:
   hides canonical `property_get_*`/`property_let_*`/`property_set_*` implementation names and keeps
   the logical getter alias for signature help. This covers the same-module property-group query
   surface; broader project/class/COM/default-member writeback and rewrite quarantine remain open.
+- `bd-aprs.8.7` clean-binder indexed property continuation: `oxvba-bind` now handles
+  member-qualified indexed project properties such as `w.Value(3) = 10` on the project-member
+  property setter path. The binder resolves the project/class property accessor, binds index
+  arguments against the accessor signature, appends/replaces the trailing assigned-value argument,
+  and emits the project member dispatch instead of falling through to array/place assignment.
+  Regression coverage proves the setter receives the index before the assigned value and that the
+  paired indexed `Property Get` still reads through the property accessor.
 
 ## Checks
 
@@ -185,6 +192,10 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-languageservice signature_help_resolves_property_get_alias_from_frontend_hir --quiet`
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
+- `cargo test -p oxvba-bind indexed_property_get_let_roundtrip --quiet`
+- `cargo test -p oxvba-bind --quiet`
+- `cargo check --workspace`
+- `cargo fmt --check -p oxvba-bind`
 - `cargo check -p oxvba-compiler --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
@@ -330,3 +341,10 @@ The 2026-06-01 continuation added:
   `pmr_projecta_widget_value` with the expected `PropertyGet`/`PropertyLet` accessor kind. This is
   route-proof hardening only; native HIR replacement or explicit compatibility quarantine remains
   required before FE-7.3.a/FE-8.5.c can close.
+- Clean-binder review on 2026-06-17 found that member-qualified indexed project properties had a
+  real production ownership gap in the reimplemented binder: COM, cross-project, and late-bound
+  receivers already used property put/set dispatch, but `ProjectMember` receivers returned `None`
+  and then failed as non-assignable property-get places. The new branch keeps that route in
+  symbol/signature-owned binder lowering. This closes the project-class indexed `Property Let`
+  subset only; broader host/reference/imported-COM writeback breadth and terminal rewrite
+  retirement remain open.
