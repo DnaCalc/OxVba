@@ -65,7 +65,9 @@ use windows_sys::Win32::System::Registry::{
     RegDeleteTreeW, RegSetValueExW,
 };
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
-use windows_sys::Win32::System::Variant::{VARIANT, VT_EMPTY, VariantClear};
+use windows_sys::Win32::System::Variant::{
+    VARIANT, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_UNKNOWN, VariantClear,
+};
 use windows_sys::core::GUID;
 
 const PROJECT_NAME: &str = "__PROJECT_NAME__";
@@ -328,6 +330,7 @@ enum BoundedDualInterfaceShape {
     ScalarMethods,
     LongProperty,
     ObjectReturnMethods,
+    ObjectArgumentMethods,
 }
 
 #[repr(C)]
@@ -421,6 +424,36 @@ struct ObjectReturnDualVtbl {
     slot1: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
 }
 
+#[repr(C)]
+struct ObjectArgumentDualVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut DISPPARAMS,
+        *mut VARIANT,
+        *mut EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    slot0: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
+    slot1: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut i32) -> i32,
+}
+
 static CLASS_FACTORY_VTBL: IClassFactoryVtbl = IClassFactoryVtbl {
     query_interface: factory_query_interface,
     add_ref: factory_add_ref,
@@ -474,6 +507,18 @@ static OBJECT_RETURN_DUAL_VTBL: ObjectReturnDualVtbl = ObjectReturnDualVtbl {
     invoke: dual_invoke,
     slot0: dual_slot7_object_return,
     slot1: dual_slot8_long_return,
+};
+
+static OBJECT_ARGUMENT_DUAL_VTBL: ObjectArgumentDualVtbl = ObjectArgumentDualVtbl {
+    query_interface: dual_query_interface,
+    add_ref: dual_add_ref,
+    release: dual_release,
+    get_type_info_count: dual_get_type_info_count,
+    get_type_info: dual_get_type_info,
+    get_ids_of_names: dual_get_ids_of_names,
+    invoke: dual_invoke,
+    slot0: dual_slot7_long_return,
+    slot1: dual_slot8_object_arg_long_return,
 };
 
 static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl =
@@ -848,28 +893,43 @@ unsafe extern "system" fn dispatch_invoke(
         return DISP_E_MEMBERNOTFOUND;
     };
 
-    // MS-OAUT IDispatch::Invoke defines DISPPARAMS.rgvarg in reverse argument
-    // order. Route through oxvba-com's shared normalizer so in-process servers
-    // use the same canonical declaration-order frame as every COM boundary.
-    let frame = match disp_params_to_runtime_call_frame(dispid, flags, params, lcid) {
-        Ok(frame) => frame,
-        Err(err) => {
-            return write_runtime_exception(
-                format!("failed to marshal COM arguments: {}", err.message),
-                excep_info,
-                arg_err,
-                arg_count(params),
-            );
+    let args = if member_has_object_parameters(member) {
+        match generated_server_object_aware_args(member, params) {
+            Ok(args) => args,
+            Err(message) => {
+                return write_runtime_exception(
+                    format!("failed to marshal COM arguments: {message}"),
+                    excep_info,
+                    arg_err,
+                    arg_count(params),
+                );
+            }
         }
+    } else {
+        // MS-OAUT IDispatch::Invoke defines DISPPARAMS.rgvarg in reverse argument
+        // order. Route through oxvba-com's shared normalizer so in-process servers
+        // use the same canonical declaration-order frame as every COM boundary.
+        let frame = match disp_params_to_runtime_call_frame(dispid, flags, params, lcid) {
+            Ok(frame) => frame,
+            Err(err) => {
+                return write_runtime_exception(
+                    format!("failed to marshal COM arguments: {}", err.message),
+                    excep_info,
+                    arg_err,
+                    arg_count(params),
+                );
+            }
+        };
+        let mut args: Vec<Variant> = frame
+            .positional_args
+            .into_iter()
+            .map(|arg| arg.value)
+            .collect();
+        if let Some(property_put_arg) = frame.property_put_arg {
+            args.push(property_put_arg.value);
+        }
+        args
     };
-    let mut args: Vec<Variant> = frame
-        .positional_args
-        .into_iter()
-        .map(|arg| arg.value)
-        .collect();
-    if let Some(property_put_arg) = frame.property_put_arg {
-        args.push(property_put_arg.value);
-    }
 
     let runtime_value = match with_session(|session| {
         session
@@ -902,6 +962,127 @@ unsafe extern "system" fn dispatch_invoke(
         Ok(()) => S_OK,
         Err(message) => write_runtime_exception(message, excep_info, arg_err, arg_count(params)),
     }
+}
+
+fn member_has_object_parameters(member: &ComMemberDescriptor) -> bool {
+    member.parameter_types.iter().any(|param| {
+        matches!(
+            param,
+            ComParamType::Object | ComParamType::ByRefObject
+        )
+    })
+}
+
+unsafe fn generated_server_object_aware_args(
+    member: &ComMemberDescriptor,
+    params: *const DISPPARAMS,
+) -> Result<Vec<Variant>, String> {
+    if params.is_null() {
+        return Err("IDispatch::Invoke received null DISPPARAMS".to_string());
+    }
+    let params = &*params;
+    let arg_count = params.cArgs as usize;
+    let expected_count = member.parameter_types.len();
+    if arg_count != expected_count {
+        return Err(format!(
+            "expected {expected_count} argument(s) for {}, got {arg_count}",
+            member.name
+        ));
+    }
+    if arg_count > 0 && params.rgvarg.is_null() {
+        return Err("IDispatch::Invoke DISPPARAMS had cArgs > 0 with null rgvarg".to_string());
+    }
+    if params.cNamedArgs != 0 {
+        return Err(
+            "object-argument WrappedComServer Invoke currently supports positional arguments only"
+                .to_string(),
+        );
+    }
+
+    let mut args = Vec::with_capacity(expected_count);
+    for (logical_index, param) in member.parameter_types.iter().enumerate() {
+        let com_index = expected_count - 1 - logical_index;
+        let variant = &*params.rgvarg.add(com_index);
+        args.push(generated_server_variant_arg(*param, variant).map_err(|message| {
+            format!("argument {logical_index}: {message}")
+        })?);
+    }
+    Ok(args)
+}
+
+// Object arguments need the generated-server resolver: a raw VT_DISPATCH only
+// becomes a project ObjectRef when it points at one of this shim's wrappers.
+unsafe fn generated_server_variant_arg(
+    param: ComParamType,
+    variant: &VARIANT,
+) -> Result<Variant, String> {
+    if matches!(param, ComParamType::Object | ComParamType::ByRefObject) {
+        generated_server_object_variant_arg(variant)
+    } else {
+        oxvba_com::windows_variant::variant_to_com_value(variant)
+            .and_then(|value| value.to_variant())
+    }
+}
+
+unsafe fn generated_server_object_variant_arg(variant: &VARIANT) -> Result<Variant, String> {
+    let vt = variant.Anonymous.Anonymous.vt;
+    let by_ref = vt & VT_BYREF != 0;
+    let base_vt = vt & !VT_BYREF;
+    let (interface, release_after) = match (by_ref, base_vt) {
+        (false, VT_DISPATCH) => (
+            variant.Anonymous.Anonymous.Anonymous.pdispVal.cast(),
+            false,
+        ),
+        (true, VT_DISPATCH) => {
+            let ppdispatch = variant.Anonymous.Anonymous.Anonymous.ppdispVal;
+            if ppdispatch.is_null() {
+                return Err("VT_BYREF|VT_DISPATCH carried null ppdispVal pointer".to_string());
+            }
+            ((*ppdispatch).cast(), false)
+        }
+        (false, VT_UNKNOWN) => (
+            generated_dispatch_from_unknown(variant.Anonymous.Anonymous.Anonymous.punkVal.cast())?,
+            true,
+        ),
+        _ => {
+            return Err(format!(
+                "expected VT_DISPATCH object argument, got VARIANT vt={vt}"
+            ));
+        }
+    };
+    if interface.is_null() {
+        return Err("object argument was Nothing".to_string());
+    }
+    let result = object_ref_from_generated_interface(interface)
+        .map(Variant::from_object_ref)
+        .map_err(|hr| {
+            format!(
+                "object argument was not an OxVBA generated object interface: 0x{:08X}",
+                hr as u32
+            )
+        });
+    if release_after {
+        release_unknown(interface);
+    }
+    result
+}
+
+unsafe fn generated_dispatch_from_unknown(unknown: *mut c_void) -> Result<*mut c_void, String> {
+    if unknown.is_null() {
+        return Ok(ptr::null_mut());
+    }
+    let mut dispatch: *mut c_void = ptr::null_mut();
+    let hr = query_interface(unknown, &IID_IDISPATCH, &mut dispatch);
+    if hr < 0 {
+        return Err(format!(
+            "VT_UNKNOWN object argument did not expose IDispatch: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    if dispatch.is_null() {
+        return Err("VT_UNKNOWN object argument returned null IDispatch".to_string());
+    }
+    Ok(dispatch)
 }
 
 unsafe extern "system" fn dual_query_interface(
@@ -1085,6 +1266,28 @@ unsafe extern "system" fn dual_slot8_long_return(this: *mut c_void, out: *mut i3
     }
 }
 
+unsafe extern "system" fn dual_slot8_object_arg_long_return(
+    this: *mut c_void,
+    object: *mut c_void,
+    out: *mut i32,
+) -> i32 {
+    if out.is_null() {
+        return E_POINTER;
+    }
+    *out = 0;
+    let object_arg = match object_ref_from_generated_interface(object) {
+        Ok(object_arg) => object_arg,
+        Err(hr) => return hr,
+    };
+    match invoke_bounded_dual_long_member(this, 8, vec![Variant::from_object_ref(object_arg)]) {
+        Ok(value) => {
+            *out = value;
+            S_OK
+        }
+        Err(hr) => hr,
+    }
+}
+
 unsafe extern "system" fn dual_slot8_long_property_put(this: *mut c_void, value: i32) -> i32 {
     match invoke_bounded_dual_unit_member(this, 8, vec![Variant::from_i32(value)]) {
         Ok(()) => S_OK,
@@ -1232,6 +1435,36 @@ unsafe fn dual_owner(this: *mut c_void) -> Result<*mut DispatchObject, i32> {
     } else {
         Ok(owner)
     }
+}
+
+unsafe fn object_ref_from_generated_interface(interface: *mut c_void) -> Result<ObjectRef, i32> {
+    if interface.is_null() {
+        return Err(E_POINTER);
+    }
+    let vtbl = *(interface.cast::<*const c_void>());
+    if ptr::eq(vtbl, (&DISPATCH_VTBL as *const IDispatchVtbl).cast()) {
+        return Ok((*interface.cast::<DispatchObject>()).object.clone());
+    }
+    if generated_bounded_dual_vtbl(vtbl) {
+        return Ok((*dual_owner(interface)?).object.clone());
+    }
+    Err(E_INVALIDARG)
+}
+
+fn generated_bounded_dual_vtbl(vtbl: *const c_void) -> bool {
+    ptr::eq(
+        vtbl,
+        (&SCALAR_METHOD_DUAL_VTBL as *const ScalarMethodDualVtbl).cast(),
+    ) || ptr::eq(
+        vtbl,
+        (&LONG_PROPERTY_DUAL_VTBL as *const LongPropertyDualVtbl).cast(),
+    ) || ptr::eq(
+        vtbl,
+        (&OBJECT_RETURN_DUAL_VTBL as *const ObjectReturnDualVtbl).cast(),
+    ) || ptr::eq(
+        vtbl,
+        (&OBJECT_ARGUMENT_DUAL_VTBL as *const ObjectArgumentDualVtbl).cast(),
+    )
 }
 
 unsafe extern "system" fn cpc_query_interface(
@@ -1733,6 +1966,8 @@ fn bounded_dual_interface_shape(
         Some(BoundedDualInterfaceShape::LongProperty)
     } else if class_supports_bounded_dual_object_return_methods(class) {
         Some(BoundedDualInterfaceShape::ObjectReturnMethods)
+    } else if class_supports_bounded_dual_object_argument_methods(class) {
+        Some(BoundedDualInterfaceShape::ObjectArgumentMethods)
     } else {
         None
     }
@@ -1748,6 +1983,9 @@ fn bounded_dual_vtbl_for_shape(shape: BoundedDualInterfaceShape) -> *const c_voi
         }
         BoundedDualInterfaceShape::ObjectReturnMethods => {
             (&OBJECT_RETURN_DUAL_VTBL as *const ObjectReturnDualVtbl).cast()
+        }
+        BoundedDualInterfaceShape::ObjectArgumentMethods => {
+            (&OBJECT_ARGUMENT_DUAL_VTBL as *const ObjectArgumentDualVtbl).cast()
         }
     }
 }
@@ -1790,6 +2028,18 @@ fn class_supports_bounded_dual_object_return_methods(class: &ComClassDescriptor)
                     member_supports_bounded_dual_slot8_long_noarg(member)
                 }
         })
+}
+
+fn class_supports_bounded_dual_object_argument_methods(class: &ComClassDescriptor) -> bool {
+    if class.members.len() != 2 {
+        return false;
+    }
+    let ping = &class.members[0];
+    let echo = &class.members[1];
+    ping.vtable_slot == Some(7)
+        && echo.vtable_slot == Some(8)
+        && member_supports_bounded_dual_slot7_long_noarg(ping)
+        && member_supports_bounded_dual_slot8_object_arg_long(echo)
 }
 
 fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> bool {
@@ -1838,7 +2088,21 @@ fn member_supports_bounded_dual_long_result(member: &ComMemberDescriptor) -> boo
                 Some(ComParamType::Long),
                 [ComParamType::Long, ComParamType::Long],
             )
+            | (
+                ComInvokeKind::Method,
+                Some(8),
+                Some(ComParamType::Long),
+                [ComParamType::Object],
+            )
     )
+}
+
+fn member_supports_bounded_dual_slot7_long_noarg(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(7)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
 }
 
 fn member_supports_bounded_dual_object_return(member: &ComMemberDescriptor) -> bool {
@@ -1846,6 +2110,14 @@ fn member_supports_bounded_dual_object_return(member: &ComMemberDescriptor) -> b
         && member.vtable_slot == Some(7)
         && member.return_type == Some(ComParamType::Object)
         && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
+fn member_supports_bounded_dual_slot8_object_arg_long(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(8)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.as_slice() == [ComParamType::Object]
         && !member.parameter_optional.iter().any(|optional| *optional)
 }
 

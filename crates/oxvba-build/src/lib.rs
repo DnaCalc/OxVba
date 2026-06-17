@@ -234,6 +234,7 @@ mod tests {
         let pinger_path = temp.path.join("Pinger.cls");
         let counter_path = temp.path.join("Counter.cls");
         let returner_path = temp.path.join("Returner.cls");
+        let object_relay_path = temp.path.join("ObjectRelay.cls");
         let out_dir = temp.path.join("out");
 
         write(
@@ -293,6 +294,18 @@ End Function
 "#,
         );
         write(
+            &object_relay_path,
+            r#"
+Public Function Ping() As Long
+    Ping = 42
+End Function
+
+Public Function EchoPing(ByVal other As Object) As Long
+    EchoPing = other.Ping()
+End Function
+"#,
+        );
+        write(
             &project_path,
             r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -328,6 +341,13 @@ End Function
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.Returner</ProgId>
       <Description>Returner class</Description>
+    </ClassModule>
+    <ClassModule Include="ObjectRelay.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.ObjectRelay</ProgId>
+      <Description>ObjectRelay class</Description>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -414,6 +434,30 @@ End Function
         assert!(idl.contains("interface IReturner : IDispatch"));
         assert!(idl.contains("HRESULT ReturnSelf([out, retval] IDispatch** result);"));
         assert!(idl.contains("HRESULT Ping([out, retval] long* result);"));
+        let object_relay = descriptor
+            .classes
+            .iter()
+            .find(|class| class.class_name == "ObjectRelay")
+            .expect("ObjectRelay descriptor");
+        assert_eq!(object_relay.members.len(), 2);
+        assert_eq!(object_relay.members[0].vtable_slot, Some(7));
+        assert_eq!(
+            object_relay.members[0].return_type,
+            Some(ComParamType::Long)
+        );
+        assert_eq!(object_relay.members[1].vtable_slot, Some(8));
+        assert_eq!(
+            object_relay.members[1].return_type,
+            Some(ComParamType::Long)
+        );
+        assert_eq!(
+            object_relay.members[1].parameter_types.as_slice(),
+            [ComParamType::Object]
+        );
+        assert!(idl.contains("interface IObjectRelay : IDispatch"));
+        assert!(
+            idl.contains("HRESULT EchoPing([in] IDispatch* other, [out, retval] long* result);")
+        );
 
         let shim_source =
             std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");

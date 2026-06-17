@@ -25,6 +25,7 @@ fn wrapped_com_server_dll_registers_and_dispatches_late_bound() {
     let pinger_path = temp.path.join("Pinger.cls");
     let counter_path = temp.path.join("Counter.cls");
     let returner_path = temp.path.join("Returner.cls");
+    let object_relay_path = temp.path.join("ObjectRelay.cls");
     let out_dir = temp.path.join("out");
 
     write(
@@ -108,6 +109,18 @@ End Function
 "#,
     );
     write(
+        &object_relay_path,
+        r#"
+Public Function Ping() As Long
+    Ping = 42
+End Function
+
+Public Function EchoPing(ByVal other As Object) As Long
+    EchoPing = other.Ping()
+End Function
+"#,
+    );
+    write(
         &project_path,
         r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -139,6 +152,12 @@ End Function
       <VBCreatable>True</VBCreatable>
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.Returner</ProgId>
+    </ClassModule>
+    <ClassModule Include="ObjectRelay.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.ObjectRelay</ProgId>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -179,6 +198,11 @@ End Function
         .iter()
         .find(|class| class.class_name == "Returner")
         .expect("Returner descriptor");
+    let object_relay_class = descriptor
+        .classes
+        .iter()
+        .find(|class| class.class_name == "ObjectRelay")
+        .expect("ObjectRelay descriptor");
 
     let registration = RegisteredDll::register(&output.dll_target_path);
     let tlb_path = output
@@ -217,6 +241,9 @@ $returner = New-Object -ComObject DemoServer.Returner
 $returned = $returner.ReturnSelf()
 $returnedPing = $returned.Ping()
 if ($returnedPing -ne 42) {{ throw "expected Returner.ReturnSelf().Ping()=42, got $returnedPing" }}
+$relay = New-Object -ComObject DemoServer.ObjectRelay
+$relayEcho = $relay.EchoPing($relay)
+if ($relayEcho -ne 42) {{ throw "expected ObjectRelay.EchoPing(ObjectRelay)=42, got $relayEcho" }}
 "#,
         tlb_path, libid, clsid, version
     );
@@ -242,6 +269,9 @@ if ($returnedPing -ne 42) {{ throw "expected Returner.ReturnSelf().Ping()=42, go
     // SAFETY: this raw COM helper creates and releases the Returner dispatch,
     // default-interface, and returned dispatch pointers it obtains.
     unsafe { controlled_object_return_vtable_smoke(returner_class) };
+    // SAFETY: this raw COM helper creates and releases the ObjectRelay dispatch
+    // and default-interface pointers it obtains.
+    unsafe { controlled_object_argument_vtable_smoke(object_relay_class) };
     excel_vba_early_bound_and_connection_point_smoke(&temp.path, &output.tlb_target_path);
     drop(registration);
 }
@@ -275,12 +305,14 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     Dim counter As Counter
     Dim returner As Returner
     Dim returnedFromReturner As Object
+    Dim relay As ObjectRelay
 
     Set sink = New EventSink
     Set calc = New Calculator
     Set pinger = New Pinger
     Set counter = New Counter
     Set returner = New Returner
+    Set relay = New ObjectRelay
     Set sink.Calc = calc
 
     If sink.Calc.Add(20, 22) <> 42 Then
@@ -314,6 +346,9 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     Set returnedFromReturner = returner.ReturnSelf()
     If returnedFromReturner.Ping() <> 42 Then
         Err.Raise 5, , "Returner.ReturnSelf returned wrong object"
+    End If
+    If relay.EchoPing(relay) <> 42 Then
+        Err.Raise 5, , "ObjectRelay.EchoPing returned wrong value"
     End If
     On Error Resume Next
     ignored = calc.Boom()
@@ -869,6 +904,128 @@ unsafe fn controlled_object_return_vtable_smoke_inner(
     result
 }
 
+unsafe fn controlled_object_argument_vtable_smoke(class: &oxvba_build::ComClassDescriptor) {
+    let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+    let should_uninitialize = hr >= 0;
+    let result = controlled_object_argument_vtable_smoke_inner(class);
+    if should_uninitialize {
+        CoUninitialize();
+    }
+    result.expect("controlled dual-interface object-argument vtable smoke");
+}
+
+unsafe fn controlled_object_argument_vtable_smoke_inner(
+    class: &oxvba_build::ComClassDescriptor,
+) -> Result<(), String> {
+    let ping = class
+        .members
+        .iter()
+        .find(|member| member.name == "Ping")
+        .ok_or_else(|| "Ping descriptor missing".to_string())?;
+    let echo_ping = class
+        .members
+        .iter()
+        .find(|member| member.name == "EchoPing")
+        .ok_or_else(|| "EchoPing descriptor missing".to_string())?;
+
+    let mut clsid = GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    let progid = wide_null(&class.prog_id);
+    let hr = CLSIDFromProgID(progid.as_ptr(), &mut clsid);
+    if hr < 0 {
+        return Err(format!("CLSIDFromProgID failed: 0x{:08X}", hr as u32));
+    }
+
+    let mut object: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = CoCreateInstance(
+        &clsid,
+        std::ptr::null_mut(),
+        CLSCTX_INPROC_SERVER,
+        &IID_IDISPATCH,
+        &mut object,
+    );
+    if hr < 0 || object.is_null() {
+        return Err(format!("CoCreateInstance failed: 0x{:08X}", hr as u32));
+    }
+
+    let result = (|| {
+        assert_dispatch_type_info(object, &parse_guid(&class.default_interface_iid)?)?;
+        let dispatch_ping = invoke_i4_method_result(object, ping.dispid)?;
+        let dispatch_echo = invoke_i4_method_object_result(object, echo_ping.dispid, object)?;
+        if dispatch_echo != 42 {
+            return Err(format!(
+                "dispatch EchoPing(ObjectRelay) expected 42, got {dispatch_echo}"
+            ));
+        }
+        let iid = parse_guid(&class.default_interface_iid)?;
+        let mut dual: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hr = query_interface(object, &iid, &mut dual);
+        if hr < 0 || dual.is_null() {
+            return Err(format!(
+                "QueryInterface({}) failed: 0x{:08X}",
+                class.default_interface_iid, hr as u32
+            ));
+        }
+
+        let dual_result = (|| {
+            let vtbl = *(dual.cast::<*const ObjectArgumentDualVtbl>());
+            let mut vtable_ping = 0i32;
+            let hr = ((*vtbl).slot0)(dual, &mut vtable_ping);
+            if hr < 0 {
+                return Err(format!(
+                    "dual object-argument shape Ping vtable call failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if dispatch_ping != vtable_ping {
+                return Err(format!(
+                    "dispatch Ping returned {dispatch_ping}, vtable returned {vtable_ping}"
+                ));
+            }
+            let mut vtable_echo = 0i32;
+            let hr = ((*vtbl).slot1)(dual, object, &mut vtable_echo);
+            if hr < 0 {
+                return Err(format!(
+                    "dual EchoPing vtable call failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if dispatch_echo != vtable_echo {
+                return Err(format!(
+                    "dispatch EchoPing returned {dispatch_echo}, vtable returned {vtable_echo}"
+                ));
+            }
+            if vtable_echo != 42 {
+                return Err(format!(
+                    "expected vtable EchoPing(ObjectRelay)=42, got {vtable_echo}"
+                ));
+            }
+            let mut vtable_echo_from_dual_arg = 0i32;
+            let hr = ((*vtbl).slot1)(dual, dual, &mut vtable_echo_from_dual_arg);
+            if hr < 0 {
+                return Err(format!(
+                    "dual EchoPing(default interface) vtable call failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if vtable_echo_from_dual_arg != 42 {
+                return Err(format!(
+                    "expected vtable EchoPing(default interface)=42, got {vtable_echo_from_dual_arg}"
+                ));
+            }
+            Ok(())
+        })();
+        release_unknown(dual);
+        dual_result
+    })();
+    release_unknown(object);
+    result
+}
+
 unsafe fn assert_dispatch_type_info(
     dispatch: *mut std::ffi::c_void,
     expected_iid: &GUID,
@@ -1296,6 +1453,54 @@ unsafe fn invoke_dispatch_object_method_result(
     ))
 }
 
+unsafe fn invoke_i4_method_object_result(
+    dispatch: *mut std::ffi::c_void,
+    dispid: i32,
+    object_arg: *mut std::ffi::c_void,
+) -> Result<i32, String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut arg: VARIANT = std::mem::zeroed();
+    arg.Anonymous.Anonymous.vt = VT_DISPATCH;
+    add_ref_unknown(object_arg);
+    arg.Anonymous.Anonymous.Anonymous.pdispVal = object_arg.cast();
+    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+        rgvarg: &mut arg,
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 1,
+        cNamedArgs: 0,
+    };
+    let mut result: VARIANT = std::mem::zeroed();
+    let hr = ((*vtbl).invoke)(
+        dispatch,
+        dispid,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD,
+        &mut params,
+        &mut result,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    VariantClear(&mut arg);
+    if hr < 0 {
+        VariantClear(&mut result);
+        return Err(format!(
+            "Invoke(object-argument method) failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let value = if result.Anonymous.Anonymous.vt == VT_I4 {
+        Ok(result.Anonymous.Anonymous.Anonymous.lVal)
+    } else {
+        Err(format!(
+            "Invoke(object-argument method) returned VT {}, expected VT_I4",
+            result.Anonymous.Anonymous.vt
+        ))
+    };
+    VariantClear(&mut result);
+    value
+}
+
 unsafe fn invoke_i4_property_get(
     dispatch: *mut std::ffi::c_void,
     dispid: i32,
@@ -1709,6 +1914,45 @@ struct ObjectReturnDualVtbl {
 }
 
 #[repr(C)]
+struct ObjectArgumentDualVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    slot0: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
+    slot1: unsafe extern "system" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, *mut i32) -> i32,
+}
+
+#[repr(C)]
 struct IConnectionPointContainerVtbl {
     query_interface: unsafe extern "system" fn(
         *mut std::ffi::c_void,
@@ -1916,6 +2160,11 @@ unsafe fn query_interface(
 ) -> i32 {
     let vtbl = *(ptr.cast::<*const IUnknownVtbl>());
     ((*vtbl).query_interface)(ptr, iid, out)
+}
+
+unsafe fn add_ref_unknown(ptr: *mut std::ffi::c_void) {
+    let vtbl = *(ptr.cast::<*const IUnknownVtbl>());
+    ((*vtbl).add_ref)(ptr);
 }
 
 unsafe fn release_unknown(ptr: *mut std::ffi::c_void) {

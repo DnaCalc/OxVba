@@ -134,6 +134,7 @@ fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
     class_supports_bounded_dual_scalar_methods(class)
         || class_supports_bounded_dual_long_property(class)
         || class_supports_bounded_dual_object_return_methods(class)
+        || class_supports_bounded_dual_object_argument_methods(class)
 }
 
 fn class_supports_bounded_dual_scalar_methods(class: &ComClassDescriptor) -> bool {
@@ -172,6 +173,18 @@ fn class_supports_bounded_dual_object_return_methods(class: &ComClassDescriptor)
         })
 }
 
+fn class_supports_bounded_dual_object_argument_methods(class: &ComClassDescriptor) -> bool {
+    if class.members.len() != 2 {
+        return false;
+    }
+    let ping = &class.members[0];
+    let echo = &class.members[1];
+    ping.vtable_slot == Some(7)
+        && echo.vtable_slot == Some(8)
+        && member_supports_bounded_dual_slot7_long_noarg(ping)
+        && member_supports_bounded_dual_slot8_object_arg_long(echo)
+}
+
 fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> bool {
     if member.invoke_kind != ComInvokeKind::Method
         || member.parameter_optional.iter().any(|optional| *optional)
@@ -198,11 +211,27 @@ fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> b
     )
 }
 
+fn member_supports_bounded_dual_slot7_long_noarg(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(7)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
 fn member_supports_bounded_dual_object_return(member: &ComMemberDescriptor) -> bool {
     member.invoke_kind == ComInvokeKind::Method
         && member.vtable_slot == Some(7)
         && member.return_type == Some(ComParamType::Object)
         && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
+fn member_supports_bounded_dual_slot8_object_arg_long(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(8)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.as_slice() == [ComParamType::Object]
         && !member.parameter_optional.iter().any(|optional| *optional)
 }
 
