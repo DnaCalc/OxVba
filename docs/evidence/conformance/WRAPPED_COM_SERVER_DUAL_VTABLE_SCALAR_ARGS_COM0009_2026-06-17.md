@@ -1,7 +1,7 @@
 # WrappedComServer bounded dual vtable COM-0009 evidence
 
 Date: 2026-06-17
-Beads: `bd-l7xl`, `bd-3wy1`, `bd-bgd9`, `bd-e7tj`
+Beads: `bd-l7xl`, `bd-3wy1`, `bd-bgd9`, `bd-e7tj`, `bd-0id1`
 Matrix row: `COM-0009`
 
 ## Scope
@@ -25,10 +25,15 @@ The object-return method shape is also a separate vtable layout:
 - slot 7: `HRESULT ReturnSelf([out, retval] IDispatch** result)`
 - optional slot 8: `HRESULT Ping([out, retval] long* result)`
 
+The object-argument method shape is another separate vtable layout:
+
+- slot 7: `HRESULT Ping([out, retval] long* result)`
+- slot 8: `HRESULT EchoPing([in] IDispatch* other, [out, retval] long* result)`
+
 Only classes whose generated TypeLib surface exactly fits the bounded contiguous
-method ABI prefix, the bounded `Long` property ABI, or the bounded object-return
-ABI are published as dual interfaces. Other generated classes remain
-dispatch-only `dispinterface`s.
+method ABI prefix, the bounded `Long` property ABI, the bounded object-return
+ABI, or the bounded same-server object-argument ABI are published as dual
+interfaces. Other generated classes remain dispatch-only `dispinterface`s.
 
 The `bd-e7tj` slice also fixes source-surface metadata so bare `As Object`
 remains a COM object boundary type (`IDispatch*` / `IDispatch**`) while still
@@ -85,12 +90,25 @@ Result: passed on Windows with Excel installed.
 - Excel/VBA references the same `.tlb`, creates `Dim returner As Returner`,
   executes `Set returnedFromReturner = returner.ReturnSelf()`, and successfully
   calls `returnedFromReturner.Ping()`.
+- Generated IDL publishes `IObjectRelay : IDispatch` for a dedicated
+  `ObjectRelay.EchoPing(ByVal other As Object) As Long` class, with slot 8
+  emitted as `HRESULT EchoPing(IDispatch* other, long* result)`.
+- PowerShell late-bound `ObjectRelay.EchoPing($relay)` passes the generated
+  object as a `VT_DISPATCH` argument and returns `42`.
+- Raw COM `QueryInterface(IObjectRelay)` returns the generated object-argument
+  vtable subobject; raw slot 8 accepts both the wrapper `IDispatch*` and the
+  generated default-interface pointer and returns `42`.
+- The same object-argument member is invoked through `IDispatch::Invoke` with a
+  `VT_DISPATCH` argument and returns the same `Long` value as the vtable path.
+- Excel/VBA references the same `.tlb`, creates `Dim relay As ObjectRelay`, and
+  successfully calls `relay.EchoPing(relay)`.
 
 ## Residual
 
 `COM-0009` remains an implemented subset. Indexed/default properties,
 non-`Long` property signatures, object `Set`/`PutRef` properties, ByRef
-writebacks, object argument slots, object identity equivalence beyond the
-returned-object behavioral proof, arrays, error parity, optional/default
-arguments, scalar signatures outside the exact `Long` and `Double` slots above,
-and arbitrary numbers of vtable slots remain outside this bounded tier.
+writebacks, foreign COM object-argument binding, object identity equivalence
+beyond same-server generated-object argument/return behavioral proofs, arrays,
+error parity, optional/default arguments, scalar signatures outside the exact
+`Long` and `Double` slots above, and arbitrary numbers of vtable slots remain
+outside this bounded tier.

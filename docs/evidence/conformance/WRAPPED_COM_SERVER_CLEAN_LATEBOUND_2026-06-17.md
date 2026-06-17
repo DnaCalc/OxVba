@@ -39,7 +39,9 @@ that interface IID. The supported vtable ABI is intentionally narrow: slot 7
 property-only shape, slot 7 `[propget] HRESULT Property(long*)` followed by slot
 8 `[propput] HRESULT Property(long)`; or, for a separate object-return shape,
 slot 7 `HRESULT Method(IDispatch**)`, optionally followed by slot 8
-`HRESULT Method(long*)`.
+`HRESULT Method(long*)`; or, for a separate same-server object-argument shape,
+slot 7 `HRESULT Method(long*)` followed by slot 8
+`HRESULT Method(IDispatch*, long*)`.
 
 ## Evidence
 
@@ -114,19 +116,27 @@ return behavior for the same member, vtable-returned and dispatch-returned
 objects callable through `IDispatch`, and Excel/VBA early-bound calls to
 `Returner.ReturnSelf().Ping()`.
 
+The same live smoke now also proves late-bound
+`ObjectRelay.EchoPing(ObjectRelay)`, raw COM `IObjectRelay` slot-8
+`HRESULT EchoPing(IDispatch*, long*)`, dispatch `VT_DISPATCH` object-argument
+binding to the same generated project object, vtable calls with generated
+wrapper and default-interface object pointers, and Excel/VBA early-bound calls
+to `ObjectRelay.EchoPing`.
+
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
 late-bound activation, bounded dual-interface vtable including the two-`Long`
 argument slot, the two-`Double` argument slot, and the two-slot `Long` property
-shape plus the object-return `IDispatch**` shape, connection-point
-enumeration/event, live dispatch type-info publication, and Excel/VBA
-early-bound/`WithEvents` smoke.
+shape plus the object-return `IDispatch**` shape and same-server
+object-argument `IDispatch*` shape, connection-point enumeration/event, live
+dispatch type-info publication, and Excel/VBA early-bound/`WithEvents` smoke.
 
 Residual: broader dual-interface indexed/default property, non-`Long` property,
-ByRef, object argument, array, and error parity, optional/default arguments,
-scalar signatures outside the exact bounded `Long` and `Double` slots, object
-identity equivalence beyond the returned-object behavioral proof, and arbitrary
-vtable slot counts remain outside this clean slice. COM event evidence covers a
+ByRef, foreign COM object-argument binding, array, and error parity,
+optional/default arguments, scalar signatures outside the exact bounded `Long`
+and `Double` slots, object identity equivalence beyond same-server
+generated-object argument/return behavioral proofs, and arbitrary vtable slot
+counts remain outside this clean slice. COM event evidence covers a
 single generated source connection point and snapshot enumeration of advised
 dispatch sinks; multi-source event selection, richer payload families, and
 broader callback ordering cases remain outside this slice. Dispatch type-info

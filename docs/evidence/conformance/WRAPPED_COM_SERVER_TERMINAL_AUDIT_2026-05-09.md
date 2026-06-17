@@ -13,7 +13,8 @@ The wrapped COM/server/UDF workset has an implemented subset with evidence for:
 - Generated TypeLib publication, live generated-object dispatch type-info
   publication, and controlled TypeLib-aware client calls.
 - Bounded Automation-safe dual-interface vtable paths with dispatch/vtable
-  parity for the supported scalar, property, and object-return slots.
+  parity for the supported scalar, property, object-return, and same-server
+  object-argument slots.
 - Source dispinterface metadata and controlled connection-point event delivery.
 - Host-call descriptor metadata, typed host UDF catalog enumeration, and scalar
   stable-ID host UDF invocation with caller/dependency/volatile context shape.
@@ -93,10 +94,11 @@ cargo test -p oxvba-host embedded::tests --quiet
   selection and richer event payload ordering remain outside the current
   `COM-0010` implemented subset.
 - Broader dual-interface indexed/default property, non-`Long` property,
-  ByRef, object argument, array, and error vtable parity, optional/default
-  arguments, scalar signatures outside the exact bounded `Long`/`Double` slots,
-  object identity equivalence beyond the returned-object behavioral proof, and
-  arbitrary vtable slot counts remain outside `COM-0009`.
+  ByRef, foreign COM object-argument binding, array, and error vtable parity,
+  optional/default arguments, scalar signatures outside the exact bounded
+  `Long`/`Double` slots, object identity equivalence beyond same-server
+  generated-object argument/return behavioral proofs, and arbitrary vtable slot
+  counts remain outside `COM-0009`.
 - Host UDF richer scalar coercion, array returns, error returns, explicit
   worksheet volatile/dependency semantics, and DnaOneCalc/OxIde host-context
   harness evidence remain open under `PH-0011`, which therefore remains
