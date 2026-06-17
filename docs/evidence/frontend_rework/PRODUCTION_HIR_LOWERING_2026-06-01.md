@@ -757,9 +757,10 @@ A subsequent `Single` carrier slice adds
 serialized `LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As
 Single = 1.5!`. Later scalar-to-string concat work lets covered typed and untyped `String` constants
 fold source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
-`LoadConstString "v7True"`. Typed constant coercion outside those string-concat operands, broader
-constant-name/expression parity, Date/Currency expression coercion beyond the covered numeric
-arithmetic subset, and full platform `LongPtr` semantics remain open.
+`LoadConstString "v7True"`. Later exact-carrier and string-to-declared-scalar follow-ups narrow the
+typed constant coercion residual; broader constant-name/expression parity, coercions outside those
+covered carrier paths, Date/Currency expression coercion beyond the covered numeric arithmetic
+subset, and full platform `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for class/project field semantics remain open.
 
@@ -1285,6 +1286,19 @@ constant expressions:
   `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`;
   `cargo fmt --check -p oxvba-symbol -p oxvba-bind`; `cargo check --workspace`;
   `git diff --check`; `./scripts/check-governance.ps1`.
+- A follow-up string-to-typed-constant coercion pass matches an Excel 16.0 oracle probe for
+  declared scalar constants such as `Const CLong As Long = "7"`, `Const CBool As Boolean =
+  "False"`, `Const CAmount As Currency = "1.25"`, and `Const CStamp As Date =
+  "2026-02-28"`. The symbol constant evaluator now coerces covered string constants into
+  declared Boolean, integer, floating, Currency, and Date carriers before publishing
+  `ResolutionEnvironment::const_value`; string-to-Date uses the same deterministic date parser as
+  `#...#` literals, so ambiguous numeric date text remains unsupported instead of becoming
+  locale-sensitive. Evidence: Excel probe returned `7`, `False`, `1.25`, and `2026/02/28` for the
+  corresponding VBA constants; `string_typed_const_values_coerce_to_declared_scalar_carriers`;
+  `scalar_string_typed_const_values_coerce_to_declared_carriers`; `cargo test -p oxvba-symbol
+  --quiet`; `cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol
+  -p oxvba-bind`; `cargo check --workspace`; `git diff --check`;
+  `./scripts/check-governance.ps1`.
 - A follow-up untyped `String` expression pass applies that fold before generic binary-expression
   lowering, so `Const Prefix = "re"` followed by `Const CText = Prefix & "ady"` also substitutes as
   `LoadConstString "ready"` through direct HIR, default-route, route-audit, and VM execution paths.
@@ -1292,8 +1306,9 @@ constant expressions:
   procedure-local scoping, conditional-branch source mapping, locale-sensitive string comparison,
   Date/Currency expression coercion beyond the covered numeric arithmetic subset, locale-sensitive
   Date literal breadth, or names beyond source-prior constants and the already handled
-  enum/literal/type-character route, plus typed constant coercion outside the covered declared
-  scalar carriers and full `LongPtr` platform semantics, remain future FE-8.5 work.
+  enum/literal/type-character route, plus typed constant coercion outside the covered exact and
+  string-to-scalar declared carriers and full `LongPtr` platform semantics, remain future FE-8.5
+  work.
 
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static

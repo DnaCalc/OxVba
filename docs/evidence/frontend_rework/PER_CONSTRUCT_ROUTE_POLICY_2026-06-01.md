@@ -31,10 +31,11 @@ exclusion list has been narrowed by later FE-8.5 delivery. The lightweight defau
 admits known DefType directives, `Option Compare Binary`/`Text`, single-source
 `Option Private Module`, simple function returns, simple property declaration/read/write shapes,
 explicit/defaultless/integer-expression optional parameters plus literal string/Boolean optional
-defaults, simple `ParamArray` packing, selected typed constants, and the documented Declare subsets
-once their HIR facts and route proof landed. Follow-up FE-8.5.e work also admits `Option Explicit`
-to the lightweight default route once HIR preserved the option flag and route proof covered an
-otherwise completed source. `Option Compare Database` now exits through
+defaults, simple `ParamArray` packing, selected typed constants including covered
+string-to-declared-scalar constants, and the documented Declare subsets once their HIR facts and
+route proof landed. Follow-up FE-8.5.e work also admits `Option Explicit` to the lightweight
+default route once HIR preserved the option flag and route proof covered an otherwise completed
+source. `Option Compare Database` now exits through
 `SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE` rather than the previous Binary approximation, because
 Database comparison is Access/database-collation dependent.
 Class/object-local compatibility contexts, project-rewritten compilation, unsupported project
