@@ -83,7 +83,7 @@ pub fn scan_module(
     project_scope: ScopeId,
 ) -> Result<ModuleScan, SymbolModelError> {
     let source_attributes = source_module_attributes(module_syntax);
-    let default_types = module_default_types(module_syntax);
+    let default_types = module_default_types(module_syntax)?;
     let module_name = source_attributes
         .vb_name
         .clone()
@@ -675,31 +675,43 @@ struct DefaultTypeTable {
 }
 
 impl DefaultTypeTable {
-    fn set_range(&mut self, start: char, end: char, ty: &VarTypeRef) {
+    fn set_range(
+        &mut self,
+        start: char,
+        end: char,
+        ty: &VarTypeRef,
+    ) -> Result<(), SymbolModelError> {
         let Some(start) = ascii_letter_index(start) else {
-            return;
+            return Ok(());
         };
         let Some(end) = ascii_letter_index(end) else {
-            return;
+            return Ok(());
         };
         let (lo, hi) = if start <= end {
             (start, end)
         } else {
             (end, start)
         };
+        // Microsoft Learn "Deftype statements" documents any later range that
+        // includes a previously defined letter as an error; do this before
+        // mutating the table so a failing range cannot partly apply.
         for idx in lo..=hi {
-            if self.ascii[idx].is_none() {
-                self.ascii[idx] = Some(ty.clone());
+            if self.ascii[idx].is_some() {
+                return Err(SymbolModelError::DuplicateDefTypeLetter {
+                    letter: (b'A' + idx as u8) as char,
+                });
             }
+        }
+        for idx in lo..=hi {
+            self.ascii[idx] = Some(ty.clone());
         }
         // Microsoft Learn "Deftype statements"
         // (learn.microsoft.com/office/vba/language/concepts/getting-started/deftype-statements)
         // documents A-Z as also covering extended alphabetic names.
-        // Full duplicate-range diagnostics belong to the diagnostics pass; this
-        // scanner keeps the first definition instead of silently changing it.
         if lo == 0 && hi == 25 && self.extended_alpha.is_none() {
             self.extended_alpha = Some(ty.clone());
         }
+        Ok(())
     }
 
     fn type_for(&self, name: &str) -> Option<VarTypeRef> {
@@ -712,17 +724,17 @@ impl DefaultTypeTable {
     }
 }
 
-fn module_default_types(root: SyntaxNode<'_>) -> DefaultTypeTable {
+fn module_default_types(root: SyntaxNode<'_>) -> Result<DefaultTypeTable, SymbolModelError> {
     let mut table = DefaultTypeTable::default();
     for node in root.child_nodes() {
         let Some((ty, ranges)) = parse_deftype_directive(node) else {
             continue;
         };
         for (start, end) in ranges {
-            table.set_range(start, end, &ty);
+            table.set_range(start, end, &ty)?;
         }
     }
-    table
+    Ok(table)
 }
 
 fn parse_deftype_directive(node: SyntaxNode<'_>) -> Option<(VarTypeRef, Vec<(char, char)>)> {

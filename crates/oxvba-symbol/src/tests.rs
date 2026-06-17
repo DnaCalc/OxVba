@@ -14,7 +14,9 @@ use crate::binding::DispatchRoute;
 use crate::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
 };
-use crate::model::{ScopeKind, SymbolImpl, SymbolKind, SymbolNamespace, SymbolTable};
+use crate::model::{
+    ScopeKind, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable,
+};
 use crate::predeclared::predeclared_object;
 use crate::provider::{Provider, ResolutionContext, TypeLibResolver, build_resolution_environment};
 use crate::providers::com::ComTypeLibProvider;
@@ -845,6 +847,38 @@ fn scanner_honors_type_precedence_over_deftype() {
         env.signatures.get(*sig).expect("signature").return_type,
         Some(VarTypeRef::Builtin(BuiltinType::String))
     );
+}
+
+#[test]
+fn scanner_rejects_duplicate_deftype_letter_ranges() {
+    let src = "DefLng A-C\r\nDefStr C-D\r\nSub Main()\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("overlapping DefType ranges should fail"),
+        Err(err) => err,
+    };
+    assert!(matches!(
+        err,
+        SymbolModelError::DuplicateDefTypeLetter { letter: 'C' }
+    ));
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-DUPLICATE-DEFTYPE-RANGE"
+    );
+}
+
+#[test]
+fn scanner_rejects_deftype_after_a_z_range() {
+    let src = "DefLng A-Z\r\nDefStr S\r\nSub Main()\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("A-Z DefType should reject later subranges"),
+        Err(err) => err,
+    };
+    assert!(matches!(
+        err,
+        SymbolModelError::DuplicateDefTypeLetter { letter: 'S' }
+    ));
 }
 
 #[test]

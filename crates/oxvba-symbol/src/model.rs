@@ -196,6 +196,8 @@ pub enum SymbolModelError {
         name: String,
         namespace: SymbolNamespace,
     },
+    #[error("duplicate DefType letter `{letter}`")]
+    DuplicateDefTypeLetter { letter: char },
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -234,6 +236,12 @@ impl SymbolModelError {
                 format!("duplicate symbol `{name}` in {namespace:?} namespace"),
             )
             .with_help("Rename one declaration or move it to a different namespace/scope."),
+            SymbolModelError::DuplicateDefTypeLetter { letter } => Diagnostic::error(
+                "SYM-E-DUPLICATE-DEFTYPE-RANGE",
+                DiagnosticPhase::Symbol,
+                format!("DefType letter `{letter}` is already covered by an earlier DefType range"),
+            )
+            .with_help("Remove the overlapping DefType range or use an explicit As clause."),
             SymbolModelError::UnknownScope(scope) => Diagnostic::error(
                 "SYM-E-UNKNOWN-SCOPE",
                 DiagnosticPhase::Symbol,
