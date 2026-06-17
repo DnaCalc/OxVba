@@ -1217,6 +1217,19 @@ fn scalar_ambiguous_numeric_date_literal_rejected() {
 }
 
 #[test]
+fn scalar_string_date_store_coerces_deterministic_text() {
+    let snap = run("Sub Main()\nDim stamp As Date\nstamp = \"2026-02-28\"\nEnd Sub");
+    assert_eq!(snap, vec![Variant::from_date_f64(46_081.0)]);
+}
+
+#[test]
+fn scalar_ambiguous_string_date_store_rejected() {
+    let err = run_result("Sub Main()\nDim stamp As Date\nstamp = \"2/3/2026\"\nEnd Sub")
+        .expect_err("ambiguous numeric Date text should be rejected");
+    assert!(err.contains("Type mismatch"), "unexpected error: {err}");
+}
+
+#[test]
 fn scalar_untyped_date_const_carrier_executes() {
     let snap =
         run("Const CStamp = #2026-02-28#\nSub Main()\nDim stamp As Date\nstamp = CStamp\nEnd Sub");

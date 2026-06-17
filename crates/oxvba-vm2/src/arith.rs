@@ -522,7 +522,15 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
                 Err(ArithError::overflow())
             }
         }
-        NumericCoerceTarget::Date => Ok(Variant::from_date_f64(num(v)?)),
+        NumericCoerceTarget::Date => {
+            if v.vtype() == VarType::String {
+                let text = as_string(v);
+                if let Some(serial) = oxvba_runtime::date::parse_date_text_serial(&text) {
+                    return Ok(Variant::from_date_f64(serial));
+                }
+            }
+            Ok(Variant::from_date_f64(num(v)?))
+        }
     }
 }
 

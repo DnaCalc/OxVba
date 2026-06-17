@@ -7,6 +7,7 @@ pub mod bstr;
 pub mod builtins;
 pub mod call_frame;
 pub mod coerce;
+pub mod date;
 pub mod decimal;
 pub mod object_ref;
 pub mod pointer_helpers;
