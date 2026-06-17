@@ -731,15 +731,26 @@ untyped Date literal work adds `Const CStamp = #2026-02-28#` to the generic lite
 materializes as `DateConst`/`LoadConstDate` instead of an unsupported Const or runtime expression.
 The numeric Date literal follow-up accepts unambiguous `month/day/year` forms such as
 `#2/28/2026#` in module constants and optional Date defaults, including omitted-argument VM binding;
-ambiguous locale-sensitive numeric dates remain open. A subsequent `Single` carrier slice adds
+ambiguous locale-sensitive numeric dates such as `#2/3/2026#` now fail through the canonical
+date-literal parser instead of silently choosing a culture-specific order, while deterministic
+same month/day values such as `#1/1/2026#` still parse. Coverage:
+`date_literals_accept_unambiguous_numeric_orders`,
+`date_literals_reject_ambiguous_numeric_orders`, and
+`scalar_ambiguous_numeric_date_literal_rejected`. Checks passed for the ambiguous-Date follow-up:
+`cargo test -p oxvba-symbol date_literals --quiet`;
+`cargo test -p oxvba-bind scalar_numeric_month_day_date_const_carrier_executes --quiet`;
+`cargo test -p oxvba-bind scalar_ambiguous_numeric_date_literal_rejected --quiet`;
+`cargo test -p oxvba-bind date --quiet`; `cargo test -p oxvba-symbol --quiet`;
+`cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol -p oxvba-bind`;
+`cargo check --workspace`; `git diff --check`; `./scripts/check-governance.ps1`.
+A subsequent `Single` carrier slice adds
 `BoundExpr::SingleConst(u32)` and
 serialized `LoadConstF32`, with bundle format v17 and VM execution coverage for `Const CTotal As
 Single = 1.5!`. Later scalar-to-string concat work lets covered typed and untyped `String` constants
 fold source-prior scalar constants across `&`, such as `Prefix & CNumber & CFlag` materializing as
 `LoadConstString "v7True"`. Typed constant coercion outside those string-concat operands, broader
 constant-name/expression parity, Date/Currency expression coercion beyond the covered numeric
-arithmetic subset, ambiguous locale-sensitive numeric Date literal breadth, and full platform
-`LongPtr` semantics remain open.
+arithmetic subset, and full platform `LongPtr` semantics remain open.
 Other declaration/compile-time surfaces remain outside the lightweight default route until HIR owns
 their semantics, and broader DefType surfaces for class/project field semantics remain open.
 
