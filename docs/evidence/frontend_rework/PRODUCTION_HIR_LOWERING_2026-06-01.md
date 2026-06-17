@@ -592,12 +592,21 @@ production routing for otherwise completed sources; unknown `Def*` directives re
 route. Later coverage hardening proves visibility-prefixed procedural module scalar fields such as
 `Private alpha` and `Public beta%` use the same DefType/type-character precedence through direct
 HIR lowering, the lightweight default route, and route-audit classification.
-`Option Compare Database` now routes through HIR/default production for otherwise completed sources;
-the current runtime intentionally maps Database compare to binary comparison rather than Access
-collation. `Option Private Module` now routes through single-source/default HIR for otherwise
-completed sources, is preserved on the production `BoundModule`, and feeds compile-derived bundle
-module facts from the bound front-end surface; project module-kind and reference-visibility
-enforcement remains in the project route. Clean symbol-stack continuation on 2026-06-17 moved the
+`Option Compare Database` is no longer silently admitted through a Binary comparison
+approximation: the scanner now reports `SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE`, matching the
+Microsoft Learn `Option Compare` documentation that `Database` is Access-only and database
+collation dependent. `scanner_rejects_option_compare_database_collation` covers the diagnostic;
+`Option Compare Binary`/`Text` remain the supported compare modes. Checks passed for this cleanup:
+`cargo test -p oxvba-symbol option_compare --quiet`;
+`cargo test -p oxvba-bind option_compare --quiet`;
+`cargo test -p oxvba-bind scalar_option_compare_text_boolean_const_expression_executes --quiet`;
+`cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`;
+`cargo fmt --check -p oxvba-symbol -p oxvba-bind`; `cargo check --workspace`;
+`git diff --check`; `./scripts/check-governance.ps1`. `Option Private Module` now routes through
+single-source/default HIR for otherwise completed sources, is preserved on the production
+`BoundModule`, and feeds compile-derived bundle module facts from the bound front-end surface;
+project module-kind and reference-visibility enforcement remains in the project route. Clean
+symbol-stack continuation on 2026-06-17 moved the
 cross-project export boundary from loader-only metadata to the scanner-owned module facts:
 `ModuleScan` now records source `Option Private Module` and export-surface synthesis consults that
 fact alongside `ModuleAttributes`. The regression
@@ -1242,8 +1251,9 @@ constant expressions:
   HIR, default-route, route-audit, and VM execution paths.
 - Module compare mode now reaches that Boolean constant string-comparison evaluator for the covered
   subset. `Option Compare Text` makes `Const CFlag As Boolean = "a" = "A"` fold to
-  `LoadConstBool true`; `Option Compare Database` intentionally remains on the current binary
-  approximation until Access collation semantics are implemented.
+  `LoadConstBool true`; `Option Compare Database` now reports
+  `SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE` instead of using a Binary approximation until Access
+  collation semantics are implemented.
 - A bounded `Like` follow-up extends that same string Boolean-constant lane to the current runtime
   `Like` subset, which is equality after compare-mode normalization rather than full VBA pattern
   matching. `Option Compare Text` now lets
