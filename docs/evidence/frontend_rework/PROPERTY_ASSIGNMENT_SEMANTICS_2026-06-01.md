@@ -417,3 +417,15 @@ The 2026-06-01 continuation added:
   `Set` assignment remains an object-reference store and does not trigger a default-member call.
   Checks: focused `typed_com_default_member_bare_let_get_lowers_to_early_com` filter,
   `cargo test -p oxvba-bind --quiet`, `cargo fmt --check -p oxvba-bind`, and `git diff --check`.
+- Host-injected breadth review on 2026-06-17 found the wrapper counterpart to the imported-COM
+  path: `HostProvider` forwarded named member lookup from its underlying COM metadata providers
+  but not `resolve_default_member`, so a typed host-injected object with a default property could
+  still fall back to an object-slot `Let` instead of early-bound COM `PropertyLet`/`PropertyGet`.
+  The focused host regression failed with no early COM calls before the fix. `HostProvider` now
+  forwards default-member lookup through the same metadata chain as named members, and
+  `host_injected_default_member_bare_let_get_lowers_to_early_com` proves `w = 10;
+  Set w2 = w; r = w2` emits exactly one early-bound default setter and getter while preserving the
+  `Set` object-reference assignment. Checks: focused host-injected default-member filter,
+  `cargo test -p oxvba-symbol --quiet`, `cargo test -p oxvba-bind --quiet`,
+  `cargo check --workspace`, `cargo fmt --check -p oxvba-bind -p oxvba-symbol`,
+  `git diff --check`, and `./scripts/check-governance.ps1`.
