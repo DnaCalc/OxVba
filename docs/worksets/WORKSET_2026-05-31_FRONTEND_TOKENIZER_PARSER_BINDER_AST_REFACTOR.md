@@ -1560,7 +1560,9 @@ Candidate bead units:
 	  string-coercion authority before UTF-16 padding/truncation so invalid assignments such as
 	  `Null` raise error 13 instead of becoming spaces; duplicate source DefType letter ranges now fail with
 	  `SYM-E-DUPLICATE-DEFTYPE-RANGE`, and `DefDec` now fails explicitly with
-	  `SYM-E-UNSUPPORTED-DEFDEC` rather than being silently ignored; enum constants,
+	  `SYM-E-UNSUPPORTED-DEFDEC` rather than being silently ignored, while bare explicit
+	  `As Decimal` now fails with `SYM-E-UNSUPPORTED-DECLARED-DECIMAL` instead of being treated
+	  as an unresolved object type; enum constants,
 	  basic DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
