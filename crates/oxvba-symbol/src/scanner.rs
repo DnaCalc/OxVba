@@ -1202,6 +1202,7 @@ fn declare_return_type(
 ) -> VarTypeRef {
     node.return_type()
         .map(type_ref_node)
+        .or_else(|| type_suffix_type_after_proc_name(node))
         .or_else(|| default_types.type_for(name_token.text))
         .unwrap_or(VarTypeRef::Variant)
 }

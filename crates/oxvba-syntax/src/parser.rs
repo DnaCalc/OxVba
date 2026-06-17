@@ -1162,6 +1162,9 @@ impl<'a> Parser<'a> {
         // Name
         if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
             self.bump();
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
         }
         self.eat_whitespace();
         if self.at(SyntaxKind::KwLib) {
@@ -2903,6 +2906,14 @@ mod tests {
         assert!(has_node_kind(&p.syntax(), SyntaxKind::LibClause));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::AliasClause));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ParamList));
+    }
+
+    #[test]
+    fn structures_declare_function_type_suffix() {
+        let src = "Private Declare PtrSafe Function Tick& Lib \"kernel32\" ()\n";
+        let p = parse_ok(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::DeclareStmt));
     }
 
     #[test]

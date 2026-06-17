@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use oxvba_bind::bind_program;
+use oxvba_bundle::DeclareParamType;
 use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreProgram, CoreStmt, CoreValue};
 use oxvba_bundle::native::NativeImplId;
 use oxvba_hal::HostPolicy;
@@ -1666,6 +1667,19 @@ fn declare_lib_emits_external_call_descriptor() {
         .expect("expected a GetTickCount external-call descriptor");
     assert_eq!(desc.library, "kernel32");
     assert!(desc.return_type.is_some());
+}
+
+#[test]
+fn declare_function_type_suffix_emits_external_return_type() {
+    let src = "DefDbl A-Z\nDeclare PtrSafe Function GetTickCount& Lib \"kernel32\" ()\n\n\
+               Sub Main()\n    Dim r As Long\n    r = GetTickCount()\nEnd Sub\n";
+    let program = bind(src);
+    let desc = program
+        .external_calls
+        .iter()
+        .find(|d| d.declared_name.eq_ignore_ascii_case("GetTickCount"))
+        .expect("expected a GetTickCount external-call descriptor");
+    assert_eq!(desc.return_type, Some(DeclareParamType::Long));
 }
 
 #[test]

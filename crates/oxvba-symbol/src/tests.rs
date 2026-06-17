@@ -687,6 +687,25 @@ fn environment_extracts_declare_statements() {
 }
 
 #[test]
+fn declare_function_type_suffix_supplies_return_type() {
+    let src = "DefDbl A-Z\r\nDeclare PtrSafe Function GetTickCount& Lib \"kernel32\" ()\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "GetTickCount")
+        .expect("declare resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
+    let SymbolImpl::Declare(declare) = &symbol.imp else {
+        panic!("expected Declare impl");
+    };
+    assert_eq!(declare.return_type, Some(DeclareParamType::Long));
+}
+
+#[test]
 fn com_resolves_default_member() {
     let provider = ComTypeLibProvider::new(widget_blob());
     let typed = VarTypeRef::Object("Widget".into());
