@@ -146,10 +146,11 @@ The 2026-06-01 continuation added:
   arguments against the accessor signature, appends/replaces the trailing assigned-value argument,
   and emits the project member dispatch instead of falling through to array/place assignment.
   Regression coverage proves the value `Property Let` setter receives the index before the
-  assigned value, the paired indexed `Property Get` still reads through the property accessor,
-  object-valued indexed `Property Set` carries the object value in the trailing parameter slot, and
-  interface-typed receivers dispatch indexed property gets/lets through the implementing accessor
-  name.
+  assigned value, named index arguments are reordered by accessor signature before the assigned
+  value is placed in the trailing slot, the paired indexed `Property Get` still reads through the
+  property accessor, object-valued indexed `Property Set` carries the object value in the trailing
+  parameter slot, and interface-typed receivers dispatch indexed property gets/lets through the
+  implementing accessor name.
 
 ## Checks
 
@@ -196,6 +197,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-languageservice --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-bind indexed_property_get_let_roundtrip --quiet`
+- `cargo test -p oxvba-bind named_indexed_property_let_roundtrip --quiet`
 - `cargo test -p oxvba-bind indexed_property --quiet`
 - `cargo test -p oxvba-bind implements_indexed_property_through_interface_var --quiet`
 - `cargo test -p oxvba-bind --quiet`
