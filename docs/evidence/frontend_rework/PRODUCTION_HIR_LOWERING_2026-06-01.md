@@ -637,8 +637,16 @@ oxvba-bind scalar_string_store_coerces_numeric_values --quiet`; `cargo test -p o
 scalar_deftype_string_defaults_affect_variables_params_and_returns --quiet`; `cargo test -p
 oxvba-bind --quiet`; `cargo test -p oxvba-vm2 --quiet`; `cargo test -p oxvba-bundle --quiet`;
 `cargo check --workspace`; `cargo fmt --check -p oxvba-bundle -p oxvba-vm2 -p oxvba-bind`; `git
-diff --check`; `./scripts/check-governance.ps1`. Remaining boundaries are explicit:
-duplicate-range diagnostics, `DefDec`, and broader declaration/type diagnostics remain later work.
+diff --check`; `./scripts/check-governance.ps1`. A later duplicate-range diagnostic pass now
+enforces the documented rule that a DefType range cannot include a previously defined letter:
+`DefaultTypeTable::set_range` checks the whole range before mutation and reports
+`SYM-E-DUPLICATE-DEFTYPE-RANGE` through `SymbolModelError::DuplicateDefTypeLetter`.
+`scanner_rejects_duplicate_deftype_letter_ranges` and `scanner_rejects_deftype_after_a_z_range`
+cover overlapping subranges and the `A-Z` umbrella case. Checks passed: `cargo test -p
+oxvba-symbol deftype --quiet`; `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind
+--quiet`; `cargo check --workspace`; `cargo fmt --check -p oxvba-symbol`; `git diff --check`;
+`./scripts/check-governance.ps1`. Remaining boundaries are explicit: `DefDec` and broader
+declaration/type diagnostics remain later work.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
