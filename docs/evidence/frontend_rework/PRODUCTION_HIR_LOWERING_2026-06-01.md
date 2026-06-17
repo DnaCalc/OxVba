@@ -597,7 +597,13 @@ the current runtime intentionally maps Database compare to binary comparison rat
 collation. `Option Private Module` now routes through single-source/default HIR for otherwise
 completed sources, is preserved on the production `BoundModule`, and feeds compile-derived bundle
 module facts from the bound front-end surface; project module-kind and reference-visibility
-enforcement remains in the project route.
+enforcement remains in the project route. Clean symbol-stack continuation on 2026-06-17 moved the
+cross-project export boundary from loader-only metadata to the scanner-owned module facts:
+`ModuleScan` now records source `Option Private Module` and export-surface synthesis consults that
+fact alongside `ModuleAttributes`. The regression
+`source_option_private_module_is_project_private` proves a direct symbol manifest with the source
+directive, but no pre-populated manifest flag, hides both the procedural module and its public
+constants from the published reference surface.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
