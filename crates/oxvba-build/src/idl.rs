@@ -132,27 +132,36 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
 
 fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
     !class.members.is_empty()
-        && class.members.len() <= 2
-        && class
-            .members
-            .iter()
-            .all(member_supports_bounded_dual_interface)
-        && class
-            .members
-            .iter()
-            .any(|member| member.vtable_slot == Some(7))
+        && class.members.len() <= 3
+        && class.members.iter().enumerate().all(|(index, member)| {
+            member.vtable_slot == Some(7 + index as u16)
+                && member_supports_bounded_dual_interface(member)
+        })
 }
 
 fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
     if member.invoke_kind != ComInvokeKind::Method
-        || member.return_type != Some(ComParamType::Long)
         || member.parameter_optional.iter().any(|optional| *optional)
     {
         return false;
     }
     matches!(
-        (member.vtable_slot, member.parameter_types.as_slice()),
-        (Some(7), []) | (Some(8), [ComParamType::Long, ComParamType::Long])
+        (
+            member.vtable_slot,
+            member.return_type,
+            member.parameter_types.as_slice()
+        ),
+        (Some(7), Some(ComParamType::Long), [])
+            | (
+                Some(8),
+                Some(ComParamType::Long),
+                [ComParamType::Long, ComParamType::Long],
+            )
+            | (
+                Some(9),
+                Some(ComParamType::Double),
+                [ComParamType::Double, ComParamType::Double],
+            )
     )
 }
 
@@ -173,7 +182,8 @@ fn generate_dual_member_idl(member: &ComMemberDescriptor) -> String {
             format!("[in] {} {name}", idl_type(*param))
         })
         .collect();
-    params.push("[out, retval] long* result".to_string());
+    let return_type = member.return_type.map(idl_type).unwrap_or("void");
+    params.push(format!("[out, retval] {return_type}* result"));
     format!("        {attr} HRESULT {name}({});\n", params.join(", "))
 }
 

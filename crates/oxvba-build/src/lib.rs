@@ -258,6 +258,10 @@ End Function
 Public Function AddPair(ByVal a As Long, ByVal b As Long) As Long
     AddPair = a + b
 End Function
+
+Public Function Average(ByVal a As Double, ByVal b As Double) As Double
+    Average = (a + b) / 2#
+End Function
 "#,
         );
         write(
@@ -321,9 +325,10 @@ End Function
             .iter()
             .find(|class| class.class_name == "Pinger")
             .expect("Pinger descriptor");
-        assert_eq!(pinger.members.len(), 2);
+        assert_eq!(pinger.members.len(), 3);
         assert_eq!(pinger.members[0].vtable_slot, Some(7));
         assert_eq!(pinger.members[1].vtable_slot, Some(8));
+        assert_eq!(pinger.members[2].vtable_slot, Some(9));
 
         let idl = std::fs::read_to_string(&output.idl_path).expect("idl should exist");
         assert!(idl.contains("library DemoServerLib"));
@@ -337,6 +342,9 @@ End Function
         assert!(
             idl.contains("HRESULT AddPair([in] long a, [in] long b, [out, retval] long* result);")
         );
+        assert!(idl.contains(
+            "HRESULT Average([in] double a, [in] double b, [out, retval] double* result);"
+        ));
         assert!(idl.contains("[default] interface IPinger;"));
 
         let shim_source =

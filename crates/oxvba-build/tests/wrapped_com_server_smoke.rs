@@ -10,7 +10,7 @@ use windows_sys::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
     CoInitializeEx, CoUninitialize, DISPATCH_METHOD, TYPEATTR,
 };
-use windows_sys::Win32::System::Variant::{VARIANT, VT_I4, VariantClear};
+use windows_sys::Win32::System::Variant::{VARIANT, VT_I4, VT_R8, VariantClear};
 use windows_sys::core::GUID;
 
 type SeenEvents = Arc<Mutex<Vec<(i32, Option<i32>)>>>;
@@ -71,6 +71,10 @@ End Function
 
 Public Function AddPair(ByVal a As Long, ByVal b As Long) As Long
     AddPair = a + b
+End Function
+
+Public Function Average(ByVal a As Double, ByVal b As Double) As Double
+    Average = (a + b) / 2#
 End Function
 "#,
     );
@@ -153,6 +157,8 @@ $ping = $pinger.Ping()
 if ($ping -ne 42) {{ throw "expected Ping()=42, got $ping" }}
 $pair = $pinger.AddPair(19, 23)
 if ($pair -ne 42) {{ throw "expected AddPair(19,23)=42, got $pair" }}
+$average = $pinger.Average(10.5, 21.5)
+if ([Math]::Abs($average - 16.0) -gt 0.0000001) {{ throw "expected Average(10.5,21.5)=16, got $average" }}
 "#,
         tlb_path, libid, clsid, version
     );
@@ -228,6 +234,9 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     End If
     If pinger.AddPair(19, 23) <> 42 Then
         Err.Raise 5, , "Pinger.AddPair returned wrong value"
+    End If
+    If Abs(pinger.Average(10.5, 21.5) - 16#) > 0.0000001 Then
+        Err.Raise 5, , "Pinger.Average returned wrong value"
     End If
     On Error Resume Next
     ignored = calc.Boom()
@@ -455,6 +464,11 @@ unsafe fn controlled_dual_vtable_smoke_inner(
         .iter()
         .find(|member| member.name == "AddPair")
         .ok_or_else(|| "AddPair descriptor missing".to_string())?;
+    let average = class
+        .members
+        .iter()
+        .find(|member| member.name == "Average")
+        .ok_or_else(|| "Average descriptor missing".to_string())?;
 
     let mut clsid = GUID {
         data1: 0,
@@ -484,6 +498,8 @@ unsafe fn controlled_dual_vtable_smoke_inner(
         assert_dispatch_type_info(object, &parse_guid(&class.default_interface_iid)?)?;
         let dispatch_value = invoke_i4_method_result(object, ping.dispid)?;
         let dispatch_pair_value = invoke_i4_method_pair_result(object, add_pair.dispid, 19, 23)?;
+        let dispatch_average_value =
+            invoke_r8_method_pair_result(object, average.dispid, 10.5, 21.5)?;
         let iid = parse_guid(&class.default_interface_iid)?;
         let mut dual: *mut std::ffi::c_void = std::ptr::null_mut();
         let hr = query_interface(object, &iid, &mut dual);
@@ -525,6 +541,24 @@ unsafe fn controlled_dual_vtable_smoke_inner(
             if vtable_pair_value != 42 {
                 return Err(format!(
                     "expected vtable AddPair(19,23)=42, got {vtable_pair_value}"
+                ));
+            }
+            let mut vtable_average_value = 0.0f64;
+            let hr = ((*vtbl).slot2)(dual, 10.5, 21.5, &mut vtable_average_value);
+            if hr < 0 {
+                return Err(format!(
+                    "dual Average vtable call failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if (dispatch_average_value - vtable_average_value).abs() > 0.0000001 {
+                return Err(format!(
+                    "dispatch Average returned {dispatch_average_value}, vtable returned {vtable_average_value}"
+                ));
+            }
+            if (vtable_average_value - 16.0).abs() > 0.0000001 {
+                return Err(format!(
+                    "expected vtable Average(10.5,21.5)=16, got {vtable_average_value}"
                 ));
             }
             Ok(())
@@ -960,6 +994,55 @@ unsafe fn invoke_i4_method_pair_result(
     value
 }
 
+unsafe fn invoke_r8_method_pair_result(
+    dispatch: *mut std::ffi::c_void,
+    dispid: i32,
+    left: f64,
+    right: f64,
+) -> Result<f64, String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut args: [VARIANT; 2] = [std::mem::zeroed(), std::mem::zeroed()];
+    args[0].Anonymous.Anonymous.vt = VT_R8;
+    args[0].Anonymous.Anonymous.Anonymous.dblVal = right;
+    args[1].Anonymous.Anonymous.vt = VT_R8;
+    args[1].Anonymous.Anonymous.Anonymous.dblVal = left;
+    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+        rgvarg: args.as_mut_ptr(),
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 2,
+        cNamedArgs: 0,
+    };
+    let mut result: VARIANT = std::mem::zeroed();
+    let hr = ((*vtbl).invoke)(
+        dispatch,
+        dispid,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD,
+        &mut params,
+        &mut result,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    for arg in &mut args {
+        VariantClear(arg);
+    }
+    if hr < 0 {
+        VariantClear(&mut result);
+        return Err(format!("Invoke(Average) failed: 0x{:08X}", hr as u32));
+    }
+    let value = if result.Anonymous.Anonymous.vt == VT_R8 {
+        Ok(result.Anonymous.Anonymous.Anonymous.dblVal)
+    } else {
+        Err(format!(
+            "Invoke(Average) returned VT {}, expected VT_R8",
+            result.Anonymous.Anonymous.vt
+        ))
+    };
+    VariantClear(&mut result);
+    value
+}
+
 #[repr(C)]
 struct IUnknownVtbl {
     query_interface: unsafe extern "system" fn(
@@ -1119,6 +1202,7 @@ struct BoundedDualVtbl {
     ) -> i32,
     slot0: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
     slot1: unsafe extern "system" fn(*mut std::ffi::c_void, i32, i32, *mut i32) -> i32,
+    slot2: unsafe extern "system" fn(*mut std::ffi::c_void, f64, f64, *mut f64) -> i32,
 }
 
 #[repr(C)]

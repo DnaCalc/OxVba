@@ -26,7 +26,7 @@ const SHIM_TEMPLATE: &str = r##"//! Auto-generated OxVBA WrappedComServer shim s
 //! per-user registration, generated type-library registration, and late-bound
 //! Invoke. Source dispinterfaces are exposed through connection points. A
 //! bounded dual-interface tier is emitted only for classes whose generated
-//! TypeLib surface fits the implemented scalar Long-returning vtable slots.
+//! TypeLib surface fits the implemented scalar vtable slots.
 
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case)]
@@ -350,6 +350,7 @@ struct BoundedDualVtbl {
     ) -> i32,
     slot0: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
     slot1: unsafe extern "system" fn(*mut c_void, i32, i32, *mut i32) -> i32,
+    slot2: unsafe extern "system" fn(*mut c_void, f64, f64, *mut f64) -> i32,
 }
 
 static CLASS_FACTORY_VTBL: IClassFactoryVtbl = IClassFactoryVtbl {
@@ -380,6 +381,7 @@ static BOUNDED_DUAL_VTBL: BoundedDualVtbl = BoundedDualVtbl {
     invoke: dual_invoke,
     slot0: dual_slot7_long_return,
     slot1: dual_slot8_long2_return,
+    slot2: dual_slot9_double2_return,
 };
 
 static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl =
@@ -937,6 +939,29 @@ unsafe extern "system" fn dual_slot8_long2_return(
     }
 }
 
+unsafe extern "system" fn dual_slot9_double2_return(
+    this: *mut c_void,
+    left: f64,
+    right: f64,
+    out: *mut f64,
+) -> i32 {
+    if out.is_null() {
+        return E_POINTER;
+    }
+    *out = 0.0;
+    match invoke_bounded_dual_double_member(
+        this,
+        9,
+        vec![Variant::from_f64(left), Variant::from_f64(right)],
+    ) {
+        Ok(value) => {
+            *out = value;
+            S_OK
+        }
+        Err(hr) => hr,
+    }
+}
+
 unsafe fn invoke_bounded_dual_long_member(
     this: *mut c_void,
     slot: u16,
@@ -965,6 +990,36 @@ unsafe fn invoke_bounded_dual_long_member(
     })
     .map_err(|_| E_FAIL)?;
     value.as_i32().ok_or(DISP_E_TYPEMISMATCH)
+}
+
+unsafe fn invoke_bounded_dual_double_member(
+    this: *mut c_void,
+    slot: u16,
+    args: Vec<Variant>,
+) -> Result<f64, i32> {
+    let owner = dual_owner(this)?;
+    let descriptor = descriptor().map_err(|_| E_FAIL)?;
+    let class = descriptor
+        .classes
+        .get((*owner).class_index)
+        .ok_or(E_FAIL)?;
+    let member = class
+        .members
+        .iter()
+        .find(|member| member.vtable_slot == Some(slot) && member_supports_bounded_dual_interface(member))
+        .ok_or(E_NOTIMPL)?;
+    let value = with_session(|session| {
+        session
+            .invoke_member_values(
+                (*owner).object.clone(),
+                &member.name,
+                Some(project_member_kind(member.invoke_kind)),
+                args,
+            )
+            .map_err(|err| err.to_string())
+    })
+    .map_err(|_| E_FAIL)?;
+    value.as_f64().ok_or(DISP_E_TYPEMISMATCH)
 }
 
 unsafe fn dual_owner(this: *mut c_void) -> Result<*mut DispatchObject, i32> {
@@ -1471,27 +1526,40 @@ fn member_for_dispatch(
 
 fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
     !class.members.is_empty()
-        && class.members.len() <= 2
+        && class.members.len() <= 3
         && class
             .members
             .iter()
-            .all(member_supports_bounded_dual_interface)
-        && class
-            .members
-            .iter()
-            .any(|member| member.vtable_slot == Some(7))
+            .enumerate()
+            .all(|(index, member)| {
+                member.vtable_slot == Some(7 + index as u16)
+                    && member_supports_bounded_dual_interface(member)
+            })
 }
 
 fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
     if member.invoke_kind != ComInvokeKind::Method
-        || member.return_type != Some(ComParamType::Long)
         || member.parameter_optional.iter().any(|optional| *optional)
     {
         return false;
     }
     matches!(
-        (member.vtable_slot, member.parameter_types.as_slice()),
-        (Some(7), []) | (Some(8), [ComParamType::Long, ComParamType::Long])
+        (
+            member.vtable_slot,
+            member.return_type,
+            member.parameter_types.as_slice()
+        ),
+        (Some(7), Some(ComParamType::Long), [])
+            | (
+                Some(8),
+                Some(ComParamType::Long),
+                [ComParamType::Long, ComParamType::Long],
+            )
+            | (
+                Some(9),
+                Some(ComParamType::Double),
+                [ComParamType::Double, ComParamType::Double],
+            )
     )
 }
 
