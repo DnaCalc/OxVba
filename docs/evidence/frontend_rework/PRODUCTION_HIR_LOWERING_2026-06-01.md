@@ -1458,6 +1458,18 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `/`) over numeric literals and module constants.
 - Follow-up Date literal work accepts deterministic `#...#` optional Date defaults and maps them to
   the same Date serial carrier, with resolver, metadata, and VM omitted-argument proofs.
+- Follow-up string-to-typed-default coercion matches an Excel 16.0 oracle probe for
+  `Optional ... As Long = "7"`, `Optional ... As Boolean = "False"`,
+  `Optional ... As Date = "2026-02-28"`, and `Optional ... As Currency = "1.25"`.
+  Scanner signature metadata now reuses the declared scalar constant coercion helper, and the
+  folded optional-default environment coerces omitted-call defaults by declared parameter type, so
+  string Date text reaches the VM as a deterministic Date serial instead of a string that the
+  numeric Date coercer would reject. Evidence: Excel observed `7`, `False`, `2026/02/28`, and
+  `1.25`; `optional_parameter_string_defaults_coerce_to_declared_metadata`;
+  `optional_string_to_typed_defaults_are_bound_for_omitted_args`; `cargo test -p oxvba-symbol
+  --quiet`; `cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol
+  -p oxvba-bind`; `cargo check --workspace`; `git diff --check`;
+  `./scripts/check-governance.ps1`.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
   literals and module constants into the existing explicit string optional-default carrier.
 - Follow-up scalar-concat default work reuses the same exact scalar-to-string operand formatting
@@ -1489,7 +1501,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
   plus string/Boolean constant-expression subset, bounded Boolean comparison subset, exact
   same-string equality/inequality subset, bounded Date/Currency arithmetic numeric subset, and
-  exact i64 optional-default carrier subset.
+  exact i64 optional-default carrier subset, plus the covered string-to-declared-scalar default
+  coercions.
   Collation-sensitive string comparisons, `Like`/`Is`, and coercive comparison defaults remain
   FE-8.5.f residuals.
 

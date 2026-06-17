@@ -39,8 +39,9 @@ source. `Option Compare Database` now exits through
 `SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE` rather than the previous Binary approximation, because
 Database comparison is Access/database-collation dependent.
 Class/object-local compatibility contexts, project-rewritten compilation, unsupported project
-property/default-member/COM rewrite shapes, Date/Currency/coerced default expressions, and other
-explicitly tracked residual constructs still fall back rather than accepting partial HIR output.
+property/default-member/COM rewrite shapes, remaining Date/Currency/coercive default-expression
+breadth outside the covered scalar/string/default carrier paths, and other explicitly tracked
+residual constructs still fall back rather than accepting partial HIR output.
 
 ## Checks
 
