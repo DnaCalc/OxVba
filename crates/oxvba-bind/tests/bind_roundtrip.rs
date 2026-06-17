@@ -681,6 +681,17 @@ fn indexed_property_get_let_roundtrip() {
 }
 
 #[test]
+fn named_indexed_property_let_roundtrip() {
+    // Named index arguments on an indexed Property Let are reordered by the
+    // accessor signature before the assigned value is placed in the trailing slot.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    w.Value(i := 3) = 10\n    r = w.Value(2)\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value(ByVal i As Long) As Long\n    Value = mV + i\nEnd Property\n\n\
+                  Public Property Let Value(ByVal i As Long, ByVal v As Long)\n    mV = v + i\nEnd Property\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(15.0));
+}
+
+#[test]
 fn indexed_property_set_roundtrip() {
     // `Set b.Item(3) = t` must select the indexed Property Set accessor, carrying
     // the index argument before the object value argument.
