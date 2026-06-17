@@ -151,6 +151,11 @@ The 2026-06-01 continuation added:
   property accessor, object-valued indexed `Property Set` carries the object value in the trailing
   parameter slot, and interface-typed receivers dispatch indexed property gets/lets through the
   implementing accessor name.
+- `bd-aprs.8.7` clean-binder missing-accessor continuation: active-project property assignments
+  now require the selected `Property Let`/`Property Set` accessor to exist before lowering a
+  synthetic project-member setter call. Get-only scalar and indexed properties, plus object-valued
+  properties that omit `Property Set`, now fail in the binder instead of silently fabricating a
+  setter route.
 
 ## Checks
 
@@ -200,6 +205,8 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-bind named_indexed_property_let_roundtrip --quiet`
 - `cargo test -p oxvba-bind indexed_property --quiet`
 - `cargo test -p oxvba-bind implements_indexed_property_through_interface_var --quiet`
+- `cargo test -p oxvba-bind property_is_bind_error --quiet`
+- `cargo test -p oxvba-bind set_assigning_to_property_without_set_accessor_is_bind_error --quiet`
 - `cargo test -p oxvba-bind --quiet`
 - `cargo check --workspace`
 - `cargo fmt --check -p oxvba-bind`
@@ -356,3 +363,8 @@ The 2026-06-01 continuation added:
   `Property Set` and interface-typed receivers. This closes the project-class/interface indexed
   property setter subset only; broader host/reference/imported-COM writeback breadth and terminal
   rewrite retirement remain open.
+- Missing-accessor review on 2026-06-17 found the paired failure mode introduced by the same
+  binder/provider split: the project provider resolves the property group, while assignment syntax
+  chooses `Let` or `Set` in the binder. Without an accessor-existence check, a get-only property
+  group could still lower to a synthetic setter call. The binder now requires the requested
+  accessor signature for bare, member-qualified, and indexed active-project property assignments.
