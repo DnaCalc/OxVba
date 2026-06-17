@@ -2,10 +2,14 @@
 
 Date: 2026-05-10
 Owner: Codex
-Status: planned
+Status: superseded by completed neutral host-callable rework
 Bead root: `bd-sg5h`
 Sequencing: after the next WrappedComServer workset reaches its reopened direct-host build gate.
 Refinement: superseded/refined by `docs/worksets/WORKSET_2026-05-24_HOST_PROJECT_CALLABLE_REFLECTION_AND_WRAPPER_GENERATION_REWORK.md`, which reframes this topic around neutral host project reflection, host-owned UDF policy, and generic build-time wrapper generation.
+Resolution: the successor workset is complete under `bd-hjys`; its terminal audit is
+`docs/evidence/host_callable/TERMINAL_AUDIT.md`. The original `bd-sg5h`
+parent remains provenance for the pre-rework HostUdf-shaped seed issues, not an
+active implementation lane.
 
 ## Purpose
 
@@ -149,6 +153,11 @@ The first execution pass should roll this into child epics before implementation
 - validation and evidence refresh for `PH-0011`.
 
 ## Terminal Condition
+
+Resolved by the successor neutral host-callable workset:
+
+`docs/worksets/WORKSET_2026-05-24_HOST_PROJECT_CALLABLE_REFLECTION_AND_WRAPPER_GENERATION_REWORK.md`
+and `docs/evidence/host_callable/TERMINAL_AUDIT.md`.
 
 This workset is complete only when:
 
