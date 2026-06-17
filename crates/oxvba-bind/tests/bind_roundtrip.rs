@@ -669,6 +669,18 @@ fn property_get_let_roundtrip() {
 }
 
 #[test]
+fn indexed_property_get_let_roundtrip() {
+    // `w.Value(3) = 10` is an indexed Property Let, not an array-element write
+    // through a synthesized helper. The setter receives index args followed by
+    // the assigned value, and the getter remains an indexed Property Get.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    w.Value(3) = 10\n    r = w.Value(2)\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value(ByVal i As Long) As Long\n    Value = mV + i\nEnd Property\n\n\
+                  Public Property Let Value(ByVal i As Long, ByVal v As Long)\n    mV = v + i\nEnd Property\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(15.0));
+}
+
+#[test]
 fn method_mutates_instance_field_across_calls() {
     // Two `c.Inc` statement-calls mutate the same instance's field; Total() reads it.
     let main = "Sub Main()\n    Dim r As Long\n    Dim c As Counter\n    Set c = New Counter\n    c.Inc\n    c.Inc\n    r = c.Total()\nEnd Sub\n";

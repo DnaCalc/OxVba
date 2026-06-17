@@ -758,6 +758,29 @@ impl<'a> ProcLower<'a> {
         // The index argument list lives on the enclosing IndexExpr (`target`).
         let arglist = target.index_arg_list();
         match self.resolve_member(&recv.ty, member, Some(kind)) {
+            // A project class/interface property: dispatch to the resolved accessor
+            // with index arguments followed by the assigned value, matching the
+            // bare `Prop(index) = rhs` lowering without falling back to field/index
+            // place assignment.
+            Some(Binding {
+                route: DispatchRoute::ProjectMember { .. },
+                symbol: Some(sym),
+                ..
+            }) => {
+                let signature = self.proc_signature_for(sym, kind);
+                let mut args = match &signature {
+                    Some(sig) => self.bind_proc_args(arglist, sig, sym)?,
+                    None => self.bind_args(arglist, None)?,
+                };
+                match args.last_mut() {
+                    Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                    None => args.push(CoreArg::ByVal(rhs.clone())),
+                }
+                let dispatch = self.interface_dispatch_name(&recv.ty, member);
+                Ok(Some(vec![CoreStmt::Eval(
+                    self.late_member_call(&dispatch, kind, recv.value, args),
+                )]))
+            }
             // A typed COM receiver: dispatch the put/set by dispid with the index
             // args (ByRef per the typelib) followed by the value.
             Some(Binding {
