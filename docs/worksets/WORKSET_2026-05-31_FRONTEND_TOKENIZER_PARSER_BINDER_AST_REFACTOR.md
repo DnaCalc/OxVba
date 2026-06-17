@@ -761,7 +761,8 @@ Required newly explicit delivery beads:
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion
   outside the covered exact and string-to-declared-scalar carriers,
-  broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
+  broader Date/Currency expression coercion beyond the covered numeric arithmetic and
+  deterministic string-Date store subset,
   full platform `LongPtr` semantics, lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
@@ -1593,8 +1594,9 @@ Candidate bead units:
   integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
   default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults,
   string-to-declared-scalar optional default metadata/runtime binding for covered Boolean,
-  integer, Currency, and deterministic Date text defaults, plus bounded equality-based `Like`
-  folding for covered string Boolean constants.
+  integer, Currency, and deterministic Date text defaults, deterministic string-to-Date store
+  coercion through the shared runtime parser, plus bounded equality-based `Like` folding for
+  covered string Boolean constants.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
