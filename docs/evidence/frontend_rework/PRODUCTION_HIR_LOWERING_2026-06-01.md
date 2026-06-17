@@ -660,6 +660,16 @@ Follow-up DefDec cleanup makes that boundary explicit in the clean scanner: `Def
 supporting Decimal as a Variant subtype/runtime payload rather than ordinary declared storage.
 `scanner_rejects_defdec_declared_decimal_storage` covers the diagnostic. Broader declaration/type
 diagnostics remain later work.
+The next Decimal cleanup applies the same policy to explicit type references: bare `As Decimal`
+now reports `SYM-E-UNSUPPORTED-DECLARED-DECIMAL` during symbol scanning instead of falling through
+as an unresolved object type named `decimal`. Qualified/user type references are left to ordinary
+object/type resolution. Regression coverage: `scanner_rejects_explicit_declared_decimal_storage`,
+`scanner_allows_qualified_decimal_type_reference`, with
+`scanner_rejects_defdec_declared_decimal_storage` retained for the DefType directive path. Checks
+passed for the explicit-declaration follow-up: `cargo test -p oxvba-symbol decimal --quiet`;
+`cargo test -p oxvba-symbol deftype --quiet`; `cargo test -p oxvba-symbol --quiet`;
+`cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol`;
+`cargo check --workspace`; `git diff --check`; `./scripts/check-governance.ps1`.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
