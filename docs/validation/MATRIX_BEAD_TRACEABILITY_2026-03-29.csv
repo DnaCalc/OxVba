@@ -66,6 +66,7 @@ bd-wcs1.4.2,bd-wcs1.4,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX
 bd-wcs1.5.1,bd-wcs1.5,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0007,Generated wrapped COM DLL compilation and standard COM export surface.
 bd-wcs1.5.3,bd-wcs1.5,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0007,IDispatch GetIDsOfNames/Invoke implementation over descriptors and call frames.
 bd-wcs1.6.2,bd-wcs1.6,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0008,Office/VBA early-bound oracle for generated wrapped server typelib.
+bd-9h5j,bd-wcs1,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0008,Clean WrappedComServer Excel/VBA project-reference early-bound dispatch-interface method/property/object/array/error coverage.
 bd-wcs1.7.2,bd-wcs1.7,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0009,Dispatch/vtable equivalence evidence for Automation-safe dual-interface member.
 bd-wcs1.8.1,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Wrapped event source dispinterface and coclass source metadata publication.
 bd-wcs1.8.2,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Connection point Advise/Unadvise and RaiseEvent sink dispatch.
