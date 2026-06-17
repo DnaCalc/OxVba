@@ -645,7 +645,17 @@ enforces the documented rule that a DefType range cannot include a previously de
 cover overlapping subranges and the `A-Z` umbrella case. Checks passed: `cargo test -p
 oxvba-symbol deftype --quiet`; `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind
 --quiet`; `cargo check --workspace`; `cargo fmt --check -p oxvba-symbol`; `git diff --check`;
-`./scripts/check-governance.ps1`. Remaining boundaries are explicit: `DefDec` and broader
+`./scripts/check-governance.ps1`. Follow-up fixed-length String store hardening keeps the same
+runtime coercion authority for `String * N` targets: `Op::CoerceFixedString` now first delegates to
+the runtime `Variant` string coercion helper and only then applies fixed-length UTF-16 code-unit
+padding/truncation. This preserves numeric-to-string assignment such as `7 -> "7  "` while raising
+runtime error 13 for invalid coercions such as `Null -> String * 3`, instead of converting failures
+through the lossy display helper into spaces. Regression coverage:
+`fixed_length_string_store_coerces_numeric_values` and `fixed_length_string_store_rejects_null`.
+Checks passed for the fixed-length follow-up: `cargo test -p oxvba-bind fixed_length_string --quiet`;
+`cargo test -p oxvba-bind --quiet`; `cargo test -p oxvba-vm2 --quiet`; `cargo check --workspace`;
+`cargo fmt --check -p oxvba-vm2 -p oxvba-bind`; `git diff --check`; `./scripts/check-governance.ps1`.
+Remaining boundaries are explicit: `DefDec` and broader
 declaration/type diagnostics remain later work.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
