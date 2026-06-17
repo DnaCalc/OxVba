@@ -39,7 +39,7 @@ This separation is required so wrapper/native-hosting lanes do not overload sema
 | `Bundle` | Canonical OxVBA bundle artifact | emits `.oxb`; current stable default except `OutputType=Addin`, where `oxvba build` packages the bundle into a generated `.xll` |
 | `WrapperExe` | Native executable wrapper over a canonical `.oxb` payload | planned delivery lane |
 | `WrapperLibrary` | Native DLL/shared-library wrapper over a canonical `.oxb` payload | planned delivery lane |
-| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | bounded Windows DLL lane active: package/descriptor/IDL/shim source, compiled `.tlb`, and compiled in-process COM DLL with per-user class/typelib registration, late-bound `IDispatch` activation/dispatch, and dispatch-backed connection-point event publication |
+| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | bounded Windows DLL lane active: package/descriptor/IDL/shim source, compiled `.tlb`, and compiled in-process COM DLL with per-user class/typelib registration, late-bound `IDispatch` activation/dispatch, dispatch-backed connection-point event publication, and one Automation-safe dual-interface vtable method shape |
 
 Default: `Bundle`
 
@@ -105,16 +105,21 @@ DLL embeds the package and descriptor, exports `DllGetClassObject`,
 `DllCanUnloadNow`, `DllRegisterServer`, and `DllUnregisterServer`, registers
 creatable classes and the generated type library under `HKCU\Software\Classes`,
 supports late-bound `IDispatch` activation/member dispatch through the clean
-package-backed runtime session, and exposes source dispinterfaces through
-standard COM connection points for project `RaiseEvent` publication.
+package-backed runtime session, exposes source dispinterfaces through standard
+COM connection points for project `RaiseEvent` publication, and emits a real
+dual-interface vtable face for classes whose default interface fits the first
+implemented Automation-safe shape: one no-argument `Long`-returning method
+published as `HRESULT Method([out, retval] long*)`.
 
 The active subset is still intentionally bounded. Early-bound client parity,
-dual-interface vtable projection, registration-free manifests, and broader
-Office/VBA client parity remain follow-on work beyond the current dispatch-backed
-DLL, registered typelib, and connection-point event slice. Excel/VBA evidence
-for this slice uses a typed dispatch-only interface and `WithEvents` sink for
-member invocation and connection-point subscription; it does not claim
-dual-interface vtable calls.
+registration-free manifests, broader dual-interface argument/property/byref/
+object/array/error parity, and broader Office/VBA client parity remain follow-on
+work beyond the current dispatch-backed DLL, registered typelib,
+connection-point event, and bounded raw-COM dual-slot slice. Excel/VBA evidence
+for the event class uses a typed dispatch-only interface and `WithEvents` sink
+for member invocation and connection-point subscription; the dual-interface
+evidence is a controlled raw-COM `QueryInterface` plus vtable call on the
+eligible scalar method class.
 
 The lane is Windows-only unless a future workset defines a portable equivalent. Bitness, toolchain availability, registration scope, and administrative requirements must be reported through build-plan/build-result surfaces rather than inferred from CLI text.
 

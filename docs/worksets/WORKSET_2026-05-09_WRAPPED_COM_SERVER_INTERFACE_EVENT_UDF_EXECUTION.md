@@ -23,12 +23,13 @@ calls with direct native compiled entry points.
 OxVba already has important substrate:
 
 - 2026-06-17 clean reimplementation update: `oxvba-build` now emits a usable
-  dispatch-backed `WrappedComServer` DLL for `OutputType=ComServer` projects,
-  including per-user registration, generated TypeLib registration, late-bound
-  `IDispatch` activation/member dispatch, and connection-point event
-  publication. Current evidence includes a controlled raw COM sink and an
-  Excel/VBA typed dispatch-interface `WithEvents` sink; this does not claim
-  dual-interface vtable calls.
+  `WrappedComServer` DLL for `OutputType=ComServer` projects, including
+  per-user registration, generated TypeLib registration, late-bound `IDispatch`
+  activation/member dispatch, connection-point event publication, and the first
+  bounded dual-interface vtable projection. Current evidence includes a
+  controlled raw COM event sink, a controlled raw COM `QueryInterface` plus
+  vtable call for a no-argument `Long` method, and an Excel/VBA typed
+  dispatch-interface `WithEvents` sink.
 - Runtime values are OLE Automation shaped (`BStr`, 16-byte `Variant`, retained
   SAFEARRAY metadata, exact scalar COM VARTYPE carriers).
 - `ObjectRef` is IUnknown-like and now carries descriptor-backed
@@ -80,12 +81,13 @@ OxVba already has important substrate:
   default property get/let, object return, array return, error/`EXCEPINFO`, and
   registered `CoCreateInstance` activation slices. Office/VBA project-reference
   evidence remains outside the implemented subset.
-- COM-0009 has historical pre-clean dual-interface projection evidence, but the
-  clean 2026-06-17 `WrappedComServer` reimplementation does not carry that
-  vtable tier. The active clean path emits dispatch-only default interfaces and
-  returns `IDispatch` for those interface IIDs until a real dual-interface
-  vtable implementation lands. Broader argument/property/byref/object/array/error
-  vtable parity remains outside the implemented subset.
+- COM-0009 now has clean 2026-06-17 dual-interface projection evidence for the
+  first bounded shape: classes with exactly one no-argument `Long` method are
+  emitted as dual interfaces, `QueryInterface` returns a real vtable subobject,
+  and the slot-7 `HRESULT`/`[out, retval] long*` call returns the same result as
+  `IDispatch::Invoke` on the same wrapped object. Broader
+  argument/property/byref/object/array/error vtable parity remains outside the
+  implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -135,7 +137,8 @@ OxVba already has important substrate:
 The missing truth is also explicit:
 
 - The clean `oxvba build --target WrappedComServer` lane now registers a usable
-  in-process COM server DLL for the bounded dispatch-backed subset.
+  in-process COM server DLL for the bounded dispatch-backed subset plus the
+  first raw-COM dual vtable slot.
 - Office/VBA early-bound project-reference evidence is not part of COM-0007 and
   remains deferred beyond the current COM-0008 controlled TypeLib-aware subset.
 - Broader dual-interface argument/property/byref/object/array/error parity and
