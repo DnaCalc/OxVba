@@ -406,6 +406,24 @@ fn scalar_typed_const_exact_carriers_preserve_variant_values() {
 }
 
 #[test]
+fn scalar_string_typed_const_values_coerce_to_declared_carriers() {
+    let snap = run(
+        "Const CLong As Long = \"7\"\nConst CBool As Boolean = \"False\"\nConst CSingle As Single = \"1.5\"\nConst CDouble As Double = \"2.5\"\nConst CAmount As Currency = \"1.25\"\nConst CStamp As Date = \"2026-02-28\"\nSub Main()\nDim l As Long\nDim b As Boolean\nDim s As Single\nDim d As Double\nDim amount As Currency\nDim stamp As Date\nl = CLong\nb = CBool\ns = CSingle\nd = CDouble\namount = CAmount\nstamp = CStamp\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i32(7),
+            Variant::from_bool(false),
+            Variant::from_f32(1.5),
+            Variant::from_f64(2.5),
+            Variant::from_currency_scaled_i64(12_500),
+            Variant::from_date_f64(46_081.0),
+        ]
+    );
+}
+
+#[test]
 fn scalar_deftype_defaults_affect_variables_params_and_returns() {
     let snap = run("DefSng F, P, S\n\
          Public outSample As Variant\n\

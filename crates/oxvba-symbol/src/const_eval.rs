@@ -313,12 +313,7 @@ fn coerce_const_to_declared_type(value: CoreConst, ty: &VarTypeRef) -> Option<Co
         VarTypeRef::FixedString(_) | VarTypeRef::Builtin(BuiltinType::String) => {
             const_to_string(&value).map(CoreConst::Str)
         }
-        VarTypeRef::Builtin(BuiltinType::Boolean) => const_to_f64(&value)
-            .map(|n| CoreConst::Bool(n != 0.0))
-            .or(match value {
-                CoreConst::Bool(_) => Some(value),
-                _ => None,
-            }),
+        VarTypeRef::Builtin(BuiltinType::Boolean) => const_to_bool(&value).map(CoreConst::Bool),
         VarTypeRef::Builtin(BuiltinType::Byte) => {
             let n = const_to_i64(&value)?;
             (0..=255).contains(&n).then_some(CoreConst::I32(n as i32))
@@ -351,10 +346,7 @@ fn coerce_const_to_declared_type(value: CoreConst, ty: &VarTypeRef) -> Option<Co
             (scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64)
                 .then_some(CoreConst::Currency(scaled as i64))
         }
-        VarTypeRef::Builtin(BuiltinType::Date) => {
-            let n = const_to_f64(&value)?;
-            n.is_finite().then_some(CoreConst::Date(n.to_bits()))
-        }
+        VarTypeRef::Builtin(BuiltinType::Date) => const_to_date_bits(&value).map(CoreConst::Date),
         VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Array(_) => None,
     }
 }
@@ -571,10 +563,40 @@ fn const_num(c: &CoreConst) -> Option<ConstNum> {
 }
 
 fn const_to_f64(c: &CoreConst) -> Option<f64> {
+    if let CoreConst::Str(s) = c {
+        let n = s.trim().parse::<f64>().ok()?;
+        return n.is_finite().then_some(n);
+    }
     Some(match const_num(c)? {
         ConstNum::Int(n) => n as f64,
         ConstNum::Float(n) => n,
     })
+}
+
+fn const_to_bool(c: &CoreConst) -> Option<bool> {
+    match c {
+        CoreConst::Bool(b) => Some(*b),
+        CoreConst::Str(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => const_to_f64(c).map(|n| n != 0.0),
+        },
+        _ => const_to_f64(c).map(|n| n != 0.0),
+    }
+}
+
+fn const_to_date_bits(c: &CoreConst) -> Option<u64> {
+    match c {
+        CoreConst::Date(bits) => Some(*bits),
+        CoreConst::Str(s) => date::parse_date_text_serial_bits(s).or_else(|| {
+            let n = const_to_f64(c)?;
+            n.is_finite().then_some(n.to_bits())
+        }),
+        _ => {
+            let n = const_to_f64(c)?;
+            n.is_finite().then_some(n.to_bits())
+        }
+    }
 }
 
 fn const_to_i64(c: &CoreConst) -> Option<i64> {
@@ -774,7 +796,11 @@ pub(crate) fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {
 pub mod date {
     pub fn parse_date_literal_serial_bits(text: &str) -> Option<u64> {
         let inner = text.strip_prefix('#')?.strip_suffix('#')?.trim();
-        let packed = parse_date_literal_to_packed(inner)?;
+        parse_date_text_serial_bits(inner)
+    }
+
+    pub fn parse_date_text_serial_bits(text: &str) -> Option<u64> {
+        let packed = parse_date_literal_to_packed(text.trim())?;
         Some(packed_date_to_ole_serial(packed)?.to_bits())
     }
 
@@ -895,7 +921,7 @@ pub mod date {
 
 #[cfg(test)]
 mod tests {
-    use super::date::parse_date_literal_serial_bits;
+    use super::date::{parse_date_literal_serial_bits, parse_date_text_serial_bits};
 
     #[test]
     fn date_literals_accept_unambiguous_numeric_orders() {
@@ -910,5 +936,14 @@ mod tests {
         assert_eq!(parse_date_literal_serial_bits("#2/3/2026#"), None);
         assert_eq!(parse_date_literal_serial_bits("#12/11/2026#"), None);
         assert!(parse_date_literal_serial_bits("#1/1/2026#").is_some());
+    }
+
+    #[test]
+    fn date_text_accepts_same_deterministic_orders_as_literals() {
+        let expected = Some(46_081.0f64.to_bits());
+        assert_eq!(parse_date_text_serial_bits("2026-02-28"), expected);
+        assert_eq!(parse_date_text_serial_bits("February 28, 2026"), expected);
+        assert_eq!(parse_date_text_serial_bits("28/2/2026"), expected);
+        assert_eq!(parse_date_text_serial_bits("2/3/2026"), None);
     }
 }

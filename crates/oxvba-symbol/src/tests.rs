@@ -403,6 +403,34 @@ fn typed_const_values_preserve_exact_type_system_carriers() {
     assert_eq!(val("CText"), Some(CoreConst::Str("1.5|1.25".to_string())));
 }
 
+#[test]
+fn string_typed_const_values_coerce_to_declared_scalar_carriers() {
+    let m = manifest(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const CLong As Long = \"7\"\n\
+             Public Const CBool As Boolean = \"False\"\n\
+             Public Const CSingle As Single = \"1.5\"\n\
+             Public Const CDouble As Double = \"2.5\"\n\
+             Public Const CAmount As Currency = \"1.25\"\n\
+             Public Const CStamp As Date = \"2026-02-28\"\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Mod1").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("CLong"), Some(CoreConst::I32(7)));
+    assert_eq!(val("CBool"), Some(CoreConst::Bool(false)));
+    assert_eq!(val("CSingle"), Some(CoreConst::F32(1.5f32.to_bits())));
+    assert_eq!(val("CDouble"), Some(CoreConst::F64(2.5f64.to_bits())));
+    assert_eq!(val("CAmount"), Some(CoreConst::Currency(12_500)));
+    assert_eq!(val("CStamp"), Some(CoreConst::Date(46_081.0f64.to_bits())));
+}
+
 // ── COM provider: early/late + events ────────────────────────────────────────
 
 fn widget_blob() -> TypeLibMetadataBlob {
