@@ -156,6 +156,11 @@ The 2026-06-01 continuation added:
   synthetic project-member setter call. Get-only scalar and indexed properties, plus object-valued
   properties that omit `Property Set`, now fail in the binder instead of silently fabricating a
   setter route.
+- `bd-aprs.8.7` clean-binder default-member continuation: exported member attributes in the
+  current scanner shape now associate `Attribute <Member>.VB_UserMemId = 0` with the logical
+  project member, and active-project default-member syntax such as `w(3) = 10`, `w(2)`, and
+  `Set b(3) = obj` lowers through the selected project `Property Let`/`Property Get`/
+  `Property Set` accessor instead of falling through to object-as-array indexing.
 
 ## Checks
 
@@ -207,9 +212,12 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-bind implements_indexed_property_through_interface_var --quiet`
 - `cargo test -p oxvba-bind property_is_bind_error --quiet`
 - `cargo test -p oxvba-bind set_assigning_to_property_without_set_accessor_is_bind_error --quiet`
+- `cargo test -p oxvba-symbol exported_member_attribute_marks_project_default_member --quiet`
+- `cargo test -p oxvba-bind project_default_member --quiet`
 - `cargo test -p oxvba-bind --quiet`
+- `cargo test -p oxvba-symbol --quiet`
 - `cargo check --workspace`
-- `cargo fmt --check -p oxvba-bind`
+- `cargo fmt --check -p oxvba-bind -p oxvba-symbol`
 - `cargo check -p oxvba-compiler --quiet`
 - `cargo test -p oxvba-syntax call --quiet`
 - `cargo fmt --check -p oxvba-compiler`
@@ -368,3 +376,10 @@ The 2026-06-01 continuation added:
   chooses `Let` or `Set` in the binder. Without an accessor-existence check, a get-only property
   group could still lower to a synthetic setter call. The binder now requires the requested
   accessor signature for bare, member-qualified, and indexed active-project property assignments.
+- Default-member review on 2026-06-17 found two clean-path gaps after the old rewrite layer was
+  removed. First, exported `.cls` member attributes were parsed as top-level `AttributeStmt` nodes,
+  but the scanner only recognized `VB_UserMemId = 0` when the text appeared inside the procedure
+  node. Second, `w(3)` on a known project class still took the array-index path unless the default
+  member came from COM metadata. The scanner now associates exported member attributes with the
+  logical member, and the binder routes active-project default-member reads and indexed Let/Set
+  writes through the same accessor-signature path used by explicit property syntax.
