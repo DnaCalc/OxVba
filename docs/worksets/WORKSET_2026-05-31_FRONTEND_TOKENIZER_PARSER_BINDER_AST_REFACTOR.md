@@ -1550,9 +1550,11 @@ Candidate bead units:
 	  fact as well as loader-provided `ModuleAttributes`, and `Attribute VB_Name` is now likewise
 	  scanner-owned for direct symbol manifests and exported module identity; source Boolean module
 	  attributes (`VB_Exposed`, `VB_Creatable`, `VB_PredeclaredId`, `VB_GlobalNamespace`) now shape
-	  class export surfaces before loader-metadata fallback, enum constants, basic DefType default-table preservation
-  for local untyped `Dim`, parameters, function returns, module-scope scalar `Dim` declarations,
-  visibility-prefixed procedural-module scalar fields, and known DefType default-route eligibility,
+	  class export surfaces before loader-metadata fallback, and source DefType directives are now
+	  scanner-owned for direct symbol manifests with documented `As <type>` > type-character >
+	  DefType > Variant precedence for variables, parameters, Function/Property Get returns,
+	  module-scope scalar declarations, and `Declare Function` default returns; enum constants,
+	  basic DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
