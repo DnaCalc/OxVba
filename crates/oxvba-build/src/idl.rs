@@ -42,8 +42,29 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
     let class_name = sanitize_ident(&class.class_name);
     let help = escape_helpstring(class.description.as_deref().unwrap_or(&class.class_name));
 
-    idl.push_str(&format!(
-        r#"    [
+    if class_supports_bounded_dual_interface(class) {
+        idl.push_str(&format!(
+            r#"    [
+        object,
+        uuid({iid}),
+        dual,
+        nonextensible,
+        oleautomation,
+        pointer_default(unique),
+        helpstring("{help} Interface")
+    ]
+    interface {interface_name} : IDispatch
+    {{
+"#,
+            iid = class.default_interface_iid,
+        ));
+        for member in &class.members {
+            idl.push_str(&generate_dual_member_idl(member));
+        }
+        idl.push_str("    };\n\n");
+    } else {
+        idl.push_str(&format!(
+            r#"    [
         uuid({iid}),
         helpstring("{help} Interface")
     ]
@@ -52,12 +73,13 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
         properties:
         methods:
 "#,
-        iid = class.default_interface_iid,
-    ));
-    for member in &class.members {
-        idl.push_str(&generate_dispatch_member_idl(member));
+            iid = class.default_interface_iid,
+        ));
+        for member in &class.members {
+            idl.push_str(&generate_dispatch_member_idl(member));
+        }
+        idl.push_str("    };\n\n");
     }
-    idl.push_str("    };\n\n");
 
     if let (Some(source_name), Some(source_iid)) = (
         class.source_interface_name.as_ref(),
@@ -88,10 +110,16 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
     ]
     coclass {class_name}
     {{
-        [default] dispinterface {interface_name};
 "#,
         clsid = class.clsid,
     ));
+    if class_supports_bounded_dual_interface(class) {
+        idl.push_str(&format!("        [default] interface {interface_name};\n"));
+    } else {
+        idl.push_str(&format!(
+            "        [default] dispinterface {interface_name};\n"
+        ));
+    }
     if let Some(source_name) = class.source_interface_name.as_ref() {
         idl.push_str(&format!(
             "        [default, source] dispinterface {};\n",
@@ -100,6 +128,27 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
     }
     idl.push_str("    };\n\n");
     idl
+}
+
+fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
+    class.members.len() == 1
+        && class
+            .members
+            .first()
+            .is_some_and(member_supports_bounded_dual_interface)
+}
+
+fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(7)
+        && member.parameter_types.is_empty()
+        && member.return_type == Some(ComParamType::Long)
+}
+
+fn generate_dual_member_idl(member: &ComMemberDescriptor) -> String {
+    let name = sanitize_ident(&member.name);
+    let attr = member_attributes(member);
+    format!("        {attr} HRESULT {name}([out, retval] long* result);\n")
 }
 
 fn generate_dispatch_member_idl(member: &ComMemberDescriptor) -> String {

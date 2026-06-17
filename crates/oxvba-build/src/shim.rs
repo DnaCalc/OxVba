@@ -24,8 +24,9 @@ const SHIM_TEMPLATE: &str = r##"//! Auto-generated OxVBA WrappedComServer shim s
 //! This is a real in-process COM DLL shim over the clean OxVBA package runtime.
 //! It currently implements class factory activation, IUnknown/IDispatch,
 //! per-user registration, generated type-library registration, and late-bound
-//! Invoke. Source dispinterfaces are exposed through connection points; dual
-//! interface vtable slots remain outside this dispatch-backed wrapper tier.
+//! Invoke. Source dispinterfaces are exposed through connection points. A
+//! bounded dual-interface tier is emitted only for classes whose generated
+//! TypeLib surface fits the implemented no-argument Long-returning vtable slot.
 
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case)]
@@ -38,7 +39,9 @@ use std::ptr;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering, fence};
 
-use oxvba_build::{ComClassDescriptor, ComInvokeKind, ComMemberDescriptor, ComServerDescriptor};
+use oxvba_build::{
+    ComClassDescriptor, ComInvokeKind, ComMemberDescriptor, ComParamType, ComServerDescriptor,
+};
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_com::{
     disp_params_to_runtime_call_frame, runtime_call_error_to_excepinfo,
@@ -84,6 +87,7 @@ const CLASS_E_CLASSNOTAVAILABLE: i32 = 0x8004_0111u32 as i32;
 const CONNECT_E_NOCONNECTION: i32 = 0x8004_0004u32 as i32;
 const CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
 const DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
+const DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
 const DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
 const SELFREG_E_CLASS: i32 = 0x8004_0201u32 as i32;
 
@@ -220,6 +224,12 @@ struct ConnectionPoint {
     owner: *mut DispatchObject,
 }
 
+#[repr(C)]
+struct DualLongReturnInterface {
+    vtbl: *const DualLongReturnVtbl,
+    owner: *mut DispatchObject,
+}
+
 struct ConnectionSink {
     cookie: u32,
     dispatch: *mut c_void,
@@ -228,6 +238,7 @@ struct ConnectionSink {
 #[repr(C)]
 struct DispatchObject {
     vtbl: *const IDispatchVtbl,
+    dual: DualLongReturnInterface,
     cpc: ConnectionPointContainer,
     cp: ConnectionPoint,
     ref_count: AtomicU32,
@@ -235,6 +246,35 @@ struct DispatchObject {
     object: ObjectRef,
     sinks: RefCell<Vec<ConnectionSink>>,
     next_cookie: AtomicU32,
+}
+
+#[repr(C)]
+struct DualLongReturnVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut DISPPARAMS,
+        *mut VARIANT,
+        *mut EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    slot0: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
 }
 
 static CLASS_FACTORY_VTBL: IClassFactoryVtbl = IClassFactoryVtbl {
@@ -253,6 +293,17 @@ static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
     get_type_info: dispatch_get_type_info,
     get_ids_of_names: dispatch_get_ids_of_names,
     invoke: dispatch_invoke,
+};
+
+static DUAL_LONG_RETURN_VTBL: DualLongReturnVtbl = DualLongReturnVtbl {
+    query_interface: dual_query_interface,
+    add_ref: dual_add_ref,
+    release: dual_release,
+    get_type_info_count: dual_get_type_info_count,
+    get_type_info: dual_get_type_info,
+    get_ids_of_names: dual_get_ids_of_names,
+    invoke: dual_invoke,
+    slot0: dual_long_return_slot0,
 };
 
 static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl =
@@ -437,19 +488,27 @@ unsafe extern "system" fn dispatch_query_interface(
     }
     *out = ptr::null_mut();
     let object = &*this.cast::<DispatchObject>();
-    let supports_default_interface = descriptor()
+    let Some(class) = descriptor()
         .ok()
         .and_then(|descriptor| descriptor.classes.get(object.class_index))
-        .is_some_and(|class| guid_matches_text(&*riid, &class.default_interface_iid));
-    let supports_connection_points = descriptor()
-        .ok()
-        .and_then(|descriptor| descriptor.classes.get(object.class_index))
-        .is_some_and(|class| class.source_interface_iid.is_some());
+    else {
+        return E_FAIL;
+    };
+    let supports_default_interface = guid_matches_text(&*riid, &class.default_interface_iid);
+    let supports_connection_points = class.source_interface_iid.is_some();
 
-    if guid_eq(&*riid, &IID_IUNKNOWN) || guid_eq(&*riid, &IID_IDISPATCH) || supports_default_interface
-    {
+    if guid_eq(&*riid, &IID_IUNKNOWN) || guid_eq(&*riid, &IID_IDISPATCH) {
         dispatch_add_ref(this);
         *out = this;
+        S_OK
+    } else if supports_default_interface {
+        dispatch_add_ref(this);
+        if class_supports_bounded_dual_interface(class) {
+            *out = (&mut (*(this.cast::<DispatchObject>())).dual as *mut DualLongReturnInterface)
+                .cast();
+        } else {
+            *out = this;
+        }
         S_OK
     } else if guid_eq(&*riid, &IID_ICONNECTIONPOINTCONTAINER) && supports_connection_points {
         dispatch_add_ref(this);
@@ -643,6 +702,150 @@ unsafe extern "system" fn dispatch_invoke(
     ) {
         Ok(()) => S_OK,
         Err(message) => write_runtime_exception(message, excep_info, arg_err, arg_count(params)),
+    }
+}
+
+unsafe extern "system" fn dual_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    match dual_owner(this) {
+        Ok(owner) => dispatch_query_interface(owner.cast(), riid, out),
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn dual_add_ref(this: *mut c_void) -> u32 {
+    match dual_owner(this) {
+        Ok(owner) => dispatch_add_ref(owner.cast()),
+        Err(_) => 0,
+    }
+}
+
+unsafe extern "system" fn dual_release(this: *mut c_void) -> u32 {
+    match dual_owner(this) {
+        Ok(owner) => dispatch_release(owner.cast()),
+        Err(_) => 0,
+    }
+}
+
+unsafe extern "system" fn dual_get_type_info_count(
+    this: *mut c_void,
+    count: *mut u32,
+) -> i32 {
+    match dual_owner(this) {
+        Ok(owner) => dispatch_get_type_info_count(owner.cast(), count),
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn dual_get_type_info(
+    this: *mut c_void,
+    index: u32,
+    lcid: u32,
+    info: *mut *mut c_void,
+) -> i32 {
+    match dual_owner(this) {
+        Ok(owner) => dispatch_get_type_info(owner.cast(), index, lcid, info),
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn dual_get_ids_of_names(
+    this: *mut c_void,
+    riid: *const GUID,
+    names: *const *const u16,
+    name_count: u32,
+    lcid: u32,
+    dispids: *mut i32,
+) -> i32 {
+    match dual_owner(this) {
+        Ok(owner) => {
+            dispatch_get_ids_of_names(owner.cast(), riid, names, name_count, lcid, dispids)
+        }
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn dual_invoke(
+    this: *mut c_void,
+    dispid: i32,
+    riid: *const GUID,
+    lcid: u32,
+    flags: u16,
+    params: *mut DISPPARAMS,
+    result: *mut VARIANT,
+    excep_info: *mut EXCEPINFO,
+    arg_err: *mut u32,
+) -> i32 {
+    match dual_owner(this) {
+        Ok(owner) => dispatch_invoke(
+            owner.cast(),
+            dispid,
+            riid,
+            lcid,
+            flags,
+            params,
+            result,
+            excep_info,
+            arg_err,
+        ),
+        Err(hr) => hr,
+    }
+}
+
+unsafe extern "system" fn dual_long_return_slot0(this: *mut c_void, out: *mut i32) -> i32 {
+    if out.is_null() {
+        return E_POINTER;
+    }
+    *out = 0;
+    let owner = match dual_owner(this) {
+        Ok(owner) => owner,
+        Err(hr) => return hr,
+    };
+    let Ok(descriptor) = descriptor() else {
+        return E_FAIL;
+    };
+    let Some(class) = descriptor.classes.get((*owner).class_index) else {
+        return E_FAIL;
+    };
+    let Some(member) = class
+        .members
+        .iter()
+        .find(|member| member_supports_bounded_dual_interface(member))
+    else {
+        return E_NOTIMPL;
+    };
+    let value = match with_session(|session| {
+        session
+            .invoke_member_values(
+                (*owner).object.clone(),
+                &member.name,
+                Some(project_member_kind(member.invoke_kind)),
+                Vec::new(),
+            )
+            .map_err(|err| err.to_string())
+    }) {
+        Ok(value) => value,
+        Err(_) => return E_FAIL,
+    };
+    let Some(value) = value.as_i32() else {
+        return DISP_E_TYPEMISMATCH;
+    };
+    *out = value;
+    S_OK
+}
+
+unsafe fn dual_owner(this: *mut c_void) -> Result<*mut DispatchObject, i32> {
+    if this.is_null() {
+        return Err(E_POINTER);
+    }
+    let owner = (*(this.cast::<DualLongReturnInterface>())).owner;
+    if owner.is_null() {
+        Err(E_FAIL)
+    } else {
+        Ok(owner)
     }
 }
 
@@ -876,6 +1079,21 @@ fn member_for_dispatch(
         .or_else(|| class.members.iter().find(|member| member.dispid == dispid))
 }
 
+fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
+    class.members.len() == 1
+        && class
+            .members
+            .first()
+            .is_some_and(member_supports_bounded_dual_interface)
+}
+
+fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(7)
+        && member.parameter_types.is_empty()
+        && member.return_type == Some(ComParamType::Long)
+}
+
 fn invoke_kind_matches_flags(kind: ComInvokeKind, flags: u16) -> bool {
     if flags & DISPATCH_PROPERTYPUTREF as u16 != 0 {
         return matches!(kind, ComInvokeKind::PropertyPutRef);
@@ -930,6 +1148,10 @@ unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mu
     GLOBAL_REF_COUNT.fetch_add(1, Ordering::AcqRel);
     let raw = Box::into_raw(Box::new(DispatchObject {
         vtbl: &DISPATCH_VTBL,
+        dual: DualLongReturnInterface {
+            vtbl: &DUAL_LONG_RETURN_VTBL,
+            owner: ptr::null_mut(),
+        },
         cpc: ConnectionPointContainer {
             vtbl: &CONNECTION_POINT_CONTAINER_VTBL,
             owner: ptr::null_mut(),
@@ -944,6 +1166,7 @@ unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mu
         sinks: RefCell::new(Vec::new()),
         next_cookie: AtomicU32::new(1),
     }));
+    (*raw).dual.owner = raw;
     (*raw).cpc.owner = raw;
     (*raw).cp.owner = raw;
     register_dispatch_wrapper(raw);

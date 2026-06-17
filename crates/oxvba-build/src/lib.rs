@@ -231,6 +231,7 @@ mod tests {
         let temp = TestDir::new("wrapped_com_server_build_emits_package_descriptor_and_idl");
         let project_path = temp.path.join("Demo.basproj");
         let class_path = temp.path.join("Calculator.cls");
+        let pinger_path = temp.path.join("Pinger.cls");
         let out_dir = temp.path.join("out");
 
         write(
@@ -248,6 +249,14 @@ End Sub
 "#,
         );
         write(
+            &pinger_path,
+            r#"
+Public Function Ping() As Long
+    Ping = 42
+End Function
+"#,
+        );
+        write(
             &project_path,
             r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -262,6 +271,13 @@ End Sub
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.Calculator</ProgId>
       <Description>Calculator class</Description>
+    </ClassModule>
+    <ClassModule Include="Pinger.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.Pinger</ProgId>
+      <Description>Pinger class</Description>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -296,6 +312,13 @@ End Sub
         assert_eq!(class.description.as_deref(), Some("Calculator class"));
         assert!(class.members.iter().any(|member| member.name == "Add"));
         assert!(class.events.iter().any(|event| event.name == "Changed"));
+        let pinger = descriptor
+            .classes
+            .iter()
+            .find(|class| class.class_name == "Pinger")
+            .expect("Pinger descriptor");
+        assert_eq!(pinger.members.len(), 1);
+        assert_eq!(pinger.members[0].vtable_slot, Some(7));
 
         let idl = std::fs::read_to_string(&output.idl_path).expect("idl should exist");
         assert!(idl.contains("library DemoServerLib"));
@@ -304,12 +327,16 @@ End Sub
         assert!(idl.contains("long Add([in] long a, [in] long b);"));
         assert!(idl.contains("void Fire([in] long value);"));
         assert!(idl.contains("void Changed"));
+        assert!(idl.contains("interface IPinger : IDispatch"));
+        assert!(idl.contains("HRESULT Ping([out, retval] long* result);"));
+        assert!(idl.contains("[default] interface IPinger;"));
 
         let shim_source =
             std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");
         assert!(shim_source.contains("DllGetClassObject"));
         assert!(shim_source.contains("DllRegisterServer"));
         assert!(shim_source.contains("MS-OAUT"));
+        assert!(shim_source.contains("DualLongReturnInterface"));
         assert!(!output.dll_target_path.exists());
         assert!(!output.tlb_target_path.exists());
     }
