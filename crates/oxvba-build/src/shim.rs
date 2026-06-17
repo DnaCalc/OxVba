@@ -300,7 +300,7 @@ struct ConnectionSnapshot {
 
 #[repr(C)]
 struct BoundedDualInterface {
-    vtbl: *const BoundedDualVtbl,
+    vtbl: *const c_void,
     owner: *mut DispatchObject,
 }
 
@@ -323,7 +323,14 @@ struct DispatchObject {
 }
 
 #[repr(C)]
-struct BoundedDualVtbl {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BoundedDualInterfaceShape {
+    ScalarMethods,
+    LongProperty,
+}
+
+#[repr(C)]
+struct ScalarMethodDualVtbl {
     query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
     release: unsafe extern "system" fn(*mut c_void) -> u32,
@@ -353,6 +360,36 @@ struct BoundedDualVtbl {
     slot2: unsafe extern "system" fn(*mut c_void, f64, f64, *mut f64) -> i32,
 }
 
+#[repr(C)]
+struct LongPropertyDualVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut DISPPARAMS,
+        *mut VARIANT,
+        *mut EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    slot0: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
+    slot1: unsafe extern "system" fn(*mut c_void, i32) -> i32,
+}
+
 static CLASS_FACTORY_VTBL: IClassFactoryVtbl = IClassFactoryVtbl {
     query_interface: factory_query_interface,
     add_ref: factory_add_ref,
@@ -371,7 +408,7 @@ static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
     invoke: dispatch_invoke,
 };
 
-static BOUNDED_DUAL_VTBL: BoundedDualVtbl = BoundedDualVtbl {
+static SCALAR_METHOD_DUAL_VTBL: ScalarMethodDualVtbl = ScalarMethodDualVtbl {
     query_interface: dual_query_interface,
     add_ref: dual_add_ref,
     release: dual_release,
@@ -382,6 +419,18 @@ static BOUNDED_DUAL_VTBL: BoundedDualVtbl = BoundedDualVtbl {
     slot0: dual_slot7_long_return,
     slot1: dual_slot8_long2_return,
     slot2: dual_slot9_double2_return,
+};
+
+static LONG_PROPERTY_DUAL_VTBL: LongPropertyDualVtbl = LongPropertyDualVtbl {
+    query_interface: dual_query_interface,
+    add_ref: dual_add_ref,
+    release: dual_release,
+    get_type_info_count: dual_get_type_info_count,
+    get_type_info: dual_get_type_info,
+    get_ids_of_names: dual_get_ids_of_names,
+    invoke: dual_invoke,
+    slot0: dual_slot7_long_return,
+    slot1: dual_slot8_long_property_put,
 };
 
 static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl =
@@ -962,6 +1011,13 @@ unsafe extern "system" fn dual_slot9_double2_return(
     }
 }
 
+unsafe extern "system" fn dual_slot8_long_property_put(this: *mut c_void, value: i32) -> i32 {
+    match invoke_bounded_dual_unit_member(this, 8, vec![Variant::from_i32(value)]) {
+        Ok(()) => S_OK,
+        Err(hr) => hr,
+    }
+}
+
 unsafe fn invoke_bounded_dual_long_member(
     this: *mut c_void,
     slot: u16,
@@ -976,7 +1032,9 @@ unsafe fn invoke_bounded_dual_long_member(
     let member = class
         .members
         .iter()
-        .find(|member| member.vtable_slot == Some(slot) && member_supports_bounded_dual_interface(member))
+        .find(|member| {
+            member.vtable_slot == Some(slot) && member_supports_bounded_dual_long_result(member)
+        })
         .ok_or(E_NOTIMPL)?;
     let value = with_session(|session| {
         session
@@ -1006,7 +1064,9 @@ unsafe fn invoke_bounded_dual_double_member(
     let member = class
         .members
         .iter()
-        .find(|member| member.vtable_slot == Some(slot) && member_supports_bounded_dual_interface(member))
+        .find(|member| {
+            member.vtable_slot == Some(slot) && member_supports_bounded_dual_scalar_method(member)
+        })
         .ok_or(E_NOTIMPL)?;
     let value = with_session(|session| {
         session
@@ -1020,6 +1080,39 @@ unsafe fn invoke_bounded_dual_double_member(
     })
     .map_err(|_| E_FAIL)?;
     value.as_f64().ok_or(DISP_E_TYPEMISMATCH)
+}
+
+unsafe fn invoke_bounded_dual_unit_member(
+    this: *mut c_void,
+    slot: u16,
+    args: Vec<Variant>,
+) -> Result<(), i32> {
+    let owner = dual_owner(this)?;
+    let descriptor = descriptor().map_err(|_| E_FAIL)?;
+    let class = descriptor
+        .classes
+        .get((*owner).class_index)
+        .ok_or(E_FAIL)?;
+    let member = class
+        .members
+        .iter()
+        .find(|member| {
+            member.vtable_slot == Some(slot)
+                && member_supports_bounded_dual_long_property_put(member)
+        })
+        .ok_or(E_NOTIMPL)?;
+    with_session(|session| {
+        session
+            .invoke_member_values(
+                (*owner).object.clone(),
+                &member.name,
+                Some(project_member_kind(member.invoke_kind)),
+                args,
+            )
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    })
+    .map_err(|_| E_FAIL)
 }
 
 unsafe fn dual_owner(this: *mut c_void) -> Result<*mut DispatchObject, i32> {
@@ -1524,20 +1617,57 @@ fn member_for_dispatch(
         .or_else(|| class.members.iter().find(|member| member.dispid == dispid))
 }
 
-fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
-    !class.members.is_empty()
-        && class.members.len() <= 3
-        && class
-            .members
-            .iter()
-            .enumerate()
-            .all(|(index, member)| {
-                member.vtable_slot == Some(7 + index as u16)
-                    && member_supports_bounded_dual_interface(member)
-            })
+fn bounded_dual_interface_shape(
+    class: &ComClassDescriptor,
+) -> Option<BoundedDualInterfaceShape> {
+    if class_supports_bounded_dual_scalar_methods(class) {
+        Some(BoundedDualInterfaceShape::ScalarMethods)
+    } else if class_supports_bounded_dual_long_property(class) {
+        Some(BoundedDualInterfaceShape::LongProperty)
+    } else {
+        None
+    }
 }
 
-fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
+fn bounded_dual_vtbl_for_shape(shape: BoundedDualInterfaceShape) -> *const c_void {
+    match shape {
+        BoundedDualInterfaceShape::ScalarMethods => {
+            (&SCALAR_METHOD_DUAL_VTBL as *const ScalarMethodDualVtbl).cast()
+        }
+        BoundedDualInterfaceShape::LongProperty => {
+            (&LONG_PROPERTY_DUAL_VTBL as *const LongPropertyDualVtbl).cast()
+        }
+    }
+}
+
+fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
+    bounded_dual_interface_shape(class).is_some()
+}
+
+fn class_supports_bounded_dual_scalar_methods(class: &ComClassDescriptor) -> bool {
+    !class.members.is_empty()
+        && class.members.len() <= 3
+        && class.members.iter().enumerate().all(|(index, member)| {
+            member.vtable_slot == Some(7 + index as u16)
+                && member_supports_bounded_dual_scalar_method(member)
+        })
+}
+
+fn class_supports_bounded_dual_long_property(class: &ComClassDescriptor) -> bool {
+    if class.members.len() != 2 {
+        return false;
+    }
+    let get = &class.members[0];
+    let put = &class.members[1];
+    get.vtable_slot == Some(7)
+        && put.vtable_slot == Some(8)
+        && get.name.eq_ignore_ascii_case(&put.name)
+        && get.dispid == put.dispid
+        && member_supports_bounded_dual_long_property_get(get)
+        && member_supports_bounded_dual_long_property_put(put)
+}
+
+fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> bool {
     if member.invoke_kind != ComInvokeKind::Method
         || member.parameter_optional.iter().any(|optional| *optional)
     {
@@ -1561,6 +1691,44 @@ fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool 
                 [ComParamType::Double, ComParamType::Double],
             )
     )
+}
+
+fn member_supports_bounded_dual_long_result(member: &ComMemberDescriptor) -> bool {
+    if member.parameter_optional.iter().any(|optional| *optional) {
+        return false;
+    }
+    matches!(
+        (
+            member.invoke_kind,
+            member.vtable_slot,
+            member.return_type,
+            member.parameter_types.as_slice()
+        ),
+        (ComInvokeKind::Method, Some(7), Some(ComParamType::Long), [])
+            | (ComInvokeKind::PropertyGet, Some(7), Some(ComParamType::Long), [])
+            | (
+                ComInvokeKind::Method,
+                Some(8),
+                Some(ComParamType::Long),
+                [ComParamType::Long, ComParamType::Long],
+            )
+    )
+}
+
+fn member_supports_bounded_dual_long_property_get(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::PropertyGet
+        && member.vtable_slot == Some(7)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
+fn member_supports_bounded_dual_long_property_put(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::PropertyPut
+        && member.vtable_slot == Some(8)
+        && member.return_type.is_none()
+        && member.parameter_types.as_slice() == [ComParamType::Long]
+        && !member.parameter_optional.iter().any(|optional| *optional)
 }
 
 fn invoke_kind_matches_flags(kind: ComInvokeKind, flags: u16) -> bool {
@@ -1615,10 +1783,16 @@ unsafe fn allocate_factory(class_index: usize) -> *mut c_void {
 
 unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mut c_void {
     GLOBAL_REF_COUNT.fetch_add(1, Ordering::AcqRel);
+    let dual_vtbl = descriptor()
+        .ok()
+        .and_then(|descriptor| descriptor.classes.get(class_index))
+        .and_then(bounded_dual_interface_shape)
+        .map(bounded_dual_vtbl_for_shape)
+        .unwrap_or_else(|| (&SCALAR_METHOD_DUAL_VTBL as *const ScalarMethodDualVtbl).cast());
     let raw = Box::into_raw(Box::new(DispatchObject {
         vtbl: &DISPATCH_VTBL,
         dual: BoundedDualInterface {
-            vtbl: &BOUNDED_DUAL_VTBL,
+            vtbl: dual_vtbl,
             owner: ptr::null_mut(),
         },
         cpc: ConnectionPointContainer {

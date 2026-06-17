@@ -131,15 +131,34 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
 }
 
 fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
+    class_supports_bounded_dual_scalar_methods(class)
+        || class_supports_bounded_dual_long_property(class)
+}
+
+fn class_supports_bounded_dual_scalar_methods(class: &ComClassDescriptor) -> bool {
     !class.members.is_empty()
         && class.members.len() <= 3
         && class.members.iter().enumerate().all(|(index, member)| {
             member.vtable_slot == Some(7 + index as u16)
-                && member_supports_bounded_dual_interface(member)
+                && member_supports_bounded_dual_scalar_method(member)
         })
 }
 
-fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
+fn class_supports_bounded_dual_long_property(class: &ComClassDescriptor) -> bool {
+    if class.members.len() != 2 {
+        return false;
+    }
+    let get = &class.members[0];
+    let put = &class.members[1];
+    get.vtable_slot == Some(7)
+        && put.vtable_slot == Some(8)
+        && get.name.eq_ignore_ascii_case(&put.name)
+        && get.dispid == put.dispid
+        && member_supports_bounded_dual_long_property_get(get)
+        && member_supports_bounded_dual_long_property_put(put)
+}
+
+fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> bool {
     if member.invoke_kind != ComInvokeKind::Method
         || member.parameter_optional.iter().any(|optional| *optional)
     {
@@ -165,6 +184,22 @@ fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool 
     )
 }
 
+fn member_supports_bounded_dual_long_property_get(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::PropertyGet
+        && member.vtable_slot == Some(7)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
+fn member_supports_bounded_dual_long_property_put(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::PropertyPut
+        && member.vtable_slot == Some(8)
+        && member.return_type.is_none()
+        && member.parameter_types.as_slice() == [ComParamType::Long]
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
 fn generate_dual_member_idl(member: &ComMemberDescriptor) -> String {
     let name = sanitize_ident(&member.name);
     let attr = member_attributes(member);
@@ -182,8 +217,13 @@ fn generate_dual_member_idl(member: &ComMemberDescriptor) -> String {
             format!("[in] {} {name}", idl_type(*param))
         })
         .collect();
-    let return_type = member.return_type.map(idl_type).unwrap_or("void");
-    params.push(format!("[out, retval] {return_type}* result"));
+    if matches!(
+        member.invoke_kind,
+        ComInvokeKind::Method | ComInvokeKind::PropertyGet
+    ) {
+        let return_type = member.return_type.map(idl_type).unwrap_or("void");
+        params.push(format!("[out, retval] {return_type}* result"));
+    }
     format!("        {attr} HRESULT {name}({});\n", params.join(", "))
 }
 

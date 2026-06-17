@@ -232,6 +232,7 @@ mod tests {
         let project_path = temp.path.join("Demo.basproj");
         let class_path = temp.path.join("Calculator.cls");
         let pinger_path = temp.path.join("Pinger.cls");
+        let counter_path = temp.path.join("Counter.cls");
         let out_dir = temp.path.join("out");
 
         write(
@@ -265,6 +266,20 @@ End Function
 "#,
         );
         write(
+            &counter_path,
+            r#"
+Private mValue As Long
+
+Public Property Get Value() As Long
+    Value = mValue
+End Property
+
+Public Property Let Value(ByVal newValue As Long)
+    mValue = newValue
+End Property
+"#,
+        );
+        write(
             &project_path,
             r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -286,6 +301,13 @@ End Function
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.Pinger</ProgId>
       <Description>Pinger class</Description>
+    </ClassModule>
+    <ClassModule Include="Counter.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.Counter</ProgId>
+      <Description>Counter class</Description>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -346,6 +368,19 @@ End Function
             "HRESULT Average([in] double a, [in] double b, [out, retval] double* result);"
         ));
         assert!(idl.contains("[default] interface IPinger;"));
+        let counter = descriptor
+            .classes
+            .iter()
+            .find(|class| class.class_name == "Counter")
+            .expect("Counter descriptor");
+        assert_eq!(counter.members.len(), 2);
+        assert_eq!(counter.members[0].vtable_slot, Some(7));
+        assert_eq!(counter.members[0].invoke_kind, ComInvokeKind::PropertyGet);
+        assert_eq!(counter.members[1].vtable_slot, Some(8));
+        assert_eq!(counter.members[1].invoke_kind, ComInvokeKind::PropertyPut);
+        assert!(idl.contains("interface ICounter : IDispatch"));
+        assert!(idl.contains("HRESULT value([out, retval] long* result);"));
+        assert!(idl.contains("HRESULT value([in] long newValue);"));
 
         let shim_source =
             std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");
