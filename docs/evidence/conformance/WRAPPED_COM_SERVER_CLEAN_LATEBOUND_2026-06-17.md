@@ -19,7 +19,10 @@ creatable classes and the generated type library under
 classes with project events, it exposes the generated source dispinterface
 through `IConnectionPointContainer`/`IConnectionPoint` and publishes
 `RaiseEvent` payloads to advised `IDispatch` sinks with Automation argument
-ordering.
+ordering. The event-capable class path also implements the standard bounded
+enumeration surfaces: `IConnectionPointContainer::EnumConnectionPoints` returns
+the generated source connection point, and `IConnectionPoint::EnumConnections`
+returns a snapshot of the currently advised `IDispatch` sinks.
 
 The generated TypeLib now uses a mixed default-interface policy. Classes outside
 the implemented vtable subset are published as dispatch-only `dispinterface`s so
@@ -37,10 +40,11 @@ that interface IID. The supported vtable ABI is intentionally narrow:
   passed, 1 Windows COM smoke test, including generated `.tlb` existence,
   `CLSID\TypeLib` registration, TypeLib `win64` path registration, ProgID
   activation, late-bound `Add(2, 3)`, late-bound `Pinger.Ping()`, raw COM
-  `IConnectionPoint` `Advise` / `RaiseEvent Changed(42)` / sink `Invoke` /
-  `Unadvise`, raw COM `QueryInterface(IPinger)` plus slot-7 vtable call, and an
-  Excel/VBA typed dispatch-interface `WithEvents` client receiving
-  `Changed(77)`.
+  `IConnectionPointContainer::EnumConnectionPoints` /
+  `IConnectionPoint::Advise` / `IConnectionPoint::EnumConnections` /
+  `RaiseEvent Changed(42)` / sink `Invoke` / `Unadvise`, raw COM
+  `QueryInterface(IPinger)` plus slot-7 vtable call, and an Excel/VBA typed
+  dispatch-interface `WithEvents` client receiving `Changed(77)`.
 - `cargo test -p oxvba-cli`: passed, 9 tests.
 - `cargo check --workspace`: passed.
 - `./scripts/meta-check.ps1 -Fast -NoArtifacts`: passed, including governance,
@@ -56,6 +60,9 @@ that interface IID. The supported vtable ABI is intentionally narrow:
   - late-bound `$pinger.Ping()` returned `42`.
   - a raw COM sink advised the generated source interface and observed
     `Changed(42)`.
+  - raw COM `EnumConnectionPoints` returned the generated source connection
+    point, and raw COM `EnumConnections` returned the advised dispatch sink
+    cookie.
   - a raw COM client queried the generated `IPinger` IID, called the custom
     vtable slot, and observed the same `42` result as the dispatch path.
   - Excel/VBA referenced `DemoServer.tlb`, created a typed `WithEvents`
@@ -65,10 +72,13 @@ that interface IID. The supported vtable ABI is intentionally narrow:
 
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
-late-bound activation, bounded dual-interface vtable, connection-point event,
-and Excel/VBA `WithEvents` smoke.
+late-bound activation, bounded dual-interface vtable, connection-point
+enumeration/event, and Excel/VBA `WithEvents` smoke.
 
 Residual: broader dual-interface argument/property/byref/object/array/error
-parity remains outside this clean slice. Excel/VBA evidence here covers typed
-dispatch-interface calls and `WithEvents`; the vtable evidence is the controlled
-raw-COM `IPinger` call.
+parity remains outside this clean slice. COM event evidence covers a single
+generated source connection point and snapshot enumeration of advised dispatch
+sinks; multi-source event selection, richer payload families, and broader
+callback ordering cases remain outside this slice. Excel/VBA evidence here
+covers typed dispatch-interface calls and `WithEvents`; the vtable evidence is
+the controlled raw-COM `IPinger` call.

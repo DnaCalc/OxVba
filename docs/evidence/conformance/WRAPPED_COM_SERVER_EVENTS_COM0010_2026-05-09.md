@@ -1,7 +1,8 @@
 # WrappedComServer events COM-0010 evidence
 
 Date: 2026-05-09
-Beads: `bd-wcs1.8.1`, `bd-wcs1.8.2`, `bd-wcs1.8.3`
+Refreshed: 2026-06-17
+Beads: `bd-wcs1.8.1`, `bd-wcs1.8.2`, `bd-wcs1.8.3`, `bd-i91u`
 Matrix row: `COM-0010`
 
 ## Scope
@@ -14,7 +15,12 @@ event-capable classes. It also proves that a controlled external sink can
 subscribe to the generated connection point, receive a wrapped event payload,
 unsubscribe, and receive no later callbacks.
 
-This is not Office/VBA `WithEvents` oracle evidence.
+The original 2026-05-09 capture was not Office/VBA `WithEvents` oracle
+evidence. The 2026-06-17 clean smoke now adds Excel/VBA `WithEvents` evidence
+and bounded connection-point enumeration evidence; see
+`docs/evidence/conformance/WRAPPED_COM_SERVER_CONNECTION_POINT_ENUMERATION_COM0010_2026-06-17.md`
+and
+`docs/evidence/conformance/WRAPPED_COM_SERVER_CLEAN_LATEBOUND_2026-06-17.md`.
 
 ## Commands
 
@@ -23,6 +29,7 @@ cargo test -p oxvba-build generate_typelib --quiet
 cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_exports --quiet
 cargo check -p oxvba-build --quiet
 ./scripts/run-com-wrapped-server-events.ps1 -EvidenceDir docs/evidence/conformance/oracle_captures/wrapped_com_events_20260509T000000Z
+cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocapture
 ```
 
 ## Verified behavior
@@ -56,10 +63,17 @@ cargo check -p oxvba-build --quiet
 - The Office probe in that capture found Excel automation available
   (`Excel available: 16.0`), but this evidence does not claim an Excel/VBA
   `WithEvents` client.
+- 2026-06-17 clean smoke evidence proves `EnumConnectionPoints` returns the
+  generated source connection point and `EnumConnections` returns a snapshot of
+  the currently advised dispatch sink cookie/`IDispatch` identity.
+- 2026-06-17 clean smoke evidence also proves an Excel/VBA typed `WithEvents`
+  client can reference the generated TypeLib, subscribe to the source
+  dispinterface, and observe `Changed(77)`.
 
 ## Residual
 
 `COM-0010` is an `implemented-subset` for controlled dispatch-sink
-connection-point events. Office/VBA `WithEvents`, `EnumConnectionPoints`,
-`EnumConnections`, multi-event selection, richer payload shapes, and broader
-external ordering evidence are not claimed by this subset.
+connection-point events, bounded connection-point enumeration, and Excel/VBA
+`WithEvents`. Multi-source event selection, richer payload shapes, broader
+external ordering evidence, and Office/VBA vtable-event-client parity are not
+claimed by this subset.
