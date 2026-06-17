@@ -92,10 +92,10 @@ cargo test -p oxvba-host embedded::tests --quiet
   `WithEvents` client proof and bounded connection enumerators. Multi-event
   selection and richer event payload ordering remain outside the current
   `COM-0010` implemented subset.
-- Broader dual-interface property/byref/object/array/error vtable parity,
-  optional/default arguments, scalar signatures outside the exact bounded
-  `Long`/`Double` slots, and arbitrary vtable slot counts remain outside
-  `COM-0009`.
+- Broader dual-interface indexed/default property, non-`Long` property,
+  ByRef, object, array, and error vtable parity, optional/default arguments,
+  scalar signatures outside the exact bounded `Long`/`Double` slots, and
+  arbitrary vtable slot counts remain outside `COM-0009`.
 - Host UDF richer scalar coercion, array returns, error returns, explicit
   worksheet volatile/dependency semantics, and DnaOneCalc/OxIde host-context
   harness evidence remain open under `PH-0011`, which therefore remains

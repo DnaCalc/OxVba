@@ -1,21 +1,29 @@
-# WrappedComServer dual vtable scalar-argument COM-0009 evidence
+# WrappedComServer dual vtable scalar-member COM-0009 evidence
 
 Date: 2026-06-17
-Beads: `bd-l7xl`, `bd-3wy1`
+Beads: `bd-l7xl`, `bd-3wy1`, `bd-bgd9`
 Matrix row: `COM-0009`
 
 ## Scope
 
 This evidence covers the clean `WrappedComServer` bounded dual-interface vtable
-expansion from one no-argument scalar method to a three-slot scalar tier:
+expansion from one no-argument scalar method to two bounded scalar member
+shapes.
+
+The scalar method shape is a contiguous prefix:
 
 - slot 7: `HRESULT Ping([out, retval] long* result)`
 - slot 8: `HRESULT AddPair(long a, long b, [out, retval] long* result)`
 - slot 9: `HRESULT Average(double a, double b, [out, retval] double* result)`
 
+The scalar property shape is a separate vtable layout:
+
+- slot 7: `[propget] HRESULT value([out, retval] long* result)`
+- slot 8: `[propput] HRESULT value(long newValue)`
+
 Only classes whose generated TypeLib surface exactly fits the bounded contiguous
-ABI prefix are published as dual interfaces. Other generated classes remain
-dispatch-only `dispinterface`s.
+method ABI prefix or the bounded `Long` property ABI are published as dual
+interfaces. Other generated classes remain dispatch-only `dispinterface`s.
 
 ## Command
 
@@ -45,11 +53,22 @@ Result: passed on Windows with Excel installed.
 - Excel/VBA references the generated `.tlb`, creates `Dim pinger As Pinger`,
   and successfully calls `pinger.Ping()`, `pinger.AddPair(19, 23)`, and
   `pinger.Average(10.5, 21.5)`.
+- Generated IDL also publishes `ICounter : IDispatch` for a dedicated
+  `Counter.Value As Long` get/let class, with `propget` and `propput` HRESULT
+  vtable signatures in distinct slots.
+- Raw COM `QueryInterface(ICounter)` returns the generated property vtable
+  subobject; raw slot 7 reads the same `Long` value as `IDispatch` property
+  get, and raw slot 8 property put is immediately visible through
+  `IDispatch` property get on the same object.
+- Excel/VBA references the same `.tlb`, creates `Dim counter As Counter`, and
+  successfully executes early-bound `counter.Value = 271` plus
+  `counter.Value` readback.
 
 ## Residual
 
-`COM-0009` remains an implemented subset. Properties, ByRef writebacks, object
-identity equivalence across vtable returns/arguments, arrays, error parity,
-optional/default arguments, scalar signatures outside the exact `Long` and
-`Double` slots above, and arbitrary numbers of vtable slots remain outside this
-bounded tier.
+`COM-0009` remains an implemented subset. Indexed/default properties,
+non-`Long` property signatures, object `Set`/`PutRef` properties, ByRef
+writebacks, object identity equivalence across vtable returns/arguments, arrays,
+error parity, optional/default arguments, scalar signatures outside the exact
+`Long` and `Double` slots above, and arbitrary numbers of vtable slots remain
+outside this bounded tier.

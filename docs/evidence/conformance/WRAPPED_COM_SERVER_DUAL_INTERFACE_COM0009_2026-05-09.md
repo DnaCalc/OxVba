@@ -2,7 +2,7 @@
 
 Date: 2026-05-09
 Refreshed: 2026-06-17
-Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`, `bd-3wy1`
+Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`, `bd-3wy1`, `bd-bgd9`
 Matrix row: `COM-0009`
 
 ## Scope
@@ -21,8 +21,10 @@ smoke widens that bounded tier to a second scalar slot,
 refresh adds a third bounded scalar slot,
 `HRESULT Method(DOUBLE, DOUBLE, [out, retval] DOUBLE*)`; see
 `docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_VTABLE_SCALAR_ARGS_COM0009_2026-06-17.md`.
-Broader parameters, property vtable slots, object returns, arrays, records, and
-arbitrary native structs remain outside this bead.
+The `bd-bgd9` refresh adds a separate two-slot `Long` property vtable shape,
+`[propget] HRESULT Property(LONG*)` plus `[propput] HRESULT Property(LONG)`.
+Broader parameters, indexed/default or non-`Long` property vtable slots, object
+returns, arrays, records, and arbitrary native structs remain outside this bead.
 
 ## Commands
 
@@ -64,6 +66,10 @@ cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocaptu
 - The clean Excel smoke references the generated `.tlb`, creates
   `Dim pinger As Pinger`, and successfully calls `pinger.Ping()` plus
   `pinger.AddPair(19, 23)` plus `pinger.Average(10.5, 21.5)`.
+- The clean smoke also publishes a separate `Counter.Value As Long` dual
+  property shape, proves raw COM property get/put vtable calls agree with
+  dispatch property get/put on the same object, and proves Excel/VBA early-bound
+  `counter.Value` write/read through the generated TypeLib.
 - Existing TypeLib generation and dispatch-backed wrapped server tests remain
   green after the dual-interface projection change.
 
@@ -71,7 +77,9 @@ cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocaptu
 
 `COM-0009` is an `implemented-subset` for the bounded scalar dual-interface
 tier: slot 7 no-argument `Long` return, slot 8 two `Long` inputs returning
-`Long`, and slot 9 two `Double` inputs returning `Double`. Properties, ByRef
-writebacks, object identity equivalence, arrays, error parity, optional/default
-arguments, scalar signatures outside these exact slots, and arbitrary
-additional vtable slots remain deferred.
+`Long`, slot 9 two `Double` inputs returning `Double`, plus a separate slot 7
+`Long` property get and slot 8 `Long` property put shape. Indexed/default
+properties, non-`Long` property signatures, object `Set`/`PutRef` properties,
+ByRef writebacks, object identity equivalence, arrays, error parity,
+optional/default arguments, scalar signatures outside these exact slots, and
+arbitrary additional vtable slots remain deferred.

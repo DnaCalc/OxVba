@@ -35,7 +35,9 @@ Automation interfaces, and the generated DLL returns a real vtable subobject for
 that interface IID. The supported vtable ABI is intentionally narrow: slot 7
 `HRESULT Method([out, retval] long*)`, optionally followed by slot 8
 `HRESULT Method(long, long, [out, retval] long*)`, optionally followed by slot 9
-`HRESULT Method(double, double, [out, retval] double*)`.
+`HRESULT Method(double, double, [out, retval] double*)`; or, for a separate
+property-only shape, slot 7 `[propget] HRESULT Property(long*)` followed by slot
+8 `[propput] HRESULT Property(long)`.
 
 ## Evidence
 
@@ -56,7 +58,8 @@ that interface IID. The supported vtable ABI is intentionally narrow: slot 7
   Excel/VBA typed dispatch-interface/dual-interface client covering method,
   property, object return, array return, dual `Pinger.Ping()`,
   `Pinger.AddPair(19, 23)`, `Pinger.Average(10.5, 21.5)`, external Automation
-  error, and `WithEvents` receiving `Changed(77)`.
+  error, dual `Counter.Value` get/let, and `WithEvents` receiving
+  `Changed(77)`.
 - `cargo test -p oxvba-cli`: passed, 9 tests.
 - `cargo check --workspace`: passed.
 - `./scripts/meta-check.ps1 -Fast -NoArtifacts`: passed, including governance,
@@ -96,21 +99,27 @@ raw COM `IPinger` slot-9 `HRESULT Average(double, double, double*)`,
 `VT_R8` dispatch/vtable parity for that slot, and Excel/VBA early-bound calls
 to `Pinger.Average`.
 
+The same live smoke now also proves late-bound `Counter.Value` property put/get,
+raw COM `ICounter` slot-7 `HRESULT value(long*)` and slot-8
+`HRESULT value(long)`, dispatch/vtable parity for both property directions, and
+Excel/VBA early-bound calls to `Counter.Value`.
+
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
 late-bound activation, bounded dual-interface vtable including the two-`Long`
-argument slot and the two-`Double` argument slot, connection-point
-enumeration/event, live dispatch type-info publication, and Excel/VBA
-early-bound/`WithEvents` smoke.
+argument slot, the two-`Double` argument slot, and the two-slot `Long` property
+shape, connection-point enumeration/event, live dispatch type-info publication,
+and Excel/VBA early-bound/`WithEvents` smoke.
 
-Residual: broader dual-interface property/byref/object/array/error parity,
-optional/default arguments, scalar signatures outside the exact bounded `Long`
-and `Double` slots, and arbitrary vtable slot counts remain outside this clean
-slice. COM event evidence covers a single generated source connection point and
-snapshot enumeration of advised dispatch sinks; multi-source event selection,
-richer payload families, and broader callback ordering cases remain outside this
-slice. Dispatch type-info evidence here covers the generated default-interface
-`ITypeInfo`, but not `ITypeComp` or localization-sensitive type-info selection.
-Excel/VBA evidence here covers typed dispatch-interface calls, bounded
-dual-interface calls, and `WithEvents`, but not broken reference repair, broader
-Office version matrices, or Excel-facing error description parity.
+Residual: broader dual-interface indexed/default property, non-`Long` property,
+ByRef, object, array, and error parity, optional/default arguments, scalar
+signatures outside the exact bounded `Long` and `Double` slots, and arbitrary
+vtable slot counts remain outside this clean slice. COM event evidence covers a
+single generated source connection point and snapshot enumeration of advised
+dispatch sinks; multi-source event selection, richer payload families, and
+broader callback ordering cases remain outside this slice. Dispatch type-info
+evidence here covers the generated default-interface `ITypeInfo`, but not
+`ITypeComp` or localization-sensitive type-info selection. Excel/VBA evidence
+here covers typed dispatch-interface calls, bounded dual-interface calls, and
+`WithEvents`, but not broken reference repair, broader Office version matrices,
+or Excel-facing error description parity.
