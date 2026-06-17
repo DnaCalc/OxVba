@@ -1482,6 +1482,15 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   through the parameter's declared type. Later focused slices extend that same carrier route to
   bounded arithmetic numeric constant-expression defaults (`+`, `-`, unary `-`, `*`, and guarded
   `/`) over numeric literals and module constants.
+- Follow-up `Single` metadata work adds a `DefaultValue::F32` signature carrier so direct scanner
+  metadata for `Optional ... As Single = 1.5!` preserves the f32 bit pattern instead of widening to
+  `F64`. This is a symbol signature metadata fix only; omitted-argument execution already flows
+  through folded `CoreConst` defaults and remains covered by the package VM. Evidence:
+  `optional_single_default_preserves_f32_metadata_carrier`;
+  `optional_single_default_is_bound_as_single_for_omitted_arg`; `cargo test -p oxvba-symbol
+  --quiet`; `cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol
+  -p oxvba-bind`; `cargo check --workspace`; `git diff --check`;
+  `./scripts/check-governance.ps1`.
 - Follow-up Date literal work accepts deterministic `#...#` optional Date defaults and maps them to
   the same Date serial carrier, with resolver, metadata, and VM omitted-argument proofs.
 - Follow-up string-to-typed-default coercion matches an Excel 16.0 oracle probe for
@@ -1527,8 +1536,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
   plus string/Boolean constant-expression subset, bounded Boolean comparison subset, exact
   same-string equality/inequality subset, bounded Date/Currency arithmetic numeric subset, and
-  exact i64 optional-default carrier subset, plus the covered string-to-declared-scalar default
-  coercions.
+  exact i64 optional-default carrier subset, plus the covered `Single` f32 metadata carrier and
+  string-to-declared-scalar default coercions.
   Collation-sensitive string comparisons, `Like`/`Is`, and coercive comparison defaults remain
   FE-8.5.f residuals.
 
