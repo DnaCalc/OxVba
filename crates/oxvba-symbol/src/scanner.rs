@@ -1004,7 +1004,7 @@ fn default_value_from_core_const(value: CoreConst) -> Option<DefaultValue> {
         CoreConst::I32(value) => DefaultValue::I32(value),
         CoreConst::I64(value) => DefaultValue::I64(value),
         CoreConst::F64(bits) => DefaultValue::F64(bits),
-        CoreConst::F32(bits) => DefaultValue::F64(f64::from(f32::from_bits(bits)).to_bits()),
+        CoreConst::F32(bits) => DefaultValue::F32(bits),
         CoreConst::Bool(value) => DefaultValue::Bool(value),
         CoreConst::Str(value) => DefaultValue::Str(value),
         CoreConst::Currency(value) => DefaultValue::CurrencyScaledI64(value),

@@ -1367,6 +1367,14 @@ fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn optional_single_default_is_bound_as_single_for_omitted_arg() {
+    let snap = run(
+        "Sub Main()\nDim value As Variant\nCall Fill(value)\nEnd Sub\nSub Fill(ByRef target As Variant, Optional ByVal value As Single = 1.5!)\ntarget = value\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_f32(1.5)]);
+}
+
+#[test]
 fn optional_string_to_typed_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim n As Long\nDim b As Boolean\nDim stamp As Date\nDim amount As Currency\nCall Fill(n, b, stamp, amount)\nEnd Sub\nSub Fill(ByRef nTarget As Long, ByRef bTarget As Boolean, ByRef stampTarget As Date, ByRef amountTarget As Currency, Optional ByVal n As Long = \"7\", Optional ByVal b As Boolean = \"False\", Optional ByVal stamp As Date = \"2026-02-28\", Optional ByVal amount As Currency = \"1.25\")\nnTarget = n\nbTarget = b\nstampTarget = stamp\namountTarget = amount\nEnd Sub",

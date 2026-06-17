@@ -53,6 +53,8 @@ pub enum DefaultValue {
     I64(i64),
     /// IEEE-754 `f64` bit pattern.
     F64(u64),
+    /// IEEE-754 `f32` bit pattern.
+    F32(u32),
     Bool(bool),
     Str(String),
     /// Currency scaled ×10_000.

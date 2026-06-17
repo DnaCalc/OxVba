@@ -804,6 +804,29 @@ fn optional_parameter_string_defaults_coerce_to_declared_metadata() {
 }
 
 #[test]
+fn optional_single_default_preserves_f32_metadata_carrier() {
+    let src = "Sub S(Optional ByVal n As Single = 1.5!)\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("proc resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol"))
+        .expect("symbol");
+    let SymbolImpl::Signature(sig) = &symbol.imp else {
+        panic!("expected signature");
+    };
+    let signature = env.signatures.get(*sig).expect("signature");
+    assert_eq!(
+        signature.params[0].default,
+        Some(DefaultValue::F32(1.5f32.to_bits()))
+    );
+}
+
+#[test]
 fn scanner_reads_per_declarator_types_from_structured_cst() {
     // Each declarator carries its own type (the old flat-token walker couldn't).
     let m = manifest(
