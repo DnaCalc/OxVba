@@ -1315,10 +1315,23 @@ constant expressions:
 - A follow-up untyped `String` expression pass applies that fold before generic binary-expression
   lowering, so `Const Prefix = "re"` followed by `Const CText = Prefix & "ady"` also substitutes as
   `LoadConstString "ready"` through direct HIR, default-route, route-audit, and VM execution paths.
+- A follow-up qualified-name pass folds same-project `Module.Const` and `Project.Module.Const`
+  references in compile-time constant expressions before binding. The symbol-layer evaluator now
+  resolves the module qualifier among siblings of the declaring module's project scope, preserves
+  forward-reference `Pending` behavior for cross-module constants, and respects the ordinary binder
+  rule that a local/parameter named like the module shadows the qualifier. Excel 16.0 oracle probe:
+  `Const X As Long = ModA.K + 1` over `Public Const K As Long = 7` returned `8`. Coverage:
+  `module_qualified_const_values_fold_across_modules`;
+  `module_qualified_const_initializer_folds`;
+  `module_qualified_const_initializer_respects_local_shadowing`;
+  `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`;
+  `cargo fmt --check -p oxvba-symbol -p oxvba-bind`; `cargo check --workspace`;
+  `git diff --check`; `./scripts/check-governance.ps1`.
 - This is intentionally still a bounded subset. Constant expressions that require broader
   procedure-local scoping, conditional-branch source mapping, locale-sensitive string comparison,
   Date/Currency expression coercion beyond the covered numeric arithmetic subset, locale-sensitive
-  Date literal breadth, or names beyond source-prior constants and the already handled
+  Date literal breadth, or names beyond source-prior constants, same-project module-qualified
+  constants, and the already handled
   enum/literal/type-character route, plus typed constant coercion outside the covered exact and
   string-to-scalar declared carriers and full `LongPtr` platform semantics, remain future FE-8.5
   work.
