@@ -614,6 +614,18 @@ class publication, creatability, predeclared singletons, and global class-member
 falling back to loader metadata. `source_boolean_module_attributes_shape_class_surface` proves a
 direct manifest with false loader flags still publishes the class according to its exported source
 headers.
+Clean symbol-stack DefType continuation on 2026-06-17 moved default-type ownership into
+`ModuleScan` signature/type assignment rather than relying on a legacy compiler collector.
+The scanner now recognizes source `DefBool`/`DefByte`/`DefInt`/`DefLng`/`DefLngLng`/
+`DefLngPtr`/`DefCur`/`DefSng`/`DefDbl`/`DefDate`/`DefStr`/`DefObj`/`DefVar` directives, applies
+the documented `As <type>` > type-character > DefType > Variant precedence to variables,
+parameters, and Function/Property Get return types, and keeps constants/UDT fields out of the
+DefType rule. `scanner_applies_deftype_to_variables_params_and_returns` and
+`scanner_honors_type_precedence_over_deftype` prove the symbol facts; the clean-stack
+`scalar_deftype_defaults_affect_variables_params_and_returns` regression proves those facts reach
+runtime coercion for a numeric DefType route. Remaining boundaries are explicit: duplicate-range
+diagnostics, `DefDec`, and broader assignment/coercion gaps such as numeric-to-String store
+conversion remain later type/diagnostic work.
 Basic conditional-compilation filtering now also runs before the default HIR route for otherwise
 completed single-source inputs, using the resolver's physical-line normalization and existing
 `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` evaluator before HIR parsing. This is route coverage for the
@@ -1524,6 +1536,12 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler --quiet`
 - `cargo check -p oxvba-compiler`
 - `cargo fmt --check -p oxvba-compiler`
+- `cargo test -p oxvba-symbol deftype --quiet`
+- `cargo test -p oxvba-symbol --quiet`
+- `cargo test -p oxvba-bind scalar_deftype_defaults_affect_variables_params_and_returns --quiet`
+- `cargo test -p oxvba-bind --quiet`
+- `cargo check --workspace`
+- `cargo fmt --check -p oxvba-symbol -p oxvba-bind`
 - `git diff --check`
 
 ## Fresh-Eyes Review
