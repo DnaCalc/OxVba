@@ -12,7 +12,8 @@ The wrapped COM/server/UDF workset has an implemented subset with evidence for:
 - WrappedComServer late-bound DLL publication and registered activation.
 - Generated TypeLib publication, live generated-object dispatch type-info
   publication, and controlled TypeLib-aware client calls.
-- One Automation-safe dual-interface vtable path with dispatch/vtable parity.
+- Bounded Automation-safe dual-interface vtable paths with dispatch/vtable
+  parity for the supported scalar slots.
 - Source dispinterface metadata and controlled connection-point event delivery.
 - Host-call descriptor metadata, typed host UDF catalog enumeration, and scalar
   stable-ID host UDF invocation with caller/dependency/volatile context shape.
@@ -33,6 +34,8 @@ The wrapped COM/server/UDF workset has an implemented subset with evidence for:
   `docs/evidence/conformance/WRAPPED_COM_SERVER_DISPATCH_TYPEINFO_COM0008_2026-06-17.md`
 - `COM-0009`:
   `docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_INTERFACE_COM0009_2026-05-09.md`
+  and
+  `docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_VTABLE_SCALAR_ARGS_COM0009_2026-06-17.md`
 - `COM-0010`:
   `docs/evidence/conformance/WRAPPED_COM_SERVER_EVENTS_COM0010_2026-05-09.md`
   and
@@ -89,8 +92,9 @@ cargo test -p oxvba-host embedded::tests --quiet
   `WithEvents` client proof and bounded connection enumerators. Multi-event
   selection and richer event payload ordering remain outside the current
   `COM-0010` implemented subset.
-- Broader dual-interface argument/property/byref/object/array/error vtable
-  parity remains outside `COM-0009`.
+- Broader dual-interface property/byref/object/array/error vtable parity,
+  optional/default arguments, non-`Long` scalar signatures, and arbitrary vtable
+  slot counts remain outside `COM-0009`.
 - Host UDF richer scalar coercion, array returns, error returns, explicit
   worksheet volatile/dependency semantics, and DnaOneCalc/OxIde host-context
   harness evidence remain open under `PH-0011`, which therefore remains

@@ -1,7 +1,8 @@
 # WrappedComServer dual-interface COM-0009 evidence
 
 Date: 2026-05-09
-Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`
+Refreshed: 2026-06-17
+Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`
 Matrix row: `COM-0009`
 
 ## Scope
@@ -13,10 +14,13 @@ and execute one Automation-safe vtable slot over the same runtime object used by
 the dispatch path. It also proves that the dispatch and vtable paths return the
 same value for the supported member.
 
-The supported signature slice is intentionally narrow: a no-argument method
-published as `HRESULT Method([out, retval] LONG*)`. Broader parameters, property
-vtable slots, object returns, arrays, records, and arbitrary native structs are
-outside this bead.
+The original supported signature slice was intentionally narrow: a no-argument
+method published as `HRESULT Method([out, retval] LONG*)`. The 2026-06-17 clean
+smoke widens that bounded tier to a second scalar slot,
+`HRESULT Method(LONG, LONG, [out, retval] LONG*)`; see
+`docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_VTABLE_SCALAR_ARGS_COM0009_2026-06-17.md`.
+Broader parameters, property vtable slots, object returns, arrays, records, and
+arbitrary native structs remain outside this bead.
 
 ## Commands
 
@@ -24,6 +28,7 @@ outside this bead.
 cargo test -p oxvba-build com_server_has --quiet
 cargo test -p oxvba-build generate_typelib --quiet
 cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_exports --quiet
+cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocapture
 ```
 
 ## Verified behavior
@@ -46,12 +51,21 @@ cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_ex
 - The generated vtable surface exposes only the first supported no-argument
   method slot in this bead; later eligible members remain dispatch-only until a
   broader ABI tier is explicitly implemented.
+- 2026-06-17 clean smoke widens the generated dual vtable surface to two
+  bounded scalar slots for eligible classes: slot 7 no-argument `Long` return
+  and slot 8 two `Long` inputs returning `Long`.
+- The clean smoke proves raw COM dispatch/vtable parity for `Pinger.Ping()` and
+  `Pinger.AddPair(19, 23)` on the same wrapped object.
+- The clean Excel smoke references the generated `.tlb`, creates
+  `Dim pinger As Pinger`, and successfully calls `pinger.Ping()` plus
+  `pinger.AddPair(19, 23)`.
 - Existing TypeLib generation and dispatch-backed wrapped server tests remain
   green after the dual-interface projection change.
 
 ## Residual
 
-`COM-0009` is an `implemented-subset` for the bounded no-argument scalar method
-slot. Properties, arguments, byref writebacks, object identity equivalence,
-arrays, error parity, and additional vtable slots are outside this subset and
-remain deferred.
+`COM-0009` is an `implemented-subset` for the bounded scalar dual-interface
+tier: slot 7 no-argument `Long` return plus slot 8 two `Long` inputs returning
+`Long`. Properties, ByRef writebacks, object identity equivalence, arrays, error
+parity, optional/default arguments, non-`Long` scalar signatures, and arbitrary
+additional vtable slots remain deferred.

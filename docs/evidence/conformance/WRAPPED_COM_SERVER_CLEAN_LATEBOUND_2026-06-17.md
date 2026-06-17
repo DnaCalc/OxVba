@@ -29,11 +29,12 @@ returns a snapshot of the currently advised `IDispatch` sinks.
 
 The generated TypeLib now uses a mixed default-interface policy. Classes outside
 the implemented vtable subset are published as dispatch-only `dispinterface`s so
-clients cannot accidentally vtable-call an unsupported face. Classes with exactly
-one public no-argument `Long` method at vtable slot 7 are published as dual
+clients cannot accidentally vtable-call an unsupported face. Classes whose public
+member surface fits the bounded scalar vtable tier are published as dual
 Automation interfaces, and the generated DLL returns a real vtable subobject for
-that interface IID. The supported vtable ABI is intentionally narrow:
-`HRESULT Method([out, retval] long*)`.
+that interface IID. The supported vtable ABI is intentionally narrow: slot 7
+`HRESULT Method([out, retval] long*)`, optionally followed by slot 8
+`HRESULT Method(long, long, [out, retval] long*)`.
 
 ## Evidence
 
@@ -50,9 +51,11 @@ that interface IID. The supported vtable ABI is intentionally narrow:
   `IConnectionPointContainer::EnumConnectionPoints` /
   `IConnectionPoint::Advise` / `IConnectionPoint::EnumConnections` /
   `RaiseEvent Changed(42)` / sink `Invoke` / `Unadvise`, raw COM
-  `QueryInterface(IPinger)` plus slot-7 vtable call, and an Excel/VBA typed
-  dispatch-interface client covering method, property, object return, array
-  return, external Automation error, and `WithEvents` receiving `Changed(77)`.
+  `QueryInterface(IPinger)` plus slot-7 and slot-8 vtable calls, and an
+  Excel/VBA typed dispatch-interface/dual-interface client covering method,
+  property, object return, array return, dual `Pinger.Ping()`,
+  `Pinger.AddPair(19, 23)`, external Automation error, and `WithEvents`
+  receiving `Changed(77)`.
 - `cargo test -p oxvba-cli`: passed, 9 tests.
 - `cargo check --workspace`: passed.
 - `./scripts/meta-check.ps1 -Fast -NoArtifacts`: passed, including governance,
@@ -82,19 +85,25 @@ that interface IID. The supported vtable ABI is intentionally narrow:
     `Changed(77)` plus Excel's external Automation error `440` for `Boom`.
   - `regsvr32.exe /u /s DemoServer.dll` was run after the smoke.
 
+2026-06-17 live ignored smoke additionally proved late-bound
+`Pinger.AddPair(19, 23)`, raw COM `IPinger` slot-8
+`HRESULT AddPair(long, long, long*)`, dispatch/vtable parity for that slot, and
+Excel/VBA early-bound calls to `Pinger.Ping` and `Pinger.AddPair`.
+
 Repeatable test hook: `cargo test -p oxvba-build --test wrapped_com_server_smoke
 -- --ignored` on Windows builds/registers a generated DLL and performs the same
-late-bound activation, bounded dual-interface vtable, connection-point
-enumeration/event, live dispatch type-info publication, and Excel/VBA
-early-bound/`WithEvents` smoke.
+late-bound activation, bounded dual-interface vtable including the two-`Long`
+argument slot, connection-point enumeration/event, live dispatch type-info
+publication, and Excel/VBA early-bound/`WithEvents` smoke.
 
-Residual: broader dual-interface argument/property/byref/object/array/error
-parity remains outside this clean slice. COM event evidence covers a single
+Residual: broader dual-interface property/byref/object/array/error parity,
+optional/default arguments, non-`Long` scalar signatures, and arbitrary vtable
+slot counts remain outside this clean slice. COM event evidence covers a single
 generated source connection point and snapshot enumeration of advised dispatch
 sinks; multi-source event selection, richer payload families, and broader
 callback ordering cases remain outside this slice. Dispatch type-info evidence
 here covers the generated default-interface `ITypeInfo`, but not `ITypeComp` or
 localization-sensitive type-info selection. Excel/VBA evidence here covers typed
-dispatch-interface calls and `WithEvents`, but not broken reference repair,
-broader Office version matrices, or Excel-facing error description parity; the
-vtable evidence is the controlled raw-COM `IPinger` call.
+dispatch-interface calls, bounded dual-interface calls, and `WithEvents`, but not
+broken reference repair, broader Office version matrices, or Excel-facing error
+description parity.
