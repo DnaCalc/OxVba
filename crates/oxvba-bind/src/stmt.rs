@@ -11,6 +11,7 @@ use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
 use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::model::fold_identifier;
+use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
@@ -87,13 +88,18 @@ impl<'a> ProcLower<'a> {
         let value_node = node
             .assign_value()
             .ok_or_else(|| BindError::Malformed("assignment value".into()))?;
-        let val = self.bind_expr(value_node)?;
+        let mut val = self.bind_expr(value_node)?;
         // A property target (`obj.Prop = x` / bare `Prop = x`) is a setter call,
         // not a place store: Let → Property Let, Set → Property Set.
-        if let Some(stmts) = self.try_property_assignment(target_node, intent, &val)? {
+        let value_text = value_node.text();
+        let value_label = value_text.trim();
+        if let Some(stmts) = self.try_property_assignment(target_node, intent, &val, value_label)? {
             return Ok(stmts);
         }
         let (place, target_ty) = self.bind_place(target_node)?;
+        if intent == AssignmentIntent::Let && !types::is_object(&target_ty) {
+            val = self.bind_default_member_value_context(val, value_label)?;
+        }
         // A declared scalar variable holds its declared type: coerce the value to the
         // target type on store (unconditionally — the value's static type is not a
         // reliable proxy for its run-time tag). No-op for String/Object/Variant/array.
@@ -108,6 +114,22 @@ impl<'a> ProcLower<'a> {
         }])
     }
 
+    fn bind_default_member_value_context(
+        &mut self,
+        mut val: crate::Bound,
+        label: &str,
+    ) -> Result<crate::Bound, BindError> {
+        for _ in 0..16 {
+            let Some(defaulted) = self.bind_default_member_value(val.clone(), label)? else {
+                return Ok(val);
+            };
+            val = defaulted;
+        }
+        Err(BindError::Unsupported(format!(
+            "default member chain for `{label}` is too deep"
+        )))
+    }
+
     /// If `target` denotes a project property, lower the assignment to a Property
     /// Let/Set accessor call (`Eval(Call(LateDispatch, [receiver, value]))`) and
     /// return it; otherwise `None` (the caller does a place store).
@@ -116,14 +138,22 @@ impl<'a> ProcLower<'a> {
         target: SyntaxNode<'_>,
         intent: AssignmentIntent,
         val: &crate::Bound,
+        value_label: &str,
     ) -> Result<Option<Vec<CoreStmt>>, BindError> {
         let kind = match intent {
             AssignmentIntent::Set => ProjectMemberKind::PropertySet,
             _ => ProjectMemberKind::PropertyLet,
         };
+        let rhs = match kind {
+            ProjectMemberKind::PropertyLet => {
+                self.bind_default_member_value_context(val.clone(), value_label)?
+                    .value
+            }
+            _ => val.value.clone(),
+        };
         match target.kind() {
             // `Prop(index…) = rhs` — an indexed Property Let/Set.
-            SyntaxKind::IndexExpr => self.bind_indexed_property_let(target, kind, &val.value),
+            SyntaxKind::IndexExpr => self.bind_indexed_property_let(target, kind, &rhs),
             SyntaxKind::IdentExpr => {
                 let Some(name) = target.ident_name_token().map(|t| t.text) else {
                     return Ok(None);
@@ -134,6 +164,14 @@ impl<'a> ProcLower<'a> {
                 let Some(binding) = self.resolve(name) else {
                     return Ok(None);
                 };
+                if intent == AssignmentIntent::Let
+                    && matches!(&binding.route, DispatchRoute::Value)
+                    && let Some(sym) = binding.symbol
+                    && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
+                    && let Some(default_binding) = self.g.env.resolve_default_member(&ty)
+                {
+                    return self.bind_default_member_property_let(name, &ty, default_binding, &rhs);
+                }
                 if !is_property_route(&binding.route) {
                     return Ok(None);
                 }
@@ -145,12 +183,8 @@ impl<'a> ProcLower<'a> {
                 let Some(recv) = self.me_value() else {
                     return Ok(None);
                 };
-                let call = self.late_member_call(
-                    name,
-                    kind,
-                    recv,
-                    vec![CoreArg::ByVal(val.value.clone())],
-                );
+                let call =
+                    self.late_member_call(name, kind, recv, vec![CoreArg::ByVal(rhs.clone())]);
                 Ok(Some(vec![CoreStmt::Eval(call)]))
             }
             SyntaxKind::MemberExpr => {
@@ -166,7 +200,7 @@ impl<'a> ProcLower<'a> {
                         &dispatch,
                         kind,
                         recv_value,
-                        vec![CoreArg::ByVal(val.value.clone())],
+                        vec![CoreArg::ByVal(rhs.clone())],
                     );
                     Ok(Some(vec![CoreStmt::Eval(call)]))
                 };
@@ -194,7 +228,7 @@ impl<'a> ProcLower<'a> {
                             dispid,
                             kind,
                             recv.value,
-                            vec![CoreArg::ByVal(val.value.clone())],
+                            vec![CoreArg::ByVal(rhs.clone())],
                         );
                         Ok(Some(vec![CoreStmt::Eval(call)]))
                     }
@@ -208,7 +242,7 @@ impl<'a> ProcLower<'a> {
                             &m,
                             kind,
                             recv.value,
-                            vec![CoreArg::ByVal(val.value.clone())],
+                            vec![CoreArg::ByVal(rhs.clone())],
                         );
                         Ok(Some(vec![CoreStmt::Eval(call)]))
                     }

@@ -913,6 +913,173 @@ impl<'a> ProcLower<'a> {
         }
     }
 
+    /// A bare object in a value/Let context (`r = obj`) reads the receiver's
+    /// authoritative default member. Keep this context-specific: object contexts
+    /// such as `Set other = obj` must see the receiver object itself.
+    pub(crate) fn bind_default_member_value(
+        &mut self,
+        receiver: Bound,
+        receiver_label: &str,
+    ) -> Result<Option<Bound>, BindError> {
+        let ty = receiver.ty.clone();
+        let VarTypeRef::Object(_) = ty else {
+            return Ok(None);
+        };
+        let Some(default_binding) = self.g.env.resolve_default_member(&ty) else {
+            return Ok(None);
+        };
+        self.bind_resolved_default_member_value(
+            &ty,
+            receiver.value,
+            default_binding,
+            receiver_label,
+        )
+    }
+
+    fn bind_resolved_default_member_value(
+        &mut self,
+        receiver_ty: &VarTypeRef,
+        receiver_value: CoreValue,
+        default_binding: Binding,
+        receiver_label: &str,
+    ) -> Result<Option<Bound>, BindError> {
+        match &default_binding.route {
+            DispatchRoute::ProjectMember { kind } => {
+                let sym = default_binding
+                    .symbol
+                    .ok_or_else(|| self.unresolved(receiver_label, "default member"))?;
+                let member = self
+                    .symbol_display_name(sym)
+                    .unwrap_or_else(|| receiver_label.to_string());
+                let kind = match kind {
+                    ProjectMemberKind::Method => ProjectMemberKind::Method,
+                    _ => ProjectMemberKind::PropertyGet,
+                };
+                let signature = self.project_property_accessor_signature(sym, kind, &member)?;
+                let ret = signature.return_type.unwrap_or(VarTypeRef::Variant);
+                let dispatch = self.interface_dispatch_name(receiver_ty, &member);
+                Ok(Some(value_bound(
+                    self.late_member_call(&dispatch, kind, receiver_value, Vec::new()),
+                    ret,
+                )))
+            }
+            DispatchRoute::ComMember {
+                dispid,
+                member_kind,
+                ..
+            } => {
+                let kind = match member_kind {
+                    ProjectMemberKind::Method => ProjectMemberKind::Method,
+                    _ => ProjectMemberKind::PropertyGet,
+                };
+                Ok(Some(value_bound(
+                    self.early_com_call(*dispid, kind, receiver_value, Vec::new()),
+                    VarTypeRef::Variant,
+                )))
+            }
+            DispatchRoute::ExternMember { member, kind, .. } => {
+                let kind = match kind {
+                    ProjectMemberKind::Method => ProjectMemberKind::Method,
+                    _ => ProjectMemberKind::PropertyGet,
+                };
+                Ok(Some(value_bound(
+                    self.late_member_call(member, kind, receiver_value, Vec::new()),
+                    VarTypeRef::Variant,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// `obj = rhs` in Let context, where `obj` is an object variable with a default
+    /// member, is a default-member Property Let. `Set obj = rhs` remains ordinary
+    /// object-reference assignment and deliberately does not use this path.
+    pub(crate) fn bind_default_member_property_let(
+        &mut self,
+        receiver_name: &str,
+        receiver_ty: &VarTypeRef,
+        default_binding: Binding,
+        rhs: &CoreValue,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        let recv = CoreValue::Load(self.place_by_name(receiver_name)?);
+        match &default_binding.route {
+            DispatchRoute::ProjectMember { .. } => {
+                let sym = default_binding
+                    .symbol
+                    .ok_or_else(|| self.unresolved(receiver_name, "default member"))?;
+                let member = self
+                    .symbol_display_name(sym)
+                    .unwrap_or_else(|| receiver_name.to_string());
+                let signature = self.project_property_accessor_signature(
+                    sym,
+                    ProjectMemberKind::PropertyLet,
+                    &member,
+                )?;
+                let mut args = self.bind_proc_args(None, &signature, sym)?;
+                match args.last_mut() {
+                    Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                    None => args.push(CoreArg::ByVal(rhs.clone())),
+                }
+                let dispatch = self.interface_dispatch_name(receiver_ty, &member);
+                Ok(Some(vec![CoreStmt::Eval(self.late_member_call(
+                    &dispatch,
+                    ProjectMemberKind::PropertyLet,
+                    recv,
+                    args,
+                ))]))
+            }
+            DispatchRoute::ComMember { member_name, .. } => {
+                let writer = self
+                    .resolve_member(
+                        receiver_ty,
+                        member_name,
+                        Some(ProjectMemberKind::PropertyLet),
+                    )
+                    .unwrap_or_else(|| default_binding.clone());
+                if let DispatchRoute::ComMember {
+                    dispid,
+                    param_by_ref,
+                    ..
+                } = writer.route
+                {
+                    let mut args = self.bind_args_byref(None, &param_by_ref)?;
+                    args.push(CoreArg::ByVal(rhs.clone()));
+                    Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
+                        dispid,
+                        ProjectMemberKind::PropertyLet,
+                        recv,
+                        args,
+                    ))]))
+                } else {
+                    Ok(None)
+                }
+            }
+            DispatchRoute::ExternMember { member, .. } => {
+                let writer = self
+                    .resolve_member(receiver_ty, member, Some(ProjectMemberKind::PropertyLet))
+                    .unwrap_or_else(|| default_binding.clone());
+                if let DispatchRoute::ExternMember {
+                    member,
+                    param_types,
+                    ..
+                } = writer.route
+                {
+                    let mut args = self.bind_extern_args(None, &param_types)?;
+                    args.push(CoreArg::ByVal(rhs.clone()));
+                    Ok(Some(vec![CoreStmt::Eval(self.late_member_call(
+                        &member,
+                        ProjectMemberKind::PropertyLet,
+                        recv,
+                        args,
+                    ))]))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Arguments for a project `VbaProc`: named args are reordered into their
     /// positional slots by parameter name (linearize binds VbaProc args strictly
     /// positionally), with unfilled slots left `Omitted`.

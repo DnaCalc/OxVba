@@ -2727,9 +2727,13 @@ impl<'h> Vm<'h> {
             Intent::Set if !is_object => {
                 Err(Fault::new(424, format!("Object required: {target_name}")))
             }
-            Intent::Let if target_kind == Kind::Object && value.vtype() == VarType::Object => Err(
-                Fault::new(91, format!("Object variable requires Set: {target_name}")),
-            ),
+            Intent::Let if target_kind == Kind::Object && is_object => Err(Fault::new(
+                91,
+                format!("Object variable requires Set: {target_name}"),
+            )),
+            Intent::Let if target_kind == Kind::Object => {
+                Err(Fault::new(424, format!("Object required: {target_name}")))
+            }
             // Strict `Set` type check (error 13): when the target's declared type is
             // a known project class/interface, a project-instance source must be
             // that class or implement that interface. Unconstrained targets

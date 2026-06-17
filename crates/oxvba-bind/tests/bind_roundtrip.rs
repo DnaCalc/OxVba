@@ -760,6 +760,48 @@ fn project_default_member_set_roundtrip() {
 }
 
 #[test]
+fn project_default_member_bare_get_let_roundtrip() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    w = 10\n    r = w\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value() As Long\n    Value = mV\nEnd Property\nAttribute Value.VB_UserMemId = 0\n\n\
+                  Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\nAttribute Value.VB_UserMemId = 0\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(10.0));
+}
+
+#[test]
+fn set_assignment_keeps_defaulted_object_reference() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Dim w2 As Widget\n    Set w = New Widget\n    w = 10\n    Set w2 = w\n    w2 = 12\n    r = w\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value() As Long\n    Value = mV\nEnd Property\nAttribute Value.VB_UserMemId = 0\n\n\
+                  Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\nAttribute Value.VB_UserMemId = 0\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(12.0));
+}
+
+#[test]
+fn project_property_let_rhs_uses_default_member_value() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim src As Widget\n    Dim dst As Widget\n    Set src = New Widget\n    Set dst = New Widget\n    src = 7\n    dst = src\n    r = dst\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value() As Long\n    Value = mV\nEnd Property\nAttribute Value.VB_UserMemId = 0\n\n\
+                  Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\nAttribute Value.VB_UserMemId = 0\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(7.0));
+}
+
+#[test]
+fn let_assignment_to_object_without_default_member_is_runtime_error() {
+    let main = "Sub Main()\n    Dim w As Widget\n    Set w = New Widget\n    w = 10\nEnd Sub\n";
+    let widget = "Public Function GetValue() As Long\n    GetValue = 1\nEnd Function\n";
+    let program =
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).expect("bind_program");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let err = match oxvba_vm2::run(&bundle, &host) {
+        Ok(_) => panic!("Let into an object slot must fail"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code, 424);
+}
+
+#[test]
 fn set_assigning_to_property_without_set_accessor_is_bind_error() {
     let main = "Sub Main()\n    Dim b As Box\n    Dim t As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b.Item(1) = t\nEnd Sub\n";
     let box_cls = "Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = Nothing\nEnd Property\n";
