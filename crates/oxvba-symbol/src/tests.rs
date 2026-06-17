@@ -750,6 +750,35 @@ fn optional_parameter_default_is_parsed() {
 }
 
 #[test]
+fn optional_parameter_string_defaults_coerce_to_declared_metadata() {
+    let src = "Sub S(Optional ByVal n As Long = \"7\", Optional ByVal b As Boolean = \"False\", Optional ByVal c As Currency = \"1.25\", Optional ByVal d As Date = \"2026-02-28\")\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("sub resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
+    let SymbolImpl::Signature(sig_id) = symbol.imp else {
+        panic!("expected a signature");
+    };
+    let signature = env.signatures.get(sig_id).expect("signature");
+    assert_eq!(signature.params[0].default, Some(DefaultValue::I32(7)));
+    assert_eq!(signature.params[1].default, Some(DefaultValue::Bool(false)));
+    assert_eq!(
+        signature.params[2].default,
+        Some(DefaultValue::CurrencyScaledI64(12_500))
+    );
+    assert_eq!(
+        signature.params[3].default,
+        Some(DefaultValue::DateSerialF64(46_081.0f64.to_bits()))
+    );
+}
+
+#[test]
 fn scanner_reads_per_declarator_types_from_structured_cst() {
     // Each declarator carries its own type (the old flat-token walker couldn't).
     let m = manifest(

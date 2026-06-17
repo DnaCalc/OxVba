@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use oxvba_bundle::DeclareParamType;
+use oxvba_bundle::{DeclareParamType, coreir::CoreConst};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 use crate::manifest::ModuleUnit;
@@ -522,11 +522,12 @@ impl ScanCtx<'_> {
                     .map(|t| normalize_identifier_token(t.text).to_string())
                     .unwrap_or_default();
                 let optional = parameter_has_modifier(param, SyntaxKind::KwOptional);
-                let default = default_from_param(param)
+                let ty = self.param_type(param);
+                let default = default_from_param(param, &ty)
                     .or_else(|| optional.then_some(DefaultValue::VariantMissing));
                 params.push(Param {
                     name,
-                    ty: self.param_type(param),
+                    ty,
                     mode: parameter_passing_mode(param),
                     optional,
                     param_array: parameter_has_modifier(param, SyntaxKind::KwParamArray),
@@ -952,22 +953,31 @@ fn default_member_attribute_name(text: &str) -> Option<String> {
 /// Parse a parameter's literal default (`Optional x As Long = 5`). With the
 /// `oxvba-syntax` parser fix, the `= default` is folded into the `Param` node, so
 /// this reads the text after the (first) `=`.
-fn default_from_param(node: SyntaxNode<'_>) -> Option<DefaultValue> {
+fn default_from_param(node: SyntaxNode<'_>, ty: &VarTypeRef) -> Option<DefaultValue> {
     let text = node.text();
     let rhs = text.split_once('=')?.1.trim();
-    parse_default_literal(rhs)
+    let raw = parse_default_literal(rhs)?;
+    let value = crate::const_eval::coerce_const_to_declared_type(raw.clone(), ty).unwrap_or(raw);
+    default_value_from_core_const(value)
 }
 
-fn parse_default_literal(rhs: &str) -> Option<DefaultValue> {
+fn parse_default_literal(rhs: &str) -> Option<CoreConst> {
     if rhs.eq_ignore_ascii_case("true") {
-        return Some(DefaultValue::Bool(true));
+        return Some(CoreConst::Bool(true));
     }
     if rhs.eq_ignore_ascii_case("false") {
-        return Some(DefaultValue::Bool(false));
+        return Some(CoreConst::Bool(false));
     }
     if let Some(inner) = rhs.strip_prefix('"') {
         let end = inner.find('"').unwrap_or(inner.len());
-        return Some(DefaultValue::Str(inner[..end].to_string()));
+        return Some(CoreConst::Str(inner[..end].to_string()));
+    }
+    if rhs.starts_with('#')
+        && let Some(end) = rhs[1..].find('#')
+    {
+        let literal = &rhs[..=end + 1];
+        return crate::const_eval::date::parse_date_literal_serial_bits(literal)
+            .map(CoreConst::Date);
     }
     // Numeric, with an optional sign.
     let (negate, body) = match rhs.strip_prefix('-') {
@@ -977,17 +987,30 @@ fn parse_default_literal(rhs: &str) -> Option<DefaultValue> {
     let token = body.split_whitespace().next().unwrap_or(body);
     if token.contains('.') || token.contains(['e', 'E']) && !token.starts_with('&') {
         let value: f64 = token.trim_end_matches(['!', '#', '@']).parse().ok()?;
-        return Some(DefaultValue::F64(
+        return Some(CoreConst::F64(
             if negate { -value } else { value }.to_bits(),
         ));
     }
     let raw = parse_int_literal(token)?;
     let value = if negate { -raw } else { raw };
-    Some(
-        i32::try_from(value)
-            .map(DefaultValue::I32)
-            .unwrap_or(DefaultValue::I64(value)),
-    )
+    Some(match i32::try_from(value) {
+        Ok(value) => CoreConst::I32(value),
+        Err(_) => CoreConst::I64(value),
+    })
+}
+
+fn default_value_from_core_const(value: CoreConst) -> Option<DefaultValue> {
+    Some(match value {
+        CoreConst::I32(value) => DefaultValue::I32(value),
+        CoreConst::I64(value) => DefaultValue::I64(value),
+        CoreConst::F64(bits) => DefaultValue::F64(bits),
+        CoreConst::F32(bits) => DefaultValue::F64(f64::from(f32::from_bits(bits)).to_bits()),
+        CoreConst::Bool(value) => DefaultValue::Bool(value),
+        CoreConst::Str(value) => DefaultValue::Str(value),
+        CoreConst::Currency(value) => DefaultValue::CurrencyScaledI64(value),
+        CoreConst::Date(bits) => DefaultValue::DateSerialF64(bits),
+        CoreConst::Empty | CoreConst::Null | CoreConst::Nothing => return None,
+    })
 }
 
 fn parse_int_literal(text: &str) -> Option<i64> {
@@ -1058,7 +1081,7 @@ fn declare_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     first_identifier_token(node)
 }
 
-fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+pub(crate) fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     let mut after_modifier = true;
     let mut in_type_ref = false;
     for element in node.children() {

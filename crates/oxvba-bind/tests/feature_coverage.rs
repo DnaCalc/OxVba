@@ -1354,6 +1354,22 @@ fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn optional_string_to_typed_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Sub Main()\nDim n As Long\nDim b As Boolean\nDim stamp As Date\nDim amount As Currency\nCall Fill(n, b, stamp, amount)\nEnd Sub\nSub Fill(ByRef nTarget As Long, ByRef bTarget As Boolean, ByRef stampTarget As Date, ByRef amountTarget As Currency, Optional ByVal n As Long = \"7\", Optional ByVal b As Boolean = \"False\", Optional ByVal stamp As Date = \"2026-02-28\", Optional ByVal amount As Currency = \"1.25\")\nnTarget = n\nbTarget = b\nstampTarget = stamp\namountTarget = amount\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i32(7),
+            Variant::from_bool(false),
+            Variant::from_date_f64(46_081.0),
+            Variant::from_currency_scaled_i64(12_500),
+        ]
+    );
+}
+
+#[test]
 fn optional_longlong_module_constant_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Big As LongLong = 5000000000\nSub Main()\nDim n As LongLong\nCall Fill(n)\nEnd Sub\nSub Fill(ByRef target As LongLong, Optional ByVal value As LongLong = Big + 7)\ntarget = value\nEnd Sub",

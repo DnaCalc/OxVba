@@ -18,6 +18,7 @@ use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::model::{ScopeId, SymbolId, SymbolImpl, SymbolNamespace, SymbolTable};
 use crate::providers::vba_library;
+use crate::scanner::parameter_name_token;
 use crate::signature::{BuiltinType, VarTypeRef};
 
 /// Fold every `Const` and `Enum` member reachable from the given module roots into
@@ -134,12 +135,16 @@ fn collect_proc_defaults(
             symbols.find_in_scope(module_scope, SymbolNamespace::Procedure, name.text)
         && let Some(param_list) = node.param_list()
     {
+        let proc_scope = proc_scope_under(symbols, module_scope, name.text);
         for (i, param) in param_list.params().iter().enumerate() {
             if let Some(def) = param.param_default().and_then(|d| d.first_expr_child())
                 && let ConstEval::Value(c) =
                     eval_const_expr(symbols, module_scope, def, values, mode)
             {
-                out.insert((proc_sym, i), c);
+                out.insert(
+                    (proc_sym, i),
+                    coerce_param_default_value(symbols, proc_scope, *param, c),
+                );
             }
         }
     }
@@ -195,6 +200,24 @@ fn proc_scope_under(symbols: &SymbolTable, module_scope: ScopeId, name: &str) ->
         let n = s.name.and_then(|id| symbols.name(id))?;
         (n.folded == folded).then_some(s.id)
     })
+}
+
+fn coerce_param_default_value(
+    symbols: &SymbolTable,
+    proc_scope: Option<ScopeId>,
+    param: SyntaxNode<'_>,
+    value: CoreConst,
+) -> CoreConst {
+    let Some(scope) = proc_scope else {
+        return value;
+    };
+    let Some(name) = parameter_name_token(param) else {
+        return value;
+    };
+    let Ok(Some(sym)) = symbols.find_in_scope(scope, SymbolNamespace::Parameter, name.text) else {
+        return value;
+    };
+    coerce_declared_const_value(symbols, sym, value.clone()).unwrap_or(value)
 }
 
 /// Fold `Enum` members in source order: a member with an explicit initializer takes
@@ -307,7 +330,10 @@ fn coerce_declared_const_value(
     coerce_const_to_declared_type(value, ty)
 }
 
-fn coerce_const_to_declared_type(value: CoreConst, ty: &VarTypeRef) -> Option<CoreConst> {
+pub(crate) fn coerce_const_to_declared_type(
+    value: CoreConst,
+    ty: &VarTypeRef,
+) -> Option<CoreConst> {
     match ty {
         VarTypeRef::Variant => Some(value),
         VarTypeRef::FixedString(_) | VarTypeRef::Builtin(BuiltinType::String) => {
