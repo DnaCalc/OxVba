@@ -39,4 +39,10 @@ impl Provider for HostProvider {
             .iter()
             .find_map(|blob| blob.resolve_member(recv, name, want))
     }
+
+    fn resolve_default_member(&self, recv: &VarTypeRef) -> Option<Binding> {
+        self.blobs
+            .iter()
+            .find_map(|blob| blob.resolve_default_member(recv))
+    }
 }

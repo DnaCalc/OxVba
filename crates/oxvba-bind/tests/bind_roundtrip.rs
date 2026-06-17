@@ -1516,6 +1516,56 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
     );
 }
 
+#[test]
+fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Dim w2 As Widget\n    w = 10\n    Set w2 = w\n    r = w2\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Widget".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
+    let callees = top_level_callees(&program);
+    assert_eq!(
+        callees
+            .iter()
+            .filter(|c| matches!(
+                c,
+                CoreCallee::EarlyCom {
+                    dispid: 0,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet)
+                }
+            ))
+            .count(),
+        1,
+        "host-injected bare `w = 10` should be one early-bound default PropertyLet: {callees:?}"
+    );
+    assert_eq!(
+        callees
+            .iter()
+            .filter(|c| matches!(
+                c,
+                CoreCallee::EarlyCom {
+                    dispid: 0,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet)
+                }
+            ))
+            .count(),
+        1,
+        "host-injected bare `r = w2` should be one early-bound default PropertyGet, while `Set w2 = w` stays object assignment: {callees:?}"
+    );
+}
+
 // ── COM late dispatch + Declare (structural — emit-correct, not run) ─────────
 
 /// The callee of a value, unwrapping a `Coerce` wrapper (an assignment to a typed
