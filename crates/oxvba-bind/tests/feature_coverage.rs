@@ -390,6 +390,22 @@ fn scalar_type_char_const_carriers_execute() {
 }
 
 #[test]
+fn scalar_typed_const_exact_carriers_preserve_variant_values() {
+    let snap = run(
+        "Const CSingle As Single = 1.5!\nConst CAmount As Currency = 1.25@\nConst CStamp As Date = #2026-02-28#\nConst CText As String = CSingle & \"|\" & CAmount\nSub Main()\nDim singleValue As Variant\nDim amount As Variant\nDim stamp As Variant\nDim text As String\nsingleValue = CSingle\namount = CAmount\nstamp = CStamp\ntext = CText\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_f32(1.5),
+            Variant::from_currency_scaled_i64(12_500),
+            Variant::from_date_f64(46_081.0),
+            Variant::from_string(BStr::from("1.5|1.25")),
+        ]
+    );
+}
+
+#[test]
 fn scalar_deftype_defaults_affect_variables_params_and_returns() {
     let snap = run("DefSng F, P, S\n\
          Public outSample As Variant\n\

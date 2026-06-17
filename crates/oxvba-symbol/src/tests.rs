@@ -379,6 +379,30 @@ fn const_and_enum_values_fold_into_the_type_system() {
     assert_eq!(val("Indigo"), Some(CoreConst::I32(11))); // resumes from 10
 }
 
+#[test]
+fn typed_const_values_preserve_exact_type_system_carriers() {
+    let m = manifest(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const CSingle As Single = 1.5!\n\
+             Public Const CAmount As Currency = 1.25@\n\
+             Public Const CStamp As Date = #2026-02-28#\n\
+             Public Const CText As String = CSingle & \"|\" & CAmount\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Mod1").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("CSingle"), Some(CoreConst::F32(1.5f32.to_bits())));
+    assert_eq!(val("CAmount"), Some(CoreConst::Currency(12_500)));
+    assert_eq!(val("CStamp"), Some(CoreConst::Date(46_081.0f64.to_bits())));
+    assert_eq!(val("CText"), Some(CoreConst::Str("1.5|1.25".to_string())));
+}
+
 // ── COM provider: early/late + events ────────────────────────────────────────
 
 fn widget_blob() -> TypeLibMetadataBlob {

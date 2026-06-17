@@ -13,10 +13,12 @@ use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::StringCompareMode;
 use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
+use oxvba_runtime::CurrencyValue;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::model::{ScopeId, SymbolId, SymbolNamespace, SymbolTable};
+use crate::model::{ScopeId, SymbolId, SymbolImpl, SymbolNamespace, SymbolTable};
 use crate::providers::vba_library;
+use crate::signature::{BuiltinType, VarTypeRef};
 
 /// Fold every `Const` and `Enum` member reachable from the given module roots into
 /// a `SymbolId → value` map. Module- *and* proc-level consts are included (the
@@ -274,6 +276,9 @@ fn resolve_const_worklist(
             let mode = mode_for_scope(symbols, scope, module_modes);
             match eval_const_expr_syms(symbols, scope, init, &values, const_syms, mode) {
                 ConstEval::Value(v) => {
+                    let Some(v) = coerce_declared_const_value(symbols, sym, v) else {
+                        continue;
+                    };
                     values.insert(sym, v);
                     progress = true;
                 }
@@ -285,6 +290,72 @@ fn resolve_const_worklist(
             return values;
         }
         remaining = still;
+    }
+}
+
+fn coerce_declared_const_value(
+    symbols: &SymbolTable,
+    sym: SymbolId,
+    value: CoreConst,
+) -> Option<CoreConst> {
+    let Some(symbol) = symbols.symbol(sym) else {
+        return Some(value);
+    };
+    let SymbolImpl::DeclaredType(ty) = &symbol.imp else {
+        return Some(value);
+    };
+    coerce_const_to_declared_type(value, ty)
+}
+
+fn coerce_const_to_declared_type(value: CoreConst, ty: &VarTypeRef) -> Option<CoreConst> {
+    match ty {
+        VarTypeRef::Variant => Some(value),
+        VarTypeRef::FixedString(_) | VarTypeRef::Builtin(BuiltinType::String) => {
+            const_to_string(&value).map(CoreConst::Str)
+        }
+        VarTypeRef::Builtin(BuiltinType::Boolean) => const_to_f64(&value)
+            .map(|n| CoreConst::Bool(n != 0.0))
+            .or(match value {
+                CoreConst::Bool(_) => Some(value),
+                _ => None,
+            }),
+        VarTypeRef::Builtin(BuiltinType::Byte) => {
+            let n = const_to_i64(&value)?;
+            (0..=255).contains(&n).then_some(CoreConst::I32(n as i32))
+        }
+        VarTypeRef::Builtin(BuiltinType::Integer) => {
+            let n = const_to_i64(&value)?;
+            (i64::from(i16::MIN)..=i64::from(i16::MAX))
+                .contains(&n)
+                .then_some(CoreConst::I32(n as i32))
+        }
+        VarTypeRef::Builtin(BuiltinType::Long) => {
+            let n = const_to_i64(&value)?;
+            i32::try_from(n).ok().map(CoreConst::I32)
+        }
+        VarTypeRef::Builtin(BuiltinType::LongLong | BuiltinType::LongPtr) => {
+            const_to_i64(&value).map(CoreConst::I64)
+        }
+        VarTypeRef::Builtin(BuiltinType::Single) => {
+            let n = const_to_f64(&value)?;
+            (n.is_finite() && n.abs() <= f64::from(f32::MAX))
+                .then_some(CoreConst::F32((n as f32).to_bits()))
+        }
+        VarTypeRef::Builtin(BuiltinType::Double) => {
+            let n = const_to_f64(&value)?;
+            n.is_finite().then_some(CoreConst::F64(n.to_bits()))
+        }
+        VarTypeRef::Builtin(BuiltinType::Currency) => {
+            let n = const_to_f64(&value)?;
+            let scaled = (n * 10_000.0).round_ties_even();
+            (scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64)
+                .then_some(CoreConst::Currency(scaled as i64))
+        }
+        VarTypeRef::Builtin(BuiltinType::Date) => {
+            let n = const_to_f64(&value)?;
+            n.is_finite().then_some(CoreConst::Date(n.to_bits()))
+        }
+        VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Array(_) => None,
     }
 }
 
@@ -465,6 +536,9 @@ pub(crate) fn negate_const(c: CoreConst) -> Option<CoreConst> {
         CoreConst::I32(n) => CoreConst::I32(n.checked_neg()?),
         CoreConst::I64(n) => CoreConst::I64(n.checked_neg()?),
         CoreConst::F64(bits) => CoreConst::F64((-f64::from_bits(bits)).to_bits()),
+        CoreConst::F32(bits) => CoreConst::F32((-f32::from_bits(bits)).to_bits()),
+        CoreConst::Currency(scaled) => CoreConst::Currency(scaled.checked_neg()?),
+        CoreConst::Date(bits) => CoreConst::Date((-f64::from_bits(bits)).to_bits()),
         _ => return None,
     })
 }
@@ -489,9 +563,32 @@ fn const_num(c: &CoreConst) -> Option<ConstNum> {
         CoreConst::I64(n) => ConstNum::Int(*n),
         CoreConst::Bool(b) => ConstNum::Int(if *b { -1 } else { 0 }),
         CoreConst::F64(bits) => ConstNum::Float(f64::from_bits(*bits)),
+        CoreConst::F32(bits) => ConstNum::Float(f64::from(f32::from_bits(*bits))),
+        CoreConst::Currency(scaled) => ConstNum::Float(*scaled as f64 / 10_000.0),
         CoreConst::Date(bits) => ConstNum::Float(f64::from_bits(*bits)),
         _ => return None,
     })
+}
+
+fn const_to_f64(c: &CoreConst) -> Option<f64> {
+    Some(match const_num(c)? {
+        ConstNum::Int(n) => n as f64,
+        ConstNum::Float(n) => n,
+    })
+}
+
+fn const_to_i64(c: &CoreConst) -> Option<i64> {
+    match c {
+        CoreConst::I32(n) => Some(i64::from(*n)),
+        CoreConst::I64(n) => Some(*n),
+        _ => {
+            let n = const_to_f64(c)?;
+            if !n.is_finite() || n.abs() >= 9.223_372_036_854_775e18 {
+                return None;
+            }
+            Some(n.round_ties_even() as i64)
+        }
+    }
 }
 
 fn int_const(n: i64) -> CoreConst {
@@ -518,6 +615,9 @@ fn const_to_string(c: &CoreConst) -> Option<String> {
             }
         }
         CoreConst::F64(bits) => f64::from_bits(*bits).to_string(),
+        CoreConst::F32(bits) => f32::from_bits(*bits).to_string(),
+        CoreConst::Currency(scaled) => CurrencyValue::from_scaled_i64(*scaled).to_string(),
+        CoreConst::Date(bits) => f64::from_bits(*bits).to_string(),
         _ => return None,
     })
 }
