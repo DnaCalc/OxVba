@@ -2,7 +2,7 @@
 
 Date: 2026-05-09
 Refreshed: 2026-06-17
-Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`
+Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`, `bd-l7xl`, `bd-3wy1`
 Matrix row: `COM-0009`
 
 ## Scope
@@ -17,7 +17,9 @@ same value for the supported member.
 The original supported signature slice was intentionally narrow: a no-argument
 method published as `HRESULT Method([out, retval] LONG*)`. The 2026-06-17 clean
 smoke widens that bounded tier to a second scalar slot,
-`HRESULT Method(LONG, LONG, [out, retval] LONG*)`; see
+`HRESULT Method(LONG, LONG, [out, retval] LONG*)`. The same date's `bd-3wy1`
+refresh adds a third bounded scalar slot,
+`HRESULT Method(DOUBLE, DOUBLE, [out, retval] DOUBLE*)`; see
 `docs/evidence/conformance/WRAPPED_COM_SERVER_DUAL_VTABLE_SCALAR_ARGS_COM0009_2026-06-17.md`.
 Broader parameters, property vtable slots, object returns, arrays, records, and
 arbitrary native structs remain outside this bead.
@@ -51,21 +53,25 @@ cargo test -p oxvba-build --test wrapped_com_server_smoke -- --ignored --nocaptu
 - The generated vtable surface exposes only the first supported no-argument
   method slot in this bead; later eligible members remain dispatch-only until a
   broader ABI tier is explicitly implemented.
-- 2026-06-17 clean smoke widens the generated dual vtable surface to two
-  bounded scalar slots for eligible classes: slot 7 no-argument `Long` return
-  and slot 8 two `Long` inputs returning `Long`.
+- 2026-06-17 clean smoke widens the generated dual vtable surface to three
+  bounded scalar slots for eligible classes: slot 7 no-argument `Long` return,
+  slot 8 two `Long` inputs returning `Long`, and slot 9 two `Double` inputs
+  returning `Double`.
 - The clean smoke proves raw COM dispatch/vtable parity for `Pinger.Ping()` and
-  `Pinger.AddPair(19, 23)` on the same wrapped object.
+  `Pinger.AddPair(19, 23)` on the same wrapped object, then extends that parity
+  to `Pinger.Average(10.5, 21.5)` through `VT_R8` dispatch arguments and the
+  direct `double, double, double*` vtable ABI.
 - The clean Excel smoke references the generated `.tlb`, creates
   `Dim pinger As Pinger`, and successfully calls `pinger.Ping()` plus
-  `pinger.AddPair(19, 23)`.
+  `pinger.AddPair(19, 23)` plus `pinger.Average(10.5, 21.5)`.
 - Existing TypeLib generation and dispatch-backed wrapped server tests remain
   green after the dual-interface projection change.
 
 ## Residual
 
 `COM-0009` is an `implemented-subset` for the bounded scalar dual-interface
-tier: slot 7 no-argument `Long` return plus slot 8 two `Long` inputs returning
-`Long`. Properties, ByRef writebacks, object identity equivalence, arrays, error
-parity, optional/default arguments, non-`Long` scalar signatures, and arbitrary
+tier: slot 7 no-argument `Long` return, slot 8 two `Long` inputs returning
+`Long`, and slot 9 two `Double` inputs returning `Double`. Properties, ByRef
+writebacks, object identity equivalence, arrays, error parity, optional/default
+arguments, scalar signatures outside these exact slots, and arbitrary
 additional vtable slots remain deferred.
