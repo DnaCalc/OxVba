@@ -102,7 +102,7 @@ impl<'a> ProcLower<'a> {
         }
         // A declared scalar variable holds its declared type: coerce the value to the
         // target type on store (unconditionally — the value's static type is not a
-        // reliable proxy for its run-time tag). No-op for String/Object/Variant/array.
+        // reliable proxy for its run-time tag). No-op for Object/Variant/array.
         let value = types::coerce_store(val.value, &target_ty);
         Ok(vec![CoreStmt::Assign {
             place,

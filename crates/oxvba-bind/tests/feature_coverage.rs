@@ -1053,6 +1053,53 @@ fn scalar_string_const_scalar_concat_expression_executes() {
 }
 
 #[test]
+fn scalar_string_store_coerces_numeric_values() {
+    let snap = run("Public outLocal As Variant\n\
+         Public outParam As Variant\n\
+         Public outFunction As Variant\n\
+         Sub Main()\n\
+             Dim sample As String\n\
+             sample = 7\n\
+             outLocal = sample\n\
+             Take 9\n\
+             outFunction = Made()\n\
+         End Sub\n\
+         Sub Take(ByVal payload As String)\n\
+             outParam = payload\n\
+         End Sub\n\
+         Function Made() As String\n\
+             Made = 8\n\
+         End Function\n");
+    assert_eq!(snap[0], Variant::from_string(BStr::from("7")));
+    assert_eq!(snap[1], Variant::from_string(BStr::from("9")));
+    assert_eq!(snap[2], Variant::from_string(BStr::from("8")));
+}
+
+#[test]
+fn scalar_deftype_string_defaults_affect_variables_params_and_returns() {
+    let snap = run("DefStr M, P, R\n\
+         Public outLocal As Variant\n\
+         Public outParam As Variant\n\
+         Public outFunction As Variant\n\
+         Sub Main()\n\
+             Dim message\n\
+             message = 7\n\
+             outLocal = message\n\
+             Take 9\n\
+             outFunction = ResultValue()\n\
+         End Sub\n\
+         Sub Take(ByVal payload)\n\
+             outParam = payload\n\
+         End Sub\n\
+         Function ResultValue()\n\
+             ResultValue = 8\n\
+         End Function\n");
+    assert_eq!(snap[0], Variant::from_string(BStr::from("7")));
+    assert_eq!(snap[1], Variant::from_string(BStr::from("9")));
+    assert_eq!(snap[2], Variant::from_string(BStr::from("8")));
+}
+
+#[test]
 fn scalar_untyped_string_const_expression_executes() {
     let snap = run(
         "Const Prefix = \"re\"\nConst CText = Prefix & \"ady\"\nSub Main()\nDim text\ntext = CText\nEnd Sub",

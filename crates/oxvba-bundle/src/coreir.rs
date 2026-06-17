@@ -218,6 +218,7 @@ pub enum CoreBinOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoerceTarget {
     Numeric(NumericCoerceTarget),
+    String,
     FixedString(usize),
     ImplicitVariant(VarType),
 }

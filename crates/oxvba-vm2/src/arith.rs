@@ -526,6 +526,10 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
     }
 }
 
+pub fn coerce_string(v: &Variant) -> R {
+    coerce_to(v, VarType::String).map_err(ArithError::from)
+}
+
 /// Pad with trailing spaces or truncate to a fixed character length.
 pub fn coerce_fixed_string(v: &Variant, len: usize) -> Variant {
     let mut s: Vec<char> = as_string(v).chars().collect();

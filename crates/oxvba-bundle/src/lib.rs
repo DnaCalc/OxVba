@@ -32,7 +32,7 @@ pub use coreir::{
 use oxvba_runtime::DynLinkSymbol;
 
 pub const BUNDLE_PACKAGE_FORMAT: &str = "oxvba.bundle-package";
-pub const BUNDLE_PACKAGE_VERSION: u32 = 1;
+pub const BUNDLE_PACKAGE_VERSION: u32 = 2;
 
 // ── Shared scalar enums (the bundle's own clean copies) ──────────────────────
 
@@ -509,3 +509,20 @@ impl std::fmt::Display for BundlePackageError {
 }
 
 impl std::error::Error for BundlePackageError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundle_package_uses_current_version_and_rejects_previous_version() {
+        let mut package = BundlePackage::single(Bundle::empty());
+        assert_eq!(package.version, BUNDLE_PACKAGE_VERSION);
+
+        package.version = BUNDLE_PACKAGE_VERSION - 1;
+        assert!(matches!(
+            package.validate(),
+            Err(BundlePackageError::UnsupportedVersion { found }) if found == BUNDLE_PACKAGE_VERSION - 1
+        ));
+    }
+}

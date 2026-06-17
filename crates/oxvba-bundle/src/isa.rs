@@ -245,6 +245,9 @@ pub enum Op {
         slot: usize,
         target: NumericCoerceTarget,
     },
+    CoerceString {
+        slot: usize,
+    },
     CoerceFixedString {
         slot: usize,
         len: usize,

@@ -1985,6 +1985,10 @@ impl<'h> Vm<'h> {
                     arith::coerce_numeric(self.get(*slot)?, *target).map_err(Fault::from_arith)?;
                 self.set(*slot, v)?;
             }
+            Op::CoerceString { slot } => {
+                let v = arith::coerce_string(self.get(*slot)?).map_err(Fault::from_arith)?;
+                self.set(*slot, v)?;
+            }
             Op::CoerceFixedString { slot, len } => {
                 let v = arith::coerce_fixed_string(self.get(*slot)?, *len);
                 self.set(*slot, v)?;

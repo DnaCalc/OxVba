@@ -524,6 +524,12 @@ impl<'p> Linearizer<'p> {
                         });
                         Ok(dst)
                     }
+                    CoerceTarget::String => {
+                        let dst = self.new_temp();
+                        self.emit(Op::Copy { dst, src });
+                        self.emit(Op::CoerceString { slot: dst });
+                        Ok(dst)
+                    }
                     CoerceTarget::FixedString(len) => {
                         let dst = self.new_temp();
                         self.emit(Op::Copy { dst, src });

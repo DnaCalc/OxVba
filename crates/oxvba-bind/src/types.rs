@@ -77,10 +77,11 @@ pub fn type_name(ty: &VarTypeRef) -> String {
 
 // ── Coercion insertion ──────────────────────────────────────────────────────
 
-/// The narrowing target when storing into a fixed scalar type, or `None` when the
-/// VM's store coercion suffices (`String`/`Boolean`/`Variant`/`Object`/array).
+/// The coercion target when storing into a declared scalar type, or `None` when
+/// the VM's store coercion suffices (`Variant`/`Object`/array).
 pub fn coerce_target(to: &VarTypeRef) -> Option<CoerceTarget> {
     match to {
+        VarTypeRef::Builtin(BuiltinType::String) => Some(CoerceTarget::String),
         VarTypeRef::Builtin(b) => numeric_target(*b).map(CoerceTarget::Numeric),
         // Assigning to a fixed-length string pads/truncates to its length.
         VarTypeRef::FixedString(len) => Some(CoerceTarget::FixedString(*len as usize)),
@@ -130,7 +131,7 @@ pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
 /// and skips identity conversions). A declared variable must hold its declared type
 /// at run time regardless of the value's static-vs-runtime tag (the VM ops are
 /// Double-biased and integer literals carry a `Long` payload). No-op for
-/// `String`/`Object`/`Variant`/array targets (their store needs no narrowing). Skips
+/// `Object`/`Variant`/array targets (their store needs no scalar coercion). Skips
 /// re-wrapping a value already coerced to the same target.
 pub fn coerce_store(value: CoreValue, to: &VarTypeRef) -> CoreValue {
     let Some(target) = coerce_target(to) else {
@@ -148,7 +149,7 @@ pub fn coerce_store(value: CoreValue, to: &VarTypeRef) -> CoreValue {
 }
 
 /// Coerce `value` (of type `from`) to type `to`, wrapping in a `Coerce` node only
-/// when a numeric conversion is actually needed (skips identity conversions).
+/// when a scalar conversion is actually needed (skips identity conversions).
 pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue {
     if from == to {
         return value;
@@ -318,8 +319,10 @@ mod tests {
             coerce(v, &long(), &builtin(BuiltinType::Integer)),
             CoreValue::Coerce { .. }
         ));
-        // String target: no numeric coercion.
-        assert!(coerce_target(&builtin(BuiltinType::String)).is_none());
+        assert!(matches!(
+            coerce_target(&builtin(BuiltinType::String)),
+            Some(CoerceTarget::String)
+        ));
         // Currency target: now expressible.
         assert!(coerce_target(&builtin(BuiltinType::Currency)).is_some());
     }
