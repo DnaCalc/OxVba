@@ -383,3 +383,20 @@ The 2026-06-01 continuation added:
   member came from COM metadata. The scanner now associates exported member attributes with the
   logical member, and the binder routes active-project default-member reads and indexed Let/Set
   writes through the same accessor-signature path used by explicit property syntax.
+- Bare default-member review on 2026-06-17 found a false pass in the clean binder: `w = 10;
+  r = w` on a defaulted project object could appear to work only because the `Let` assignment
+  overwrote the object variable slot with a scalar. The binder now treats bare object variables as
+  default-member receivers only in Let/value contexts: `w = value` lowers to the default
+  `Property Let`, `r = w` lowers to the default `Property Get`, and `Set w2 = w` remains an
+  object-reference assignment. Property Let RHS binding uses the same value-context default-member
+  rule, so `dst = src` passes `src`'s default value to `dst`'s setter. The VM assignment guard also
+  rejects any remaining plain `Let` store into an object slot when no default-member setter route
+  was selected. Regression coverage: `project_default_member_bare_get_let_roundtrip`,
+  `set_assignment_keeps_defaulted_object_reference`,
+  `project_property_let_rhs_uses_default_member_value`, and
+  `let_assignment_to_object_without_default_member_is_runtime_error`. Excel oracle coverage:
+  `Range` default-member macro probe passed for `cell = 10`, `Set cell2 = cell`, `cell2 = 12`,
+  `r = cell`. Checks: `cargo test -p oxvba-bind default_member --quiet`,
+  `cargo test -p oxvba-bind --quiet`, `cargo test -p oxvba-vm2 --quiet`,
+  `cargo check --workspace`, `cargo fmt --check -p oxvba-bind -p oxvba-vm2`, `git diff --check`,
+  and `./scripts/check-governance.ps1`.
