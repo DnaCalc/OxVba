@@ -760,7 +760,7 @@ Required newly explicit delivery beads:
   through a culture-specific order.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion
-  outside the covered declared scalar carriers,
+  outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
   full platform `LongPtr` semantics, lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
@@ -1587,7 +1587,8 @@ Candidate bead units:
   operand coercion for covered typed and untyped
   `String` constants, type-system folded constant metadata that preserves declared `Single`,
   `Currency`, `Date`, `String`, Boolean, integer, `LongLong`, and `LongPtr` carriers before
-  assignment coercion, and explicit
+  assignment coercion, string-to-declared-scalar `Const` coercion for covered Boolean, integer,
+  floating, Currency, and deterministic Date text constants, and explicit
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
   default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults, plus bounded
