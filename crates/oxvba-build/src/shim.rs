@@ -127,6 +127,18 @@ const IID_ICONNECTIONPOINT: GUID = GUID {
     data3: 0x101A,
     data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
 };
+const IID_IENUMCONNECTIONPOINTS: GUID = GUID {
+    data1: 0xB196_B285,
+    data2: 0xBAB4,
+    data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
+const IID_IENUMCONNECTIONS: GUID = GUID {
+    data1: 0xB196_B287,
+    data2: 0xBAB4,
+    data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
 
 static GLOBAL_REF_COUNT: AtomicU32 = AtomicU32::new(0);
 static DESCRIPTOR: OnceLock<Result<ComServerDescriptor, String>> = OnceLock::new();
@@ -199,6 +211,34 @@ struct IConnectionPointVtbl {
 }
 
 #[repr(C)]
+struct IEnumConnectionPointsVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    next: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void, *mut u32) -> i32,
+    skip: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+    reset: unsafe extern "system" fn(*mut c_void) -> i32,
+    clone: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+}
+
+#[repr(C)]
+struct IEnumConnectionsVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    next: unsafe extern "system" fn(*mut c_void, u32, *mut ConnectData, *mut u32) -> i32,
+    skip: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+    reset: unsafe extern "system" fn(*mut c_void) -> i32,
+    clone: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+}
+
+#[repr(C)]
+struct ConnectData {
+    pUnk: *mut c_void,
+    dwCookie: u32,
+}
+
+#[repr(C)]
 struct IUnknownVtbl {
     query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
@@ -222,6 +262,27 @@ struct ConnectionPointContainer {
 struct ConnectionPoint {
     vtbl: *const IConnectionPointVtbl,
     owner: *mut DispatchObject,
+}
+
+#[repr(C)]
+struct EnumConnectionPoints {
+    vtbl: *const IEnumConnectionPointsVtbl,
+    ref_count: AtomicU32,
+    owner: *mut DispatchObject,
+    index: usize,
+}
+
+#[repr(C)]
+struct EnumConnections {
+    vtbl: *const IEnumConnectionsVtbl,
+    ref_count: AtomicU32,
+    entries: Vec<ConnectionSnapshot>,
+    index: usize,
+}
+
+struct ConnectionSnapshot {
+    cookie: u32,
+    dispatch: *mut c_void,
 }
 
 #[repr(C)]
@@ -324,6 +385,26 @@ static CONNECTION_POINT_VTBL: IConnectionPointVtbl = IConnectionPointVtbl {
     advise: cp_advise,
     unadvise: cp_unadvise,
     enum_connections: cp_enum_connections,
+};
+
+static ENUM_CONNECTION_POINTS_VTBL: IEnumConnectionPointsVtbl = IEnumConnectionPointsVtbl {
+    query_interface: enum_cp_query_interface,
+    add_ref: enum_cp_add_ref,
+    release: enum_cp_release,
+    next: enum_cp_next,
+    skip: enum_cp_skip,
+    reset: enum_cp_reset,
+    clone: enum_cp_clone,
+};
+
+static ENUM_CONNECTIONS_VTBL: IEnumConnectionsVtbl = IEnumConnectionsVtbl {
+    query_interface: enum_connections_query_interface,
+    add_ref: enum_connections_add_ref,
+    release: enum_connections_release,
+    next: enum_connections_next,
+    skip: enum_connections_skip,
+    reset: enum_connections_reset,
+    clone: enum_connections_clone,
 };
 
 #[unsafe(no_mangle)]
@@ -886,13 +967,19 @@ unsafe extern "system" fn cpc_release(this: *mut c_void) -> u32 {
 }
 
 unsafe extern "system" fn cpc_enum_connection_points(
-    _this: *mut c_void,
+    this: *mut c_void,
     out: *mut *mut c_void,
 ) -> i32 {
-    if !out.is_null() {
-        *out = ptr::null_mut();
+    if this.is_null() || out.is_null() {
+        return E_POINTER;
     }
-    E_NOTIMPL
+    *out = ptr::null_mut();
+    let owner = (*(this.cast::<ConnectionPointContainer>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    *out = allocate_enum_connection_points(owner, 0);
+    S_OK
 }
 
 unsafe extern "system" fn cpc_find_connection_point(
@@ -1028,11 +1115,265 @@ unsafe extern "system" fn cp_unadvise(this: *mut c_void, cookie: u32) -> i32 {
     S_OK
 }
 
-unsafe extern "system" fn cp_enum_connections(_this: *mut c_void, out: *mut *mut c_void) -> i32 {
-    if !out.is_null() {
-        *out = ptr::null_mut();
+unsafe extern "system" fn cp_enum_connections(this: *mut c_void, out: *mut *mut c_void) -> i32 {
+    if this.is_null() || out.is_null() {
+        return E_POINTER;
     }
-    E_NOTIMPL
+    *out = ptr::null_mut();
+    let owner = (*(this.cast::<ConnectionPoint>())).owner;
+    if owner.is_null() {
+        return E_FAIL;
+    }
+    *out = allocate_enum_connections_from_owner(owner, 0);
+    S_OK
+}
+
+unsafe extern "system" fn enum_cp_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || riid.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    if guid_eq(&*riid, &IID_IUNKNOWN) || guid_eq(&*riid, &IID_IENUMCONNECTIONPOINTS) {
+        enum_cp_add_ref(this);
+        *out = this;
+        S_OK
+    } else {
+        E_NOINTERFACE
+    }
+}
+
+unsafe extern "system" fn enum_cp_add_ref(this: *mut c_void) -> u32 {
+    if this.is_null() {
+        return 0;
+    }
+    let enumerator = this.cast::<EnumConnectionPoints>();
+    (*enumerator).ref_count.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+unsafe extern "system" fn enum_cp_release(this: *mut c_void) -> u32 {
+    if this.is_null() {
+        return 0;
+    }
+    let enumerator = this.cast::<EnumConnectionPoints>();
+    let previous = (*enumerator).ref_count.fetch_sub(1, Ordering::Release);
+    if previous == 0 {
+        return 0;
+    }
+    let remaining = previous - 1;
+    if remaining == 0 {
+        fence(Ordering::Acquire);
+        let owner = (*enumerator).owner;
+        GLOBAL_REF_COUNT.fetch_sub(1, Ordering::AcqRel);
+        if !owner.is_null() {
+            dispatch_release(owner.cast());
+        }
+        drop(Box::from_raw(enumerator));
+    }
+    remaining
+}
+
+unsafe extern "system" fn enum_cp_next(
+    this: *mut c_void,
+    count: u32,
+    out: *mut *mut c_void,
+    fetched: *mut u32,
+) -> i32 {
+    if this.is_null() || out.is_null() || (fetched.is_null() && count != 1) {
+        return E_POINTER;
+    }
+    for index in 0..count as usize {
+        *out.add(index) = ptr::null_mut();
+    }
+    if !fetched.is_null() {
+        *fetched = 0;
+    }
+
+    let enumerator = &mut *this.cast::<EnumConnectionPoints>();
+    let mut copied = 0u32;
+    while copied < count && enumerator.index == 0 {
+        enumerator.index = 1;
+        if enumerator.owner.is_null() {
+            return E_FAIL;
+        }
+        if source_iid_for_object(&*enumerator.owner).is_some() {
+            dispatch_add_ref(enumerator.owner.cast());
+            *out.add(copied as usize) =
+                (&mut (*enumerator.owner).cp as *mut ConnectionPoint).cast();
+            copied += 1;
+        }
+    }
+    if !fetched.is_null() {
+        *fetched = copied;
+    }
+    if copied == count {
+        S_OK
+    } else {
+        S_FALSE
+    }
+}
+
+unsafe extern "system" fn enum_cp_skip(this: *mut c_void, count: u32) -> i32 {
+    if this.is_null() {
+        return E_POINTER;
+    }
+    let enumerator = &mut *this.cast::<EnumConnectionPoints>();
+    let has_remaining_source = enumerator.index == 0
+        && !enumerator.owner.is_null()
+        && source_iid_for_object(&*enumerator.owner).is_some();
+    let remaining = usize::from(has_remaining_source);
+    let skipped = remaining.min(count as usize);
+    enumerator.index += skipped;
+    if skipped == count as usize {
+        S_OK
+    } else {
+        S_FALSE
+    }
+}
+
+unsafe extern "system" fn enum_cp_reset(this: *mut c_void) -> i32 {
+    if this.is_null() {
+        return E_POINTER;
+    }
+    (*this.cast::<EnumConnectionPoints>()).index = 0;
+    S_OK
+}
+
+unsafe extern "system" fn enum_cp_clone(this: *mut c_void, out: *mut *mut c_void) -> i32 {
+    if this.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    let enumerator = &*this.cast::<EnumConnectionPoints>();
+    if enumerator.owner.is_null() {
+        return E_FAIL;
+    }
+    *out = allocate_enum_connection_points(enumerator.owner, enumerator.index);
+    S_OK
+}
+
+unsafe extern "system" fn enum_connections_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    out: *mut *mut c_void,
+) -> i32 {
+    if this.is_null() || riid.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    if guid_eq(&*riid, &IID_IUNKNOWN) || guid_eq(&*riid, &IID_IENUMCONNECTIONS) {
+        enum_connections_add_ref(this);
+        *out = this;
+        S_OK
+    } else {
+        E_NOINTERFACE
+    }
+}
+
+unsafe extern "system" fn enum_connections_add_ref(this: *mut c_void) -> u32 {
+    if this.is_null() {
+        return 0;
+    }
+    let enumerator = this.cast::<EnumConnections>();
+    (*enumerator).ref_count.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+unsafe extern "system" fn enum_connections_release(this: *mut c_void) -> u32 {
+    if this.is_null() {
+        return 0;
+    }
+    let enumerator = this.cast::<EnumConnections>();
+    let previous = (*enumerator).ref_count.fetch_sub(1, Ordering::Release);
+    if previous == 0 {
+        return 0;
+    }
+    let remaining = previous - 1;
+    if remaining == 0 {
+        fence(Ordering::Acquire);
+        for entry in (*enumerator).entries.drain(..) {
+            release_unknown(entry.dispatch);
+        }
+        GLOBAL_REF_COUNT.fetch_sub(1, Ordering::AcqRel);
+        drop(Box::from_raw(enumerator));
+    }
+    remaining
+}
+
+unsafe extern "system" fn enum_connections_next(
+    this: *mut c_void,
+    count: u32,
+    out: *mut ConnectData,
+    fetched: *mut u32,
+) -> i32 {
+    if this.is_null() || out.is_null() || (fetched.is_null() && count != 1) {
+        return E_POINTER;
+    }
+    for index in 0..count as usize {
+        *out.add(index) = ConnectData {
+            pUnk: ptr::null_mut(),
+            dwCookie: 0,
+        };
+    }
+    if !fetched.is_null() {
+        *fetched = 0;
+    }
+
+    let enumerator = &mut *this.cast::<EnumConnections>();
+    let mut copied = 0u32;
+    while copied < count && enumerator.index < enumerator.entries.len() {
+        let entry = &enumerator.entries[enumerator.index];
+        add_ref_unknown(entry.dispatch);
+        *out.add(copied as usize) = ConnectData {
+            pUnk: entry.dispatch,
+            dwCookie: entry.cookie,
+        };
+        enumerator.index += 1;
+        copied += 1;
+    }
+    if !fetched.is_null() {
+        *fetched = copied;
+    }
+    if copied == count {
+        S_OK
+    } else {
+        S_FALSE
+    }
+}
+
+unsafe extern "system" fn enum_connections_skip(this: *mut c_void, count: u32) -> i32 {
+    if this.is_null() {
+        return E_POINTER;
+    }
+    let enumerator = &mut *this.cast::<EnumConnections>();
+    let remaining = enumerator.entries.len().saturating_sub(enumerator.index);
+    let skipped = remaining.min(count as usize);
+    enumerator.index += skipped;
+    if skipped == count as usize {
+        S_OK
+    } else {
+        S_FALSE
+    }
+}
+
+unsafe extern "system" fn enum_connections_reset(this: *mut c_void) -> i32 {
+    if this.is_null() {
+        return E_POINTER;
+    }
+    (*this.cast::<EnumConnections>()).index = 0;
+    S_OK
+}
+
+unsafe extern "system" fn enum_connections_clone(this: *mut c_void, out: *mut *mut c_void) -> i32 {
+    if this.is_null() || out.is_null() {
+        return E_POINTER;
+    }
+    *out = ptr::null_mut();
+    let enumerator = &*this.cast::<EnumConnections>();
+    *out = allocate_enum_connections_from_entries(&enumerator.entries, enumerator.index);
+    S_OK
 }
 
 fn descriptor() -> Result<&'static ComServerDescriptor, i32> {
@@ -1171,6 +1512,66 @@ unsafe fn allocate_dispatch_object(class_index: usize, object: ObjectRef) -> *mu
     (*raw).cp.owner = raw;
     register_dispatch_wrapper(raw);
     raw.cast()
+}
+
+unsafe fn allocate_enum_connection_points(owner: *mut DispatchObject, index: usize) -> *mut c_void {
+    dispatch_add_ref(owner.cast());
+    GLOBAL_REF_COUNT.fetch_add(1, Ordering::AcqRel);
+    Box::into_raw(Box::new(EnumConnectionPoints {
+        vtbl: &ENUM_CONNECTION_POINTS_VTBL,
+        ref_count: AtomicU32::new(1),
+        owner,
+        index,
+    }))
+    .cast()
+}
+
+unsafe fn allocate_enum_connections_from_owner(
+    owner: *mut DispatchObject,
+    index: usize,
+) -> *mut c_void {
+    let entries: Vec<ConnectionSnapshot> = {
+        let sinks = (*owner).sinks.borrow();
+        sinks
+            .iter()
+            .map(|sink| {
+                add_ref_unknown(sink.dispatch);
+                ConnectionSnapshot {
+                    cookie: sink.cookie,
+                    dispatch: sink.dispatch,
+                }
+            })
+            .collect()
+    };
+    allocate_enum_connections(entries, index)
+}
+
+unsafe fn allocate_enum_connections_from_entries(
+    entries: &[ConnectionSnapshot],
+    index: usize,
+) -> *mut c_void {
+    let cloned = entries
+        .iter()
+        .map(|entry| {
+            add_ref_unknown(entry.dispatch);
+            ConnectionSnapshot {
+                cookie: entry.cookie,
+                dispatch: entry.dispatch,
+            }
+        })
+        .collect();
+    allocate_enum_connections(cloned, index)
+}
+
+unsafe fn allocate_enum_connections(entries: Vec<ConnectionSnapshot>, index: usize) -> *mut c_void {
+    GLOBAL_REF_COUNT.fetch_add(1, Ordering::AcqRel);
+    Box::into_raw(Box::new(EnumConnections {
+        vtbl: &ENUM_CONNECTIONS_VTBL,
+        ref_count: AtomicU32::new(1),
+        entries,
+        index,
+    }))
+    .cast()
 }
 
 unsafe fn register_dispatch_wrapper(object: *mut DispatchObject) {

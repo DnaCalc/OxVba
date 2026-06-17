@@ -473,6 +473,10 @@ unsafe fn controlled_connection_point_with_container(
     if hr < 0 || cp.is_null() {
         return Err(format!("FindConnectionPoint failed: 0x{:08X}", hr as u32));
     }
+    if let Err(err) = assert_enum_connection_points(cpc, &source_iid) {
+        release_unknown(cp);
+        return Err(err);
+    }
 
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = TestSink::new(seen.clone());
@@ -483,6 +487,12 @@ unsafe fn controlled_connection_point_with_container(
         release_unknown(cp);
         release_unknown(sink.cast());
         return Err(format!("Advise failed: 0x{:08X}", hr as u32));
+    }
+    if let Err(err) = assert_enum_connections(cp, cookie) {
+        let _ = ((*cp_vtbl).unadvise)(cp, cookie);
+        release_unknown(cp);
+        release_unknown(sink.cast());
+        return Err(err);
     }
 
     let invoke_result = invoke_i4_method(object, fire_member.dispid, 42);
@@ -499,6 +509,179 @@ unsafe fn controlled_connection_point_with_container(
         return Err(format!("expected Changed event payload 42, got {seen:?}"));
     }
     Ok(())
+}
+
+unsafe fn assert_enum_connection_points(
+    cpc: *mut std::ffi::c_void,
+    expected_source_iid: &GUID,
+) -> Result<(), String> {
+    let cpc_vtbl = *(cpc.cast::<*const IConnectionPointContainerVtbl>());
+    let mut enumerator: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*cpc_vtbl).enum_connection_points)(cpc, &mut enumerator);
+    if hr < 0 || enumerator.is_null() {
+        return Err(format!("EnumConnectionPoints failed: 0x{:08X}", hr as u32));
+    }
+
+    let result = (|| {
+        let enum_vtbl = *(enumerator.cast::<*const IEnumConnectionPointsVtbl>());
+        let mut cp: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut fetched = 0u32;
+        let hr = ((*enum_vtbl).next)(enumerator, 1, &mut cp, &mut fetched);
+        if hr < 0 || fetched != 1 || cp.is_null() {
+            return Err(format!(
+                "IEnumConnectionPoints::Next expected one connection point, hr=0x{:08X}, fetched={fetched}",
+                hr as u32
+            ));
+        }
+        let cp_result = (|| {
+            let cp_vtbl = *(cp.cast::<*const IConnectionPointVtbl>());
+            let mut actual_iid = GUID {
+                data1: 0,
+                data2: 0,
+                data3: 0,
+                data4: [0; 8],
+            };
+            let hr = ((*cp_vtbl).get_connection_interface)(cp, &mut actual_iid);
+            if hr < 0 {
+                return Err(format!(
+                    "IConnectionPoint::GetConnectionInterface failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if !guid_eq(&actual_iid, expected_source_iid) {
+                return Err(format!(
+                    "EnumConnectionPoints returned IID {}, expected {}",
+                    guid_to_string(&actual_iid),
+                    guid_to_string(expected_source_iid)
+                ));
+            }
+            Ok(())
+        })();
+        release_unknown(cp);
+        cp_result?;
+
+        let mut extra: *mut std::ffi::c_void = std::ptr::null_mut();
+        fetched = u32::MAX;
+        let hr = ((*enum_vtbl).next)(enumerator, 1, &mut extra, &mut fetched);
+        if hr != S_FALSE || fetched != 0 || !extra.is_null() {
+            if !extra.is_null() {
+                release_unknown(extra);
+            }
+            return Err(format!(
+                "IEnumConnectionPoints::Next past end expected S_FALSE/0/null, hr=0x{:08X}, fetched={fetched}, extra={extra:p}",
+                hr as u32
+            ));
+        }
+
+        let hr = ((*enum_vtbl).reset)(enumerator);
+        if hr < 0 {
+            return Err(format!(
+                "IEnumConnectionPoints::Reset failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        let mut reset_cp: *mut std::ffi::c_void = std::ptr::null_mut();
+        fetched = 0;
+        let hr = ((*enum_vtbl).next)(enumerator, 1, &mut reset_cp, &mut fetched);
+        if hr < 0 || fetched != 1 || reset_cp.is_null() {
+            return Err(format!(
+                "IEnumConnectionPoints::Next after Reset failed: hr=0x{:08X}, fetched={fetched}",
+                hr as u32
+            ));
+        }
+        release_unknown(reset_cp);
+        Ok(())
+    })();
+    release_unknown(enumerator);
+    result
+}
+
+unsafe fn assert_enum_connections(
+    cp: *mut std::ffi::c_void,
+    expected_cookie: u32,
+) -> Result<(), String> {
+    let cp_vtbl = *(cp.cast::<*const IConnectionPointVtbl>());
+    let mut enumerator: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*cp_vtbl).enum_connections)(cp, &mut enumerator);
+    if hr < 0 || enumerator.is_null() {
+        return Err(format!("EnumConnections failed: 0x{:08X}", hr as u32));
+    }
+
+    let result = (|| {
+        let enum_vtbl = *(enumerator.cast::<*const IEnumConnectionsVtbl>());
+        let mut data = ConnectData {
+            p_unk: std::ptr::null_mut(),
+            cookie: 0,
+        };
+        let mut fetched = 0u32;
+        let hr = ((*enum_vtbl).next)(enumerator, 1, &mut data, &mut fetched);
+        if hr < 0 || fetched != 1 || data.p_unk.is_null() {
+            return Err(format!(
+                "IEnumConnections::Next expected one connection, hr=0x{:08X}, fetched={fetched}",
+                hr as u32
+            ));
+        }
+        let connection_result = (|| {
+            if data.cookie != expected_cookie {
+                return Err(format!(
+                    "IEnumConnections returned cookie {}, expected {expected_cookie}",
+                    data.cookie
+                ));
+            }
+            let mut dispatch: *mut std::ffi::c_void = std::ptr::null_mut();
+            let hr = query_interface(data.p_unk, &IID_IDISPATCH, &mut dispatch);
+            if hr < 0 || dispatch.is_null() {
+                return Err(format!(
+                    "IEnumConnections returned non-dispatch sink: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            release_unknown(dispatch);
+            Ok(())
+        })();
+        release_unknown(data.p_unk);
+        connection_result?;
+
+        let mut extra = ConnectData {
+            p_unk: std::ptr::null_mut(),
+            cookie: 0,
+        };
+        fetched = u32::MAX;
+        let hr = ((*enum_vtbl).next)(enumerator, 1, &mut extra, &mut fetched);
+        if hr != S_FALSE || fetched != 0 || !extra.p_unk.is_null() || extra.cookie != 0 {
+            if !extra.p_unk.is_null() {
+                release_unknown(extra.p_unk);
+            }
+            return Err(format!(
+                "IEnumConnections::Next past end expected S_FALSE/0/null, hr=0x{:08X}, fetched={fetched}, cookie={}",
+                hr as u32, extra.cookie
+            ));
+        }
+
+        let hr = ((*enum_vtbl).reset)(enumerator);
+        if hr < 0 {
+            return Err(format!(
+                "IEnumConnections::Reset failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        let mut reset_data = ConnectData {
+            p_unk: std::ptr::null_mut(),
+            cookie: 0,
+        };
+        fetched = 0;
+        let hr = ((*enum_vtbl).next)(enumerator, 1, &mut reset_data, &mut fetched);
+        if hr < 0 || fetched != 1 || reset_data.p_unk.is_null() {
+            return Err(format!(
+                "IEnumConnections::Next after Reset failed: hr=0x{:08X}, fetched={fetched}",
+                hr as u32
+            ));
+        }
+        release_unknown(reset_data.p_unk);
+        Ok(())
+    })();
+    release_unknown(enumerator);
+    result
 }
 
 unsafe fn invoke_i4_method(
@@ -698,6 +881,47 @@ struct IConnectionPointVtbl {
 }
 
 #[repr(C)]
+struct IEnumConnectionPointsVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    next: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        *mut *mut std::ffi::c_void,
+        *mut u32,
+    ) -> i32,
+    skip: unsafe extern "system" fn(*mut std::ffi::c_void, u32) -> i32,
+    reset: unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
+    clone: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut std::ffi::c_void) -> i32,
+}
+
+#[repr(C)]
+struct IEnumConnectionsVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    next: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut ConnectData, *mut u32) -> i32,
+    skip: unsafe extern "system" fn(*mut std::ffi::c_void, u32) -> i32,
+    reset: unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
+    clone: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut std::ffi::c_void) -> i32,
+}
+
+#[repr(C)]
+struct ConnectData {
+    p_unk: *mut std::ffi::c_void,
+    cookie: u32,
+}
+
+#[repr(C)]
 struct TestSink {
     vtbl: *const IDispatchVtbl,
     ref_count: AtomicU32,
@@ -863,6 +1087,25 @@ fn guid_eq(left: &GUID, right: &GUID) -> bool {
         && left.data3 == right.data3
         && left.data4 == right.data4
 }
+
+fn guid_to_string(guid: &GUID) -> String {
+    format!(
+        "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+        guid.data1,
+        guid.data2,
+        guid.data3,
+        guid.data4[0],
+        guid.data4[1],
+        guid.data4[2],
+        guid.data4[3],
+        guid.data4[4],
+        guid.data4[5],
+        guid.data4[6],
+        guid.data4[7],
+    )
+}
+
+const S_FALSE: i32 = 1;
 
 const IID_IUNKNOWN: GUID = GUID {
     data1: 0x0000_0000,
