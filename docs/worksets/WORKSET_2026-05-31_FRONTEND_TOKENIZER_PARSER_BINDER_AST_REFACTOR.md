@@ -1553,7 +1553,10 @@ Candidate bead units:
 	  class export surfaces before loader-metadata fallback, and source DefType directives are now
 	  scanner-owned for direct symbol manifests with documented `As <type>` > type-character >
 	  DefType > Variant precedence for variables, parameters, Function/Property Get returns,
-	  module-scope scalar declarations, and `Declare Function` default returns; enum constants,
+	  module-scope scalar declarations, and `Declare Function` default returns, and clean-stack
+	  scalar coercion now stores declared variable-length `String` and `DefStr` values as
+	  BSTR-backed String Variants through an explicit `CoerceString` VM op with clean bundle
+	  package format version `2`; enum constants,
 	  basic DefType default-route eligibility,
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
