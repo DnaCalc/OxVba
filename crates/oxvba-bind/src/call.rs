@@ -704,6 +704,20 @@ impl<'a> ProcLower<'a> {
         let Some(binding) = self.resolve(name) else {
             return Ok(None);
         };
+        if let DispatchRoute::Value = binding.route
+            && let Some(sym) = binding.symbol
+            && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
+            && let Some(default_binding) = self.g.env.resolve_default_member(&ty)
+        {
+            return self.bind_default_member_indexed_property_let(
+                name,
+                &ty,
+                default_binding,
+                target.index_arg_list(),
+                kind,
+                rhs,
+            );
+        }
         if !matches!(
             binding.route,
             DispatchRoute::ProjectMember {
@@ -822,10 +836,87 @@ impl<'a> ProcLower<'a> {
         }
     }
 
+    fn bind_default_member_indexed_property_let(
+        &mut self,
+        receiver_name: &str,
+        receiver_ty: &VarTypeRef,
+        default_binding: Binding,
+        arglist: Option<SyntaxNode<'_>>,
+        kind: ProjectMemberKind,
+        rhs: &CoreValue,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        let recv = CoreValue::Load(self.place_by_name(receiver_name)?);
+        match &default_binding.route {
+            DispatchRoute::ProjectMember { .. } => {
+                let sym = default_binding
+                    .symbol
+                    .ok_or_else(|| self.unresolved(receiver_name, "default member"))?;
+                let member = self
+                    .symbol_display_name(sym)
+                    .unwrap_or_else(|| receiver_name.to_string());
+                let signature = self.project_property_accessor_signature(sym, kind, &member)?;
+                let mut args = self.bind_proc_args(arglist, &signature, sym)?;
+                match args.last_mut() {
+                    Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                    None => args.push(CoreArg::ByVal(rhs.clone())),
+                }
+                let dispatch = self.interface_dispatch_name(receiver_ty, &member);
+                Ok(Some(vec![CoreStmt::Eval(
+                    self.late_member_call(&dispatch, kind, recv, args),
+                )]))
+            }
+            DispatchRoute::ComMember { member_name, .. } => {
+                let writer = self
+                    .resolve_member(receiver_ty, member_name, Some(kind))
+                    .unwrap_or_else(|| default_binding.clone());
+                if let DispatchRoute::ComMember {
+                    dispid,
+                    param_by_ref,
+                    ..
+                } = writer.route
+                {
+                    let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
+                    match args.last_mut() {
+                        Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                        None => args.push(CoreArg::ByVal(rhs.clone())),
+                    }
+                    Ok(Some(vec![CoreStmt::Eval(
+                        self.early_com_call(dispid, kind, recv, args),
+                    )]))
+                } else {
+                    Ok(None)
+                }
+            }
+            DispatchRoute::ExternMember { member, .. } => {
+                let writer = self
+                    .resolve_member(receiver_ty, member, Some(kind))
+                    .unwrap_or_else(|| default_binding.clone());
+                if let DispatchRoute::ExternMember {
+                    member,
+                    param_types,
+                    ..
+                } = writer.route
+                {
+                    let mut args = self.bind_extern_args(arglist, &param_types)?;
+                    match args.last_mut() {
+                        Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                        None => args.push(CoreArg::ByVal(rhs.clone())),
+                    }
+                    Ok(Some(vec![CoreStmt::Eval(
+                        self.late_member_call(&member, kind, recv, args),
+                    )]))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Arguments for a project `VbaProc`: named args are reordered into their
     /// positional slots by parameter name (linearize binds VbaProc args strictly
     /// positionally), with unfilled slots left `Omitted`.
-    fn bind_proc_args(
+    pub(crate) fn bind_proc_args(
         &mut self,
         arglist: Option<SyntaxNode<'_>>,
         signature: &Signature,
@@ -1028,6 +1119,15 @@ impl<'a> ProcLower<'a> {
     ) -> Result<Signature, BindError> {
         self.proc_signature_for(sym, kind)
             .ok_or_else(|| missing_project_property_accessor(member, kind))
+    }
+
+    pub(crate) fn symbol_display_name(&self, sym: SymbolId) -> Option<String> {
+        let name = self.g.env.symbols.symbol(sym)?.name;
+        self.g
+            .env
+            .symbols
+            .name(name)
+            .map(|n| n.first_spelling.clone())
     }
 
     /// The per-parameter by-ref flags of a `Declare` symbol (empty if unknown).

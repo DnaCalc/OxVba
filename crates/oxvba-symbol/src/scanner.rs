@@ -4,6 +4,8 @@
 //! module and every sibling / referenced-project module. Ported from the legacy
 //! `frontend_symbols` CST collection, signature-aware (no text-parsing fallback).
 
+use std::collections::BTreeSet;
+
 use oxvba_bundle::DeclareParamType;
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
@@ -92,12 +94,14 @@ pub fn scan_module(
         members: Vec::new(),
         implements: Vec::new(),
     };
+    let default_member_attrs = default_member_attributes(module_syntax);
     let mut ctx = ScanCtx {
         symbols,
         signatures,
         next_descriptor_id,
         scan: &mut scan,
         module_name: &module_name,
+        default_member_attrs,
         proc_is_static: false,
     };
     ctx.walk(module_scope, module_syntax, true)?;
@@ -110,6 +114,7 @@ struct ScanCtx<'a> {
     next_descriptor_id: &'a mut u32,
     scan: &'a mut ModuleScan,
     module_name: &'a str,
+    default_member_attrs: BTreeSet<String>,
     /// Set while walking the body of a `Static Sub/Function/Property`, so every
     /// proc-local declarator becomes a `StaticLocal` even without its own
     /// `Static` keyword. VBA has no nested procedures, so a single flag (no
@@ -270,7 +275,10 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let logical = normalize_identifier_token(name_token.text).to_string();
-        let is_default = is_default_member_node(node);
+        let is_default = is_default_member_node(node)
+            || self
+                .default_member_attrs
+                .contains(&fold_identifier(&logical));
         // Sub/Function/Property default to Public; `Private`/`Friend` override.
         let visibility = decl_visibility(node, Visibility::Public);
         let sig = self
@@ -595,6 +603,41 @@ fn is_default_member_node(node: SyntaxNode<'_>) -> bool {
         let lower = line.to_ascii_lowercase();
         lower.contains("vb_usermemid") && lower.replace(' ', "").contains("=0")
     })
+}
+
+/// Exported `.cls` files place member attributes after the member body:
+/// `Attribute Value.VB_UserMemId = 0`. The parser keeps those as top-level
+/// `AttributeStmt` nodes, so associate them with the logical member during scan.
+fn default_member_attributes(root: SyntaxNode<'_>) -> BTreeSet<String> {
+    let mut attrs = BTreeSet::new();
+    collect_default_member_attributes(root, &mut attrs);
+    attrs
+}
+
+fn collect_default_member_attributes(node: SyntaxNode<'_>, attrs: &mut BTreeSet<String>) {
+    if node.kind() == SyntaxKind::AttributeStmt
+        && let Some(member) = default_member_attribute_name(&node.text())
+    {
+        attrs.insert(fold_identifier(&member));
+    }
+    for child in node.child_nodes() {
+        collect_default_member_attributes(child, attrs);
+    }
+}
+
+fn default_member_attribute_name(text: &str) -> Option<String> {
+    let compact = text.to_ascii_lowercase().replace([' ', '\t'], "");
+    if !compact.starts_with("attribute") || !compact.contains(".vb_usermemid=0") {
+        return None;
+    }
+    let after_keyword = text.trim().split_once(char::is_whitespace)?.1.trim();
+    let (lhs, _) = after_keyword.split_once('=')?;
+    let (member, attr) = lhs.trim().rsplit_once('.')?;
+    if !attr.trim().eq_ignore_ascii_case("VB_UserMemId") {
+        return None;
+    }
+    let member = member.trim();
+    (!member.is_empty()).then(|| member.to_string())
 }
 
 /// Parse a parameter's literal default (`Optional x As Long = 5`). With the

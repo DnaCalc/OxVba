@@ -656,6 +656,24 @@ fn property_get_and_let_merge_into_one_group() {
 }
 
 #[test]
+fn exported_member_attribute_marks_project_default_member() {
+    let src = "Property Get Value(ByVal i As Long) As Long\r\n    Value = i\r\nEnd Property\r\n\
+               Attribute Value.VB_UserMemId = 0\r\n";
+    let m = manifest("Proj", vec![module("Widget", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let binding = env
+        .resolve_default_member(&VarTypeRef::Object("Widget".to_string()))
+        .expect("default member");
+    assert!(binding.is_default);
+    assert!(matches!(
+        binding.route,
+        DispatchRoute::ProjectMember {
+            kind: ProjectMemberKind::PropertyGet
+        }
+    ));
+}
+
+#[test]
 fn optional_parameter_default_is_parsed() {
     let src = "Sub S(Optional ByVal n As Long = 5)\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

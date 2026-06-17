@@ -734,6 +734,32 @@ fn indexed_property_set_roundtrip() {
 }
 
 #[test]
+fn project_default_member_get_let_roundtrip() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    w(3) = 10\n    r = w(2)\nEnd Sub\n";
+    let widget = "Private mV As Long\n\n\
+                  Public Property Get Value(ByVal i As Long) As Long\n    Value = mV + i\nEnd Property\nAttribute Value.VB_UserMemId = 0\n\n\
+                  Public Property Let Value(ByVal i As Long, ByVal v As Long)\n    mV = v + i\nEnd Property\nAttribute Value.VB_UserMemId = 0\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(15.0));
+}
+
+#[test]
+fn project_default_member_set_roundtrip() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Dim t As Thing\n    Dim got As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b(3) = t\n    Set got = b(2)\n    r = got.GetVal()\nEnd Sub\n";
+    let box_cls = "Private stored As Thing\n\n\
+                   Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = stored\nEnd Property\nAttribute Item.VB_UserMemId = 0\n\n\
+                   Public Property Set Item(ByVal i As Long, ByVal v As Thing)\n    Set stored = v\nEnd Property\nAttribute Item.VB_UserMemId = 0\n";
+    let thing = "Public Function GetVal() As Long\n    GetVal = 23\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, box_cls),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        Some(23.0)
+    );
+}
+
+#[test]
 fn set_assigning_to_property_without_set_accessor_is_bind_error() {
     let main = "Sub Main()\n    Dim b As Box\n    Dim t As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b.Item(1) = t\nEnd Sub\n";
     let box_cls = "Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = Nothing\nEnd Property\n";

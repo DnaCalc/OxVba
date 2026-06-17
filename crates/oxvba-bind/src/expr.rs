@@ -4,7 +4,7 @@
 
 use oxvba_bundle::NumericMode;
 use oxvba_bundle::coreir::{CoreArg, CoreBinOp, CoreConst, CorePlace, CoreUnOp, CoreValue};
-use oxvba_bundle::{BundleImport, ExportToken};
+use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::model::SymbolKind;
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
@@ -336,32 +336,72 @@ impl<'a> ProcLower<'a> {
             && let Some(sym) = self.resolve(tok.text).and_then(|b| b.symbol)
             && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
         {
-            if let Some(binding) = self.g.env.resolve_default_member(&ty)
-                && let DispatchRoute::ComMember {
-                    dispid,
-                    member_kind,
-                    param_by_ref,
-                    ..
-                } = &binding.route
-            {
-                let dispid = *dispid;
-                // `obj(i)` is a value-context read: dispatch the default member as a
-                // Property Get (or Method), never its Let/Set variant (a default
-                // member that shares its dispid across get/put/putref can resolve to
-                // the writer by typelib order).
-                let member_kind = match member_kind {
-                    oxvba_bundle::ProjectMemberKind::Method => {
-                        oxvba_bundle::ProjectMemberKind::Method
+            if let Some(binding) = self.g.env.resolve_default_member(&ty) {
+                match &binding.route {
+                    DispatchRoute::ProjectMember { kind } => {
+                        let sym = binding
+                            .symbol
+                            .ok_or_else(|| self.unresolved(tok.text, "default member"))?;
+                        let member = self
+                            .symbol_display_name(sym)
+                            .unwrap_or_else(|| tok.text.to_string());
+                        let kind = match kind {
+                            ProjectMemberKind::Method => ProjectMemberKind::Method,
+                            _ => ProjectMemberKind::PropertyGet,
+                        };
+                        let signature =
+                            self.project_property_accessor_signature(sym, kind, &member)?;
+                        let args = self.bind_proc_args(node.index_arg_list(), &signature, sym)?;
+                        let ret = signature.return_type.unwrap_or(VarTypeRef::Variant);
+                        let dispatch = self.interface_dispatch_name(&ty, &member);
+                        let recv = CoreValue::Load(self.place_by_name(tok.text)?);
+                        return Ok(value_bound(
+                            self.late_member_call(&dispatch, kind, recv, args),
+                            ret,
+                        ));
                     }
-                    _ => oxvba_bundle::ProjectMemberKind::PropertyGet,
-                };
-                let by_ref = param_by_ref.clone();
-                let recv = CoreValue::Load(self.place_by_name(tok.text)?);
-                let args = self.bind_args_byref(node.index_arg_list(), &by_ref)?;
-                return Ok(value_bound(
-                    self.early_com_call(dispid, member_kind, recv, args),
-                    VarTypeRef::Variant,
-                ));
+                    DispatchRoute::ComMember {
+                        dispid,
+                        member_kind,
+                        param_by_ref,
+                        ..
+                    } => {
+                        let dispid = *dispid;
+                        // `obj(i)` is a value-context read: dispatch the default member as a
+                        // Property Get (or Method), never its Let/Set variant (a default
+                        // member that shares its dispid across get/put/putref can resolve to
+                        // the writer by typelib order).
+                        let member_kind = match member_kind {
+                            ProjectMemberKind::Method => ProjectMemberKind::Method,
+                            _ => ProjectMemberKind::PropertyGet,
+                        };
+                        let by_ref = param_by_ref.clone();
+                        let recv = CoreValue::Load(self.place_by_name(tok.text)?);
+                        let args = self.bind_args_byref(node.index_arg_list(), &by_ref)?;
+                        return Ok(value_bound(
+                            self.early_com_call(dispid, member_kind, recv, args),
+                            VarTypeRef::Variant,
+                        ));
+                    }
+                    DispatchRoute::ExternMember {
+                        member,
+                        kind,
+                        param_types,
+                        ..
+                    } => {
+                        let kind = match kind {
+                            ProjectMemberKind::Method => ProjectMemberKind::Method,
+                            _ => ProjectMemberKind::PropertyGet,
+                        };
+                        let recv = CoreValue::Load(self.place_by_name(tok.text)?);
+                        let args = self.bind_extern_args(node.index_arg_list(), param_types)?;
+                        return Ok(value_bound(
+                            self.late_member_call(member, kind, recv, args),
+                            VarTypeRef::Variant,
+                        ));
+                    }
+                    _ => {}
+                }
             }
             if self.is_late_bound_receiver(&ty) {
                 let recv = CoreValue::Load(self.place_by_name(tok.text)?);
