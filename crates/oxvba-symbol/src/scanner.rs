@@ -727,7 +727,7 @@ impl DefaultTypeTable {
 fn module_default_types(root: SyntaxNode<'_>) -> Result<DefaultTypeTable, SymbolModelError> {
     let mut table = DefaultTypeTable::default();
     for node in root.child_nodes() {
-        let Some((ty, ranges)) = parse_deftype_directive(node) else {
+        let Some((ty, ranges)) = parse_deftype_directive(node)? else {
             continue;
         };
         for (start, end) in ranges {
@@ -737,13 +737,20 @@ fn module_default_types(root: SyntaxNode<'_>) -> Result<DefaultTypeTable, Symbol
     Ok(table)
 }
 
-fn parse_deftype_directive(node: SyntaxNode<'_>) -> Option<(VarTypeRef, Vec<(char, char)>)> {
+fn parse_deftype_directive(
+    node: SyntaxNode<'_>,
+) -> Result<Option<(VarTypeRef, Vec<(char, char)>)>, SymbolModelError> {
     let tokens = significant_tokens_deep(node);
-    let first = tokens.first()?;
+    let Some(first) = tokens.first() else {
+        return Ok(None);
+    };
     if first.kind != SyntaxKind::Ident {
-        return None;
+        return Ok(None);
     }
-    let ty = deftype_statement_type(first.text)?;
+    let ty = match deftype_statement_type(first.text)? {
+        Some(ty) => ty,
+        None => return Ok(None),
+    };
     let mut ranges = Vec::new();
     let mut i = 1usize;
     while i < tokens.len() {
@@ -767,10 +774,10 @@ fn parse_deftype_directive(node: SyntaxNode<'_>) -> Option<(VarTypeRef, Vec<(cha
         ranges.push((start, end));
         i += 1;
     }
-    (!ranges.is_empty()).then_some((ty, ranges))
+    Ok((!ranges.is_empty()).then_some((ty, ranges)))
 }
 
-fn deftype_statement_type(name: &str) -> Option<VarTypeRef> {
+fn deftype_statement_type(name: &str) -> Result<Option<VarTypeRef>, SymbolModelError> {
     let ty = match name.to_ascii_lowercase().as_str() {
         "defbool" => VarTypeRef::Builtin(BuiltinType::Boolean),
         "defbyte" => VarTypeRef::Builtin(BuiltinType::Byte),
@@ -785,12 +792,15 @@ fn deftype_statement_type(name: &str) -> Option<VarTypeRef> {
         "defstr" => VarTypeRef::Builtin(BuiltinType::String),
         "defobj" => VarTypeRef::Object("object".to_string()),
         "defvar" => VarTypeRef::Variant,
-        // Decimal is a Variant subtype in VBA but not a declared type in the
-        // current OxVba type model; keep DefDec as unsupported for FE-8.5.f.
-        "defdec" => return None,
-        _ => return None,
+        // Microsoft Learn "Decimal data type" documents Decimal as usable only
+        // inside a Variant, not as ordinary declared storage:
+        // learn.microsoft.com/office/vba/language/reference/user-interface-help/decimal-data-type
+        // Treat DefDec as an explicit unsupported declared-storage request
+        // rather than silently falling back to Variant.
+        "defdec" => return Err(SymbolModelError::UnsupportedDefDec),
+        _ => return Ok(None),
     };
-    Some(ty)
+    Ok(Some(ty))
 }
 
 fn significant_tokens_deep(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {

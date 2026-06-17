@@ -198,6 +198,8 @@ pub enum SymbolModelError {
     },
     #[error("duplicate DefType letter `{letter}`")]
     DuplicateDefTypeLetter { letter: char },
+    #[error("unsupported DefDec directive")]
+    UnsupportedDefDec,
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -242,6 +244,12 @@ impl SymbolModelError {
                 format!("DefType letter `{letter}` is already covered by an earlier DefType range"),
             )
             .with_help("Remove the overlapping DefType range or use an explicit As clause."),
+            SymbolModelError::UnsupportedDefDec => Diagnostic::error(
+                "SYM-E-UNSUPPORTED-DEFDEC",
+                DiagnosticPhase::Symbol,
+                "DefDec would require declared Decimal storage, but Decimal is only supported as a Variant subtype",
+            )
+            .with_help("Use Variant storage with CDec(...) or an explicit supported declared type."),
             SymbolModelError::UnknownScope(scope) => Diagnostic::error(
                 "SYM-E-UNKNOWN-SCOPE",
                 DiagnosticPhase::Symbol,

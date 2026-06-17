@@ -882,6 +882,21 @@ fn scanner_rejects_deftype_after_a_z_range() {
 }
 
 #[test]
+fn scanner_rejects_defdec_declared_decimal_storage() {
+    let src = "DefDec A-Z\r\nSub Main()\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("DefDec should not be silently ignored"),
+        Err(err) => err,
+    };
+    assert!(matches!(err, SymbolModelError::UnsupportedDefDec));
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-UNSUPPORTED-DEFDEC"
+    );
+}
+
+#[test]
 fn scanner_declares_enum_members() {
     let src = "Public Enum Color\r\n    Red\r\n    Green = 5\r\n    Blue\r\nEnd Enum\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);
