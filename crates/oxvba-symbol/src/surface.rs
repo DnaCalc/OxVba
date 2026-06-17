@@ -165,14 +165,23 @@ pub fn synthesize_export_surface(
 
     for (module, scan) in modules.iter().zip(scans.iter()) {
         let attrs = &module.attributes;
+        let source_attrs = &scan.source_attributes;
         // `Option Private Module` makes every Public member project-private — the
         // whole module is absent from the cross-project surface.
         if attrs.option_private_module || scan.option_private_module {
             continue;
         }
         let is_class = module.module_kind == ModuleKind::Class;
+        let exposed = source_attrs.vb_exposed.unwrap_or(attrs.vb_exposed);
+        let creatable = source_attrs.vb_creatable.unwrap_or(attrs.vb_creatable);
+        let predeclared = source_attrs
+            .vb_predeclared_id
+            .unwrap_or(attrs.vb_predeclared_id);
+        let global_attr = source_attrs
+            .vb_global_namespace
+            .unwrap_or(attrs.vb_global_namespace);
         // A class is only part of the COM surface if it is exposed.
-        if is_class && !attrs.vb_exposed {
+        if is_class && !exposed {
             collect_consts(scan, symbols, const_values, &mut consts);
             continue;
         }
@@ -180,7 +189,7 @@ pub fn synthesize_export_surface(
         let kind = if is_class {
             SurfaceTypeKind::Coclass {
                 prog_id: attrs.prog_id.clone(),
-                creatable: attrs.vb_creatable || creatable_instancing(attrs.instancing),
+                creatable: creatable || creatable_instancing(attrs.instancing),
                 class_symbol: scan.module_symbol,
             }
         } else {
@@ -192,7 +201,7 @@ pub fn synthesize_export_surface(
             // Extension modules are class-like — their members are qualified-only.
             SurfaceTypeKind::Module => module.module_kind == ModuleKind::Procedural,
             // `GlobalMultiUse`/`GlobalSingleUse` classes inject members globally.
-            SurfaceTypeKind::Coclass { .. } => global_instancing(attrs.instancing),
+            SurfaceTypeKind::Coclass { .. } => global_attr || global_instancing(attrs.instancing),
         };
 
         let mut members = Vec::new();
@@ -277,7 +286,7 @@ pub fn synthesize_export_surface(
             global_namespace,
             // Only an exposed class can be a predeclared coclass in the surface; a
             // hidden module is never predeclared.
-            predeclared: is_class && attrs.vb_predeclared_id,
+            predeclared: is_class && predeclared,
             members,
             events,
             implements,
@@ -806,6 +815,40 @@ mod tests {
         assert!(
             find_type(&s, "StorageName").is_none(),
             "storage/manifest fallback name should not leak when VB_Name is present"
+        );
+    }
+
+    #[test]
+    fn source_boolean_module_attributes_shape_class_surface() {
+        let s = synth(vec![class_mod(
+            "StorageName",
+            "Attribute VB_Name = \"Widget\"\n\
+             Attribute VB_Exposed = True\n\
+             Attribute VB_Creatable = True\n\
+             Attribute VB_PredeclaredId = True\n\
+             Attribute VB_GlobalNamespace = True\n\
+             Public Sub Ping()\nEnd Sub\n",
+            false,
+            false,
+        )]);
+        let widget = find_type(&s, "Widget").expect("source VB_Exposed should publish class");
+        assert!(
+            widget.predeclared,
+            "source VB_PredeclaredId should publish singleton"
+        );
+        assert!(
+            widget.global_namespace,
+            "source VB_GlobalNamespace should publish global class members"
+        );
+        assert!(
+            matches!(
+                &widget.kind,
+                SurfaceTypeKind::Coclass {
+                    creatable: true,
+                    ..
+                }
+            ),
+            "source VB_Creatable should publish a creatable coclass"
         );
     }
 

@@ -38,6 +38,19 @@ pub struct ModuleScan {
     /// into `ModuleAttributes`; keeping it here makes direct symbol/binder
     /// manifests obey the directive without relying on loader preprocessing.
     pub option_private_module: bool,
+    /// Source-owned exported module attributes. The project loader also projects
+    /// these into `ModuleAttributes`; keeping the source facts here makes direct
+    /// symbol/binder manifests follow exported `.bas`/`.cls` headers.
+    pub source_attributes: ScannedModuleAttributes,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ScannedModuleAttributes {
+    pub vb_name: Option<String>,
+    pub vb_global_namespace: Option<bool>,
+    pub vb_creatable: Option<bool>,
+    pub vb_predeclared_id: Option<bool>,
+    pub vb_exposed: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +82,10 @@ pub fn scan_module(
     module_syntax: SyntaxNode<'_>,
     project_scope: ScopeId,
 ) -> Result<ModuleScan, SymbolModelError> {
-    let module_name = source_vb_name_attribute(module_syntax)
+    let source_attributes = source_module_attributes(module_syntax);
+    let module_name = source_attributes
+        .vb_name
+        .clone()
         .or_else(|| {
             (!module.attributes.vb_name.is_empty()).then(|| module.attributes.vb_name.clone())
         })
@@ -99,6 +115,7 @@ pub fn scan_module(
         implements: Vec::new(),
         option_private_module: module.attributes.option_private_module
             || option_private_module(module_syntax),
+        source_attributes,
     };
     let default_member_attrs = default_member_attributes(module_syntax);
     let mut ctx = ScanCtx {
@@ -633,28 +650,54 @@ fn option_private_module(root: SyntaxNode<'_>) -> bool {
     })
 }
 
-fn source_vb_name_attribute(root: SyntaxNode<'_>) -> Option<String> {
-    root.child_nodes().into_iter().find_map(|node| {
-        (node.kind() == SyntaxKind::AttributeStmt)
-            .then(|| node.text())
-            .and_then(|text| parse_vb_name_attribute(&text))
-    })
+fn source_module_attributes(root: SyntaxNode<'_>) -> ScannedModuleAttributes {
+    let mut attrs = ScannedModuleAttributes::default();
+    for node in root.child_nodes() {
+        if node.kind() != SyntaxKind::AttributeStmt {
+            continue;
+        }
+        let Some((key, value)) = parse_attribute_line(&node.text()) else {
+            continue;
+        };
+        match key.as_str() {
+            "vb_name" => attrs.vb_name = Some(value),
+            "vb_globalnamespace" => attrs.vb_global_namespace = parse_bool_attribute(&value),
+            "vb_creatable" => attrs.vb_creatable = parse_bool_attribute(&value),
+            "vb_predeclaredid" => attrs.vb_predeclared_id = parse_bool_attribute(&value),
+            "vb_exposed" => attrs.vb_exposed = parse_bool_attribute(&value),
+            _ => {}
+        }
+    }
+    attrs
 }
 
-fn parse_vb_name_attribute(text: &str) -> Option<String> {
+fn parse_attribute_line(text: &str) -> Option<(String, String)> {
     let trimmed = text.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if !lower.starts_with("attribute vb_name") {
+    if !trimmed.to_ascii_lowercase().starts_with("attribute ") {
         return None;
     }
-    let (_, value) = trimmed.split_once('=')?;
-    Some(unquote_attribute_value(value.trim()))
+    let rest = &trimmed["attribute ".len()..];
+    let (key, value) = rest.split_once('=')?;
+    Some((
+        key.trim().to_ascii_lowercase(),
+        unquote_attribute_value(value.trim()),
+    ))
 }
 
 fn unquote_attribute_value(value: &str) -> String {
     let inner = value.strip_prefix('"').unwrap_or(value);
     let inner = inner.strip_suffix('"').unwrap_or(inner);
     inner.replace("\"\"", "\"")
+}
+
+fn parse_bool_attribute(value: &str) -> Option<bool> {
+    if value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 fn collect_default_member_attributes(node: SyntaxNode<'_>, attrs: &mut BTreeSet<String>) {
