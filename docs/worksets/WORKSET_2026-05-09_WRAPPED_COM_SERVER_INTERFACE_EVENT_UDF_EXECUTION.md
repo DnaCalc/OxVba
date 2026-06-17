@@ -88,12 +88,14 @@ OxVba already has important substrate:
   VBA project and proves typed method, property put/get, object return, array
   return, and external Automation error `440` behavior.
 - COM-0009 now has clean 2026-06-17 dual-interface projection evidence for the
-  first bounded shape: classes with exactly one no-argument `Long` method are
-  emitted as dual interfaces, `QueryInterface` returns a real vtable subobject,
-  and the slot-7 `HRESULT`/`[out, retval] long*` call returns the same result as
+  first bounded scalar tier: classes whose public member surface fits slot 7
+  no-argument `Long` return plus optional slot 8 two-`Long` inputs returning
+  `Long` are emitted as dual interfaces, `QueryInterface` returns a real vtable
+  subobject, and both supported vtable calls return the same results as
   `IDispatch::Invoke` on the same wrapped object. Broader
-  argument/property/byref/object/array/error vtable parity remains outside the
-  implemented subset.
+  property/byref/object/array/error vtable parity, optional/default arguments,
+  non-`Long` scalar signatures, and arbitrary vtable slot counts remain outside
+  the implemented subset.
 - COM-0010 now has source-dispinterface metadata evidence: wrapped server
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
@@ -153,8 +155,10 @@ The missing truth is also explicit:
   dispatch-backed subset; broken/missing reference repair, broader Office
   version matrices, localization-sensitive type-info selection, and
   Excel-facing error-description parity remain deferred.
-- Broader dual-interface argument/property/byref/object/array/error parity and
-  Office/VBA early-bound/vtable event-client parity are not yet implemented.
+- Broader dual-interface property/byref/object/array/error parity,
+  optional/default arguments, non-`Long` scalar signatures, arbitrary vtable slot
+  counts, and Office/VBA early-bound/vtable event-client parity are not yet
+  implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.
@@ -744,6 +748,8 @@ First executable beads:
   `IDispatch::GetTypeInfo`
 - `bd-wcs1.7.1` - generate one Automation-safe dual-interface vtable projection
 - `bd-wcs1.7.2` - prove dispatch/vtable equivalence for the same wrapped member
+- `bd-l7xl` - widen bounded WrappedComServer dual vtable to a two-`Long`
+  argument scalar slot
 - `bd-wcs1.8.1` - publish event source dispinterfaces and connection-point
   descriptors
 - `bd-wcs1.8.2` - implement `Advise`/`Unadvise` and fire `RaiseEvent` into a sink
