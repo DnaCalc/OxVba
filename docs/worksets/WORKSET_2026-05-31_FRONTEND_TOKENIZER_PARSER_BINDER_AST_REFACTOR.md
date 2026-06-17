@@ -754,12 +754,14 @@ Required newly explicit delivery beads:
   constants for diagnostics/symbols through the shared compiler preprocessor, plus month-name Date
   constants with commas inside `#...#` literals without breaking same-statement Const declarator
   splitting, plus untyped Date literal constants through `DateConst`/`LoadConstDate`, plus
-  unambiguous numeric month/day Date literals such as `#2/28/2026#`.
+  unambiguous numeric month/day Date literals such as `#2/28/2026#`, with ambiguous numeric Date
+  literals such as `#2/3/2026#` rejected by the canonical parser rather than silently interpreted
+  through a culture-specific order.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior constants, typed constant coercion
   outside the covered scalar-to-string concat operands and exact scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic subset,
-  ambiguous locale-sensitive numeric Date literal breadth, full platform `LongPtr` semantics, lossless
+  full platform `LongPtr` semantics, lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
@@ -1578,7 +1580,8 @@ Candidate bead units:
   declarators, simple same-statement constant expressions including checked nonnegative
   exponentiation plus integer division/`Mod`, month-name Date constants with comma-safe
   same-statement declarator splitting, untyped Date literal constants, unambiguous numeric
-  month/day Date literals, scalar-to-string `&` operand coercion for covered typed and untyped
+  month/day Date literals plus ambiguous numeric Date literal rejection, scalar-to-string `&`
+  operand coercion for covered typed and untyped
   `String` constants, and explicit
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
