@@ -68,6 +68,10 @@ End Sub
 Public Function Ping() As Long
     Ping = 42
 End Function
+
+Public Function AddPair(ByVal a As Long, ByVal b As Long) As Long
+    AddPair = a + b
+End Function
 "#,
     );
     write(
@@ -147,6 +151,8 @@ if ($result -ne 5) {{ throw "expected Add(2,3)=5, got $result" }}
 $pinger = New-Object -ComObject DemoServer.Pinger
 $ping = $pinger.Ping()
 if ($ping -ne 42) {{ throw "expected Ping()=42, got $ping" }}
+$pair = $pinger.AddPair(19, 23)
+if ($pair -ne 42) {{ throw "expected AddPair(19,23)=42, got $pair" }}
 "#,
         tlb_path, libid, clsid, version
     );
@@ -195,9 +201,11 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     Dim returned As Object
     Dim values As Variant
     Dim ignored As Long
+    Dim pinger As Pinger
 
     Set sink = New EventSink
     Set calc = New Calculator
+    Set pinger = New Pinger
     Set sink.Calc = calc
 
     If sink.Calc.Add(20, 22) <> 42 Then
@@ -214,6 +222,12 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     values = calc.Numbers()
     If values(0) <> 7 Or values(1) <> 8 Then
         Err.Raise 5, , "Numbers returned wrong array"
+    End If
+    If pinger.Ping() <> 42 Then
+        Err.Raise 5, , "Pinger.Ping returned wrong value"
+    End If
+    If pinger.AddPair(19, 23) <> 42 Then
+        Err.Raise 5, , "Pinger.AddPair returned wrong value"
     End If
     On Error Resume Next
     ignored = calc.Boom()
@@ -436,6 +450,11 @@ unsafe fn controlled_dual_vtable_smoke_inner(
         .iter()
         .find(|member| member.name == "Ping")
         .ok_or_else(|| "Ping descriptor missing".to_string())?;
+    let add_pair = class
+        .members
+        .iter()
+        .find(|member| member.name == "AddPair")
+        .ok_or_else(|| "AddPair descriptor missing".to_string())?;
 
     let mut clsid = GUID {
         data1: 0,
@@ -464,6 +483,7 @@ unsafe fn controlled_dual_vtable_smoke_inner(
     let result = (|| {
         assert_dispatch_type_info(object, &parse_guid(&class.default_interface_iid)?)?;
         let dispatch_value = invoke_i4_method_result(object, ping.dispid)?;
+        let dispatch_pair_value = invoke_i4_method_pair_result(object, add_pair.dispid, 19, 23)?;
         let iid = parse_guid(&class.default_interface_iid)?;
         let mut dual: *mut std::ffi::c_void = std::ptr::null_mut();
         let hr = query_interface(object, &iid, &mut dual);
@@ -475,7 +495,7 @@ unsafe fn controlled_dual_vtable_smoke_inner(
         }
 
         let dual_result = (|| {
-            let vtbl = *(dual.cast::<*const DualLongReturnVtbl>());
+            let vtbl = *(dual.cast::<*const BoundedDualVtbl>());
             let mut vtable_value = 0i32;
             let hr = ((*vtbl).slot0)(dual, &mut vtable_value);
             if hr < 0 {
@@ -488,6 +508,24 @@ unsafe fn controlled_dual_vtable_smoke_inner(
             }
             if vtable_value != 42 {
                 return Err(format!("expected vtable Ping()=42, got {vtable_value}"));
+            }
+            let mut vtable_pair_value = 0i32;
+            let hr = ((*vtbl).slot1)(dual, 19, 23, &mut vtable_pair_value);
+            if hr < 0 {
+                return Err(format!(
+                    "dual AddPair vtable call failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if dispatch_pair_value != vtable_pair_value {
+                return Err(format!(
+                    "dispatch AddPair returned {dispatch_pair_value}, vtable returned {vtable_pair_value}"
+                ));
+            }
+            if vtable_pair_value != 42 {
+                return Err(format!(
+                    "expected vtable AddPair(19,23)=42, got {vtable_pair_value}"
+                ));
             }
             Ok(())
         })();
@@ -873,6 +911,55 @@ unsafe fn invoke_i4_method_result(
     value
 }
 
+unsafe fn invoke_i4_method_pair_result(
+    dispatch: *mut std::ffi::c_void,
+    dispid: i32,
+    left: i32,
+    right: i32,
+) -> Result<i32, String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut args: [VARIANT; 2] = [std::mem::zeroed(), std::mem::zeroed()];
+    args[0].Anonymous.Anonymous.vt = VT_I4;
+    args[0].Anonymous.Anonymous.Anonymous.lVal = right;
+    args[1].Anonymous.Anonymous.vt = VT_I4;
+    args[1].Anonymous.Anonymous.Anonymous.lVal = left;
+    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+        rgvarg: args.as_mut_ptr(),
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 2,
+        cNamedArgs: 0,
+    };
+    let mut result: VARIANT = std::mem::zeroed();
+    let hr = ((*vtbl).invoke)(
+        dispatch,
+        dispid,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD,
+        &mut params,
+        &mut result,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    for arg in &mut args {
+        VariantClear(arg);
+    }
+    if hr < 0 {
+        VariantClear(&mut result);
+        return Err(format!("Invoke(AddPair) failed: 0x{:08X}", hr as u32));
+    }
+    let value = if result.Anonymous.Anonymous.vt == VT_I4 {
+        Ok(result.Anonymous.Anonymous.Anonymous.lVal)
+    } else {
+        Err(format!(
+            "Invoke(AddPair) returned VT {}, expected VT_I4",
+            result.Anonymous.Anonymous.vt
+        ))
+    };
+    VariantClear(&mut result);
+    value
+}
+
 #[repr(C)]
 struct IUnknownVtbl {
     query_interface: unsafe extern "system" fn(
@@ -996,7 +1083,7 @@ struct ITypeInfoVtbl {
 }
 
 #[repr(C)]
-struct DualLongReturnVtbl {
+struct BoundedDualVtbl {
     query_interface: unsafe extern "system" fn(
         *mut std::ffi::c_void,
         *const GUID,
@@ -1031,6 +1118,7 @@ struct DualLongReturnVtbl {
         *mut u32,
     ) -> i32,
     slot0: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
+    slot1: unsafe extern "system" fn(*mut std::ffi::c_void, i32, i32, *mut i32) -> i32,
 }
 
 #[repr(C)]

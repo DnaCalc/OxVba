@@ -254,6 +254,10 @@ End Sub
 Public Function Ping() As Long
     Ping = 42
 End Function
+
+Public Function AddPair(ByVal a As Long, ByVal b As Long) As Long
+    AddPair = a + b
+End Function
 "#,
         );
         write(
@@ -317,8 +321,9 @@ End Function
             .iter()
             .find(|class| class.class_name == "Pinger")
             .expect("Pinger descriptor");
-        assert_eq!(pinger.members.len(), 1);
+        assert_eq!(pinger.members.len(), 2);
         assert_eq!(pinger.members[0].vtable_slot, Some(7));
+        assert_eq!(pinger.members[1].vtable_slot, Some(8));
 
         let idl = std::fs::read_to_string(&output.idl_path).expect("idl should exist");
         assert!(idl.contains("library DemoServerLib"));
@@ -329,6 +334,9 @@ End Function
         assert!(idl.contains("void Changed"));
         assert!(idl.contains("interface IPinger : IDispatch"));
         assert!(idl.contains("HRESULT Ping([out, retval] long* result);"));
+        assert!(
+            idl.contains("HRESULT AddPair([in] long a, [in] long b, [out, retval] long* result);")
+        );
         assert!(idl.contains("[default] interface IPinger;"));
 
         let shim_source =
@@ -336,7 +344,7 @@ End Function
         assert!(shim_source.contains("DllGetClassObject"));
         assert!(shim_source.contains("DllRegisterServer"));
         assert!(shim_source.contains("MS-OAUT"));
-        assert!(shim_source.contains("DualLongReturnInterface"));
+        assert!(shim_source.contains("BoundedDualInterface"));
         assert!(!output.dll_target_path.exists());
         assert!(!output.tlb_target_path.exists());
     }

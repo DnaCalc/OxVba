@@ -131,24 +131,50 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
 }
 
 fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
-    class.members.len() == 1
+    !class.members.is_empty()
+        && class.members.len() <= 2
         && class
             .members
-            .first()
-            .is_some_and(member_supports_bounded_dual_interface)
+            .iter()
+            .all(member_supports_bounded_dual_interface)
+        && class
+            .members
+            .iter()
+            .any(|member| member.vtable_slot == Some(7))
 }
 
 fn member_supports_bounded_dual_interface(member: &ComMemberDescriptor) -> bool {
-    member.invoke_kind == ComInvokeKind::Method
-        && member.vtable_slot == Some(7)
-        && member.parameter_types.is_empty()
-        && member.return_type == Some(ComParamType::Long)
+    if member.invoke_kind != ComInvokeKind::Method
+        || member.return_type != Some(ComParamType::Long)
+        || member.parameter_optional.iter().any(|optional| *optional)
+    {
+        return false;
+    }
+    matches!(
+        (member.vtable_slot, member.parameter_types.as_slice()),
+        (Some(7), []) | (Some(8), [ComParamType::Long, ComParamType::Long])
+    )
 }
 
 fn generate_dual_member_idl(member: &ComMemberDescriptor) -> String {
     let name = sanitize_ident(&member.name);
     let attr = member_attributes(member);
-    format!("        {attr} HRESULT {name}([out, retval] long* result);\n")
+    let mut params: Vec<String> = member
+        .parameter_types
+        .iter()
+        .enumerate()
+        .map(|(index, param)| {
+            let name = member
+                .parameter_names
+                .get(index)
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| sanitize_ident(name))
+                .unwrap_or_else(|| format!("arg{index}"));
+            format!("[in] {} {name}", idl_type(*param))
+        })
+        .collect();
+    params.push("[out, retval] long* result".to_string());
+    format!("        {attr} HRESULT {name}({});\n", params.join(", "))
 }
 
 fn generate_dispatch_member_idl(member: &ComMemberDescriptor) -> String {
