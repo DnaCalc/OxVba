@@ -41,8 +41,9 @@ Workspace crates and current roles:
   vtable method shape over package-backed runtime sessions. It also exposes
   Office-first implemented-interface profiles for `IDTExtensibility2` and
   `IRtdServer` when classes declare the corresponding `Implements` clauses,
-  including raw native vtable entry points and Excel add-in registration
-  metadata for the add-in profile.
+  including raw native vtable entry points, host-native COM object binding for
+  the `IDTExtensibility2.OnConnection` `Excel.Application` argument, and Excel
+  add-in registration metadata for the add-in profile.
 - `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
   reference-closure loading.
 - `oxvba-cli`: CLI bootstrap/run/build surface.

@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicU32, Ordering, fence};
 use std::sync::{Arc, Mutex};
 
 use windows_sys::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
-    CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
-    SAFEARRAY, TYPEATTR,
+    CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET,
+    DISPATCH_PROPERTYPUT, SAFEARRAY, TYPEATTR,
 };
 use windows_sys::Win32::System::Ole::SafeArrayDestroy;
 use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_I4, VT_R8, VariantClear};
@@ -141,7 +141,10 @@ End Function
         r#"
 Implements IDTExtensibility2
 
-Private Sub IDTExtensibility2_OnConnection(ByVal Application As Variant, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+Private mApplicationNameLength As Long
+
+Private Sub IDTExtensibility2_OnConnection(ByVal HostApplication As Excel.Application, ByVal ConnectMode As Long, ByVal AddInInst As Variant, ByVal custom As Variant)
+    mApplicationNameLength = Len(HostApplication.Name)
 End Sub
 
 Private Sub IDTExtensibility2_OnDisconnection(ByVal RemoveMode As Long, ByVal custom As Variant)
@@ -155,6 +158,10 @@ End Sub
 
 Private Sub IDTExtensibility2_OnBeginShutdown(ByVal custom As Variant)
 End Sub
+
+Public Function ApplicationNameLength() As Long
+    ApplicationNameLength = mApplicationNameLength
+End Function
 "#,
     );
     write(
@@ -194,6 +201,12 @@ End Sub
     <ProjectName>DemoServer</ProjectName>
   </PropertyGroup>
   <ItemGroup>
+    <COMReference Include="Excel">
+      <Guid>{00020813-0000-0000-C000-000000000046}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>9</VersionMinor>
+      <Lcid>0</Lcid>
+    </COMReference>
     <ClassModule Include="Calculator.cls">
       <VBExposed>True</VBExposed>
       <VBCreatable>True</VBCreatable>
@@ -1143,7 +1156,7 @@ unsafe fn controlled_office_profile_vtable_smoke_inner(
                 hr as u32
             ));
         }
-        let result = controlled_idte_vtable(idte);
+        let result = controlled_idte_vtable(addin, idte, addin_class);
         release_unknown(idte);
         result
     })();
@@ -1196,7 +1209,43 @@ unsafe fn activate_dispatch(
     Ok(object)
 }
 
-unsafe fn controlled_idte_vtable(idte: *mut std::ffi::c_void) -> Result<(), String> {
+unsafe fn activate_excel_application() -> Result<*mut std::ffi::c_void, String> {
+    let mut clsid = GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    let progid = wide_null("Excel.Application");
+    let hr = CLSIDFromProgID(progid.as_ptr(), &mut clsid);
+    if hr < 0 {
+        return Err(format!(
+            "CLSIDFromProgID(Excel.Application) failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let mut object: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = CoCreateInstance(
+        &clsid,
+        std::ptr::null_mut(),
+        CLSCTX_LOCAL_SERVER,
+        &IID_IDISPATCH,
+        &mut object,
+    );
+    if hr < 0 || object.is_null() {
+        return Err(format!(
+            "CoCreateInstance(Excel.Application) failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    Ok(object)
+}
+
+unsafe fn controlled_idte_vtable(
+    addin: *mut std::ffi::c_void,
+    idte: *mut std::ffi::c_void,
+    addin_class: &oxvba_build::ComClassDescriptor,
+) -> Result<(), String> {
     let vtbl = *(idte.cast::<*const IdtExtensibility2Vtbl>());
     let mut count = 0u32;
     let hr = ((*vtbl).get_type_info_count)(idte, &mut count);
@@ -1206,17 +1255,26 @@ unsafe fn controlled_idte_vtable(idte: *mut std::ffi::c_void) -> Result<(), Stri
             hr as u32
         ));
     }
-    let hr = ((*vtbl).on_connection)(
-        idte,
-        std::ptr::null_mut(),
-        3,
-        std::ptr::null_mut(),
-        std::ptr::null_mut(),
-    );
+    let application_name_length = addin_class
+        .members
+        .iter()
+        .find(|member| member.name == "ApplicationNameLength")
+        .map(|member| member.dispid)
+        .ok_or_else(|| "ApplicationNameLength descriptor missing".to_string())?;
+    let excel = activate_excel_application()?;
+    let hr = ((*vtbl).on_connection)(idte, excel, 3, std::ptr::null_mut(), std::ptr::null_mut());
+    let _ = invoke_dispatch_method_by_name(excel, "Quit");
+    release_unknown(excel);
     if hr < 0 {
         return Err(format!(
             "IDTExtensibility2 OnConnection failed: 0x{:08X}",
             hr as u32
+        ));
+    }
+    let length = invoke_i4_method_result(addin, application_name_length)?;
+    if length <= 0 {
+        return Err(format!(
+            "expected OnConnection to read Excel.Application.Name, got length {length}"
         ));
     }
     let hr = ((*vtbl).on_disconnection)(idte, 2, std::ptr::null_mut());
@@ -1722,6 +1780,49 @@ unsafe fn invoke_i4_method_result(
     };
     VariantClear(&mut result);
     value
+}
+
+unsafe fn invoke_dispatch_method_by_name(
+    dispatch: *mut std::ffi::c_void,
+    name: &str,
+) -> Result<(), String> {
+    let dispid = get_dispid_by_name(dispatch, name)?;
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+        rgvarg: std::ptr::null_mut(),
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 0,
+        cNamedArgs: 0,
+    };
+    let hr = ((*vtbl).invoke)(
+        dispatch,
+        dispid,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD,
+        &mut params,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    if hr < 0 {
+        Err(format!("Invoke({name}) failed: 0x{:08X}", hr as u32))
+    } else {
+        Ok(())
+    }
+}
+
+unsafe fn get_dispid_by_name(dispatch: *mut std::ffi::c_void, name: &str) -> Result<i32, String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let wide = wide_null(name);
+    let name_ptr = wide.as_ptr();
+    let mut dispid = 0i32;
+    let hr = ((*vtbl).get_ids_of_names)(dispatch, &IID_NULL, &name_ptr, 1, 0, &mut dispid);
+    if hr < 0 {
+        Err(format!("GetIDsOfNames({name}) failed: 0x{:08X}", hr as u32))
+    } else {
+        Ok(dispid)
+    }
 }
 
 unsafe fn invoke_dispatch_object_method_result(

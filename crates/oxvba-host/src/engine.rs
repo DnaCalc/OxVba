@@ -8,6 +8,8 @@
 //! legacy compiler/VM execution path (and its COM-event / session / immediate-window
 //! machinery) was removed with `oxvba-compiler`/`oxvba-vm`; see git history.
 
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
 use std::sync::Arc;
 
 use oxvba_diagnostics::{Diagnostic as OxDiagnostic, DiagnosticPhase as OxDiagnosticPhase};
@@ -116,6 +118,7 @@ pub struct Engine {
 pub struct ProjectRuntimeSession {
     vm: oxvba_vm2::Vm<'static>,
     entry_bundle: usize,
+    host_services: Arc<dyn HostServices>,
 }
 
 impl ProjectRuntimeSession {
@@ -153,6 +156,28 @@ impl ProjectRuntimeSession {
 
     pub fn clear_project_event_sink(&mut self) {
         self.vm.clear_project_event_sink();
+    }
+
+    /// Bind a retained native `IDispatch*` supplied by a host callback into the
+    /// runtime COM object table, preserving the supplied type identity for
+    /// early-bound member dispatch inside the VBA implementation.
+    ///
+    /// # Safety
+    ///
+    /// `dispatch` must be null or a valid `IDispatch*` carrying one retained
+    /// reference owned by the caller. The HAL takes ownership of that reference.
+    #[cfg(target_os = "windows")]
+    pub unsafe fn bind_native_dispatch_object_value(
+        &mut self,
+        prog_id: &str,
+        dispatch: *mut c_void,
+    ) -> Result<Variant, PhaseDiagnostic> {
+        unsafe {
+            self.host_services
+                .com()
+                .bind_native_dispatch_object_variant(prog_id, dispatch)
+        }
+        .map_err(|err| PhaseDiagnostic::from_diagnostic(err.to_diagnostic()))
     }
 }
 
@@ -288,6 +313,17 @@ impl Engine {
         self.set_host_policy(policy);
     }
 
+    /// Enable host-native runtime services for wrapper targets that are already
+    /// executing inside the local host process boundary, such as an in-process
+    /// COM server receiving native COM interface pointers from Office.
+    pub fn enable_host_native_runtime(&mut self) {
+        let mut policy = self.host_services.policy().clone();
+        policy.deterministic_mode = false;
+        policy.allow_com_activation = true;
+        policy.runtime_class = Some(self.runtime_profile.runtime_class());
+        self.set_host_policy(policy);
+    }
+
     pub fn host_policy(&self) -> &HostPolicy {
         self.host_services.policy()
     }
@@ -334,7 +370,11 @@ impl Engine {
         let host_services: &'static dyn HostServices = &**leaked_host_services;
         let vm = oxvba_vm2::Vm::link(&bundle_refs, host_services)
             .map_err(|err| PhaseDiagnostic::from_diagnostic(err.to_diagnostic()))?;
-        Ok(ProjectRuntimeSession { vm, entry_bundle })
+        Ok(ProjectRuntimeSession {
+            vm,
+            entry_bundle,
+            host_services: self.host_services.clone(),
+        })
     }
 
     /// Execute a **clean-path** project closure (the leaf-first, entry-last output of

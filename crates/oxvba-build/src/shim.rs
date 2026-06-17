@@ -48,7 +48,7 @@ use oxvba_com::{
     disp_params_to_runtime_call_frame, runtime_call_error_to_excepinfo,
     runtime_call_result_to_variant, variant_to_com_value,
 };
-use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession};
+use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession, RuntimeProfileId};
 use oxvba_runtime::{
     ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant,
 };
@@ -1693,7 +1693,7 @@ unsafe extern "system" fn office_invoke(
     let Some(method_name) = office_method_for_dispid(profile, dispid) else {
         return DISP_E_MEMBERNOTFOUND;
     };
-    let args = match office_disp_params_to_args(params) {
+    let args = match office_disp_params_to_args(profile, dispid, params) {
         Ok(args) => args,
         Err(message) => return write_runtime_exception(message, excep_info, arg_err, arg_count(params)),
     };
@@ -1717,10 +1717,14 @@ unsafe extern "system" fn idte_on_connection(
     let Ok(owner) = office_owner(this) else {
         return E_FAIL;
     };
+    let application = match external_dispatch_arg(application, "Excel.Application") {
+        Ok(value) => value,
+        Err(hr) => return hr,
+    };
     let args = vec![
-        external_dispatch_arg(application),
+        application,
         Variant::from_i32(connect_mode),
-        external_dispatch_arg(addin_inst),
+        optional_external_dispatch_arg(addin_inst, "Office.COMAddIn"),
         safearray_ptr_ref_to_variant(custom),
     ];
     invoke_office_member(owner, "IDTExtensibility2_OnConnection", args)
@@ -1791,7 +1795,10 @@ unsafe extern "system" fn rtd_server_start(
     match invoke_office_i32_member(
         owner,
         "IRtdServer_ServerStart",
-        vec![external_dispatch_arg(callback_object)],
+        vec![optional_external_dispatch_arg(
+            callback_object,
+            "Excel.IRTDUpdateEvent",
+        )],
     ) {
         Ok(value) => {
             *result = value;
@@ -1986,7 +1993,11 @@ fn profile_methods(
     }
 }
 
-unsafe fn office_disp_params_to_args(params: *const DISPPARAMS) -> Result<Vec<Variant>, String> {
+unsafe fn office_disp_params_to_args(
+    profile: OfficeInterfaceProfile,
+    dispid: i32,
+    params: *const DISPPARAMS,
+) -> Result<Vec<Variant>, String> {
     if params.is_null() {
         return Ok(Vec::new());
     }
@@ -1999,20 +2010,46 @@ unsafe fn office_disp_params_to_args(params: *const DISPPARAMS) -> Result<Vec<Va
         return Err("IDispatch::Invoke DISPPARAMS had cArgs > 0 with null rgvarg".to_string());
     }
     let mut args = Vec::with_capacity(arg_count);
-    for com_index in (0..arg_count).rev() {
+    for (logical_index, com_index) in (0..arg_count).rev().enumerate() {
         let variant = &*params.rgvarg.add(com_index);
-        args.push(office_variant_to_arg(variant)?);
+        args.push(office_variant_to_arg(
+            variant,
+            office_arg_type_hint(profile, dispid, logical_index),
+        )?);
     }
     Ok(args)
 }
 
-unsafe fn office_variant_to_arg(variant: &VARIANT) -> Result<Variant, String> {
+fn office_arg_type_hint(
+    profile: OfficeInterfaceProfile,
+    dispid: i32,
+    logical_index: usize,
+) -> Option<&'static str> {
+    match (profile, dispid, logical_index) {
+        // IDTExtensibility2.OnConnection(Application, ConnectMode, AddInInst, custom).
+        // Microsoft Learn documents Application as the host application's root
+        // object; for this Office-first profile that is Excel.Application.
+        // Reference:
+        // https://learn.microsoft.com/en-us/office/vba/api/addins2.idtextensibility2.onconnection
+        (OfficeInterfaceProfile::IdtExtensibility2, 1, 0) => Some("Excel.Application"),
+        _ => None,
+    }
+}
+
+unsafe fn office_variant_to_arg(
+    variant: &VARIANT,
+    type_hint: Option<&'static str>,
+) -> Result<Variant, String> {
     let vt = variant.Anonymous.Anonymous.vt;
-    if vt == VT_DISPATCH
-        || vt == VT_UNKNOWN
-        || vt == (VT_BYREF | VT_DISPATCH)
-        || vt == (VT_BYREF | VT_UNKNOWN)
-    {
+    if vt == VT_DISPATCH {
+        if let Some(type_hint) = type_hint {
+            let dispatch = variant.Anonymous.Anonymous.Anonymous.pdispVal.cast::<c_void>();
+            return external_dispatch_arg(dispatch, type_hint)
+                .map_err(|hr| format!("failed to bind Office IDispatch argument: 0x{:08X}", hr as u32));
+        }
+        return Ok(Variant::empty());
+    }
+    if vt == VT_UNKNOWN || vt == (VT_BYREF | VT_DISPATCH) || vt == (VT_BYREF | VT_UNKNOWN) {
         return Ok(Variant::empty());
     }
     variant_to_com_value(variant).and_then(|value| value.to_variant())
@@ -2076,11 +2113,26 @@ fn variant_to_i32(value: &Variant) -> Option<i32> {
         .or_else(|| value.as_bool().map(|value| if value { 1 } else { 0 }))
 }
 
-unsafe fn external_dispatch_arg(_dispatch: *mut c_void) -> Variant {
-    // This profile slice proves the native interface ABI and synchronous Office
-    // lifecycle/RTD calls. Binding inbound Office IDispatch pointers into the
-    // HAL COM-client object table is a separate object-carrier expansion.
-    Variant::empty()
+unsafe fn external_dispatch_arg(dispatch: *mut c_void, type_hint: &'static str) -> Result<Variant, i32> {
+    if dispatch.is_null() {
+        return Ok(Variant::empty());
+    }
+    // Office hands these parameters as borrowed interface pointers. The HAL
+    // native-dispatch binding contract takes ownership of one retained reference,
+    // so retain exactly once before transferring it into the COM object table.
+    add_ref_unknown(dispatch);
+    with_session(|session| {
+        unsafe {
+            session
+                .bind_native_dispatch_object_value(type_hint, dispatch)
+                .map_err(|err| err.to_string())
+        }
+    })
+    .map_err(|_| E_FAIL)
+}
+
+unsafe fn optional_external_dispatch_arg(dispatch: *mut c_void, type_hint: &'static str) -> Variant {
+    external_dispatch_arg(dispatch, type_hint).unwrap_or_else(|_| Variant::empty())
 }
 
 unsafe fn safearray_ptr_ref_to_variant(array_ref: *mut *mut SAFEARRAY) -> Variant {
@@ -2622,7 +2674,11 @@ fn with_session<R>(
         if needs_init {
             let package = oxvba_bundle::BundlePackage::from_bytes(BUNDLE_BYTES)
                 .map_err(|err| err.to_string())?;
-            let engine = Engine::new(HostConfig { enable_jit: false });
+            let mut engine =
+                Engine::new(HostConfig { enable_jit: false }).with_runtime_profile(
+                    RuntimeProfileId::WindowsHeadless,
+                );
+            engine.enable_host_native_runtime();
             let mut session = engine
                 .prepare_bundle_package_session(package)
                 .map_err(|err| err.to_string())?;
