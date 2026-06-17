@@ -1591,8 +1591,10 @@ Candidate bead units:
   floating, Currency, and deterministic Date text constants, and explicit
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
-  default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults, plus bounded
-  equality-based `Like` folding for covered string Boolean constants.
+  default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults,
+  string-to-declared-scalar optional default metadata/runtime binding for covered Boolean,
+  integer, Currency, and deterministic Date text defaults, plus bounded equality-based `Like`
+  folding for covered string Boolean constants.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
@@ -1613,6 +1615,8 @@ Candidate bead units:
   explicit i64 optional-default descriptors for covered `LongLong` and `LongPtr`
   source-prior integer constant expressions with package-VM omitted-argument binding for
   `LongLong`,
+  string-to-declared-scalar optional defaults for covered Boolean, integer, Currency, and
+  deterministic Date text defaults,
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
   optional `Boolean` defaults over bounded equality-based string `Like`,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
