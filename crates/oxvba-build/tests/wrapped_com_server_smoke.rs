@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use windows_sys::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
-    CoInitializeEx, CoUninitialize, DISPATCH_METHOD,
+    CoInitializeEx, CoUninitialize, DISPATCH_METHOD, TYPEATTR,
 };
 use windows_sys::Win32::System::Variant::{VARIANT, VT_I4, VariantClear};
 use windows_sys::core::GUID;
@@ -401,6 +401,7 @@ unsafe fn controlled_connection_point_smoke_inner(
     }
 
     let result = (|| {
+        assert_dispatch_type_info(object, &parse_guid(&class.default_interface_iid)?)?;
         let mut cpc: *mut std::ffi::c_void = std::ptr::null_mut();
         let hr = query_interface(object, &IID_ICONNECTIONPOINTCONTAINER, &mut cpc);
         if hr < 0 || cpc.is_null() {
@@ -461,6 +462,7 @@ unsafe fn controlled_dual_vtable_smoke_inner(
     }
 
     let result = (|| {
+        assert_dispatch_type_info(object, &parse_guid(&class.default_interface_iid)?)?;
         let dispatch_value = invoke_i4_method_result(object, ping.dispid)?;
         let iid = parse_guid(&class.default_interface_iid)?;
         let mut dual: *mut std::ffi::c_void = std::ptr::null_mut();
@@ -494,6 +496,68 @@ unsafe fn controlled_dual_vtable_smoke_inner(
     })();
     release_unknown(object);
     result
+}
+
+unsafe fn assert_dispatch_type_info(
+    dispatch: *mut std::ffi::c_void,
+    expected_iid: &GUID,
+) -> Result<(), String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut count = 0u32;
+    let hr = ((*vtbl).get_type_info_count)(dispatch, &mut count);
+    if hr < 0 || count != 1 {
+        return Err(format!(
+            "GetTypeInfoCount expected one typeinfo, hr=0x{:08X}, count={count}",
+            hr as u32
+        ));
+    }
+
+    let mut type_info: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*vtbl).get_type_info)(dispatch, 0, 0, &mut type_info);
+    if hr < 0 || type_info.is_null() {
+        return Err(format!("GetTypeInfo(0) failed: 0x{:08X}", hr as u32));
+    }
+    let guid_result = assert_type_info_guid(type_info, expected_iid);
+    release_unknown(type_info);
+    guid_result?;
+
+    let mut bad_index_info: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*vtbl).get_type_info)(dispatch, 1, 0, &mut bad_index_info);
+    if hr != DISP_E_BADINDEX || !bad_index_info.is_null() {
+        if !bad_index_info.is_null() {
+            release_unknown(bad_index_info);
+        }
+        return Err(format!(
+            "GetTypeInfo(1) expected DISP_E_BADINDEX/null, hr=0x{:08X}, ptr={bad_index_info:p}",
+            hr as u32
+        ));
+    }
+    Ok(())
+}
+
+unsafe fn assert_type_info_guid(
+    type_info: *mut std::ffi::c_void,
+    expected: &GUID,
+) -> Result<(), String> {
+    let vtbl = *(type_info.cast::<*const ITypeInfoVtbl>());
+    let mut attr: *mut TYPEATTR = std::ptr::null_mut();
+    let hr = ((*vtbl).get_type_attr)(type_info, &mut attr);
+    if hr < 0 || attr.is_null() {
+        return Err(format!(
+            "ITypeInfo::GetTypeAttr failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let actual = (*attr).guid;
+    ((*vtbl).release_type_attr)(type_info, attr);
+    if !guid_eq(&actual, expected) {
+        return Err(format!(
+            "GetTypeInfo(0) returned {}, expected {}",
+            guid_to_string(&actual),
+            guid_to_string(expected)
+        ));
+    }
+    Ok(())
 }
 
 unsafe fn controlled_connection_point_with_container(
@@ -858,6 +922,80 @@ struct IDispatchVtbl {
 }
 
 #[repr(C)]
+struct ITypeInfoVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_attr: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut TYPEATTR) -> i32,
+    get_type_comp:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut std::ffi::c_void) -> i32,
+    get_func_desc:
+        unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut *mut std::ffi::c_void) -> i32,
+    get_var_desc:
+        unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut *mut std::ffi::c_void) -> i32,
+    get_names:
+        unsafe extern "system" fn(*mut std::ffi::c_void, i32, *mut *mut u16, u32, *mut u32) -> i32,
+    get_ref_type_of_impl_type:
+        unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut u32) -> i32,
+    get_impl_type_flags: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut i32) -> i32,
+    get_ids_of_names:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut u16, u32, *mut i32) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *mut std::ffi::c_void,
+        i32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    get_documentation: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *mut *mut u16,
+        *mut *mut u16,
+        *mut u32,
+        *mut *mut u16,
+    ) -> i32,
+    get_dll_entry: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        u16,
+        *mut *mut u16,
+        *mut *mut u16,
+        *mut u16,
+    ) -> i32,
+    get_ref_type_info:
+        unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut *mut std::ffi::c_void) -> i32,
+    address_of_member: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        u16,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    create_instance: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_mops: unsafe extern "system" fn(*mut std::ffi::c_void, i32, *mut *mut u16) -> i32,
+    get_containing_type_lib: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *mut *mut std::ffi::c_void,
+        *mut u32,
+    ) -> i32,
+    release_type_attr: unsafe extern "system" fn(*mut std::ffi::c_void, *mut TYPEATTR),
+    release_func_desc: unsafe extern "system" fn(*mut std::ffi::c_void, *mut std::ffi::c_void),
+    release_var_desc: unsafe extern "system" fn(*mut std::ffi::c_void, *mut std::ffi::c_void),
+}
+
+#[repr(C)]
 struct DualLongReturnVtbl {
     query_interface: unsafe extern "system" fn(
         *mut std::ffi::c_void,
@@ -1158,6 +1296,7 @@ fn guid_to_string(guid: &GUID) -> String {
 }
 
 const S_FALSE: i32 = 1;
+const DISP_E_BADINDEX: i32 = 0x8002_000Bu32 as i32;
 
 const IID_IUNKNOWN: GUID = GUID {
     data1: 0x0000_0000,

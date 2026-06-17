@@ -89,6 +89,7 @@ const CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
 const DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
 const DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
 const DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
+const DISP_E_BADINDEX: i32 = 0x8002_000Bu32 as i32;
 const SELFREG_E_CLASS: i32 = 0x8004_0201u32 as i32;
 
 const IID_IUNKNOWN: GUID = GUID {
@@ -243,6 +244,18 @@ struct IUnknownVtbl {
     query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
     release: unsafe extern "system" fn(*mut c_void) -> u32,
+}
+
+#[repr(C)]
+struct ITypeLibVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
+    get_type_info_type: unsafe extern "system" fn(*mut c_void, u32, *mut i32) -> i32,
+    get_type_info_of_guid:
+        unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
 }
 
 #[repr(C)]
@@ -629,26 +642,35 @@ unsafe extern "system" fn dispatch_release(this: *mut c_void) -> u32 {
 }
 
 unsafe extern "system" fn dispatch_get_type_info_count(
-    _this: *mut c_void,
+    this: *mut c_void,
     count: *mut u32,
 ) -> i32 {
-    if count.is_null() {
+    if this.is_null() || count.is_null() {
         return E_POINTER;
     }
-    *count = 0;
+    let object = &*this.cast::<DispatchObject>();
+    let Ok(descriptor) = descriptor() else {
+        return E_FAIL;
+    };
+    *count = u32::from(descriptor.classes.get(object.class_index).is_some());
     S_OK
 }
 
 unsafe extern "system" fn dispatch_get_type_info(
-    _this: *mut c_void,
-    _index: u32,
+    this: *mut c_void,
+    index: u32,
     _lcid: u32,
     info: *mut *mut c_void,
 ) -> i32 {
-    if !info.is_null() {
-        *info = ptr::null_mut();
+    if this.is_null() || info.is_null() {
+        return E_POINTER;
     }
-    E_NOTIMPL
+    *info = ptr::null_mut();
+    if index != 0 {
+        return DISP_E_BADINDEX;
+    }
+    let object = &*this.cast::<DispatchObject>();
+    type_info_for_object(object, info)
 }
 
 unsafe extern "system" fn dispatch_get_ids_of_names(
@@ -1614,6 +1636,40 @@ fn source_iid_for_object(object: &DispatchObject) -> Option<&str> {
         .ok()
         .and_then(|descriptor| descriptor.classes.get(object.class_index))
         .and_then(|class| class.source_interface_iid.as_deref())
+}
+
+unsafe fn type_info_for_object(object: &DispatchObject, info: *mut *mut c_void) -> i32 {
+    let Ok(descriptor) = descriptor() else {
+        return E_FAIL;
+    };
+    let Some(class) = descriptor.classes.get(object.class_index) else {
+        return E_FAIL;
+    };
+    let Some(interface_iid) = parse_guid_text(&class.default_interface_iid) else {
+        return E_FAIL;
+    };
+
+    // IDispatch::GetTypeInfo(0) returns an ITypeInfo for this object's default
+    // dispatch interface. The generated TypeLib is already the registration
+    // source of truth, so ask oleaut32 for the matching interface by IID.
+    let path_w = wide_null(TLB_PATH);
+    let mut typelib: *mut c_void = ptr::null_mut();
+    let hr = LoadTypeLibEx(path_w.as_ptr(), REGKIND_NONE, &mut typelib);
+    if hr < 0 || typelib.is_null() {
+        return hr;
+    }
+
+    let vtbl = *(typelib.cast::<*const ITypeLibVtbl>());
+    let hr = if vtbl.is_null() {
+        E_FAIL
+    } else {
+        ((*vtbl).get_type_info_of_guid)(typelib, &interface_iid, info)
+    };
+    release_unknown(typelib);
+    if hr < 0 {
+        *info = ptr::null_mut();
+    }
+    hr
 }
 
 unsafe fn fire_project_event(
