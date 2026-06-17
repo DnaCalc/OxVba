@@ -884,7 +884,8 @@ fn type_ref_node(node: SyntaxNode<'_>) -> VarTypeRef {
         "currency" => VarTypeRef::Builtin(BuiltinType::Currency),
         "date" => VarTypeRef::Builtin(BuiltinType::Date),
         "string" => VarTypeRef::Builtin(BuiltinType::String),
-        "variant" | "object" | "" => VarTypeRef::Variant,
+        "variant" | "" => VarTypeRef::Variant,
+        "object" => VarTypeRef::Object("object".to_string()),
         other => VarTypeRef::Object(other.to_string()),
     }
 }

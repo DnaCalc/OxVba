@@ -133,6 +133,7 @@ fn generate_class_idl(class: &ComClassDescriptor) -> String {
 fn class_supports_bounded_dual_interface(class: &ComClassDescriptor) -> bool {
     class_supports_bounded_dual_scalar_methods(class)
         || class_supports_bounded_dual_long_property(class)
+        || class_supports_bounded_dual_object_return_methods(class)
 }
 
 fn class_supports_bounded_dual_scalar_methods(class: &ComClassDescriptor) -> bool {
@@ -156,6 +157,19 @@ fn class_supports_bounded_dual_long_property(class: &ComClassDescriptor) -> bool
         && get.dispid == put.dispid
         && member_supports_bounded_dual_long_property_get(get)
         && member_supports_bounded_dual_long_property_put(put)
+}
+
+fn class_supports_bounded_dual_object_return_methods(class: &ComClassDescriptor) -> bool {
+    !class.members.is_empty()
+        && class.members.len() <= 2
+        && class.members.iter().enumerate().all(|(index, member)| {
+            member.vtable_slot == Some(7 + index as u16)
+                && if index == 0 {
+                    member_supports_bounded_dual_object_return(member)
+                } else {
+                    member_supports_bounded_dual_slot8_long_noarg(member)
+                }
+        })
 }
 
 fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> bool {
@@ -182,6 +196,22 @@ fn member_supports_bounded_dual_scalar_method(member: &ComMemberDescriptor) -> b
                 [ComParamType::Double, ComParamType::Double],
             )
     )
+}
+
+fn member_supports_bounded_dual_object_return(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(7)
+        && member.return_type == Some(ComParamType::Object)
+        && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
+}
+
+fn member_supports_bounded_dual_slot8_long_noarg(member: &ComMemberDescriptor) -> bool {
+    member.invoke_kind == ComInvokeKind::Method
+        && member.vtable_slot == Some(8)
+        && member.return_type == Some(ComParamType::Long)
+        && member.parameter_types.is_empty()
+        && !member.parameter_optional.iter().any(|optional| *optional)
 }
 
 fn member_supports_bounded_dual_long_property_get(member: &ComMemberDescriptor) -> bool {

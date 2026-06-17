@@ -742,6 +742,24 @@ mod tests {
     }
 
     #[test]
+    fn surface_preserves_bare_object_boundary_types() {
+        let s = synth(vec![class_mod(
+            "Returner",
+            "Public Function ReturnSelf() As Object\nEnd Function\n\
+             Public Function UseObject(ByVal target As Object) As Long\nEnd Function\n",
+            true,
+            true,
+        )]);
+        let returner = find_type(&s, "Returner").expect("Returner coclass in surface");
+        let return_self = member(returner, "ReturnSelf").expect("ReturnSelf exposed");
+        assert_eq!(return_self.return_type, Some(TypeLibParamType::Object));
+
+        let use_object = member(returner, "UseObject").expect("UseObject exposed");
+        assert_eq!(use_object.parameter_types, vec![TypeLibParamType::Object]);
+        assert_eq!(use_object.return_type, Some(TypeLibParamType::Long));
+    }
+
+    #[test]
     fn non_exposed_class_and_private_module_are_absent() {
         let s = synth(vec![
             class_mod("Hidden", "Public Sub H()\nEnd Sub\n", false, false),

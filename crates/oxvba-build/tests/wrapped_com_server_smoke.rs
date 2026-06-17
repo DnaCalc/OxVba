@@ -11,7 +11,7 @@ use windows_sys::Win32::System::Com::{
     CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
     TYPEATTR,
 };
-use windows_sys::Win32::System::Variant::{VARIANT, VT_I4, VT_R8, VariantClear};
+use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_I4, VT_R8, VariantClear};
 use windows_sys::core::GUID;
 
 type SeenEvents = Arc<Mutex<Vec<(i32, Option<i32>)>>>;
@@ -24,6 +24,7 @@ fn wrapped_com_server_dll_registers_and_dispatches_late_bound() {
     let class_path = temp.path.join("Calculator.cls");
     let pinger_path = temp.path.join("Pinger.cls");
     let counter_path = temp.path.join("Counter.cls");
+    let returner_path = temp.path.join("Returner.cls");
     let out_dir = temp.path.join("out");
 
     write(
@@ -95,6 +96,18 @@ End Property
 "#,
     );
     write(
+        &returner_path,
+        r#"
+Public Function ReturnSelf() As Object
+    Set ReturnSelf = Me
+End Function
+
+Public Function Ping() As Long
+    Ping = 42
+End Function
+"#,
+    );
+    write(
         &project_path,
         r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -120,6 +133,12 @@ End Property
       <VBCreatable>True</VBCreatable>
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.Counter</ProgId>
+    </ClassModule>
+    <ClassModule Include="Returner.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.Returner</ProgId>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -155,6 +174,11 @@ End Property
         .iter()
         .find(|class| class.class_name == "Counter")
         .expect("Counter descriptor");
+    let returner_class = descriptor
+        .classes
+        .iter()
+        .find(|class| class.class_name == "Returner")
+        .expect("Returner descriptor");
 
     let registration = RegisteredDll::register(&output.dll_target_path);
     let tlb_path = output
@@ -189,6 +213,10 @@ if ([Math]::Abs($average - 16.0) -gt 0.0000001) {{ throw "expected Average(10.5,
 $counter = New-Object -ComObject DemoServer.Counter
 $counter.Value = 314
 if ($counter.Value -ne 314) {{ throw "expected Counter.Value=314, got $($counter.Value)" }}
+$returner = New-Object -ComObject DemoServer.Returner
+$returned = $returner.ReturnSelf()
+$returnedPing = $returned.Ping()
+if ($returnedPing -ne 42) {{ throw "expected Returner.ReturnSelf().Ping()=42, got $returnedPing" }}
 "#,
         tlb_path, libid, clsid, version
     );
@@ -211,6 +239,9 @@ if ($counter.Value -ne 314) {{ throw "expected Counter.Value=314, got $($counter
     // SAFETY: this raw COM helper creates and releases the Counter dispatch and
     // default-interface pointers it obtains.
     unsafe { controlled_property_vtable_smoke(counter_class) };
+    // SAFETY: this raw COM helper creates and releases the Returner dispatch,
+    // default-interface, and returned dispatch pointers it obtains.
+    unsafe { controlled_object_return_vtable_smoke(returner_class) };
     excel_vba_early_bound_and_connection_point_smoke(&temp.path, &output.tlb_target_path);
     drop(registration);
 }
@@ -242,11 +273,14 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     Dim ignored As Long
     Dim pinger As Pinger
     Dim counter As Counter
+    Dim returner As Returner
+    Dim returnedFromReturner As Object
 
     Set sink = New EventSink
     Set calc = New Calculator
     Set pinger = New Pinger
     Set counter = New Counter
+    Set returner = New Returner
     Set sink.Calc = calc
 
     If sink.Calc.Add(20, 22) <> 42 Then
@@ -276,6 +310,10 @@ Public Function RunOxVbaWrappedComServerSmoke() As String
     counter.Value = 271
     If counter.Value <> 271 Then
         Err.Raise 5, , "Counter.Value returned wrong value"
+    End If
+    Set returnedFromReturner = returner.ReturnSelf()
+    If returnedFromReturner.Ping() <> 42 Then
+        Err.Raise 5, , "Returner.ReturnSelf returned wrong object"
     End If
     On Error Resume Next
     ignored = calc.Boom()
@@ -714,6 +752,123 @@ unsafe fn controlled_property_vtable_smoke_inner(
     result
 }
 
+unsafe fn controlled_object_return_vtable_smoke(class: &oxvba_build::ComClassDescriptor) {
+    let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+    let should_uninitialize = hr >= 0;
+    let result = controlled_object_return_vtable_smoke_inner(class);
+    if should_uninitialize {
+        CoUninitialize();
+    }
+    result.expect("controlled dual-interface object-return vtable smoke");
+}
+
+unsafe fn controlled_object_return_vtable_smoke_inner(
+    class: &oxvba_build::ComClassDescriptor,
+) -> Result<(), String> {
+    let return_self = class
+        .members
+        .iter()
+        .find(|member| member.name == "ReturnSelf")
+        .ok_or_else(|| "ReturnSelf descriptor missing".to_string())?;
+    let ping = class
+        .members
+        .iter()
+        .find(|member| member.name == "Ping")
+        .ok_or_else(|| "Ping descriptor missing".to_string())?;
+
+    let mut clsid = GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    let progid = wide_null(&class.prog_id);
+    let hr = CLSIDFromProgID(progid.as_ptr(), &mut clsid);
+    if hr < 0 {
+        return Err(format!("CLSIDFromProgID failed: 0x{:08X}", hr as u32));
+    }
+
+    let mut object: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = CoCreateInstance(
+        &clsid,
+        std::ptr::null_mut(),
+        CLSCTX_INPROC_SERVER,
+        &IID_IDISPATCH,
+        &mut object,
+    );
+    if hr < 0 || object.is_null() {
+        return Err(format!("CoCreateInstance failed: 0x{:08X}", hr as u32));
+    }
+
+    let result = (|| {
+        assert_dispatch_type_info(object, &parse_guid(&class.default_interface_iid)?)?;
+        let dispatch_returned = invoke_dispatch_object_method_result(object, return_self.dispid)?;
+        let dispatch_returned_result = (|| {
+            let returned_ping = invoke_i4_method_result(dispatch_returned, ping.dispid)?;
+            if returned_ping != 42 {
+                return Err(format!(
+                    "dispatch ReturnSelf().Ping() expected 42, got {returned_ping}"
+                ));
+            }
+            Ok(())
+        })();
+        release_unknown(dispatch_returned);
+        dispatch_returned_result?;
+
+        let iid = parse_guid(&class.default_interface_iid)?;
+        let mut dual: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hr = query_interface(object, &iid, &mut dual);
+        if hr < 0 || dual.is_null() {
+            return Err(format!(
+                "QueryInterface({}) failed: 0x{:08X}",
+                class.default_interface_iid, hr as u32
+            ));
+        }
+
+        let dual_result = (|| {
+            let vtbl = *(dual.cast::<*const ObjectReturnDualVtbl>());
+            let mut vtable_returned: *mut std::ffi::c_void = std::ptr::null_mut();
+            let hr = ((*vtbl).slot0)(dual, &mut vtable_returned);
+            if hr < 0 || vtable_returned.is_null() {
+                return Err(format!(
+                    "dual ReturnSelf vtable call failed: 0x{:08X}, ptr={vtable_returned:p}",
+                    hr as u32
+                ));
+            }
+            let vtable_returned_result = (|| {
+                let returned_ping = invoke_i4_method_result(vtable_returned, ping.dispid)?;
+                if returned_ping != 42 {
+                    return Err(format!(
+                        "vtable ReturnSelf().Ping() expected 42, got {returned_ping}"
+                    ));
+                }
+                Ok(())
+            })();
+            release_unknown(vtable_returned);
+            vtable_returned_result?;
+
+            let mut vtable_ping = 0i32;
+            let hr = ((*vtbl).slot1)(dual, &mut vtable_ping);
+            if hr < 0 {
+                return Err(format!(
+                    "dual object-return shape Ping vtable call failed: 0x{:08X}",
+                    hr as u32
+                ));
+            }
+            if vtable_ping != 42 {
+                return Err(format!(
+                    "expected object-return shape Ping()=42, got {vtable_ping}"
+                ));
+            }
+            Ok(())
+        })();
+        release_unknown(dual);
+        dual_result
+    })();
+    release_unknown(object);
+    result
+}
+
 unsafe fn assert_dispatch_type_info(
     dispatch: *mut std::ffi::c_void,
     expected_iid: &GUID,
@@ -1089,6 +1244,58 @@ unsafe fn invoke_i4_method_result(
     value
 }
 
+unsafe fn invoke_dispatch_object_method_result(
+    dispatch: *mut std::ffi::c_void,
+    dispid: i32,
+) -> Result<*mut std::ffi::c_void, String> {
+    let vtbl = *(dispatch.cast::<*const IDispatchVtbl>());
+    let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+        rgvarg: std::ptr::null_mut(),
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 0,
+        cNamedArgs: 0,
+    };
+    let mut result: VARIANT = std::mem::zeroed();
+    let hr = ((*vtbl).invoke)(
+        dispatch,
+        dispid,
+        &IID_NULL,
+        0,
+        DISPATCH_METHOD,
+        &mut params,
+        &mut result,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    if hr < 0 {
+        VariantClear(&mut result);
+        return Err(format!(
+            "Invoke(object-return method) failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    if result.Anonymous.Anonymous.vt == VT_DISPATCH {
+        let returned = result
+            .Anonymous
+            .Anonymous
+            .Anonymous
+            .pdispVal
+            .cast::<std::ffi::c_void>();
+        if returned.is_null() {
+            VariantClear(&mut result);
+            return Err("Invoke(object-return method) returned null VT_DISPATCH".to_string());
+        }
+        result.Anonymous.Anonymous.Anonymous.pdispVal = std::ptr::null_mut();
+        VariantClear(&mut result);
+        return Ok(returned);
+    }
+    let vt = result.Anonymous.Anonymous.vt;
+    VariantClear(&mut result);
+    Err(format!(
+        "Invoke(object-return method) returned VT {vt}, expected VT_DISPATCH"
+    ))
+}
+
 unsafe fn invoke_i4_property_get(
     dispatch: *mut std::ffi::c_void,
     dispid: i32,
@@ -1460,6 +1667,45 @@ struct LongPropertyDualVtbl {
     ) -> i32,
     slot0: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
     slot1: unsafe extern "system" fn(*mut std::ffi::c_void, i32) -> i32,
+}
+
+#[repr(C)]
+struct ObjectReturnDualVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    slot0: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut std::ffi::c_void) -> i32,
+    slot1: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i32) -> i32,
 }
 
 #[repr(C)]

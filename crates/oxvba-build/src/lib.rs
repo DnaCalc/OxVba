@@ -233,6 +233,7 @@ mod tests {
         let class_path = temp.path.join("Calculator.cls");
         let pinger_path = temp.path.join("Pinger.cls");
         let counter_path = temp.path.join("Counter.cls");
+        let returner_path = temp.path.join("Returner.cls");
         let out_dir = temp.path.join("out");
 
         write(
@@ -280,6 +281,18 @@ End Property
 "#,
         );
         write(
+            &returner_path,
+            r#"
+Public Function ReturnSelf() As Object
+    Set ReturnSelf = Me
+End Function
+
+Public Function Ping() As Long
+    Ping = 42
+End Function
+"#,
+        );
+        write(
             &project_path,
             r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -308,6 +321,13 @@ End Property
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.Counter</ProgId>
       <Description>Counter class</Description>
+    </ClassModule>
+    <ClassModule Include="Returner.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <Instancing>MultiUse</Instancing>
+      <ProgId>DemoServer.Returner</ProgId>
+      <Description>Returner class</Description>
     </ClassModule>
   </ItemGroup>
 </Project>
@@ -381,6 +401,19 @@ End Property
         assert!(idl.contains("interface ICounter : IDispatch"));
         assert!(idl.contains("HRESULT value([out, retval] long* result);"));
         assert!(idl.contains("HRESULT value([in] long newValue);"));
+        let returner = descriptor
+            .classes
+            .iter()
+            .find(|class| class.class_name == "Returner")
+            .expect("Returner descriptor");
+        assert_eq!(returner.members.len(), 2);
+        assert_eq!(returner.members[0].vtable_slot, Some(7));
+        assert_eq!(returner.members[0].return_type, Some(ComParamType::Object));
+        assert_eq!(returner.members[1].vtable_slot, Some(8));
+        assert_eq!(returner.members[1].return_type, Some(ComParamType::Long));
+        assert!(idl.contains("interface IReturner : IDispatch"));
+        assert!(idl.contains("HRESULT ReturnSelf([out, retval] IDispatch** result);"));
+        assert!(idl.contains("HRESULT Ping([out, retval] long* result);"));
 
         let shim_source =
             std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");

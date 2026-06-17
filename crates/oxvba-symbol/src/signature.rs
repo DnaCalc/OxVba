@@ -19,8 +19,9 @@ pub enum BuiltinType {
     String,
 }
 
-/// A resolved type reference. `Object(name)` is the static receiver-type
-/// discriminator the binder uses to pick early vs late COM dispatch.
+/// A resolved type reference. `Object(name)` is the object-reference discriminator
+/// the binder uses to pick early vs late COM dispatch. A known project class name
+/// binds early; bare `Object` and foreign/COM object names bind late.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarTypeRef {
     Builtin(BuiltinType),
@@ -31,7 +32,7 @@ pub enum VarTypeRef {
     /// reference). Produced by the binder when an `Object`-named type resolves to a
     /// declared `Type`.
     Udt(String),
-    /// Untyped `Variant`/`Object` — forces late binding for member access.
+    /// Untyped `Variant` — forces late binding for member access.
     Variant,
     Array(Box<VarTypeRef>),
     /// A fixed-length string `String * N` (length in characters). Behaves like
