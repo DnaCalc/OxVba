@@ -137,6 +137,10 @@ impl<'a> ProcLower<'a> {
                 if !is_property_route(&binding.route) {
                     return Ok(None);
                 }
+                let Some(sym) = binding.symbol else {
+                    return Ok(None);
+                };
+                self.project_property_accessor_signature(sym, kind, name)?;
                 // A bare property name is an implicit `Me.Prop` (class member).
                 let Some(recv) = self.me_value() else {
                     return Ok(None);
@@ -167,6 +171,17 @@ impl<'a> ProcLower<'a> {
                     Ok(Some(vec![CoreStmt::Eval(call)]))
                 };
                 match self.resolve_member(&recv.ty, member, Some(kind)) {
+                    // A project class/interface property must have the requested
+                    // accessor. The project symbol provider resolves the property
+                    // group; the binder chooses Let vs Set from assignment syntax.
+                    Some(Binding {
+                        route: DispatchRoute::ProjectMember { .. },
+                        symbol: Some(sym),
+                        ..
+                    }) => {
+                        self.project_property_accessor_signature(sym, kind, member)?;
+                        setter(self, recv.value)
+                    }
                     // A typed COM receiver's property put/set: dispatch by dispid
                     // (the same early-bound call shape as a COM method, with the RHS
                     // as the single value argument). `kind` (Let → PropertyLet, Set →

@@ -718,15 +718,12 @@ impl<'a> ProcLower<'a> {
             return Ok(None);
         };
         let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied() else {
-            return Ok(None);
+            return Err(missing_project_property_accessor(name, kind));
         };
         // Bind the index arguments against the accessor's signature (its trailing
         // value parameter is supplied by the RHS, not the index list).
-        let signature = self.proc_signature_for(sym, kind);
-        let mut args = match &signature {
-            Some(sig) => self.bind_proc_args(target.index_arg_list(), sig, sym)?,
-            None => self.bind_args(target.index_arg_list(), None)?,
-        };
+        let signature = self.project_property_accessor_signature(sym, kind, name)?;
+        let mut args = self.bind_proc_args(target.index_arg_list(), &signature, sym)?;
         match args.last_mut() {
             Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
             None => args.push(CoreArg::ByVal(rhs.clone())),
@@ -767,11 +764,8 @@ impl<'a> ProcLower<'a> {
                 symbol: Some(sym),
                 ..
             }) => {
-                let signature = self.proc_signature_for(sym, kind);
-                let mut args = match &signature {
-                    Some(sig) => self.bind_proc_args(arglist, sig, sym)?,
-                    None => self.bind_args(arglist, None)?,
-                };
+                let signature = self.project_property_accessor_signature(sym, kind, member)?;
+                let mut args = self.bind_proc_args(arglist, &signature, sym)?;
                 match args.last_mut() {
                     Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
                     None => args.push(CoreArg::ByVal(rhs.clone())),
@@ -1024,6 +1018,16 @@ impl<'a> ProcLower<'a> {
             _ => None,
         }?;
         self.g.env.signatures.get(sig_id).cloned()
+    }
+
+    pub(crate) fn project_property_accessor_signature(
+        &self,
+        sym: SymbolId,
+        kind: ProjectMemberKind,
+        member: &str,
+    ) -> Result<Signature, BindError> {
+        self.proc_signature_for(sym, kind)
+            .ok_or_else(|| missing_project_property_accessor(member, kind))
     }
 
     /// The per-parameter by-ref flags of a `Declare` symbol (empty if unknown).
@@ -1699,4 +1703,14 @@ pub(crate) fn err_field(member: &str) -> Option<(ErrField, VarTypeRef)> {
         "lastdllerror" => Some((ErrField::LastDllError, builtin(BuiltinType::Long))),
         _ => None,
     }
+}
+
+fn missing_project_property_accessor(member: &str, kind: ProjectMemberKind) -> BindError {
+    let accessor = match kind {
+        ProjectMemberKind::PropertyGet => "Property Get",
+        ProjectMemberKind::PropertyLet => "Property Let",
+        ProjectMemberKind::PropertySet => "Property Set",
+        ProjectMemberKind::Method => "method",
+    };
+    BindError::InvalidAssignment(format!("property `{member}` has no {accessor} accessor"))
 }

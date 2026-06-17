@@ -692,6 +692,29 @@ fn named_indexed_property_let_roundtrip() {
 }
 
 #[test]
+fn assigning_to_get_only_property_is_bind_error() {
+    let main =
+        "Sub Main()\n    Dim w As Widget\n    Set w = New Widget\n    w.Value = 10\nEnd Sub\n";
+    let widget = "Public Property Get Value() As Long\n    Value = 1\nEnd Property\n";
+    assert!(
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).is_err(),
+        "a get-only project property must not lower to a synthetic PropertyLet call"
+    );
+}
+
+#[test]
+fn assigning_to_indexed_get_only_property_is_bind_error() {
+    let main =
+        "Sub Main()\n    Dim w As Widget\n    Set w = New Widget\n    w.Value(3) = 10\nEnd Sub\n";
+    let widget =
+        "Public Property Get Value(ByVal i As Long) As Long\n    Value = i\nEnd Property\n";
+    assert!(
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).is_err(),
+        "an indexed get-only project property must not lower to a synthetic PropertyLet call"
+    );
+}
+
+#[test]
 fn indexed_property_set_roundtrip() {
     // `Set b.Item(3) = t` must select the indexed Property Set accessor, carrying
     // the index argument before the object value argument.
@@ -707,6 +730,25 @@ fn indexed_property_set_roundtrip() {
             ("Thing", ModuleKind::Class, thing),
         ]),
         Some(23.0)
+    );
+}
+
+#[test]
+fn set_assigning_to_property_without_set_accessor_is_bind_error() {
+    let main = "Sub Main()\n    Dim b As Box\n    Dim t As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b.Item(1) = t\nEnd Sub\n";
+    let box_cls = "Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = Nothing\nEnd Property\n";
+    let thing = "Public Function GetVal() As Long\n    GetVal = 1\nEnd Function\n";
+    assert!(
+        bind_program(
+            &multi_manifest(&[
+                ("Main", ModuleKind::Procedural, main),
+                ("Box", ModuleKind::Class, box_cls),
+                ("Thing", ModuleKind::Class, thing),
+            ]),
+            &NullTypeLibs,
+        )
+        .is_err(),
+        "an object property without Property Set must not lower to a synthetic setter"
     );
 }
 
