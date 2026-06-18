@@ -17,9 +17,6 @@ members = [
     "crates/oxvba-symbol",
     "crates/oxvba-bind",
 ]
-# Non-main-path code (frontend/tooling/native-export + the legacy execution guts)
-# lives here as reference for the clean-stack rebuild; it is not built.
-exclude = ["_legacy_harvest"]
 resolver = "2"
 
 [workspace.package]

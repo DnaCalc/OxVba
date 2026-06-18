@@ -14,18 +14,19 @@ use std::ffi::c_void;
 use std::sync::Arc;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicU32, Ordering};
-use windows_sys::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CoCreateInstance, DISPPARAMS, EXCEPINFO,
-};
+use windows_sys::Win32::System::Com::{DISPPARAMS, EXCEPINFO};
 use windows_sys::Win32::System::Variant::VARIANT;
 use windows_sys::core::GUID;
 
-/// Event-sink callback: `(args, object_marshals) -> consumed`. `args` carries
-/// every event argument (object-typed slots hold a `Nothing` placeholder), and
-/// `object_marshals` carries `(arg_index, git_cookie)` for each object arg that was
-/// registered in the Global Interface Table on the delivery thread for the VM
-/// thread to revive (see [`ComEventCallback::pending_marshals`]).
-type DispatchEventCallback = Arc<dyn Fn(&[ComValue], &[(usize, u32)]) -> bool + Send + Sync>;
+/// Native event argument as received by the sink. Scalar values are already
+/// projected to `ComValue`; object values carry one retained `IDispatch`
+/// reference for the runtime state to bind or release.
+pub enum WindowsEventArg {
+    Value(ComValue),
+    Dispatch(*mut RawIDispatch),
+}
+
+type DispatchEventCallback = Arc<dyn Fn(&[WindowsEventArg]) -> bool + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowsConnectionPointTransport {
@@ -41,180 +42,14 @@ pub struct DispatchEventSinkConfig {
     pub on_event: DispatchEventCallback,
 }
 
-/// `IID_IMarshal` `{00000003-0000-0000-C000-000000000046}` — the interface COM queries an
-/// object for when marshalling it across an apartment boundary. Delegating it to an
-/// aggregated free-threaded marshaler is what makes a sink AGILE, so an out-of-process
-/// server (Excel) can call it back directly instead of through an STA stub that deadlocks
-/// our outbound `Advise`. See docs/COM_OOP_EVENT_SINK_MARSHALLING.md.
-#[cfg(target_os = "windows")]
-const IID_IMARSHAL: GUID = GUID {
-    data1: 0x0000_0003,
-    data2: 0,
-    data3: 0,
-    data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
-};
-
-// `windows-sys` 0.59 does not surface this ole32 export, so declare it directly (as the
-// vtable module does for Get/SetErrorInfo). It creates an aggregatable free-threaded
-// marshaler: `punkouter` is the controlling IUnknown (our sink), `ppunkmarshal` receives
-// the inner IUnknown we own.
-#[cfg(target_os = "windows")]
-unsafe extern "system" {
-    fn CoCreateFreeThreadedMarshaler(punkouter: *mut c_void, ppunkmarshal: *mut *mut c_void)
-    -> i32;
-}
-
-// ── Global Interface Table: cross-apartment handoff of object event arguments ──
-//
-// An out-of-process source (Excel) delivers events to our AGILE sink on an MTA RPC
-// worker thread, but the VM consumes them on its STA thread. An interface pointer
-// marshalled into the MTA apartment cannot be touched from the STA, so every
-// object-typed event argument is registered in the process-global GIT on the
-// delivery thread (`register_object_in_git`) and revived on the VM thread at poll
-// time (`take_dispatch_from_git`). This is the canonical mechanism for handing a
-// COM interface across apartments.
-#[cfg(target_os = "windows")]
-const CLSID_STD_GLOBAL_INTERFACE_TABLE: GUID = GUID {
-    data1: 0x0000_0323,
-    data2: 0,
-    data3: 0,
-    data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
-};
-#[cfg(target_os = "windows")]
-const IID_IGLOBAL_INTERFACE_TABLE: GUID = GUID {
-    data1: 0x0000_0146,
-    data2: 0,
-    data3: 0,
-    data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
-};
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct IGlobalInterfaceTableVtbl {
-    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
-    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
-    release: unsafe extern "system" fn(*mut c_void) -> u32,
-    register_interface_in_global:
-        unsafe extern "system" fn(*mut c_void, *mut c_void, *const GUID, *mut u32) -> i32,
-    revoke_interface_from_global: unsafe extern "system" fn(*mut c_void, u32) -> i32,
-    get_interface_from_global:
-        unsafe extern "system" fn(*mut c_void, u32, *const GUID, *mut *mut c_void) -> i32,
-}
-
-/// Obtains the process Global Interface Table singleton. The returned pointer carries
-/// one reference the caller must Release.
-///
-/// # Safety
-/// The current thread must be COM-initialized.
-#[cfg(target_os = "windows")]
-unsafe fn obtain_git() -> Option<*mut c_void> {
-    let mut git: *mut c_void = std::ptr::null_mut();
-    // SAFETY: all four pointer args are valid ('static GUIDs and a live out-slot);
-    // CoCreateInstance writes a retained interface pointer into `git` on success.
-    let hr = unsafe {
-        CoCreateInstance(
-            &CLSID_STD_GLOBAL_INTERFACE_TABLE,
-            std::ptr::null_mut(),
-            CLSCTX_INPROC_SERVER,
-            &IID_IGLOBAL_INTERFACE_TABLE,
-            &mut git,
-        )
-    };
-    if hr < 0 || git.is_null() {
-        return None;
-    }
-    Some(git)
-}
-
-/// Registers a live interface pointer in the process GIT and returns its cookie.
-/// Called on the event-delivery (MTA) thread, where `punk` is valid. The GIT
-/// holds its own reference until the cookie is revoked, so the registration
-/// outlives the inbound `Invoke` whose borrowed argument reference goes away when
-/// the source's call returns.
-///
-/// # Safety
-/// `punk` must be a live COM interface pointer and the current thread COM-initialized.
-#[cfg(target_os = "windows")]
-pub unsafe fn register_object_in_git(punk: *mut c_void) -> Option<u32> {
-    if punk.is_null() {
-        return None;
-    }
-    // SAFETY: the delivery thread is COM-initialized (it is servicing an inbound RPC).
-    let git = unsafe { obtain_git() }?;
-    // SAFETY: `git` is the live GIT singleton; its first field is the vtable.
-    let vtbl = unsafe { *(git as *const *const IGlobalInterfaceTableVtbl) };
-    let mut cookie: u32 = 0;
-    // SAFETY: `punk` is live per the contract, `IID_IDISPATCH` is a 'static GUID, and
-    // `&mut cookie` is a live out-slot; RegisterInterfaceInGlobal QIs `punk` for the IID
-    // and AddRefs its own reference on success.
-    let reg_hr =
-        unsafe { ((*vtbl).register_interface_in_global)(git, punk, &IID_IDISPATCH, &mut cookie) };
-    // SAFETY: `git` carries one reference from `obtain_git`; this balances it.
-    unsafe { ((*vtbl).release)(git) };
-    if reg_hr < 0 || cookie == 0 {
-        None
-    } else {
-        Some(cookie)
-    }
-}
-
-/// Revives a GIT-registered interface as an `IDispatch` valid in the CALLING
-/// apartment (the VM/STA thread at poll time) and revokes the registration. The
-/// returned pointer carries one reference the caller takes ownership of.
-///
-/// # Safety
-/// The current thread must be COM-initialized.
-#[cfg(target_os = "windows")]
-pub unsafe fn take_dispatch_from_git(cookie: u32) -> Option<*mut RawIDispatch> {
-    // SAFETY: the VM thread is COM-initialized before any event poll runs.
-    let git = unsafe { obtain_git() }?;
-    // SAFETY: `git` is the live GIT singleton; its first field is the vtable.
-    let vtbl = unsafe { *(git as *const *const IGlobalInterfaceTableVtbl) };
-    let mut ppv: *mut c_void = std::ptr::null_mut();
-    // SAFETY: `IID_IDISPATCH` is a 'static GUID and `&mut ppv` a live out-slot;
-    // GetInterfaceFromGlobal stores a retained, apartment-correct proxy on success.
-    let get_hr =
-        unsafe { ((*vtbl).get_interface_from_global)(git, cookie, &IID_IDISPATCH, &mut ppv) };
-    // SAFETY: the cookie is consumed exactly once here, releasing the GIT's reference.
-    unsafe {
-        let _ = ((*vtbl).revoke_interface_from_global)(git, cookie);
-        ((*vtbl).release)(git);
-    }
-    if get_hr < 0 || ppv.is_null() {
-        None
-    } else {
-        Some(ppv.cast::<RawIDispatch>())
-    }
-}
-
-/// Revokes a GIT registration without unmarshalling it — used to release object
-/// args whose callback is purged (object released) before it is ever pumped, so
-/// the GIT does not pin the source object forever.
-///
-/// # Safety
-/// The current thread must be COM-initialized.
-#[cfg(target_os = "windows")]
-pub unsafe fn revoke_git_cookie(cookie: u32) {
-    // SAFETY: the VM thread is COM-initialized when bindings are released.
-    let Some(git) = (unsafe { obtain_git() }) else {
-        return;
-    };
-    // SAFETY: `git` is the live GIT singleton; its first field is the vtable.
-    let vtbl = unsafe { *(git as *const *const IGlobalInterfaceTableVtbl) };
-    // SAFETY: revoke is idempotent-safe for a once-registered cookie; release balances obtain.
-    unsafe {
-        let _ = ((*vtbl).revoke_interface_from_global)(git, cookie);
-        ((*vtbl).release)(git);
-    }
-}
-
 /// The live `IDispatch`/`IUnknown` pointer carried by an object-typed event-argument
-/// VARIANT (`VT_DISPATCH`/`VT_UNKNOWN`, optionally `VT_BYREF`), or `None` for any
-/// non-object VARIANT.
+/// VARIANT (`VT_DISPATCH`/`VT_UNKNOWN`, optionally `VT_BYREF`), retained as an
+/// `IDispatch`, or `None` for any non-object VARIANT.
 ///
 /// # Safety
 /// `variant` must be a live VARIANT for the duration of the read.
 #[cfg(target_os = "windows")]
-unsafe fn object_arg_ptr(variant: &VARIANT) -> Option<*mut c_void> {
+unsafe fn retain_dispatch_arg(variant: &VARIANT) -> Option<*mut RawIDispatch> {
     const VT_DISPATCH_T: u16 = 9;
     const VT_UNKNOWN_T: u16 = 13;
     const VT_BYREF_T: u16 = 0x4000;
@@ -242,7 +77,30 @@ unsafe fn object_arg_ptr(variant: &VARIANT) -> Option<*mut c_void> {
                 .cast::<c_void>()
         }
     };
-    if ptr.is_null() { None } else { Some(ptr) }
+    if ptr.is_null() {
+        return None;
+    }
+    if base == VT_DISPATCH_T {
+        let dispatch = ptr.cast::<RawIDispatch>();
+        // SAFETY: the event VARIANT carries a live borrowed IDispatch pointer; retain
+        // one reference so the queued runtime binding owns its lifetime.
+        unsafe {
+            ((*(*dispatch).vtbl).unknown.add_ref)(dispatch.cast::<c_void>());
+        }
+        return Some(dispatch);
+    }
+    let mut out: *mut c_void = std::ptr::null_mut();
+    // SAFETY: the event VARIANT carries a live borrowed IUnknown pointer; its first
+    // field is the standard IUnknown vtable used for QueryInterface below.
+    let vtbl = unsafe { *(ptr as *const *const crate::RawIUnknownVtbl) };
+    // SAFETY: `out` is a valid out-slot and IID_IDISPATCH is a static interface ID;
+    // on success QueryInterface returns one retained IDispatch reference.
+    let hr = unsafe { ((*vtbl).query_interface)(ptr, &IID_IDISPATCH, &mut out) };
+    if hr < 0 || out.is_null() {
+        None
+    } else {
+        Some(out.cast::<RawIDispatch>())
+    }
 }
 
 #[repr(C)]
@@ -253,11 +111,6 @@ struct WindowsDispatchEventSink {
     expected_arity: usize,
     connection_point_iid: Option<GUID>,
     on_event: DispatchEventCallback,
-    /// The aggregated free-threaded marshaler's inner `IUnknown` (one owned reference),
-    /// or null if aggregation failed (the sink then falls back to standard marshalling —
-    /// fine in-process). `QueryInterface(IID_IMarshal)` delegates here so COM marshals the
-    /// sink agilely to an out-of-process source. Released when the sink is destroyed.
-    ftm: *mut c_void,
 }
 
 static WINDOWS_DISPATCH_EVENT_SINK_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
@@ -282,28 +135,8 @@ fn create_dispatch_event_sink(config: DispatchEventSinkConfig) -> *mut c_void {
         expected_arity: config.expected_arity,
         connection_point_iid: config.connection_point_iid,
         on_event: config.on_event,
-        ftm: std::ptr::null_mut(),
     });
-    let raw = Box::into_raw(sink);
-    // Aggregate the free-threaded marshaler so the sink is AGILE: an out-of-process source
-    // (Excel) then calls it back directly rather than through an STA stub, which is what
-    // deadlocked the cross-apartment `Advise`. The sink IS the controlling IUnknown
-    // (`raw`); the FTM's inner IUnknown is stored for IID_IMarshal delegation + released on
-    // destroy. On failure we leave `ftm` null and fall back to standard marshalling (which
-    // is correct in-process, where no marshalling occurs).
-    #[cfg(target_os = "windows")]
-    // SAFETY: `raw` is the freshly-boxed sink whose first field is its IUnknown vtable, so
-    // it is a valid controlling IUnknown for aggregation; `ftm` is a valid out-pointer. We
-    // store the returned inner reference only on success and Release it exactly once on
-    // destroy.
-    unsafe {
-        let mut ftm: *mut c_void = std::ptr::null_mut();
-        let hr = CoCreateFreeThreadedMarshaler(raw.cast::<c_void>(), &mut ftm);
-        if hr >= 0 {
-            (*raw).ftm = ftm;
-        }
-    }
-    raw.cast::<c_void>()
+    Box::into_raw(sink).cast::<c_void>()
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -443,16 +276,6 @@ unsafe extern "system" fn windows_dispatch_event_sink_query_interface(
         (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
         return COM_S_OK;
     }
-    // Delegate IID_IMarshal to the aggregated free-threaded marshaler so COM marshals the
-    // sink AGILELY to an out-of-process source (the FTM's QI delegates AddRef/Release back
-    // to this controlling IUnknown per aggregation rules, so the refcount stays balanced).
-    if crate::guid_equals(riid, &IID_IMARSHAL) && !(*sink).ftm.is_null() {
-        let ftm = (*sink).ftm;
-        // SAFETY: `ftm` is the FTM's inner IUnknown (one ref we own); its first field is its
-        // vtable, whose first slot is `QueryInterface(this, riid, ppv)`.
-        let vtbl = *(ftm as *const *const crate::RawIUnknownVtbl);
-        return ((*vtbl).query_interface)(ftm, riid, ppv);
-    }
     COM_E_NOINTERFACE
 }
 
@@ -468,13 +291,6 @@ unsafe extern "system" fn windows_dispatch_event_sink_release(this: *mut c_void)
     let prev = (*sink).ref_count.fetch_sub(1, Ordering::AcqRel);
     let next = prev.saturating_sub(1);
     if next == 0 {
-        // Release the aggregated free-threaded marshaler's inner reference before freeing
-        // the box (the FTM does not hold a ref on this controlling object, so no cycle).
-        let ftm = (*sink).ftm;
-        if !ftm.is_null() {
-            let vtbl = *(ftm as *const *const crate::RawIUnknownVtbl);
-            ((*vtbl).release)(ftm);
-        }
         drop(Box::from_raw(sink));
     }
     next
@@ -618,26 +434,12 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
         }
     };
     let mut args = Vec::with_capacity(cargs);
-    let mut marshals: Vec<(usize, u32)> = Vec::new();
-    for (arg_index, raw_index) in raw_indices.iter().copied().enumerate().take(cargs) {
+    for raw_index in raw_indices.iter().copied().take(cargs) {
         let variant = rgvarg.add(raw_index);
-        // Object-typed arguments belong to the source's apartment; register them in
-        // the GIT here (on the delivery thread, where they are valid) and queue a
-        // `Nothing` placeholder for the VM thread to revive at poll time. If
-        // registration fails (a pure IUnknown with no IDispatch, or a GIT failure),
-        // degrade THIS argument to `Nothing` rather than failing the entire event:
-        // falling through to `variant_to_com_value` (which cannot carry an object)
-        // would return DISP_E_TYPEMISMATCH and abort the whole inbound Invoke over a
-        // single un-revivable object arg. This mirrors
-        // `resolve_pending_event_marshals_for_next`, which also leaves `Nothing` on a
-        // revive miss. `variant_to_com_value` then handles every scalar/string arg.
-        if let Some(punk) = object_arg_ptr(&*variant) {
-            if let Some(cookie) = register_object_in_git(punk) {
-                marshals.push((arg_index, cookie));
-            }
-            args.push(ComValue::Object(
-                oxvba_runtime::ObjectRef::from_compat_identity(0),
-            ));
+        // Object arguments are retained and handed to the runtime state, which binds
+        // them through the same native-dispatch path used by COM method returns.
+        if let Some(dispatch) = retain_dispatch_arg(&*variant) {
+            args.push(WindowsEventArg::Dispatch(dispatch));
             continue;
         }
         let value = match variant_to_com_value(&*variant) {
@@ -649,9 +451,9 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
                 return COM_DISP_E_TYPEMISMATCH;
             }
         };
-        args.push(value);
+        args.push(WindowsEventArg::Value(value));
     }
-    let _ = ((*sink).on_event)(args.as_slice(), marshals.as_slice());
+    let _ = ((*sink).on_event)(args.as_slice());
     COM_S_OK
 }
 
@@ -841,9 +643,8 @@ unsafe extern "system" fn windows_single_i32_source_event_sink_changed(
     if (*sink).expected_arity != 1 {
         return COM_DISP_E_BADPARAMCOUNT;
     }
-    let args = [ComValue::I32(value)];
-    // Source-interface i32 events carry no object arguments, so no GIT marshals.
-    let _ = ((*sink).on_event)(&args, &[]);
+    let args = [WindowsEventArg::Value(ComValue::I32(value))];
+    let _ = ((*sink).on_event)(&args);
     COM_S_OK
 }
 

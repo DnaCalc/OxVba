@@ -13,12 +13,10 @@ legacy-stack removal. Source of truth for "things we chose to defer, on purpose.
 2. **Gap analysis vs the old compiler**: re-pointing the old corpora at the clean path is
    the primary signal — what fails reveals which VBA features/semantics the new stack does
    not yet cover. Catalog the gaps.
-3. **Then** start deleting the parts of the old code we will **not** need (selective, after
-   the gaps are understood — not a blind one-pass delete).
-
-Keep `oxvba-debug` (debugger) and `oxvba-languageservice`/`oxvba-lsp`/`oxvba-web-*`
-(language support) in `_legacy_harvest/` **as reference until we re-implement them** on the
-clean stack — do not delete.
+3. **Then** start deleting the parts of the old code we will **not** need. The
+   retained `_legacy_harvest/` reference tree has now been deleted; future
+   debugger/language-service/web work should be rebuilt against the clean stack
+   rather than copied from the removed legacy crates.
 
 ## Clean-stack gaps (from the re-pointed `feature_coverage` corpus)
 
@@ -131,8 +129,8 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
 
 - **True COM server export + `.tlb`/native export** (DLL / EXE / COM-server / XLL): re-target
   `oxvba-build`'s bundle-embed + reflection-driven signature emit at the clean `oxvba-bundle`
-  `Bundle`. Reusable assets cataloged in `_legacy_harvest/CATALOG.md`
-  (`registration.rs`, `deffile.rs`, `compile.rs`, `idl.rs`, `typelib_gen.rs`).
+  `Bundle`. The old retained reference implementation has been deleted; current
+  COM-server work lives in `oxvba-build`, `oxvba-com`, and `oxvba-comhost`.
 - **Host-sensitivity compile-time gate** (review item M1): re-express
   `preflight_host_sensitive_support` (matches HAL capability + host policy against
   host-sensitive intrinsics) over `oxvba-bundle` ops — the clean path currently lacks it.
@@ -331,9 +329,8 @@ scalar corpus can't. Of the remaining bind/VM gaps, **C** (UDTs) is the most sub
 ## Legacy stack removed (this pass)
 
 The legacy execution stack is gone; the workspace builds and tests green on the clean stack
-only. Removed: `oxvba-compiler`, `oxvba-vm` (deleted); `oxvba-build` (moved to
-`_legacy_harvest/`, COM/`.tlb`/XLL knowledge cataloged). `oxvba-jit` is a `thiserror`-only
-stub (kept). `oxvba-host` was rewritten to a thin clean `Engine` (two entry points:
+only. Removed: `oxvba-compiler`, `oxvba-vm`, and the retained `_legacy_harvest/`
+tree. `oxvba-jit` is a `thiserror`-only stub (kept). `oxvba-host` was rewritten to a thin clean `Engine` (two entry points:
 `execute_source_with_variant_snapshot_clean`, `execute_project_closure_with_variant_snapshot`).
 
 - **`oxvba-project`** severed off the deleted crates: the project-manifest types it borrowed
@@ -349,7 +346,7 @@ stub (kept). `oxvba-host` was rewritten to a thin clean `Engine` (two entry poin
   shim, and the `oxvba-reflect-wrapper` bin. Re-add project-authoring conveniences
   (`import-vbp`, `init`) against the clean modules if wanted — they are not the execution path.
 
-## Re-implement on the clean stack (kept as reference in `_legacy_harvest/`)
+## Re-implement on the clean stack
 
 - `oxvba-languageservice` / `oxvba-lsp` — semantic model + LSP over `oxvba-symbol` + CST.
 - `oxvba-debug` — debugger (DAP) over `oxvba-vm2` (needs a vm2 debug surface).

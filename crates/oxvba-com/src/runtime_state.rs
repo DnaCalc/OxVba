@@ -359,14 +359,6 @@ pub struct ComEventCallback {
     pub object: i32,
     pub event: ComMemberToken,
     pub args: Vec<ComEventCallbackValue>,
-    /// `(arg_index, git_cookie)` for object-typed event arguments delivered on a
-    /// cross-apartment thread (an out-of-process source's agile sink fires on an
-    /// MTA RPC worker, but the VM consumes events on its STA thread). Each object
-    /// arg is registered in the process Global Interface Table on the delivery
-    /// thread, leaving a `Nothing` placeholder in `args[arg_index]`; the Windows
-    /// poll path revives it into a thread-correct binding before dispatch. Empty
-    /// for in-process/projection callbacks (their args are already valid).
-    pub pending_marshals: Vec<(usize, u32)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -504,21 +496,6 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
         subscription: ComSubscriptionToken,
         args: &[ComValue],
     ) -> bool {
-        self.queue_callback_for_subscription_with_marshals(subscription, args, &[])
-    }
-
-    /// As [`Self::queue_callback_for_subscription`], but records the
-    /// `(arg_index, git_cookie)` cross-apartment marshals for object-typed event
-    /// arguments (see [`ComEventCallback::pending_marshals`]). The native
-    /// out-of-process event sink registers each object arg in the Global Interface
-    /// Table on its delivery thread and queues a `Nothing` placeholder; the Windows
-    /// poll path revives the real object on the VM thread before dispatch.
-    pub fn queue_callback_for_subscription_with_marshals(
-        &mut self,
-        subscription: ComSubscriptionToken,
-        args: &[ComValue],
-        marshals: &[(usize, u32)],
-    ) -> bool {
         let Some(entry) = self.subscriptions.get(&subscription).cloned() else {
             return false;
         };
@@ -533,7 +510,6 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
                     .iter()
                     .map(ComEventCallbackValue::from_com_value)
                     .collect(),
-                pending_marshals: marshals.to_vec(),
             },
         );
         self.pending_callbacks.push_back(callback);

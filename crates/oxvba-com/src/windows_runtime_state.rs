@@ -1,6 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::runtime_state::ComEventCallbackValue;
+use crate::windows_connection_point::WindowsEventArg;
 use crate::{
     ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComInvokeArg, ComMemberSpec,
     ComMemberToken, ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue,
@@ -19,7 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
-type DispatchEventCallback = Arc<dyn Fn(&[ComValue], &[(usize, u32)]) -> bool + Send + Sync>;
+type DispatchEventCallback = Arc<dyn Fn(&[WindowsEventArg]) -> bool + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowsComSubscriptionTransport {
@@ -100,16 +101,6 @@ impl Drop for WindowsComClientState {
             }
         }
         self.subscriptions.clear();
-        // Revoke GIT registrations of any queued-but-unpumped object event args so a
-        // bridge discarded with live callbacks does not leave the source objects pinned
-        // in the process Global Interface Table (the map is cleared immediately after, so
-        // each cookie is revoked exactly once).
-        let orphan_cookies: Vec<u32> = self
-            .callbacks
-            .values()
-            .flat_map(|callback| callback.pending_marshals.iter().map(|(_, cookie)| *cookie))
-            .collect();
-        revoke_marshal_cookies(orphan_cookies);
         self.callbacks.clear();
         self.pending_callbacks.clear();
         self.host_objects_by_prog_id.clear();
@@ -164,27 +155,45 @@ fn callback_sink(
     // reference is gone is reported unconsumed — the runtime that would
     // drain it no longer exists.
     let com_state = Arc::downgrade(&com_state);
-    Arc::new(move |args: &[ComValue], marshals: &[(usize, u32)]| {
+    Arc::new(move |args: &[WindowsEventArg]| {
         let Some(com_state) = com_state.upgrade() else {
-            // The runtime that would drain this event is gone; revoke the object-arg GIT
-            // registrations this delivery just made rather than leak them.
-            revoke_marshal_cookies(marshals.iter().map(|(_, cookie)| *cookie));
+            release_unbound_event_dispatches(args);
             return false;
         };
         let mut state = match com_state.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let queued =
-            state.queue_callback_for_subscription_with_marshals(subscription, args, marshals);
-        if !queued {
-            // The subscription was torn down between this delivery's GIT registration and
-            // the queue attempt (the callback was never stored, so no double-revoke);
-            // revoke the now-orphaned object-arg cookies instead of leaking them.
-            revoke_marshal_cookies(marshals.iter().map(|(_, cookie)| *cookie));
+        if !state.subscriptions.contains_key(&subscription) {
+            release_unbound_event_dispatches(args);
+            return false;
         }
-        queued
+        let values = args
+            .iter()
+            .map(|arg| match arg {
+                WindowsEventArg::Value(value) => value.clone(),
+                WindowsEventArg::Dispatch(dispatch) => {
+                    // SAFETY: the sink retained this IDispatch reference for transfer to
+                    // the runtime state. `bind_native_dispatch_result` consumes it.
+                    let object = unsafe {
+                        bind_native_dispatch_result(&mut state, *dispatch, "<com-event-arg>")
+                    };
+                    ComValue::Object(object)
+                }
+            })
+            .collect::<Vec<_>>();
+        state.queue_callback_for_subscription(subscription, &values)
     })
+}
+
+fn release_unbound_event_dispatches(args: &[WindowsEventArg]) {
+    for arg in args {
+        if let WindowsEventArg::Dispatch(dispatch) = arg {
+            // SAFETY: each dispatch was retained by the sink for callback transfer and
+            // was not handed to the runtime state on this path.
+            unsafe { release_dispatch(*dispatch) };
+        }
+    }
 }
 
 /// # Safety
@@ -429,45 +438,10 @@ pub unsafe fn bind_native_dispatch_result(
     object
 }
 
-/// Revoke the Global Interface Table registrations of one or more event-callback
-/// object arguments that will never be poll-revived. EVERY teardown path that
-/// discards a callback (or a just-delivered marshal set) before the VM pump revives
-/// it — unsubscribe ([`remove_subscription_callbacks`]), release
-/// ([`release_callback`] / [`release_object_binding`]), a declined queue
-/// ([`callback_sink`]), or client [`WindowsComClientState`] drop — must funnel its
-/// `pending_marshals` cookies through here. Otherwise the GIT keeps its own
-/// AddRef'd reference to each source object forever, pinning it and potentially
-/// preventing an out-of-process source (Excel) from shutting down.
-///
-/// Safe against double-revoke: a revived callback has its `pending_marshals` cleared
-/// by [`resolve_pending_event_marshals_for_next`], and every teardown path removes
-/// the callback from `state.callbacks` after (or instead of) revoking, so each cookie
-/// reaches `revoke_git_cookie` at most once.
-fn revoke_marshal_cookies(cookies: impl IntoIterator<Item = u32>) {
-    for cookie in cookies {
-        // SAFETY: cookies are revoked on a COM-initialized thread (the VM/STA thread for
-        // teardown, the COM-servicing delivery thread for a declined queue); each was
-        // registered by our own sink and is revoked at most once (see the doc above).
-        unsafe { crate::windows_connection_point::revoke_git_cookie(cookie) };
-    }
-}
-
 pub fn release_object_binding(
     state: &mut WindowsComClientState,
     object: ObjectRef,
 ) -> Result<ReleasedWindowsComObject, String> {
-    // Revoke GIT registrations for any of this object's event callbacks that were
-    // queued but never pumped, so a purged callback does not pin its object arguments
-    // in the Global Interface Table (which would hold a COM reference forever and can
-    // keep an out-of-process source from shutting down). The callbacks themselves are
-    // removed by `release_object_state` below, so a revoked cookie is never revived.
-    let orphan_cookies: Vec<u32> = state
-        .callbacks
-        .values()
-        .filter(|callback| callback.object == object.raw())
-        .flat_map(|callback| callback.pending_marshals.iter().map(|(_, cookie)| *cookie))
-        .collect();
-    revoke_marshal_cookies(orphan_cookies);
     let Some((binding, transports, stale_callbacks)) =
         state.release_object_state(ComObjectToken::new(object.raw()))
     else {
@@ -515,57 +489,7 @@ pub fn resolve_subscription_transport(
 pub fn take_polled_callback_payload(
     state: &mut WindowsComClientState,
 ) -> Option<crate::ComCallbackPayload> {
-    // Revive any cross-apartment object event arguments for the callback about to be
-    // dispatched: the agile sink registered them in the GIT on its (MTA) delivery
-    // thread and queued `Nothing` placeholders; here, on the VM/STA thread, we
-    // unmarshal each into a thread-correct binding so the handler receives the real
-    // object (e.g. the new `Workbook`, the changed `Range`).
-    resolve_pending_event_marshals_for_next(state);
     state.take_polled_callback()
-}
-
-/// The callback token `take_polled_callback` will next consume: the one already
-/// marked pumped (by a prior `DoEvents`) if any, otherwise the front of the queue.
-fn next_pollable_callback(state: &WindowsComClientState) -> Option<ComCallbackToken> {
-    state
-        .last_pumped_callback
-        .or_else(|| state.pending_callbacks.front().copied())
-}
-
-/// Unmarshals the GIT-registered object arguments of the next pollable callback into
-/// thread-correct bindings on the current (VM/STA) apartment, overwriting their
-/// `Nothing` placeholders. A cookie that fails to revive leaves `Nothing` in place
-/// (the handler then sees `Nothing` for that argument rather than the event failing).
-fn resolve_pending_event_marshals_for_next(state: &mut WindowsComClientState) {
-    let Some(token) = next_pollable_callback(state) else {
-        return;
-    };
-    let marshals = match state.callbacks.get(&token) {
-        Some(callback) if !callback.pending_marshals.is_empty() => {
-            callback.pending_marshals.clone()
-        }
-        _ => return,
-    };
-    for (arg_index, cookie) in marshals {
-        // SAFETY: the VM thread is COM-initialized before any event poll; the cookie was
-        // registered by our own sink and is consumed (revoked) exactly once here.
-        let dispatch = unsafe { crate::windows_connection_point::take_dispatch_from_git(cookie) };
-        let Some(dispatch) = dispatch else {
-            continue;
-        };
-        // SAFETY: `take_dispatch_from_git` returned a live `IDispatch` carrying one retained
-        // reference owned by us; `bind_native_dispatch_result` takes ownership of it.
-        let object = unsafe { bind_native_dispatch_result(state, dispatch, "<com-event-arg>") };
-        let value = ComEventCallbackValue::from_com_value(&ComValue::Object(object));
-        if let Some(callback) = state.callbacks.get_mut(&token)
-            && let Some(slot) = callback.args.get_mut(arg_index)
-        {
-            *slot = value;
-        }
-    }
-    if let Some(callback) = state.callbacks.get_mut(&token) {
-        callback.pending_marshals.clear();
-    }
 }
 
 pub fn callback_subscription_token(
@@ -622,16 +546,12 @@ pub fn release_callback(
     state: &mut WindowsComClientState,
     callback: ComCallbackToken,
 ) -> Result<(), String> {
-    let Some(removed) = state.callbacks.remove(&callback) else {
+    let Some(_) = state.callbacks.remove(&callback) else {
         return Err(format!(
             "COM-E-EVENT-CALLBACK-MISSING: unknown callback token {}",
             callback.raw()
         ));
     };
-    // A callback released before it is poll-revived (e.g. `DoEvents` marked it pumped,
-    // the handler read its args, then released it without ever polling) still owns its
-    // object-arg GIT registrations; revoke them so the source objects are not pinned.
-    revoke_marshal_cookies(removed.pending_marshals.iter().map(|(_, cookie)| *cookie));
     state.pending_callbacks.retain(|token| *token != callback);
     if state.last_pumped_callback == Some(callback) {
         state.last_pumped_callback = None;
@@ -652,12 +572,7 @@ pub fn remove_subscription_callbacks(
     let stale_callbacks =
         collect_stale_callbacks_for_subscription(state, subscription, entry.object);
     for callback in &stale_callbacks {
-        if let Some(removed) = state.callbacks.remove(callback) {
-            // Unsubscribing (WithEvents = Nothing) before a queued event is pumped must
-            // revoke the dropped callback's object-arg GIT registrations, or the source's
-            // object arguments stay pinned in the Global Interface Table forever.
-            revoke_marshal_cookies(removed.pending_marshals.iter().map(|(_, cookie)| *cookie));
-        }
+        state.callbacks.remove(callback);
     }
     state
         .pending_callbacks
@@ -1164,7 +1079,7 @@ mod tests {
             "the event sink must not keep the shared state alive"
         );
         // A late event after teardown is reported unconsumed, not a panic.
-        assert!(!sink(&[], &[]));
+        assert!(!sink(&[]));
     }
 
     #[test]

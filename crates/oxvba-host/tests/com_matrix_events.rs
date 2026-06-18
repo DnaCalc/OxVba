@@ -200,23 +200,17 @@ fn v6_multi_sink_fan_out() {
 #[test]
 #[ignore = "live COM; run explicitly"]
 fn v7_excel_new_workbook_oop_event() {
-    // THE out-of-process flagship: a marshalled connection point + STA pump +
-    // cross-apartment sink. Wire app, Workbooks.Add, pump. The handler also dereferences
-    // the marshalled `Wb` (reads `Wb.Name`), so the verdict requires the GIT-revived
-    // Workbook to be a live object, not Nothing / a dead proxy — a bare fire-count
-    // (mFired >= 1) would pass even if the object arg were broken.
+    // THE out-of-process flagship: an Excel connection point + STA event pump.
+    // Wire app, Workbooks.Add, pump. The handler also dereferences the `Wb`
+    // object arg (reads `Wb.Name`), so the verdict requires a live workbook
+    // binding, not Nothing / a dead proxy — a bare fire-count (mFired >= 1)
+    // would pass even if the object arg were broken.
     // verdict = IIf(mFired >= 1 And mWbOk >= 1, 1, 0).
     //
-    // GREEN (verified live, ~3s). Out-of-process Excel `Application.NewWorkbook` is
-    // delivered end-to-end: the agile (free-threaded-marshaler) sink advises Excel's
-    // `AppEvents` connection point without deadlocking; the source binding's event
-    // metadata is recovered from the live object's typelib (Excel's CLSID has no
-    // `\TypeLib` registry subkey); the inbound RPC fires the sink on an MTA worker, the
-    // object-typed `Wb` argument is handed to the VM thread via the Global Interface
-    // Table, and the VM pump dispatches `appEv_NewWorkbook`. (Was previously a ~56-min
-    // wedge: out-of-process COM dispatch walked the MARSHALLED Excel typelib
-    // cross-process per call; fixed by declining marshaling proxies to late-bound
-    // IDispatch before any live-typelib recovery.)
+    // GREEN (verified live, ~5s). Out-of-process Excel `Application.NewWorkbook`
+    // is delivered end-to-end with a plain STA dispatch sink. Object-typed event
+    // args are retained and bound through the normal native-dispatch object table
+    // before the queued VM pump dispatches `appEv_NewWorkbook`.
     let main_src = "Public result As Long\n\
          Sub Main()\n\
          Dim s As New Sink\n\
