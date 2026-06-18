@@ -29,31 +29,37 @@ Workspace crates and current roles:
 - `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services,
   COM wire translation (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`), typelib
   loading, and runtime state/metadata.
+- `oxvba-comhost`: reusable Windows `cdylib` for `WrappedComServer` outputs.
+  It exports the in-process COM DLL entrypoints once, then loads project
+  sidecars (`.oxb`, `.comserver.json`, `.tlb`) next to the copied DLL and runs
+  the package through the VM.
 - `oxvba-host`: engine orchestration — bind/linearize/execute pipeline, host
   policy, snapshots, package-backed runtime sessions, error routing.
 - `oxvba-build`: clean wrapper build orchestration. The current
   `WrappedComServer` slice validates `.basproj` target shape, emits a versioned
   `.oxb` bundle package, projects deterministic COM descriptors from the export
-  surface, writes IDL/shim-source artifacts, compiles a generated type library,
-  and compiles a bounded Windows in-process COM DLL with per-user class/typelib
-  registration, late-bound `IDispatch` dispatch, source-dispinterface
-  connection-point event publication, and one Automation-safe dual-interface
-  vtable method shape over package-backed runtime sessions. Implemented COM
+  surface, writes IDL and `.comserver.json`, compiles a generated type library
+  with MIDL, and copies the prebuilt `oxvba-comhost` DLL to the project DLL
+  name. It also carries a parallel Windows `OleAut32` type-library emitter built
+  on `CreateTypeLib2`/`ICreateTypeInfo`, tested against the MIDL output as an
+  oracle for dispatch, bounded dual, imported Automation, SAFEARRAY, ByRef, and
+  typed interface-pointer shapes; MIDL remains the default build path while that
+  emitter is refined. It no longer compiles a project-specific Rust shim.
+  Implemented COM
   interfaces are represented in the descriptor as interface/method metadata
   (name, IID, DISPIDs, vtable slots, VBA-facing parameter and return shapes,
   COM wire shapes such as typed interface pointers and SAFEARRAY variants, and
   mapped VBA member names). Non-profile `Implements` clauses can resolve
   imported COM interfaces from referenced type libraries into the same
   descriptor shape. The descriptor reports required native wire features by
-  shape rather than by interface-name allowlist. The native backend composes
+  shape rather than by interface-name allowlist. The reusable COM host composes
   vtable data from precompiled slot+shape thunks for imported dual/Automation
   interfaces resolved from referenced typelibs, including the Office
   `IDTExtensibility2`, Office `IRibbonExtensibility`, Excel `IRtdServer`, and
   Excel `IRTDUpdateEvent` shapes covered by the current tests. Descriptor and
-  IDL generation no longer carry
-  hardcoded IDTE/RTD profile tables; Office-specific behavior that remains is
-  registration policy for Excel add-in classes that implement
-  `IDTExtensibility2`.
+  IDL generation no longer carry hardcoded IDTE/RTD profile tables;
+  Office-specific behavior that remains is registration policy for Excel add-in
+  classes that implement `IDTExtensibility2`.
 - `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
   reference-closure loading.
 - `oxvba-cli`: CLI bootstrap/run/build surface.

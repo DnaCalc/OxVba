@@ -226,12 +226,15 @@ fn run_build(args: Vec<String>) {
         project_path: parsed.project_path,
         out_dir: parsed.out_dir,
         compile_dll: true,
+        comhost_dll_path: None,
     }) {
         Ok(output) => {
             println!("OXB:{}", output.oxb_path.display());
             println!("COM_DESCRIPTOR:{}", output.descriptor_path.display());
             println!("IDL:{}", output.idl_path.display());
-            println!("SHIM_SOURCE:{}", output.shim_source_path.display());
+            if let Some(path) = output.comhost_source_path.as_ref() {
+                println!("COMHOST_SOURCE:{}", path.display());
+            }
             println!("DLL_TARGET:{}", output.dll_target_path.display());
             println!("TLB_TARGET:{}", output.tlb_target_path.display());
         }

@@ -6,6 +6,7 @@ members = [
     "crates/oxvba-runtime",
     "crates/oxvba-jit",
     "crates/oxvba-com",
+    "crates/oxvba-comhost",
     "crates/oxvba-host",
     "crates/oxvba-build",
     "crates/oxvba-cli",
@@ -53,6 +54,7 @@ oxvba-hal = { path = "crates/oxvba-hal" }
 oxvba-runtime = { path = "crates/oxvba-runtime" }
 oxvba-jit = { path = "crates/oxvba-jit" }
 oxvba-com = { path = "crates/oxvba-com" }
+oxvba-comhost = { path = "crates/oxvba-comhost" }
 oxvba-host = { path = "crates/oxvba-host" }
 oxvba-build = { path = "crates/oxvba-build" }
 oxvba-project = { path = "crates/oxvba-project" }

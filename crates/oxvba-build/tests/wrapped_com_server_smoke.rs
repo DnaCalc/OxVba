@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering, fence};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen};
 use windows_sys::Win32::System::Com::{
@@ -280,6 +280,7 @@ End Sub
             project_path,
             out_dir,
             compile_dll: true,
+            comhost_dll_path: Some(ensure_prebuilt_comhost()),
         })
         .expect("WrappedComServer build should compile a DLL");
     assert!(output.dll_target_path.exists());
@@ -607,6 +608,16 @@ if ($failure -ne $null) {
 #[test]
 #[ignore = "requires desktop Excel; registers and loads an in-process Excel COM add-in"]
 fn wrapped_com_server_excel_addin_receives_usable_application_object() {
+    excel_addin_receives_usable_application_object(false);
+}
+
+#[test]
+#[ignore = "requires desktop Excel; registers and loads an in-process Excel COM add-in with an OleAut-emitted TLB"]
+fn wrapped_com_server_excel_addin_loads_with_oleaut_typelib() {
+    excel_addin_receives_usable_application_object(true);
+}
+
+fn excel_addin_receives_usable_application_object(use_oleaut_typelib: bool) {
     let temp = TestDir::new_in_repo_target("excel_addin_application_object");
     let project_path = temp.path.join("OxVbaExcelAddinSmoke.basproj");
     let addin_path = temp.path.join("ExcelAddin.cls");
@@ -677,8 +688,17 @@ End Sub
             project_path,
             out_dir,
             compile_dll: true,
+            comhost_dll_path: Some(ensure_prebuilt_comhost()),
         })
         .expect("WrappedComServer build should compile an Excel add-in DLL");
+    if use_oleaut_typelib {
+        let descriptor_text =
+            std::fs::read_to_string(&output.descriptor_path).expect("descriptor should exist");
+        let descriptor: oxvba_build::ComServerDescriptor =
+            serde_json::from_str(&descriptor_text).expect("descriptor should parse");
+        oxvba_build::emit_typelib_with_oleaut(&descriptor, &output.tlb_target_path)
+            .expect("OleAut emitter should replace the generated TLB");
+    }
 
     let script_path = temp.path.join("excel_addin_smoke.ps1");
     write(
@@ -827,6 +847,7 @@ End Function
             project_path,
             out_dir,
             compile_dll: true,
+            comhost_dll_path: Some(ensure_prebuilt_comhost()),
         })
         .expect("WrappedComServer build should compile a ribbon COM DLL");
     let descriptor_text =
@@ -848,6 +869,38 @@ End Function
 
 struct RegisteredDll {
     path: PathBuf,
+}
+
+fn ensure_prebuilt_comhost() -> PathBuf {
+    static PREBUILT: OnceLock<PathBuf> = OnceLock::new();
+    PREBUILT
+        .get_or_init(|| {
+            let status = Command::new("cargo")
+                .arg("build")
+                .arg("-p")
+                .arg("oxvba-comhost")
+                .arg("--release")
+                .status()
+                .expect("cargo build -p oxvba-comhost should run");
+            assert!(
+                status.success(),
+                "cargo build -p oxvba-comhost --release failed: {status:?}"
+            );
+            let dll = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .and_then(|path| path.parent())
+                .expect("oxvba-build crate should live under workspace crates directory")
+                .join("target")
+                .join("release")
+                .join("oxvba_comhost.dll");
+            assert!(
+                dll.exists(),
+                "prebuilt COM host DLL missing: {}",
+                dll.display()
+            );
+            dll
+        })
+        .clone()
 }
 
 impl RegisteredDll {

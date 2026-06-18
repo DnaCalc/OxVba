@@ -1450,6 +1450,10 @@ impl TypeLibResolver for DefaultValueTypeLibs {
                     parameter_types: Vec::new(),
                     parameter_iids: Vec::new(),
                     return_type: Some(oxvba_com::TypeLibParamType::Long),
+                    parameter_wire_types: Vec::new(),
+                    return_wire_type: Some(oxvba_com::TypeLibWireType::Automation(
+                        oxvba_com::TypeLibParamType::Long,
+                    )),
                     callconv_is_stdcall: false,
                     is_dual: true,
                     interface_iid: None,
@@ -1467,8 +1471,12 @@ impl TypeLibResolver for DefaultValueTypeLibs {
                     parameter_optional_defaults: Vec::new(),
                     is_default_member: true,
                     parameter_types: vec![oxvba_com::TypeLibParamType::Long],
+                    parameter_wire_types: vec![oxvba_com::TypeLibWireType::Automation(
+                        oxvba_com::TypeLibParamType::Long,
+                    )],
                     parameter_iids: vec![None],
                     return_type: None,
+                    return_wire_type: None,
                     callconv_is_stdcall: false,
                     is_dual: true,
                     interface_iid: None,

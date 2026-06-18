@@ -14,6 +14,10 @@ pub enum ShimCompileError {
     CargoFailed { message: String },
     #[error("failed to compile WrappedComServer type library with MIDL: {message}")]
     MidlFailed { message: String },
+    #[error("failed to emit WrappedComServer type library with OleAut32: {message}")]
+    OleAutTypeLibFailed { message: String },
+    #[error("failed to copy prebuilt WrappedComServer COM host: {message}")]
+    ComHostCopyFailed { message: String },
     #[error("required tool `{tool}` was not found; searched {searched}")]
     ToolNotFound {
         tool: &'static str,
@@ -21,6 +25,71 @@ pub enum ShimCompileError {
     },
     #[error("WrappedComServer DLL compilation is only supported on Windows hosts")]
     UnsupportedPlatform,
+}
+
+pub fn copy_prebuilt_comhost_dll(
+    explicit_host_path: Option<&Path>,
+    dll_target_path: &Path,
+) -> Result<PathBuf, ShimCompileError> {
+    let host_path = if let Some(path) = explicit_host_path {
+        path.to_path_buf()
+    } else {
+        find_prebuilt_comhost_dll().ok_or_else(|| ShimCompileError::ToolNotFound {
+            tool: "oxvba_comhost.dll",
+            searched:
+                "explicit build option, OXVBA_COMHOST_DLL, executable directory, and workspace target release/debug directories"
+                    .to_string(),
+        })?
+    };
+    if !host_path.exists() {
+        return Err(ShimCompileError::ToolNotFound {
+            tool: "oxvba_comhost.dll",
+            searched: host_path.display().to_string(),
+        });
+    }
+    if let Some(parent) = dll_target_path.parent() {
+        create_dir_all(parent)?;
+    }
+    fs::copy(&host_path, dll_target_path).map_err(|source| {
+        ShimCompileError::ComHostCopyFailed {
+            message: format!(
+                "{} -> {}: {source}",
+                host_path.display(),
+                dll_target_path.display()
+            ),
+        }
+    })?;
+    Ok(host_path)
+}
+
+pub fn find_prebuilt_comhost_dll() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("OXVBA_COMHOST_DLL").map(PathBuf::from)
+        && path.exists()
+    {
+        return Some(path);
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let candidate = dir.join(dll_file_name("oxvba_comhost"));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|path| path.parent())
+        .map(Path::to_path_buf)?;
+    for profile in ["release", "debug"] {
+        let candidate = workspace_root
+            .join("target")
+            .join(profile)
+            .join(dll_file_name("oxvba_comhost"));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 pub fn compile_typelib(idl_path: &Path, tlb_target_path: &Path) -> Result<(), ShimCompileError> {

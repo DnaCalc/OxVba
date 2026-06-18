@@ -8,6 +8,7 @@ use oxvba_bundle::{DeclareParamType, ProjectMemberKind};
 use oxvba_com::{
     SourceTypeKind, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+    TypeLibWireType,
 };
 
 use crate::binding::DispatchRoute;
@@ -483,8 +484,12 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 parameter_optional: vec![false],
                 is_default_member: false,
                 parameter_types: vec![TypeLibParamType::ByRefLong],
+                parameter_wire_types: vec![TypeLibWireType::Automation(
+                    TypeLibParamType::ByRefLong,
+                )],
                 parameter_iids: vec![None],
                 return_type: None,
+                return_wire_type: None,
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: None,
@@ -502,8 +507,10 @@ fn widget_blob() -> TypeLibMetadataBlob {
                 parameter_optional: vec![false],
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::Long],
+                parameter_wire_types: vec![TypeLibWireType::Automation(TypeLibParamType::Long)],
                 parameter_iids: vec![None],
                 return_type: Some(TypeLibParamType::Variant),
+                return_wire_type: Some(TypeLibWireType::Automation(TypeLibParamType::Variant)),
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: None,

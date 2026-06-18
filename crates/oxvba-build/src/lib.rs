@@ -8,7 +8,8 @@ mod com_descriptor;
 mod compile;
 mod identity;
 mod idl;
-mod shim;
+#[cfg(target_os = "windows")]
+mod oleaut_typelib;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,16 +19,21 @@ pub use com_descriptor::{
     ComImplementedInterfaceMethodDescriptor, ComInvokeKind, ComMemberDescriptor,
     ComNativeInterfaceRequirement, ComParamType, ComServerDescriptor, ComWireType,
 };
-pub use compile::{ShimCompileError, compile_shim_dll, compile_typelib};
+pub use compile::{
+    ShimCompileError, compile_shim_dll, compile_typelib, copy_prebuilt_comhost_dll,
+    find_prebuilt_comhost_dll,
+};
 pub use identity::deterministic_uuid;
 pub use idl::generate_idl;
-pub use shim::generate_shim_source;
+#[cfg(target_os = "windows")]
+pub use oleaut_typelib::emit_typelib_with_oleaut;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedComServerBuildOptions {
     pub project_path: PathBuf,
     pub out_dir: PathBuf,
     pub compile_dll: bool,
+    pub comhost_dll_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,8 +41,8 @@ pub struct WrappedComServerBuildOutput {
     pub oxb_path: PathBuf,
     pub descriptor_path: PathBuf,
     pub idl_path: PathBuf,
-    pub shim_source_path: PathBuf,
     pub dll_target_path: PathBuf,
+    pub comhost_source_path: Option<PathBuf>,
     pub tlb_target_path: PathBuf,
 }
 
@@ -133,25 +139,21 @@ pub fn build_wrapped_com_server(
     write_text(&idl_path, &generate_idl(&descriptor))?;
     let tlb_target_path = options.out_dir.join(format!("{artifact_stem}.tlb"));
 
-    let shim_source_path = options
-        .out_dir
-        .join(format!("{artifact_stem}_com_server.rs"));
-    write_text(
-        &shim_source_path,
-        &generate_shim_source(&descriptor, &oxb_path, &descriptor_path, &tlb_target_path),
-    )?;
     let dll_target_path = options.out_dir.join(format!("{artifact_stem}.dll"));
+    let mut comhost_source_path = options.comhost_dll_path.clone();
     if options.compile_dll {
         compile_typelib(&idl_path, &tlb_target_path)?;
-        compile_shim_dll(&shim_source_path, &dll_target_path)?;
+        let copied_from =
+            copy_prebuilt_comhost_dll(options.comhost_dll_path.as_deref(), &dll_target_path)?;
+        comhost_source_path = Some(copied_from);
     }
 
     Ok(WrappedComServerBuildOutput {
         oxb_path,
         descriptor_path,
         idl_path,
-        shim_source_path,
         dll_target_path,
+        comhost_source_path,
         tlb_target_path,
     })
 }
@@ -548,6 +550,7 @@ End Sub
             project_path,
             out_dir,
             compile_dll: false,
+            comhost_dll_path: None,
         })
         .expect("WrappedComServer build should emit artifacts");
 
@@ -758,16 +761,6 @@ End Sub
         assert!(idl.contains("interface IRibbonExtensibility;"));
         assert!(idl.contains("interface IRtdServer;"));
 
-        let shim_source =
-            std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");
-        assert!(shim_source.contains("DllGetClassObject"));
-        assert!(shim_source.contains("DllRegisterServer"));
-        assert!(shim_source.contains("MS-OAUT"));
-        assert!(shim_source.contains("BoundedDualInterface"));
-        assert!(shim_source.contains("compose_imported_interface_vtable"));
-        assert!(shim_source.contains("imported_thunk_for_slot_shape"));
-        assert!(!shim_source.contains("IDTE_VTBL"));
-        assert!(!shim_source.contains("RTD_SERVER_VTBL"));
         assert!(!output.dll_target_path.exists());
         assert!(!output.tlb_target_path.exists());
     }
@@ -818,6 +811,7 @@ End Sub
             project_path,
             out_dir: temp.path.join("out"),
             compile_dll: false,
+            comhost_dll_path: None,
         })
         .expect_err("incomplete IDTExtensibility2 implementation should be rejected");
         match err {
@@ -891,6 +885,7 @@ End Sub
             project_path,
             out_dir: temp.path.join("out"),
             compile_dll: false,
+            comhost_dll_path: None,
         })
         .expect_err("wrong IDTExtensibility2 method arity should be rejected");
         match err {
@@ -966,7 +961,8 @@ End Sub
         let output = build_wrapped_com_server(&WrappedComServerBuildOptions {
             project_path,
             out_dir: temp.path.join("out"),
-            compile_dll: true,
+            compile_dll: false,
+            comhost_dll_path: None,
         })
         .expect("WrappedComServer build should resolve imported COM interface");
         let descriptor_text =
@@ -992,12 +988,14 @@ End Sub
                 && method.invoke_kind == ComInvokeKind::PropertyPut
                 && method.vba_name == "IRTDUpdateEvent_HeartbeatInterval"
         }));
-        assert!(output.dll_target_path.exists());
-        assert!(output.tlb_target_path.exists());
-        let shim_source =
-            std::fs::read_to_string(&output.shim_source_path).expect("shim source should exist");
-        assert!(shim_source.contains("compose_imported_interface_vtable"));
-        assert!(shim_source.contains("imported_thunk_for_slot_shape"));
+        assert_eq!(
+            interface
+                .methods
+                .iter()
+                .filter(|method| method.vtable_slot.is_some())
+                .count(),
+            3
+        );
     }
 
     #[test]
@@ -1029,6 +1027,7 @@ End Sub
             project_path,
             out_dir: temp.path.join("out"),
             compile_dll: false,
+            comhost_dll_path: None,
         })
         .expect_err("invalid OutputType should be rejected");
         assert!(matches!(err, BuildError::InvalidOutputType { .. }));

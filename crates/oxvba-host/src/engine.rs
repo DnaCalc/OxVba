@@ -172,6 +172,9 @@ impl ProjectRuntimeSession {
         prog_id: &str,
         dispatch: *mut c_void,
     ) -> Result<Variant, PhaseDiagnostic> {
+        // SAFETY: the caller provides the retained `IDispatch*` described by
+        // this function's safety contract, and this method transfers it directly
+        // to the host COM boundary that assumes that ownership.
         unsafe {
             self.host_services
                 .com()

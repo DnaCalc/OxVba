@@ -1,27 +1,6 @@
-use std::path::Path;
-
-use crate::ComServerDescriptor;
-
-pub fn generate_shim_source(
-    descriptor: &ComServerDescriptor,
-    oxb_path: &Path,
-    descriptor_path: &Path,
-    tlb_path: &Path,
-) -> String {
-    SHIM_TEMPLATE
-        .replace("__PROJECT_NAME__", &descriptor.project_name)
-        .replace("__LIBID__", &descriptor.libid)
-        .replace("__OXB_PATH__", &oxb_path.display().to_string())
-        .replace(
-            "__DESCRIPTOR_PATH__",
-            &descriptor_path.display().to_string(),
-        )
-        .replace("__TLB_PATH__", &tlb_path.display().to_string())
-}
-
-const SHIM_TEMPLATE: &str = r##"//! Auto-generated OxVBA WrappedComServer shim source for `__PROJECT_NAME__`.
+//! Prebuilt OxVBA WrappedComServer COM host.
 //!
-//! This is a real in-process COM DLL shim over the clean OxVBA package runtime.
+//! This is a reusable in-process COM DLL host over the clean OxVBA package runtime.
 //! It currently implements class factory activation, IUnknown/IDispatch,
 //! per-user registration, generated type-library registration, and late-bound
 //! Invoke. Source dispinterfaces are exposed through connection points. A
@@ -31,13 +10,15 @@ const SHIM_TEMPLATE: &str = r##"//! Auto-generated OxVBA WrappedComServer shim s
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case)]
 #![allow(unsafe_op_in_unsafe_fn)]
+#![allow(unused_assignments)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::c_void;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::PathBuf;
 use std::ptr;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering, fence};
@@ -72,22 +53,87 @@ use windows_sys::Win32::System::Registry::{
 };
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_ARRAY, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_I4, VT_UNKNOWN, VT_VARIANT,
-    VariantClear,
+    VARIANT, VT_ARRAY, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
 use windows_sys::core::{BSTR, GUID};
 
-const PROJECT_NAME: &str = "__PROJECT_NAME__";
-const LIBID: &str = "__LIBID__";
-const BUNDLE_BYTES: &[u8] = include_bytes!(r#"__OXB_PATH__"#);
-const DESCRIPTOR_JSON: &str = include_str!(r#"__DESCRIPTOR_PATH__"#);
-const TLB_PATH: &str = r#"__TLB_PATH__"#;
+struct HostArtifacts {
+    project_name: String,
+    oxb_path: PathBuf,
+    descriptor_path: PathBuf,
+    tlb_path: PathBuf,
+}
+
+static ARTIFACTS: OnceLock<Result<HostArtifacts, String>> = OnceLock::new();
+
+fn artifacts() -> Result<&'static HostArtifacts, String> {
+    ARTIFACTS
+        .get_or_init(resolve_host_artifacts)
+        .as_ref()
+        .map_err(|err| err.clone())
+}
+
+fn resolve_host_artifacts() -> Result<HostArtifacts, String> {
+    if let Some(result) = resolve_embedded_artifacts() {
+        return result;
+    }
+    resolve_sidecar_artifacts()
+}
+
+fn resolve_embedded_artifacts() -> Option<Result<HostArtifacts, String>> {
+    None
+}
+
+fn resolve_sidecar_artifacts() -> Result<HostArtifacts, String> {
+    // SAFETY: module_path reads the current DLL module path into owned Rust storage.
+    let module_path_text = unsafe {
+        module_path().map_err(|hr| format!("GetModuleFileNameW failed: 0x{:08X}", hr as u32))?
+    };
+    let module_path = PathBuf::from(&module_path_text);
+    let parent = module_path
+        .parent()
+        .ok_or_else(|| format!("COM host module path has no parent: {module_path_text}"))?
+        .to_path_buf();
+    let stem = module_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| format!("COM host module path has no file stem: {module_path_text}"))?
+        .to_string();
+    Ok(HostArtifacts {
+        project_name: stem.clone(),
+        oxb_path: parent.join(format!("{stem}.oxb")),
+        descriptor_path: parent.join(format!("{stem}.comserver.json")),
+        tlb_path: parent.join(format!("{stem}.tlb")),
+    })
+}
+
+fn artifact_descriptor_json() -> Result<String, String> {
+    let path = artifacts()?.descriptor_path.clone();
+    fs::read_to_string(&path)
+        .map_err(|err| format!("failed to read COM descriptor `{}`: {err}", path.display()))
+}
+
+fn artifact_bundle_bytes() -> Result<Vec<u8>, String> {
+    let path = artifacts()?.oxb_path.clone();
+    fs::read(&path)
+        .map_err(|err| format!("failed to read OxVBA bundle `{}`: {err}", path.display()))
+}
+
+fn artifact_tlb_path_string() -> Result<String, String> {
+    Ok(artifacts()?.tlb_path.display().to_string())
+}
+
+fn project_name_for_trace() -> String {
+    artifacts()
+        .map(|artifacts| artifacts.project_name.clone())
+        .unwrap_or_else(|_| "OxVbaComHost".to_string())
+}
 
 fn trace_line(message: &str) {
     if env::var_os("OXVBA_COM_TRACE").is_none() {
         return;
     }
-    let path = env::temp_dir().join(format!("{PROJECT_NAME}.com-trace.log"));
+    let path = env::temp_dir().join(format!("{}.com-trace.log", project_name_for_trace()));
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
@@ -186,7 +232,7 @@ static DESCRIPTOR: OnceLock<Result<ComServerDescriptor, String>> = OnceLock::new
 static mut MODULE_HANDLE: HMODULE = ptr::null_mut();
 
 thread_local! {
-    static SESSION: RefCell<Option<ProjectRuntimeSession>> = RefCell::new(None);
+    static SESSION: RefCell<Option<ProjectRuntimeSession>> = const { RefCell::new(None) };
     static WRAPPERS: RefCell<HashMap<i32, Vec<*mut DispatchObject>>> = RefCell::new(HashMap::new());
 }
 
@@ -244,8 +290,7 @@ struct IConnectionPointVtbl {
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
     release: unsafe extern "system" fn(*mut c_void) -> u32,
     get_connection_interface: unsafe extern "system" fn(*mut c_void, *mut GUID) -> i32,
-    get_connection_point_container:
-        unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+    get_connection_point_container: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
     advise: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut u32) -> i32,
     unadvise: unsafe extern "system" fn(*mut c_void, u32) -> i32,
     enum_connections: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
@@ -815,8 +860,8 @@ unsafe extern "system" fn dispatch_query_interface(
     } else if supports_default_interface {
         dispatch_add_ref(this);
         if class_supports_bounded_dual_interface(class) {
-            *out = (&mut (*(this.cast::<DispatchObject>())).dual as *mut BoundedDualInterface)
-                .cast();
+            *out =
+                (&mut (*(this.cast::<DispatchObject>())).dual as *mut BoundedDualInterface).cast();
         } else {
             *out = this;
         }
@@ -844,7 +889,8 @@ unsafe extern "system" fn dispatch_query_interface(
         }
     } else if guid_eq(&*riid, &IID_ICONNECTIONPOINTCONTAINER) && supports_connection_points {
         dispatch_add_ref(this);
-        *out = (&mut (*(this.cast::<DispatchObject>())).cpc as *mut ConnectionPointContainer).cast();
+        *out =
+            (&mut (*(this.cast::<DispatchObject>())).cpc as *mut ConnectionPointContainer).cast();
         S_OK
     } else {
         E_NOINTERFACE
@@ -879,10 +925,7 @@ unsafe extern "system" fn dispatch_release(this: *mut c_void) -> u32 {
     remaining
 }
 
-unsafe extern "system" fn dispatch_get_type_info_count(
-    this: *mut c_void,
-    count: *mut u32,
-) -> i32 {
+unsafe extern "system" fn dispatch_get_type_info_count(this: *mut c_void, count: *mut u32) -> i32 {
     if this.is_null() || count.is_null() {
         return E_POINTER;
     }
@@ -1043,12 +1086,10 @@ unsafe extern "system" fn dispatch_invoke(
 }
 
 fn member_has_object_parameters(member: &ComMemberDescriptor) -> bool {
-    member.parameter_types.iter().any(|param| {
-        matches!(
-            param,
-            ComParamType::Object | ComParamType::ByRefObject
-        )
-    })
+    member
+        .parameter_types
+        .iter()
+        .any(|param| matches!(param, ComParamType::Object | ComParamType::ByRefObject))
 }
 
 unsafe fn disp_params_contain_object(params: *const DISPPARAMS) -> bool {
@@ -1094,9 +1135,10 @@ unsafe fn generated_server_object_aware_args(
     for (logical_index, param) in member.parameter_types.iter().enumerate() {
         let com_index = expected_count - 1 - logical_index;
         let variant = &*params.rgvarg.add(com_index);
-        args.push(generated_server_variant_arg(*param, variant, session).map_err(|message| {
-            format!("argument {logical_index}: {message}")
-        })?);
+        args.push(
+            generated_server_variant_arg(*param, variant, session)
+                .map_err(|message| format!("argument {logical_index}: {message}"))?,
+        );
     }
     Ok(args)
 }
@@ -1178,7 +1220,9 @@ unsafe fn retained_dispatch_from_object_variant(variant: &VARIANT) -> Result<*mu
         return Ok(dispatch);
     }
     if vt == VT_UNKNOWN {
-        return generated_dispatch_from_unknown(variant.Anonymous.Anonymous.Anonymous.punkVal.cast());
+        return generated_dispatch_from_unknown(
+            variant.Anonymous.Anonymous.Anonymous.punkVal.cast(),
+        );
     }
     Err(format!("expected object VARIANT, got vt={vt}"))
 }
@@ -1188,10 +1232,7 @@ unsafe fn generated_server_object_variant_arg(variant: &VARIANT) -> Result<Varia
     let by_ref = vt & VT_BYREF != 0;
     let base_vt = vt & !VT_BYREF;
     let (interface, release_after) = match (by_ref, base_vt) {
-        (false, VT_DISPATCH) => (
-            variant.Anonymous.Anonymous.Anonymous.pdispVal.cast(),
-            false,
-        ),
+        (false, VT_DISPATCH) => (variant.Anonymous.Anonymous.Anonymous.pdispVal.cast(), false),
         (true, VT_DISPATCH) => {
             let ppdispatch = variant.Anonymous.Anonymous.Anonymous.ppdispVal;
             if ppdispatch.is_null() {
@@ -1269,10 +1310,7 @@ unsafe extern "system" fn dual_release(this: *mut c_void) -> u32 {
     }
 }
 
-unsafe extern "system" fn dual_get_type_info_count(
-    this: *mut c_void,
-    count: *mut u32,
-) -> i32 {
+unsafe extern "system" fn dual_get_type_info_count(this: *mut c_void, count: *mut u32) -> i32 {
     match dual_owner(this) {
         Ok(owner) => dispatch_get_type_info_count(owner.cast(), count),
         Err(hr) => hr,
@@ -1461,10 +1499,7 @@ unsafe fn invoke_bounded_dual_long_member(
 ) -> Result<i32, i32> {
     let owner = dual_owner(this)?;
     let descriptor = descriptor().map_err(|_| E_FAIL)?;
-    let class = descriptor
-        .classes
-        .get((*owner).class_index)
-        .ok_or(E_FAIL)?;
+    let class = descriptor.classes.get((*owner).class_index).ok_or(E_FAIL)?;
     let member = class
         .members
         .iter()
@@ -1493,10 +1528,7 @@ unsafe fn invoke_bounded_dual_double_member(
 ) -> Result<f64, i32> {
     let owner = dual_owner(this)?;
     let descriptor = descriptor().map_err(|_| E_FAIL)?;
-    let class = descriptor
-        .classes
-        .get((*owner).class_index)
-        .ok_or(E_FAIL)?;
+    let class = descriptor.classes.get((*owner).class_index).ok_or(E_FAIL)?;
     let member = class
         .members
         .iter()
@@ -1525,10 +1557,7 @@ unsafe fn invoke_bounded_dual_object_member(
 ) -> Result<*mut c_void, i32> {
     let owner = dual_owner(this)?;
     let descriptor = descriptor().map_err(|_| E_FAIL)?;
-    let class = descriptor
-        .classes
-        .get((*owner).class_index)
-        .ok_or(E_FAIL)?;
+    let class = descriptor.classes.get((*owner).class_index).ok_or(E_FAIL)?;
     let member = class
         .members
         .iter()
@@ -1558,10 +1587,7 @@ unsafe fn invoke_bounded_dual_unit_member(
 ) -> Result<(), i32> {
     let owner = dual_owner(this)?;
     let descriptor = descriptor().map_err(|_| E_FAIL)?;
-    let class = descriptor
-        .classes
-        .get((*owner).class_index)
-        .ok_or(E_FAIL)?;
+    let class = descriptor.classes.get((*owner).class_index).ok_or(E_FAIL)?;
     let member = class
         .members
         .iter()
@@ -1621,10 +1647,7 @@ unsafe extern "system" fn imported_release(this: *mut c_void) -> u32 {
     }
 }
 
-unsafe extern "system" fn imported_get_type_info_count(
-    this: *mut c_void,
-    count: *mut u32,
-) -> i32 {
+unsafe extern "system" fn imported_get_type_info_count(this: *mut c_void, count: *mut u32) -> i32 {
     if this.is_null() || count.is_null() {
         return E_POINTER;
     }
@@ -1705,14 +1728,26 @@ unsafe extern "system" fn imported_invoke(
     let Ok(interface) = imported_interface(this) else {
         return E_FAIL;
     };
-    let Some(method) = interface.methods.iter().find(|method| {
-        method.dispid == dispid && invoke_kind_matches_flags(method.invoke_kind, flags)
-    }).or_else(|| interface.methods.iter().find(|method| method.dispid == dispid)) else {
+    let Some(method) = interface
+        .methods
+        .iter()
+        .find(|method| {
+            method.dispid == dispid && invoke_kind_matches_flags(method.invoke_kind, flags)
+        })
+        .or_else(|| {
+            interface
+                .methods
+                .iter()
+                .find(|method| method.dispid == dispid)
+        })
+    else {
         return DISP_E_MEMBERNOTFOUND;
     };
     let args = match imported_disp_params_to_args(method, params) {
         Ok(args) => args,
-        Err(message) => return write_runtime_exception(message, excep_info, arg_err, arg_count(params)),
+        Err(message) => {
+            return write_runtime_exception(message, excep_info, arg_err, arg_count(params));
+        }
     };
     let runtime_value = match invoke_imported_member(this, method, args) {
         Ok(value) => value,
@@ -1721,7 +1756,13 @@ unsafe extern "system" fn imported_invoke(
     if result.is_null() {
         return S_OK;
     }
-    write_runtime_value_to_variant(runtime_value, result, excep_info, arg_err, arg_count(params))
+    write_runtime_value_to_variant(
+        runtime_value,
+        result,
+        excep_info,
+        arg_err,
+        arg_count(params),
+    )
 }
 
 unsafe extern "system" fn imported_slot7_unit(this: *mut c_void) -> i32 {
@@ -1879,7 +1920,10 @@ unsafe extern "system" fn imported_slot8_long_safearray_ref_unit(
     imported_slot_unit_with_args(
         this,
         8,
-        vec![Variant::from_i32(value), safearray_ptr_ref_to_variant(array_ref)],
+        vec![
+            Variant::from_i32(value),
+            safearray_ptr_ref_to_variant(array_ref),
+        ],
     )
 }
 
@@ -2093,10 +2137,7 @@ unsafe fn imported_interface(
 ) -> Result<&'static ComImplementedInterfaceDescriptor, i32> {
     let owner = imported_owner(this)?;
     let descriptor = descriptor().map_err(|_| E_FAIL)?;
-    let class = descriptor
-        .classes
-        .get((*owner).class_index)
-        .ok_or(E_FAIL)?;
+    let class = descriptor.classes.get((*owner).class_index).ok_or(E_FAIL)?;
     let index = (*(this.cast::<ImportedInterfaceFace>())).interface_index;
     let interface = class.implemented_interfaces.get(index).ok_or(E_FAIL)?;
     if interface_supports_composed_vtable(interface) {
@@ -2200,7 +2241,9 @@ unsafe fn imported_dispatch_arg(
     let interface = imported_interface(this)?;
     let method = imported_interface_method_by_slot(interface, slot).ok_or(E_NOTIMPL)?;
     let type_hint = match method.parameter_wire_types.get(parameter_index) {
-        Some(ComWireType::InterfacePointer { name, .. }) if !name.trim().is_empty() => name.as_str(),
+        Some(ComWireType::InterfacePointer { name, .. }) if !name.trim().is_empty() => {
+            name.as_str()
+        }
         _ => "",
     };
     if type_hint.is_empty() {
@@ -2237,7 +2280,10 @@ fn variant_to_i32(value: &Variant) -> Option<i32> {
         .or_else(|| value.as_bool().map(|value| if value { 1 } else { 0 }))
 }
 
-unsafe fn external_dispatch_arg_dynamic(dispatch: *mut c_void, type_hint: &str) -> Result<Variant, i32> {
+unsafe fn external_dispatch_arg_dynamic(
+    dispatch: *mut c_void,
+    type_hint: &str,
+) -> Result<Variant, i32> {
     if dispatch.is_null() {
         return Ok(Variant::empty());
     }
@@ -2246,6 +2292,7 @@ unsafe fn external_dispatch_arg_dynamic(dispatch: *mut c_void, type_hint: &str) 
     // so retain exactly once before transferring it into the COM object table.
     add_ref_unknown(dispatch);
     with_session(|session| {
+        // SAFETY: dispatch has just been AddRef'd for transfer into the runtime object table.
         unsafe {
             session
                 .bind_native_dispatch_object_value(type_hint, dispatch)
@@ -2508,7 +2555,10 @@ unsafe extern "system" fn cp_advise(
         return CONNECT_E_CANNOTCONNECT;
     }
     let cookie = (*owner).next_cookie.fetch_add(1, Ordering::Relaxed);
-    (*owner).sinks.borrow_mut().push(ConnectionSink { cookie, dispatch });
+    (*owner)
+        .sinks
+        .borrow_mut()
+        .push(ConnectionSink { cookie, dispatch });
     *cookie_out = cookie;
     S_OK
 }
@@ -2624,11 +2674,7 @@ unsafe extern "system" fn enum_cp_next(
     if !fetched.is_null() {
         *fetched = copied;
     }
-    if copied == count {
-        S_OK
-    } else {
-        S_FALSE
-    }
+    if copied == count { S_OK } else { S_FALSE }
 }
 
 unsafe extern "system" fn enum_cp_skip(this: *mut c_void, count: u32) -> i32 {
@@ -2751,11 +2797,7 @@ unsafe extern "system" fn enum_connections_next(
     if !fetched.is_null() {
         *fetched = copied;
     }
-    if copied == count {
-        S_OK
-    } else {
-        S_FALSE
-    }
+    if copied == count { S_OK } else { S_FALSE }
 }
 
 unsafe extern "system" fn enum_connections_skip(this: *mut c_void, count: u32) -> i32 {
@@ -2793,7 +2835,10 @@ unsafe extern "system" fn enum_connections_clone(this: *mut c_void, out: *mut *m
 
 fn descriptor() -> Result<&'static ComServerDescriptor, i32> {
     DESCRIPTOR
-        .get_or_init(|| serde_json::from_str(DESCRIPTOR_JSON).map_err(|err| err.to_string()))
+        .get_or_init(|| {
+            artifact_descriptor_json()
+                .and_then(|text| serde_json::from_str(&text).map_err(|err| err.to_string()))
+        })
         .as_ref()
         .map_err(|_| E_FAIL)
 }
@@ -2804,18 +2849,21 @@ fn with_session<R>(
     SESSION.with(|slot| {
         let needs_init = slot.borrow().is_none();
         if needs_init {
-            let package = oxvba_bundle::BundlePackage::from_bytes(BUNDLE_BYTES)
+            let package = artifact_bundle_bytes()
+                .and_then(|bytes| {
+                    oxvba_bundle::BundlePackage::from_bytes(&bytes).map_err(|err| err.to_string())
+                })
                 .map_err(|err| err.to_string())?;
-            let mut engine =
-                Engine::new(HostConfig { enable_jit: false }).with_runtime_profile(
-                    RuntimeProfileId::WindowsHeadless,
-                );
+            let mut engine = Engine::new(HostConfig { enable_jit: false })
+                .with_runtime_profile(RuntimeProfileId::WindowsHeadless);
             engine.enable_host_native_runtime();
             let mut session = engine
                 .prepare_bundle_package_session(package)
                 .map_err(|err| err.to_string())?;
-            session.set_project_event_sink(|source, event_id, args| unsafe {
-                fire_project_event(source, event_id, args)
+            session.set_project_event_sink(|source, event_id, args| {
+                // SAFETY: the runtime invokes this sink with descriptor-defined event payloads
+                // owned for the duration of the callback.
+                unsafe { fire_project_event(source, event_id, args) }
             });
             *slot.borrow_mut() = Some(session);
         }
@@ -2835,13 +2883,13 @@ fn member_for_dispatch(
     class
         .members
         .iter()
-        .find(|member| member.dispid == dispid && invoke_kind_matches_flags(member.invoke_kind, flags))
+        .find(|member| {
+            member.dispid == dispid && invoke_kind_matches_flags(member.invoke_kind, flags)
+        })
         .or_else(|| class.members.iter().find(|member| member.dispid == dispid))
 }
 
-fn bounded_dual_interface_shape(
-    class: &ComClassDescriptor,
-) -> Option<BoundedDualInterfaceShape> {
+fn bounded_dual_interface_shape(class: &ComClassDescriptor) -> Option<BoundedDualInterfaceShape> {
     if class_supports_bounded_dual_scalar_methods(class) {
         Some(BoundedDualInterfaceShape::ScalarMethods)
     } else if class_supports_bounded_dual_long_property(class) {
@@ -3026,7 +3074,9 @@ fn imported_thunk_for_slot_shape(slot: u16, shape: ImportedSlotShape) -> Option<
         (11, ImportedSlotShape::MethodSafeArrayVoid) => {
             Some(imported_slot11_safearray_unit as *const c_void)
         }
-        (11, ImportedSlotShape::MethodReturnLong) => Some(imported_slot11_long_get as *const c_void),
+        (11, ImportedSlotShape::MethodReturnLong) => {
+            Some(imported_slot11_long_get as *const c_void)
+        }
         (12, ImportedSlotShape::MethodVoid) => Some(imported_slot12_unit as *const c_void),
         _ => None,
     }
@@ -3069,8 +3119,7 @@ fn imported_method_supports_long_arg_unit(
     method: &oxvba_build::ComImplementedInterfaceMethodDescriptor,
 ) -> bool {
     method.invoke_kind == ComInvokeKind::Method
-        && method.parameter_wire_types.as_slice()
-            == [ComWireType::Automation(ComParamType::Long)]
+        && method.parameter_wire_types.as_slice() == [ComWireType::Automation(ComParamType::Long)]
         && method.return_wire_type.is_none()
 }
 
@@ -3086,9 +3135,12 @@ fn imported_method_supports_dispatch_return_long(
     method: &oxvba_build::ComImplementedInterfaceMethodDescriptor,
 ) -> bool {
     method.invoke_kind == ComInvokeKind::Method
-    && matches!(
-        method.parameter_wire_types.as_slice(),
-            [ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object)]
+        && matches!(
+            method.parameter_wire_types.as_slice(),
+            [
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object)
+            ]
         )
         && method.return_wire_type == Some(ComWireType::Automation(ComParamType::Long))
 }
@@ -3100,9 +3152,11 @@ fn imported_method_supports_dispatch_long_dispatch_safearray_ref_unit(
         && matches!(
             method.parameter_wire_types.as_slice(),
             [
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::Automation(ComParamType::Long),
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::ByRefSafeArrayVariant,
             ]
         )
@@ -3116,9 +3170,11 @@ fn imported_method_supports_dispatch_long_dispatch_safearray_unit(
         && matches!(
             method.parameter_wire_types.as_slice(),
             [
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::Automation(ComParamType::Long),
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::SafeArrayVariant,
             ]
         )
@@ -3132,9 +3188,12 @@ fn imported_method_supports_dispatch_dispatch_dispatch_safearray_unit(
         && matches!(
             method.parameter_wire_types.as_slice(),
             [
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::SafeArrayVariant,
             ]
         )
@@ -3148,9 +3207,12 @@ fn imported_method_supports_dispatch_dispatch_dispatch_safearray_ref_unit(
         && matches!(
             method.parameter_wire_types.as_slice(),
             [
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::ByRefSafeArrayVariant,
             ]
         )
@@ -3188,7 +3250,8 @@ fn imported_method_supports_dispatch_safearray_unit(
         && matches!(
             method.parameter_wire_types.as_slice(),
             [
-                ComWireType::InterfacePointer { .. } | ComWireType::Automation(ComParamType::Object),
+                ComWireType::InterfacePointer { .. }
+                    | ComWireType::Automation(ComParamType::Object),
                 ComWireType::SafeArrayVariant,
             ]
         )
@@ -3215,8 +3278,7 @@ fn imported_method_supports_string_return_string(
     method: &oxvba_build::ComImplementedInterfaceMethodDescriptor,
 ) -> bool {
     method.invoke_kind == ComInvokeKind::Method
-        && method.parameter_wire_types.as_slice()
-            == [ComWireType::Automation(ComParamType::String)]
+        && method.parameter_wire_types.as_slice() == [ComWireType::Automation(ComParamType::String)]
         && method.return_wire_type == Some(ComWireType::Automation(ComParamType::String))
 }
 
@@ -3254,8 +3316,7 @@ fn imported_method_supports_long_property_put(
     method: &oxvba_build::ComImplementedInterfaceMethodDescriptor,
 ) -> bool {
     method.invoke_kind == ComInvokeKind::PropertyPut
-        && method.parameter_wire_types.as_slice()
-            == [ComWireType::Automation(ComParamType::Long)]
+        && method.parameter_wire_types.as_slice() == [ComWireType::Automation(ComParamType::Long)]
         && method.return_wire_type.is_none()
 }
 
@@ -3345,7 +3406,12 @@ fn member_supports_bounded_dual_long_result(member: &ComMemberDescriptor) -> boo
             member.parameter_types.as_slice()
         ),
         (ComInvokeKind::Method, Some(7), Some(ComParamType::Long), [])
-            | (ComInvokeKind::PropertyGet, Some(7), Some(ComParamType::Long), [])
+            | (
+                ComInvokeKind::PropertyGet,
+                Some(7),
+                Some(ComParamType::Long),
+                []
+            )
             | (ComInvokeKind::Method, Some(8), Some(ComParamType::Long), [])
             | (
                 ComInvokeKind::Method,
@@ -3411,16 +3477,16 @@ fn member_supports_bounded_dual_long_property_put(member: &ComMemberDescriptor) 
 }
 
 fn invoke_kind_matches_flags(kind: ComInvokeKind, flags: u16) -> bool {
-    if flags & DISPATCH_PROPERTYPUTREF as u16 != 0 {
+    if flags & DISPATCH_PROPERTYPUTREF != 0 {
         return matches!(kind, ComInvokeKind::PropertyPutRef);
     }
-    if flags & DISPATCH_PROPERTYPUT as u16 != 0 {
+    if flags & DISPATCH_PROPERTYPUT != 0 {
         return matches!(kind, ComInvokeKind::PropertyPut);
     }
-    if flags & DISPATCH_PROPERTYGET as u16 != 0 {
+    if flags & DISPATCH_PROPERTYGET != 0 {
         return matches!(kind, ComInvokeKind::PropertyGet);
     }
-    if flags & DISPATCH_METHOD as u16 != 0 {
+    if flags & DISPATCH_METHOD != 0 {
         return matches!(kind, ComInvokeKind::Method);
     }
     false
@@ -3646,7 +3712,10 @@ unsafe fn type_info_for_iid(interface_iid: GUID, info: *mut *mut c_void) -> i32 
     if info.is_null() {
         return E_POINTER;
     }
-    let path_w = wide_null(TLB_PATH);
+    let path_w = match artifact_tlb_path_string() {
+        Ok(path) => wide_null(&path),
+        Err(_) => return E_FAIL,
+    };
     let mut typelib: *mut c_void = ptr::null_mut();
     let hr = LoadTypeLibEx(path_w.as_ptr(), REGKIND_NONE, &mut typelib);
     if hr < 0 || typelib.is_null() {
@@ -3788,7 +3857,7 @@ unsafe fn invoke_dispatch_sink(
         event_id,
         &IID_NULL,
         0,
-        DISPATCH_METHOD as u16,
+        DISPATCH_METHOD,
         params,
         ptr::null_mut(),
         &mut excep_info,
@@ -3820,11 +3889,11 @@ unsafe fn register_server() -> Result<(), i32> {
     register_typelib()?;
     for class in descriptor.classes.iter().filter(|class| class.creatable) {
         let clsid_key = format!("Software\\Classes\\CLSID\\{{{}}}", class.clsid);
-        set_key_default(&clsid_key, class.description.as_deref().unwrap_or(&class.class_name))?;
         set_key_default(
-            &format!("{clsid_key}\\InprocServer32"),
-            &module_path,
+            &clsid_key,
+            class.description.as_deref().unwrap_or(&class.class_name),
         )?;
+        set_key_default(&format!("{clsid_key}\\InprocServer32"), &module_path)?;
         set_key_value(
             &format!("{clsid_key}\\InprocServer32"),
             "ThreadingModel",
@@ -3839,13 +3908,19 @@ unsafe fn register_server() -> Result<(), i32> {
             &format!("{clsid_key}\\Version"),
             &format!("{}.{}", descriptor.version_major, descriptor.version_minor),
         )?;
-        set_key_default(&format!("Software\\Classes\\{}", class.prog_id), &class.class_name)?;
+        set_key_default(
+            &format!("Software\\Classes\\{}", class.prog_id),
+            &class.class_name,
+        )?;
         set_key_default(
             &format!("Software\\Classes\\{}\\CLSID", class.prog_id),
             &format!("{{{}}}", class.clsid),
         )?;
         if class_implements_interface_named(class, "IDTExtensibility2") {
-            let addin_key = format!("Software\\Microsoft\\Office\\Excel\\Addins\\{}", class.prog_id);
+            let addin_key = format!(
+                "Software\\Microsoft\\Office\\Excel\\Addins\\{}",
+                class.prog_id
+            );
             let friendly_name = class.description.as_deref().unwrap_or(&class.class_name);
             set_key_default(&addin_key, friendly_name)?;
             set_key_value(&addin_key, "FriendlyName", friendly_name)?;
@@ -3874,7 +3949,10 @@ unsafe fn unregister_server() -> Result<(), i32> {
 }
 
 unsafe fn register_typelib() -> Result<(), i32> {
-    let path_w = wide_null(TLB_PATH);
+    let path_w = match artifact_tlb_path_string() {
+        Ok(path) => wide_null(&path),
+        Err(_) => return Err(SELFREG_E_CLASS),
+    };
     let mut typelib: *mut c_void = ptr::null_mut();
     let hr = LoadTypeLibEx(path_w.as_ptr(), REGKIND_NONE, &mut typelib);
     if hr < 0 || typelib.is_null() {
@@ -3882,11 +3960,7 @@ unsafe fn register_typelib() -> Result<(), i32> {
     }
     let hr = RegisterTypeLibForUser(typelib, path_w.as_ptr(), ptr::null());
     release_unknown(typelib);
-    if hr < 0 {
-        Err(SELFREG_E_CLASS)
-    } else {
-        Ok(())
-    }
+    if hr < 0 { Err(SELFREG_E_CLASS) } else { Ok(()) }
 }
 
 unsafe fn unregister_typelib(descriptor: &ComServerDescriptor) {
@@ -4092,10 +4166,11 @@ unsafe fn wide_ptr_to_string(ptr: *const u16) -> Option<String> {
             return None;
         }
     }
-    Some(String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len)))
+    Some(String::from_utf16_lossy(std::slice::from_raw_parts(
+        ptr, len,
+    )))
 }
 
 fn wide_null(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
-"##;

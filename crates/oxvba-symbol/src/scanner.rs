@@ -763,9 +763,10 @@ fn module_default_types(root: SyntaxNode<'_>) -> Result<DefaultTypeTable, Symbol
     Ok(table)
 }
 
-fn parse_deftype_directive(
-    node: SyntaxNode<'_>,
-) -> Result<Option<(VarTypeRef, Vec<(char, char)>)>, SymbolModelError> {
+type DeftypeRanges = Vec<(char, char)>;
+type DeftypeDirective = Option<(VarTypeRef, DeftypeRanges)>;
+
+fn parse_deftype_directive(node: SyntaxNode<'_>) -> Result<DeftypeDirective, SymbolModelError> {
     let tokens = significant_tokens_deep(node);
     let Some(first) = tokens.first() else {
         return Ok(None);
