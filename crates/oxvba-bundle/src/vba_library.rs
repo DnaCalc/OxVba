@@ -176,6 +176,7 @@ fn build() -> Bundle {
         ops: vec![Op::Return],
         procedures,
         entry_pc: 0,
+        global_initializer: None,
         global_count: 0,
         entry_frame_slots: 0,
         statement_starts: Vec::new(),

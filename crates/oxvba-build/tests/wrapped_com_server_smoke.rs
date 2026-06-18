@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering, fence};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen};
 use windows_sys::Win32::System::Com::{
@@ -12,9 +13,15 @@ use windows_sys::Win32::System::Com::{
     CoInitializeEx, CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
     SAFEARRAY, TYPEATTR,
 };
-use windows_sys::Win32::System::Ole::SafeArrayDestroy;
+use windows_sys::Win32::System::Ole::{
+    SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound,
+};
+use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::System::Variant::{
     VARIANT, VT_BSTR, VT_DISPATCH, VT_I4, VT_R8, VariantClear,
+};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage,
 };
 use windows_sys::core::GUID;
 
@@ -44,6 +51,12 @@ const IID_IRTDSERVER: GUID = GUID {
     data3: 0x11D3,
     data4: [0x8F, 0x3E, 0x00, 0xC0, 0x4F, 0x36, 0x51, 0xB8],
 };
+const IID_IRTDUPDATEEVENT: GUID = GUID {
+    data1: 0xA437_88C1,
+    data2: 0xD91B,
+    data3: 0x11D3,
+    data4: [0x8F, 0x39, 0x00, 0xC0, 0x4F, 0x36, 0x51, 0xB8],
+};
 
 #[test]
 #[ignore = "builds/registers an in-process COM DLL; run manually on Windows"]
@@ -57,6 +70,7 @@ fn wrapped_com_server_dll_registers_and_dispatches_late_bound() {
     let object_relay_path = temp.path.join("ObjectRelay.cls");
     let addin_path = temp.path.join("OfficeAddin.cls");
     let rtd_path = temp.path.join("RtdTicker.cls");
+    let rtd_timer_path = temp.path.join("RtdTimer.bas");
     let out_dir = temp.path.join("out");
 
     write(
@@ -185,18 +199,29 @@ End Function
 Implements Excel.IRtdServer
 
 Private Function IRtdServer_ServerStart(ByVal CallbackObject As Variant) As Long
-    IRtdServer_ServerStart = 1
+    IRtdServer_ServerStart = StartRtdTimer(CallbackObject)
 End Function
 
 Private Function IRtdServer_ConnectData(ByVal TopicID As Long, ByVal Strings As Variant, ByVal GetNewValues As Boolean) As Variant
+    AddRtdTopic TopicID
     IRtdServer_ConnectData = TopicID + 100
 End Function
 
 Private Function IRtdServer_RefreshData(ByVal TopicCount As Long) As Variant
-    IRtdServer_RefreshData = Array(7, "value")
+    Dim count As Long
+    count = GetRtdTopicCount()
+    If count < 1 Then
+        count = 1
+    End If
+    Dim data As Variant
+    ReDim data(0 To 1, 0 To count - 1)
+    FillRtdData data
+    TopicCount = GetRtdTopicCount()
+    IRtdServer_RefreshData = data
 End Function
 
 Private Sub IRtdServer_DisconnectData(ByVal TopicID As Long)
+    RemoveRtdTopic TopicID
 End Sub
 
 Private Function IRtdServer_Heartbeat() As Long
@@ -204,7 +229,105 @@ Private Function IRtdServer_Heartbeat() As Long
 End Function
 
 Private Sub IRtdServer_ServerTerminate()
+    StopRtdTimer
 End Sub
+"#,
+    );
+    write(
+        &rtd_timer_path,
+        r#"
+Private Declare PtrSafe Function SetTimer Lib "user32" (ByVal hwnd As LongPtr, ByVal nIDEvent As LongPtr, ByVal uElapse As Long, ByVal lpTimerFunc As LongPtr) As LongPtr
+Private Declare PtrSafe Function KillTimer Lib "user32" (ByVal hwnd As LongPtr, ByVal nIDEvent As LongPtr) As Long
+Private Declare PtrSafe Function GetCurrentThreadId Lib "kernel32" () As Long
+
+Private gCallback As Object
+Private gTimerId As LongPtr
+Private gTick As Long
+Private gTopicCount As Long
+Private gTopicIds(1 To 32) As Long
+Private gMainThreadId As Long
+Private gTimerThreadMismatch As Long
+
+Public Function StartRtdTimer(ByVal CallbackObject As Variant) As Long
+    Set gCallback = CallbackObject
+    gMainThreadId = GetCurrentThreadId()
+    gTimerId = SetTimer(0, 0, 1000, AddressOf TimerProc)
+    If gTimerId <> 0 Then
+        StartRtdTimer = 1
+    Else
+        StartRtdTimer = 0
+    End If
+End Function
+
+Public Sub StopRtdTimer()
+    If gTimerId <> 0 Then
+        KillTimer 0, gTimerId
+        gTimerId = 0
+    End If
+    Set gCallback = Nothing
+End Sub
+
+Public Sub AddRtdTopic(ByVal TopicID As Long)
+    Dim i As Long
+    For i = 1 To gTopicCount
+        If gTopicIds(i) = TopicID Then
+            Exit Sub
+        End If
+    Next i
+    If gTopicCount < 32 Then
+        gTopicCount = gTopicCount + 1
+        gTopicIds(gTopicCount) = TopicID
+    End If
+End Sub
+
+Public Sub RemoveRtdTopic(ByVal TopicID As Long)
+    Dim i As Long
+    Dim j As Long
+    For i = 1 To gTopicCount
+        If gTopicIds(i) = TopicID Then
+            For j = i To gTopicCount - 1
+                gTopicIds(j) = gTopicIds(j + 1)
+            Next j
+            gTopicIds(gTopicCount) = 0
+            gTopicCount = gTopicCount - 1
+            Exit Sub
+        End If
+    Next i
+End Sub
+
+Public Function GetRtdTopicCount() As Long
+    GetRtdTopicCount = gTopicCount
+End Function
+
+Public Function GetRtdTick() As Long
+    GetRtdTick = gTick
+End Function
+
+Public Sub FillRtdData(ByRef data As Variant)
+    Dim i As Long
+    For i = 1 To gTopicCount
+        data(0, i - 1) = gTopicIds(i)
+        data(1, i - 1) = gTick
+    Next i
+End Sub
+
+Public Sub TimerProc(ByVal hwnd As LongPtr, ByVal uMsg As Long, ByVal idEvent As LongPtr, ByVal dwTime As Long)
+    If GetCurrentThreadId() <> gMainThreadId Then
+        gTimerThreadMismatch = 1
+    End If
+    gTick = gTick + 1
+    If Not gCallback Is Nothing Then
+        gCallback.UpdateNotify
+    End If
+End Sub
+
+Public Function TimerThreadMatchesMain() As Long
+    If gTick <> 0 And gTimerThreadMismatch = 0 Then
+        TimerThreadMatchesMain = 1
+    Else
+        TimerThreadMatchesMain = 0
+    End If
+End Function
 "#,
     );
     write(
@@ -270,6 +393,7 @@ End Sub
       <Instancing>MultiUse</Instancing>
       <ProgId>DemoServer.RtdTicker</ProgId>
     </ClassModule>
+    <Module Include="RtdTimer.bas" />
   </ItemGroup>
 </Project>
 "#,
@@ -1712,9 +1836,11 @@ unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), Str
         ));
     }
 
+    let callback = RtdUpdateEventProbe::new();
     let mut start = 0i32;
-    let hr = ((*vtbl).server_start)(server, std::ptr::null_mut(), &mut start);
+    let hr = ((*vtbl).server_start)(server, callback.cast(), &mut start);
     if hr < 0 || start != 1 {
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer ServerStart failed/value mismatch: hr=0x{:08X}, value={start}",
             hr as u32
@@ -1732,6 +1858,8 @@ unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), Str
     );
     if hr < 0 {
         VariantClear(&mut connect_value);
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer ConnectData failed: 0x{:08X}",
             hr as u32
@@ -1742,14 +1870,75 @@ unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), Str
     } else {
         let vt = connect_value.Anonymous.Anonymous.vt;
         VariantClear(&mut connect_value);
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer ConnectData returned VT {vt}, expected VT_I4"
         ));
     };
     VariantClear(&mut connect_value);
     if connected != 142 || new_values != -1 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer ConnectData expected value/newValues 142/-1, got {connected}/{new_values}"
+        ));
+    }
+
+    new_values = 0;
+    let mut connect_value: VARIANT = std::mem::zeroed();
+    let hr = ((*vtbl).connect_data)(
+        server,
+        43,
+        std::ptr::null_mut(),
+        &mut new_values,
+        &mut connect_value,
+    );
+    if hr < 0 {
+        VariantClear(&mut connect_value);
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err(format!(
+            "IRtdServer second ConnectData failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
+    let connected = if connect_value.Anonymous.Anonymous.vt == VT_I4 {
+        connect_value.Anonymous.Anonymous.Anonymous.lVal
+    } else {
+        let vt = connect_value.Anonymous.Anonymous.vt;
+        VariantClear(&mut connect_value);
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err(format!(
+            "IRtdServer second ConnectData returned VT {vt}, expected VT_I4"
+        ));
+    };
+    VariantClear(&mut connect_value);
+    if connected != 143 || new_values != -1 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err(format!(
+            "IRtdServer second ConnectData expected value/newValues 143/-1, got {connected}/{new_values}"
+        ));
+    }
+
+    pump_messages_until(Duration::from_millis(2500), || {
+        (*callback).notify_count.load(Ordering::Acquire) > 0
+    });
+    let notify_count = (*callback).notify_count.load(Ordering::Acquire);
+    if notify_count == 0 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err("IRtdServer timer did not call IRTDUpdateEvent.UpdateNotify".to_string());
+    }
+    let notify_thread = (*callback).notify_thread_id.load(Ordering::Acquire);
+    let current_thread = GetCurrentThreadId();
+    if notify_thread != current_thread {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err(format!(
+            "IRtdServer UpdateNotify ran on thread {notify_thread}, expected STA thread {current_thread}"
         ));
     }
 
@@ -1757,27 +1946,51 @@ unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), Str
     let mut data: *mut SAFEARRAY = std::ptr::null_mut();
     let hr = ((*vtbl).refresh_data)(server, &mut topic_count, &mut data);
     if hr < 0 || data.is_null() {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer RefreshData failed: hr=0x{:08X}, data={data:p}",
             hr as u32
         ));
     }
+    let values = read_i4_safearray(data);
     let destroy_hr = SafeArrayDestroy(data.cast_const());
     if destroy_hr < 0 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "SafeArrayDestroy(RefreshData result) failed: 0x{:08X}",
             destroy_hr as u32
         ));
     }
-    if topic_count != 1 {
+    let values = match values {
+        Ok(values) => values,
+        Err(err) => {
+            let _ = ((*vtbl).server_terminate)(server);
+            release_unknown(callback.cast());
+            return Err(err);
+        }
+    };
+    if topic_count != 2 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
-            "IRtdServer RefreshData expected TopicCount=1, got {topic_count}"
+            "IRtdServer RefreshData expected TopicCount=2, got {topic_count}"
+        ));
+    }
+    if values.len() != 4 || values[0] != 42 || values[1] < 1 || values[2] != 43 || values[3] < 1 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err(format!(
+            "IRtdServer RefreshData expected [42, tick>=1, 43, tick>=1], got {values:?}"
         ));
     }
 
     let mut heartbeat = 0i32;
     let hr = ((*vtbl).heartbeat)(server, &mut heartbeat);
     if hr < 0 || heartbeat != 1 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer Heartbeat failed/value mismatch: hr=0x{:08X}, value={heartbeat}",
             hr as u32
@@ -1785,12 +1998,24 @@ unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), Str
     }
     let hr = ((*vtbl).disconnect_data)(server, 42);
     if hr < 0 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
         return Err(format!(
             "IRtdServer DisconnectData failed: 0x{:08X}",
             hr as u32
         ));
     }
+    let hr = ((*vtbl).disconnect_data)(server, 43);
+    if hr < 0 {
+        let _ = ((*vtbl).server_terminate)(server);
+        release_unknown(callback.cast());
+        return Err(format!(
+            "IRtdServer second DisconnectData failed: 0x{:08X}",
+            hr as u32
+        ));
+    }
     let hr = ((*vtbl).server_terminate)(server);
+    release_unknown(callback.cast());
     if hr < 0 {
         return Err(format!(
             "IRtdServer ServerTerminate failed: 0x{:08X}",
@@ -1798,6 +2023,87 @@ unsafe fn controlled_rtd_vtable(server: *mut std::ffi::c_void) -> Result<(), Str
         ));
     }
     Ok(())
+}
+
+unsafe fn pump_messages_until(timeout: Duration, mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        let mut message: MSG = std::mem::zeroed();
+        while PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        if done() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(15));
+    }
+}
+
+unsafe fn read_i4_safearray(array: *mut SAFEARRAY) -> Result<Vec<i32>, String> {
+    let dims = SafeArrayGetDim(array.cast_const());
+    let mut bounds = Vec::with_capacity(dims as usize);
+    for dim in 1..=dims {
+        let mut lower = 0i32;
+        let mut upper = -1i32;
+        let hr = SafeArrayGetLBound(array.cast_const(), dim, &mut lower);
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetLBound({dim}) failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        let hr = SafeArrayGetUBound(array.cast_const(), dim, &mut upper);
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetUBound({dim}) failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        bounds.push((lower, upper));
+    }
+    let mut indices = Vec::new();
+    match bounds.as_slice() {
+        [(lower, upper)] => {
+            for index in *lower..=*upper {
+                indices.push(vec![index]);
+            }
+        }
+        [(row_lower, row_upper), (col_lower, col_upper)] => {
+            for column in *col_lower..=*col_upper {
+                for row in *row_lower..=*row_upper {
+                    indices.push(vec![row, column]);
+                }
+            }
+        }
+        _ => return Err(format!("unsupported SAFEARRAY dimension count {dims}")),
+    }
+    let mut values = Vec::with_capacity(indices.len());
+    for mut element_indices in indices {
+        let mut variant: VARIANT = std::mem::zeroed();
+        let hr = SafeArrayGetElement(
+            array.cast_const(),
+            element_indices.as_mut_ptr(),
+            (&mut variant as *mut VARIANT).cast(),
+        );
+        if hr < 0 {
+            VariantClear(&mut variant);
+            return Err(format!(
+                "SafeArrayGetElement({element_indices:?}) failed: 0x{:08X}",
+                hr as u32
+            ));
+        }
+        if variant.Anonymous.Anonymous.vt != VT_I4 {
+            let vt = variant.Anonymous.Anonymous.vt;
+            VariantClear(&mut variant);
+            return Err(format!(
+                "SafeArray element {element_indices:?} returned VT {vt}, expected VT_I4"
+            ));
+        }
+        values.push(variant.Anonymous.Anonymous.Anonymous.lVal);
+        VariantClear(&mut variant);
+    }
+    Ok(values)
 }
 
 unsafe fn assert_dispatch_type_info(
@@ -2901,6 +3207,44 @@ struct RtdServerVtbl {
 }
 
 #[repr(C)]
+struct RtdUpdateEventVtbl {
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+    get_type_info_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const GUID,
+        *const *const u16,
+        u32,
+        u32,
+        *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        i32,
+        *const GUID,
+        u32,
+        u16,
+        *mut windows_sys::Win32::System::Com::DISPPARAMS,
+        *mut VARIANT,
+        *mut windows_sys::Win32::System::Com::EXCEPINFO,
+        *mut u32,
+    ) -> i32,
+    update_notify: unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
+}
+
+#[repr(C)]
 struct IConnectionPointContainerVtbl {
     query_interface: unsafe extern "system" fn(
         *mut std::ffi::c_void,
@@ -2992,6 +3336,14 @@ struct NamedDispatch {
     name: Vec<u16>,
 }
 
+#[repr(C)]
+struct RtdUpdateEventProbe {
+    vtbl: *const RtdUpdateEventVtbl,
+    ref_count: AtomicU32,
+    notify_count: AtomicU32,
+    notify_thread_id: AtomicU32,
+}
+
 impl NamedDispatch {
     unsafe fn new(name: &str) -> *mut Self {
         Box::into_raw(Box::new(Self {
@@ -3000,6 +3352,136 @@ impl NamedDispatch {
             name: name.encode_utf16().collect(),
         }))
     }
+}
+
+impl RtdUpdateEventProbe {
+    unsafe fn new() -> *mut Self {
+        Box::into_raw(Box::new(Self {
+            vtbl: &RTD_UPDATE_EVENT_VTBL,
+            ref_count: AtomicU32::new(1),
+            notify_count: AtomicU32::new(0),
+            notify_thread_id: AtomicU32::new(0),
+        }))
+    }
+}
+
+static RTD_UPDATE_EVENT_VTBL: RtdUpdateEventVtbl = RtdUpdateEventVtbl {
+    query_interface: rtd_update_event_query_interface,
+    add_ref: rtd_update_event_add_ref,
+    release: rtd_update_event_release,
+    get_type_info_count: rtd_update_event_get_type_info_count,
+    get_type_info: rtd_update_event_get_type_info,
+    get_ids_of_names: rtd_update_event_get_ids_of_names,
+    invoke: rtd_update_event_invoke,
+    update_notify: rtd_update_event_update_notify,
+};
+
+unsafe extern "system" fn rtd_update_event_query_interface(
+    this: *mut std::ffi::c_void,
+    riid: *const GUID,
+    out: *mut *mut std::ffi::c_void,
+) -> i32 {
+    if this.is_null() || riid.is_null() || out.is_null() {
+        return 0x8000_4003u32 as i32;
+    }
+    *out = std::ptr::null_mut();
+    if guid_eq(&*riid, &IID_IUNKNOWN)
+        || guid_eq(&*riid, &IID_IDISPATCH)
+        || guid_eq(&*riid, &IID_IRTDUPDATEEVENT)
+    {
+        rtd_update_event_add_ref(this);
+        *out = this;
+        0
+    } else {
+        0x8000_4002u32 as i32
+    }
+}
+
+unsafe extern "system" fn rtd_update_event_add_ref(this: *mut std::ffi::c_void) -> u32 {
+    let probe = this.cast::<RtdUpdateEventProbe>();
+    (*probe).ref_count.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+unsafe extern "system" fn rtd_update_event_release(this: *mut std::ffi::c_void) -> u32 {
+    let probe = this.cast::<RtdUpdateEventProbe>();
+    let previous = (*probe).ref_count.fetch_sub(1, Ordering::Release);
+    let remaining = previous.saturating_sub(1);
+    if remaining == 0 {
+        fence(Ordering::Acquire);
+        drop(Box::from_raw(probe));
+    }
+    remaining
+}
+
+unsafe extern "system" fn rtd_update_event_get_type_info_count(
+    _this: *mut std::ffi::c_void,
+    count: *mut u32,
+) -> i32 {
+    if !count.is_null() {
+        *count = 0;
+    }
+    0
+}
+
+unsafe extern "system" fn rtd_update_event_get_type_info(
+    _this: *mut std::ffi::c_void,
+    _index: u32,
+    _lcid: u32,
+    out: *mut *mut std::ffi::c_void,
+) -> i32 {
+    if !out.is_null() {
+        *out = std::ptr::null_mut();
+    }
+    0x8000_4001u32 as i32
+}
+
+unsafe extern "system" fn rtd_update_event_get_ids_of_names(
+    _this: *mut std::ffi::c_void,
+    _riid: *const GUID,
+    names: *const *const u16,
+    name_count: u32,
+    _lcid: u32,
+    dispids: *mut i32,
+) -> i32 {
+    if names.is_null() || dispids.is_null() || name_count == 0 {
+        return 0x8000_4003u32 as i32;
+    }
+    *dispids = if wide_ptr_to_string(*names)
+        .map(|name| name.eq_ignore_ascii_case("UpdateNotify"))
+        .unwrap_or(false)
+    {
+        10
+    } else {
+        -1
+    };
+    0
+}
+
+unsafe extern "system" fn rtd_update_event_invoke(
+    this: *mut std::ffi::c_void,
+    dispid: i32,
+    _riid: *const GUID,
+    _lcid: u32,
+    flags: u16,
+    _params: *mut windows_sys::Win32::System::Com::DISPPARAMS,
+    _result: *mut VARIANT,
+    _excep_info: *mut windows_sys::Win32::System::Com::EXCEPINFO,
+    _arg_err: *mut u32,
+) -> i32 {
+    if dispid == 10 && (flags & DISPATCH_METHOD) != 0 {
+        rtd_update_event_update_notify(this)
+    } else {
+        0x8002_0003u32 as i32
+    }
+}
+
+unsafe extern "system" fn rtd_update_event_update_notify(this: *mut std::ffi::c_void) -> i32 {
+    let probe = this.cast::<RtdUpdateEventProbe>();
+    (*probe)
+        .notify_thread_id
+        .store(GetCurrentThreadId(), Ordering::Release);
+    (*probe).notify_count.fetch_add(1, Ordering::AcqRel);
+    0
 }
 
 static NAMED_DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {

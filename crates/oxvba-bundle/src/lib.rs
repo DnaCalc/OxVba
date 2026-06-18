@@ -281,6 +281,8 @@ pub struct Bundle {
     pub procedures: Vec<ProcedureDescriptor>,
     /// Entry point pc for top-level / `Sub Main` execution.
     pub entry_pc: usize,
+    /// Hidden procedure index for once-per-run global/static initialization.
+    pub global_initializer: Option<usize>,
     /// Module-level global slot count. A slot operand `s` addresses a global
     /// when `s < global_count`; otherwise it addresses the current frame's
     /// local at `s - global_count`. Globals persist across calls; locals are
@@ -385,6 +387,7 @@ impl Bundle {
             ops: Vec::new(),
             procedures: Vec::new(),
             entry_pc: 0,
+            global_initializer: None,
             global_count: 0,
             entry_frame_slots: 0,
             statement_starts: Vec::new(),

@@ -323,6 +323,7 @@ impl Engine {
         let mut policy = self.host_services.policy().clone();
         policy.deterministic_mode = false;
         policy.allow_com_activation = true;
+        policy.allow_dynamic_link = true;
         policy.runtime_class = Some(self.runtime_profile.runtime_class());
         self.set_host_policy(policy);
     }

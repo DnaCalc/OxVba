@@ -29,7 +29,9 @@ mod arith;
 mod collection;
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ffi::c_void;
 
 use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
@@ -62,8 +64,21 @@ use arith::CmpOp;
 
 /// VBA `Missing` (an omitted optional argument): vbError `&H80020004`.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
+const MAX_NATIVE_CALLBACKS: usize = 32;
 
 type ProjectEventSink<'h> = dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h;
+
+#[derive(Clone, Copy)]
+struct NativeCallbackRegistration {
+    vm: usize,
+    bundle: usize,
+    proc: usize,
+}
+
+thread_local! {
+    static NATIVE_CALLBACKS: RefCell<[Option<NativeCallbackRegistration>; MAX_NATIVE_CALLBACKS]> =
+        const { RefCell::new([None; MAX_NATIVE_CALLBACKS]) };
+}
 
 /// A VBA run-time error surfaced to the embedder (uncaught by any handler).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,6 +271,8 @@ struct LoadedBundle<'h> {
     /// class name yields one persistent instance per run). `New` of the same class
     /// is independent and never consults this.
     predeclared_singletons: HashMap<usize, Variant>,
+    /// Whether this bundle's hidden global/static initializer has run.
+    global_initialized: bool,
 }
 
 impl<'h> LoadedBundle<'h> {
@@ -301,6 +318,7 @@ impl<'h> LoadedBundle<'h> {
             class_descriptors,
             statement_start_set,
             predeclared_singletons: HashMap::new(),
+            global_initialized: false,
         }
     }
 }
@@ -508,6 +526,7 @@ impl<'h> Vm<'h> {
         bundle: usize,
         class_name: &str,
     ) -> Result<ObjectRef, VmError> {
+        self.ensure_bundle_initialized(bundle)?;
         let class_idx = self
             .bundles
             .get(bundle)
@@ -586,6 +605,7 @@ impl<'h> Vm<'h> {
         }
         let class_idx = object.route_key() as usize;
         let obj_bundle = object.bundle_id() as usize;
+        self.ensure_bundle_initialized(obj_bundle)?;
         let proc = self
             .bundles
             .get(obj_bundle)
@@ -627,6 +647,7 @@ impl<'h> Vm<'h> {
     /// Drive the instruction stream until `Halt`, a `Return` from the entry
     /// frame, the end of the ops, or an uncaught error.
     pub fn run(&mut self) -> Result<(), VmError> {
+        self.run_global_initializers()?;
         // Start from a clean termination queue (the queue is thread-local; the VM
         // is single-threaded, so this isolates one run from the next).
         oxvba_runtime::reset_pending_terminations();
@@ -649,6 +670,40 @@ impl<'h> Vm<'h> {
             }
         }
         Ok(())
+    }
+
+    pub fn run_global_initializers(&mut self) -> Result<(), VmError> {
+        for bundle in 0..self.bundles.len() {
+            self.ensure_bundle_initialized(bundle)?;
+        }
+        Ok(())
+    }
+
+    fn ensure_bundle_initialized(&mut self, bundle: usize) -> Result<(), VmError> {
+        let Some(initializer) = self
+            .bundles
+            .get(bundle)
+            .and_then(|loaded| loaded.bundle.global_initializer)
+        else {
+            return Ok(());
+        };
+        if self
+            .bundles
+            .get(bundle)
+            .map(|loaded| loaded.global_initialized)
+            .unwrap_or(true)
+        {
+            return Ok(());
+        }
+        if let Some(loaded) = self.bundles.get_mut(bundle) {
+            loaded.global_initialized = true;
+        }
+        let saved_cur = self.cur;
+        self.cur = bundle;
+        let result =
+            self.run_proc_with_values(initializer, Variant::empty(), Vec::new(), false, false);
+        self.cur = saved_cur;
+        result.map(|_| ()).map_err(vm_error_from_fault)
     }
 
     // ── Slot / place resolution ────────────────────────────────────────────────
@@ -1512,6 +1567,40 @@ impl<'h> Vm<'h> {
             .collect()
     }
 
+    fn native_callback_pointer(&mut self, proc: usize) -> Result<i64, Fault> {
+        if proc >= self.cur_bundle().procedures.len() {
+            return Err(Fault::new(490, "invalid procedure reference"));
+        }
+        let registration = NativeCallbackRegistration {
+            vm: (self as *mut Vm<'h>) as usize,
+            bundle: self.cur,
+            proc,
+        };
+        NATIVE_CALLBACKS.with(|callbacks| {
+            let mut callbacks = callbacks.borrow_mut();
+            if let Some((index, _)) = callbacks.iter().enumerate().find(|(_, existing)| {
+                existing
+                    .map(|existing| {
+                        existing.vm == registration.vm
+                            && existing.bundle == registration.bundle
+                            && existing.proc == registration.proc
+                    })
+                    .unwrap_or(false)
+            }) {
+                return native_callback_thunk(index)
+                    .map(|ptr| ptr as isize as i64)
+                    .ok_or_else(|| Fault::new(5, "unsupported native callback slot"));
+            }
+            if let Some(index) = callbacks.iter().position(Option::is_none) {
+                callbacks[index] = Some(registration);
+                return native_callback_thunk(index)
+                    .map(|ptr| ptr as isize as i64)
+                    .ok_or_else(|| Fault::new(5, "unsupported native callback slot"));
+            }
+            Err(Fault::new(7, "native callback table exhausted"))
+        })
+    }
+
     /// Assemble the argument Variants for a native-bodied library function reached
     /// cross-bundle (an `Op::CallExtern` whose target proc has a
     /// [`NativeBody::Library`] body). The args are positional ByVal values in the
@@ -1747,6 +1836,21 @@ impl<'h> Vm<'h> {
         // args are not in the registry and are ignored by `free_pins`. (A pin never
         // passed to a `Declare` is not reclaimed here; that degenerate case is the
         // documented residual.)
+        let mut arg_variants = arg_variants;
+        for (index, value) in arg_variants.iter_mut().enumerate() {
+            let param_type = descriptor
+                .param_types
+                .get(index)
+                .map(|ty| format!("{ty:?}"))
+                .unwrap_or_else(|| "Long".to_string());
+            if param_type == "LongPtr"
+                && !descriptor.param_by_ref.get(index).copied().unwrap_or(false)
+                && let Some(proc) = decode_proc_ref(value)
+            {
+                let pointer = self.native_callback_pointer(proc)?;
+                *value = Variant::from_i64(pointer);
+            }
+        }
         let pin_addrs: Vec<i64> = arg_variants.iter().filter_map(Variant::as_i64).collect();
         let invoke = self
             .host
@@ -1893,10 +1997,10 @@ impl<'h> Vm<'h> {
                 *dst,
                 Variant::from_object_ref(ObjectRef::from_compat_identity(*handle as i32)),
             )?,
-            // A procedure reference carries the procedure index. Invoking it (in-VM
-            // call-through or a real OS callback thunk) is the native-runtime epic;
-            // for now it is a plain integer that marshals to a `Declare`.
-            Op::LoadProcRef { dst, proc } => self.set(*dst, Variant::from_i32(*proc as i32))?,
+            // A procedure reference is intentionally not a normal numeric pointer:
+            // keep it tagged until a Declare parameter expects a callback pointer,
+            // then register a real native thunk for that proc reference.
+            Op::LoadProcRef { dst, proc } => self.set(*dst, Variant::from_proc_ref(*proc))?,
             Op::LoadErrLastDllError { slot } => {
                 self.set(*slot, Variant::from_i32(self.last_dll_error))?
             }
@@ -2079,9 +2183,9 @@ impl<'h> Vm<'h> {
             Op::CallProcRef { dst, target, args } => {
                 // Resolve the procedure reference (the AddressOf value) to an index
                 // at runtime, then dispatch through the standard call machinery.
-                let proc = arith::int(self.get(*target)?).map_err(Fault::from_arith)?;
-                let proc = usize::try_from(proc)
-                    .ok()
+                let proc = self
+                    .get(*target)?
+                    .as_proc_ref()
                     .filter(|&p| p < self.cur_bundle().procedures.len())
                     .ok_or_else(|| Fault::new(490, "invalid procedure reference"))?;
                 self.call_proc(proc, *dst, args)?
@@ -2820,6 +2924,126 @@ impl<'h> Vm<'h> {
         }
     }
 }
+
+fn decode_proc_ref(value: &Variant) -> Option<usize> {
+    value.as_proc_ref()
+}
+
+fn native_callback_thunk(index: usize) -> Option<*const c_void> {
+    Some(match index {
+        0 => native_timer_callback_0 as *const c_void,
+        1 => native_timer_callback_1 as *const c_void,
+        2 => native_timer_callback_2 as *const c_void,
+        3 => native_timer_callback_3 as *const c_void,
+        4 => native_timer_callback_4 as *const c_void,
+        5 => native_timer_callback_5 as *const c_void,
+        6 => native_timer_callback_6 as *const c_void,
+        7 => native_timer_callback_7 as *const c_void,
+        8 => native_timer_callback_8 as *const c_void,
+        9 => native_timer_callback_9 as *const c_void,
+        10 => native_timer_callback_10 as *const c_void,
+        11 => native_timer_callback_11 as *const c_void,
+        12 => native_timer_callback_12 as *const c_void,
+        13 => native_timer_callback_13 as *const c_void,
+        14 => native_timer_callback_14 as *const c_void,
+        15 => native_timer_callback_15 as *const c_void,
+        16 => native_timer_callback_16 as *const c_void,
+        17 => native_timer_callback_17 as *const c_void,
+        18 => native_timer_callback_18 as *const c_void,
+        19 => native_timer_callback_19 as *const c_void,
+        20 => native_timer_callback_20 as *const c_void,
+        21 => native_timer_callback_21 as *const c_void,
+        22 => native_timer_callback_22 as *const c_void,
+        23 => native_timer_callback_23 as *const c_void,
+        24 => native_timer_callback_24 as *const c_void,
+        25 => native_timer_callback_25 as *const c_void,
+        26 => native_timer_callback_26 as *const c_void,
+        27 => native_timer_callback_27 as *const c_void,
+        28 => native_timer_callback_28 as *const c_void,
+        29 => native_timer_callback_29 as *const c_void,
+        30 => native_timer_callback_30 as *const c_void,
+        31 => native_timer_callback_31 as *const c_void,
+        _ => return None,
+    })
+}
+
+unsafe fn invoke_native_timer_callback(
+    index: usize,
+    hwnd: *mut c_void,
+    message: u32,
+    timer_id: usize,
+    time: u32,
+) {
+    let registration =
+        NATIVE_CALLBACKS.with(|callbacks| callbacks.borrow().get(index).copied().flatten());
+    let Some(registration) = registration else {
+        return;
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let vm = unsafe { &mut *(registration.vm as *mut Vm<'static>) };
+        let saved_cur = vm.cur;
+        vm.cur = registration.bundle;
+        let _ = vm.run_proc_with_values(
+            registration.proc,
+            Variant::empty(),
+            vec![
+                Variant::from_i64(hwnd as isize as i64),
+                Variant::from_i32(message as i32),
+                Variant::from_i64(timer_id as i64),
+                Variant::from_i32(time as i32),
+            ],
+            true,
+            false,
+        );
+        vm.cur = saved_cur;
+    }));
+}
+
+macro_rules! native_timer_callback {
+    ($name:ident, $index:expr) => {
+        unsafe extern "system" fn $name(
+            hwnd: *mut c_void,
+            message: u32,
+            timer_id: usize,
+            time: u32,
+        ) {
+            unsafe { invoke_native_timer_callback($index, hwnd, message, timer_id, time) };
+        }
+    };
+}
+
+native_timer_callback!(native_timer_callback_0, 0);
+native_timer_callback!(native_timer_callback_1, 1);
+native_timer_callback!(native_timer_callback_2, 2);
+native_timer_callback!(native_timer_callback_3, 3);
+native_timer_callback!(native_timer_callback_4, 4);
+native_timer_callback!(native_timer_callback_5, 5);
+native_timer_callback!(native_timer_callback_6, 6);
+native_timer_callback!(native_timer_callback_7, 7);
+native_timer_callback!(native_timer_callback_8, 8);
+native_timer_callback!(native_timer_callback_9, 9);
+native_timer_callback!(native_timer_callback_10, 10);
+native_timer_callback!(native_timer_callback_11, 11);
+native_timer_callback!(native_timer_callback_12, 12);
+native_timer_callback!(native_timer_callback_13, 13);
+native_timer_callback!(native_timer_callback_14, 14);
+native_timer_callback!(native_timer_callback_15, 15);
+native_timer_callback!(native_timer_callback_16, 16);
+native_timer_callback!(native_timer_callback_17, 17);
+native_timer_callback!(native_timer_callback_18, 18);
+native_timer_callback!(native_timer_callback_19, 19);
+native_timer_callback!(native_timer_callback_20, 20);
+native_timer_callback!(native_timer_callback_21, 21);
+native_timer_callback!(native_timer_callback_22, 22);
+native_timer_callback!(native_timer_callback_23, 23);
+native_timer_callback!(native_timer_callback_24, 24);
+native_timer_callback!(native_timer_callback_25, 25);
+native_timer_callback!(native_timer_callback_26, 26);
+native_timer_callback!(native_timer_callback_27, 27);
+native_timer_callback!(native_timer_callback_28, 28);
+native_timer_callback!(native_timer_callback_29, 29);
+native_timer_callback!(native_timer_callback_30, 30);
+native_timer_callback!(native_timer_callback_31, 31);
 
 // ── Free helpers ──────────────────────────────────────────────────────────────
 

@@ -36,6 +36,7 @@ use oxvba_com::{
 use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession, RuntimeProfileId};
 use oxvba_runtime::{
     ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant, bstr::BStr,
+    safe_array::SafeArray,
 };
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HMODULE, SysStringLen};
 use windows_sys::Win32::System::Com::{
@@ -53,7 +54,7 @@ use windows_sys::Win32::System::Registry::{
 };
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_ARRAY, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_UNKNOWN, VT_VARIANT, VariantClear,
+    VARIANT, VT_ARRAY, VT_BYREF, VT_DISPATCH, VT_EMPTY, VT_I4, VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
 use windows_sys::core::{BSTR, GUID};
 
@@ -1746,13 +1747,28 @@ unsafe extern "system" fn imported_invoke(
     let args = match imported_disp_params_to_args(method, params) {
         Ok(args) => args,
         Err(message) => {
+            trace_line(&format!(
+                "imported Invoke dispid={dispid} argument conversion failed: {message}"
+            ));
             return write_runtime_exception(message, excep_info, arg_err, arg_count(params));
         }
     };
     let runtime_value = match invoke_imported_member(this, method, args) {
         Ok(value) => value,
-        Err(hr) => return hr,
+        Err(hr) => {
+            trace_line(&format!(
+                "imported Invoke dispid={dispid} runtime call failed: 0x{:08X}",
+                hr as u32
+            ));
+            return hr;
+        }
     };
+    if let Err(message) = imported_write_back_dispatch_args(method, params, &runtime_value) {
+        trace_line(&format!(
+            "imported Invoke dispid={dispid} argument write-back failed: {message}"
+        ));
+        return write_runtime_exception(message, excep_info, arg_err, arg_count(params));
+    }
     if result.is_null() {
         return S_OK;
     }
@@ -1972,7 +1988,13 @@ unsafe extern "system" fn imported_slot8_long_safearray_byref_bool_return_varian
         ],
     ) {
         Ok(value) => value,
-        Err(hr) => return hr,
+        Err(hr) => {
+            trace_line(&format!(
+                "imported slot8 long-safearray-byref-bool-return-variant failed: 0x{:08X}",
+                hr as u32
+            ));
+            return hr;
+        }
     };
     *flag = -1;
     write_runtime_value_to_variant(runtime_value, result, ptr::null_mut(), ptr::null_mut(), 0)
@@ -1997,7 +2019,6 @@ unsafe extern "system" fn imported_slot7_bstr_return_bstr(
     value: BSTR,
     out: *mut BSTR,
 ) -> i32 {
-    trace_line("IRibbonExtensibility.GetCustomUI slot7 entered");
     if out.is_null() {
         trace_line("IRibbonExtensibility.GetCustomUI slot7 failed: null out");
         return E_POINTER;
@@ -2020,7 +2041,6 @@ unsafe extern "system" fn imported_slot7_bstr_return_bstr(
     match text.clone_raw_bstr() {
         Ok(raw) => {
             *out = raw;
-            trace_line("IRibbonExtensibility.GetCustomUI slot7 returned BSTR");
             S_OK
         }
         Err(_) => {
@@ -2163,9 +2183,13 @@ unsafe fn imported_disp_params_to_args(
         return Err("IDispatch::Invoke DISPPARAMS had cArgs > 0 with null rgvarg".to_string());
     }
     let mut args = Vec::with_capacity(arg_count);
-    for com_index in (0..arg_count).rev() {
+    for (logical_index, com_index) in (0..arg_count).rev().enumerate() {
         let variant = &*params.rgvarg.add(com_index);
-        args.push(variant_to_com_value(variant).and_then(|value| value.to_variant())?);
+        args.push(imported_dispatch_variant_arg(
+            method,
+            logical_index,
+            variant,
+        )?);
     }
     if matches!(
         method.invoke_kind,
@@ -2178,6 +2202,114 @@ unsafe fn imported_disp_params_to_args(
         return Ok(args);
     }
     Ok(args)
+}
+
+unsafe fn imported_dispatch_variant_arg(
+    method: &oxvba_build::ComImplementedInterfaceMethodDescriptor,
+    parameter_index: usize,
+    variant: &VARIANT,
+) -> Result<Variant, String> {
+    let wire_type = method.parameter_wire_types.get(parameter_index);
+    match wire_type {
+        Some(ComWireType::InterfacePointer { name, .. }) => {
+            let type_hint = if name.trim().is_empty() {
+                "IDispatch"
+            } else {
+                name.as_str()
+            };
+            imported_dispatch_object_arg(variant, type_hint)
+        }
+        Some(ComWireType::Automation(ComParamType::Object | ComParamType::ByRefObject)) => {
+            imported_dispatch_object_arg(variant, "IDispatch")
+        }
+        _ if variant_contains_dispatch_or_unknown(variant) => {
+            imported_dispatch_object_arg(variant, "IDispatch")
+        }
+        _ => variant_to_com_value(variant).and_then(|value| value.to_variant()),
+    }
+}
+
+unsafe fn imported_dispatch_object_arg(
+    variant: &VARIANT,
+    type_hint: &str,
+) -> Result<Variant, String> {
+    let dispatch = retained_dispatch_from_object_variant(variant)?;
+    if dispatch.is_null() {
+        return Ok(Variant::empty());
+    }
+    with_session(|session| {
+        session
+            .bind_native_dispatch_object_value(type_hint, dispatch)
+            .map_err(|err| err.to_string())
+    })
+    .map_err(|_| "failed to bind imported dispatch object argument".to_string())
+}
+
+unsafe fn imported_write_back_dispatch_args(
+    method: &oxvba_build::ComImplementedInterfaceMethodDescriptor,
+    params: *mut DISPPARAMS,
+    runtime_value: &Variant,
+) -> Result<(), String> {
+    if params.is_null() {
+        return Ok(());
+    }
+    if method.return_wire_type == Some(ComWireType::ByRefSafeArrayVariant) {
+        let Some(parameter_index) = method
+            .parameter_wire_types
+            .iter()
+            .position(|wire_type| *wire_type == ComWireType::Automation(ComParamType::ByRefLong))
+        else {
+            return Ok(());
+        };
+        let params = &mut *params;
+        let arg_count = params.cArgs as usize;
+        if parameter_index >= arg_count || params.rgvarg.is_null() {
+            return Ok(());
+        }
+        let com_index = arg_count - 1 - parameter_index;
+        let variant = &mut *params.rgvarg.add(com_index);
+        let Some(array) = runtime_value.as_safearray() else {
+            return Ok(());
+        };
+        let Some(count) = rtd_topic_count_from_runtime_safearray(&array) else {
+            return Ok(());
+        };
+        write_byref_long_variant(variant, count)?;
+    }
+    Ok(())
+}
+
+fn rtd_topic_count_from_runtime_safearray(array: &SafeArray) -> Option<i32> {
+    let bounds = array.bounds()?;
+    if bounds.is_empty() {
+        return Some(0);
+    }
+    if bounds.len() >= 2 {
+        return i32::try_from(bounds[1].count).ok();
+    }
+    i32::try_from(bounds[0].count / 2).ok()
+}
+
+unsafe fn write_byref_long_variant(variant: &mut VARIANT, value: i32) -> Result<(), String> {
+    let vt = variant.Anonymous.Anonymous.vt;
+    if vt == (VT_BYREF | VT_VARIANT) {
+        let nested = variant.Anonymous.Anonymous.Anonymous.pvarVal;
+        if nested.is_null() {
+            return Err("VT_BYREF|VT_VARIANT carried null pvarVal pointer".to_string());
+        }
+        return write_byref_long_variant(&mut *nested, value);
+    }
+    if vt == (VT_BYREF | VT_I4) {
+        let target = variant.Anonymous.Anonymous.Anonymous.plVal;
+        if target.is_null() {
+            return Err("VT_BYREF|VT_I4 carried null plVal pointer".to_string());
+        }
+        *target = value;
+        return Ok(());
+    }
+    Err(format!(
+        "expected VT_BYREF|VT_I4 output argument, got vt={vt}"
+    ))
 }
 
 unsafe fn invoke_imported_member(
@@ -2194,7 +2326,14 @@ unsafe fn invoke_imported_member(
                 Some(project_member_kind(method.invoke_kind)),
                 args,
             )
-            .map_err(|err| err.to_string())
+            .map_err(|err| {
+                let message = err.to_string();
+                trace_line(&format!(
+                    "imported member {} failed: {}",
+                    method.vba_name, message
+                ));
+                message
+            })
     })
     .map_err(|_| E_FAIL)
 }
@@ -3887,6 +4026,7 @@ unsafe fn register_server() -> Result<(), i32> {
     let module_path = module_path()?;
     let descriptor = descriptor()?;
     register_typelib()?;
+    cleanup_imported_interface_registration(descriptor);
     for class in descriptor.classes.iter().filter(|class| class.creatable) {
         let clsid_key = format!("Software\\Classes\\CLSID\\{{{}}}", class.clsid);
         set_key_default(
@@ -3908,6 +4048,7 @@ unsafe fn register_server() -> Result<(), i32> {
             &format!("{clsid_key}\\Version"),
             &format!("{}.{}", descriptor.version_major, descriptor.version_minor),
         )?;
+        set_key_default(&format!("{clsid_key}\\Programmable"), "")?;
         set_key_default(
             &format!("Software\\Classes\\{}", class.prog_id),
             &class.class_name,
@@ -3946,6 +4087,24 @@ unsafe fn unregister_server() -> Result<(), i32> {
     }
     unregister_typelib(descriptor);
     Ok(())
+}
+
+unsafe fn cleanup_imported_interface_registration(descriptor: &ComServerDescriptor) {
+    for interface in descriptor
+        .classes
+        .iter()
+        .flat_map(|class| class.implemented_interfaces.iter())
+    {
+        // Implemented imported interfaces (for example Excel.IRtdServer) are
+        // owned by their source type library. RegisterTypeLibForUser registers
+        // every interface present in the generated typelib, so remove the
+        // user-scope Interface key for these foreign IIDs after registration;
+        // Excel and other hosts then resolve the canonical interface metadata.
+        delete_tree(&format!(
+            "Software\\Classes\\Interface\\{{{}}}",
+            interface.iid
+        ));
+    }
 }
 
 unsafe fn register_typelib() -> Result<(), i32> {

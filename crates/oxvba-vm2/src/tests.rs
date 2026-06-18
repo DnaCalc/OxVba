@@ -298,6 +298,7 @@ fn bundle_full(
         ops,
         procedures,
         entry_pc: 0,
+        global_initializer: None,
         global_count,
         entry_frame_slots,
         statement_starts,

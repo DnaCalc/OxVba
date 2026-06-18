@@ -29,6 +29,7 @@ pub enum VarType {
     UnsignedLongLong = 0x0015,
     UnsignedInt = 0x0017,
     ArrayVariant = 0x200C,
+    ProcRef = 0xFFF0,
 }
 
 impl VarType {
@@ -55,6 +56,7 @@ impl VarType {
             0x0015 => Some(Self::UnsignedLongLong),
             0x0017 => Some(Self::UnsignedInt),
             0x200C => Some(Self::ArrayVariant),
+            0xFFF0 => Some(Self::ProcRef),
             _ => None,
         }
     }
@@ -347,6 +349,20 @@ impl Variant {
             return None;
         }
         Some(i64::from_le_bytes(self.data_bytes()))
+    }
+
+    pub fn from_proc_ref(proc: usize) -> Self {
+        Self::from_core(VariantCore::from_bytes(
+            VarType::ProcRef,
+            (proc as u64).to_le_bytes(),
+        ))
+    }
+
+    pub fn as_proc_ref(&self) -> Option<usize> {
+        if self.vtype() != VarType::ProcRef {
+            return None;
+        }
+        usize::try_from(u64::from_le_bytes(self.data_bytes())).ok()
     }
 
     pub fn from_f32(value: f32) -> Self {

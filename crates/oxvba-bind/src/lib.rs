@@ -20,10 +20,10 @@ pub use error::BindError;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use oxvba_bundle::coreir::{CorePlace, CoreProc, CoreProgram, CoreValue, LabelId, LocalId};
+use oxvba_bundle::coreir::{CorePlace, CoreProc, CoreProgram, CoreValue, LabelId, LocalId, ProcId};
 use oxvba_bundle::{
     BundleExport, BundleImport, ComClassExport, EventRoute, ExportTarget, ExportToken,
-    ExternalCallDescriptor,
+    ExternalCallDescriptor, ProcedureKind,
 };
 use oxvba_runtime::DynLinkSymbol;
 use oxvba_symbol::binding::Binding;
@@ -143,17 +143,32 @@ fn bind_one(
     }
 
     // Module-level fixed-size array globals AND every proc's `Static` array/record
-    // locals are allocated once at program entry, before the entry procedure's own
-    // body runs.
-    if let Some(entry_id) = ids.entry() {
+    // locals are allocated once per VM session. Keep them in a hidden initializer
+    // proc rather than splicing into `Main`, because COM activation-style hosts can
+    // enter directly through class members without running the top-level entry proc.
+    let init_context = ids
+        .entry()
+        .or_else(|| (!ids.procs.is_empty()).then_some(ProcId(0)));
+    let global_initializer = if let Some(entry_id) = init_context {
         let mut inits = lower.module_global_array_inits(&ids.procs[entry_id.0])?;
         inits.extend(lower.static_local_inits(&decls)?);
-        if !inits.is_empty() {
-            let body = &mut procs[entry_id.0].body;
-            let tail = std::mem::take(body);
-            *body = inits.into_iter().chain(tail).collect();
+        if inits.is_empty() {
+            None
+        } else {
+            let proc = ProcId(procs.len());
+            procs.push(CoreProc {
+                name: "__vba_global_initialize".to_string(),
+                kind: ProcedureKind::Sub,
+                params: Vec::new(),
+                locals: Vec::new(),
+                return_local: None,
+                body: inits,
+            });
+            Some(proc)
         }
-    }
+    } else {
+        None
+    };
 
     // The active project's published surface → this bundle's exports (the contract
     // a referrer's imports resolve against). Imports were accumulated while lowering.
@@ -168,6 +183,7 @@ fn bind_one(
         external_calls: build_external_calls(env),
         com_class_exports: build_com_class_exports(manifest),
         entry: ids.entry(),
+        global_initializer,
         unit_name: manifest.project_name.clone(),
         exports,
         imports,

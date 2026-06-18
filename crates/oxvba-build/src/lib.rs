@@ -329,6 +329,7 @@ mod tests {
         let addin_path = temp.path.join("OfficeAddin.cls");
         let ribbon_path = temp.path.join("RibbonAddin.cls");
         let rtd_path = temp.path.join("RtdTicker.cls");
+        let rtd_timer_path = temp.path.join("RtdTimer.bas");
         let out_dir = temp.path.join("out");
 
         write(
@@ -436,18 +437,29 @@ End Function
 Implements Excel.IRtdServer
 
 Private Function IRtdServer_ServerStart(ByVal CallbackObject As Variant) As Long
-    IRtdServer_ServerStart = 1
+    IRtdServer_ServerStart = StartRtdTimer(CallbackObject)
 End Function
 
 Private Function IRtdServer_ConnectData(ByVal TopicID As Long, ByVal Strings As Variant, ByVal GetNewValues As Boolean) As Variant
+    AddRtdTopic TopicID
     IRtdServer_ConnectData = TopicID + 100
 End Function
 
 Private Function IRtdServer_RefreshData(ByVal TopicCount As Long) As Variant
-    IRtdServer_RefreshData = Array(7, "value")
+    Dim count As Long
+    count = GetRtdTopicCount()
+    If count < 1 Then
+        count = 1
+    End If
+    Dim data As Variant
+    ReDim data(0 To 1, 0 To count - 1)
+    FillRtdData data
+    TopicCount = GetRtdTopicCount()
+    IRtdServer_RefreshData = data
 End Function
 
 Private Sub IRtdServer_DisconnectData(ByVal TopicID As Long)
+    RemoveRtdTopic TopicID
 End Sub
 
 Private Function IRtdServer_Heartbeat() As Long
@@ -455,7 +467,105 @@ Private Function IRtdServer_Heartbeat() As Long
 End Function
 
 Private Sub IRtdServer_ServerTerminate()
+    StopRtdTimer
 End Sub
+"#,
+        );
+        write(
+            &rtd_timer_path,
+            r#"
+Private Declare PtrSafe Function SetTimer Lib "user32" (ByVal hwnd As LongPtr, ByVal nIDEvent As LongPtr, ByVal uElapse As Long, ByVal lpTimerFunc As LongPtr) As LongPtr
+Private Declare PtrSafe Function KillTimer Lib "user32" (ByVal hwnd As LongPtr, ByVal nIDEvent As LongPtr) As Long
+Private Declare PtrSafe Function GetCurrentThreadId Lib "kernel32" () As Long
+
+Private gCallback As Object
+Private gTimerId As LongPtr
+Private gTick As Long
+Private gTopicCount As Long
+Private gTopicIds(1 To 32) As Long
+Private gMainThreadId As Long
+Private gTimerThreadMismatch As Long
+
+Public Function StartRtdTimer(ByVal CallbackObject As Variant) As Long
+    Set gCallback = CallbackObject
+    gMainThreadId = GetCurrentThreadId()
+    gTimerId = SetTimer(0, 0, 1000, AddressOf TimerProc)
+    If gTimerId <> 0 Then
+        StartRtdTimer = 1
+    Else
+        StartRtdTimer = 0
+    End If
+End Function
+
+Public Sub StopRtdTimer()
+    If gTimerId <> 0 Then
+        KillTimer 0, gTimerId
+        gTimerId = 0
+    End If
+    Set gCallback = Nothing
+End Sub
+
+Public Sub AddRtdTopic(ByVal TopicID As Long)
+    Dim i As Long
+    For i = 1 To gTopicCount
+        If gTopicIds(i) = TopicID Then
+            Exit Sub
+        End If
+    Next i
+    If gTopicCount < 32 Then
+        gTopicCount = gTopicCount + 1
+        gTopicIds(gTopicCount) = TopicID
+    End If
+End Sub
+
+Public Sub RemoveRtdTopic(ByVal TopicID As Long)
+    Dim i As Long
+    Dim j As Long
+    For i = 1 To gTopicCount
+        If gTopicIds(i) = TopicID Then
+            For j = i To gTopicCount - 1
+                gTopicIds(j) = gTopicIds(j + 1)
+            Next j
+            gTopicIds(gTopicCount) = 0
+            gTopicCount = gTopicCount - 1
+            Exit Sub
+        End If
+    Next i
+End Sub
+
+Public Function GetRtdTopicCount() As Long
+    GetRtdTopicCount = gTopicCount
+End Function
+
+Public Function GetRtdTick() As Long
+    GetRtdTick = gTick
+End Function
+
+Public Sub FillRtdData(ByRef data As Variant)
+    Dim i As Long
+    For i = 1 To gTopicCount
+        data(0, i - 1) = gTopicIds(i)
+        data(1, i - 1) = gTick
+    Next i
+End Sub
+
+Public Sub TimerProc(ByVal hwnd As LongPtr, ByVal uMsg As Long, ByVal idEvent As LongPtr, ByVal dwTime As Long)
+    If GetCurrentThreadId() <> gMainThreadId Then
+        gTimerThreadMismatch = 1
+    End If
+    gTick = gTick + 1
+    If Not gCallback Is Nothing Then
+        gCallback.UpdateNotify
+    End If
+End Sub
+
+Public Function TimerThreadMatchesMain() As Long
+    If gTick <> 0 And gTimerThreadMismatch = 0 Then
+        TimerThreadMatchesMain = 1
+    Else
+        TimerThreadMatchesMain = 0
+    End If
+End Function
 "#,
         );
         write(
@@ -541,6 +651,7 @@ End Sub
       <ProgId>DemoServer.RtdTicker</ProgId>
       <Description>RTD ticker class</Description>
     </ClassModule>
+    <Module Include="RtdTimer.bas" />
   </ItemGroup>
 </Project>
 "#,

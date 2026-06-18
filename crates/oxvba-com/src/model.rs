@@ -201,6 +201,9 @@ impl ComValue {
                     .as_safearray()
                     .ok_or_else(|| "invalid SAFEARRAY VARIANT payload".to_string())?,
             ),
+            oxvba_runtime::VarType::ProcRef => {
+                return Err("procedure references cannot be converted to COM values".to_string());
+            }
         })
     }
 

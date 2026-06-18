@@ -879,6 +879,14 @@ impl StandardHostServices {
                     format!("{field} is a SAFEARRAY and cannot be coerced to i32"),
                 ));
             }
+            VarType::ProcRef => {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} is a procedure reference and cannot be coerced to i32"),
+                ));
+            }
         };
         Ok(value)
     }

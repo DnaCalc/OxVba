@@ -157,6 +157,7 @@ impl<'p> Linearizer<'p> {
             ops: self.ops,
             procedures,
             entry_pc,
+            global_initializer: self.program.global_initializer.map(|proc| proc.0),
             global_count: self.global_count,
             entry_frame_slots,
             statement_starts: self.statement_starts,

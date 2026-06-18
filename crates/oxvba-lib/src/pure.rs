@@ -1448,6 +1448,7 @@ pub fn is_numeric(args: &[Variant]) -> LibResult<Variant> {
         | VarType::Null
         | VarType::Object
         | VarType::Error
+        | VarType::ProcRef
         | VarType::ArrayVariant => false,
     };
     Ok(vbool(result))

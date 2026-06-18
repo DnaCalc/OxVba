@@ -60,6 +60,8 @@ pub struct CoreProgram {
     pub com_class_exports: Vec<ComClassExport>,
     /// Entry procedure; `None` ⇒ `Main` (case-insensitive) or the first proc.
     pub entry: Option<ProcId>,
+    /// Hidden once-per-run initializer for module fixed arrays and Static storage.
+    pub global_initializer: Option<ProcId>,
     /// This unit's name (its project name) — the key cross-bundle imports use.
     pub unit_name: String,
     /// Public members exported for cross-bundle references (the bundle manifest).
