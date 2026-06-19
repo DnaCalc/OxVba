@@ -928,6 +928,59 @@ mod tests {
         }
     }
 
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn putref_object_member_spec(name: &str, vtable_slot: u16) -> crate::ComMemberSpec {
+        crate::ComMemberSpec {
+            name: name.to_string(),
+            requires_argument: true,
+            invoke_kind: crate::TypeLibMemberInvokeKind::PropertyPutRef,
+            parameter_names: vec!["value".to_string()],
+            is_default_member: false,
+            vtable_slot: Some(vtable_slot),
+            parameter_types: vec![crate::TypeLibParamType::Object],
+            parameter_wire_types: vec![crate::TypeLibWireType::InterfacePointer {
+                name: "IDispatch".to_string(),
+            }],
+            parameter_iids: vec![Some(crate::ComInterfaceIid {
+                data1: 0x0002_0400,
+                data2: 0,
+                data3: 0,
+                data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+            })],
+            parameter_optional_defaults: vec![crate::OptionalParamDefault::Required],
+            return_type: None,
+            return_wire_type: None,
+            callconv_is_stdcall: true,
+            interface_iid: Some(crate::DUAL_FIXTURE_INTERFACE_IID),
+            is_dual: true,
+            source_typekind: Some(crate::SourceTypeKind::Interface),
+            vtable_slot_bound: Some(64),
+        }
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn putref_long_member_spec(name: &str, vtable_slot: Option<u16>) -> crate::ComMemberSpec {
+        crate::ComMemberSpec {
+            name: name.to_string(),
+            requires_argument: true,
+            invoke_kind: crate::TypeLibMemberInvokeKind::PropertyPutRef,
+            parameter_names: vec!["value".to_string()],
+            is_default_member: false,
+            vtable_slot,
+            parameter_types: vec![crate::TypeLibParamType::Long],
+            parameter_wire_types: Vec::new(),
+            parameter_iids: Vec::new(),
+            parameter_optional_defaults: vec![crate::OptionalParamDefault::Required],
+            return_type: None,
+            return_wire_type: None,
+            callconv_is_stdcall: true,
+            interface_iid: vtable_slot.map(|_| crate::DUAL_FIXTURE_INTERFACE_IID),
+            is_dual: vtable_slot.is_some(),
+            source_typekind: vtable_slot.map(|_| crate::SourceTypeKind::Interface),
+            vtable_slot_bound: vtable_slot.map(|_| 64),
+        }
+    }
+
     /// S3: under a `PreferVtable` policy, a member that passes the vtable gate (a
     /// real custom dual slot, CC_STDCALL, fully-typed v1 signature) dispatches
     /// through the COM vtable — proven by the real S2 dual-vtable fixture
@@ -1022,6 +1075,100 @@ mod tests {
             fallback_bridge.idispatch_call_count(),
             before_idispatch + 1,
             "an ineligible member must fall back to IDispatch and count it"
+        );
+        let _ = fallback_bridge.release_object_binding(fallback_object);
+    }
+
+    /// Object/interface PropertyPutRef is no longer globally deferred: with
+    /// explicit interface-pointer wire metadata and a declared parameter IID, the
+    /// normal shared-state dispatch path admits and executes it through vtable.
+    /// Scalar putref remains outside that owned ABI shape and falls back to
+    /// IDispatch.
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn prefer_vtable_routes_object_putref_and_falls_back_for_scalar_putref() {
+        let bridge = WindowsComBridge::new(false);
+        let dual = crate::create_oxvba_dual_vtable_object();
+        let putref_slot = crate::windows_test_dispatch::DUAL_SLOT_PUTREF_OBJECT_VALUE;
+        let member = ComMemberToken::new(putref_slot as i32);
+        let object = insert_native_member_binding(
+            &bridge,
+            7010,
+            "OxVba.DualFixture",
+            dual,
+            member,
+            putref_slot as i32,
+            putref_object_member_spec("ObjectValue", putref_slot),
+        );
+        let request = ComInvokeRequest {
+            object: object.clone(),
+            member,
+            args: vec![ComInvokeArg::positional_value(crate::ComValue::Object(
+                object.clone(),
+            ))],
+            invoke_kind_hint: Some(crate::ComInvokeKind::PropertyPutRef),
+        };
+        let before_vtable = bridge.vtable_call_count();
+        let before_idispatch = bridge.idispatch_call_count();
+        let value = bridge
+            .dispatch_invoke_variant(&request, true)
+            .expect("object putref vtable dispatch should not error")
+            .expect("putref should produce an Empty value");
+        assert_eq!(
+            value.vtype(),
+            oxvba_runtime::VarType::Empty,
+            "HRESULT-only object putref returns Empty through vtable"
+        );
+        assert_eq!(
+            bridge.vtable_call_count(),
+            before_vtable + 1,
+            "covered object putref must increment the vtable transport counter"
+        );
+        assert_eq!(
+            bridge.idispatch_call_count(),
+            before_idispatch,
+            "covered object putref must not also dispatch through IDispatch"
+        );
+        let _ = bridge.release_object_binding(object);
+
+        let fallback_bridge = WindowsComBridge::new(false);
+        let dispatch = crate::create_oxvba_test_dispatch();
+        let scalar_putref = ComMemberToken::new(crate::TEST_DISPID_SET_VALUE_REF);
+        let fallback_object = insert_native_member_binding(
+            &fallback_bridge,
+            7011,
+            crate::OXVBA_TEST_DISPATCH_PROGID,
+            dispatch.cast::<core::ffi::c_void>(),
+            scalar_putref,
+            crate::TEST_DISPID_SET_VALUE_REF,
+            putref_long_member_spec("SetValueRef", Some(putref_slot)),
+        );
+        let fallback_request = ComInvokeRequest {
+            object: fallback_object.clone(),
+            member: scalar_putref,
+            args: vec![ComInvokeArg::positional_value(crate::ComValue::I32(7))],
+            invoke_kind_hint: Some(crate::ComInvokeKind::PropertyPutRef),
+        };
+        let before_vtable = fallback_bridge.vtable_call_count();
+        let before_idispatch = fallback_bridge.idispatch_call_count();
+        let fallback_value = fallback_bridge
+            .dispatch_invoke_variant(&fallback_request, true)
+            .expect("scalar putref fallback should not error")
+            .expect("fallback putref should produce a value");
+        assert_eq!(
+            fallback_value.as_i32(),
+            Some(100_007),
+            "unsupported scalar putref must still execute through IDispatch fallback"
+        );
+        assert_eq!(
+            fallback_bridge.vtable_call_count(),
+            before_vtable,
+            "unsupported scalar putref must not take the vtable path"
+        );
+        assert_eq!(
+            fallback_bridge.idispatch_call_count(),
+            before_idispatch + 1,
+            "unsupported scalar putref must count as IDispatch fallback"
         );
         let _ = fallback_bridge.release_object_binding(fallback_object);
     }

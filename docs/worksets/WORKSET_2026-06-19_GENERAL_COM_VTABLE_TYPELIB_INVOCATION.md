@@ -116,6 +116,9 @@ surface:
   carries explicit `InterfacePointer` wire metadata and a non-null parameter IID;
   every other putref shape declines once in the plan builder and falls back to
   IDispatch.
+- The shared runtime dispatch path has an integration proof for that putref
+  boundary: supported object/interface putref increments the vtable transport
+  counter, while scalar putref declines and succeeds through the IDispatch fallback.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
