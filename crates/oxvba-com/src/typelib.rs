@@ -167,7 +167,7 @@ impl TypeLibParamType {
     /// marshaller. Keep this intentionally narrower than the full typelib
     /// vocabulary: unsupported shapes must fall back before any vtable slot is
     /// read.
-    pub(crate) fn supports_vtable_abi(self) -> bool {
+    pub(crate) fn supports_vtable_param_abi(self) -> bool {
         matches!(
             self,
             TypeLibParamType::Variant
@@ -183,6 +183,10 @@ impl TypeLibParamType {
                 | TypeLibParamType::Byte
                 | TypeLibParamType::LongLong
         )
+    }
+
+    pub(crate) fn supports_vtable_return_abi(self) -> bool {
+        self.supports_vtable_param_abi() || matches!(self, TypeLibParamType::Decimal)
     }
 }
 
@@ -205,14 +209,14 @@ pub(crate) fn validate_vtable_wire_signature(
 ) -> Result<(), TypeLibVtableSignatureIssue> {
     if let Some(param_type) = parameter_types
         .iter()
-        .find(|param_type| !param_type.supports_vtable_abi())
+        .find(|param_type| !param_type.supports_vtable_param_abi())
     {
         return Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
             *param_type,
         ));
     }
     if let Some(rt) = return_type
-        && !rt.supports_vtable_abi()
+        && !rt.supports_vtable_return_abi()
     {
         return Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(rt));
     }
@@ -717,15 +721,38 @@ mod tests {
         );
         assert_eq!(
             validate_vtable_wire_signature(
+                &[TypeLibParamType::Decimal],
+                &[TypeLibWireType::Automation(TypeLibParamType::Decimal)],
+                &[],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
+                TypeLibParamType::Decimal
+            ))
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[],
+                &[],
+                &[],
+                Some(TypeLibParamType::LongPtr),
+                Some(&TypeLibWireType::Automation(TypeLibParamType::LongPtr)),
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(
+                TypeLibParamType::LongPtr
+            ))
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
                 &[],
                 &[],
                 &[],
                 Some(TypeLibParamType::Decimal),
                 Some(&TypeLibWireType::Automation(TypeLibParamType::Decimal)),
             ),
-            Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(
-                TypeLibParamType::Decimal
-            ))
+            Ok(()),
+            "DECIMAL retvals are supported as out cells"
         );
     }
 

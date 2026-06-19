@@ -3466,7 +3466,7 @@ pub unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
 //   9  put_Value(this, VARIANT*)                   -> HRESULT
 //   10 Lookup(this, BSTR, IDispatch**)             -> HRESULT
 //   11 raise_error(this, i32*) [SetErrorInfo+fail] -> HRESULT
-//   12..25 additional typed ABI coverage slots
+//   12..26 additional typed ABI coverage slots
 // ════════════════════════════════════════════════════════════════════════
 
 /// The custom-interface IErrorInfo IID, `{1CF2B120-547D-101B-8E65-08002B2BD119}`.
@@ -3504,6 +3504,7 @@ pub const DUAL_SLOT_GET_VARIANT_VALUE: u16 = 22;
 pub const DUAL_SLOT_PUTREF_OBJECT_VALUE: u16 = 23;
 pub const DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE: u16 = 24;
 pub const DUAL_SLOT_GET_SAFEARRAY_VALUE: u16 = 25;
+pub const DUAL_SLOT_GET_DECIMAL_VALUE: u16 = 26;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3516,6 +3517,11 @@ pub const DUAL_SINGLE_VALUE: f32 = 12.5;
 pub const DUAL_DOUBLE_VALUE: f64 = -9876.25;
 pub const DUAL_TEXT_VALUE: &str = "vtable-text";
 pub const DUAL_VARIANT_VALUE: i32 = 4242;
+pub const DUAL_DECIMAL_LO: u32 = 123_450;
+pub const DUAL_DECIMAL_MID: u32 = 0;
+pub const DUAL_DECIMAL_HI: u32 = 0;
+pub const DUAL_DECIMAL_SCALE: u8 = 3;
+pub const DUAL_DECIMAL_NEGATIVE: bool = true;
 
 /// The custom **dual interface IID** the fixture answers from `QueryInterface`
 /// (besides `IUnknown`/`IDispatch`). Workset S5a: the vtable dispatch path QIs the
@@ -3636,6 +3642,9 @@ struct RawDualVtbl {
     /// slot 25
     get_safearray_value:
         unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut *mut SAFEARRAY) -> i32,
+    /// slot 26
+    get_decimal_value:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut DECIMAL) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3679,6 +3688,7 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     putref_object_value: oxvba_dual_putref_object_value,
     validate_safearray_value: oxvba_dual_validate_safearray_value,
     get_safearray_value: oxvba_dual_get_safearray_value,
+    get_decimal_value: oxvba_dual_get_decimal_value,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4186,6 +4196,25 @@ unsafe extern "system" fn oxvba_dual_get_safearray_value(
         }
         Err(_) => COM_E_INVALIDARG,
     }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_decimal_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut DECIMAL,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = decimal_from_parts(
+        DUAL_DECIMAL_LO,
+        DUAL_DECIMAL_MID,
+        DUAL_DECIMAL_HI,
+        DUAL_DECIMAL_SCALE,
+        DUAL_DECIMAL_NEGATIVE,
+    );
+    COM_S_OK
 }
 
 // ── Minimal IErrorInfo implementation for the raise_error slot ──

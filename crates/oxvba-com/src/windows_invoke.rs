@@ -1885,7 +1885,12 @@ where
 /// fallback rather than risking a wrong-ABI vtable call.
 #[cfg(target_os = "windows")]
 pub fn is_v1_vtable_vartype(param_type: crate::TypeLibParamType) -> bool {
-    param_type.supports_vtable_abi()
+    param_type.supports_vtable_param_abi()
+}
+
+#[cfg(target_os = "windows")]
+fn is_vtable_return_vartype(param_type: crate::TypeLibParamType) -> bool {
+    param_type.supports_vtable_return_abi()
 }
 
 /// Per-bridge transport counters incremented at the exact return sites of a
@@ -2019,7 +2024,7 @@ fn build_vtable_invocation_plan(
         return Err(VtableDeclineReason::UnsupportedParameterType(*param_type));
     }
     if let Some(rt) = return_type
-        && !is_v1_vtable_vartype(rt)
+        && !is_vtable_return_vartype(rt)
     {
         return Err(VtableDeclineReason::UnsupportedReturnType(rt));
     }
@@ -3094,7 +3099,8 @@ mod gate_tests {
         ] {
             assert!(is_v1_vtable_vartype(ok), "{ok:?} must be in the v1 set");
         }
-        // Out-of-set shapes (Decimal, LongPtr, ByRef*) must NOT be admitted.
+        // Out-of-set parameter shapes (Decimal, LongPtr, ByRef*) must NOT be
+        // admitted as inbound arguments.
         for bad in [
             crate::TypeLibParamType::Decimal,
             crate::TypeLibParamType::LongPtr,
@@ -3108,18 +3114,33 @@ mod gate_tests {
                 "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
             );
         }
-        // And a member whose RETURN VARTYPE is out-of-set declines outright.
+        // Decimal retvals are supported through caller-owned DECIMAL out cells,
+        // while still-unsupported retval shapes decline outright.
         let mut decimal_ret = eligible_spec(17, 58);
         decimal_ret.return_type = Some(crate::TypeLibParamType::Decimal);
+        decimal_ret.return_wire_type = Some(crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::Decimal,
+        ));
         assert_eq!(
             vtable_gate_decline_reason(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
-            Some(VtableDeclineReason::UnsupportedReturnType(
-                crate::TypeLibParamType::Decimal
-            ))
+            None,
+            "Decimal retvals are admitted as caller-owned out cells"
         );
         assert!(
-            !vtable_gate_admits(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
-            "a Decimal-returning member must decline the vtable path"
+            vtable_gate_admits(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
+            "a Decimal-returning member should use the vtable path when other safety facts are present"
+        );
+
+        let mut longptr_ret = eligible_spec(17, 58);
+        longptr_ret.return_type = Some(crate::TypeLibParamType::LongPtr);
+        longptr_ret.return_wire_type = Some(crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::LongPtr,
+        ));
+        assert_eq!(
+            vtable_gate_decline_reason(&longptr_ret, 0, Some(crate::TypeLibParamType::LongPtr)),
+            Some(VtableDeclineReason::UnsupportedReturnType(
+                crate::TypeLibParamType::LongPtr
+            ))
         );
     }
 

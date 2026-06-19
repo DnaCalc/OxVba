@@ -30,9 +30,9 @@ use crate::windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, VtableInvocationPlan, bstr_to_string_and_free,
 };
 use crate::{ComValue, TypeLibParamType, TypeLibWireType};
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{Decimal96, ObjectRef, Variant};
 use std::ffi::c_void;
-use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
+use windows_sys::Win32::Foundation::{DECIMAL, SysAllocString, SysFreeString};
 use windows_sys::Win32::System::Com::SAFEARRAY;
 use windows_sys::Win32::System::Variant::{
     VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
@@ -198,6 +198,7 @@ enum OutCell {
     /// distinct from a plain `VT_R8` Double retval (`OutCell::F64`).
     Date(Box<f64>),
     Currency(Box<i64>),
+    Decimal(Box<DECIMAL>),
     Bstr(Box<windows_sys::core::BSTR>),
     Variant(Box<VARIANT>),
     Interface(Box<*mut c_void>),
@@ -674,6 +675,8 @@ fn alloc_out_cell(
         P::Date => OutCell::Date(Box::new(0.0)),
         P::Single => OutCell::F32(Box::new(0.0)),
         P::Currency => OutCell::Currency(Box::new(0)),
+        // SAFETY: zeroed DECIMAL is 0 with scale/sign/reserved fields clear.
+        P::Decimal => OutCell::Decimal(Box::new(unsafe { std::mem::zeroed() })),
         P::String => OutCell::Bstr(Box::new(std::ptr::null_mut())),
         P::Object => OutCell::Interface(Box::new(std::ptr::null_mut())),
         // SAFETY: zeroing a VARIANT yields a valid VT_EMPTY VARIANT.
@@ -693,6 +696,7 @@ fn out_cell_ptr(cell: &mut OutCell) -> Option<*mut c_void> {
         OutCell::I16(b) | OutCell::Bool(b) => Some((b.as_mut() as *mut i16).cast::<c_void>()),
         OutCell::U8(b) => Some((b.as_mut() as *mut u8).cast::<c_void>()),
         OutCell::I64(b) | OutCell::Currency(b) => Some((b.as_mut() as *mut i64).cast::<c_void>()),
+        OutCell::Decimal(b) => Some((b.as_mut() as *mut DECIMAL).cast::<c_void>()),
         OutCell::F64(b) | OutCell::Date(b) => Some((b.as_mut() as *mut f64).cast::<c_void>()),
         OutCell::F32(b) => Some((b.as_mut() as *mut f32).cast::<c_void>()),
         OutCell::Bstr(b) => Some((b.as_mut() as *mut windows_sys::core::BSTR).cast::<c_void>()),
@@ -771,6 +775,7 @@ where
         OutCell::Bool(b) => Variant::from_bool(*b != 0),
         OutCell::I64(b) => Variant::from_i64(*b),
         OutCell::Currency(b) => Variant::from_currency_scaled_i64(*b),
+        OutCell::Decimal(b) => Variant::from_decimal96(decimal96_from_windows(b.as_ref())),
         OutCell::F64(b) => Variant::from_f64(*b),
         // A VT_DATE retval decodes to a Date Variant (not a plain Double).
         OutCell::Date(b) => Variant::from_date_f64(*b),
@@ -875,6 +880,21 @@ where
     })
 }
 
+fn decimal96_from_windows(decimal: &DECIMAL) -> Decimal96 {
+    // SAFETY: `decimal` is the initialized DECIMAL cell written by the COM
+    // callee on a successful HRESULT. Reading the documented DECIMAL union
+    // views mirrors the existing VARIANT conversion path.
+    unsafe {
+        Decimal96::from_scale_sign(
+            decimal.Anonymous2.Anonymous.Lo32,
+            decimal.Anonymous2.Anonymous.Mid32,
+            decimal.Hi32,
+            (u16::from(decimal.Anonymous1.Anonymous.sign) << 8)
+                | u16::from(decimal.Anonymous1.Anonymous.scale),
+        )
+    }
+}
+
 // ── ComValue → scalar conversions (shared shapes with the dynlink path) ──
 
 fn com_value_to_i32(value: &ComValue, what: &str) -> Result<i32, String> {
@@ -939,16 +959,18 @@ fn com_value_to_currency_i64(value: &ComValue) -> Result<i64, String> {
 mod tests {
     use super::*;
     use crate::windows_test_dispatch::{
-        DUAL_BYTE_VALUE, DUAL_CREATED_OLE_DATE, DUAL_DOUBLE_VALUE, DUAL_INTEGER_VALUE,
+        DUAL_BYTE_VALUE, DUAL_CREATED_OLE_DATE, DUAL_DECIMAL_HI, DUAL_DECIMAL_LO, DUAL_DECIMAL_MID,
+        DUAL_DECIMAL_NEGATIVE, DUAL_DECIMAL_SCALE, DUAL_DOUBLE_VALUE, DUAL_INTEGER_VALUE,
         DUAL_LONGLONG_VALUE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
         DUAL_RAISE_ERROR_SOURCE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE,
-        DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_DOUBLE_VALUE,
-        DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER,
-        DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SAFEARRAY_VALUE, DUAL_SLOT_GET_SINGLE_VALUE,
-        DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP,
-        DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
-        DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE,
-        DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
+        DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_DECIMAL_VALUE,
+        DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE,
+        DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SAFEARRAY_VALUE,
+        DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE,
+        DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE,
+        DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE,
+        DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object,
+        create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
     use oxvba_runtime::VarType;
@@ -1300,6 +1322,38 @@ mod tests {
                 Variant::from_i32(34),
             ],
             "SAFEARRAY retval values must survive COM ownership transfer"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn decimal_return_decodes_decimal_out_cell() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_DECIMAL_VALUE,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Decimal),
+            Some(TypeLibWireType::Automation(TypeLibParamType::Decimal)),
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
+        // SAFETY: slot 26 is a no-arg DECIMAL retval getter.
+        let value = unsafe { vtable_invoke(this, &plan, &[], 26, &mut resolve, &mut bind) }
+            .expect("Decimal retval vtable call should succeed");
+        assert_eq!(
+            value.as_decimal96(),
+            Some(Decimal96::from_parts(
+                DUAL_DECIMAL_LO,
+                DUAL_DECIMAL_MID,
+                DUAL_DECIMAL_HI,
+                DUAL_DECIMAL_SCALE,
+                DUAL_DECIMAL_NEGATIVE
+            )),
+            "DECIMAL retval must decode to the runtime Decimal96 carrier"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };

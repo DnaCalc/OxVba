@@ -134,6 +134,10 @@ surface:
   a temporary owning `VARIANT` so OLE SAFEARRAY ownership is released correctly.
   Adjacent `ByRefSafeArrayVariant` shapes still decline once in the plan builder
   until writeback semantics are implemented.
+- `Decimal` return values are admitted and fixture-proven as caller-owned
+  `[out,retval] DECIMAL*` cells decoded into the runtime `Decimal96` carrier.
+  Decimal inbound parameters remain fallback until their vtable argument ABI is
+  proven rather than inferred.
 - The first broad ABI tranche is fixture-proven through real vtable calls:
   inbound `Byte`, `Integer`, `Long`, `LongLong`, `Single`, `Double`, `Currency`,
   `Date`, `Boolean`, `String`, `Variant`, and explicit interface-pointer `Object`
@@ -151,8 +155,8 @@ surface:
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: records/UDTs, arbitrary ByRef/writeback, Decimal, and
-non-object putref remain `in-progress` accepted scope. They may fall back only
-with a specific recorded missing fact or unowned ABI/ownership rule, and need the
-same descriptor, admission, fixture, runtime-integration, and fresh-eyes evidence
-discipline before any broader support claim is made.
+Residual after this slice: records/UDTs, arbitrary ByRef/writeback, Decimal
+parameters, and non-object putref remain `in-progress` accepted scope. They may
+fall back only with a specific recorded missing fact or unowned ABI/ownership
+rule, and need the same descriptor, admission, fixture, runtime-integration, and
+fresh-eyes evidence discipline before any broader support claim is made.
