@@ -175,6 +175,8 @@ enum InboundOwned {
     Variant(Box<VARIANT>),
     /// A VARIANT cell whose SAFEARRAY payload owns the `[in] SAFEARRAY*` we pass.
     SafeArray(Box<VARIANT>),
+    /// A DECIMAL cell passed by pointer for Automation `VT_DECIMAL` parameters.
+    Decimal(Box<DECIMAL>),
     /// An interface pointer we obtained by `QueryInterface`-ing an `[in]` object arg to
     /// its declared param IID (Bug-4b); we own that one reference and `Release` it after
     /// the call (the callee only borrowed it).
@@ -473,6 +475,15 @@ where
             FfiArg::LongLong(com_value_to_currency_i64(&value)?),
             InboundOwned::None,
         ),
+        P::Decimal => {
+            let decimal = com_value_to_decimal(&value)?;
+            let mut cell = Box::new(decimal96_to_windows(decimal));
+            let ptr = cell.as_mut() as *mut DECIMAL;
+            (
+                FfiArg::Pointer(ptr.cast::<c_void>()),
+                InboundOwned::Decimal(cell),
+            )
+        }
         // BSTR: we allocate the wide string; the callee borrows it [in]; we free
         // it after the call (InboundOwned::Bstr).
         P::String => {
@@ -645,6 +656,7 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
                     let _ = VariantClear(cell.as_mut());
                 }
             }
+            InboundOwned::Decimal(cell) => drop(cell),
             // SAFETY: an Interface entry is the single reference our QueryInterface
             // handed us; the callee only borrowed it, so we Release it exactly once.
             InboundOwned::Interface(interface) => unsafe { crate::release_unknown(interface) },
@@ -895,6 +907,21 @@ fn decimal96_from_windows(decimal: &DECIMAL) -> Decimal96 {
     }
 }
 
+fn decimal96_to_windows(value: Decimal96) -> DECIMAL {
+    // SAFETY: zeroed DECIMAL is a valid zero value; the fields below are then
+    // filled with the runtime Decimal96 parts using the documented layout.
+    unsafe {
+        let mut decimal: DECIMAL = std::mem::zeroed();
+        decimal.wReserved = 0;
+        decimal.Anonymous1.Anonymous.scale = value.scale();
+        decimal.Anonymous1.Anonymous.sign = if value.is_negative() { 0x80 } else { 0 };
+        decimal.Hi32 = value.hi;
+        decimal.Anonymous2.Anonymous.Lo32 = value.lo;
+        decimal.Anonymous2.Anonymous.Mid32 = value.mid;
+        decimal
+    }
+}
+
 // ── ComValue → scalar conversions (shared shapes with the dynlink path) ──
 
 fn com_value_to_i32(value: &ComValue, what: &str) -> Result<i32, String> {
@@ -951,6 +978,15 @@ fn com_value_to_currency_i64(value: &ComValue) -> Result<i64, String> {
         ComValue::I64(v) => Ok(v.saturating_mul(10_000)),
         other => Err(format!(
             "vtable VT_CY parameter expects a currency/integer, got {other:?}"
+        )),
+    }
+}
+
+fn com_value_to_decimal(value: &ComValue) -> Result<Decimal96, String> {
+    match value {
+        ComValue::Decimal(v) => Ok(*v),
+        other => Err(format!(
+            "vtable VT_DECIMAL parameter expects a Decimal, got {other:?}"
         )),
     }
 }
@@ -1513,6 +1549,7 @@ mod tests {
                 TypeLibParamType::String,
                 TypeLibParamType::Variant,
                 TypeLibParamType::Object,
+                TypeLibParamType::Decimal,
             ],
             vec![
                 TypeLibWireType::Automation(TypeLibParamType::Byte),
@@ -1529,6 +1566,7 @@ mod tests {
                 TypeLibWireType::InterfacePointer {
                     name: "IDispatch".to_string(),
                 },
+                TypeLibWireType::Automation(TypeLibParamType::Decimal),
             ],
             vec![
                 None,
@@ -1543,6 +1581,7 @@ mod tests {
                 None,
                 None,
                 Some(idispatch_iid()),
+                None,
             ],
             Some(TypeLibParamType::Boolean),
             Some(TypeLibWireType::Automation(TypeLibParamType::Boolean)),
@@ -1567,6 +1606,13 @@ mod tests {
                     Variant::from_string("typed-input"),
                     Variant::from_i32(1234),
                     Variant::from_object_ref(object),
+                    Variant::from_decimal96(Decimal96::from_parts(
+                        DUAL_DECIMAL_LO,
+                        DUAL_DECIMAL_MID,
+                        DUAL_DECIMAL_HI,
+                        DUAL_DECIMAL_SCALE,
+                        DUAL_DECIMAL_NEGATIVE,
+                    )),
                 ],
                 15,
                 &mut resolve,

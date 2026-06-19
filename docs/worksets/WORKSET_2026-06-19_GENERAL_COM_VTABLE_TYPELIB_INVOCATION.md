@@ -92,8 +92,8 @@ has unowned ABI or descriptor facts.
 1. Resolve the member through the existing early-bound binding path.
 2. Reject named arguments and interior omissions before vtable admission.
 3. Compute `return_type` from invoke kind: property-get/method use the member return;
-   property-put and admitted object/interface property-putref are HRESULT-only;
-   unsupported putref shapes remain fallback.
+   property-put and admitted property-putref shapes are HRESULT-only; unsupported
+   putref shapes remain fallback.
 4. Ask the admission table for a result. `Admit` continues; any decline falls back to
    IDispatch unless a real COM HRESULT is produced after the call starts.
 5. QI the object for `interface_iid`; reject null/misaligned pointers.
@@ -115,7 +115,7 @@ surface:
   `VtableInvocationPlan`; the legacy boolean gate is now only a test wrapper over
   the same plan builder.
 - When wire metadata is present, the vtable gate now rejects unsupported wire shapes
-  such as SAFEARRAY before the marshaller sees a collapsed semantic `Variant`.
+  before the marshaller sees a collapsed semantic `Variant`.
 - `windows_vtable::vtable_invoke` now accepts the admitted `VtableInvocationPlan`
   instead of loose slot/type/wire/IID arrays, and performs the same
   unsupported-wire-shape validation before reading the vtable slot so direct
@@ -136,8 +136,9 @@ surface:
   until writeback semantics are implemented.
 - `Decimal` return values are admitted and fixture-proven as caller-owned
   `[out,retval] DECIMAL*` cells decoded into the runtime `Decimal96` carrier.
-  Decimal inbound parameters remain fallback until their vtable argument ABI is
-  proven rather than inferred.
+  Decimal inbound parameters are also admitted and fixture-proven through explicit
+  `Automation(Decimal)` metadata, lowered as caller-owned `DECIMAL*` cells that
+  stay alive for the duration of the vtable call.
 - The first broad ABI tranche is fixture-proven through real vtable calls:
   inbound `Byte`, `Integer`, `Long`, `LongLong`, `Single`, `Double`, `Currency`,
   `Date`, `Boolean`, `String`, `Variant`, and explicit interface-pointer `Object`
@@ -145,18 +146,17 @@ surface:
   `String`, and `Variant`; with the existing `Long`, `Boolean`, `Currency`,
   `Date`, and `Object` return tests covering the rest of the current v1 surface.
 - `PropertyPutRef` is no longer globally deferred. The admission table now admits
-  the covered object/interface assignment shape only when the typelib descriptor
-  carries explicit `InterfacePointer` wire metadata and a non-null parameter IID;
-  every other putref shape declines once in the plan builder and falls back to
-  IDispatch.
-- The shared runtime dispatch path has an integration proof for that putref
-  boundary: supported object/interface putref increments the vtable transport
-  counter, while scalar putref declines and succeeds through the IDispatch fallback.
+  putref through the shared signature table: object/interface assignment still
+  requires explicit `InterfacePointer` wire metadata and a non-null parameter IID,
+  while scalar Automation putref shapes use the same ABI rules as property-put.
+- The shared runtime dispatch path has integration proof for both putref families:
+  supported object/interface putref and scalar `Long` putref increment the vtable
+  transport counter and do not also dispatch through IDispatch.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: records/UDTs, arbitrary ByRef/writeback, Decimal
-parameters, and non-object putref remain `in-progress` accepted scope. They may
-fall back only with a specific recorded missing fact or unowned ABI/ownership
-rule, and need the same descriptor, admission, fixture, runtime-integration, and
-fresh-eyes evidence discipline before any broader support claim is made.
+Residual after this slice: records/UDTs and arbitrary ByRef/writeback remain
+`in-progress` accepted scope. They may fall back only with a specific recorded
+missing fact or unowned ABI/ownership rule, and need the same descriptor,
+admission, fixture, runtime-integration, and fresh-eyes evidence discipline
+before any broader support claim is made.

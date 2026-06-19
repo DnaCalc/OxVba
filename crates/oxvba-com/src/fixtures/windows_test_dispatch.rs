@@ -3505,6 +3505,7 @@ pub const DUAL_SLOT_PUTREF_OBJECT_VALUE: u16 = 23;
 pub const DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE: u16 = 24;
 pub const DUAL_SLOT_GET_SAFEARRAY_VALUE: u16 = 25;
 pub const DUAL_SLOT_GET_DECIMAL_VALUE: u16 = 26;
+pub const DUAL_SLOT_PUTREF_LONG_VALUE: u16 = 27;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3608,6 +3609,7 @@ struct RawDualVtbl {
         text_value: windows_sys::core::BSTR,
         variant_value: *mut VARIANT,
         object_value: *mut RawIDispatch,
+        decimal_value: *mut DECIMAL,
         out: *mut VARIANT_BOOL,
     ) -> i32,
     /// slot 16
@@ -3645,6 +3647,8 @@ struct RawDualVtbl {
     /// slot 26
     get_decimal_value:
         unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut DECIMAL) -> i32,
+    /// slot 27
+    putref_long_value: unsafe extern "system" fn(this: *mut core::ffi::c_void, value: i32) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3689,6 +3693,7 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     validate_safearray_value: oxvba_dual_validate_safearray_value,
     get_safearray_value: oxvba_dual_get_safearray_value,
     get_decimal_value: oxvba_dual_get_decimal_value,
+    putref_long_value: oxvba_dual_putref_long_value,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -3984,6 +3989,7 @@ unsafe extern "system" fn oxvba_dual_validate_all_inputs(
     text_value: windows_sys::core::BSTR,
     variant_value: *mut VARIANT,
     object_value: *mut RawIDispatch,
+    decimal_value: *mut DECIMAL,
     out: *mut VARIANT_BOOL,
 ) -> i32 {
     if out.is_null() {
@@ -4000,7 +4006,13 @@ unsafe extern "system" fn oxvba_dual_validate_all_inputs(
         && bool_value != 0
         && !text_value.is_null()
         && variant_i32_value(variant_value) == Some(1234)
-        && !object_value.is_null();
+        && !object_value.is_null()
+        && !decimal_value.is_null()
+        && (*decimal_value).Anonymous2.Anonymous.Lo32 == DUAL_DECIMAL_LO
+        && (*decimal_value).Anonymous2.Anonymous.Mid32 == DUAL_DECIMAL_MID
+        && (*decimal_value).Hi32 == DUAL_DECIMAL_HI
+        && (*decimal_value).Anonymous1.Anonymous.scale == DUAL_DECIMAL_SCALE
+        && ((*decimal_value).Anonymous1.Anonymous.sign != 0) == DUAL_DECIMAL_NEGATIVE;
     *out = if ok { -1 } else { 0 };
     COM_S_OK
 }
@@ -4214,6 +4226,21 @@ unsafe extern "system" fn oxvba_dual_get_decimal_value(
         DUAL_DECIMAL_SCALE,
         DUAL_DECIMAL_NEGATIVE,
     );
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_putref_long_value(
+    this: *mut core::ffi::c_void,
+    value: i32,
+) -> i32 {
+    if this.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    (*as_oxvba_dual(this))
+        .last_put_value
+        .store(value, Ordering::SeqCst);
     COM_S_OK
 }
 

@@ -139,7 +139,7 @@ pub enum TypeLibWireType {
 impl TypeLibWireType {
     /// Whether this exact wire shape is currently supported as a vtable inbound
     /// parameter for the semantic typelib type. This is intentionally narrower
-    /// than the full descriptor vocabulary: SAFEARRAY and ByRef interface shapes
+    /// than the full descriptor vocabulary: ByRef interface/writeback shapes
     /// remain IDispatch fallback until the marshaller owns them end to end.
     pub(crate) fn supports_vtable_param(&self, param_type: TypeLibParamType) -> bool {
         match self {
@@ -182,11 +182,12 @@ impl TypeLibParamType {
                 | TypeLibParamType::Object
                 | TypeLibParamType::Byte
                 | TypeLibParamType::LongLong
+                | TypeLibParamType::Decimal
         )
     }
 
     pub(crate) fn supports_vtable_return_abi(self) -> bool {
-        self.supports_vtable_param_abi() || matches!(self, TypeLibParamType::Decimal)
+        self.supports_vtable_param_abi()
     }
 }
 
@@ -727,9 +728,7 @@ mod tests {
                 None,
                 None,
             ),
-            Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
-                TypeLibParamType::Decimal
-            ))
+            Ok(())
         );
         assert_eq!(
             validate_vtable_wire_signature(

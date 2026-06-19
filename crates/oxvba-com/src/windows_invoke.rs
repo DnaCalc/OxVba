@@ -2075,21 +2075,26 @@ fn is_supported_vtable_putref_shape(
     spec: &crate::ComMemberSpec,
     return_type: Option<crate::TypeLibParamType>,
 ) -> bool {
-    return_type.is_none()
+    if !(return_type.is_none()
         && spec.return_type.is_none()
         && spec.return_wire_type.is_none()
-        && spec.parameter_types.as_slice() == [crate::TypeLibParamType::Object]
-        && matches!(
+        && spec.parameter_types.len() == 1)
+    {
+        return false;
+    }
+    if spec.parameter_types.as_slice() == [crate::TypeLibParamType::Object] {
+        return matches!(
             spec.parameter_wire_types.as_slice(),
             [crate::TypeLibWireType::InterfacePointer { .. }]
-        )
-        && spec.parameter_iids.len() == 1
-        && spec
-            .parameter_iids
-            .first()
-            .copied()
-            .flatten()
-            .is_some_and(|iid| !iid.is_null())
+        ) && spec.parameter_iids.len() == 1
+            && spec
+                .parameter_iids
+                .first()
+                .copied()
+                .flatten()
+                .is_some_and(|iid| !iid.is_null());
+    }
+    true
 }
 
 /// True when every declared parameter from `supplied_count..` (the ones the guest
@@ -3096,13 +3101,13 @@ mod gate_tests {
             crate::TypeLibParamType::Object,
             crate::TypeLibParamType::Byte,
             crate::TypeLibParamType::LongLong,
+            crate::TypeLibParamType::Decimal,
         ] {
             assert!(is_v1_vtable_vartype(ok), "{ok:?} must be in the v1 set");
         }
-        // Out-of-set parameter shapes (Decimal, LongPtr, ByRef*) must NOT be
-        // admitted as inbound arguments.
+        // Out-of-set parameter shapes (LongPtr, ByRef*) must NOT be admitted as
+        // inbound arguments.
         for bad in [
-            crate::TypeLibParamType::Decimal,
             crate::TypeLibParamType::LongPtr,
             crate::TypeLibParamType::ByRefVariant,
             crate::TypeLibParamType::ByRefLong,
@@ -3159,6 +3164,25 @@ mod gate_tests {
         assert!(
             vtable_gate_admits(&spec, 0, Some(crate::TypeLibParamType::Object)),
             "InterfacePointer return metadata should not collapse to IDispatch fallback"
+        );
+    }
+
+    #[test]
+    fn gate_admits_scalar_property_putref_through_common_signature_table() {
+        let mut spec = eligible_spec(17, 58);
+        spec.invoke_kind = crate::TypeLibMemberInvokeKind::PropertyPutRef;
+        spec.parameter_types = vec![crate::TypeLibParamType::Long];
+        spec.parameter_wire_types = vec![crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::Long,
+        )];
+        spec.parameter_iids = vec![None];
+        spec.return_type = None;
+        spec.return_wire_type = None;
+
+        assert_eq!(
+            vtable_gate_decline_reason(&spec, 1, None),
+            None,
+            "non-object putref shapes should be admitted when the normal signature table supports them"
         );
     }
 

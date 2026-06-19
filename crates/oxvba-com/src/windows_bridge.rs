@@ -1079,14 +1079,12 @@ mod tests {
         let _ = fallback_bridge.release_object_binding(fallback_object);
     }
 
-    /// Object/interface PropertyPutRef is no longer globally deferred: with
-    /// explicit interface-pointer wire metadata and a declared parameter IID, the
-    /// normal shared-state dispatch path admits and executes it through vtable.
-    /// Scalar putref remains outside that owned ABI shape and falls back to
-    /// IDispatch.
+    /// PropertyPutRef is no longer globally deferred. Object/interface putref
+    /// uses explicit interface-pointer wire metadata, while scalar putref uses
+    /// the same typed automation table as property-put.
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     #[test]
-    fn prefer_vtable_routes_object_putref_and_falls_back_for_scalar_putref() {
+    fn prefer_vtable_routes_object_and_scalar_putref() {
         let bridge = WindowsComBridge::new(false);
         let dual = crate::create_oxvba_dual_vtable_object();
         let putref_slot = crate::DUAL_SLOT_PUTREF_OBJECT_VALUE;
@@ -1131,46 +1129,46 @@ mod tests {
         );
         let _ = bridge.release_object_binding(object);
 
-        let fallback_bridge = WindowsComBridge::new(false);
-        let dispatch = crate::create_oxvba_test_dispatch();
+        let scalar_bridge = WindowsComBridge::new(false);
+        let scalar_dual = crate::create_oxvba_dual_vtable_object();
         let scalar_putref = ComMemberToken::new(crate::TEST_DISPID_SET_VALUE_REF);
-        let fallback_object = insert_native_member_binding(
-            &fallback_bridge,
+        let scalar_object = insert_native_member_binding(
+            &scalar_bridge,
             7011,
-            crate::OXVBA_TEST_DISPATCH_PROGID,
-            dispatch.cast::<core::ffi::c_void>(),
+            "OxVba.DualFixture",
+            scalar_dual,
             scalar_putref,
             crate::TEST_DISPID_SET_VALUE_REF,
-            putref_long_member_spec("SetValueRef", Some(putref_slot)),
+            putref_long_member_spec("SetValueRef", Some(crate::DUAL_SLOT_PUTREF_LONG_VALUE)),
         );
-        let fallback_request = ComInvokeRequest {
-            object: fallback_object.clone(),
+        let scalar_request = ComInvokeRequest {
+            object: scalar_object.clone(),
             member: scalar_putref,
             args: vec![ComInvokeArg::positional_value(crate::ComValue::I32(7))],
             invoke_kind_hint: Some(crate::ComInvokeKind::PropertyPutRef),
         };
-        let before_vtable = fallback_bridge.vtable_call_count();
-        let before_idispatch = fallback_bridge.idispatch_call_count();
-        let fallback_value = fallback_bridge
-            .dispatch_invoke_variant(&fallback_request, true)
-            .expect("scalar putref fallback should not error")
-            .expect("fallback putref should produce a value");
+        let before_vtable = scalar_bridge.vtable_call_count();
+        let before_idispatch = scalar_bridge.idispatch_call_count();
+        let scalar_value = scalar_bridge
+            .dispatch_invoke_variant(&scalar_request, true)
+            .expect("scalar putref vtable dispatch should not error")
+            .expect("scalar putref should produce an Empty value");
         assert_eq!(
-            fallback_value.as_i32(),
-            Some(100_007),
-            "unsupported scalar putref must still execute through IDispatch fallback"
+            scalar_value.vtype(),
+            oxvba_runtime::VarType::Empty,
+            "HRESULT-only scalar putref returns Empty through vtable"
         );
         assert_eq!(
-            fallback_bridge.vtable_call_count(),
-            before_vtable,
-            "unsupported scalar putref must not take the vtable path"
+            scalar_bridge.vtable_call_count(),
+            before_vtable + 1,
+            "covered scalar putref must increment the vtable transport counter"
         );
         assert_eq!(
-            fallback_bridge.idispatch_call_count(),
-            before_idispatch + 1,
-            "unsupported scalar putref must count as IDispatch fallback"
+            scalar_bridge.idispatch_call_count(),
+            before_idispatch,
+            "covered scalar putref must not also dispatch through IDispatch"
         );
-        let _ = fallback_bridge.release_object_binding(fallback_object);
+        let _ = scalar_bridge.release_object_binding(scalar_object);
     }
 
     /// S5a HOST-AV SAFETY: a member that IS gate-eligible (a custom slot,
