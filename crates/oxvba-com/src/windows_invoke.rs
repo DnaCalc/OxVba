@@ -2065,63 +2065,6 @@ fn build_vtable_invocation_plan(
     })
 }
 
-#[cfg(all(target_os = "windows", test))]
-fn vtable_label_for_invoke_kind(invoke_kind: crate::TypeLibMemberInvokeKind) -> &'static str {
-    match invoke_kind {
-        crate::TypeLibMemberInvokeKind::PropertyGet => "property-get",
-        crate::TypeLibMemberInvokeKind::Method => "method",
-        crate::TypeLibMemberInvokeKind::PropertyPut => "property-put",
-        crate::TypeLibMemberInvokeKind::PropertyPutRef => "property-putref",
-    }
-}
-
-#[cfg(all(target_os = "windows", test))]
-fn vtable_gate_decline_reason(
-    spec: &crate::ComMemberSpec,
-    positional_arg_count: usize,
-    return_type: Option<crate::TypeLibParamType>,
-) -> Option<VtableDeclineReason> {
-    let label = vtable_label_for_invoke_kind(spec.invoke_kind);
-    build_vtable_invocation_plan(spec, positional_arg_count, return_type, label).err()
-}
-
-/// The GATE: take the vtable path iff `prefer_vtable` AND the resolved member
-/// carries a full, callable, v1-marshallable dual signature. Returns `true` only
-/// when ALL hold:
-/// - a vtable slot is present, and the slot index is `>= 7` (oVft `>= 56`), so we
-///   never call an `IUnknown`/`IDispatch` slot;
-/// - the member is a real custom **interface** dual: `is_dual` AND
-///   `source_typekind == Interface`. A pure dispinterface member (`Dispatch`) has
-///   NO callable vtable slot — its `oVft` is authored for the FDUAL partner, so
-///   the live-recovery path must cross to that partner (slice B) before a slot
-///   can be admitted here;
-/// - `slot < vtable_slot_bound` — THE AV-SAFETY NET. The bound is the source
-///   INTERFACE's `cbSizeVft / 8` (from the partner typeinfo, not the
-///   dispinterface). A slot `>= bound` would over-read the live vtable, which is
-///   the access violation the value-oracle probe root-caused (Recordset.Close at
-///   the wrong slot 98 over-ran the 92-slot vtable). Without a known bound we
-///   decline;
-/// - the member carries its defining **dual interface IID** (S5a), which the
-///   dispatch site `QueryInterface`s the object for before any slot call — without
-///   it we cannot obtain a verified vtable pointer, so we must not vtable-call;
-/// - the FUNCDESC declares `CC_STDCALL`;
-/// - arity is exact, or every missing argument is a trailing optional the vtable
-///   dispatch site can synthesize from typelib defaults / `OptionalVariant`;
-/// - every parameter VARTYPE and the return VARTYPE (if any) is in the v1 set,
-///   and any available wire metadata agrees with that v1 surface. A `None`
-///   return (a void method / HRESULT-only put) is fine — the marshaller simply
-///   appends no `[out,retval]` cell.
-///
-/// When this returns `false` the caller runs the unchanged IDispatch path.
-#[cfg(all(target_os = "windows", test))]
-fn vtable_gate_admits(
-    spec: &crate::ComMemberSpec,
-    positional_arg_count: usize,
-    return_type: Option<crate::TypeLibParamType>,
-) -> bool {
-    vtable_gate_decline_reason(spec, positional_arg_count, return_type).is_none()
-}
-
 /// True when every declared parameter from `supplied_count..` (the ones the guest
 /// did not supply) is one the vtable dispatch site can synthesize: a typelib
 /// default ([`OptionalParamDefault::HasDefault`]), an optional VARIANT
@@ -2660,8 +2603,8 @@ where
 #[cfg(all(target_os = "windows", test))]
 mod gate_tests {
     use super::{
-        VtableDeclineReason, is_v1_vtable_vartype, synthesize_trailing_optional_args,
-        vtable_gate_admits, vtable_gate_decline_reason,
+        VtableDeclineReason, build_vtable_invocation_plan, is_v1_vtable_vartype,
+        synthesize_trailing_optional_args,
     };
     use crate::{ComInterfaceIid, ComMemberSpec, SourceTypeKind, TypeLibMemberInvokeKind};
 
@@ -2695,6 +2638,43 @@ mod gate_tests {
             source_typekind: Some(SourceTypeKind::Interface),
             vtable_slot_bound: Some(bound),
         }
+    }
+
+    fn vtable_plan_label(invoke_kind: TypeLibMemberInvokeKind) -> &'static str {
+        match invoke_kind {
+            TypeLibMemberInvokeKind::PropertyGet => "property-get",
+            TypeLibMemberInvokeKind::Method => "method",
+            TypeLibMemberInvokeKind::PropertyPut => "property-put",
+            TypeLibMemberInvokeKind::PropertyPutRef => "property-putref",
+        }
+    }
+
+    fn vtable_gate_decline_reason(
+        spec: &ComMemberSpec,
+        positional_arg_count: usize,
+        return_type: Option<crate::TypeLibParamType>,
+    ) -> Option<VtableDeclineReason> {
+        build_vtable_invocation_plan(
+            spec,
+            positional_arg_count,
+            return_type,
+            vtable_plan_label(spec.invoke_kind),
+        )
+        .err()
+    }
+
+    fn vtable_gate_admits(
+        spec: &ComMemberSpec,
+        positional_arg_count: usize,
+        return_type: Option<crate::TypeLibParamType>,
+    ) -> bool {
+        build_vtable_invocation_plan(
+            spec,
+            positional_arg_count,
+            return_type,
+            vtable_plan_label(spec.invoke_kind),
+        )
+        .is_ok()
     }
 
     #[test]
