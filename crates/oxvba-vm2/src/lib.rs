@@ -2980,6 +2980,9 @@ unsafe fn invoke_native_timer_callback(
         return;
     };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // SAFETY: native timer registrations are created from a live `Vm` and are
+        // removed before that VM is dropped; the callback table stores the same
+        // pointer only for the duration of that registration.
         let vm = unsafe { &mut *(registration.vm as *mut Vm<'static>) };
         let saved_cur = vm.cur;
         vm.cur = registration.bundle;
@@ -3007,6 +3010,9 @@ macro_rules! native_timer_callback {
             timer_id: usize,
             time: u32,
         ) {
+            // SAFETY: Windows calls this thunk with the timer callback ABI; the
+            // index is a compile-time slot that maps to the thread-local
+            // registration table used by `invoke_native_timer_callback`.
             unsafe { invoke_native_timer_callback($index, hwnd, message, timer_id, time) };
         }
     };

@@ -136,6 +136,110 @@ pub enum TypeLibWireType {
     ByRefSafeArrayVariant,
 }
 
+impl TypeLibWireType {
+    /// Whether this exact wire shape is currently supported as a vtable inbound
+    /// parameter for the semantic typelib type. This is intentionally narrower
+    /// than the full descriptor vocabulary: SAFEARRAY and ByRef interface shapes
+    /// remain IDispatch fallback until the marshaller owns them end to end.
+    pub(crate) fn supports_vtable_param(&self, param_type: TypeLibParamType) -> bool {
+        match self {
+            Self::Automation(wire_param_type) => *wire_param_type == param_type,
+            Self::InterfacePointer { .. } => matches!(param_type, TypeLibParamType::Object),
+            Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => false,
+        }
+    }
+
+    /// Whether this exact wire shape is currently supported as a vtable return
+    /// value for the semantic typelib type.
+    pub(crate) fn supports_vtable_return(&self, return_type: TypeLibParamType) -> bool {
+        match self {
+            Self::Automation(wire_return_type) => *wire_return_type == return_type,
+            Self::InterfacePointer { .. } => matches!(return_type, TypeLibParamType::Object),
+            Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => false,
+        }
+    }
+}
+
+impl TypeLibParamType {
+    /// Whether this semantic type is currently supported by the COM vtable
+    /// marshaller. Keep this intentionally narrower than the full typelib
+    /// vocabulary: unsupported shapes must fall back before any vtable slot is
+    /// read.
+    pub(crate) fn supports_vtable_abi(self) -> bool {
+        matches!(
+            self,
+            TypeLibParamType::Variant
+                | TypeLibParamType::Long
+                | TypeLibParamType::Integer
+                | TypeLibParamType::String
+                | TypeLibParamType::Boolean
+                | TypeLibParamType::Double
+                | TypeLibParamType::Single
+                | TypeLibParamType::Currency
+                | TypeLibParamType::Date
+                | TypeLibParamType::Object
+                | TypeLibParamType::Byte
+                | TypeLibParamType::LongLong
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeLibVtableSignatureIssue {
+    UnsupportedParameterType(TypeLibParamType),
+    UnsupportedReturnType(TypeLibParamType),
+    ParameterWireTypeArityMismatch,
+    UnsupportedParameterWireType,
+    UnsupportedReturnWireType,
+    MissingObjectParameterIid,
+}
+
+pub(crate) fn validate_vtable_wire_signature(
+    parameter_types: &[TypeLibParamType],
+    parameter_wire_types: &[TypeLibWireType],
+    parameter_iids: &[Option<ComInterfaceIid>],
+    return_type: Option<TypeLibParamType>,
+    return_wire_type: Option<&TypeLibWireType>,
+) -> Result<(), TypeLibVtableSignatureIssue> {
+    if let Some(param_type) = parameter_types
+        .iter()
+        .find(|param_type| !param_type.supports_vtable_abi())
+    {
+        return Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
+            *param_type,
+        ));
+    }
+    if let Some(rt) = return_type
+        && !rt.supports_vtable_abi()
+    {
+        return Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(rt));
+    }
+    if !parameter_wire_types.is_empty() {
+        if parameter_wire_types.len() != parameter_types.len() {
+            return Err(TypeLibVtableSignatureIssue::ParameterWireTypeArityMismatch);
+        }
+        if parameter_types
+            .iter()
+            .zip(parameter_wire_types)
+            .any(|(param_type, wire_type)| !wire_type.supports_vtable_param(*param_type))
+        {
+            return Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType);
+        }
+    }
+    if let (Some(rt), Some(wire_type)) = (return_type, return_wire_type)
+        && !wire_type.supports_vtable_return(rt)
+    {
+        return Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType);
+    }
+    if parameter_types.iter().enumerate().any(|(i, param_type)| {
+        matches!(param_type, TypeLibParamType::Object)
+            && parameter_iids.get(i).copied().flatten().is_none()
+    }) {
+        return Err(TypeLibVtableSignatureIssue::MissingObjectParameterIid);
+    }
+    Ok(())
+}
+
 impl TypeLibParamType {
     /// True for the `ByRef*` variants — the parameter is passed by reference
     /// (`[out]`/`[in,out]` in IDL), so the caller's argument is written back.
@@ -521,6 +625,135 @@ mod tests {
             lcid: Some(0),
             cache_key: "TestLib:1.0".to_string(),
         }
+    }
+
+    fn test_iid() -> ComInterfaceIid {
+        ComInterfaceIid {
+            data1: 0x1234_5678,
+            data2: 0x1234,
+            data3: 0x5678,
+            data4: [1, 2, 3, 4, 5, 6, 7, 8],
+        }
+    }
+
+    #[test]
+    fn vtable_wire_signature_validator_accepts_supported_shapes() {
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Long, TypeLibParamType::Object],
+                &[
+                    TypeLibWireType::Automation(TypeLibParamType::Long),
+                    TypeLibWireType::InterfacePointer {
+                        name: "ITest".to_string()
+                    },
+                ],
+                &[None, Some(test_iid())],
+                Some(TypeLibParamType::Object),
+                Some(&TypeLibWireType::InterfacePointer {
+                    name: "IResult".to_string()
+                }),
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn vtable_wire_signature_validator_keeps_empty_wire_metadata_compatible() {
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Long],
+                &[],
+                &[],
+                Some(TypeLibParamType::Long),
+                None,
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn vtable_wire_signature_validator_reports_arity_mismatch() {
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Long],
+                &[
+                    TypeLibWireType::Automation(TypeLibParamType::Long),
+                    TypeLibWireType::Automation(TypeLibParamType::Long),
+                ],
+                &[],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::ParameterWireTypeArityMismatch)
+        );
+    }
+
+    #[test]
+    fn vtable_wire_signature_validator_rejects_unsupported_semantic_types() {
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::ByRefLong],
+                &[TypeLibWireType::Automation(TypeLibParamType::ByRefLong)],
+                &[],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
+                TypeLibParamType::ByRefLong
+            ))
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[],
+                &[],
+                &[],
+                Some(TypeLibParamType::Decimal),
+                Some(&TypeLibWireType::Automation(TypeLibParamType::Decimal)),
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(
+                TypeLibParamType::Decimal
+            ))
+        );
+    }
+
+    #[test]
+    fn vtable_wire_signature_validator_rejects_unsupported_wire_shapes() {
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Variant],
+                &[TypeLibWireType::SafeArrayVariant],
+                &[],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType)
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[],
+                &[],
+                &[],
+                Some(TypeLibParamType::Variant),
+                Some(&TypeLibWireType::SafeArrayVariant),
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType)
+        );
+    }
+
+    #[test]
+    fn vtable_wire_signature_validator_requires_object_parameter_iid() {
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Object],
+                &[TypeLibWireType::InterfacePointer {
+                    name: "ITest".to_string()
+                }],
+                &[None],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::MissingObjectParameterIid)
+        );
     }
 
     #[test]

@@ -907,9 +907,13 @@ mod tests {
             is_default_member: false,
             vtable_slot,
             parameter_types: Vec::new(),
+            parameter_wire_types: Vec::new(),
             parameter_iids: Vec::new(),
             parameter_optional_defaults: Vec::new(),
             return_type: Some(crate::TypeLibParamType::Long),
+            return_wire_type: Some(crate::TypeLibWireType::Automation(
+                crate::TypeLibParamType::Long,
+            )),
             callconv_is_stdcall,
             // A vtable-eligible spec (slot present) carries the dual fixture IID so
             // the dispatch path can QueryInterface the fixture object for it before

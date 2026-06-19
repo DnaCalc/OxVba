@@ -26,8 +26,10 @@
 #![allow(clippy::result_large_err)]
 
 use crate::windows_ffi_bridge::{FfiArg, FfiReturnType, call_via_libffi};
-use crate::windows_invoke::{ComInvokeExceptionInfo, ComInvokeFailure, bstr_to_string_and_free};
-use crate::{ComValue, TypeLibMemberInvokeKind, TypeLibParamType};
+use crate::windows_invoke::{
+    ComInvokeExceptionInfo, ComInvokeFailure, VtableInvocationPlan, bstr_to_string_and_free,
+};
+use crate::{ComValue, TypeLibParamType};
 use oxvba_runtime::{ObjectRef, Variant};
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
@@ -197,35 +199,26 @@ enum OutCell {
 
 /// Call a dual-interface member through its COM vtable slot.
 ///
-/// Marshals each inbound [`Variant`] arg per its FUNCDESC `parameter_types`
-/// VARTYPE, appends a caller-owned `[out,retval]` cell when `return_type` is
-/// set, calls `(*(*this))[slot](this, …, retval_ptr)` via libffi (HRESULT in
-/// EAX), then decodes the retval. On `hr < 0` returns a [`ComInvokeFailure`]
-/// carrying the `GetErrorInfo`-retrieved rich error.
+/// Executes an admitted [`VtableInvocationPlan`]: marshals each inbound
+/// [`Variant`] arg per the plan's FUNCDESC parameter VARTYPEs, appends a
+/// caller-owned `[out,retval]` cell when the plan has a return type, calls
+/// `(*(*this))[slot](this, ..., retval_ptr)` via libffi (HRESULT in EAX), then
+/// decodes the retval. On `hr < 0` returns a [`ComInvokeFailure`] carrying the
+/// `GetErrorInfo`-retrieved rich error.
 ///
 /// `slot` is the x64 vtable **slot index** (the FUNCDESC `oVft / 8` that S1
 /// stored), NOT a byte offset.
 ///
-/// NOTE (workset S2): not yet wired into live dispatch; S3 owns that. Kept
-/// `pub(crate)` and exercised by the in-process unit test so it is not
-/// dead-code-linted.
-///
 /// # Safety
 /// `this` must be a live `IDispatch`/dual-interface pointer whose vtable has at
 /// least `slot + 1` entries and whose slot-`slot` function has the C ABI implied
-/// by `parameter_types` + `return_type` (the dual-member contract:
+/// by the plan's parameter and return metadata (the dual-member contract:
 /// `HRESULT slot(this, params…, retval*)`). The closures must uphold COM
 /// ownership and identity rules for object handles and returned interfaces.
-#[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn vtable_invoke<FResolveObject, FBindDispatch>(
     this: *mut c_void,
-    slot: u16,
-    parameter_types: &[TypeLibParamType],
-    parameter_iids: &[Option<crate::ComInterfaceIid>],
-    return_type: Option<TypeLibParamType>,
-    _invoke_kind: TypeLibMemberInvokeKind,
+    plan: &VtableInvocationPlan,
     args: &[Variant],
-    label: &'static str,
     dispid: i32,
     resolve_object: &mut FResolveObject,
     bind_dispatch_result: &mut FBindDispatch,
@@ -236,7 +229,7 @@ where
 {
     if this.is_null() {
         return Err(validation_failure(
-            label,
+            plan.label,
             dispid,
             "null this pointer for vtable invoke",
         ));
@@ -247,19 +240,36 @@ where
     // Decline (validation failure → IDispatch fallback) rather than deref it.
     if !(this as usize).is_multiple_of(std::mem::align_of::<*const c_void>()) {
         return Err(validation_failure(
-            label,
+            plan.label,
             dispid,
             format!("misaligned this pointer {this:p} for vtable invoke"),
         ));
     }
-    if args.len() != parameter_types.len() {
+    if args.len() != plan.parameter_types.len() {
         return Err(validation_failure(
-            label,
+            plan.label,
             dispid,
             format!(
                 "vtable arity mismatch: {} args for {} parameters",
                 args.len(),
-                parameter_types.len()
+                plan.parameter_types.len()
+            ),
+        ));
+    }
+    if let Err(issue) = crate::typelib::validate_vtable_wire_signature(
+        &plan.parameter_types,
+        &plan.parameter_wire_types,
+        &plan.parameter_iids,
+        plan.return_type,
+        plan.return_wire_type.as_ref(),
+    ) {
+        return Err(validation_failure(
+            plan.label,
+            dispid,
+            vtable_signature_issue_detail(
+                issue,
+                plan.parameter_wire_types.len(),
+                plan.parameter_types.len(),
             ),
         ));
     }
@@ -271,11 +281,11 @@ where
     // slot-`slot` function pointer, both in bounds.
     let fnptr = unsafe {
         let vtbl = *this.cast::<*const *const c_void>();
-        *vtbl.add(slot as usize)
+        *vtbl.add(plan.slot as usize)
     };
     if fnptr.is_null() {
         return Err(validation_failure(
-            label,
+            plan.label,
             dispid,
             "null vtable slot function pointer",
         ));
@@ -287,11 +297,11 @@ where
     let mut inbound_owned: Vec<InboundOwned> = Vec::with_capacity(args.len());
     ffi_args.push(FfiArg::Pointer(this));
 
-    for (i, (param_type, arg)) in parameter_types.iter().zip(args.iter()).enumerate() {
+    for (i, (param_type, arg)) in plan.parameter_types.iter().zip(args.iter()).enumerate() {
         // The per-parameter declared interface IID for an object arg (Bug-4b); `None`
         // for scalars or when no IID was recovered. `get(i)` tolerates synthesized
         // trailing optionals (which extend `args` beyond `parameter_iids`).
-        let param_iid = parameter_iids.get(i).copied().flatten();
+        let param_iid = plan.parameter_iids.get(i).copied().flatten();
         match marshal_inbound_param(*param_type, arg, param_iid, resolve_object) {
             Ok((ffi_arg, owned)) => {
                 ffi_args.push(ffi_arg);
@@ -300,18 +310,18 @@ where
             Err(detail) => {
                 // Free everything marshalled so far before bailing.
                 free_inbound(&mut inbound_owned);
-                return Err(validation_failure(label, dispid, detail));
+                return Err(validation_failure(plan.label, dispid, detail));
             }
         }
     }
 
     // Allocate the [out,retval] cell and append its pointer.
-    let mut out_cell = match return_type {
+    let mut out_cell = match plan.return_type {
         Some(rt) => match alloc_out_cell(rt) {
             Ok(cell) => cell,
             Err(detail) => {
                 free_inbound(&mut inbound_owned);
-                return Err(validation_failure(label, dispid, detail));
+                return Err(validation_failure(plan.label, dispid, detail));
             }
         },
         None => OutCell::None,
@@ -337,7 +347,7 @@ where
         // failure (defensive: most servers leave it zeroed on failure).
         discard_out_cell(out_cell);
         return Err(ComInvokeFailure {
-            label,
+            label: plan.label,
             dispid,
             hr: Some(hr),
             arg_err: None,
@@ -349,7 +359,7 @@ where
     // hr >= 0, so the callee populated the retval cell per its declared return
     // type; decode it and take ownership of any transferred BSTR/interface/
     // VARIANT payload.
-    decode_out_cell(out_cell, label, dispid, bind_dispatch_result)
+    decode_out_cell(out_cell, plan.label, dispid, bind_dispatch_result)
 }
 
 fn validation_failure(
@@ -364,6 +374,37 @@ fn validation_failure(
         arg_err: None,
         excep: None,
         detail: Some(detail.into()),
+    }
+}
+
+fn vtable_signature_issue_detail(
+    issue: crate::typelib::TypeLibVtableSignatureIssue,
+    parameter_wire_count: usize,
+    parameter_count: usize,
+) -> String {
+    match issue {
+        crate::typelib::TypeLibVtableSignatureIssue::UnsupportedParameterType(param_type) => {
+            format!(
+                "vtable inbound parameter VARTYPE {param_type:?} is not supported in v1 (use the IDispatch fallback)"
+            )
+        }
+        crate::typelib::TypeLibVtableSignatureIssue::UnsupportedReturnType(return_type) => {
+            format!(
+                "vtable retval VARTYPE {return_type:?} is not supported in v1 (use the IDispatch fallback)"
+            )
+        }
+        crate::typelib::TypeLibVtableSignatureIssue::ParameterWireTypeArityMismatch => format!(
+            "vtable wire-shape arity mismatch: {parameter_wire_count} wire types for {parameter_count} parameters"
+        ),
+        crate::typelib::TypeLibVtableSignatureIssue::UnsupportedParameterWireType => {
+            "vtable parameter wire shape is not supported in v1".to_string()
+        }
+        crate::typelib::TypeLibVtableSignatureIssue::UnsupportedReturnWireType => {
+            "vtable return wire shape is not supported in v1".to_string()
+        }
+        crate::typelib::TypeLibVtableSignatureIssue::MissingObjectParameterIid => {
+            "vtable object parameter is missing its declared interface IID".to_string()
+        }
     }
 }
 
@@ -778,6 +819,7 @@ mod tests {
         DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
         DUAL_SLOT_RAISE_ERROR, create_oxvba_dual_vtable_object,
     };
+    use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
     use oxvba_runtime::VarType;
 
     /// Resolver that never sees an object arg in these tests.
@@ -821,6 +863,40 @@ mod tests {
         }
     }
 
+    fn invocation_plan(
+        slot: u16,
+        parameter_types: Vec<TypeLibParamType>,
+        parameter_wire_types: Vec<TypeLibWireType>,
+        parameter_iids: Vec<Option<crate::ComInterfaceIid>>,
+        return_type: Option<TypeLibParamType>,
+        return_wire_type: Option<TypeLibWireType>,
+        invoke_kind: TypeLibMemberInvokeKind,
+    ) -> VtableInvocationPlan {
+        let label = match invoke_kind {
+            TypeLibMemberInvokeKind::PropertyGet => "property-get",
+            TypeLibMemberInvokeKind::Method => "method",
+            TypeLibMemberInvokeKind::PropertyPut => "property-put",
+            TypeLibMemberInvokeKind::PropertyPutRef => "property-putref",
+        };
+        VtableInvocationPlan {
+            slot,
+            slot_bound: slot.saturating_add(1),
+            interface_iid: crate::ComInterfaceIid {
+                data1: 0x1234_5678,
+                data2: 0x1234,
+                data3: 0x5678,
+                data4: [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            parameter_types,
+            parameter_wire_types,
+            parameter_iids,
+            return_type,
+            return_wire_type,
+            invoke_kind,
+            label,
+        }
+    }
+
     #[test]
     fn get_count_first_light_returns_expected_i32() {
         // FIRST LIGHT: isolates this-ptr + out-cell + HRESULT + oVft/8 slot
@@ -829,23 +905,18 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_COUNT,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Long),
+            None,
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
         // SAFETY: `this` is a live dual-vtable fixture object with the known
         // slot layout; get_Count is slot 7 with retval Long.
-        let result = unsafe {
-            vtable_invoke(
-                this,
-                DUAL_SLOT_GET_COUNT,
-                &[],
-                &[],
-                Some(TypeLibParamType::Long),
-                TypeLibMemberInvokeKind::PropertyGet,
-                &[],
-                "property-get",
-                1,
-                &mut resolve,
-                &mut bind,
-            )
-        };
+        let result = unsafe { vtable_invoke(this, &plan, &[], 1, &mut resolve, &mut bind) };
         let value = result.expect("get_Count should succeed");
         assert_eq!(
             value.as_i32(),
@@ -861,17 +932,21 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_EXISTS,
+            vec![TypeLibParamType::Long],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Boolean),
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
         // SAFETY: Exists is slot 8: (i32 key) -> VARIANT_BOOL retval.
         let yes = unsafe {
             vtable_invoke(
                 this,
-                DUAL_SLOT_EXISTS,
-                &[TypeLibParamType::Long],
-                &[],
-                Some(TypeLibParamType::Boolean),
-                TypeLibMemberInvokeKind::Method,
+                &plan,
                 &[Variant::from_i32(42)],
-                "method",
                 2,
                 &mut resolve,
                 &mut bind,
@@ -884,13 +959,8 @@ mod tests {
         let no = unsafe {
             vtable_invoke(
                 this,
-                DUAL_SLOT_EXISTS,
-                &[TypeLibParamType::Long],
-                &[],
-                Some(TypeLibParamType::Boolean),
-                TypeLibMemberInvokeKind::Method,
+                &plan,
                 &[Variant::from_i32(7)],
-                "method",
                 2,
                 &mut resolve,
                 &mut bind,
@@ -907,17 +977,21 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_PUT_VALUE,
+            vec![TypeLibParamType::Variant],
+            vec![],
+            vec![],
+            None,
+            None,
+            TypeLibMemberInvokeKind::PropertyPut,
+        );
         // SAFETY: put_Value is slot 9: ([in] VARIANT*) -> HRESULT, no retval.
         let result = unsafe {
             vtable_invoke(
                 this,
-                DUAL_SLOT_PUT_VALUE,
-                &[TypeLibParamType::Variant],
-                &[],
-                None,
-                TypeLibMemberInvokeKind::PropertyPut,
+                &plan,
                 &[Variant::from_i32(1234)],
-                "property-put",
                 3,
                 &mut resolve,
                 &mut bind,
@@ -936,21 +1010,190 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_parameter_wire_shape_declines_before_slot_call() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_PUT_VALUE,
+            vec![TypeLibParamType::Variant],
+            vec![TypeLibWireType::SafeArrayVariant],
+            vec![],
+            None,
+            None,
+            TypeLibMemberInvokeKind::PropertyPut,
+        );
+        // SAFETY: `this` is a live fixture object. The unsupported SAFEARRAY wire
+        // shape must be rejected as a validation failure before the slot is read/called.
+        let failure = unsafe {
+            vtable_invoke(
+                this,
+                &plan,
+                &[Variant::from_i32(1234)],
+                300,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect_err("unsupported parameter wire shape must decline");
+        assert_eq!(
+            failure.hr, None,
+            "wire-shape decline is a validation fallback"
+        );
+        assert!(
+            failure
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("parameter wire shape")),
+            "failure should identify the unsupported parameter wire shape"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn unsupported_return_wire_shape_declines_before_slot_call() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_COUNT,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Variant),
+            Some(TypeLibWireType::SafeArrayVariant),
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
+        // SAFETY: `this` is a live fixture object. The unsupported SAFEARRAY return
+        // wire shape must be rejected as a validation failure before the slot is read/called.
+        let failure = unsafe { vtable_invoke(this, &plan, &[], 301, &mut resolve, &mut bind) }
+            .expect_err("unsupported return wire shape must decline");
+        assert_eq!(
+            failure.hr, None,
+            "wire-shape decline is a validation fallback"
+        );
+        assert!(
+            failure
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("return wire shape")),
+            "failure should identify the unsupported return wire shape"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn object_parameter_without_declared_iid_declines_before_resolution() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve =
+            |_object| panic!("object resolver must not run before missing-IID validation");
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_PUT_VALUE,
+            vec![TypeLibParamType::Object],
+            vec![TypeLibWireType::InterfacePointer {
+                name: "ITestDispatch".to_string(),
+            }],
+            vec![],
+            None,
+            None,
+            TypeLibMemberInvokeKind::PropertyPut,
+        );
+        // SAFETY: `this` is a live fixture object. The missing object-parameter IID
+        // must be rejected as a validation failure before the slot is read/called.
+        let failure = unsafe {
+            vtable_invoke(
+                this,
+                &plan,
+                &[Variant::from_object_ref(ObjectRef::from_compat_identity(
+                    123,
+                ))],
+                302,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect_err("object parameter without IID must decline");
+        assert_eq!(
+            failure.hr, None,
+            "missing-IID decline is a validation fallback"
+        );
+        assert!(
+            failure
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("declared interface IID")),
+            "failure should identify the missing object parameter IID"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn unsupported_semantic_type_declines_before_slot_read() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            u16::MAX,
+            vec![TypeLibParamType::ByRefLong],
+            vec![TypeLibWireType::Automation(TypeLibParamType::ByRefLong)],
+            vec![],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        // SAFETY: `this` is live, but the slot is intentionally invalid. The
+        // unsupported semantic ByRef shape must be rejected before any vtable
+        // slot read, so this must return a validation failure rather than AV.
+        let failure = unsafe {
+            vtable_invoke(
+                this,
+                &plan,
+                &[Variant::from_i32(7)],
+                303,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect_err("unsupported semantic type must decline before slot read");
+        assert_eq!(
+            failure.hr, None,
+            "unsupported semantic type decline is a validation fallback"
+        );
+        assert!(
+            failure
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("ByRefLong")),
+            "failure should identify the unsupported semantic type"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
     fn lookup_returns_a_bound_object_variant() {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_LOOKUP,
+            vec![TypeLibParamType::String],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Object),
+            None,
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
         // SAFETY: Lookup is slot 10: ([in] BSTR) -> IDispatch* retval.
         let result = unsafe {
             vtable_invoke(
                 this,
-                DUAL_SLOT_LOOKUP,
-                &[TypeLibParamType::String],
-                &[],
-                Some(TypeLibParamType::Object),
-                TypeLibMemberInvokeKind::PropertyGet,
+                &plan,
                 &[Variant::from_string("alpha")],
-                "property-get",
                 4,
                 &mut resolve,
                 &mut bind,
@@ -978,23 +1221,18 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_PRICE,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Currency),
+            None,
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
         // SAFETY: get_Price is slot 12: () -> CY retval.
-        let value = unsafe {
-            vtable_invoke(
-                this,
-                DUAL_SLOT_GET_PRICE,
-                &[],
-                &[],
-                Some(TypeLibParamType::Currency),
-                TypeLibMemberInvokeKind::PropertyGet,
-                &[],
-                "property-get",
-                12,
-                &mut resolve,
-                &mut bind,
-            )
-        }
-        .expect("get_Price should succeed");
+        let value = unsafe { vtable_invoke(this, &plan, &[], 12, &mut resolve, &mut bind) }
+            .expect("get_Price should succeed");
         assert_eq!(
             value.vtype(),
             VarType::Currency,
@@ -1016,23 +1254,18 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_CREATED,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Date),
+            None,
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
         // SAFETY: get_Created is slot 13: () -> DATE retval.
-        let value = unsafe {
-            vtable_invoke(
-                this,
-                DUAL_SLOT_GET_CREATED,
-                &[],
-                &[],
-                Some(TypeLibParamType::Date),
-                TypeLibMemberInvokeKind::PropertyGet,
-                &[],
-                "property-get",
-                13,
-                &mut resolve,
-                &mut bind,
-            )
-        }
-        .expect("get_Created should succeed");
+        let value = unsafe { vtable_invoke(this, &plan, &[], 13, &mut resolve, &mut bind) }
+            .expect("get_Created should succeed");
         assert_eq!(
             value.vtype(),
             VarType::Date,
@@ -1055,24 +1288,19 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_OWNER,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Object),
+            None,
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
         // SAFETY: get_Owner is slot 14: () -> IUnknown* retval (a TestDispatch whose
         // IUnknown aliases its IDispatch, so the bound pointer is a live object).
-        let value = unsafe {
-            vtable_invoke(
-                this,
-                DUAL_SLOT_GET_OWNER,
-                &[],
-                &[],
-                Some(TypeLibParamType::Object),
-                TypeLibMemberInvokeKind::PropertyGet,
-                &[],
-                "property-get",
-                14,
-                &mut resolve,
-                &mut bind,
-            )
-        }
-        .expect("get_Owner should succeed");
+        let value = unsafe { vtable_invoke(this, &plan, &[], 14, &mut resolve, &mut bind) }
+            .expect("get_Owner should succeed");
         assert_eq!(
             value.vtype(),
             VarType::Object,
@@ -1092,22 +1320,17 @@ mod tests {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_RAISE_ERROR,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Long),
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
         // SAFETY: raise_error is slot 11: SetErrorInfo + fail HRESULT.
-        let result = unsafe {
-            vtable_invoke(
-                this,
-                DUAL_SLOT_RAISE_ERROR,
-                &[],
-                &[],
-                Some(TypeLibParamType::Long),
-                TypeLibMemberInvokeKind::Method,
-                &[],
-                "method",
-                5,
-                &mut resolve,
-                &mut bind,
-            )
-        };
+        let result = unsafe { vtable_invoke(this, &plan, &[], 5, &mut resolve, &mut bind) };
         let failure = result.expect_err("raise_error must surface a ComInvokeFailure");
         assert_eq!(
             failure.hr,

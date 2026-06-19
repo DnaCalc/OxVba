@@ -1887,22 +1887,7 @@ where
 /// marshaller never disagree.
 #[cfg(target_os = "windows")]
 pub fn is_v1_vtable_vartype(param_type: crate::TypeLibParamType) -> bool {
-    use crate::TypeLibParamType as P;
-    matches!(
-        param_type,
-        P::Variant
-            | P::Long
-            | P::Integer
-            | P::String
-            | P::Boolean
-            | P::Double
-            | P::Single
-            | P::Currency
-            | P::Date
-            | P::Object
-            | P::Byte
-            | P::LongLong
-    )
+    param_type.supports_vtable_abi()
 }
 
 /// Per-bridge transport counters incremented at the exact return sites of a
@@ -1931,6 +1916,175 @@ impl ComTransportCounters<'_> {
     }
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VtableDeclineReason {
+    MissingSlot,
+    ReservedComSlot,
+    NotDualInterface,
+    MissingSlotBound,
+    SlotOutOfBounds,
+    MissingInterfaceIid,
+    NonStdcall,
+    PropertyPutRefDeferred,
+    TooManyArgs,
+    UnsynthesizableTrailingArgs,
+    ScalarMethodReturnWithSynthesizedArgs,
+    UnsupportedParameterType(crate::TypeLibParamType),
+    UnsupportedReturnType(crate::TypeLibParamType),
+    ParameterWireTypeArityMismatch,
+    UnsupportedParameterWireType,
+    UnsupportedReturnWireType,
+    MissingObjectParameterIid,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VtableInvocationPlan {
+    pub(crate) slot: u16,
+    pub(crate) slot_bound: u16,
+    pub(crate) interface_iid: crate::ComInterfaceIid,
+    pub(crate) parameter_types: Vec<crate::TypeLibParamType>,
+    pub(crate) parameter_wire_types: Vec<crate::TypeLibWireType>,
+    pub(crate) parameter_iids: Vec<Option<crate::ComInterfaceIid>>,
+    pub(crate) return_type: Option<crate::TypeLibParamType>,
+    pub(crate) return_wire_type: Option<crate::TypeLibWireType>,
+    pub(crate) invoke_kind: crate::TypeLibMemberInvokeKind,
+    pub(crate) label: &'static str,
+}
+
+#[cfg(target_os = "windows")]
+fn build_vtable_invocation_plan(
+    spec: &crate::ComMemberSpec,
+    positional_arg_count: usize,
+    return_type: Option<crate::TypeLibParamType>,
+    label: &'static str,
+) -> Result<VtableInvocationPlan, VtableDeclineReason> {
+    let Some(slot) = spec.vtable_slot else {
+        return Err(VtableDeclineReason::MissingSlot);
+    };
+    // Never vtable-call an IUnknown (0..=2) or IDispatch (3..=6) slot.
+    if slot < 7 {
+        return Err(VtableDeclineReason::ReservedComSlot);
+    }
+    // A vtable slot is only callable when sourced from a real custom INTERFACE
+    // (FDUAL + TKIND_INTERFACE). A pure dispinterface member must NOT be slot-called.
+    if !spec.is_dual || spec.source_typekind != Some(crate::SourceTypeKind::Interface) {
+        return Err(VtableDeclineReason::NotDualInterface);
+    }
+    // AV-SAFETY NET: the slot must be in bounds of the source INTERFACE's live
+    // vtable (cbSizeVft/8). A missing bound or an out-of-range slot declines.
+    let slot_bound = match spec.vtable_slot_bound {
+        Some(bound) if slot < bound => bound,
+        Some(_) => return Err(VtableDeclineReason::SlotOutOfBounds),
+        None => return Err(VtableDeclineReason::MissingSlotBound),
+    };
+    // A usable dual interface IID is mandatory; it is the QueryInterface target.
+    let interface_iid = match spec.interface_iid {
+        Some(iid) if !iid.is_null() => iid,
+        _ => return Err(VtableDeclineReason::MissingInterfaceIid),
+    };
+    if !spec.callconv_is_stdcall {
+        return Err(VtableDeclineReason::NonStdcall);
+    }
+    if spec.invoke_kind == crate::TypeLibMemberInvokeKind::PropertyPutRef {
+        return Err(VtableDeclineReason::PropertyPutRefDeferred);
+    }
+    if positional_arg_count > spec.parameter_types.len() {
+        return Err(VtableDeclineReason::TooManyArgs);
+    }
+    if positional_arg_count < spec.parameter_types.len() {
+        if !trailing_optionals_are_synthesizable(spec, positional_arg_count) {
+            return Err(VtableDeclineReason::UnsynthesizableTrailingArgs);
+        }
+        if spec.invoke_kind == crate::TypeLibMemberInvokeKind::Method
+            && matches!(
+                return_type,
+                Some(
+                    crate::TypeLibParamType::Long
+                        | crate::TypeLibParamType::Integer
+                        | crate::TypeLibParamType::Byte
+                        | crate::TypeLibParamType::LongLong
+                )
+            )
+        {
+            return Err(VtableDeclineReason::ScalarMethodReturnWithSynthesizedArgs);
+        }
+    }
+    if let Some(param_type) = spec
+        .parameter_types
+        .iter()
+        .find(|param_type| !is_v1_vtable_vartype(**param_type))
+    {
+        return Err(VtableDeclineReason::UnsupportedParameterType(*param_type));
+    }
+    if let Some(rt) = return_type
+        && !is_v1_vtable_vartype(rt)
+    {
+        return Err(VtableDeclineReason::UnsupportedReturnType(rt));
+    }
+    if let Err(issue) = crate::typelib::validate_vtable_wire_signature(
+        &spec.parameter_types,
+        &spec.parameter_wire_types,
+        &spec.parameter_iids,
+        return_type,
+        spec.return_wire_type.as_ref(),
+    ) {
+        return Err(match issue {
+            crate::typelib::TypeLibVtableSignatureIssue::UnsupportedParameterType(param_type) => {
+                VtableDeclineReason::UnsupportedParameterType(param_type)
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::UnsupportedReturnType(return_type) => {
+                VtableDeclineReason::UnsupportedReturnType(return_type)
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::ParameterWireTypeArityMismatch => {
+                VtableDeclineReason::ParameterWireTypeArityMismatch
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::UnsupportedParameterWireType => {
+                VtableDeclineReason::UnsupportedParameterWireType
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::UnsupportedReturnWireType => {
+                VtableDeclineReason::UnsupportedReturnWireType
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::MissingObjectParameterIid => {
+                VtableDeclineReason::MissingObjectParameterIid
+            }
+        });
+    }
+    Ok(VtableInvocationPlan {
+        slot,
+        slot_bound,
+        interface_iid,
+        parameter_types: spec.parameter_types.clone(),
+        parameter_wire_types: spec.parameter_wire_types.clone(),
+        parameter_iids: spec.parameter_iids.clone(),
+        return_type,
+        return_wire_type: spec.return_wire_type.clone(),
+        invoke_kind: spec.invoke_kind,
+        label,
+    })
+}
+
+#[cfg(all(target_os = "windows", test))]
+fn vtable_label_for_invoke_kind(invoke_kind: crate::TypeLibMemberInvokeKind) -> &'static str {
+    match invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyGet => "property-get",
+        crate::TypeLibMemberInvokeKind::Method => "method",
+        crate::TypeLibMemberInvokeKind::PropertyPut => "property-put",
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => "property-putref",
+    }
+}
+
+#[cfg(all(target_os = "windows", test))]
+fn vtable_gate_decline_reason(
+    spec: &crate::ComMemberSpec,
+    positional_arg_count: usize,
+    return_type: Option<crate::TypeLibParamType>,
+) -> Option<VtableDeclineReason> {
+    let label = vtable_label_for_invoke_kind(spec.invoke_kind);
+    build_vtable_invocation_plan(spec, positional_arg_count, return_type, label).err()
+}
+
 /// The GATE: take the vtable path iff `prefer_vtable` AND the resolved member
 /// carries a full, callable, v1-marshallable dual signature. Returns `true` only
 /// when ALL hold:
@@ -1951,117 +2105,21 @@ impl ComTransportCounters<'_> {
 ///   dispatch site `QueryInterface`s the object for before any slot call — without
 ///   it we cannot obtain a verified vtable pointer, so we must not vtable-call;
 /// - the FUNCDESC declares `CC_STDCALL`;
-/// - EXACT arity: exactly one declared parameter type per supplied positional
-///   arg. The vtable ABI cannot drop a trailing optional param (no DISPPARAMS to
-///   shorten), so a member called with fewer args than its FUNCDESC declares
-///   (e.g. an omitted optional) falls back to IDispatch (workset v1 deferral);
-/// - every parameter VARTYPE and the return VARTYPE (if any) is in the v1 set. A
-///   `None` return (a void method / HRESULT-only put) is fine — the marshaller
-///   simply appends no `[out,retval]` cell.
+/// - arity is exact, or every missing argument is a trailing optional the vtable
+///   dispatch site can synthesize from typelib defaults / `OptionalVariant`;
+/// - every parameter VARTYPE and the return VARTYPE (if any) is in the v1 set,
+///   and any available wire metadata agrees with that v1 surface. A `None`
+///   return (a void method / HRESULT-only put) is fine — the marshaller simply
+///   appends no `[out,retval]` cell.
 ///
 /// When this returns `false` the caller runs the unchanged IDispatch path.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", test))]
 fn vtable_gate_admits(
     spec: &crate::ComMemberSpec,
     positional_arg_count: usize,
     return_type: Option<crate::TypeLibParamType>,
 ) -> bool {
-    let Some(slot) = spec.vtable_slot else {
-        return false;
-    };
-    // Never vtable-call an IUnknown (0..=2) or IDispatch (3..=6) slot.
-    if slot < 7 {
-        return false;
-    }
-    // A vtable slot is only callable when sourced from a real custom INTERFACE
-    // (FDUAL + TKIND_INTERFACE). A pure dispinterface member must NOT be slot-called.
-    if !spec.is_dual || spec.source_typekind != Some(crate::SourceTypeKind::Interface) {
-        return false;
-    }
-    // AV-SAFETY NET: the slot must be in bounds of the source INTERFACE's live
-    // vtable (cbSizeVft/8). A missing bound or an out-of-range slot declines —
-    // this is the guard that prevents the host access violation.
-    match spec.vtable_slot_bound {
-        Some(bound) if slot < bound => {}
-        _ => return false,
-    }
-    // S5a HOST-AV SAFETY: a usable dual interface IID is mandatory. We only ever
-    // vtable-call after a SUCCESSFUL QueryInterface for this exact IID, so without
-    // one (or with a null IID) we cannot prove the pointer's vtable layout and
-    // must fall back to IDispatch.
-    match spec.interface_iid {
-        Some(iid) if !iid.is_null() => {}
-        _ => return false,
-    }
-    if !spec.callconv_is_stdcall {
-        return false;
-    }
-    // ARITY (D3 widened). The vtable ABI has no DISPPARAMS to shorten, so the slot
-    // call must pass the FULL declared positional list. We admit:
-    //  - exact arity (one supplied positional per declared param), OR
-    //  - FEWER supplied positionals when every MISSING one is a TRAILING optional
-    //    the dispatch site can synthesize (a typelib default, or a VARIANT that
-    //    becomes VT_ERROR/DISP_E_PARAMNOTFOUND). A required or non-synthesizable
-    //    optional in the missing tail declines (the IDispatch path drops trailing
-    //    optionals natively).
-    // A guest supplying MORE positionals than declared is always a mismatch.
-    if positional_arg_count > spec.parameter_types.len() {
-        return false;
-    }
-    if positional_arg_count < spec.parameter_types.len() {
-        if !trailing_optionals_are_synthesizable(spec, positional_arg_count) {
-            return false;
-        }
-        // D3 RETURN-TRUST GUARD. Synthesizing omitted optionals only newly routes a
-        // member to the vtable; we must not do that for a member whose typelib
-        // return type the vtable result-decode cannot trust. A `Method` declared to
-        // return a bare INTEGER scalar is the unreliable case: some Automation
-        // typelibs (DAO `Database.OpenRecordset`) declare an object-returning method
-        // with a scalar return (`RecordsetTypeEnum`/`Long`) even though COM hands
-        // back an interface pointer — the IDispatch path tolerates this by reading
-        // the live VARIANT vt, but the vtable path trusts the declared type and would
-        // decode the Recordset pointer as a `Long`. So for the D3 widening we decline
-        // a scalar-returning Method and let it fall back to IDispatch (a void or
-        // Object return, or a property-get, is decode-safe and stays admitted).
-        if spec.invoke_kind == crate::TypeLibMemberInvokeKind::Method
-            && matches!(
-                return_type,
-                Some(
-                    crate::TypeLibParamType::Long
-                        | crate::TypeLibParamType::Integer
-                        | crate::TypeLibParamType::Byte
-                        | crate::TypeLibParamType::LongLong
-                )
-            )
-        {
-            return false;
-        }
-    }
-    if spec
-        .parameter_types
-        .iter()
-        .any(|p| !is_v1_vtable_vartype(*p))
-    {
-        return false;
-    }
-    if let Some(rt) = return_type
-        && !is_v1_vtable_vartype(rt)
-    {
-        return false;
-    }
-    // Bug-4b: an OBJECT `[in]` arg is only vtable-safe when its declared interface IID
-    // was recovered — the marshaller `QueryInterface`s the supplied object to it so the
-    // callee receives the exact vtable. Without an IID (empty/`None` `parameter_iids`,
-    // e.g. fixture/catalog metadata) we cannot prove the pointer's interface layout, so
-    // decline to the IDispatch path rather than slot-call with a raw `IDispatch`.
-    for (i, p) in spec.parameter_types.iter().enumerate() {
-        if matches!(p, crate::TypeLibParamType::Object)
-            && spec.parameter_iids.get(i).copied().flatten().is_none()
-        {
-            return false;
-        }
-    }
-    true
+    vtable_gate_decline_reason(spec, positional_arg_count, return_type).is_none()
 }
 
 /// True when every declared parameter from `supplied_count..` (the ones the guest
@@ -2265,14 +2323,16 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // A property-put's HRESULT-only member returns no value; the trailing
         // value argument is an ordinary positional [in] param to the vtable slot.
         crate::TypeLibMemberInvokeKind::PropertyPut => ("property-put", None),
-        // PropertyPutRef (Set p = obj) is deferred to the IDispatch path in v1.
-        crate::TypeLibMemberInvokeKind::PropertyPutRef => return Ok(None),
+        // PropertyPutRef (Set p = obj) is deferred to the IDispatch path by
+        // the admission gate in v1, so the fallback boundary stays table-driven.
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => ("property-putref", None),
     };
     // Gate on the SUPPLIED positional count (the gate widens to admit fewer
     // supplied than declared when the missing trailing params are synthesizable).
-    if !vtable_gate_admits(spec, supplied_count, return_type) {
-        return Ok(None);
-    }
+    let plan = match build_vtable_invocation_plan(spec, supplied_count, return_type, label) {
+        Ok(plan) => plan,
+        Err(_) => return Ok(None),
+    };
     // Marshal the supplied positional args to `Variant` (the marshaller's input).
     let mut variant_args: Vec<Variant> = args[..supplied_count]
         .iter()
@@ -2313,13 +2373,9 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         .map(Variant::from_object_ref)
     };
 
-    let slot = spec.vtable_slot.expect("gate guaranteed a slot");
-
     // The member's typelib-declared DUAL interface IID (the gate proved it is
     // present and non-null) — both the QI target below and the PSOA registry key.
-    let interface_iid = spec
-        .interface_iid
-        .expect("gate guaranteed an interface IID");
+    let interface_iid = plan.interface_iid;
     let iid = interface_iid.to_guid();
 
     // OUT-OF-PROCESS DISCRIMINATOR (HOST-AV SAFETY), gated on the interface's
@@ -2379,13 +2435,10 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     // already checked this, but we re-verify here so a slot call can never over-run
     // the live vtable — the access violation the probe root-caused. Without a known
     // bound, or with an out-of-range slot, fall back to IDispatch.
-    match spec.vtable_slot_bound {
-        Some(bound) if slot < bound => {}
-        _ => {
-            // SAFETY: Release the QI'd reference we own, then fall back.
-            unsafe { crate::release_unknown(interface) };
-            return Ok(None);
-        }
+    if plan.slot >= plan.slot_bound {
+        // SAFETY: Release the QI'd reference we own, then fall back.
+        unsafe { crate::release_unknown(interface) };
+        return Ok(None);
     }
 
     // SAFETY: `interface` is the QI'd dual-interface pointer carrying one reference
@@ -2398,13 +2451,8 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     let result = unsafe {
         crate::windows_vtable::vtable_invoke(
             interface,
-            slot,
-            &spec.parameter_types,
-            &spec.parameter_iids,
-            return_type,
-            spec.invoke_kind,
+            &plan,
             &variant_args,
-            label,
             dispid,
             &mut resolve_object,
             &mut bind_dispatch_result,
@@ -2611,7 +2659,10 @@ where
 
 #[cfg(all(target_os = "windows", test))]
 mod gate_tests {
-    use super::{is_v1_vtable_vartype, synthesize_trailing_optional_args, vtable_gate_admits};
+    use super::{
+        VtableDeclineReason, is_v1_vtable_vartype, synthesize_trailing_optional_args,
+        vtable_gate_admits, vtable_gate_decline_reason,
+    };
     use crate::{ComInterfaceIid, ComMemberSpec, SourceTypeKind, TypeLibMemberInvokeKind};
 
     /// A vtable-eligible spec: a real custom INTERFACE dual, CC_STDCALL, a slot
@@ -2626,9 +2677,13 @@ mod gate_tests {
             is_default_member: false,
             vtable_slot: Some(slot),
             parameter_types: Vec::new(),
+            parameter_wire_types: Vec::new(),
             parameter_iids: Vec::new(),
             parameter_optional_defaults: Vec::new(),
             return_type: Some(crate::TypeLibParamType::Long),
+            return_wire_type: Some(crate::TypeLibWireType::Automation(
+                crate::TypeLibParamType::Long,
+            )),
             callconv_is_stdcall: true,
             interface_iid: Some(ComInterfaceIid {
                 data1: 0x1234_5678,
@@ -2651,6 +2706,71 @@ mod gate_tests {
             0,
             Some(crate::TypeLibParamType::Long)
         ));
+        assert_eq!(
+            vtable_gate_decline_reason(&spec, 0, Some(crate::TypeLibParamType::Long)),
+            None
+        );
+    }
+
+    #[test]
+    fn gate_decline_reasons_cover_descriptor_safety_predicates() {
+        let mut missing_slot = eligible_spec(17, 58);
+        missing_slot.vtable_slot = None;
+        assert_eq!(
+            vtable_gate_decline_reason(&missing_slot, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingSlot)
+        );
+
+        let reserved = eligible_spec(6, 58);
+        assert_eq!(
+            vtable_gate_decline_reason(&reserved, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::ReservedComSlot)
+        );
+
+        let mut missing_bound = eligible_spec(17, 58);
+        missing_bound.vtable_slot_bound = None;
+        assert_eq!(
+            vtable_gate_decline_reason(&missing_bound, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingSlotBound)
+        );
+
+        let out_of_bounds = eligible_spec(58, 58);
+        assert_eq!(
+            vtable_gate_decline_reason(&out_of_bounds, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::SlotOutOfBounds)
+        );
+
+        let mut missing_iid = eligible_spec(17, 58);
+        missing_iid.interface_iid = None;
+        assert_eq!(
+            vtable_gate_decline_reason(&missing_iid, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingInterfaceIid)
+        );
+
+        let mut non_stdcall = eligible_spec(17, 58);
+        non_stdcall.callconv_is_stdcall = false;
+        assert_eq!(
+            vtable_gate_decline_reason(&non_stdcall, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::NonStdcall)
+        );
+
+        let mut putref = eligible_spec(17, 58);
+        putref.invoke_kind = TypeLibMemberInvokeKind::PropertyPutRef;
+        putref.parameter_types = vec![crate::TypeLibParamType::Object];
+        putref.parameter_wire_types = vec![crate::TypeLibWireType::InterfacePointer {
+            name: "ITestDispatch".to_string(),
+        }];
+        putref.parameter_iids = vec![putref.interface_iid];
+        putref.return_type = None;
+        putref.return_wire_type = None;
+        assert_eq!(
+            vtable_gate_decline_reason(&putref, 1, None),
+            Some(VtableDeclineReason::PropertyPutRefDeferred)
+        );
+        assert!(
+            !vtable_gate_admits(&putref, 1, None),
+            "PropertyPutRef remains an IDispatch fallback until vtable putref is explicitly covered"
+        );
     }
 
     #[test]
@@ -2659,6 +2779,10 @@ mod gate_tests {
         // callable vtable slot, even with a slot+IID present. REJECT.
         let mut spec = eligible_spec(17, 58);
         spec.source_typekind = Some(SourceTypeKind::Dispatch);
+        assert_eq!(
+            vtable_gate_decline_reason(&spec, 0, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::NotDualInterface)
+        );
         assert!(!vtable_gate_admits(
             &spec,
             0,
@@ -2720,6 +2844,9 @@ mod gate_tests {
             crate::OptionalParamDefault::OptionalVariant,
         ];
         spec.return_type = Some(crate::TypeLibParamType::Object);
+        spec.return_wire_type = Some(crate::TypeLibWireType::InterfacePointer {
+            name: "Recordset".to_string(),
+        });
         spec
     }
 
@@ -2792,6 +2919,10 @@ mod gate_tests {
         ));
         // More supplied than declared is always a mismatch.
         let spec = three_param_optional_variant_spec();
+        assert_eq!(
+            vtable_gate_decline_reason(&spec, 4, Some(crate::TypeLibParamType::Object)),
+            Some(VtableDeclineReason::TooManyArgs)
+        );
         assert!(!vtable_gate_admits(
             &spec,
             4,
@@ -2815,6 +2946,7 @@ mod gate_tests {
             let mut spec = three_param_optional_variant_spec();
             spec.invoke_kind = TypeLibMemberInvokeKind::Method;
             spec.return_type = Some(scalar);
+            spec.return_wire_type = Some(crate::TypeLibWireType::Automation(scalar));
             // 1 supplied of 3 (omitted optionals) + scalar-returning Method → DECLINE.
             assert!(
                 !vtable_gate_admits(&spec, 1, Some(scalar)),
@@ -2843,6 +2975,9 @@ mod gate_tests {
         let mut scalar_getter = three_param_optional_variant_spec();
         scalar_getter.invoke_kind = TypeLibMemberInvokeKind::PropertyGet;
         scalar_getter.return_type = Some(crate::TypeLibParamType::Long);
+        scalar_getter.return_wire_type = Some(crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::Long,
+        ));
         assert!(vtable_gate_admits(
             &scalar_getter,
             1,
@@ -2870,11 +3005,18 @@ mod gate_tests {
         trailing.requires_argument = true;
         trailing.parameter_types =
             vec![crate::TypeLibParamType::Long, crate::TypeLibParamType::Long];
+        trailing.parameter_wire_types = vec![
+            crate::TypeLibWireType::Automation(crate::TypeLibParamType::Long),
+            crate::TypeLibWireType::Automation(crate::TypeLibParamType::Long),
+        ];
         trailing.parameter_optional_defaults = vec![
             crate::OptionalParamDefault::Required,
             crate::OptionalParamDefault::Lcid,
         ];
         trailing.return_type = Some(crate::TypeLibParamType::Variant);
+        trailing.return_wire_type = Some(crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::Variant,
+        ));
         assert!(
             vtable_gate_admits(&trailing, 1, Some(crate::TypeLibParamType::Variant)),
             "lcid-trailing [Required, Lcid] with 1 supplied real arg must ADMIT \
@@ -2948,9 +3090,96 @@ mod gate_tests {
         // And a member whose RETURN VARTYPE is out-of-set declines outright.
         let mut decimal_ret = eligible_spec(17, 58);
         decimal_ret.return_type = Some(crate::TypeLibParamType::Decimal);
+        assert_eq!(
+            vtable_gate_decline_reason(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
+            Some(VtableDeclineReason::UnsupportedReturnType(
+                crate::TypeLibParamType::Decimal
+            ))
+        );
         assert!(
             !vtable_gate_admits(&decimal_ret, 0, Some(crate::TypeLibParamType::Decimal)),
             "a Decimal-returning member must decline the vtable path"
+        );
+    }
+
+    #[test]
+    fn gate_decline_reasons_cover_abi_shape_predicates() {
+        let mut bad_param = eligible_spec(17, 58);
+        bad_param.parameter_types = vec![crate::TypeLibParamType::ByRefVariant];
+        assert_eq!(
+            vtable_gate_decline_reason(&bad_param, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::UnsupportedParameterType(
+                crate::TypeLibParamType::ByRefVariant
+            ))
+        );
+
+        let mut object_arg = eligible_spec(17, 58);
+        object_arg.parameter_types = vec![crate::TypeLibParamType::Object];
+        object_arg.parameter_iids = vec![None];
+        assert_eq!(
+            vtable_gate_decline_reason(&object_arg, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingObjectParameterIid)
+        );
+
+        let mut mismatched_wire_arity = eligible_spec(17, 58);
+        mismatched_wire_arity.parameter_types = vec![crate::TypeLibParamType::Variant];
+        mismatched_wire_arity.parameter_wire_types = Vec::new();
+        assert_eq!(
+            vtable_gate_decline_reason(
+                &mismatched_wire_arity,
+                1,
+                Some(crate::TypeLibParamType::Long)
+            ),
+            None,
+            "empty wire metadata remains backward-compatible"
+        );
+        mismatched_wire_arity.parameter_wire_types = vec![
+            crate::TypeLibWireType::Automation(crate::TypeLibParamType::Variant),
+            crate::TypeLibWireType::Automation(crate::TypeLibParamType::Variant),
+        ];
+        assert_eq!(
+            vtable_gate_decline_reason(
+                &mismatched_wire_arity,
+                1,
+                Some(crate::TypeLibParamType::Long)
+            ),
+            Some(VtableDeclineReason::ParameterWireTypeArityMismatch)
+        );
+
+        let mut safearray_param = eligible_spec(17, 58);
+        safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
+        safearray_param.parameter_wire_types = vec![crate::TypeLibWireType::SafeArrayVariant];
+        assert_eq!(
+            vtable_gate_decline_reason(&safearray_param, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::UnsupportedParameterWireType)
+        );
+
+        let mut safearray_return = eligible_spec(17, 58);
+        safearray_return.return_type = Some(crate::TypeLibParamType::Variant);
+        safearray_return.return_wire_type = Some(crate::TypeLibWireType::SafeArrayVariant);
+        assert_eq!(
+            vtable_gate_decline_reason(
+                &safearray_return,
+                0,
+                Some(crate::TypeLibParamType::Variant)
+            ),
+            Some(VtableDeclineReason::UnsupportedReturnWireType)
+        );
+
+        let mut unsynthesizable = three_param_optional_variant_spec();
+        unsynthesizable.parameter_optional_defaults[2] =
+            crate::OptionalParamDefault::OptionalNoDefault;
+        unsynthesizable.parameter_types[2] = crate::TypeLibParamType::Long;
+        assert_eq!(
+            vtable_gate_decline_reason(&unsynthesizable, 1, Some(crate::TypeLibParamType::Object)),
+            Some(VtableDeclineReason::UnsynthesizableTrailingArgs)
+        );
+
+        let mut scalar_method = three_param_optional_variant_spec();
+        scalar_method.return_type = Some(crate::TypeLibParamType::Long);
+        assert_eq!(
+            vtable_gate_decline_reason(&scalar_method, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::ScalarMethodReturnWithSynthesizedArgs)
         );
     }
 }

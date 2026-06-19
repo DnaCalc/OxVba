@@ -939,7 +939,13 @@ unsafe fn retval_typedesc_to_wire_type(
     if tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY {
         return TypeLibWireType::ByRefSafeArrayVariant;
     }
-    TypeLibWireType::Automation(retval_typedesc_to_param_type(owner_ptinfo, tdesc))
+    let return_type = retval_typedesc_to_param_type(owner_ptinfo, tdesc);
+    if return_type == TypeLibParamType::Object
+        && let Some(name) = typedesc_to_interface_binding_name(owner_ptinfo, tdesc)
+    {
+        return TypeLibWireType::InterfacePointer { name };
+    }
+    TypeLibWireType::Automation(return_type)
 }
 
 /// Recover the interface IID an object-typed parameter's `TYPEDESC` declares, for the

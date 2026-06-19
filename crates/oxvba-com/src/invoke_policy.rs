@@ -14,7 +14,7 @@ pub struct BoundRuntimeInvokePlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnboundRuntimeInvokePlan {
-    MemberSpec(ComMemberSpec),
+    MemberSpec(Box<ComMemberSpec>),
     /// No static member metadata is available for this token (a late-bound call, or an
     /// early-bound call on a runtime-bound result object whose type the registry cannot
     /// re-resolve). The dispid is trusted from the caller; the invoke kind is unknown, so
@@ -113,7 +113,7 @@ pub fn plan_unbound_runtime_invoke(
     known_spec: Option<ComMemberSpec>,
 ) -> Result<UnboundRuntimeInvokePlan, String> {
     if let Some(spec) = known_spec {
-        return Ok(UnboundRuntimeInvokePlan::MemberSpec(spec));
+        return Ok(UnboundRuntimeInvokePlan::MemberSpec(Box::new(spec)));
     }
     // Named args without metadata are allowed to pass through. The Windows adapter
     // resolves named arg DISPIDs at runtime via GetIDsOfNames on the IDispatch interface.
@@ -213,9 +213,11 @@ mod tests {
             is_default_member: false,
             vtable_slot: None,
             parameter_types: Vec::new(),
+            parameter_wire_types: Vec::new(),
             parameter_iids: Vec::new(),
             parameter_optional_defaults: Vec::new(),
             return_type: None,
+            return_wire_type: None,
             callconv_is_stdcall: false,
             interface_iid: None,
             is_dual: false,
@@ -242,9 +244,11 @@ mod tests {
             is_default_member: false,
             vtable_slot: None,
             parameter_types: vec![],
+            parameter_wire_types: vec![],
             parameter_iids: vec![],
             parameter_optional_defaults: vec![],
             return_type: None,
+            return_wire_type: None,
             callconv_is_stdcall: true,
             interface_iid: None,
             is_dual: false,
@@ -300,9 +304,11 @@ mod tests {
                 is_default_member: true,
                 vtable_slot: None,
                 parameter_types: Vec::new(),
+                parameter_wire_types: Vec::new(),
                 parameter_iids: Vec::new(),
                 parameter_optional_defaults: Vec::new(),
                 return_type: None,
+                return_wire_type: None,
                 callconv_is_stdcall: false,
                 interface_iid: None,
                 is_dual: false,
@@ -339,9 +345,11 @@ mod tests {
                 is_default_member: true,
                 vtable_slot: None,
                 parameter_types: Vec::new(),
+                parameter_wire_types: Vec::new(),
                 parameter_iids: Vec::new(),
                 parameter_optional_defaults: Vec::new(),
                 return_type: None,
+                return_wire_type: None,
                 callconv_is_stdcall: false,
                 interface_iid: None,
                 is_dual: false,

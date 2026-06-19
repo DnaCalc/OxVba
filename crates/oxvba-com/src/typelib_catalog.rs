@@ -7,7 +7,7 @@ use crate::typelib::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeLibMemberLookupResult {
-    Resolved(ComMemberToken, ComMemberSpec),
+    Resolved(ComMemberToken, Box<ComMemberSpec>),
     Missing,
     Ambiguous,
 }
@@ -252,7 +252,7 @@ pub fn member_token_and_spec_from_typelib_metadata_name(
     member_name: &str,
 ) -> Option<(ComMemberToken, ComMemberSpec)> {
     match resolve_member_token_and_spec_from_typelib_metadata_name(blob, member_name) {
-        TypeLibMemberLookupResult::Resolved(token, spec) => Some((token, spec)),
+        TypeLibMemberLookupResult::Resolved(token, spec) => Some((token, *spec)),
         TypeLibMemberLookupResult::Missing | TypeLibMemberLookupResult::Ambiguous => None,
     }
 }
@@ -273,7 +273,7 @@ pub fn resolve_member_token_and_spec_from_typelib_metadata_name(
     }
     TypeLibMemberLookupResult::Resolved(
         ComMemberToken::new(member.token),
-        map_member_metadata_to_spec(member),
+        Box::new(map_member_metadata_to_spec(member)),
     )
 }
 
@@ -292,7 +292,7 @@ pub fn resolve_default_member_token_and_spec_from_typelib_metadata(
     }
     TypeLibMemberLookupResult::Resolved(
         ComMemberToken::new(member.token),
-        map_member_metadata_to_spec(member),
+        Box::new(map_member_metadata_to_spec(member)),
     )
 }
 
@@ -321,9 +321,11 @@ pub(crate) fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> Com
         is_default_member: member.is_default_member,
         vtable_slot: member.vtable_slot,
         parameter_types: member.parameter_types.clone(),
+        parameter_wire_types: member.parameter_wire_types.clone(),
         parameter_iids: member.parameter_iids.clone(),
         parameter_optional_defaults: member.parameter_optional_defaults.clone(),
         return_type: member.return_type,
+        return_wire_type: member.return_wire_type.clone(),
         callconv_is_stdcall: member.callconv_is_stdcall,
         interface_iid: member.interface_iid,
         is_dual: member.is_dual,

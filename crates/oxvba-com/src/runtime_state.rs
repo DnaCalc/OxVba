@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComCallbackValue, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
-    TypeLibParamType, runtime_class_descriptor_from_typelib_metadata,
+    TypeLibParamType, TypeLibWireType, runtime_class_descriptor_from_typelib_metadata,
 };
 use oxvba_runtime::{
     ObjectRef, RuntimeClassDescriptor, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
@@ -259,6 +259,11 @@ fn member_specs_from_typelib_metadata(
                     is_default_member: member.is_default_member,
                     vtable_slot: member.vtable_slot,
                     parameter_types: member.parameter_types.clone(),
+                    // Carry the exact wire shape alongside the semantic VARTYPEs. The
+                    // vtable marshaller still gates on `parameter_types` today, but
+                    // SAFEARRAY/interface-pointer expansion needs the original
+                    // TYPEDESC-derived shape at runtime.
+                    parameter_wire_types: member.parameter_wire_types.clone(),
                     // Bug-4b: carry the per-parameter object-arg interface IIDs so the
                     // vtable marshaller can QI each object arg to its declared interface.
                     parameter_iids: member.parameter_iids.clone(),
@@ -272,6 +277,7 @@ fn member_specs_from_typelib_metadata(
                     // metadata blob; honor the explicit `callconv_is_stdcall`
                     // bit the live loader stamps onto `TypeLibMemberMetadata`.
                     callconv_is_stdcall: member.callconv_is_stdcall,
+                    return_wire_type: member.return_wire_type.clone(),
                     // S5a: carry the dual interface IID so the vtable dispatch
                     // site can QueryInterface for it before any slot call.
                     interface_iid: member.interface_iid,
@@ -391,6 +397,11 @@ pub struct ComMemberSpec {
     /// Per-parameter VARTYPEs carried from the FUNCDESC, left-to-right (the
     /// `[out,retval]` parameter is surfaced as `return_type`, not here).
     pub parameter_types: Vec<TypeLibParamType>,
+    /// Per-parameter exact wire shape recovered from TYPEDESC/HREFTYPE, parallel
+    /// to `parameter_types`. This keeps SAFEARRAY, interface-pointer, and
+    /// automation scalar distinctions available to runtime admission/marshalling
+    /// even when they collapse to the same semantic `TypeLibParamType`.
+    pub parameter_wire_types: Vec<TypeLibWireType>,
     /// Per-parameter interface IID (parallel to `parameter_types`), `Some` only for an
     /// OBJECT-typed `[in]` parameter declared as a specific interface (`IFoo*`). The
     /// vtable marshaller `QueryInterface`s the supplied object for this exact IID before
@@ -410,6 +421,9 @@ pub struct ComMemberSpec {
     /// The member's logical return type (typically the `[out,retval]` T* of a
     /// dual member, whose ABI return is the HRESULT). `None` for `void`/HRESULT.
     pub return_type: Option<TypeLibParamType>,
+    /// Exact wire shape of the logical return value, when the typelib supplied
+    /// one. This is the result-side companion to `parameter_wire_types`.
+    pub return_wire_type: Option<TypeLibWireType>,
     /// True when the member's FUNCDESC declares `CC_STDCALL` (callconv == 4),
     /// the only calling convention the x64 vtable marshaller may call.
     pub callconv_is_stdcall: bool,
@@ -632,7 +646,7 @@ mod tests {
     };
     use crate::{
         ComInterfaceIid, ComMemberToken, ComValue, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-        TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+        TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity, TypeLibWireType,
     };
     use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, RuntimeMemberInvokeKind, VarType};
 
@@ -666,10 +680,10 @@ mod tests {
                 parameter_optional_defaults: Vec::new(),
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::String],
-                parameter_wire_types: Vec::new(),
+                parameter_wire_types: vec![TypeLibWireType::Automation(TypeLibParamType::String)],
                 parameter_iids: Vec::new(),
                 return_type: Some(TypeLibParamType::Long),
-                return_wire_type: None,
+                return_wire_type: Some(TypeLibWireType::Automation(TypeLibParamType::Long)),
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: None,
@@ -744,10 +758,10 @@ mod tests {
                 parameter_optional_defaults: Vec::new(),
                 is_default_member: false,
                 parameter_types: vec![TypeLibParamType::String],
-                parameter_wire_types: Vec::new(),
+                parameter_wire_types: vec![TypeLibWireType::Automation(TypeLibParamType::String)],
                 parameter_iids: Vec::new(),
                 return_type: Some(TypeLibParamType::Long),
-                return_wire_type: None,
+                return_wire_type: Some(TypeLibWireType::Automation(TypeLibParamType::Long)),
                 callconv_is_stdcall: true,
                 is_dual: true,
                 interface_iid: Some(ComInterfaceIid {
@@ -779,9 +793,19 @@ mod tests {
             "FUNCDESC parameter VARTYPEs must reach the member spec"
         );
         assert_eq!(
+            spec.parameter_wire_types,
+            vec![TypeLibWireType::Automation(TypeLibParamType::String)],
+            "TYPEDESC-derived parameter wire types must reach the member spec"
+        );
+        assert_eq!(
             spec.return_type,
             Some(TypeLibParamType::Long),
             "the [out,retval] return type must reach the member spec"
+        );
+        assert_eq!(
+            spec.return_wire_type,
+            Some(TypeLibWireType::Automation(TypeLibParamType::Long)),
+            "the [out,retval] wire type must reach the member spec"
         );
         assert!(
             spec.callconv_is_stdcall,
