@@ -3466,6 +3466,7 @@ pub unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
 //   9  put_Value(this, VARIANT*)                   -> HRESULT
 //   10 Lookup(this, BSTR, IDispatch**)             -> HRESULT
 //   11 raise_error(this, i32*) [SetErrorInfo+fail] -> HRESULT
+//   12..23 additional typed ABI coverage slots
 // ════════════════════════════════════════════════════════════════════════
 
 /// The custom-interface IErrorInfo IID, `{1CF2B120-547D-101B-8E65-08002B2BD119}`.
@@ -3492,11 +3493,27 @@ pub const DUAL_SLOT_GET_CREATED: u16 = 13;
 /// slot 14: `get_Owner(this, [out,retval] IUnknown**)` — a VT_UNKNOWN return that
 /// the marshaller must `QueryInterface(IDispatch)` (`query_dispatch_from_unknown`).
 pub const DUAL_SLOT_GET_OWNER: u16 = 14;
+pub const DUAL_SLOT_VALIDATE_ALL_INPUTS: u16 = 15;
+pub const DUAL_SLOT_GET_BYTE_VALUE: u16 = 16;
+pub const DUAL_SLOT_GET_INTEGER_VALUE: u16 = 17;
+pub const DUAL_SLOT_GET_LONGLONG_VALUE: u16 = 18;
+pub const DUAL_SLOT_GET_SINGLE_VALUE: u16 = 19;
+pub const DUAL_SLOT_GET_DOUBLE_VALUE: u16 = 20;
+pub const DUAL_SLOT_GET_TEXT_VALUE: u16 = 21;
+pub const DUAL_SLOT_GET_VARIANT_VALUE: u16 = 22;
+pub const DUAL_SLOT_PUTREF_OBJECT_VALUE: u16 = 23;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
 /// The OLE-date value `get_Created` returns (an arbitrary fixed f64).
 pub const DUAL_CREATED_OLE_DATE: f64 = 45_000.5;
+pub const DUAL_BYTE_VALUE: u8 = 201;
+pub const DUAL_INTEGER_VALUE: i16 = -1234;
+pub const DUAL_LONGLONG_VALUE: i64 = 5_000_000_000;
+pub const DUAL_SINGLE_VALUE: f32 = 12.5;
+pub const DUAL_DOUBLE_VALUE: f64 = -9876.25;
+pub const DUAL_TEXT_VALUE: &str = "vtable-text";
+pub const DUAL_VARIANT_VALUE: i32 = 4242;
 
 /// The custom **dual interface IID** the fixture answers from `QueryInterface`
 /// (besides `IUnknown`/`IDispatch`). Workset S5a: the vtable dispatch path QIs the
@@ -3568,6 +3585,46 @@ struct RawDualVtbl {
     /// slot 14: `get_Owner(this, [out,retval] IUnknown**)`
     get_owner:
         unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut *mut RawIUnknown) -> i32,
+    /// slot 15
+    validate_all_inputs: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        byte_value: u8,
+        integer_value: i16,
+        long_value: i32,
+        longlong_value: i64,
+        single_value: f32,
+        double_value: f64,
+        currency_value: i64,
+        date_value: f64,
+        bool_value: VARIANT_BOOL,
+        text_value: windows_sys::core::BSTR,
+        variant_value: *mut VARIANT,
+        object_value: *mut RawIDispatch,
+        out: *mut VARIANT_BOOL,
+    ) -> i32,
+    /// slot 16
+    get_byte_value: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut u8) -> i32,
+    /// slot 17
+    get_integer_value:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut i16) -> i32,
+    /// slot 18
+    get_longlong_value:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut i64) -> i32,
+    /// slot 19
+    get_single_value: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut f32) -> i32,
+    /// slot 20
+    get_double_value: unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut f64) -> i32,
+    /// slot 21
+    get_text_value: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        out: *mut windows_sys::core::BSTR,
+    ) -> i32,
+    /// slot 22
+    get_variant_value:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut VARIANT) -> i32,
+    /// slot 23
+    putref_object_value:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, value: *mut RawIDispatch) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3600,6 +3657,15 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     get_price: oxvba_dual_get_price,
     get_created: oxvba_dual_get_created,
     get_owner: oxvba_dual_get_owner,
+    validate_all_inputs: oxvba_dual_validate_all_inputs,
+    get_byte_value: oxvba_dual_get_byte_value,
+    get_integer_value: oxvba_dual_get_integer_value,
+    get_longlong_value: oxvba_dual_get_longlong_value,
+    get_single_value: oxvba_dual_get_single_value,
+    get_double_value: oxvba_dual_get_double_value,
+    get_text_value: oxvba_dual_get_text_value,
+    get_variant_value: oxvba_dual_get_variant_value,
+    putref_object_value: oxvba_dual_putref_object_value,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -3868,6 +3934,164 @@ unsafe extern "system" fn oxvba_dual_get_owner(
     // first field is its IUnknown vtable, so it casts to IUnknown* directly and the
     // [out,retval] convention transfers that single reference to the caller.
     *out = create_oxvba_test_dispatch().cast::<RawIUnknown>();
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn variant_i32_value(variant: *mut VARIANT) -> Option<i32> {
+    if variant.is_null() || (*variant).Anonymous.Anonymous.vt != VT_I4 {
+        return None;
+    }
+    Some((*variant).Anonymous.Anonymous.Anonymous.lVal)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
+unsafe extern "system" fn oxvba_dual_validate_all_inputs(
+    _this: *mut core::ffi::c_void,
+    byte_value: u8,
+    integer_value: i16,
+    long_value: i32,
+    longlong_value: i64,
+    single_value: f32,
+    double_value: f64,
+    currency_value: i64,
+    date_value: f64,
+    bool_value: VARIANT_BOOL,
+    text_value: windows_sys::core::BSTR,
+    variant_value: *mut VARIANT,
+    object_value: *mut RawIDispatch,
+    out: *mut VARIANT_BOOL,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let ok = byte_value == 9
+        && integer_value == -12
+        && long_value == 34_567
+        && longlong_value == DUAL_LONGLONG_VALUE
+        && (single_value - 1.5).abs() < f32::EPSILON
+        && (double_value + 2.25).abs() < f64::EPSILON
+        && currency_value == DUAL_PRICE_SCALED_I64
+        && (date_value - DUAL_CREATED_OLE_DATE).abs() < f64::EPSILON
+        && bool_value != 0
+        && !text_value.is_null()
+        && variant_i32_value(variant_value) == Some(1234)
+        && !object_value.is_null();
+    *out = if ok { -1 } else { 0 };
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_byte_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut u8,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = DUAL_BYTE_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_integer_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut i16,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = DUAL_INTEGER_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_longlong_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut i64,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = DUAL_LONGLONG_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_single_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut f32,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = DUAL_SINGLE_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_double_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut f64,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = DUAL_DOUBLE_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_text_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut windows_sys::core::BSTR,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let wide: Vec<u16> = DUAL_TEXT_VALUE
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    *out = SysAllocString(wide.as_ptr());
+    if (*out).is_null() {
+        return COM_E_INVALIDARG;
+    }
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_variant_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut VARIANT,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    (*out).Anonymous.Anonymous.vt = VT_I4;
+    (*out).Anonymous.Anonymous.Anonymous.lVal = DUAL_VARIANT_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_putref_object_value(
+    this: *mut core::ffi::c_void,
+    value: *mut RawIDispatch,
+) -> i32 {
+    if value.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let owner = as_oxvba_dual(this);
+    (*owner).last_put_value.store(777, Ordering::Release);
     COM_S_OK
 }
 

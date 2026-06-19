@@ -182,6 +182,7 @@ enum OutCell {
     None,
     I32(Box<i32>),
     I16(Box<i16>),
+    U8(Box<u8>),
     /// A `VARIANT_BOOL` (i16) retval cell that decodes to a Boolean Variant
     /// (`!= 0` → true), distinct from a plain `VT_I2` Integer retval.
     Bool(Box<i16>),
@@ -581,7 +582,7 @@ fn alloc_out_cell(return_type: TypeLibParamType) -> Result<OutCell, String> {
         P::Long => OutCell::I32(Box::new(0)),
         P::Integer => OutCell::I16(Box::new(0)),
         P::Boolean => OutCell::Bool(Box::new(0)),
-        P::Byte => OutCell::I32(Box::new(0)),
+        P::Byte => OutCell::U8(Box::new(0)),
         P::LongLong => OutCell::I64(Box::new(0)),
         P::Double => OutCell::F64(Box::new(0.0)),
         P::Date => OutCell::Date(Box::new(0.0)),
@@ -604,6 +605,7 @@ fn out_cell_ptr(cell: &mut OutCell) -> Option<*mut c_void> {
         OutCell::None => None,
         OutCell::I32(b) => Some((b.as_mut() as *mut i32).cast::<c_void>()),
         OutCell::I16(b) | OutCell::Bool(b) => Some((b.as_mut() as *mut i16).cast::<c_void>()),
+        OutCell::U8(b) => Some((b.as_mut() as *mut u8).cast::<c_void>()),
         OutCell::I64(b) | OutCell::Currency(b) => Some((b.as_mut() as *mut i64).cast::<c_void>()),
         OutCell::F64(b) | OutCell::Date(b) => Some((b.as_mut() as *mut f64).cast::<c_void>()),
         OutCell::F32(b) => Some((b.as_mut() as *mut f32).cast::<c_void>()),
@@ -665,6 +667,7 @@ where
         OutCell::None => Variant::empty(),
         OutCell::I32(b) => Variant::from_i32(*b),
         OutCell::I16(b) => Variant::from_i16(*b),
+        OutCell::U8(b) => Variant::from_u8(*b),
         // VARIANT_BOOL: any non-zero is true (VBA convention writes -1 for true).
         OutCell::Bool(b) => Variant::from_bool(*b != 0),
         OutCell::I64(b) => Variant::from_i64(*b),
@@ -814,10 +817,16 @@ fn com_value_to_currency_i64(value: &ComValue) -> Result<i64, String> {
 mod tests {
     use super::*;
     use crate::windows_test_dispatch::{
-        DUAL_CREATED_OLE_DATE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
-        DUAL_RAISE_ERROR_SOURCE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED,
-        DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
-        DUAL_SLOT_RAISE_ERROR, create_oxvba_dual_vtable_object,
+        DUAL_BYTE_VALUE, DUAL_CREATED_OLE_DATE, DUAL_DOUBLE_VALUE, DUAL_INTEGER_VALUE,
+        DUAL_LONGLONG_VALUE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
+        DUAL_RAISE_ERROR_SOURCE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE,
+        DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_DOUBLE_VALUE,
+        DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER,
+        DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE,
+        DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
+        DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS,
+        DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object,
+        create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
     use oxvba_runtime::VarType;
@@ -860,6 +869,28 @@ mod tests {
             let release: unsafe extern "system" fn(*mut c_void) -> u32 =
                 std::mem::transmute(release);
             let _ = release(this);
+        }
+    }
+
+    fn idispatch_iid() -> crate::ComInterfaceIid {
+        crate::ComInterfaceIid {
+            data1: 0x0002_0400,
+            data2: 0,
+            data3: 0,
+            data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+        }
+    }
+
+    fn object_resolver_for(
+        expected: ObjectRef,
+        dispatch: *mut crate::RawIDispatch,
+    ) -> impl FnMut(ObjectRef) -> Result<*mut c_void, String> {
+        move |object| {
+            if object == expected {
+                Ok(dispatch.cast::<c_void>())
+            } else {
+                Err(format!("unexpected object handle {:?}", object.raw()))
+            }
         }
     }
 
@@ -1214,6 +1245,218 @@ mod tests {
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn validates_supported_inbound_automation_breadth() {
+        let this = create_oxvba_dual_vtable_object();
+        let object = ObjectRef::from_compat_identity(123);
+        let object_dispatch = create_oxvba_test_dispatch();
+        let mut resolve = object_resolver_for(object.clone(), object_dispatch);
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_VALIDATE_ALL_INPUTS,
+            vec![
+                TypeLibParamType::Byte,
+                TypeLibParamType::Integer,
+                TypeLibParamType::Long,
+                TypeLibParamType::LongLong,
+                TypeLibParamType::Single,
+                TypeLibParamType::Double,
+                TypeLibParamType::Currency,
+                TypeLibParamType::Date,
+                TypeLibParamType::Boolean,
+                TypeLibParamType::String,
+                TypeLibParamType::Variant,
+                TypeLibParamType::Object,
+            ],
+            vec![
+                TypeLibWireType::Automation(TypeLibParamType::Byte),
+                TypeLibWireType::Automation(TypeLibParamType::Integer),
+                TypeLibWireType::Automation(TypeLibParamType::Long),
+                TypeLibWireType::Automation(TypeLibParamType::LongLong),
+                TypeLibWireType::Automation(TypeLibParamType::Single),
+                TypeLibWireType::Automation(TypeLibParamType::Double),
+                TypeLibWireType::Automation(TypeLibParamType::Currency),
+                TypeLibWireType::Automation(TypeLibParamType::Date),
+                TypeLibWireType::Automation(TypeLibParamType::Boolean),
+                TypeLibWireType::Automation(TypeLibParamType::String),
+                TypeLibWireType::Automation(TypeLibParamType::Variant),
+                TypeLibWireType::InterfacePointer {
+                    name: "IDispatch".to_string(),
+                },
+            ],
+            vec![
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(idispatch_iid()),
+            ],
+            Some(TypeLibParamType::Boolean),
+            Some(TypeLibWireType::Automation(TypeLibParamType::Boolean)),
+            TypeLibMemberInvokeKind::Method,
+        );
+        // SAFETY: slot 15 is the fixture's typed-input validator with the exact
+        // ABI described by the plan.
+        let value = unsafe {
+            vtable_invoke(
+                this,
+                &plan,
+                &[
+                    Variant::from_u8(9),
+                    Variant::from_i16(-12),
+                    Variant::from_i32(34_567),
+                    Variant::from_i64(DUAL_LONGLONG_VALUE),
+                    Variant::from_f64(1.5),
+                    Variant::from_f64(-2.25),
+                    Variant::from_currency_scaled_i64(DUAL_PRICE_SCALED_I64),
+                    Variant::from_date_f64(DUAL_CREATED_OLE_DATE),
+                    Variant::from_bool(true),
+                    Variant::from_string("typed-input"),
+                    Variant::from_i32(1234),
+                    Variant::from_object_ref(object),
+                ],
+                15,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("typed inbound vtable call should succeed");
+        assert_eq!(
+            value.as_bool(),
+            Some(true),
+            "fixture must confirm every inbound value survived ABI lowering"
+        );
+        // SAFETY: balance both fixture references handed to the test.
+        unsafe {
+            crate::release_dispatch(object_dispatch);
+            release_dual(this);
+        }
+    }
+
+    #[test]
+    fn returns_supported_scalar_string_and_variant_breadth() {
+        let cases = [
+            (
+                DUAL_SLOT_GET_BYTE_VALUE,
+                TypeLibParamType::Byte,
+                TypeLibWireType::Automation(TypeLibParamType::Byte),
+                Variant::from_u8(DUAL_BYTE_VALUE),
+            ),
+            (
+                DUAL_SLOT_GET_INTEGER_VALUE,
+                TypeLibParamType::Integer,
+                TypeLibWireType::Automation(TypeLibParamType::Integer),
+                Variant::from_i16(DUAL_INTEGER_VALUE),
+            ),
+            (
+                DUAL_SLOT_GET_LONGLONG_VALUE,
+                TypeLibParamType::LongLong,
+                TypeLibWireType::Automation(TypeLibParamType::LongLong),
+                Variant::from_i64(DUAL_LONGLONG_VALUE),
+            ),
+            (
+                DUAL_SLOT_GET_SINGLE_VALUE,
+                TypeLibParamType::Single,
+                TypeLibWireType::Automation(TypeLibParamType::Single),
+                Variant::from_f64(f64::from(DUAL_SINGLE_VALUE)),
+            ),
+            (
+                DUAL_SLOT_GET_DOUBLE_VALUE,
+                TypeLibParamType::Double,
+                TypeLibWireType::Automation(TypeLibParamType::Double),
+                Variant::from_f64(DUAL_DOUBLE_VALUE),
+            ),
+            (
+                DUAL_SLOT_GET_TEXT_VALUE,
+                TypeLibParamType::String,
+                TypeLibWireType::Automation(TypeLibParamType::String),
+                Variant::from_string(DUAL_TEXT_VALUE),
+            ),
+            (
+                DUAL_SLOT_GET_VARIANT_VALUE,
+                TypeLibParamType::Variant,
+                TypeLibWireType::Automation(TypeLibParamType::Variant),
+                Variant::from_i32(DUAL_VARIANT_VALUE),
+            ),
+        ];
+
+        for (slot, return_type, return_wire_type, expected) in cases {
+            let this = create_oxvba_dual_vtable_object();
+            let mut resolve = no_object_resolver();
+            let mut bind = release_and_bind();
+            let plan = invocation_plan(
+                slot,
+                vec![],
+                vec![],
+                vec![],
+                Some(return_type),
+                Some(return_wire_type),
+                TypeLibMemberInvokeKind::PropertyGet,
+            );
+            // SAFETY: each slot is a no-arg property getter returning the declared
+            // automation shape.
+            let value = unsafe {
+                vtable_invoke(this, &plan, &[], i32::from(slot), &mut resolve, &mut bind)
+            }
+            .expect("typed return vtable call should succeed");
+            assert_eq!(
+                value, expected,
+                "slot {slot} should decode through the declared out-cell"
+            );
+            // SAFETY: balances the create_* reference for this case.
+            unsafe { release_dual(this) };
+        }
+    }
+
+    #[test]
+    fn putref_object_value_uses_interface_pointer_vtable_shape() {
+        let this = create_oxvba_dual_vtable_object();
+        let object = ObjectRef::from_compat_identity(456);
+        let object_dispatch = create_oxvba_test_dispatch();
+        let mut resolve = object_resolver_for(object.clone(), object_dispatch);
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_PUTREF_OBJECT_VALUE,
+            vec![TypeLibParamType::Object],
+            vec![TypeLibWireType::InterfacePointer {
+                name: "IDispatch".to_string(),
+            }],
+            vec![Some(idispatch_iid())],
+            None,
+            None,
+            TypeLibMemberInvokeKind::PropertyPutRef,
+        );
+        // SAFETY: slot 23 is `putref_ObjectValue(IDispatch*)` with no retval.
+        let value = unsafe {
+            vtable_invoke(
+                this,
+                &plan,
+                &[Variant::from_object_ref(object)],
+                23,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("putref object vtable call should succeed");
+        assert_eq!(
+            value.vtype(),
+            VarType::Empty,
+            "no-retval putref returns Empty on success"
+        );
+        // SAFETY: balance both fixture references handed to the test.
+        unsafe {
+            crate::release_dispatch(object_dispatch);
+            release_dual(this);
+        }
     }
 
     #[test]

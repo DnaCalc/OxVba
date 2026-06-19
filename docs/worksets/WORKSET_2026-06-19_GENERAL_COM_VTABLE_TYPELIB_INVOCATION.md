@@ -26,8 +26,8 @@ explicit admission/fallback policy.
 3. Runtime call-shape tables: document and enforce the mapping from typelib VARTYPE /
    TYPEDESC / FUNCDESC to `ComMemberSpec`, `TypeLibWireType`, vtable ABI args, and
    result cells.
-4. Marshaller expansion in small slices: add only shapes backed by fixture tests and,
-   where relevant, live Office/DAO evidence.
+4. Marshaller expansion in meaningful ABI tranches: add coherent groups of shapes
+   backed by fixture tests and, where relevant, live Office/DAO evidence.
 5. Verification and evidence: fixture tests for every ABI shape; live tests only where
    host safety is already bounded by QI, slot bound, proxy CLSID, and value-oracle
    evidence.
@@ -69,7 +69,8 @@ explicit admission/fallback policy.
 1. Resolve the member through the existing early-bound binding path.
 2. Reject named arguments and interior omissions before vtable admission.
 3. Compute `return_type` from invoke kind: property-get/method use the member return;
-   property-put is HRESULT-only; property-putref remains fallback until covered.
+   property-put and admitted object/interface property-putref are HRESULT-only;
+   unsupported putref shapes remain fallback.
 4. Ask the admission table for a result. `Admit` continues; any decline falls back to
    IDispatch unless a real COM HRESULT is produced after the call starts.
 5. QI the object for `interface_iid`; reject null/misaligned pointers.
@@ -79,7 +80,8 @@ explicit admission/fallback policy.
 
 ## Current Slice
 
-The first code slice makes phases 1 and 2 concrete:
+Completed code slices make phases 1 through 4 concrete for the current vtable
+surface:
 
 - `ComMemberSpec` now carries `parameter_wire_types` and `return_wire_type` from
   `TypeLibMemberMetadata`, with regression coverage in `runtime_state.rs`.
@@ -103,13 +105,20 @@ The first code slice makes phases 1 and 2 concrete:
 - Explicit `InterfacePointer` wire metadata for object return values is admitted
   and fixture-proven through the vtable marshaller; adjacent unsupported return
   wire shapes such as SAFEARRAY still decline to IDispatch fallback.
-- The admission table now explicitly declines `PropertyPutRef`; the dispatch site
-  already fell back for putref, and the gate now records that same v1 boundary instead
-  of leaving it as an implicit pre-gate special case.
+- The first broad ABI tranche is fixture-proven through real vtable calls:
+  inbound `Byte`, `Integer`, `Long`, `LongLong`, `Single`, `Double`, `Currency`,
+  `Date`, `Boolean`, `String`, `Variant`, and explicit interface-pointer `Object`
+  parameters; return cells for `Byte`, `Integer`, `LongLong`, `Single`, `Double`,
+  `String`, and `Variant`; with the existing `Long`, `Boolean`, `Currency`,
+  `Date`, and `Object` return tests covering the rest of the current v1 surface.
+- `PropertyPutRef` is no longer globally deferred. The admission table now admits
+  the covered object/interface assignment shape only when the typelib descriptor
+  carries explicit `InterfacePointer` wire metadata and a non-null parameter IID;
+  every other putref shape declines once in the plan builder and falls back to
+  IDispatch.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual in this slice: the marshaller still lowers from the plan's
-`parameter_types` and `parameter_iids` for actual ABI calls; the plan's wire-type
-fields are enforced for admission/fallback safety and ready for the next
-shape-expansion slice.
+Residual after this slice: SAFEARRAY, records/UDTs, arbitrary ByRef/writeback,
+Decimal, and non-object putref remain explicit fallback until their ABI and
+ownership semantics are implemented with the same fixture and live-evidence discipline.

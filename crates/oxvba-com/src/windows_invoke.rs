@@ -1987,7 +1987,9 @@ fn build_vtable_invocation_plan(
     if !spec.callconv_is_stdcall {
         return Err(VtableDeclineReason::NonStdcall);
     }
-    if spec.invoke_kind == crate::TypeLibMemberInvokeKind::PropertyPutRef {
+    if spec.invoke_kind == crate::TypeLibMemberInvokeKind::PropertyPutRef
+        && !is_supported_vtable_putref_shape(spec, return_type)
+    {
         return Err(VtableDeclineReason::PropertyPutRefDeferred);
     }
     if positional_arg_count > spec.parameter_types.len() {
@@ -2063,6 +2065,28 @@ fn build_vtable_invocation_plan(
         invoke_kind: spec.invoke_kind,
         label,
     })
+}
+
+#[cfg(target_os = "windows")]
+fn is_supported_vtable_putref_shape(
+    spec: &crate::ComMemberSpec,
+    return_type: Option<crate::TypeLibParamType>,
+) -> bool {
+    return_type.is_none()
+        && spec.return_type.is_none()
+        && spec.return_wire_type.is_none()
+        && spec.parameter_types.as_slice() == [crate::TypeLibParamType::Object]
+        && matches!(
+            spec.parameter_wire_types.as_slice(),
+            [crate::TypeLibWireType::InterfacePointer { .. }]
+        )
+        && spec.parameter_iids.len() == 1
+        && spec
+            .parameter_iids
+            .first()
+            .copied()
+            .flatten()
+            .is_some_and(|iid| !iid.is_null())
 }
 
 /// True when every declared parameter from `supplied_count..` (the ones the guest
@@ -2266,8 +2290,9 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // A property-put's HRESULT-only member returns no value; the trailing
         // value argument is an ordinary positional [in] param to the vtable slot.
         crate::TypeLibMemberInvokeKind::PropertyPut => ("property-put", None),
-        // PropertyPutRef (Set p = obj) is deferred to the IDispatch path by
-        // the admission gate in v1, so the fallback boundary stays table-driven.
+        // PropertyPutRef (Set p = obj) is HRESULT-only when the admission table
+        // proves the object/interface putref ABI shape; unsupported putref
+        // shapes still fall back through that same table-driven boundary.
         crate::TypeLibMemberInvokeKind::PropertyPutRef => ("property-putref", None),
     };
     // Gate on the SUPPLIED positional count (the gate widens to admit fewer
@@ -2734,23 +2759,42 @@ mod gate_tests {
             Some(VtableDeclineReason::NonStdcall)
         );
 
-        let mut putref = eligible_spec(17, 58);
-        putref.invoke_kind = TypeLibMemberInvokeKind::PropertyPutRef;
-        putref.parameter_types = vec![crate::TypeLibParamType::Object];
-        putref.parameter_wire_types = vec![crate::TypeLibWireType::InterfacePointer {
-            name: "ITestDispatch".to_string(),
-        }];
-        putref.parameter_iids = vec![putref.interface_iid];
-        putref.return_type = None;
-        putref.return_wire_type = None;
+        let mut putref = eligible_putref_object_spec();
         assert_eq!(
             vtable_gate_decline_reason(&putref, 1, None),
-            Some(VtableDeclineReason::PropertyPutRefDeferred)
+            None,
+            "object/interface PropertyPutRef is now an admitted vtable shape"
         );
         assert!(
-            !vtable_gate_admits(&putref, 1, None),
-            "PropertyPutRef remains an IDispatch fallback until vtable putref is explicitly covered"
+            vtable_gate_admits(&putref, 1, None),
+            "PropertyPutRef object assignment should use the cleaned vtable path"
         );
+        putref.parameter_wire_types = Vec::new();
+        assert_eq!(
+            vtable_gate_decline_reason(&putref, 1, None),
+            Some(VtableDeclineReason::PropertyPutRefDeferred),
+            "putref without explicit interface wire metadata remains fallback"
+        );
+        let mut putref_extra_iid = eligible_putref_object_spec();
+        putref_extra_iid.parameter_iids.push(None);
+        assert_eq!(
+            vtable_gate_decline_reason(&putref_extra_iid, 1, None),
+            Some(VtableDeclineReason::PropertyPutRefDeferred),
+            "putref with malformed IID arity remains fallback"
+        );
+    }
+
+    fn eligible_putref_object_spec() -> ComMemberSpec {
+        let mut spec = eligible_spec(17, 58);
+        spec.invoke_kind = TypeLibMemberInvokeKind::PropertyPutRef;
+        spec.parameter_types = vec![crate::TypeLibParamType::Object];
+        spec.parameter_wire_types = vec![crate::TypeLibWireType::InterfacePointer {
+            name: "ITestDispatch".to_string(),
+        }];
+        spec.parameter_iids = vec![spec.interface_iid];
+        spec.return_type = None;
+        spec.return_wire_type = None;
+        spec
     }
 
     #[test]
