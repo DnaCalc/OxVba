@@ -1185,7 +1185,9 @@ mod tests {
             vec![],
             vec![],
             Some(TypeLibParamType::Object),
-            None,
+            Some(TypeLibWireType::InterfacePointer {
+                name: "ITestDispatch".to_string(),
+            }),
             TypeLibMemberInvokeKind::PropertyGet,
         );
         // SAFETY: Lookup is slot 10: ([in] BSTR) -> IDispatch* retval.
@@ -1294,7 +1296,9 @@ mod tests {
             vec![],
             vec![],
             Some(TypeLibParamType::Object),
-            None,
+            Some(TypeLibWireType::InterfacePointer {
+                name: "ITestDispatch".to_string(),
+            }),
             TypeLibMemberInvokeKind::PropertyGet,
         );
         // SAFETY: get_Owner is slot 14: () -> IUnknown* retval (a TestDispatch whose

@@ -100,6 +100,9 @@ The first code slice makes phases 1 and 2 concrete:
   the shared descriptor-level validator used by both the runtime gate and the vtable
   marshaller. Object-parameter IID validation now happens through that same path
   before resolving objects or reading slots.
+- Explicit `InterfacePointer` wire metadata for object return values is admitted
+  and fixture-proven through the vtable marshaller; adjacent unsupported return
+  wire shapes such as SAFEARRAY still decline to IDispatch fallback.
 - The admission table now explicitly declines `PropertyPutRef`; the dispatch site
   already fell back for putref, and the gate now records that same v1 boundary instead
   of leaving it as an implicit pre-gate special case.

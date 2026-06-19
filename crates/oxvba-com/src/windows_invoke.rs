@@ -3103,6 +3103,24 @@ mod gate_tests {
     }
 
     #[test]
+    fn gate_admits_explicit_interface_pointer_return_wire_shape() {
+        let mut spec = eligible_spec(17, 58);
+        spec.return_type = Some(crate::TypeLibParamType::Object);
+        spec.return_wire_type = Some(crate::TypeLibWireType::InterfacePointer {
+            name: "ITestDispatch".to_string(),
+        });
+        assert_eq!(
+            vtable_gate_decline_reason(&spec, 0, Some(crate::TypeLibParamType::Object)),
+            None,
+            "explicit interface-pointer object returns are admitted"
+        );
+        assert!(
+            vtable_gate_admits(&spec, 0, Some(crate::TypeLibParamType::Object)),
+            "InterfacePointer return metadata should not collapse to IDispatch fallback"
+        );
+    }
+
+    #[test]
     fn gate_decline_reasons_cover_abi_shape_predicates() {
         let mut bad_param = eligible_spec(17, 58);
         bad_param.parameter_types = vec![crate::TypeLibParamType::ByRefVariant];
