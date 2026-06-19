@@ -1089,7 +1089,7 @@ mod tests {
     fn prefer_vtable_routes_object_putref_and_falls_back_for_scalar_putref() {
         let bridge = WindowsComBridge::new(false);
         let dual = crate::create_oxvba_dual_vtable_object();
-        let putref_slot = crate::windows_test_dispatch::DUAL_SLOT_PUTREF_OBJECT_VALUE;
+        let putref_slot = crate::DUAL_SLOT_PUTREF_OBJECT_VALUE;
         let member = ComMemberToken::new(putref_slot as i32);
         let object = insert_native_member_binding(
             &bridge,
