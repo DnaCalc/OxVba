@@ -29,11 +29,14 @@ use crate::windows_ffi_bridge::{FfiArg, FfiReturnType, call_via_libffi};
 use crate::windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, VtableInvocationPlan, bstr_to_string_and_free,
 };
-use crate::{ComValue, TypeLibParamType};
+use crate::{ComValue, TypeLibParamType, TypeLibWireType};
 use oxvba_runtime::{ObjectRef, Variant};
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
-use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_UNKNOWN, VariantClear};
+use windows_sys::Win32::System::Com::SAFEARRAY;
+use windows_sys::Win32::System::Variant::{
+    VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
+};
 
 // ── IErrorInfo + Get/SetErrorInfo ──
 //
@@ -170,6 +173,8 @@ enum InboundOwned {
     Bstr(windows_sys::core::BSTR),
     /// A VARIANT cell we populated (VT_VARIANT [in] param); `VariantClear` after.
     Variant(Box<VARIANT>),
+    /// A VARIANT cell whose SAFEARRAY payload owns the `[in] SAFEARRAY*` we pass.
+    SafeArray(Box<VARIANT>),
     /// An interface pointer we obtained by `QueryInterface`-ing an `[in]` object arg to
     /// its declared param IID (Bug-4b); we own that one reference and `Release` it after
     /// the call (the callee only borrowed it).
@@ -196,6 +201,7 @@ enum OutCell {
     Bstr(Box<windows_sys::core::BSTR>),
     Variant(Box<VARIANT>),
     Interface(Box<*mut c_void>),
+    SafeArray(Box<*mut SAFEARRAY>),
 }
 
 /// Call a dual-interface member through its COM vtable slot.
@@ -303,7 +309,8 @@ where
         // for scalars or when no IID was recovered. `get(i)` tolerates synthesized
         // trailing optionals (which extend `args` beyond `parameter_iids`).
         let param_iid = plan.parameter_iids.get(i).copied().flatten();
-        match marshal_inbound_param(*param_type, arg, param_iid, resolve_object) {
+        let wire_type = plan.parameter_wire_types.get(i);
+        match marshal_inbound_param(*param_type, wire_type, arg, param_iid, resolve_object) {
             Ok((ffi_arg, owned)) => {
                 ffi_args.push(ffi_arg);
                 inbound_owned.push(owned);
@@ -318,7 +325,7 @@ where
 
     // Allocate the [out,retval] cell and append its pointer.
     let mut out_cell = match plan.return_type {
-        Some(rt) => match alloc_out_cell(rt) {
+        Some(rt) => match alloc_out_cell(rt, plan.return_wire_type.as_ref()) {
             Ok(cell) => cell,
             Err(detail) => {
                 free_inbound(&mut inbound_owned);
@@ -414,6 +421,7 @@ fn vtable_signature_issue_detail(
 /// returned [`InboundOwned`] records what the caller must free post-call.
 fn marshal_inbound_param<FResolveObject>(
     param_type: TypeLibParamType,
+    wire_type: Option<&TypeLibWireType>,
     arg: &Variant,
     param_iid: Option<crate::ComInterfaceIid>,
     resolve_object: &mut FResolveObject,
@@ -423,6 +431,9 @@ where
 {
     use TypeLibParamType as P;
     let value = ComValue::from_variant(arg)?;
+    if matches!(wire_type, Some(TypeLibWireType::SafeArrayVariant)) {
+        return marshal_inbound_safearray_param(&value, resolve_object);
+    }
     Ok(match param_type {
         // Scalars by value (reusing the dynlink scalar conventions). BOOL is an
         // i16 VARIANT_BOOL (-1/0); CY is an i64 scaled ×10000; DATE is an f64.
@@ -557,6 +568,63 @@ where
     })
 }
 
+fn marshal_inbound_safearray_param<FResolveObject>(
+    value: &ComValue,
+    resolve_object: &mut FResolveObject,
+) -> Result<(FfiArg, InboundOwned), String>
+where
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut c_void, String>,
+{
+    if !matches!(value, ComValue::ArrayIntent(_)) {
+        return Err(format!(
+            "vtable SAFEARRAY(VARIANT) parameter expects an array argument, got {value:?}"
+        ));
+    }
+    // SAFETY: an all-zero VARIANT is a valid VT_EMPTY VARIANT.
+    let mut cell: Box<VARIANT> = Box::new(unsafe { std::mem::zeroed() });
+    let mut add_ref = |dispatch: *mut c_void| {
+        // SAFETY: `dispatch` is a live COM object pointer resolved from the
+        // bindings map; the SAFEARRAY/VARIANT cell owns its reference until
+        // VariantClear in `free_inbound`.
+        unsafe {
+            let _ = crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+        }
+    };
+    // SAFETY: `cell` is a fresh writable VARIANT. `set_variant_from_com_value`
+    // creates a Windows SAFEARRAY payload owned by the VARIANT.
+    unsafe {
+        crate::set_variant_from_com_value(cell.as_mut(), value, resolve_object, &mut add_ref)?;
+    }
+    // SAFETY: `cell` is initialized by `set_variant_from_com_value`, so reading
+    // the VARIANT discriminant is valid.
+    let vt = unsafe { cell.Anonymous.Anonymous.vt };
+    if vt & VT_ARRAY == 0 {
+        // SAFETY: `cell` owns any payload written by `set_variant_from_com_value`;
+        // clearing it releases that payload before the validation error returns.
+        unsafe {
+            let _ = VariantClear(cell.as_mut());
+        }
+        return Err(format!(
+            "vtable SAFEARRAY(VARIANT) parameter lowered to non-array VARIANT vt={vt:#06X}"
+        ));
+    }
+    // SAFETY: the discriminant above proves this VARIANT carries a SAFEARRAY
+    // payload, so reading the union's parray field is valid.
+    let psa = unsafe { cell.Anonymous.Anonymous.Anonymous.parray };
+    if psa.is_null() {
+        // SAFETY: as above, `cell` owns any payload that must be released before
+        // returning the validation error.
+        unsafe {
+            let _ = VariantClear(cell.as_mut());
+        }
+        return Err("vtable SAFEARRAY(VARIANT) parameter lowered to null SAFEARRAY".to_string());
+    }
+    Ok((
+        FfiArg::Pointer(psa.cast::<c_void>()),
+        InboundOwned::SafeArray(cell),
+    ))
+}
+
 fn free_inbound(owned: &mut Vec<InboundOwned>) {
     for entry in owned.drain(..) {
         match entry {
@@ -569,6 +637,13 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
             InboundOwned::Variant(mut cell) => unsafe {
                 let _ = VariantClear(cell.as_mut());
             },
+            InboundOwned::SafeArray(mut cell) => {
+                // SAFETY: the cell owns the SAFEARRAY payload that backed the
+                // borrowed inbound SAFEARRAY* for the duration of the call.
+                unsafe {
+                    let _ = VariantClear(cell.as_mut());
+                }
+            }
             // SAFETY: an Interface entry is the single reference our QueryInterface
             // handed us; the callee only borrowed it, so we Release it exactly once.
             InboundOwned::Interface(interface) => unsafe { crate::release_unknown(interface) },
@@ -576,8 +651,19 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
     }
 }
 
-fn alloc_out_cell(return_type: TypeLibParamType) -> Result<OutCell, String> {
+fn alloc_out_cell(
+    return_type: TypeLibParamType,
+    return_wire_type: Option<&TypeLibWireType>,
+) -> Result<OutCell, String> {
     use TypeLibParamType as P;
+    if matches!(return_wire_type, Some(TypeLibWireType::SafeArrayVariant)) {
+        if return_type == P::Variant {
+            return Ok(OutCell::SafeArray(Box::new(std::ptr::null_mut())));
+        }
+        return Err(format!(
+            "vtable SAFEARRAY(VARIANT) retval requires semantic Variant, got {return_type:?}"
+        ));
+    }
     Ok(match return_type {
         P::Long => OutCell::I32(Box::new(0)),
         P::Integer => OutCell::I16(Box::new(0)),
@@ -612,6 +698,7 @@ fn out_cell_ptr(cell: &mut OutCell) -> Option<*mut c_void> {
         OutCell::Bstr(b) => Some((b.as_mut() as *mut windows_sys::core::BSTR).cast::<c_void>()),
         OutCell::Variant(b) => Some((b.as_mut() as *mut VARIANT).cast::<c_void>()),
         OutCell::Interface(b) => Some((b.as_mut() as *mut *mut c_void).cast::<c_void>()),
+        OutCell::SafeArray(b) => Some((b.as_mut() as *mut *mut SAFEARRAY).cast::<c_void>()),
     }
 }
 
@@ -641,6 +728,18 @@ fn discard_out_cell(cell: OutCell) {
                     let release: unsafe extern "system" fn(*mut c_void) -> u32 =
                         std::mem::transmute(release);
                     let _ = release(*b);
+                }
+            }
+        }
+        OutCell::SafeArray(b) => {
+            if !(*b).is_null() {
+                // SAFETY: a failing callee unexpectedly transferred a SAFEARRAY
+                // retval. Wrap it in a VARIANT and clear once to destroy it.
+                unsafe {
+                    let mut variant: VARIANT = std::mem::zeroed();
+                    variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+                    variant.Anonymous.Anonymous.Anonymous.parray = *b;
+                    let _ = VariantClear(&mut variant);
                 }
             }
         }
@@ -750,6 +849,29 @@ where
             // hand it to the binding map via bind_dispatch_result.
             bind_dispatch_result(*b).map_err(|detail| validation_failure(label, dispid, detail))?
         }
+        OutCell::SafeArray(b) => {
+            if (*b).is_null() {
+                return Err(validation_failure(
+                    label,
+                    dispid,
+                    "vtable SAFEARRAY(VARIANT) retval returned null SAFEARRAY",
+                ));
+            }
+            // SAFETY: the successful callee transferred ownership of the
+            // SAFEARRAY* through the `[out,retval]` cell. A temporary VARIANT
+            // lets the existing Windows SAFEARRAY reader clone it into the
+            // runtime carrier, then VariantClear destroys the COM-owned array.
+            unsafe {
+                let mut variant: VARIANT = std::mem::zeroed();
+                variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+                variant.Anonymous.Anonymous.Anonymous.parray = *b;
+                let value = crate::variant_to_com_value(&variant)
+                    .and_then(|value| value.to_variant())
+                    .map_err(|detail| validation_failure(label, dispid, detail));
+                let _ = VariantClear(&mut variant);
+                value?
+            }
+        }
     })
 }
 
@@ -822,14 +944,15 @@ mod tests {
         DUAL_RAISE_ERROR_SOURCE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE,
         DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_DOUBLE_VALUE,
         DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER,
-        DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE,
-        DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE,
-        DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS,
-        DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object,
-        create_oxvba_test_dispatch,
+        DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SAFEARRAY_VALUE, DUAL_SLOT_GET_SINGLE_VALUE,
+        DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP,
+        DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
+        DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE,
+        DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
     use oxvba_runtime::VarType;
+    use oxvba_runtime::safe_array::SafeArray;
 
     /// Resolver that never sees an object arg in these tests.
     fn no_object_resolver() -> impl FnMut(ObjectRef) -> Result<*mut c_void, String> {
@@ -1041,14 +1164,14 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_parameter_wire_shape_declines_before_slot_call() {
+    fn unsupported_byref_safearray_parameter_wire_shape_declines_before_slot_call() {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
         let plan = invocation_plan(
             DUAL_SLOT_PUT_VALUE,
             vec![TypeLibParamType::Variant],
-            vec![TypeLibWireType::SafeArrayVariant],
+            vec![TypeLibWireType::ByRefSafeArrayVariant],
             vec![],
             None,
             None,
@@ -1083,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_return_wire_shape_declines_before_slot_call() {
+    fn unsupported_byref_safearray_return_wire_shape_declines_before_slot_call() {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
@@ -1093,7 +1216,7 @@ mod tests {
             vec![],
             vec![],
             Some(TypeLibParamType::Variant),
-            Some(TypeLibWireType::SafeArrayVariant),
+            Some(TypeLibWireType::ByRefSafeArrayVariant),
             TypeLibMemberInvokeKind::PropertyGet,
         );
         // SAFETY: `this` is a live fixture object. The unsupported SAFEARRAY return
@@ -1110,6 +1233,73 @@ mod tests {
                 .as_deref()
                 .is_some_and(|detail| detail.contains("return wire shape")),
             "failure should identify the unsupported return wire shape"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn safearray_parameter_lowers_to_explicit_safearray_wire_shape() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE,
+            vec![TypeLibParamType::Variant],
+            vec![TypeLibWireType::SafeArrayVariant],
+            vec![],
+            Some(TypeLibParamType::Boolean),
+            Some(TypeLibWireType::Automation(TypeLibParamType::Boolean)),
+            TypeLibMemberInvokeKind::Method,
+        );
+        let arg = Variant::from_safearray(SafeArray::from_variants(vec![
+            Variant::from_i32(3),
+            Variant::from_i32(5),
+            Variant::from_i32(8),
+        ]));
+        // SAFETY: slot 24 validates the inbound SAFEARRAY(VARIANT)* payload.
+        let value = unsafe { vtable_invoke(this, &plan, &[arg], 24, &mut resolve, &mut bind) }
+            .expect("SAFEARRAY inbound vtable call should succeed");
+        assert_eq!(
+            value.as_bool(),
+            Some(true),
+            "fixture must see the array values through the SAFEARRAY wire pointer"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn safearray_return_decodes_transferred_safearray_pointer() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_SAFEARRAY_VALUE,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Variant),
+            Some(TypeLibWireType::SafeArrayVariant),
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
+        // SAFETY: slot 25 returns an owned SAFEARRAY* through an out pointer.
+        let value = unsafe { vtable_invoke(this, &plan, &[], 25, &mut resolve, &mut bind) }
+            .expect("SAFEARRAY retval vtable call should succeed");
+        let array = value
+            .as_safearray()
+            .expect("SAFEARRAY retval should decode to an array Variant");
+        let elements = array
+            .variant_elements()
+            .expect("fixture array should expose element values");
+        assert_eq!(
+            elements,
+            vec![
+                Variant::from_i32(13),
+                Variant::from_i32(21),
+                Variant::from_i32(34),
+            ],
+            "SAFEARRAY retval values must survive COM ownership transfer"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };

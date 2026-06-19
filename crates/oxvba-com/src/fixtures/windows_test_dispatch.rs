@@ -3466,7 +3466,7 @@ pub unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
 //   9  put_Value(this, VARIANT*)                   -> HRESULT
 //   10 Lookup(this, BSTR, IDispatch**)             -> HRESULT
 //   11 raise_error(this, i32*) [SetErrorInfo+fail] -> HRESULT
-//   12..23 additional typed ABI coverage slots
+//   12..25 additional typed ABI coverage slots
 // ════════════════════════════════════════════════════════════════════════
 
 /// The custom-interface IErrorInfo IID, `{1CF2B120-547D-101B-8E65-08002B2BD119}`.
@@ -3502,6 +3502,8 @@ pub const DUAL_SLOT_GET_DOUBLE_VALUE: u16 = 20;
 pub const DUAL_SLOT_GET_TEXT_VALUE: u16 = 21;
 pub const DUAL_SLOT_GET_VARIANT_VALUE: u16 = 22;
 pub const DUAL_SLOT_PUTREF_OBJECT_VALUE: u16 = 23;
+pub const DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE: u16 = 24;
+pub const DUAL_SLOT_GET_SAFEARRAY_VALUE: u16 = 25;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3625,6 +3627,15 @@ struct RawDualVtbl {
     /// slot 23
     putref_object_value:
         unsafe extern "system" fn(this: *mut core::ffi::c_void, value: *mut RawIDispatch) -> i32,
+    /// slot 24
+    validate_safearray_value: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        value: *mut SAFEARRAY,
+        out: *mut VARIANT_BOOL,
+    ) -> i32,
+    /// slot 25
+    get_safearray_value:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut *mut SAFEARRAY) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3666,6 +3677,8 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     get_text_value: oxvba_dual_get_text_value,
     get_variant_value: oxvba_dual_get_variant_value,
     putref_object_value: oxvba_dual_putref_object_value,
+    validate_safearray_value: oxvba_dual_validate_safearray_value,
+    get_safearray_value: oxvba_dual_get_safearray_value,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4093,6 +4106,86 @@ unsafe extern "system" fn oxvba_dual_putref_object_value(
     let owner = as_oxvba_dual(this);
     (*owner).last_put_value.store(777, Ordering::Release);
     COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn safearray_variant_i32_values(psa: *mut SAFEARRAY) -> Result<Vec<i32>, i32> {
+    if psa.is_null() {
+        return Err(COM_E_INVALIDARG);
+    }
+    if SafeArrayGetDim(psa.cast_const()) != 1 {
+        return Err(COM_E_INVALIDARG);
+    }
+    let mut element_vt = 0u16;
+    if SafeArrayGetVartype(psa.cast_const(), &mut element_vt) < 0 || element_vt != VT_VARIANT {
+        return Err(COM_E_INVALIDARG);
+    }
+    let mut lower = 0i32;
+    let mut upper = 0i32;
+    if SafeArrayGetLBound(psa.cast_const(), 1, &mut lower) < 0
+        || SafeArrayGetUBound(psa.cast_const(), 1, &mut upper) < 0
+    {
+        return Err(COM_E_INVALIDARG);
+    }
+    let mut values = Vec::new();
+    for index in lower..=upper {
+        let mut element: VARIANT = std::mem::zeroed();
+        let hr = SafeArrayGetElement(
+            psa.cast_const(),
+            &index,
+            (&mut element as *mut VARIANT).cast(),
+        );
+        if hr < 0 {
+            let _ = VariantClear(&mut element);
+            return Err(hr);
+        }
+        if element.Anonymous.Anonymous.vt != VT_I4 {
+            let _ = VariantClear(&mut element);
+            return Err(COM_E_INVALIDARG);
+        }
+        values.push(element.Anonymous.Anonymous.Anonymous.lVal);
+        let _ = VariantClear(&mut element);
+    }
+    Ok(values)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_validate_safearray_value(
+    _this: *mut core::ffi::c_void,
+    value: *mut SAFEARRAY,
+    out: *mut VARIANT_BOOL,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let ok = match safearray_variant_i32_values(value) {
+        Ok(values) => values == [3, 5, 8],
+        Err(_) => false,
+    };
+    *out = if ok { -1 } else { 0 };
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_safearray_value(
+    _this: *mut core::ffi::c_void,
+    out: *mut *mut SAFEARRAY,
+) -> i32 {
+    if out.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *out = std::ptr::null_mut();
+    let mut variant: VARIANT = std::mem::zeroed();
+    match set_variant_i32_array(&[13, 21, 34], &mut variant) {
+        Ok(()) => {
+            *out = variant.Anonymous.Anonymous.Anonymous.parray;
+            COM_S_OK
+        }
+        Err(_) => COM_E_INVALIDARG,
+    }
 }
 
 // ── Minimal IErrorInfo implementation for the raise_error slot ──

@@ -34,11 +34,34 @@ explicit admission/fallback policy.
 
 ## Residual
 
-- Full SAFEARRAY support, UDT/record types, non-Automation custom marshaling, and
-  arbitrary by-ref writeback are residual unless a scoped caller requires them.
+- SAFEARRAY, Decimal, ByRef/writeback, and UDT/record support are active accepted
+  scope for this workset. They must not be pre-excluded as "low-risk later" work;
+  fallback is valid only for a specific missing fact or unsupported ownership case
+  such as foreign/unknown record layout, malformed SAFEARRAY descriptors, missing
+  object/interface IID, unsafe proxy boundaries, or unsupported custom marshaling.
+- Non-Automation custom marshaling with no recoverable public layout/ownership
+  facts remains fallback until those facts are recovered and fixture-proven.
 - Cranelift-generated stubs are residual and not required for correctness. They may be
   considered later for performance only after the libffi path is complete and stable.
 - Foreign in-process allowlists remain evidence-driven, not assumed from typelib slots.
+
+## Review Instructions
+
+After each commit-sized tranche:
+
+1. Run the relevant checks for the touched runtime path.
+2. Perform a fresh-eyes review that actively looks for blunders, mistakes, errors,
+   oversights, omissions, logical issues, misconceptions, confusion, bugs,
+   regressions, hidden assumptions, and compatibility/parity gaps.
+3. Rework every material issue found by the review.
+4. Rerun the relevant checks after rework.
+5. Repeat the fresh-eyes review and rework loop until no material issue remains.
+6. Only then update docs/status, commit the tranche, push it, and continue.
+
+Partial subsets must not be described as implemented, closed, complete, or parity
+unless the scoped parity claim is actually proven by tests or evidence. A useful
+subset remains `in-progress` when the broader accepted COM vtable surface still
+has unowned ABI or descriptor facts.
 
 ## Work Structure
 
@@ -47,7 +70,7 @@ explicit admission/fallback policy.
 | 1. Descriptor inventory | Runtime specs preserve the COM facts needed for call safety | `typelib.rs`, `windows_typelib_loader.rs`, `runtime_state.rs`, `typelib_catalog.rs` | Unit tests show metadata is not dropped |
 | 2. Admission table | Every vtable decline has a typed reason | `windows_invoke.rs` | Existing behavior unchanged; tests assert reason classes |
 | 3. ABI mapping table | Param/result shapes have one authoritative support matrix | `windows_vtable.rs`, `windows_invoke.rs`, docs | Gate and marshaller agree for every shape |
-| 4. Shape expansion | Add supported shapes one family at a time | `windows_vtable.rs`, `windows_typelib_loader.rs` | Fixture tests plus live evidence where applicable |
+| 4. Shape expansion | Add meaningful ABI tranches across SAFEARRAY, Decimal, ByRef/writeback, and UDT/record shapes | `windows_vtable.rs`, `windows_typelib_loader.rs` | Fixture tests plus live evidence where applicable; fallback only for specific missing facts |
 | 5. Runtime integration | Early-bound dispatch uses the shared mechanism without AV risk | `windows_bridge.rs`, `windows_runtime_state.rs`, host tests | IDispatch fallback remains default for ineligible calls |
 
 ## Descriptor Tables
@@ -103,8 +126,14 @@ surface:
   marshaller. Object-parameter IID validation now happens through that same path
   before resolving objects or reading slots.
 - Explicit `InterfacePointer` wire metadata for object return values is admitted
-  and fixture-proven through the vtable marshaller; adjacent unsupported return
-  wire shapes such as SAFEARRAY still decline to IDispatch fallback.
+  and fixture-proven through the vtable marshaller.
+- Explicit `SafeArrayVariant` wire metadata is now admitted for semantic
+  `Variant` parameters and returns. The vtable marshaller lowers inbound array
+  arguments to `SAFEARRAY*` through the existing Windows `VARIANT`/SAFEARRAY
+  conversion helper, and decodes transferred retval `SAFEARRAY*` payloads through
+  a temporary owning `VARIANT` so OLE SAFEARRAY ownership is released correctly.
+  Adjacent `ByRefSafeArrayVariant` shapes still decline once in the plan builder
+  until writeback semantics are implemented.
 - The first broad ABI tranche is fixture-proven through real vtable calls:
   inbound `Byte`, `Integer`, `Long`, `LongLong`, `Single`, `Double`, `Currency`,
   `Date`, `Boolean`, `String`, `Variant`, and explicit interface-pointer `Object`
@@ -122,6 +151,8 @@ surface:
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: SAFEARRAY, records/UDTs, arbitrary ByRef/writeback,
-Decimal, and non-object putref remain explicit fallback until their ABI and
-ownership semantics are implemented with the same fixture and live-evidence discipline.
+Residual after this slice: records/UDTs, arbitrary ByRef/writeback, Decimal, and
+non-object putref remain `in-progress` accepted scope. They may fall back only
+with a specific recorded missing fact or unowned ABI/ownership rule, and need the
+same descriptor, admission, fixture, runtime-integration, and fresh-eyes evidence
+discipline before any broader support claim is made.

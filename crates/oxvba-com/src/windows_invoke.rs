@@ -1878,13 +1878,11 @@ where
     }
 }
 
-/// Whether a FUNCDESC parameter/return VARTYPE is in the v1 vtable marshalling
-/// set (the exact shapes [`crate::windows_vtable::vtable_invoke`] marshals). Any
-/// VARTYPE outside this set — `Decimal`, `LongPtr`, every `ByRef*`, SAFEARRAY
-/// (which surfaces as a `Variant` array intent the marshaller rejects) — gates
-/// the call to the IDispatch fallback rather than risking a wrong-ABI vtable
-/// call. Mirrors the marshaller's own supported-shape match so the gate and the
-/// marshaller never disagree.
+/// Whether a FUNCDESC parameter/return VARTYPE is in the vtable marshalling set
+/// (the exact semantic shapes [`crate::windows_vtable::vtable_invoke`] marshals).
+/// Wire metadata admits additional layouts such as explicit SAFEARRAY pointers;
+/// semantic VARTYPEs outside this set still gate the call to the IDispatch
+/// fallback rather than risking a wrong-ABI vtable call.
 #[cfg(target_os = "windows")]
 pub fn is_v1_vtable_vartype(param_type: crate::TypeLibParamType) -> bool {
     param_type.supports_vtable_abi()
@@ -3072,11 +3070,11 @@ mod gate_tests {
         );
     }
 
-    /// COM-matrix A12 (SAFEARRAY / edge-VT decline half). The v1 vtable marshaller
-    /// only handles a fixed scalar/Variant/Object set; every out-of-set VARTYPE —
-    /// `Decimal`, `LongPtr`, and the whole `ByRef*` family (the shapes a SAFEARRAY
-    /// or an out-param would surface as) — must gate the call to the IDispatch
-    /// fallback rather than risk a wrong-ABI vtable call.
+    /// COM-matrix A12 edge-VT decline half. The vtable marshaller handles the
+    /// scalar/Variant/Object semantic set, with explicit wire metadata covering
+    /// non-scalar layouts such as SAFEARRAY. Out-of-set semantic VARTYPEs still
+    /// gate the call to the IDispatch fallback rather than risk a wrong-ABI slot
+    /// call.
     #[test]
     fn gate_v1_vtable_vartype_rejects_out_of_set() {
         // In-set shapes are admitted (sanity).
@@ -3096,8 +3094,7 @@ mod gate_tests {
         ] {
             assert!(is_v1_vtable_vartype(ok), "{ok:?} must be in the v1 set");
         }
-        // Out-of-set shapes (Decimal, LongPtr, ByRef*) — the SAFEARRAY/out-param
-        // decline guard — must NOT be admitted.
+        // Out-of-set shapes (Decimal, LongPtr, ByRef*) must NOT be admitted.
         for bad in [
             crate::TypeLibParamType::Decimal,
             crate::TypeLibParamType::LongPtr,
@@ -3193,6 +3190,20 @@ mod gate_tests {
         safearray_param.parameter_wire_types = vec![crate::TypeLibWireType::SafeArrayVariant];
         assert_eq!(
             vtable_gate_decline_reason(&safearray_param, 1, Some(crate::TypeLibParamType::Long)),
+            None,
+            "explicit SAFEARRAY parameter wire metadata is admitted"
+        );
+
+        let mut byref_safearray_param = eligible_spec(17, 58);
+        byref_safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
+        byref_safearray_param.parameter_wire_types =
+            vec![crate::TypeLibWireType::ByRefSafeArrayVariant];
+        assert_eq!(
+            vtable_gate_decline_reason(
+                &byref_safearray_param,
+                1,
+                Some(crate::TypeLibParamType::Long)
+            ),
             Some(VtableDeclineReason::UnsupportedParameterWireType)
         );
 
@@ -3202,6 +3213,20 @@ mod gate_tests {
         assert_eq!(
             vtable_gate_decline_reason(
                 &safearray_return,
+                0,
+                Some(crate::TypeLibParamType::Variant)
+            ),
+            None,
+            "explicit SAFEARRAY return wire metadata is admitted"
+        );
+
+        let mut byref_safearray_return = eligible_spec(17, 58);
+        byref_safearray_return.return_type = Some(crate::TypeLibParamType::Variant);
+        byref_safearray_return.return_wire_type =
+            Some(crate::TypeLibWireType::ByRefSafeArrayVariant);
+        assert_eq!(
+            vtable_gate_decline_reason(
+                &byref_safearray_return,
                 0,
                 Some(crate::TypeLibParamType::Variant)
             ),

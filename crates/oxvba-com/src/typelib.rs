@@ -145,7 +145,8 @@ impl TypeLibWireType {
         match self {
             Self::Automation(wire_param_type) => *wire_param_type == param_type,
             Self::InterfacePointer { .. } => matches!(param_type, TypeLibParamType::Object),
-            Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => false,
+            Self::SafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
+            Self::ByRefSafeArrayVariant => false,
         }
     }
 
@@ -155,7 +156,8 @@ impl TypeLibWireType {
         match self {
             Self::Automation(wire_return_type) => *wire_return_type == return_type,
             Self::InterfacePointer { .. } => matches!(return_type, TypeLibParamType::Object),
-            Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => false,
+            Self::SafeArrayVariant => matches!(return_type, TypeLibParamType::Variant),
+            Self::ByRefSafeArrayVariant => false,
         }
     }
 }
@@ -655,6 +657,17 @@ mod tests {
             ),
             Ok(())
         );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Variant],
+                &[TypeLibWireType::SafeArrayVariant],
+                &[],
+                Some(TypeLibParamType::Variant),
+                Some(&TypeLibWireType::SafeArrayVariant),
+            ),
+            Ok(()),
+            "explicit SAFEARRAY wire metadata is supported for Variant-shaped params and returns"
+        );
     }
 
     #[test]
@@ -721,7 +734,7 @@ mod tests {
         assert_eq!(
             validate_vtable_wire_signature(
                 &[TypeLibParamType::Variant],
-                &[TypeLibWireType::SafeArrayVariant],
+                &[TypeLibWireType::ByRefSafeArrayVariant],
                 &[],
                 None,
                 None,
@@ -734,7 +747,7 @@ mod tests {
                 &[],
                 &[],
                 Some(TypeLibParamType::Variant),
-                Some(&TypeLibWireType::SafeArrayVariant),
+                Some(&TypeLibWireType::ByRefSafeArrayVariant),
             ),
             Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType)
         );
