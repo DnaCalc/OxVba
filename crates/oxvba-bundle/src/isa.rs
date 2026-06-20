@@ -403,6 +403,9 @@ pub enum Op {
     RaiseError {
         code: i32,
     },
+    RaiseErrorFromSlot {
+        slot: usize,
+    },
     ClearErr,
 
     // ── Arrays / aggregates ──────────────────────────────────

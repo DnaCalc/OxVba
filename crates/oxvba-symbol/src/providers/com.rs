@@ -14,7 +14,7 @@ use crate::signature::VarTypeRef;
 pub struct ComTypeLibProvider {
     blob: TypeLibMetadataBlob,
     /// Folded names this blob answers to (its reference name, requested coclass,
-    /// and activation ProgID).
+    /// activation ProgID, and library-level coclasses).
     type_names: Vec<String>,
 }
 
@@ -27,6 +27,14 @@ impl ComTypeLibProvider {
         if let Some(prog_id) = &blob.activation_prog_id {
             type_names.push(fold_identifier(prog_id));
         }
+        let reference = fold_identifier(&blob.identity.reference_name);
+        for coclass in &blob.coclass_names {
+            let folded = fold_identifier(coclass);
+            type_names.push(folded.clone());
+            type_names.push(format!("{reference}.{folded}"));
+        }
+        type_names.sort();
+        type_names.dedup();
         Self { blob, type_names }
     }
 
@@ -77,6 +85,34 @@ impl ComTypeLibProvider {
 
     pub fn activation_prog_id(&self) -> Option<&str> {
         self.blob.activation_prog_id.as_deref()
+    }
+
+    pub fn resolve_object_root(&self, name: &str) -> Option<Binding> {
+        if !self.owns(name) {
+            return None;
+        }
+        Some(Binding::new(
+            None,
+            DispatchRoute::ComObjectRoot {
+                type_name: name.to_string(),
+                prog_id: self
+                    .coclass_prog_id_for_name(name)
+                    .or_else(|| self.activation_prog_id().map(str::to_string)),
+            },
+        ))
+    }
+
+    fn coclass_prog_id_for_name(&self, name: &str) -> Option<String> {
+        let folded = fold_identifier(name);
+        let reference = fold_identifier(&self.blob.identity.reference_name);
+        self.blob.coclass_names.iter().find_map(|coclass| {
+            let folded_coclass = fold_identifier(coclass);
+            if folded == folded_coclass || folded == format!("{reference}.{folded_coclass}") {
+                Some(format!("{}.{}", self.blob.identity.reference_name, coclass))
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -138,11 +174,11 @@ impl Provider for ComTypeLibProvider {
     }
 
     fn resolve_coclass(&self, name: &str) -> Option<String> {
-        if self.owns(name) {
-            self.activation_prog_id().map(str::to_string)
-        } else {
-            None
+        if !self.owns(name) {
+            return None;
         }
+        self.coclass_prog_id_for_name(name)
+            .or_else(|| self.activation_prog_id().map(str::to_string))
     }
 
     fn source_events(&self, recv: &VarTypeRef) -> Option<Vec<(String, i32)>> {

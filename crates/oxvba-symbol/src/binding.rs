@@ -101,6 +101,15 @@ pub enum DispatchRoute {
         connection_point_iid: Option<String>,
         callback_arity: u8,
     },
+    /// A root object supplied by the host object model (`Application`,
+    /// `ThisWorkbook`, …). The current Core IR has no host-root value form, so
+    /// the binder lowers this through the existing COM activation path; the route
+    /// remains distinct so that later host-identity injection has one replacement
+    /// point.
+    ComObjectRoot {
+        type_name: String,
+        prog_id: Option<String>,
+    },
     /// A compiler-internal structural intrinsic.
     Structural(StructuralIntrinsic),
     /// A VBA special form with a non-ordinary evaluation rule.

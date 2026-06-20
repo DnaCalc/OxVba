@@ -134,7 +134,10 @@ pub(crate) fn build_loaded_project(
     let mut references = Vec::new();
     for pr in &basproj.project_references {
         references.push(ProjectReference {
-            referenced_project_name: project_ref_name(&pr.include),
+            referenced_project_name: match pr.kind {
+                BasProjProjectReferenceKind::HostInjected => pr.include.clone(),
+                BasProjProjectReferenceKind::Project => project_ref_name(&pr.include),
+            },
             reference_kind: match pr.kind {
                 BasProjProjectReferenceKind::Project => ReferenceKind::Project,
                 BasProjProjectReferenceKind::HostInjected => ReferenceKind::HostInjected,
@@ -431,11 +434,13 @@ fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut active_proc_end: Option<&'static str> = None;
     let mut active_decl_block_end: Option<&'static str> = None;
+    let mut active_non_mainline_continuation = false;
 
     for raw in source.lines() {
         let line = raw.trim_end_matches('\r');
         let trimmed = line.trim();
         let lower = trimmed.to_ascii_lowercase();
+        let continues = physical_line_continues(line);
 
         if let Some(end_term) = active_proc_end {
             if lower == end_term {
@@ -448,6 +453,11 @@ fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
             if lower == end_term {
                 active_decl_block_end = None;
             }
+            continue;
+        }
+
+        if active_non_mainline_continuation {
+            active_non_mainline_continuation = continues;
             continue;
         }
 
@@ -472,6 +482,7 @@ fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
             continue;
         }
         if is_non_mainline_top_level_directive(trimmed) {
+            active_non_mainline_continuation = continues;
             continue;
         }
         out.push(line.to_string());
@@ -574,6 +585,12 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
     lower.starts_with("attribute ")
         || lower.starts_with("option ")
         || lower.starts_with("#const ")
+        || lower.starts_with("#if ")
+        || lower.starts_with("#elseif ")
+        || lower == "#else"
+        || lower.starts_with("#else ")
+        || lower == "#end if"
+        || lower.starts_with("#end if ")
         || lower.starts_with("dim ")
         || lower.starts_with("global ")
         || lower.starts_with("static ")
@@ -590,6 +607,17 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
         || lower.starts_with("public declare ")
         || lower.starts_with("private declare ")
         || is_def_type_directive(&lower)
+}
+
+fn physical_line_continues(line: &str) -> bool {
+    let trimmed = line.trim_end();
+    let Some(prefix) = trimmed.strip_suffix('_') else {
+        return false;
+    };
+    prefix
+        .as_bytes()
+        .last()
+        .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
 }
 
 fn starts_type_block(lower: &str) -> bool {
@@ -1095,6 +1123,52 @@ mod tests {
     }
 
     #[test]
+    fn host_injected_project_reference_preserves_dotted_object_model_name() {
+        let unique = format!(
+            "oxvba_project_host_ref_name_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("MainModule.bas"),
+            "Public Sub Main()\nEnd Sub\n",
+        )
+        .expect("write module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include=\"Excel.Application\">
+      <Kind>HostInjected</Kind>
+    </ProjectReference>
+    <Module Include=\"MainModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root).expect("basproj should load");
+        assert_eq!(loaded.manifest.references.len(), 1);
+        assert_eq!(
+            loaded.manifest.references[0].referenced_project_name,
+            "Excel.Application"
+        );
+        assert_eq!(
+            loaded.manifest.references[0].reference_kind,
+            ReferenceKind::HostInjected
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
     fn exe_without_configured_entry_point_discovers_unique_sub_main() {
         let unique = format!(
             "oxvba_project_load_unique_main_test_{}_{}",
@@ -1473,6 +1547,156 @@ mod tests {
 
             std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
         }
+    }
+
+    #[test]
+    fn library_with_continued_module_declare_has_no_top_level_mainline() {
+        let unique = format!(
+            "oxvba_project_load_library_continued_declare_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("Interop.bas"),
+            concat!(
+                "Option Explicit\n",
+                "Private Declare PtrSafe Sub CopyMemory Lib \"kernel32\" Alias \"RtlMoveMemory\" _\n",
+                "    (ByVal dest As LongPtr, ByVal src As LongPtr, ByVal size As Long)\n",
+                "Public Sub Warmup()\n",
+                "End Sub\n",
+            ),
+        )
+        .expect("write module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjectLibrary</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Interop.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("continued module-level Declare is not executable mainline");
+        assert_eq!(loaded.output_type, OutputType::Library);
+        assert!(loaded.entry_point.is_none());
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn library_with_conditional_continued_declare_has_no_top_level_mainline() {
+        let unique = format!(
+            "oxvba_project_load_library_conditional_declare_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("Interop.bas"),
+            concat!(
+                "#If Mac Then\n",
+                "#ElseIf VBA7 Then\n",
+                "Private Declare PtrSafe Sub CopyMemory Lib \"kernel32\" Alias \"RtlMoveMemory\" _\n",
+                "    (ByVal dest As LongPtr, ByVal src As LongPtr, ByVal size As Long)\n",
+                "#Else\n",
+                "Private Declare Sub CopyMemory Lib \"kernel32\" Alias \"RtlMoveMemory\" _\n",
+                "    (ByVal dest As Long, ByVal src As Long, ByVal size As Long)\n",
+                "#End If\n",
+                "Public Sub Warmup()\n",
+                "End Sub\n",
+            ),
+        )
+        .expect("write module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjectLibrary</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Interop.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("conditional module-level Declare is not executable mainline");
+        assert_eq!(loaded.output_type, OutputType::Library);
+        assert!(loaded.entry_point.is_none());
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_top_level_rewrite_preserves_continued_module_declare() {
+        let unique = format!(
+            "oxvba_project_load_exe_continued_declare_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("ScriptModule.bas"),
+            concat!(
+                "Private Declare PtrSafe Sub CopyMemory Lib \"kernel32\" Alias \"RtlMoveMemory\" _\n",
+                "    (ByVal dest As LongPtr, ByVal src As LongPtr, ByVal size As Long)\n",
+                "valueOut = 41\n",
+            ),
+        )
+        .expect("write module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectExe</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ScriptModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("project should load with top-level rewrite");
+        let script_module = loaded
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name == "ScriptModule")
+            .expect("rewritten module should exist");
+        assert!(
+            script_module
+                .source
+                .contains("(ByVal dest As LongPtr, ByVal src As LongPtr, ByVal size As Long)"),
+            "continued Declare line must stay at module scope: {}",
+            script_module.source
+        );
+        assert!(
+            script_module
+                .source
+                .contains("Public Sub __OxVbaTopLevelMainline"),
+            "top-level executable line should still be rewritten: {}",
+            script_module.source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }
 
     #[test]

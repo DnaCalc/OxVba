@@ -2246,6 +2246,10 @@ impl<'h> Vm<'h> {
             Op::RaiseError { code } => {
                 return Err(Fault::new(*code, default_error_message(*code)));
             }
+            Op::RaiseErrorFromSlot { slot } => {
+                let code = variant_to_error_code(self.get(*slot)?)?;
+                return Err(Fault::new(code, default_error_message(code)));
+            }
             Op::ClearErr => self.err = ErrObject::default(),
 
             // ── Arrays / aggregates ──
@@ -3106,6 +3110,25 @@ fn variant_to_object(value: &Variant) -> Result<ObjectRef, Fault> {
             .map_err(|_| Fault::new(13, "object handle exceeds i32 range"));
     }
     Err(Fault::new(424, "Object required"))
+}
+
+fn variant_to_error_code(value: &Variant) -> Result<i32, Fault> {
+    if let Some(code) = value.as_i32() {
+        return Ok(code);
+    }
+    if let Some(code) = value.as_i64() {
+        return i32::try_from(code).map_err(|_| Fault::new(13, "Type mismatch"));
+    }
+    if let Some(code) = value.as_f64() {
+        if code.is_finite()
+            && code.fract() == 0.0
+            && code >= i32::MIN as f64
+            && code <= i32::MAX as f64
+        {
+            return Ok(code as i32);
+        }
+    }
+    Err(Fault::new(13, "Type mismatch"))
 }
 
 /// True for the omitted-optional-argument sentinel placed by `resolve_proc_args`.

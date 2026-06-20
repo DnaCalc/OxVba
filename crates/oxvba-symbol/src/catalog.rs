@@ -27,6 +27,7 @@ pub struct IntrinsicEntry {
     /// (statement-form, predeclared-member, or internal machinery).
     pub names: &'static [&'static str],
     pub sig: IntrinsicSig,
+    pub param_names: &'static [&'static str],
     pub call_shape: CallShape,
 }
 
@@ -54,6 +55,22 @@ const fn e(
         id,
         names,
         sig,
+        param_names: &[],
+        call_shape,
+    }
+}
+const fn e_params(
+    id: NativeImplId,
+    names: &'static [&'static str],
+    sig: IntrinsicSig,
+    param_names: &'static [&'static str],
+    call_shape: CallShape,
+) -> IntrinsicEntry {
+    IntrinsicEntry {
+        id,
+        names,
+        sig,
+        param_names,
         call_shape,
     }
 }
@@ -77,7 +94,13 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         UCase => e(UCase, &["UCase", "UCase$"], sig(1, 1), Ordinary),
         Split => e(Split, &["Split"], sig(1, 4), Ordinary),
         Join => e(Join, &["Join"], sig(1, 2), Ordinary),
-        Replace => e(Replace, &["Replace"], sig(3, 6), Ordinary),
+        Replace => e_params(
+            Replace,
+            &["Replace"],
+            sig(3, 6),
+            &["Expression", "Find", "Replace", "Start", "Count", "Compare"],
+            Ordinary,
+        ),
         Trim => e(Trim, &["Trim", "Trim$"], sig(1, 1), Ordinary),
         LTrim => e(LTrim, &["LTrim", "LTrim$"], sig(1, 1), Ordinary),
         RTrim => e(RTrim, &["RTrim", "RTrim$"], sig(1, 1), Ordinary),

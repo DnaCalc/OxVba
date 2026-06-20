@@ -470,8 +470,12 @@ fn map_typelib_wire_type(wire_type: TypeLibWireType, iid: Option<ComInterfaceIid
             iid: iid.map(format_iid).unwrap_or_default(),
         },
         TypeLibWireType::Automation(param) => ComWireType::Automation(map_param_type(param)),
+        TypeLibWireType::SafeArray { .. } => ComWireType::SafeArrayVariant,
         TypeLibWireType::SafeArrayVariant => ComWireType::SafeArrayVariant,
+        TypeLibWireType::ByRefSafeArray { .. } => ComWireType::ByRefSafeArrayVariant,
         TypeLibWireType::ByRefSafeArrayVariant => ComWireType::ByRefSafeArrayVariant,
+        TypeLibWireType::Record { .. } => ComWireType::Automation(ComParamType::Variant),
+        TypeLibWireType::ByRefRecord { .. } => ComWireType::Automation(ComParamType::ByRefVariant),
     }
 }
 
@@ -514,6 +518,7 @@ fn map_param_type(param: TypeLibParamType) -> ComParamType {
         TypeLibParamType::Date => ComParamType::Date,
         TypeLibParamType::Decimal => ComParamType::Decimal,
         TypeLibParamType::Object => ComParamType::Object,
+        TypeLibParamType::Record => ComParamType::Variant,
         TypeLibParamType::Byte => ComParamType::Byte,
         TypeLibParamType::LongLong => ComParamType::LongLong,
         TypeLibParamType::LongPtr => ComParamType::LongPtr,
@@ -527,6 +532,7 @@ fn map_param_type(param: TypeLibParamType) -> ComParamType {
         TypeLibParamType::ByRefDate => ComParamType::ByRefDate,
         TypeLibParamType::ByRefDecimal => ComParamType::ByRefDecimal,
         TypeLibParamType::ByRefObject => ComParamType::ByRefObject,
+        TypeLibParamType::ByRefRecord => ComParamType::ByRefVariant,
         TypeLibParamType::ByRefByte => ComParamType::ByRefByte,
         TypeLibParamType::ByRefBoolean => ComParamType::ByRefBoolean,
         TypeLibParamType::ByRefLongLong => ComParamType::ByRefLongLong,

@@ -782,7 +782,6 @@ End Function
         assert_eq!(
             addin.implemented_interfaces[0].native_requirements(),
             vec![
-                ComNativeInterfaceRequirement::AutomationValue,
                 ComNativeInterfaceRequirement::TypedInterfacePointer,
                 ComNativeInterfaceRequirement::SafeArrayVariant,
             ]
@@ -853,7 +852,7 @@ End Function
             .expect("IRtdServer.RefreshData metadata");
         assert_eq!(
             refresh_data.return_wire_type,
-            Some(ComWireType::ByRefSafeArrayVariant)
+            Some(ComWireType::SafeArrayVariant)
         );
         assert_eq!(
             rtd.implemented_interfaces[0].native_requirements(),
@@ -862,7 +861,6 @@ End Function
                 ComNativeInterfaceRequirement::ScalarByRefWriteback,
                 ComNativeInterfaceRequirement::TypedInterfacePointer,
                 ComNativeInterfaceRequirement::SafeArrayVariant,
-                ComNativeInterfaceRequirement::SafeArrayByRefWriteback,
             ]
         );
         assert!(idl.contains("interface IDTExtensibility2 : IDispatch"));

@@ -41,6 +41,25 @@ fn manifest(source: &str) -> SymbolProjectManifest {
     }
 }
 
+fn manifest_modules(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {
+    SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: modules
+            .iter()
+            .map(|(name, kind, source)| ModuleUnit {
+                module_name: (*name).into(),
+                module_kind: *kind,
+                attributes: ModuleAttributes::named(*name),
+                source: (*source).into(),
+            })
+            .collect(),
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
 fn bind(source: &str) -> CoreProgram {
     bind_program(&manifest(source), &NullTypeLibs).expect("bind_program")
 }
@@ -205,6 +224,148 @@ fn module_qualified_const_initializer_respects_local_shadowing() {
     assert!(
         bind_program(&manifest(src), &NullTypeLibs).is_err(),
         "a local const named like the module must shadow the module qualifier"
+    );
+}
+
+#[test]
+fn enum_qualified_member_binds_as_constant_value() {
+    let src = "Public Enum WebFormat\n  PlainText = 0\n  Json = 1\nEnd Enum\n\
+               Sub Main()\n    Dim r As Long\n    r = WebFormat.Json\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(1.0));
+}
+
+#[test]
+fn keyword_token_can_be_parameter_name() {
+    let src = "Sub UseName(Name As String)\n    Dim r As Long\n    r = Len(Name)\nEnd Sub\n\
+               Sub Main()\n    Dim r As Long\n    UseName \"abc\"\n    r = 1\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(1.0));
+}
+
+#[test]
+fn native_intrinsic_named_argument_reorders_to_parameter_slot() {
+    assert_eq!(
+        run_main_local0_string(&main_sub(
+            "    Dim s As String\n    s = Replace(\"a?a?\", \"?\", \"\", Count:=1)\n"
+        )),
+        Some("aa?".to_string())
+    );
+}
+
+#[test]
+fn function_name_is_assignable_return_target_for_set() {
+    let src = "Function MakeObject() As Object\n    Set MakeObject = Nothing\nEnd Function\n\
+               Sub Main()\n    Dim r As Long\n    r = 1\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(1.0));
+}
+
+#[test]
+fn indexed_function_result_binds_as_default_member_access() {
+    let src = "Function Lookup() As Object\nEnd Function\n\
+               Sub Main()\n    Dim value As Variant\n    value = Lookup()(\"MediaType\")\nEnd Sub\n";
+    bind_program(&manifest(src), &NullTypeLibs).expect("bind indexed function result");
+}
+
+#[test]
+fn mid_assignment_mutates_target_string() {
+    assert_eq!(
+        run_main_local0_string(&main_sub(
+            "    Dim s As String\n    s = \"abcdef\"\n    Mid$(s, 3, 2) = \"XY\"\n"
+        )),
+        Some("abXYef".to_string())
+    );
+}
+
+#[test]
+fn err_raise_accepts_foldable_error_number_expression() {
+    let src = "Sub Main()\n    On Error Resume Next\n    Err.Raise 11099 + vbObjectError\n    Dim r As Long\n    r = Err.Number\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(-2147210405.0));
+}
+
+#[test]
+fn err_raise_accepts_dynamic_error_number_expression() {
+    let src = "Sub Main()\n    On Error Resume Next\n    Dim n As Long\n    n = 7\n    Err.Raise n\n    Dim r As Long\n    r = Err.Number\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(7.0));
+}
+
+#[test]
+fn module_qualified_global_variable_is_read_and_written_as_place() {
+    let manifest = manifest_modules(&[
+        (
+            "WebHelpers",
+            ModuleKind::Procedural,
+            "Public AsyncRequests As Long\n",
+        ),
+        (
+            "Main",
+            ModuleKind::Procedural,
+            "Sub Main()\n    WebHelpers.AsyncRequests = 42\n    Dim r As Long\n    r = WebHelpers.AsyncRequests\nEnd Sub\n",
+        ),
+    ]);
+    let program = bind_program(&manifest, &NullTypeLibs).expect("bind qualified global");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
+    assert_eq!(
+        vm.slot(bundle.global_count).and_then(|v| v.as_i32()),
+        Some(42)
+    );
+}
+
+#[test]
+fn module_qualified_object_global_can_receive_member_calls() {
+    let manifest = manifest_modules(&[
+        (
+            "WebHelpers",
+            ModuleKind::Procedural,
+            "Public AsyncRequests As Collection\n",
+        ),
+        (
+            "Main",
+            ModuleKind::Procedural,
+            "Sub Main()\n    Set WebHelpers.AsyncRequests = New Collection\n    WebHelpers.AsyncRequests.Add 10\n    Dim r As Long\n    r = WebHelpers.AsyncRequests.Count\nEnd Sub\n",
+        ),
+    ]);
+    let program = bind_program(&manifest, &NullTypeLibs).expect("bind qualified object global");
+    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
+    assert_eq!(
+        vm.slot(bundle.global_count).and_then(|v| v.as_i32()),
+        Some(1)
+    );
+}
+
+#[test]
+fn vba_qualified_intrinsic_and_constant_resolve_through_library_namespace() {
+    assert_eq!(
+        run_main_local0(&main_sub(
+            "    Dim r As Long\n    r = VBA.Len(\"abc\") + VBA.vbString\n"
+        )),
+        Some(11.0)
+    );
+}
+
+#[test]
+fn vba_module_qualified_intrinsic_requires_matching_module_owner() {
+    assert_eq!(
+        run_main_local0(&main_sub(
+            "    Dim r As Long\n    r = VBA.Strings.Len(\"abc\")\n"
+        )),
+        Some(3.0)
+    );
+    let src = main_sub("    Dim r As Long\n    r = VBA.NotStrings.Len(\"abc\")\n");
+    assert!(
+        bind_program(&manifest(&src), &NullTypeLibs).is_err(),
+        "VBA.<module>.<member> must not ignore a bogus middle qualifier"
+    );
+}
+
+#[test]
+fn local_value_named_vba_shadows_library_namespace_qualifier() {
+    let src = main_sub("    Dim VBA As Long\n    Dim r As Long\n    r = VBA.Len(\"abc\")\n");
+    assert!(
+        bind_program(&manifest(&src), &NullTypeLibs).is_err(),
+        "a local value named VBA must shadow the library namespace qualifier"
     );
 }
 
@@ -1592,6 +1753,38 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
             .count(),
         1,
         "host-injected bare `r = w2` should be one early-bound default PropertyGet, while `Set w2 = w` stays object assignment: {callees:?}"
+    );
+}
+
+#[test]
+fn host_injected_root_object_member_lowers_through_com_metadata() {
+    let main = "Sub Main()\n    Dim r As Long\n    r = Widget.Value\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Widget".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
+    let callees = top_level_callees(&program);
+    assert!(
+        callees.iter().any(|c| matches!(
+            c,
+            CoreCallee::EarlyCom {
+                dispid: 0,
+                kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet)
+            }
+        )),
+        "host root member should bind against host-injected typelib metadata: {callees:?}"
     );
 }
 

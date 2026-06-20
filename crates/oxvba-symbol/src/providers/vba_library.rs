@@ -12,7 +12,7 @@ use oxvba_bundle::ProjectMemberKind;
 use oxvba_bundle::coreir::CoreConst;
 
 use crate::binding::{Binding, DispatchRoute, SpecialForm};
-use crate::catalog::name_to_intrinsic;
+use crate::catalog::{intrinsic_entry, name_to_intrinsic};
 use crate::model::{PredeclaredObjectId, fold_identifier};
 use crate::predeclared::{predeclared_member, predeclared_object};
 use crate::provider::Provider;
@@ -55,6 +55,7 @@ impl Provider for VbaLibraryProvider {
             // the FileIo STATEMENT forms (P4), and Diagnostics — keep the `Native(id)`
             // route.
             if let Some((owner, member)) = id.library_member() {
+                let entry = intrinsic_entry(id);
                 return Some(Binding::new(
                     None,
                     DispatchRoute::ExternMember {
@@ -63,7 +64,11 @@ impl Provider for VbaLibraryProvider {
                         member: member.to_string(),
                         kind: ProjectMemberKind::Method,
                         param_types: Vec::new(),
-                        param_names: Vec::new(),
+                        param_names: entry
+                            .param_names
+                            .iter()
+                            .map(|name| (*name).to_string())
+                            .collect(),
                         has_receiver: false,
                     },
                 ));
@@ -97,6 +102,27 @@ impl Provider for VbaLibraryProvider {
         let object = predeclared_object(type_name)?;
         let route = predeclared_member(object, name)?;
         Some(Binding::new(None, route))
+    }
+
+    fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
+        if parts.len() == 2 && fold_identifier(parts[0]) == "vba" {
+            return self.resolve(parts[1]);
+        }
+        if parts.len() == 3 && fold_identifier(parts[0]) == "vba" {
+            let owner = fold_identifier(parts[1]);
+            let binding = self.resolve(parts[2])?;
+            let matches_owner = match &binding.route {
+                DispatchRoute::Native(id) => id
+                    .library_member()
+                    .is_some_and(|(module, _)| fold_identifier(module) == owner),
+                DispatchRoute::ExternMember { owner: module, .. } => {
+                    fold_identifier(module) == owner
+                }
+                _ => false,
+            };
+            return matches_owner.then_some(binding);
+        }
+        None
     }
 
     fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {

@@ -101,6 +101,9 @@ fn read_f64(v: &Variant) -> Result<f64, ArithError> {
     if let Some(x) = v.as_currency_scaled_i64() {
         return Ok(x as f64 / 10_000.0);
     }
+    if let Some(x) = v.as_proc_ref() {
+        return Ok(x as f64);
+    }
     coerce_to(v, VarType::Double)?
         .as_f64()
         .ok_or_else(ArithError::type_mismatch)
@@ -132,6 +135,9 @@ pub fn int(v: &Variant) -> Result<i64, ArithError> {
     }
     if let Some(x) = v.as_i32() {
         return Ok(i64::from(x));
+    }
+    if let Some(x) = v.as_proc_ref() {
+        return i64::try_from(x).map_err(|_| ArithError::overflow());
     }
     let d = num(v)?;
     if !d.is_finite() || d.abs() >= 9.223_372_036_854_775e18 {

@@ -440,6 +440,7 @@ pub enum ErrorOp {
     ResumeLabel(LabelId),
     ClearErr,
     Raise { code: i32 },
+    RaiseValue { code: CoreValue },
 }
 
 #[derive(Debug, Clone, PartialEq)]

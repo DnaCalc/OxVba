@@ -251,13 +251,12 @@ fn public_modules(modules: &[sym::ModuleUnit]) -> Vec<sym::ModuleUnit> {
 fn build_references(basproj: &BasProj) -> Vec<sym::ProjectReference> {
     let mut references = Vec::new();
     for pr in &basproj.project_references {
-        let name = module_name_of(&pr.include);
         references.push(match pr.kind {
             BasProjProjectReferenceKind::Project => sym::ProjectReference::Project {
-                referenced_project_name: name,
+                referenced_project_name: module_name_of(&pr.include),
             },
             BasProjProjectReferenceKind::HostInjected => sym::ProjectReference::HostInjected {
-                referenced_project_name: name,
+                referenced_project_name: pr.include.clone(),
             },
         });
     }

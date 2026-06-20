@@ -422,7 +422,9 @@ unsafe fn set_windows_variant_from_variant(
             set_windows_variant_array_arg(variant, &array)?;
         }
         crate::VarType::Record => {
-            return Err("COM records cannot be marshaled by the generic pointer helper".to_string());
+            return Err(
+                "COM records cannot be marshaled by the generic pointer helper".to_string(),
+            );
         }
         crate::VarType::ProcRef => {
             return Err("procedure references cannot be marshaled as VARIANT values".to_string());

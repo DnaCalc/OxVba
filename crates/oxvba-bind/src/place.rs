@@ -67,6 +67,17 @@ impl<'a> ProcLower<'a> {
                     .member_name_token()
                     .ok_or_else(|| BindError::Malformed("member target without name".into()))?
                     .text;
+                if let Some(binding) = self.qualified_namespace_member_binding(node, member) {
+                    match binding.symbol.and_then(|s| self.place_for_symbol(s)) {
+                        Some(place_ty) => return Ok(place_ty),
+                        None => {
+                            return Err(BindError::InvalidAssignment(format!(
+                                "`{}` is not an assignable variable",
+                                node.text().trim()
+                            )));
+                        }
+                    }
+                }
                 let recv = self.member_receiver_bound(node)?;
                 let binding = self
                     .resolve_member(&recv.ty, member, None)

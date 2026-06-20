@@ -1,11 +1,10 @@
 use core::ffi::c_void;
 use std::rc::Rc;
 
-pub type ComRecordCloneFn =
-    unsafe fn(
-        record_info: *mut c_void,
-        record_data: *const c_void,
-    ) -> Result<(*mut c_void, *mut c_void), String>;
+pub type ComRecordCloneFn = unsafe fn(
+    record_info: *mut c_void,
+    record_data: *const c_void,
+) -> Result<(*mut c_void, *mut c_void), String>;
 pub type ComRecordDestroyFn = unsafe fn(record_info: *mut c_void, record_data: *mut c_void);
 
 struct ComRecordInner {

@@ -636,6 +636,10 @@ fn format_variant_value(value: &Variant) -> String {
             Some(handle) => format!("object:{handle}"),
             None => "object:<null>".to_string(),
         },
+        VarType::Record => match value.as_com_record() {
+            Some(record) => format!("record:{record:?}"),
+            None => "record:<invalid>".to_string(),
+        },
         VarType::ProcRef => match value.as_proc_ref() {
             Some(proc) => format!("proc:{proc}"),
             None => "proc:<invalid>".to_string(),

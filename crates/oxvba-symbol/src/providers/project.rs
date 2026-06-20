@@ -25,6 +25,8 @@ pub struct ProjectProvider {
     public: BTreeMap<String, Vec<MemberEntry>>,
     /// module(folded) → (member(folded) → candidates).
     modules: BTreeMap<String, BTreeMap<String, Vec<MemberEntry>>>,
+    /// enum(folded) → (member(folded) → candidates).
+    enums: BTreeMap<String, BTreeMap<String, Vec<MemberEntry>>>,
     /// module(folded) → its default member (`VB_UserMemId = 0`).
     default_members: BTreeMap<String, MemberEntry>,
 }
@@ -61,6 +63,15 @@ impl ProjectProvider {
                         .entry(module_key.clone())
                         .or_insert(entry);
                 }
+                if let Some(enum_name) = &member.enum_name {
+                    provider
+                        .enums
+                        .entry(fold_identifier(enum_name))
+                        .or_default()
+                        .entry(member.name_folded.clone())
+                        .or_default()
+                        .push(entry);
+                }
             }
         }
         provider
@@ -77,8 +88,13 @@ impl ProjectProvider {
     }
 
     fn resolve_owner_member(&self, owner: &str, member: &str) -> Option<Binding> {
-        let module = self.modules.get(&fold_identifier(owner))?;
-        let candidates = module.get(&fold_identifier(member))?;
+        let owner = fold_identifier(owner);
+        let member = fold_identifier(member);
+        let candidates = self
+            .modules
+            .get(&owner)
+            .and_then(|module| module.get(&member))
+            .or_else(|| self.enums.get(&owner).and_then(|enum_| enum_.get(&member)))?;
         candidates.first().map(|entry| binding_for(*entry))
     }
 }

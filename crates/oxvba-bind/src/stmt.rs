@@ -89,6 +89,11 @@ impl<'a> ProcLower<'a> {
             .assign_value()
             .ok_or_else(|| BindError::Malformed("assignment value".into()))?;
         let mut val = self.bind_expr(value_node)?;
+        if intent == AssignmentIntent::Let
+            && let Some(stmts) = self.try_mid_assignment(target_node, &val.value)?
+        {
+            return Ok(stmts);
+        }
         // A property target (`obj.Prop = x` / bare `Prop = x`) is a setter call,
         // not a place store: Let → Property Let, Set → Property Set.
         let value_text = value_node.text();
@@ -112,6 +117,68 @@ impl<'a> ProcLower<'a> {
             target_name: target_node.text().trim().to_string(),
             target_type_name: types::type_name(&target_ty),
         }])
+    }
+
+    fn try_mid_assignment(
+        &mut self,
+        target: SyntaxNode<'_>,
+        rhs: &CoreValue,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        if target.kind() != SyntaxKind::IndexExpr {
+            return Ok(None);
+        }
+        let Some(base) = target.index_base() else {
+            return Ok(None);
+        };
+        let name = match base.kind() {
+            SyntaxKind::IdentExpr => base.ident_name_token().map(|token| token.text),
+            SyntaxKind::MemberExpr => base.member_name_token().map(|token| token.text),
+            _ => None,
+        };
+        let Some(name) = name else {
+            return Ok(None);
+        };
+        let folded = oxvba_symbol::model::fold_identifier(name.trim_end_matches('$'));
+        if folded != "mid" {
+            return Ok(None);
+        }
+        let items = target
+            .index_arg_list()
+            .ok_or_else(|| BindError::Malformed("Mid assignment arguments".into()))?
+            .arg_items();
+        let Some((first, rest)) = items.split_first() else {
+            return Err(BindError::Malformed("Mid assignment target".into()));
+        };
+        let oxvba_syntax::red::ArgItem::Positional(target_expr, _) = first else {
+            return Err(BindError::Malformed("Mid assignment target".into()));
+        };
+        let (place, target_ty) = self.bind_place(*target_expr)?;
+        let mut args = vec![CoreArg::ByVal(CoreValue::Load(place.clone()))];
+        for item in rest {
+            match item {
+                oxvba_syntax::red::ArgItem::Positional(expr, _) => {
+                    args.push(CoreArg::ByVal(self.bind_expr(*expr)?.value));
+                }
+                oxvba_syntax::red::ArgItem::Omitted => args.push(CoreArg::Omitted),
+                oxvba_syntax::red::ArgItem::Named { .. } => {
+                    return Err(BindError::Unsupported(
+                        "named arguments in Mid assignment".into(),
+                    ));
+                }
+            }
+        }
+        args.push(CoreArg::ByVal(rhs.clone()));
+        Ok(Some(vec![CoreStmt::Assign {
+            place,
+            value: CoreValue::Call {
+                callee: CoreCallee::Native(NativeImplId::MidStmt),
+                args,
+            },
+            intent: AssignmentIntent::Let,
+            target_kind: types::assignment_target_kind(&target_ty),
+            target_name: target_expr.text().trim().to_string(),
+            target_type_name: types::type_name(&target_ty),
+        }]))
     }
 
     fn bind_default_member_value_context(
@@ -191,6 +258,23 @@ impl<'a> ProcLower<'a> {
                 let Some(member) = target.member_name_token().map(|t| t.text) else {
                     return Ok(None);
                 };
+                if let Some(binding) = self.qualified_namespace_member_binding(target, member) {
+                    if !is_property_route(&binding.route) {
+                        return Ok(None);
+                    }
+                    let Some(sym) = binding.symbol else {
+                        return Ok(None);
+                    };
+                    self.project_property_accessor_signature(sym, kind, member)?;
+                    let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied()
+                    else {
+                        return Ok(None);
+                    };
+                    return Ok(Some(vec![CoreStmt::Eval(CoreValue::Call {
+                        callee: CoreCallee::VbaProc { proc: proc_id },
+                        args: vec![CoreArg::ByVal(rhs.clone())],
+                    })]));
+                }
                 let recv = self.member_receiver_bound(target)?;
                 // Through an interface-typed target, the setter is the mangled
                 // `Interface_Property` accessor on the implementing class.
@@ -357,8 +441,8 @@ impl<'a> ProcLower<'a> {
     ) -> Result<Vec<CoreStmt>, BindError> {
         match fold_identifier(member).as_str() {
             "raise" => {
-                let code = self.const_i32_arg(arglist)?;
-                Ok(vec![CoreStmt::Error(ErrorOp::Raise { code })])
+                let op = self.err_raise_arg(arglist)?;
+                Ok(vec![CoreStmt::Error(op)])
             }
             "clear" => Ok(vec![CoreStmt::Error(ErrorOp::ClearErr)]),
             other => Err(BindError::Unsupported(format!("Err.{other}"))),
@@ -1315,7 +1399,7 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Unsupported("ReDim bound must be a constant".into()))
     }
 
-    fn const_i32_arg(&mut self, arglist: Option<SyntaxNode<'_>>) -> Result<i32, BindError> {
+    fn err_raise_arg(&mut self, arglist: Option<SyntaxNode<'_>>) -> Result<ErrorOp, BindError> {
         let arglist = arglist.ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
         let first = arglist
             .arg_items()
@@ -1324,11 +1408,13 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
         let expr = match first {
             ArgItem::Positional(e, _) => e,
+            ArgItem::Named { name, value, .. } if fold_identifier(name.text) == "number" => value,
             _ => return Err(BindError::Malformed("Err.Raise number".into())),
         };
         let value = self.bind_expr(expr)?.value;
-        self.fold_const_i32(&value).ok_or_else(|| {
-            BindError::Unsupported("Err.Raise requires a constant error number".into())
+        Ok(match self.fold_const_i32(&value) {
+            Some(code) => ErrorOp::Raise { code },
+            None => ErrorOp::RaiseValue { code: value },
         })
     }
 }

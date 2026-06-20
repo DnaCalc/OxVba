@@ -1103,7 +1103,9 @@ pub(crate) fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'
                 after_modifier = false;
             }
             SyntaxElement::Token(token)
-                if !in_type_ref && after_modifier && is_identifier_like(token.kind) =>
+                if !in_type_ref
+                    && after_modifier
+                    && (is_identifier_like(token.kind) || token.kind.is_keyword()) =>
             {
                 return Some(token);
             }

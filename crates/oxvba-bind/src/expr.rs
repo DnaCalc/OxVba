@@ -138,6 +138,19 @@ impl<'a> ProcLower<'a> {
         if let DispatchRoute::ConstValue(c) = &binding.route {
             return Ok(value_bound(CoreValue::Const(c.clone()), const_type(c)));
         }
+        if let DispatchRoute::ComObjectRoot { type_name, prog_id } = &binding.route {
+            let prog_id = prog_id.clone().unwrap_or_else(|| type_name.clone());
+            let args = vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))];
+            return Ok(value_bound(
+                CoreValue::Call {
+                    callee: oxvba_bundle::coreir::CoreCallee::Native(
+                        oxvba_bundle::native::NativeImplId::CreateObject,
+                    ),
+                    args,
+                },
+                VarTypeRef::Object(type_name.clone()),
+            ));
+        }
         // An active-project `Const`/`Enum` member: its value is folded once in the
         // symbol layer (the published type system's single source of truth).
         if let Some(sym) = binding.symbol
@@ -421,6 +434,25 @@ impl<'a> ProcLower<'a> {
         // array. The member binder decides by resolving the member.
         if base.kind() == SyntaxKind::MemberExpr {
             return self.bind_member_call(base, node.index_arg_list());
+        }
+        // `Func(args)(key)` / `obj.Factory()(key)` — index the default member of
+        // a value produced by another expression. This is common for Dictionary
+        // helpers that return an object and are immediately indexed.
+        if base.kind() == SyntaxKind::IndexExpr {
+            let recv = self.bind_expr(base)?;
+            let args = self.bind_positional_values(
+                node.index_arg_list()
+                    .ok_or_else(|| BindError::Malformed("default member index".into()))?,
+            )?;
+            return Ok(value_bound(
+                self.late_member_call(
+                    "Item",
+                    oxvba_bundle::ProjectMemberKind::Method,
+                    recv.value,
+                    args.into_iter().map(CoreArg::ByVal).collect(),
+                ),
+                VarTypeRef::Variant,
+            ));
         }
         // An array element read.
         let (place, ty) = self.bind_place(node)?;

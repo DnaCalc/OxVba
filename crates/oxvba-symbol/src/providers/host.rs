@@ -26,7 +26,9 @@ impl HostProvider {
 
 impl Provider for HostProvider {
     fn resolve(&self, name: &str) -> Option<Binding> {
-        self.blobs.iter().find_map(|blob| blob.resolve(name))
+        self.blobs
+            .iter()
+            .find_map(|blob| blob.resolve_object_root(name))
     }
 
     fn resolve_member(

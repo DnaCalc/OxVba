@@ -1180,6 +1180,10 @@ impl<'p> Linearizer<'p> {
                 ErrorOp::Raise { code } => {
                     self.emit(Op::RaiseError { code: *code });
                 }
+                ErrorOp::RaiseValue { code } => {
+                    let slot = self.lower_value(code)?;
+                    self.emit(Op::RaiseErrorFromSlot { slot });
+                }
             },
             CoreStmt::ReDim {
                 array,

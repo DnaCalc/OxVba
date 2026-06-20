@@ -258,10 +258,12 @@ impl Variant {
     pub fn from_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
         let core = VariantCore::from_wire_bytes(bytes)?;
         match core.vtype {
-            VarType::String | VarType::Object | VarType::ArrayVariant | VarType::Record => Err(format!(
-                "pointer-carrying VARIANT wire bytes for {:?} require trusted in-process provenance",
-                core.vtype
-            )),
+            VarType::String | VarType::Object | VarType::ArrayVariant | VarType::Record => {
+                Err(format!(
+                    "pointer-carrying VARIANT wire bytes for {:?} require trusted in-process provenance",
+                    core.vtype
+                ))
+            }
             _ => Ok(Self::from_core(core)),
         }
     }
@@ -311,7 +313,10 @@ impl Variant {
             VarType::Record => {
                 let ptr = bytes_to_raw_com_record(core.data_bytes());
                 if ptr.is_null() {
-                    return Ok(Self::from_core(VariantCore::from_bytes(VarType::Record, [0; 8])));
+                    return Ok(Self::from_core(VariantCore::from_bytes(
+                        VarType::Record,
+                        [0; 8],
+                    )));
                 }
                 // SAFETY: guaranteed by this unsafe fn's caller.
                 let record = unsafe { (*ptr).clone() };

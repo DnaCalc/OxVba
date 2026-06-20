@@ -257,11 +257,11 @@ pub fn replace(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let find = as_str(need(args, 1)?)?;
     let with = as_str(need(args, 2)?)?;
-    let start = match opt(args, 3) {
+    let start = match numeric_arg(args, 3) {
         Some(v) => as_i32(v)?,
         None => 1,
     };
-    let count = match opt(args, 4) {
+    let count = match numeric_arg(args, 4) {
         Some(v) => as_i32(v)?,
         None => -1,
     };
@@ -1449,6 +1449,7 @@ pub fn is_numeric(args: &[Variant]) -> LibResult<Variant> {
         | VarType::Object
         | VarType::Error
         | VarType::ProcRef
+        | VarType::Record
         | VarType::ArrayVariant => false,
     };
     Ok(vbool(result))

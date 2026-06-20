@@ -101,7 +101,7 @@ fn oleaut_typelib_emits_loadable_dual_and_imported_interface_shape() {
     assert!(shape.members.iter().any(|member| {
         member.name == "RefreshData"
             && member.parameter_wire_types == ["Automation(ByRefLong)"]
-            && member.return_wire_type.as_deref() == Some("ByRefSafeArrayVariant")
+            && member.return_wire_type.as_deref() == Some("SafeArrayVariant")
     }));
 }
 

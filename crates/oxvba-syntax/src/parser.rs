@@ -1247,7 +1247,7 @@ impl<'a> Parser<'a> {
         loop {
             let before = self.pos;
             self.parse_var_declarator();
-            self.eat_whitespace();
+            self.eat_trivia();
             if !self.eat(SyntaxKind::Comma) {
                 break;
             }
@@ -1748,9 +1748,9 @@ impl<'a> Parser<'a> {
         self.eat_whitespace();
         if !self.at(SyntaxKind::Newline) && !self.at(SyntaxKind::Comment) && !self.at_eof() {
             self.parse_inline_statement_block(&[SyntaxKind::KwElse]);
-            if self.current_non_trivia() == SyntaxKind::KwElse {
+            self.eat_whitespace();
+            if self.at(SyntaxKind::KwElse) {
                 self.start_node(SyntaxKind::ElseClause);
-                self.eat_whitespace();
                 self.bump(); // Else
                 self.parse_inline_statement_block(&[]);
                 self.finish_node();
@@ -1818,6 +1818,10 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::Block);
         loop {
             self.eat_whitespace();
+            if self.at(SyntaxKind::Colon) {
+                self.bump();
+                continue;
+            }
             let kind = self.current_non_trivia();
             if self.at_eof()
                 || self.at(SyntaxKind::Newline)
@@ -2917,6 +2921,25 @@ mod tests {
     }
 
     #[test]
+    fn structures_declare_continued_parameter_list_after_alias() {
+        let src = "Private Declare PtrSafe Sub CopyMemory Lib \"kernel32\" Alias \"RtlMoveMemory\" _\n    (ByVal dest As LongPtr, ByVal src As LongPtr, ByVal size As Long)\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::DeclareStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ParamList));
+    }
+
+    #[test]
+    fn structures_sub_continued_parameter_list_after_open_paren() {
+        let src = "Public Sub RegisterConverter( _\n    Name As String, MediaType As String, Optional Instance As Object)\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::Param).len(), 3);
+    }
+
+    #[test]
     fn structures_type_block_fields() {
         let src = "Type Rec\n    Id As Long\n    Name As String * 32\n    Tags(1 To 3) As Integer\nEnd Type\n";
         let p = parse_ok(src);
@@ -3540,6 +3563,56 @@ mod tests {
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
         assert!(has_node_kind(&p.syntax(), SyntaxKind::BinaryExpr));
+    }
+
+    #[test]
+    fn single_line_if_accepts_colon_after_then() {
+        let src = "Sub T()\nIf Len(s) > 0 Then: s = s & \"&\"\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IfStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::AssignStmt));
+    }
+
+    #[test]
+    fn multiline_if_accepts_call_condition_with_else() {
+        let src = "Sub T()\nIf InStr(parts(1), \"Z\") Then\n    value = 1\nElse\n    value = 2\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IfStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseClause));
+    }
+
+    #[test]
+    fn multiline_if_branch_accepts_nested_call_assignment_before_else() {
+        let src = "Sub T()\nIf InStr(parts(1), \"Z\") Then\n    timeParts = Split(Replace(parts(1), \"Z\", \"\"), \":\")\nElse\n    value = 2\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IfStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseClause));
+    }
+
+    #[test]
+    fn multiline_if_branch_accepts_qualified_nested_call_assignment_before_else() {
+        let src = "Sub T()\nIf VBA.InStr(parts(1), \"Z\") Then\n    timeParts = VBA.Split(VBA.Replace(parts(1), \"Z\", \"\"), \":\")\nElse\n    value = 2\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IfStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseClause));
+    }
+
+    #[test]
+    fn single_line_if_before_enclosing_else_does_not_steal_else() {
+        let src = "Sub T()\nIf offsetIndex > 0 Then\n    Select Case UBound(offsetParts)\n    Case 1\n        offsetValue = TimeSerial(CInt(offsetParts(0)), CInt(offsetParts(1)), 0)\n    Case 2\n        offsetValue = TimeSerial(CInt(offsetParts(0)), CInt(offsetParts(1)), Int(Val(offsetParts(2))))\n    End Select\n\n    If negativeOffset Then: offsetValue = -offsetValue\nElse\n    timeParts = Split(parts(1), \":\")\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::SelectStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseClause));
     }
 
     #[test]

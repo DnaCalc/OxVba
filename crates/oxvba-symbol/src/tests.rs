@@ -430,6 +430,23 @@ fn typed_const_values_preserve_exact_type_system_carriers() {
 }
 
 #[test]
+fn active_enum_member_resolves_qualified_by_enum_name() {
+    let m = manifest(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Enum WebFormat\n  PlainText = 0\n  Json = 1\nEnd Enum\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let binding = env
+        .resolve_qualified(&["WebFormat", "Json"])
+        .expect("enum-qualified member");
+    let value = binding.symbol.and_then(|sym| env.const_value(sym)).cloned();
+    assert_eq!(value, Some(CoreConst::I32(1)));
+}
+
+#[test]
 fn string_typed_const_values_coerce_to_declared_scalar_carriers() {
     let m = manifest(
         "Proj",
@@ -572,6 +589,46 @@ fn coclass_resolves_to_activation_prog_id() {
         Some("Widget.Thing")
     );
     assert_eq!(provider.resolve_coclass("Nope"), None);
+}
+
+#[test]
+fn library_level_coclass_resolves_bare_and_qualified_names() {
+    // A library-wide COM reference such as `Scripting` has no requested coclass,
+    // but its coclasses are still valid early-bound type names in VBA.
+    let mut blob = widget_blob();
+    blob.identity.reference_name = "Scripting".into();
+    blob.identity.requested_coclass = None;
+    blob.activation_prog_id = None;
+    blob.coclass_names = vec!["Dictionary".into()];
+    let provider = ComTypeLibProvider::new(blob);
+
+    assert_eq!(
+        provider.resolve_coclass("Dictionary").as_deref(),
+        Some("Scripting.Dictionary")
+    );
+    assert_eq!(
+        provider.resolve_coclass("Scripting.Dictionary").as_deref(),
+        Some("Scripting.Dictionary")
+    );
+    assert!(
+        provider
+            .resolve_member(
+                &VarTypeRef::Object("Dictionary".into()),
+                "DoThing",
+                Some(ProjectMemberKind::Method),
+            )
+            .is_some()
+    );
+    assert!(
+        provider
+            .resolve_member(
+                &VarTypeRef::Object("Scripting.Dictionary".into()),
+                "DoThing",
+                Some(ProjectMemberKind::Method),
+            )
+            .is_some()
+    );
+    assert_eq!(provider.resolve_coclass("Scripting.Nope"), None);
 }
 
 #[test]

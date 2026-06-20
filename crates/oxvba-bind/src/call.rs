@@ -12,7 +12,7 @@ use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
 use oxvba_com::TypeLibParamType;
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{
-    PredeclaredObjectId, SymbolId, SymbolImpl, SymbolNamespace, fold_identifier,
+    PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::signature::{BuiltinType, Param, PassingMode, Signature, VarTypeRef};
 use oxvba_symbol::structural::StructuralIntrinsic;
@@ -87,7 +87,7 @@ impl<'a> ProcLower<'a> {
                 ))
             }
             DispatchRoute::Native(id) => {
-                let args = self.bind_args(arglist, None)?;
+                let args = self.bind_native_args(*id, arglist)?;
                 Ok(value_bound(
                     CoreValue::Call {
                         callee: CoreCallee::Native(*id),
@@ -212,6 +212,83 @@ impl<'a> ProcLower<'a> {
                 "call route {other:?} for `{name}`"
             ))),
         }
+    }
+
+    fn bind_native_args(
+        &mut self,
+        id: NativeImplId,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let entry = oxvba_symbol::catalog::intrinsic_entry(id);
+        if entry.param_names.is_empty() {
+            return self.bind_args(arglist, None);
+        }
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let mut slots = vec![None; entry.param_names.len()];
+        let mut extra = Vec::new();
+        let mut pos = 0usize;
+        let mut seen_named = false;
+        for item in items {
+            match item {
+                ArgItem::Omitted => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
+                    if pos < slots.len() {
+                        slots[pos] = Some(CoreArg::Omitted);
+                    } else {
+                        extra.push(CoreArg::Omitted);
+                    }
+                    pos += 1;
+                }
+                ArgItem::Positional(expr, passing) => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
+                    let arg = self.bind_one_arg(expr, None, passing)?;
+                    if pos < slots.len() {
+                        slots[pos] = Some(arg);
+                    } else {
+                        extra.push(arg);
+                    }
+                    pos += 1;
+                }
+                ArgItem::Named { name, value } => {
+                    seen_named = true;
+                    let folded = fold_identifier(name.text);
+                    let Some(index) = entry
+                        .param_names
+                        .iter()
+                        .position(|candidate| fold_identifier(candidate) == folded)
+                    else {
+                        return Err(self.unresolved(name.text, "named argument"));
+                    };
+                    if slots[index].is_some() {
+                        return Err(BindError::Unsupported(format!(
+                            "duplicate argument for parameter {}",
+                            entry.param_names[index]
+                        )));
+                    }
+                    slots[index] = Some(CoreArg::ByVal(self.bind_expr(value)?.value));
+                }
+            }
+        }
+        let mut args: Vec<CoreArg> = slots
+            .into_iter()
+            .map(|slot| slot.unwrap_or(CoreArg::Omitted))
+            .collect();
+        while matches!(args.last(), Some(CoreArg::Omitted)) {
+            args.pop();
+        }
+        args.extend(extra);
+        Ok(args)
     }
 
     fn bind_project_call(
@@ -1360,8 +1437,8 @@ impl<'a> ProcLower<'a> {
         {
             return Ok(value_bound(CoreValue::ErrField(field), ty));
         }
-        // `Module.Member` where `Module` is a standard module — a namespace qualifier,
-        // not a value.
+        // `Module.Member` / `Enum.Member` where the receiver is a namespace
+        // qualifier, not a value.
         if let Some(bound) = self.try_module_qualified(node, member, None)? {
             return Ok(bound);
         }
@@ -1377,13 +1454,14 @@ impl<'a> ProcLower<'a> {
         self.bind_member_value(recv, member)
     }
 
-    /// `Module.Member(args)` where `Module` is a bare identifier naming a standard
-    /// module (a namespace qualifier). VBA module-qualified calls — emitted by the
-    /// project startup shim as `Call Module.Proc()` — must resolve the member as a
-    /// qualified project member; binding the module name as a value would fail (or,
-    /// when a same-named proc exists, recurse). Returns `None` when the receiver is
-    /// not a module qualifier (a leading-dot `With` member, an object receiver, …).
-    fn try_module_qualified(
+    /// `Module.Member(args)` or `Enum.Member` where the receiver is a bare
+    /// namespace qualifier. Module-qualified calls — emitted by the project
+    /// startup shim as `Call Module.Proc()` — and enum-qualified constants both
+    /// resolve the member as a qualified project/library name. Binding the
+    /// qualifier as a value would fail, or recurse when a procedure has the same
+    /// name as its module. Returns `None` when the receiver is not a qualifier (a
+    /// leading-dot `With` member, an object receiver, …).
+    pub(crate) fn try_module_qualified(
         &mut self,
         node: SyntaxNode<'_>,
         member: &str,
@@ -1392,24 +1470,44 @@ impl<'a> ProcLower<'a> {
         if node.member_has_leading_dot() {
             return Ok(None);
         }
-        let Some(recv) = node.member_receiver() else {
+        let Some(parts) = self.qualified_namespace_member_parts(node, member) else {
             return Ok(None);
         };
-        if recv.kind() != SyntaxKind::IdentExpr {
-            return Ok(None);
-        }
-        let Some(tok) = recv.ident_name_token() else {
-            return Ok(None);
-        };
-        if !self.is_module_qualifier(tok.text) {
-            return Ok(None);
-        }
-        match self.g.env.resolve_qualified(&[tok.text, member]) {
+        let part_refs = parts.iter().map(String::as_str).collect::<Vec<_>>();
+        match self.g.env.resolve_qualified(&part_refs) {
             // A qualified member can be a proc (call), a `Const`/`Enum` value, or a
             // module variable (place) — lower it the same way a bare name resolves.
             Some(binding) => Ok(Some(self.finish_value_or_call(member, &binding, arglist)?)),
             None => Ok(None),
         }
+    }
+
+    pub(crate) fn qualified_namespace_member_binding(
+        &self,
+        node: SyntaxNode<'_>,
+        member: &str,
+    ) -> Option<Binding> {
+        let parts = self.qualified_namespace_member_parts(node, member)?;
+        let part_refs = parts.iter().map(String::as_str).collect::<Vec<_>>();
+        self.g.env.resolve_qualified(&part_refs)
+    }
+
+    fn qualified_namespace_member_parts(
+        &self,
+        node: SyntaxNode<'_>,
+        member: &str,
+    ) -> Option<Vec<String>> {
+        if node.member_has_leading_dot() {
+            return None;
+        }
+        let recv = node.member_receiver()?;
+        let mut parts = Vec::new();
+        collect_qualified_member_parts(recv, &mut parts)?;
+        if parts.is_empty() || !self.is_namespace_qualifier(&parts[0]) {
+            return None;
+        }
+        parts.push(member.to_string());
+        Some(parts)
     }
 
     /// Lower an already-resolved name `binding` to a value or call, mirroring the
@@ -1450,9 +1548,10 @@ impl<'a> ProcLower<'a> {
         self.bind_call_route(name, binding, arglist)
     }
 
-    /// True if `name` is a **standard** (`Procedural`) module — a free-call namespace
-    /// qualifier, so `name.Member` is a module-qualified call. Class / Document / Form
-    /// modules need an instance, so they are excluded.
+    /// True if `name` is a bare namespace qualifier for `name.Member`: either a
+    /// **standard** (`Procedural`) module, the built-in `VBA` library namespace, or
+    /// an enum type. Class / Document / Form modules need an instance, so they are
+    /// excluded.
     ///
     /// Module-ness is read from the authoritative module list, **not** from `resolve`:
     /// a `Sub`/`Function` of the same name as a module must not block `Module.Member`
@@ -1461,13 +1560,19 @@ impl<'a> ProcLower<'a> {
     /// `Main`) would otherwise mis-bind as a self-call. Only a **local/parameter
     /// variable** of the same name shadows the qualifier (`x.Member` is then member
     /// access on that variable's value).
-    fn is_module_qualifier(&self, name: &str) -> bool {
+    fn is_namespace_qualifier(&self, name: &str) -> bool {
         let folded = fold_identifier(name);
+        let is_vba_namespace = folded == "vba";
         let is_proc_module = self.g.env.all_modules().any(|m| {
             fold_identifier(m.module_name) == folded
                 && m.module_kind == oxvba_symbol::manifest::ModuleKind::Procedural
         });
-        is_proc_module && !self.resolves_to_local_value(name)
+        let is_enum = self
+            .resolve(name)
+            .and_then(|b| b.symbol)
+            .and_then(|s| self.g.env.symbols.symbol(s))
+            .is_some_and(|s| s.kind == SymbolKind::Enum);
+        (is_vba_namespace || is_proc_module || is_enum) && !self.resolves_to_local_value(name)
     }
 
     /// True if `name` resolves to a local or parameter variable in the current scope
@@ -1968,6 +2073,21 @@ pub(crate) fn err_field(member: &str) -> Option<(ErrField, VarTypeRef)> {
         "description" => Some((ErrField::Description, builtin(BuiltinType::String))),
         "source" => Some((ErrField::Source, builtin(BuiltinType::String))),
         "lastdllerror" => Some((ErrField::LastDllError, builtin(BuiltinType::Long))),
+        _ => None,
+    }
+}
+
+fn collect_qualified_member_parts(node: SyntaxNode<'_>, out: &mut Vec<String>) -> Option<()> {
+    match node.kind() {
+        SyntaxKind::IdentExpr => {
+            out.push(node.ident_name_token()?.text.to_string());
+            Some(())
+        }
+        SyntaxKind::MemberExpr if !node.member_has_leading_dot() => {
+            collect_qualified_member_parts(node.member_receiver()?, out)?;
+            out.push(node.member_name_token()?.text.to_string());
+            Some(())
+        }
         _ => None,
     }
 }
