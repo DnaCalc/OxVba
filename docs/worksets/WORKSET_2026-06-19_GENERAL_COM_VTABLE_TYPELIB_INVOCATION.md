@@ -198,12 +198,16 @@ surface:
   through `RuntimeByRefWriteback`, fixture-proven by a real slot that mutates the
   record data in place and by the shared runtime bridge `dispatch_invoke_call_result`
   path using vtable transport without an IDispatch fallback.
+- Live typelib record wire metadata now carries optional record allocation identity
+  (`LIBID`, version, LCID, record type GUID). Descriptor-backed record retvals are
+  admitted and the vtable executor allocates caller-owned record storage through
+  OleAut `GetRecordInfoFromGuids`/`IRecordInfo::RecordCreate`; name-only record
+  metadata still declines with an explicit missing-record-return-info reason.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: record/UDT return allocation remains `in-progress`
-accepted scope because the current invocation plan still does not carry the
-record type-info allocation source needed to create caller-owned retval storage.
-Records may fall back only with a specific recorded missing fact or unowned
-ABI/ownership rule, and need the same marshaller, fixture, runtime-integration,
-and fresh-eyes evidence discipline before any broader support claim is made.
+Residual after this slice: record/UDT return execution still needs live or fixture
+evidence with a real `IRecordInfo` source before any broad support claim is made.
+Name-only records may fall back only with the specific missing allocation metadata
+fact, and any remaining record fallback must identify the exact unowned ABI or
+ownership rule.

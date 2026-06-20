@@ -188,6 +188,41 @@ unsafe fn destroy_com_record(record_info: *mut c_void, record_data: *mut c_void)
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) unsafe fn create_com_record_from_record_info(
+    record_info: *mut c_void,
+) -> Result<ComRecord, String> {
+    if record_info.is_null() {
+        return Err("COM record retval allocation received null IRecordInfo".to_string());
+    }
+    let info = record_info.cast::<RawIRecordInfo>();
+    // SAFETY: `record_info` is a live owned IRecordInfo pointer obtained from
+    // OleAut; its first field is the IRecordInfo vtable.
+    let vtbl = unsafe { &*(*info).vtbl };
+    // SAFETY: RecordCreate allocates a new record payload owned by this
+    // IRecordInfo. The returned ComRecord adopts both the payload and the owned
+    // IRecordInfo reference.
+    let record_data = unsafe { (vtbl.record_create)(record_info) };
+    if record_data.is_null() {
+        // SAFETY: the caller transferred this IRecordInfo reference to us; release
+        // it because no ComRecord will own it.
+        unsafe {
+            release_record_info(record_info);
+        }
+        return Err("IRecordInfo::RecordCreate returned null".to_string());
+    }
+    // SAFETY: `record_data` is the fresh allocation returned by `record_info`, and
+    // `destroy_com_record` will destroy it and release the owned IRecordInfo.
+    unsafe {
+        ComRecord::from_raw_parts(
+            record_info,
+            record_data,
+            clone_com_record,
+            destroy_com_record,
+        )
+    }
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn com_record_from_variant(variant: &VARIANT) -> Result<ComRecord, String> {
     // SAFETY: caller checked/knows this VARIANT has vt == VT_RECORD, so the
     // record arm of the VARIANT union is active.

@@ -11,8 +11,8 @@
 #[cfg(target_os = "windows")]
 use crate::typelib::{
     OptionalParamDefault, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
-    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
-    TypeLibWireType,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibRecordInfo,
+    TypeLibResolvedIdentity, TypeLibWireType,
 };
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
@@ -850,12 +850,12 @@ unsafe fn typedesc_to_wire_type(
     if matches!(
         param_type,
         TypeLibParamType::Record | TypeLibParamType::ByRefRecord
-    ) && let Some(name) = typedesc_to_record_binding_name(owner_ptinfo, tdesc)
+    ) && let Some((name, record_info)) = typedesc_to_record_binding(owner_ptinfo, tdesc)
     {
         return if param_type == TypeLibParamType::ByRefRecord {
-            TypeLibWireType::ByRefRecord { name }
+            TypeLibWireType::ByRefRecord { name, record_info }
         } else {
-            TypeLibWireType::Record { name }
+            TypeLibWireType::Record { name, record_info }
         };
     }
     TypeLibWireType::Automation(param_type)
@@ -908,14 +908,14 @@ unsafe fn typedesc_to_interface_binding_name(
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn typedesc_to_record_binding_name(
+unsafe fn typedesc_to_record_binding(
     owner_ptinfo: *mut c_void,
     tdesc: &TYPEDESC,
-) -> Option<String> {
+) -> Option<(String, Option<TypeLibRecordInfo>)> {
     match tdesc.vt {
         VT_PTR if tdesc.union_field != 0 => {
             let inner = &*(tdesc.union_field as *const TYPEDESC);
-            typedesc_to_record_binding_name(owner_ptinfo, inner)
+            typedesc_to_record_binding(owner_ptinfo, inner)
         }
         VT_USERDEFINED => {
             let href = u32::try_from(tdesc.union_field).unwrap_or(0);
@@ -932,15 +932,16 @@ unsafe fn typedesc_to_record_binding_name(
                 && !ref_attr.is_null()
             {
                 let typekind = (*ref_attr).typekind;
-                let name = if typekind == TKIND_RECORD {
+                let binding = if typekind == TKIND_RECORD {
                     qualified_typeinfo_binding_name(ref_ptinfo)
+                        .map(|name| (name, record_typeinfo_descriptor(ref_ptinfo, &*ref_attr)))
                 } else if typekind == TKIND_ALIAS {
-                    typedesc_to_record_binding_name(ref_ptinfo, &(*ref_attr).tdesc_alias)
+                    typedesc_to_record_binding(ref_ptinfo, &(*ref_attr).tdesc_alias)
                 } else {
                     None
                 };
                 ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
-                name
+                binding
             } else {
                 None
             };
@@ -949,6 +950,45 @@ unsafe fn typedesc_to_record_binding_name(
         }
         _ => None,
     }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn record_typeinfo_descriptor(
+    ptinfo: *mut c_void,
+    type_attr: &TYPEATTR,
+) -> Option<TypeLibRecordInfo> {
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut ptlib: *mut c_void = std::ptr::null_mut();
+    let mut index = 0u32;
+    let hr = ((*vtbl).get_containing_type_lib)(ptinfo, &mut ptlib, &mut index);
+    if hr != COM_S_OK || ptlib.is_null() {
+        return None;
+    }
+    let lib_vtbl = *(ptlib as *const *const ITypeLibVtbl);
+    let mut lib_attr: *mut c_void = std::ptr::null_mut();
+    let result =
+        if ((*lib_vtbl).get_lib_attr)(ptlib, &mut lib_attr) == COM_S_OK && !lib_attr.is_null() {
+            let attr = &*(lib_attr as *const TLIBATTR);
+            let type_guid = crate::ComInterfaceIid::from_guid(&type_attr.guid);
+            if type_guid.is_null() {
+                ((*lib_vtbl).release_t_lib_attr)(ptlib, lib_attr);
+                None
+            } else {
+                let info = TypeLibRecordInfo {
+                    libid: crate::ComInterfaceIid::from_guid(&attr.guid),
+                    major: attr.w_major_ver_num,
+                    minor: attr.w_minor_ver_num,
+                    lcid: attr.lcid,
+                    type_guid,
+                };
+                ((*lib_vtbl).release_t_lib_attr)(ptlib, lib_attr);
+                Some(info)
+            }
+        } else {
+            None
+        };
+    ((*lib_vtbl).release)(ptlib);
+    result
 }
 
 /// Resolve a `[out,retval]` parameter's INNER TYPEDESC to the member's by-VALUE
@@ -1005,9 +1045,9 @@ unsafe fn retval_typedesc_to_wire_type(
         return TypeLibWireType::InterfacePointer { name };
     }
     if return_type == TypeLibParamType::Record
-        && let Some(name) = typedesc_to_record_binding_name(owner_ptinfo, tdesc)
+        && let Some((name, record_info)) = typedesc_to_record_binding(owner_ptinfo, tdesc)
     {
-        return TypeLibWireType::Record { name };
+        return TypeLibWireType::Record { name, record_info };
     }
     TypeLibWireType::Automation(return_type)
 }
@@ -3649,6 +3689,65 @@ mod tests {
             );
         }
         // It's OK if this fails on hosts where stdole registry data is unavailable.
+    }
+
+    #[test]
+    fn stdole_record_typeinfo_preserves_non_null_record_guid() {
+        // OLE Automation / stdole LIBID: {00020430-0000-0000-C000-000000000046}
+        let guid = windows_sys::core::GUID {
+            data1: 0x0002_0430,
+            data2: 0,
+            data3: 0,
+            data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+        };
+        let Ok(ptlib) = load_typelib_from_registry(&guid, 2, 0, 0) else {
+            return;
+        };
+        let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+        let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
+        for i in 0..count {
+            let mut typekind: u32 = 0;
+            if unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) } != COM_S_OK
+                || typekind != TKIND_RECORD
+            {
+                continue;
+            }
+            let mut ptinfo: *mut c_void = std::ptr::null_mut();
+            if unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) } != COM_S_OK
+                || ptinfo.is_null()
+            {
+                continue;
+            }
+            let ti_vtbl = unsafe { *(ptinfo as *const *const ITypeInfoVtbl) };
+            let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
+            if unsafe { ((*ti_vtbl).get_type_attr)(ptinfo, &mut pattr) } == COM_S_OK
+                && !pattr.is_null()
+            {
+                let type_guid = crate::ComInterfaceIid::from_guid(unsafe { &(*pattr).guid });
+                let descriptor = unsafe { record_typeinfo_descriptor(ptinfo, &*pattr) };
+                unsafe { ((*ti_vtbl).release_type_attr)(ptinfo, pattr) };
+                if !type_guid.is_null() {
+                    let descriptor = descriptor
+                        .expect("non-null record TYPEATTR GUID should yield allocation metadata");
+                    assert_eq!(
+                        descriptor.libid,
+                        crate::ComInterfaceIid::from_guid(&guid),
+                        "record descriptor should preserve stdole LIBID"
+                    );
+                    assert_eq!(
+                        descriptor.type_guid, type_guid,
+                        "record descriptor should preserve the record TYPEATTR GUID"
+                    );
+                } else {
+                    assert!(
+                        descriptor.is_none(),
+                        "GUID_NULL records cannot be rehydrated by GetRecordInfoFromGuids"
+                    );
+                }
+            }
+            unsafe { ((*ti_vtbl).release)(ptinfo) };
+        }
+        unsafe { release_typelib(ptlib) };
     }
 
     #[test]

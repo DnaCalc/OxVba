@@ -131,13 +131,30 @@ pub enum TypeLibParamType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibRecordInfo {
+    pub libid: ComInterfaceIid,
+    pub major: u16,
+    pub minor: u16,
+    pub lcid: u32,
+    pub type_guid: ComInterfaceIid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeLibWireType {
     Automation(TypeLibParamType),
-    InterfacePointer { name: String },
+    InterfacePointer {
+        name: String,
+    },
     SafeArrayVariant,
     ByRefSafeArrayVariant,
-    Record { name: String },
-    ByRefRecord { name: String },
+    Record {
+        name: String,
+        record_info: Option<TypeLibRecordInfo>,
+    },
+    ByRefRecord {
+        name: String,
+        record_info: Option<TypeLibRecordInfo>,
+    },
 }
 
 impl TypeLibWireType {
@@ -216,11 +233,7 @@ impl TypeLibParamType {
     }
 
     pub(crate) fn supports_vtable_return_abi(self) -> bool {
-        self.supports_vtable_param_abi()
-            && !matches!(
-                self,
-                TypeLibParamType::Record | TypeLibParamType::ByRefRecord
-            )
+        self.supports_vtable_param_abi() && !matches!(self, TypeLibParamType::ByRefRecord)
     }
 }
 
@@ -233,6 +246,7 @@ pub(crate) enum TypeLibVtableSignatureIssue {
     UnsupportedReturnWireType,
     MissingObjectParameterIid,
     MissingRecordParameterWireType,
+    MissingRecordReturnInfo,
 }
 
 pub(crate) fn validate_vtable_wire_signature(
@@ -288,6 +302,17 @@ pub(crate) fn validate_vtable_wire_signature(
         && !wire_type.supports_vtable_return(rt)
     {
         return Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType);
+    }
+    if matches!(return_type, Some(TypeLibParamType::Record))
+        && !matches!(
+            return_wire_type,
+            Some(TypeLibWireType::Record {
+                record_info: Some(_),
+                ..
+            })
+        )
+    {
+        return Err(TypeLibVtableSignatureIssue::MissingRecordReturnInfo);
     }
     if parameter_types.iter().enumerate().any(|(i, param_type)| {
         matches!(
@@ -699,6 +724,26 @@ mod tests {
         }
     }
 
+    fn test_record_info() -> TypeLibRecordInfo {
+        TypeLibRecordInfo {
+            libid: ComInterfaceIid {
+                data1: 0x1111_1111,
+                data2: 0x2222,
+                data3: 0x3333,
+                data4: [4, 5, 6, 7, 8, 9, 10, 11],
+            },
+            major: 1,
+            minor: 0,
+            lcid: 0,
+            type_guid: ComInterfaceIid {
+                data1: 0xAAAA_AAAA,
+                data2: 0xBBBB,
+                data3: 0xCCCC,
+                data4: [12, 13, 14, 15, 16, 17, 18, 19],
+            },
+        }
+    }
+
     #[test]
     fn vtable_wire_signature_validator_accepts_supported_shapes() {
         assert_eq!(
@@ -823,7 +868,8 @@ mod tests {
             validate_vtable_wire_signature(
                 &[TypeLibParamType::Record],
                 &[TypeLibWireType::Record {
-                    name: "TestLib.Point".to_string()
+                    name: "TestLib.Point".to_string(),
+                    record_info: None,
                 }],
                 &[],
                 None,
@@ -841,7 +887,8 @@ mod tests {
             validate_vtable_wire_signature(
                 &[TypeLibParamType::ByRefRecord],
                 &[TypeLibWireType::ByRefRecord {
-                    name: "TestLib.Point".to_string()
+                    name: "TestLib.Point".to_string(),
+                    record_info: None,
                 }],
                 &[],
                 None,
@@ -862,13 +909,26 @@ mod tests {
                 &[],
                 Some(TypeLibParamType::Record),
                 Some(&TypeLibWireType::Record {
-                    name: "TestLib.Point".to_string()
+                    name: "TestLib.Point".to_string(),
+                    record_info: None,
                 }),
             ),
-            Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(
-                TypeLibParamType::Record
-            )),
-            "record retvals decline as records rather than collapsing to Variant/Object"
+            Err(TypeLibVtableSignatureIssue::MissingRecordReturnInfo),
+            "record retvals require explicit IRecordInfo allocation metadata"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[],
+                &[],
+                &[],
+                Some(TypeLibParamType::Record),
+                Some(&TypeLibWireType::Record {
+                    name: "TestLib.Point".to_string(),
+                    record_info: Some(test_record_info()),
+                }),
+            ),
+            Ok(()),
+            "descriptor-backed record retvals are admitted as caller-owned record cells"
         );
     }
 

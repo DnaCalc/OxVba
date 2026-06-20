@@ -29,13 +29,14 @@ use crate::windows_ffi_bridge::{FfiArg, FfiReturnType, call_via_libffi};
 use crate::windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, VtableInvocationPlan, bstr_to_string_and_free,
 };
-use crate::{ComValue, TypeLibParamType, TypeLibWireType};
+use crate::{ComValue, TypeLibParamType, TypeLibRecordInfo, TypeLibWireType};
 use oxvba_runtime::{
     ComRecord, Decimal96, ObjectRef, RuntimeByRefSlot, RuntimeByRefWriteback, Variant,
 };
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{DECIMAL, SysAllocString, SysFreeString};
 use windows_sys::Win32::System::Com::SAFEARRAY;
+use windows_sys::Win32::System::Ole::GetRecordInfoFromGuids;
 use windows_sys::Win32::System::Variant::{
     VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
@@ -236,6 +237,7 @@ enum OutCell {
     Variant(Box<VARIANT>),
     Interface(Box<*mut c_void>),
     SafeArray(Box<*mut SAFEARRAY>),
+    Record(ComRecord),
 }
 
 /// Call a dual-interface member through its COM vtable slot.
@@ -528,6 +530,9 @@ fn vtable_signature_issue_detail(
         }
         crate::typelib::TypeLibVtableSignatureIssue::MissingRecordParameterWireType => {
             "vtable record parameter is missing explicit record wire metadata".to_string()
+        }
+        crate::typelib::TypeLibVtableSignatureIssue::MissingRecordReturnInfo => {
+            "vtable record retval is missing IRecordInfo allocation metadata".to_string()
         }
     }
 }
@@ -1128,6 +1133,20 @@ fn alloc_out_cell(
             "vtable SAFEARRAY(VARIANT) retval requires semantic Variant, got {return_type:?}"
         ));
     }
+    if matches!(
+        return_wire_type,
+        Some(TypeLibWireType::Record {
+            record_info: Some(_),
+            ..
+        })
+    ) {
+        if return_type == P::Record {
+            return Ok(OutCell::Record(alloc_record_retval(return_wire_type)?));
+        }
+        return Err(format!(
+            "vtable record retval requires semantic Record, got {return_type:?}"
+        ));
+    }
     Ok(match return_type {
         P::Long => OutCell::I32(Box::new(0)),
         P::Integer => OutCell::I16(Box::new(0)),
@@ -1152,6 +1171,45 @@ fn alloc_out_cell(
     })
 }
 
+fn alloc_record_retval(return_wire_type: Option<&TypeLibWireType>) -> Result<ComRecord, String> {
+    let Some(TypeLibWireType::Record {
+        record_info: Some(record_info),
+        ..
+    }) = return_wire_type
+    else {
+        return Err("vtable record retval is missing IRecordInfo allocation metadata".to_string());
+    };
+    let record_info = get_record_info_from_descriptor(record_info)?;
+    // SAFETY: `get_record_info_from_descriptor` returns one owned IRecordInfo
+    // reference. The ComRecord adopts and releases that reference.
+    unsafe { crate::windows_variant::create_com_record_from_record_info(record_info) }
+}
+
+fn get_record_info_from_descriptor(record_info: &TypeLibRecordInfo) -> Result<*mut c_void, String> {
+    let libid = record_info.libid.to_guid();
+    let type_guid = record_info.type_guid.to_guid();
+    let mut raw: *mut c_void = std::ptr::null_mut();
+    // SAFETY: all GUID/version/LCID fields come from live typelib metadata. On
+    // success OleAut writes one owned IRecordInfo reference to `raw`.
+    let hr = unsafe {
+        GetRecordInfoFromGuids(
+            &libid,
+            u32::from(record_info.major),
+            u32::from(record_info.minor),
+            record_info.lcid,
+            &type_guid,
+            &mut raw,
+        )
+    };
+    if hr < 0 || raw.is_null() {
+        return Err(format!(
+            "GetRecordInfoFromGuids failed for record retval with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(raw)
+}
+
 fn out_cell_ptr(cell: &mut OutCell) -> Option<*mut c_void> {
     match cell {
         OutCell::None => None,
@@ -1166,6 +1224,7 @@ fn out_cell_ptr(cell: &mut OutCell) -> Option<*mut c_void> {
         OutCell::Variant(b) => Some((b.as_mut() as *mut VARIANT).cast::<c_void>()),
         OutCell::Interface(b) => Some((b.as_mut() as *mut *mut c_void).cast::<c_void>()),
         OutCell::SafeArray(b) => Some((b.as_mut() as *mut *mut SAFEARRAY).cast::<c_void>()),
+        OutCell::Record(record) => Some(record.record_data_ptr().cast::<c_void>()),
     }
 }
 
@@ -1210,6 +1269,7 @@ fn discard_out_cell(cell: OutCell) {
                 }
             }
         }
+        OutCell::Record(record) => drop(record),
         _ => {}
     }
 }
@@ -1340,6 +1400,7 @@ where
                 value?
             }
         }
+        OutCell::Record(record) => Variant::from_com_record(record.clone()),
     })
 }
 
@@ -1847,6 +1908,7 @@ mod tests {
             vec![TypeLibParamType::Record],
             vec![TypeLibWireType::Record {
                 name: "TestLib.Point".to_string(),
+                record_info: None,
             }],
             vec![None],
             Some(TypeLibParamType::Boolean),
@@ -1887,6 +1949,7 @@ mod tests {
             vec![TypeLibParamType::ByRefRecord],
             vec![TypeLibWireType::ByRefRecord {
                 name: "TestLib.Point".to_string(),
+                record_info: None,
             }],
             vec![None],
             None,

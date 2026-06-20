@@ -1074,6 +1074,7 @@ mod tests {
             parameter_types: vec![crate::TypeLibParamType::ByRefRecord],
             parameter_wire_types: vec![crate::TypeLibWireType::ByRefRecord {
                 name: "TestLib.Point".to_string(),
+                record_info: None,
             }],
             parameter_iids: Vec::new(),
             parameter_optional_defaults: vec![crate::OptionalParamDefault::Required],

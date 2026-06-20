@@ -2052,6 +2052,7 @@ enum VtableDeclineReason {
     UnsupportedReturnWireType,
     MissingObjectParameterIid,
     MissingRecordParameterWireType,
+    MissingRecordReturnInfo,
 }
 
 #[cfg(target_os = "windows")]
@@ -2191,6 +2192,9 @@ fn build_vtable_invocation_plan_with_byrefs(
             }
             crate::typelib::TypeLibVtableSignatureIssue::MissingRecordParameterWireType => {
                 VtableDeclineReason::MissingRecordParameterWireType
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::MissingRecordReturnInfo => {
+                VtableDeclineReason::MissingRecordReturnInfo
             }
         });
     }
@@ -3714,13 +3718,37 @@ mod gate_tests {
         record_ret.return_type = Some(crate::TypeLibParamType::Record);
         record_ret.return_wire_type = Some(crate::TypeLibWireType::Record {
             name: "TestLib.Point".to_string(),
+            record_info: None,
         });
         assert_eq!(
             vtable_gate_decline_reason(&record_ret, 0, Some(crate::TypeLibParamType::Record)),
-            Some(VtableDeclineReason::UnsupportedReturnType(
-                crate::TypeLibParamType::Record
-            )),
-            "record retvals remain explicit unsupported records, not Variant/Object fallbacks"
+            Some(VtableDeclineReason::MissingRecordReturnInfo),
+            "record retvals require explicit IRecordInfo allocation metadata"
+        );
+        record_ret.return_wire_type = Some(crate::TypeLibWireType::Record {
+            name: "TestLib.Point".to_string(),
+            record_info: Some(crate::TypeLibRecordInfo {
+                libid: crate::ComInterfaceIid {
+                    data1: 0x1111_1111,
+                    data2: 0x2222,
+                    data3: 0x3333,
+                    data4: [4, 5, 6, 7, 8, 9, 10, 11],
+                },
+                major: 1,
+                minor: 0,
+                lcid: 0,
+                type_guid: crate::ComInterfaceIid {
+                    data1: 0xAAAA_AAAA,
+                    data2: 0xBBBB,
+                    data3: 0xCCCC,
+                    data4: [12, 13, 14, 15, 16, 17, 18, 19],
+                },
+            }),
+        });
+        assert_eq!(
+            vtable_gate_decline_reason(&record_ret, 0, Some(crate::TypeLibParamType::Record)),
+            None,
+            "record retvals are admitted when the descriptor carries allocation metadata"
         );
     }
 
@@ -3870,6 +3898,7 @@ mod gate_tests {
         record_param.parameter_types = vec![crate::TypeLibParamType::Record];
         record_param.parameter_wire_types = vec![crate::TypeLibWireType::Record {
             name: "TestLib.Point".to_string(),
+            record_info: None,
         }];
         assert_eq!(
             vtable_gate_decline_reason(&record_param, 1, Some(crate::TypeLibParamType::Long)),
@@ -3887,6 +3916,7 @@ mod gate_tests {
         byref_record_param.parameter_types = vec![crate::TypeLibParamType::ByRefRecord];
         byref_record_param.parameter_wire_types = vec![crate::TypeLibWireType::ByRefRecord {
             name: "TestLib.Point".to_string(),
+            record_info: None,
         }];
         assert_eq!(
             vtable_gate_decline_reason(&byref_record_param, 1, Some(crate::TypeLibParamType::Long)),
