@@ -28,6 +28,7 @@ here is not a compatibility claim.
 | --- | --- | --- | --- |
 | Riff | https://github.com/uesleibros/riff | `Declare`/Win32 interop, COM vtable dispatch, pointer-heavy VBA, conditional 32/64-bit compilation, UDTs/arrays, machine-code callback thunks, host-reset safety | gathered |
 | Wasabi | https://github.com/uesleibros/wasabi | Win32 networking `Declare`s, byte-array/string transport, async callback/event patterns, handler-class lifetimes, `DoEvents` host behavior, TLS/proxy surfaces | gathered |
+| VBA-Web | https://github.com/VBA-tools/VBA-Web | Real-world VBA web-service library: `WinHttpRequest`, `InternetExplorer.Application`, `Scripting.Dictionary`, `MSXML2.DOMDocument`, `System.Security.Cryptography`, `WithEvents`, `Implements`, Win32/macOS `Declare`s, conditional compilation, JSON/URL/XML helpers, optional args, arrays, collections, class modules | gathered/building |
 | Awesome VBA | https://github.com/sancarn/awesome-vba | Index for sourcing further candidates (JSON/CSV/XML, data structures, parsers, Win32, add-ins, …) | watchlisted |
 
 ## Method note (how to read sweep failures)
@@ -168,10 +169,32 @@ Each has a minimal standalone repro (kept under the gitignored `temp/` while ite
   procedure: foo`; the same code in a `.basproj` (`run-project`) resolves fine. Affects only
   the single-file CLI convenience path; noted so corpus testing uses `run-project`.
 
+## VBA-Web first-pass issue-family catalog
+
+VBA-Web is being used as the first larger library proofing lane from the showcase
+candidate list. Local upstream source and the adapted `.basproj` live only under
+`.external/vba-corpus/vba-web/`; this section records our own observations and
+general issue families. Do not treat these as one-off patches for VBA-Web only:
+each item needs a broader grammar/semantic audit and non-corpus regression tests.
+
+| ID | Status | Family | What VBA-Web exposed | Broader scrutiny needed |
+| --- | --- | --- | --- | --- |
+| VW-00 | fixed locally, needs review | Toolchain exhaustiveness after runtime type expansion | The first `oxvba-cli` build for this lane failed because newer `VarType::Record`, `TypeLibParamType::Record`, `TypeLibWireType::SafeArray { .. }`, and record wire variants were not handled in HAL conversion, CLI value formatting, pure-library `IsNumeric`, and generated COM descriptor mapping. | Add an explicit audit rule after runtime value/wire enum expansion: every host adapter, CLI formatter, wrapper descriptor mapper, and intrinsic classifier must either support the new family or decline with a deliberate diagnostic. |
+| VW-01 | open | Module top-level classification | Loading VBA-Web as `OutputType=Library` reported `PROJ-E-TOP-LEVEL-MAINLINE-UNSUPPORTED` for `WebHelpers`, even though the relevant early lines are declarations, conditional declarations, module variables, public constants, enums, and types, not executable mainline code. | Audit the loader/scanner distinction between declaration statements and executable top-level statements, especially exported `.bas` modules with `Attribute VB_Name`, `#Const`, `#If` declaration blocks, `Declare`, `Type`, `Enum`, module variables, and public object globals. This likely indicates a syntax/classification bug, not a project policy issue. |
+| VW-02 | patch in progress, needs wider design | Colon statement separators and single-line `If` grammar | VBA-Web uses idioms such as `If Len(x) > 0 Then: x = x & "&"` and `If cache Is Nothing Then: Set cache = New Dictionary`. The parser treated a colon immediately after `Then` as the start of an unexpected statement. | Revisit colon handling as a grammar family: statement separator vs label delimiter, leading colon after `Then`, multiple inline statements, `Else` on the same logical line, empty inline segments, and interaction with `On Error`, `Exit`, `Set`, calls, and assignments. Tests should cover representative VBA syntax, not just the observed corpus line. |
+| VW-03 | under investigation | Multi-line `If`/inline `If` boundary around `Else` | After the `Then:` separator fix, the next full-project syntax failure pointed near an `Else` in `WebHelpers` around the ISO-date parser. A reduced nested `If` shape parses, so the remaining trigger is likely a more specific surrounding construct. | Continue reducing without committing upstream code. Treat any fix as part of the same `If` grammar audit: branch body termination, nested `Select Case`, inline `If ... Then: ...` immediately before an enclosing `Else`, and preprocessed source offset reporting. |
+| VW-04 | confirmed | Qualified standard library namespace binding | A reduced `ParseIso`-shape probe parses, then fails binding on `VBA.Split`, `VBA.Replace`, `VBA.DateSerial`, etc. | Implement or normalize the `VBA.` standard-library qualifier consistently. This is a real-world idiom in exported library code and should work for constants, functions, and type names without requiring users to remove qualification. |
+| VW-05 | pending | Conditional compilation breadth | VBA-Web has nested `#If Mac Then` / `#ElseIf VBA7 Then` / `#Else` declaration blocks and procedure-local conditional sections. OxVBA has a pre-parse conditional-compilation pass, but this corpus needs a full-project validation that inactive branches are not parsed and active Windows/VBA7 branches are selected. | Add whole-project tests for conditional declarations, procedure-local `#If`, nested conditionals, `#Const`, and offset-preserving diagnostics. Avoid assuming binder-level unit tests cover project-loader behavior. |
+| VW-06 | pending | COM/library object model dependencies | The project uses late-bound COM and referenced host objects: `WinHttp.WinHttpRequest.5.1`, `InternetExplorer.Application`, `MSXML2.DOMDocument`, .NET crypto COM classes, `Scripting.Dictionary`, and `WithEvents` `WinHttpRequest`. | After parse/bind admission, split proofing into hermetic lanes: pure JSON/URL helpers first, then late-bound COM creation, then `WithEvents`/async WinHTTP. Each lane needs explicit policy flags and fallback expectations. |
+
 ### Per project
 - **Riff**: surfaces F2 (and WithEvents member-access in `If`), plus heavy
   `Declare PtrSafe`/`As Any`/`LongPtr` and `#If VBA7` paths (pending VBA7 predefinition).
 - **Wasabi**: surfaces F1, F2, and (examples/tests) cross-module + project-class usage.
+- **VBA-Web**: first pass gathered upstream at commit
+  `9dbcc751d177099f20c96c5ee332ec10ef47423c` into the ignored corpus area and authored an
+  ignored local `VbaWebCore.basproj` fixture. Current blockers are cataloged above; no
+  compatibility claim yet.
 
 ## Related prior corpus work
 
