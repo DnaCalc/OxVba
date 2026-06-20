@@ -1,0 +1,2566 @@
+kind,library,field1,field2,field3,field4,field5,field6,field7,field8
+metadata,Microsoft ActiveX Data Objects 2.0 Library,457,20,457,ADODB.Connection,ADODB,live:{00000200-0000-0010-8000-00AA006D2EA4}:2:0
+summary,Microsoft ActiveX Data Objects 2.0 Library,68,514,278,24,372,54
+typekind,Microsoft ActiveX Data Objects 2.0 Library,alias,1
+typekind,Microsoft ActiveX Data Objects 2.0 Library,coclass,4
+typekind,Microsoft ActiveX Data Objects 2.0 Library,dispatch,21
+typekind,Microsoft ActiveX Data Objects 2.0 Library,enum,36
+typekind,Microsoft ActiveX Data Objects 2.0 Library,interface,6
+invkind,Microsoft ActiveX Data Objects 2.0 Library,func,266
+invkind,Microsoft ActiveX Data Objects 2.0 Library,property_get,157
+invkind,Microsoft ActiveX Data Objects 2.0 Library,property_put,83
+invkind,Microsoft ActiveX Data Objects 2.0 Library,property_putref,8
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_BOOL,14
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_BSTR,65
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_DISPATCH,7
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_HRESULT,51
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_I1,19
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_I4,123
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_I8,32
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_PTR,465
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_UI1,10
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_UI2,19
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_UI4,95
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_UINT,76
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_UNKNOWN,21
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_USERDEFINED,332
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_VARIANT,110
+vt,Microsoft ActiveX Data Objects 2.0 Library,VT_VOID,282
+metadata,Microsoft ActiveX Data Objects 2.1 Library,538,20,538,ADODB.Connection,ADODB,live:{00000201-0000-0010-8000-00AA006D2EA4}:2:1
+summary,Microsoft ActiveX Data Objects 2.1 Library,72,598,296,33,385,76
+typekind,Microsoft ActiveX Data Objects 2.1 Library,alias,1
+typekind,Microsoft ActiveX Data Objects 2.1 Library,coclass,4
+typekind,Microsoft ActiveX Data Objects 2.1 Library,dispatch,22
+typekind,Microsoft ActiveX Data Objects 2.1 Library,enum,39
+typekind,Microsoft ActiveX Data Objects 2.1 Library,interface,6
+invkind,Microsoft ActiveX Data Objects 2.1 Library,func,300
+invkind,Microsoft ActiveX Data Objects 2.1 Library,property_get,186
+invkind,Microsoft ActiveX Data Objects 2.1 Library,property_put,101
+invkind,Microsoft ActiveX Data Objects 2.1 Library,property_putref,11
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_BOOL,19
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_BSTR,78
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_DISPATCH,10
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_HRESULT,51
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_I1,20
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_I4,135
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_I8,42
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_PTR,486
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_UI1,10
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_UI2,20
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_UI4,100
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_UINT,80
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_UNKNOWN,23
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_USERDEFINED,366
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_VARIANT,137
+vt,Microsoft ActiveX Data Objects 2.1 Library,VT_VOID,330
+metadata,Microsoft ActiveX Data Objects 2.5 Library,720,20,720,ADODB.Connection,ADODB,live:{00000205-0000-0010-8000-00AA006D2EA4}:2:5
+summary,Microsoft ActiveX Data Objects 2.5 Library,95,798,412,43,452,132
+typekind,Microsoft ActiveX Data Objects 2.5 Library,alias,1
+typekind,Microsoft ActiveX Data Objects 2.5 Library,coclass,6
+typekind,Microsoft ActiveX Data Objects 2.5 Library,dispatch,28
+typekind,Microsoft ActiveX Data Objects 2.5 Library,enum,52
+typekind,Microsoft ActiveX Data Objects 2.5 Library,interface,8
+invkind,Microsoft ActiveX Data Objects 2.5 Library,func,397
+invkind,Microsoft ActiveX Data Objects 2.5 Library,property_get,248
+invkind,Microsoft ActiveX Data Objects 2.5 Library,property_put,136
+invkind,Microsoft ActiveX Data Objects 2.5 Library,property_putref,17
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_BOOL,28
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_BSTR,118
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_DISPATCH,14
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_HRESULT,56
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_I1,25
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_I4,162
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_I8,61
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_PTR,579
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_UI1,14
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_UI2,25
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_UI4,127
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_UINT,100
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_UNKNOWN,33
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_USERDEFINED,456
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_VARIANT,185
+vt,Microsoft ActiveX Data Objects 2.5 Library,VT_VOID,450
+metadata,Microsoft ActiveX Data Objects 2.6 Library,748,20,748,ADODB.Connection,ADODB,live:{00000206-0000-0010-8000-00AA006D2EA4}:2:6
+summary,Microsoft ActiveX Data Objects 2.6 Library,95,826,420,44,465,137
+typekind,Microsoft ActiveX Data Objects 2.6 Library,alias,1
+typekind,Microsoft ActiveX Data Objects 2.6 Library,coclass,6
+typekind,Microsoft ActiveX Data Objects 2.6 Library,dispatch,28
+typekind,Microsoft ActiveX Data Objects 2.6 Library,enum,52
+typekind,Microsoft ActiveX Data Objects 2.6 Library,interface,8
+invkind,Microsoft ActiveX Data Objects 2.6 Library,func,403
+invkind,Microsoft ActiveX Data Objects 2.6 Library,property_get,260
+invkind,Microsoft ActiveX Data Objects 2.6 Library,property_put,144
+invkind,Microsoft ActiveX Data Objects 2.6 Library,property_putref,19
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_BOOL,32
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_BSTR,125
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_DISPATCH,14
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_HRESULT,56
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_I1,26
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_I4,168
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_I8,62
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_PTR,599
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_UI1,14
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_UI2,26
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_UI4,130
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_UINT,104
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_UNKNOWN,34
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_USERDEFINED,470
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_VARIANT,191
+vt,Microsoft ActiveX Data Objects 2.6 Library,VT_VOID,465
+metadata,Microsoft ActiveX Data Objects Recordset 2.8 Library,452,0,452,ADOR.Recordset,ADOR,live:{00000300-0000-0010-8000-00AA006D2EA4}:2:8
+summary,Microsoft ActiveX Data Objects Recordset 2.8 Library,57,497,203,37,187,84
+typekind,Microsoft ActiveX Data Objects Recordset 2.8 Library,alias,3
+typekind,Microsoft ActiveX Data Objects Recordset 2.8 Library,coclass,1
+typekind,Microsoft ActiveX Data Objects Recordset 2.8 Library,dispatch,15
+typekind,Microsoft ActiveX Data Objects Recordset 2.8 Library,enum,37
+typekind,Microsoft ActiveX Data Objects Recordset 2.8 Library,interface,1
+invkind,Microsoft ActiveX Data Objects Recordset 2.8 Library,func,234
+invkind,Microsoft ActiveX Data Objects Recordset 2.8 Library,property_get,164
+invkind,Microsoft ActiveX Data Objects Recordset 2.8 Library,property_put,86
+invkind,Microsoft ActiveX Data Objects Recordset 2.8 Library,property_putref,13
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_BOOL,18
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_BSTR,48
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_DISPATCH,12
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_HRESULT,6
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_I1,15
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_I4,86
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_I8,2
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_PTR,259
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_UI1,10
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_UI2,15
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_UI4,75
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_UINT,60
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_UNKNOWN,20
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_USERDEFINED,258
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_VARIANT,144
+vt,Microsoft ActiveX Data Objects Recordset 2.8 Library,VT_VOID,296
+metadata,Microsoft ActiveX Data Objects Recordset 6.0 Library,452,0,452,ADOR.Recordset,ADOR,live:{00000300-0000-0010-8000-00AA006D2EA4}:6:0
+summary,Microsoft ActiveX Data Objects Recordset 6.0 Library,57,497,203,37,187,84
+typekind,Microsoft ActiveX Data Objects Recordset 6.0 Library,alias,3
+typekind,Microsoft ActiveX Data Objects Recordset 6.0 Library,coclass,1
+typekind,Microsoft ActiveX Data Objects Recordset 6.0 Library,dispatch,15
+typekind,Microsoft ActiveX Data Objects Recordset 6.0 Library,enum,37
+typekind,Microsoft ActiveX Data Objects Recordset 6.0 Library,interface,1
+invkind,Microsoft ActiveX Data Objects Recordset 6.0 Library,func,234
+invkind,Microsoft ActiveX Data Objects Recordset 6.0 Library,property_get,164
+invkind,Microsoft ActiveX Data Objects Recordset 6.0 Library,property_put,86
+invkind,Microsoft ActiveX Data Objects Recordset 6.0 Library,property_putref,13
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_BOOL,18
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_BSTR,48
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_DISPATCH,12
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_HRESULT,6
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_I1,15
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_I4,86
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_I8,1
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_PTR,259
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_UI1,10
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_UI2,15
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_UI4,75
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_UINT,60
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_UNKNOWN,20
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_USERDEFINED,259
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_VARIANT,144
+vt,Microsoft ActiveX Data Objects Recordset 6.0 Library,VT_VOID,296
+metadata,Microsoft ADO Ext. 2.8 for DDL and Security,266,0,266,ADOX.Table,ADOX,live:{00000600-0000-0010-8000-00AA006D2EA4}:2:8
+summary,Microsoft ADO Ext. 2.8 for DDL and Security,40,335,87,11,284,10
+typekind,Microsoft ADO Ext. 2.8 for DDL and Security,coclass,7
+typekind,Microsoft ADO Ext. 2.8 for DDL and Security,dispatch,23
+typekind,Microsoft ADO Ext. 2.8 for DDL and Security,enum,10
+invkind,Microsoft ADO Ext. 2.8 for DDL and Security,func,214
+invkind,Microsoft ADO Ext. 2.8 for DDL and Security,property_get,82
+invkind,Microsoft ADO Ext. 2.8 for DDL and Security,property_put,32
+invkind,Microsoft ADO Ext. 2.8 for DDL and Security,property_putref,7
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_BOOL,6
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_BSTR,38
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_DISPATCH,6
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_I1,23
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_I4,64
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_PTR,385
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_UI1,2
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_UI2,23
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_UI4,115
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_UINT,92
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_UNKNOWN,11
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_USERDEFINED,198
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_VARIANT,82
+vt,Microsoft ADO Ext. 2.8 for DDL and Security,VT_VOID,236
+metadata,Microsoft ADO Ext. 6.0 for DDL and Security,266,0,266,ADOX.Table,ADOX,live:{00000600-0000-0010-8000-00AA006D2EA4}:6:0
+summary,Microsoft ADO Ext. 6.0 for DDL and Security,40,335,87,11,284,10
+typekind,Microsoft ADO Ext. 6.0 for DDL and Security,coclass,7
+typekind,Microsoft ADO Ext. 6.0 for DDL and Security,dispatch,23
+typekind,Microsoft ADO Ext. 6.0 for DDL and Security,enum,10
+invkind,Microsoft ADO Ext. 6.0 for DDL and Security,func,214
+invkind,Microsoft ADO Ext. 6.0 for DDL and Security,property_get,82
+invkind,Microsoft ADO Ext. 6.0 for DDL and Security,property_put,32
+invkind,Microsoft ADO Ext. 6.0 for DDL and Security,property_putref,7
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_BOOL,6
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_BSTR,38
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_DISPATCH,6
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_I1,23
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_I4,64
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_PTR,385
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_UI1,2
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_UI2,23
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_UI4,115
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_UINT,92
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_UNKNOWN,11
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_USERDEFINED,198
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_VARIANT,82
+vt,Microsoft ADO Ext. 6.0 for DDL and Security,VT_VOID,236
+metadata,OLE Automation,49,1,49,stdole.StdFont,stdole2.tlb,typelib:stdole2:2.0:0
+summary,OLE Automation,42,52,37,0,42,3
+typekind,OLE Automation,alias,26
+typekind,OLE Automation,coclass,2
+typekind,OLE Automation,dispatch,3
+typekind,OLE Automation,enum,2
+typekind,OLE Automation,interface,5
+typekind,OLE Automation,module,1
+typekind,OLE Automation,record,3
+invkind,OLE Automation,func,25
+invkind,OLE Automation,property_get,17
+invkind,OLE Automation,property_put,10
+vt,OLE Automation,VT_BOOL,18
+vt,OLE Automation,VT_BSTR,5
+vt,OLE Automation,VT_CY,3
+vt,OLE Automation,VT_HRESULT,48
+vt,OLE Automation,VT_I1,1
+vt,OLE Automation,VT_I2,5
+vt,OLE Automation,VT_I4,22
+vt,OLE Automation,VT_INT,8
+vt,OLE Automation,VT_PTR,48
+vt,OLE Automation,VT_R4,4
+vt,OLE Automation,VT_UI2,1
+vt,OLE Automation,VT_UI4,9
+vt,OLE Automation,VT_UINT,4
+vt,OLE Automation,VT_USERDEFINED,32
+vt,OLE Automation,VT_VARIANT,3
+vt,OLE Automation,VT_VOID,7
+metadata,OLE Automation,49,1,49,stdole.StdFont,stdole2.tlb,typelib:stdole2:2.0:0
+summary,OLE Automation,42,52,37,0,42,3
+typekind,OLE Automation,alias,26
+typekind,OLE Automation,coclass,2
+typekind,OLE Automation,dispatch,3
+typekind,OLE Automation,enum,2
+typekind,OLE Automation,interface,5
+typekind,OLE Automation,module,1
+typekind,OLE Automation,record,3
+invkind,OLE Automation,func,25
+invkind,OLE Automation,property_get,17
+invkind,OLE Automation,property_put,10
+vt,OLE Automation,VT_BOOL,18
+vt,OLE Automation,VT_BSTR,5
+vt,OLE Automation,VT_CY,3
+vt,OLE Automation,VT_HRESULT,48
+vt,OLE Automation,VT_I1,1
+vt,OLE Automation,VT_I2,5
+vt,OLE Automation,VT_I4,22
+vt,OLE Automation,VT_INT,8
+vt,OLE Automation,VT_PTR,48
+vt,OLE Automation,VT_R4,4
+vt,OLE Automation,VT_UI2,1
+vt,OLE Automation,VT_UI4,9
+vt,OLE Automation,VT_UINT,4
+vt,OLE Automation,VT_USERDEFINED,32
+vt,OLE Automation,VT_VARIANT,3
+vt,OLE Automation,VT_VOID,7
+metadata,Visual Basic For Applications,224,0,224,VBA.ErrObject,VBA,live:{000204EF-0000-0000-C000-000000000046}:6:0
+summary,Visual Basic For Applications,29,257,128,52,182,44
+typekind,Visual Basic For Applications,coclass,2
+typekind,Visual Basic For Applications,dispatch,2
+typekind,Visual Basic For Applications,enum,14
+typekind,Visual Basic For Applications,interface,1
+typekind,Visual Basic For Applications,module,10
+invkind,Visual Basic For Applications,func,234
+invkind,Visual Basic For Applications,property_get,13
+invkind,Visual Basic For Applications,property_put,10
+vt,Visual Basic For Applications,VT_BOOL,13
+vt,Visual Basic For Applications,VT_BSTR,106
+vt,Visual Basic For Applications,VT_CY,1
+vt,Visual Basic For Applications,VT_DATE,1
+vt,Visual Basic For Applications,VT_DISPATCH,1
+vt,Visual Basic For Applications,VT_HRESULT,1
+vt,Visual Basic For Applications,VT_I1,2
+vt,Visual Basic For Applications,VT_I2,27
+vt,Visual Basic For Applications,VT_I4,56
+vt,Visual Basic For Applications,VT_INT,5
+vt,Visual Basic For Applications,VT_PTR,189
+vt,Visual Basic For Applications,VT_R4,4
+vt,Visual Basic For Applications,VT_R8,68
+vt,Visual Basic For Applications,VT_SAFEARRAY,7
+vt,Visual Basic For Applications,VT_UI1,4
+vt,Visual Basic For Applications,VT_UI2,2
+vt,Visual Basic For Applications,VT_UI4,10
+vt,Visual Basic For Applications,VT_UINT,8
+vt,Visual Basic For Applications,VT_UNKNOWN,2
+vt,Visual Basic For Applications,VT_USERDEFINED,50
+vt,Visual Basic For Applications,VT_VARIANT,225
+vt,Visual Basic For Applications,VT_VOID,71
+safearray_element_vt,Visual Basic For Applications,VT_R8,3
+safearray_element_vt,Visual Basic For Applications,VT_VARIANT,4
+metadata,Microsoft Graph 16.0 Object Library,2256,0,2256,Graph.Global,Graph,live:{00020802-0000-0000-C000-000000000046}:1:9
+summary,Microsoft Graph 16.0 Object Library,194,2391,598,206,1232,12
+typekind,Microsoft Graph 16.0 Object Library,coclass,1
+typekind,Microsoft Graph 16.0 Object Library,dispatch,45
+typekind,Microsoft Graph 16.0 Object Library,enum,95
+typekind,Microsoft Graph 16.0 Object Library,interface,53
+invkind,Microsoft Graph 16.0 Object Library,func,553
+invkind,Microsoft Graph 16.0 Object Library,property_get,1224
+invkind,Microsoft Graph 16.0 Object Library,property_put,610
+invkind,Microsoft Graph 16.0 Object Library,property_putref,4
+vt,Microsoft Graph 16.0 Object Library,VT_BOOL,346
+vt,Microsoft Graph 16.0 Object Library,VT_BSTR,118
+vt,Microsoft Graph 16.0 Object Library,VT_DISPATCH,120
+vt,Microsoft Graph 16.0 Object Library,VT_HRESULT,1032
+vt,Microsoft Graph 16.0 Object Library,VT_I1,45
+vt,Microsoft Graph 16.0 Object Library,VT_I4,314
+vt,Microsoft Graph 16.0 Object Library,VT_PTR,1697
+vt,Microsoft Graph 16.0 Object Library,VT_R4,4
+vt,Microsoft Graph 16.0 Object Library,VT_R8,172
+vt,Microsoft Graph 16.0 Object Library,VT_UI2,45
+vt,Microsoft Graph 16.0 Object Library,VT_UI4,225
+vt,Microsoft Graph 16.0 Object Library,VT_UINT,180
+vt,Microsoft Graph 16.0 Object Library,VT_UNKNOWN,16
+vt,Microsoft Graph 16.0 Object Library,VT_USERDEFINED,865
+vt,Microsoft Graph 16.0 Object Library,VT_VARIANT,689
+vt,Microsoft Graph 16.0 Object Library,VT_VOID,671
+metadata,Microsoft Excel 16.0 Object Library,21328,166,21328,Excel.QueryTable,Excel,live:{00020813-0000-0000-C000-000000000046}:1:9
+summary,Microsoft Excel 16.0 Object Library,1036,22492,2328,6982,11238,352
+typekind,Microsoft Excel 16.0 Object Library,coclass,7
+typekind,Microsoft Excel 16.0 Object Library,dispatch,388
+typekind,Microsoft Excel 16.0 Object Library,enum,282
+typekind,Microsoft Excel 16.0 Object Library,interface,359
+invkind,Microsoft Excel 16.0 Object Library,func,7440
+invkind,Microsoft Excel 16.0 Object Library,property_get,10388
+invkind,Microsoft Excel 16.0 Object Library,property_put,4640
+invkind,Microsoft Excel 16.0 Object Library,property_putref,24
+vt,Microsoft Excel 16.0 Object Library,VT_BOOL,3703
+vt,Microsoft Excel 16.0 Object Library,VT_BSTR,2437
+vt,Microsoft Excel 16.0 Object Library,VT_DATE,14
+vt,Microsoft Excel 16.0 Object Library,VT_DISPATCH,1216
+vt,Microsoft Excel 16.0 Object Library,VT_HRESULT,8781
+vt,Microsoft Excel 16.0 Object Library,VT_I1,388
+vt,Microsoft Excel 16.0 Object Library,VT_I4,2668
+vt,Microsoft Excel 16.0 Object Library,VT_INT,17
+vt,Microsoft Excel 16.0 Object Library,VT_PTR,15435
+vt,Microsoft Excel 16.0 Object Library,VT_R4,358
+vt,Microsoft Excel 16.0 Object Library,VT_R8,2473
+vt,Microsoft Excel 16.0 Object Library,VT_SAFEARRAY,2
+vt,Microsoft Excel 16.0 Object Library,VT_UI2,388
+vt,Microsoft Excel 16.0 Object Library,VT_UI4,1940
+vt,Microsoft Excel 16.0 Object Library,VT_UINT,1552
+vt,Microsoft Excel 16.0 Object Library,VT_UNKNOWN,262
+vt,Microsoft Excel 16.0 Object Library,VT_USERDEFINED,7744
+vt,Microsoft Excel 16.0 Object Library,VT_VARIANT,11708
+vt,Microsoft Excel 16.0 Object Library,VT_VOID,6556
+safearray_element_vt,Microsoft Excel 16.0 Object Library,VT_VARIANT,2
+metadata,Microsoft Word 16.0 Object Library,9898,110,9898,Word.Global,Word,live:{00020905-0000-0000-C000-000000000046}:8:7
+summary,Microsoft Word 16.0 Object Library,767,11011,3756,1689,6591,244
+typekind,Microsoft Word 16.0 Object Library,coclass,7
+typekind,Microsoft Word 16.0 Object Library,dispatch,374
+typekind,Microsoft Word 16.0 Object Library,enum,385
+typekind,Microsoft Word 16.0 Object Library,interface,1
+invkind,Microsoft Word 16.0 Object Library,func,4252
+invkind,Microsoft Word 16.0 Object Library,property_get,4709
+invkind,Microsoft Word 16.0 Object Library,property_put,2050
+vt,Microsoft Word 16.0 Object Library,VT_BOOL,1718
+vt,Microsoft Word 16.0 Object Library,VT_BSTR,880
+vt,Microsoft Word 16.0 Object Library,VT_DATE,4
+vt,Microsoft Word 16.0 Object Library,VT_DISPATCH,452
+vt,Microsoft Word 16.0 Object Library,VT_HRESULT,35
+vt,Microsoft Word 16.0 Object Library,VT_I1,371
+vt,Microsoft Word 16.0 Object Library,VT_I2,40
+vt,Microsoft Word 16.0 Object Library,VT_I4,2110
+vt,Microsoft Word 16.0 Object Library,VT_INT,22
+vt,Microsoft Word 16.0 Object Library,VT_PTR,9262
+vt,Microsoft Word 16.0 Object Library,VT_R4,659
+vt,Microsoft Word 16.0 Object Library,VT_R8,119
+vt,Microsoft Word 16.0 Object Library,VT_SAFEARRAY,2
+vt,Microsoft Word 16.0 Object Library,VT_UI2,371
+vt,Microsoft Word 16.0 Object Library,VT_UI4,1855
+vt,Microsoft Word 16.0 Object Library,VT_UINT,1484
+vt,Microsoft Word 16.0 Object Library,VT_UNKNOWN,123
+vt,Microsoft Word 16.0 Object Library,VT_USERDEFINED,4905
+vt,Microsoft Word 16.0 Object Library,VT_VARIANT,2515
+vt,Microsoft Word 16.0 Object Library,VT_VOID,5649
+safearray_element_vt,Microsoft Word 16.0 Object Library,VT_BSTR,2
+metadata,Microsoft Publisher 16.0 Object Library,2625,38,2625,Publisher.Document,Publisher,live:{0002123C-0000-0000-C000-000000000046}:2:3
+summary,Microsoft Publisher 16.0 Object Library,237,3015,1129,19,1652,155
+typekind,Microsoft Publisher 16.0 Object Library,coclass,2
+typekind,Microsoft Publisher 16.0 Object Library,dispatch,131
+typekind,Microsoft Publisher 16.0 Object Library,enum,104
+invkind,Microsoft Publisher 16.0 Object Library,func,1321
+invkind,Microsoft Publisher 16.0 Object Library,property_get,1227
+invkind,Microsoft Publisher 16.0 Object Library,property_put,467
+vt,Microsoft Publisher 16.0 Object Library,VT_10,2
+vt,Microsoft Publisher 16.0 Object Library,VT_BOOL,275
+vt,Microsoft Publisher 16.0 Object Library,VT_BSTR,226
+vt,Microsoft Publisher 16.0 Object Library,VT_DISPATCH,129
+vt,Microsoft Publisher 16.0 Object Library,VT_I1,130
+vt,Microsoft Publisher 16.0 Object Library,VT_I4,517
+vt,Microsoft Publisher 16.0 Object Library,VT_INT,63
+vt,Microsoft Publisher 16.0 Object Library,VT_PTR,2477
+vt,Microsoft Publisher 16.0 Object Library,VT_R4,138
+vt,Microsoft Publisher 16.0 Object Library,VT_UI2,130
+vt,Microsoft Publisher 16.0 Object Library,VT_UI4,650
+vt,Microsoft Publisher 16.0 Object Library,VT_UINT,520
+vt,Microsoft Publisher 16.0 Object Library,VT_UNKNOWN,35
+vt,Microsoft Publisher 16.0 Object Library,VT_USERDEFINED,1662
+vt,Microsoft Publisher 16.0 Object Library,VT_VARIANT,430
+vt,Microsoft Publisher 16.0 Object Library,VT_VOID,1648
+unsupported_vt,Microsoft Publisher 16.0 Object Library,VT_10,2
+metadata,Microsoft Visio 16.0 Type Library,3758,549,3758,Visio.Application,Visio,live:{00021A98-0000-0000-C000-000000000046}:4:16
+summary,Microsoft Visio 16.0 Type Library,565,4055,3562,77,2155,74
+typekind,Microsoft Visio 16.0 Type Library,alias,169
+typekind,Microsoft Visio 16.0 Type Library,coclass,97
+typekind,Microsoft Visio 16.0 Type Library,dispatch,117
+typekind,Microsoft Visio 16.0 Type Library,enum,167
+typekind,Microsoft Visio 16.0 Type Library,interface,15
+invkind,Microsoft Visio 16.0 Type Library,func,1787
+invkind,Microsoft Visio 16.0 Type Library,property_get,1670
+invkind,Microsoft Visio 16.0 Type Library,property_put,593
+invkind,Microsoft Visio 16.0 Type Library,property_putref,5
+vt,Microsoft Visio 16.0 Type Library,VT_BOOL,341
+vt,Microsoft Visio 16.0 Type Library,VT_BSTR,622
+vt,Microsoft Visio 16.0 Type Library,VT_DATE,9
+vt,Microsoft Visio 16.0 Type Library,VT_DISPATCH,34
+vt,Microsoft Visio 16.0 Type Library,VT_HRESULT,237
+vt,Microsoft Visio 16.0 Type Library,VT_I1,99
+vt,Microsoft Visio 16.0 Type Library,VT_I2,869
+vt,Microsoft Visio 16.0 Type Library,VT_I4,652
+vt,Microsoft Visio 16.0 Type Library,VT_I8,2
+vt,Microsoft Visio 16.0 Type Library,VT_PTR,3165
+vt,Microsoft Visio 16.0 Type Library,VT_R8,312
+vt,Microsoft Visio 16.0 Type Library,VT_SAFEARRAY,192
+vt,Microsoft Visio 16.0 Type Library,VT_UI2,99
+vt,Microsoft Visio 16.0 Type Library,VT_UI4,495
+vt,Microsoft Visio 16.0 Type Library,VT_UINT,396
+vt,Microsoft Visio 16.0 Type Library,VT_UNKNOWN,79
+vt,Microsoft Visio 16.0 Type Library,VT_USERDEFINED,1982
+vt,Microsoft Visio 16.0 Type Library,VT_VARIANT,277
+vt,Microsoft Visio 16.0 Type Library,VT_VOID,2053
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_BSTR,30
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_DISPATCH,1
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_I2,36
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_I4,43
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_R8,27
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_UI1,2
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_USERDEFINED,3
+safearray_element_vt,Microsoft Visio 16.0 Type Library,VT_VARIANT,50
+safearray_unresolved_userdefined,Microsoft Visio 16.0 Type Library,VT_USERDEFINED,3
+missing,Microsoft DAO 3.6 Object Library,{00025E01-0000-0000-C000-000000000046},5,0,0,exit_1
+metadata,Microsoft Visual Basic for Applications Extensibility 5.3,396,5,396,VBIDE.Windows,VBIDE,live:{0002E157-0000-0000-C000-000000000046}:5:3
+summary,Microsoft Visual Basic for Applications Extensibility 5.3,64,480,50,6,374,5
+typekind,Microsoft Visual Basic for Applications Extensibility 5.3,coclass,17
+typekind,Microsoft Visual Basic for Applications Extensibility 5.3,dispatch,33
+typekind,Microsoft Visual Basic for Applications Extensibility 5.3,enum,10
+typekind,Microsoft Visual Basic for Applications Extensibility 5.3,interface,4
+invkind,Microsoft Visual Basic for Applications Extensibility 5.3,func,281
+invkind,Microsoft Visual Basic for Applications Extensibility 5.3,property_get,169
+invkind,Microsoft Visual Basic for Applications Extensibility 5.3,property_put,27
+invkind,Microsoft Visual Basic for Applications Extensibility 5.3,property_putref,3
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_BOOL,20
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_BSTR,63
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_DISPATCH,9
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_I1,28
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_I2,1
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_I4,116
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_INT,1
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_PTR,569
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_UI2,28
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_UI4,140
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_UINT,112
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_UNKNOWN,15
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_USERDEFINED,298
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_VARIANT,52
+vt,Microsoft Visual Basic for Applications Extensibility 5.3,VT_VOID,268
+metadata,Microsoft Outlook 16.0 Object Library,5362,995,5362,Outlook._RecipientControl,Outlook,live:{00062FFF-0000-0000-C000-000000000046}:9:6
+summary,Microsoft Outlook 16.0 Object Library,495,5872,882,107,2313,0
+typekind,Microsoft Outlook 16.0 Object Library,coclass,137
+typekind,Microsoft Outlook 16.0 Object Library,dispatch,217
+typekind,Microsoft Outlook 16.0 Object Library,enum,138
+typekind,Microsoft Outlook 16.0 Object Library,interface,3
+invkind,Microsoft Outlook 16.0 Object Library,func,2205
+invkind,Microsoft Outlook 16.0 Object Library,property_get,2611
+invkind,Microsoft Outlook 16.0 Object Library,property_put,1049
+invkind,Microsoft Outlook 16.0 Object Library,property_putref,7
+vt,Microsoft Outlook 16.0 Object Library,VT_BOOL,680
+vt,Microsoft Outlook 16.0 Object Library,VT_BSTR,1186
+vt,Microsoft Outlook 16.0 Object Library,VT_DATE,211
+vt,Microsoft Outlook 16.0 Object Library,VT_DISPATCH,274
+vt,Microsoft Outlook 16.0 Object Library,VT_HRESULT,74
+vt,Microsoft Outlook 16.0 Object Library,VT_I1,186
+vt,Microsoft Outlook 16.0 Object Library,VT_I4,651
+vt,Microsoft Outlook 16.0 Object Library,VT_INT,1
+vt,Microsoft Outlook 16.0 Object Library,VT_PTR,3693
+vt,Microsoft Outlook 16.0 Object Library,VT_UI2,170
+vt,Microsoft Outlook 16.0 Object Library,VT_UI4,850
+vt,Microsoft Outlook 16.0 Object Library,VT_UINT,680
+vt,Microsoft Outlook 16.0 Object Library,VT_UNKNOWN,35
+vt,Microsoft Outlook 16.0 Object Library,VT_USERDEFINED,2771
+vt,Microsoft Outlook 16.0 Object Library,VT_VARIANT,432
+vt,Microsoft Outlook 16.0 Object Library,VT_VOID,2875
+metadata,Microsoft Outlook View Control,101,4,101,OLXLib.ObjectModelCtl,OLXLib,live:{0006F062-0000-0000-C000-000000000046}:1:2
+summary,Microsoft Outlook View Control,10,107,13,0,26,0
+typekind,Microsoft Outlook View Control,alias,1
+typekind,Microsoft Outlook View Control,coclass,3
+typekind,Microsoft Outlook View Control,dispatch,3
+typekind,Microsoft Outlook View Control,enum,2
+typekind,Microsoft Outlook View Control,interface,1
+invkind,Microsoft Outlook View Control,func,78
+invkind,Microsoft Outlook View Control,property_get,17
+invkind,Microsoft Outlook View Control,property_put,12
+vt,Microsoft Outlook View Control,VT_BOOL,8
+vt,Microsoft Outlook View Control,VT_BSTR,25
+vt,Microsoft Outlook View Control,VT_DATE,1
+vt,Microsoft Outlook View Control,VT_DISPATCH,7
+vt,Microsoft Outlook View Control,VT_I1,2
+vt,Microsoft Outlook View Control,VT_I4,7
+vt,Microsoft Outlook View Control,VT_PTR,32
+vt,Microsoft Outlook View Control,VT_UI2,2
+vt,Microsoft Outlook View Control,VT_UI4,10
+vt,Microsoft Outlook View Control,VT_UINT,8
+vt,Microsoft Outlook View Control,VT_USERDEFINED,13
+vt,Microsoft Outlook View Control,VT_VARIANT,2
+vt,Microsoft Outlook View Control,VT_VOID,88
+missing,Microsoft Windows Installer Object Library,{000C1092-0000-0000-C000-000000000046},1,0,409,exit_1
+metadata,sdchange 1.0 Type Library,5,0,5,SDChangeLib.SDChangeObj,SDChangeLib,live:{00A40DB9-D8B4-40B3-8E0C-A8E8C6B3B720}:1:0
+summary,sdchange 1.0 Type Library,2,8,0,0,12,0
+typekind,sdchange 1.0 Type Library,coclass,1
+typekind,sdchange 1.0 Type Library,dispatch,1
+invkind,sdchange 1.0 Type Library,func,8
+vt,sdchange 1.0 Type Library,VT_I1,1
+vt,sdchange 1.0 Type Library,VT_I4,3
+vt,sdchange 1.0 Type Library,VT_PTR,15
+vt,sdchange 1.0 Type Library,VT_UI2,1
+vt,sdchange 1.0 Type Library,VT_UI4,5
+vt,sdchange 1.0 Type Library,VT_UINT,4
+vt,sdchange 1.0 Type Library,VT_USERDEFINED,5
+vt,sdchange 1.0 Type Library,VT_VARIANT,1
+vt,sdchange 1.0 Type Library,VT_VOID,8
+metadata,PhotoAcquireObjects,230,0,230,PhotoAcquireObjects.PhotoAcquire,PhotoAcquireObjects,live:{00F25AE8-3625-4E34-92D4-F0918CF010EE}:1:0
+summary,PhotoAcquireObjects,161,230,502,0,246,0
+typekind,PhotoAcquireObjects,alias,12
+typekind,PhotoAcquireObjects,coclass,6
+typekind,PhotoAcquireObjects,enum,12
+typekind,PhotoAcquireObjects,interface,30
+typekind,PhotoAcquireObjects,kind_7,15
+typekind,PhotoAcquireObjects,record,86
+invkind,PhotoAcquireObjects,func,230
+vt,PhotoAcquireObjects,VT_BSTR,20
+vt,PhotoAcquireObjects,VT_HRESULT,235
+vt,PhotoAcquireObjects,VT_I4,25
+vt,PhotoAcquireObjects,VT_I8,1
+vt,PhotoAcquireObjects,VT_INT,3
+vt,PhotoAcquireObjects,VT_LPWSTR,48
+vt,PhotoAcquireObjects,VT_PTR,308
+vt,PhotoAcquireObjects,VT_UI1,4
+vt,PhotoAcquireObjects,VT_UI2,3
+vt,PhotoAcquireObjects,VT_UI4,84
+vt,PhotoAcquireObjects,VT_UI8,1
+vt,PhotoAcquireObjects,VT_UINT,22
+vt,PhotoAcquireObjects,VT_UNKNOWN,11
+vt,PhotoAcquireObjects,VT_USERDEFINED,197
+vt,PhotoAcquireObjects,VT_VARIANT,4
+vt,PhotoAcquireObjects,VT_VOID,14
+metadata,Microsoft Office Template and Media Control 1.0 Type Library,24,2,24,ACTIVEXLib.Cawsdc,ACTIVEXLib,live:{012F24C1-35B0-11D0-BF2D-0000E8D0D146}:1:0
+summary,Microsoft Office Template and Media Control 1.0 Type Library,3,27,0,0,12,0
+typekind,Microsoft Office Template and Media Control 1.0 Type Library,coclass,1
+typekind,Microsoft Office Template and Media Control 1.0 Type Library,dispatch,2
+invkind,Microsoft Office Template and Media Control 1.0 Type Library,func,27
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_BOOL,2
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_BSTR,48
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_I1,1
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_I4,5
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_INT,13
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_PTR,15
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_UI2,1
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_UI4,14
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_UINT,4
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_USERDEFINED,5
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_VARIANT,1
+vt,Microsoft Office Template and Media Control 1.0 Type Library,VT_VOID,10
+metadata,Policy Type Library,5,0,5,PolicyLib.PolicyObject,PolicyLib,live:{013461E1-B42A-43DA-BFB2-2CD59A29F4A9}:1:0
+summary,Policy Type Library,2,8,0,0,12,0
+typekind,Policy Type Library,coclass,1
+typekind,Policy Type Library,dispatch,1
+invkind,Policy Type Library,func,8
+vt,Policy Type Library,VT_BSTR,1
+vt,Policy Type Library,VT_I1,1
+vt,Policy Type Library,VT_I4,2
+vt,Policy Type Library,VT_PTR,15
+vt,Policy Type Library,VT_UI2,1
+vt,Policy Type Library,VT_UI4,5
+vt,Policy Type Library,VT_UINT,4
+vt,Policy Type Library,VT_USERDEFINED,5
+vt,Policy Type Library,VT_VARIANT,1
+vt,Policy Type Library,VT_VOID,8
+metadata,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,782,6,782,CAL2Lib.CameraModel,CAL2Lib,live:{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2:0
+summary,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,150,833,392,0,499,0
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,alias,9
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,coclass,16
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,dispatch,17
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,enum,14
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,interface,30
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,kind_7,5
+typekind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,record,59
+invkind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,func,440
+invkind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,property_get,329
+invkind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,property_put,63
+invkind,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,property_putref,1
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_BOOL,64
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_BSTR,234
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_HRESULT,164
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_I1,17
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_I4,89
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_I8,5
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_INT,2
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_LPWSTR,24
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_PTR,869
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_R8,13
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_UI1,8
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_UI2,20
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_UI4,139
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_UI8,3
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_UINT,93
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_UNKNOWN,5
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_USERDEFINED,543
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_VARIANT,121
+vt,{017EEE8A-9ECF-4783-8882-0E39288E4BBB}:2.0,VT_VOID,233
+metadata,Win32_EncryptableVolume 1.0 Type Library,0,0,0,Win32_EncryptableVolumeLib.Win32_EncryptableVolumeProvider,Win32_EncryptableVolumeLib,live:{0249F559-489F-4977-A0EF-21352C5AD247}:1:0
+summary,Win32_EncryptableVolume 1.0 Type Library,1,0,0,0,0,0
+typekind,Win32_EncryptableVolume 1.0 Type Library,coclass,1
+metadata,Performance Data Service,507,0,507,PlaLibrary.DataCollectorSet,PlaLibrary,live:{03837500-098B-11D8-9414-505054503030}:1:0
+summary,Performance Data Service,58,561,63,0,235,0
+typekind,Performance Data Service,alias,12
+typekind,Performance Data Service,coclass,16
+typekind,Performance Data Service,dispatch,18
+typekind,Performance Data Service,enum,12
+invkind,Performance Data Service,func,187
+invkind,Performance Data Service,property_get,214
+invkind,Performance Data Service,property_put,160
+vt,Performance Data Service,VT_BOOL,75
+vt,Performance Data Service,VT_BSTR,160
+vt,Performance Data Service,VT_DISPATCH,1
+vt,Performance Data Service,VT_I1,18
+vt,Performance Data Service,VT_I4,53
+vt,Performance Data Service,VT_PTR,327
+vt,Performance Data Service,VT_SAFEARRAY,20
+vt,Performance Data Service,VT_UI2,18
+vt,Performance Data Service,VT_UI4,151
+vt,Performance Data Service,VT_UI8,2
+vt,Performance Data Service,VT_UINT,72
+vt,Performance Data Service,VT_UNKNOWN,6
+vt,Performance Data Service,VT_USERDEFINED,201
+vt,Performance Data Service,VT_VARIANT,41
+vt,Performance Data Service,VT_VOID,324
+safearray_element_vt,Performance Data Service,VT_BSTR,18
+safearray_element_vt,Performance Data Service,VT_UI1,2
+metadata,AgentWmiLib,0,0,0,AgentWmiLib.UserSettingsProvider,AgentWmiLib,live:{0438D53A-9A57-423C-9E54-9612C4576257}:1:0
+summary,AgentWmiLib,7,0,0,0,0,0
+typekind,AgentWmiLib,coclass,7
+missing,GoogleUpdater TypeLib for IUpdaterCallbackSystem,{0486745C-8D9B-5377-A54C-A61FFAA0BBE4},1,0,0,exit_1
+missing,DropboxUpdater TypeLib for IProcessLauncher,{05378308-2559-4C71-B758-7DACD5A359BA},1,0,0,exit_1
+metadata,Microsoft ActiveMovie Control,280,16,280,AMovie.ActiveMovie,AMovie,live:{05589FA0-C356-11CE-BF01-00AA0055595A}:2:0
+summary,Microsoft ActiveMovie Control,12,289,19,0,44,0
+typekind,Microsoft ActiveMovie Control,coclass,1
+typekind,Microsoft ActiveMovie Control,dispatch,5
+typekind,Microsoft ActiveMovie Control,enum,6
+invkind,Microsoft ActiveMovie Control,func,64
+invkind,Microsoft ActiveMovie Control,property_get,132
+invkind,Microsoft ActiveMovie Control,property_put,93
+vt,Microsoft ActiveMovie Control,VT_BOOL,100
+vt,Microsoft ActiveMovie Control,VT_BSTR,27
+vt,Microsoft ActiveMovie Control,VT_DISPATCH,4
+vt,Microsoft ActiveMovie Control,VT_I1,3
+vt,Microsoft ActiveMovie Control,VT_I2,24
+vt,Microsoft ActiveMovie Control,VT_I4,40
+vt,Microsoft ActiveMovie Control,VT_PTR,53
+vt,Microsoft ActiveMovie Control,VT_R8,31
+vt,Microsoft ActiveMovie Control,VT_UI2,3
+vt,Microsoft ActiveMovie Control,VT_UI4,15
+vt,Microsoft ActiveMovie Control,VT_UINT,12
+vt,Microsoft ActiveMovie Control,VT_UNKNOWN,6
+vt,Microsoft ActiveMovie Control,VT_USERDEFINED,69
+vt,Microsoft ActiveMovie Control,VT_VARIANT,3
+vt,Microsoft ActiveMovie Control,VT_VOID,155
+missing,GoogleUpdater TypeLib for IPolicyStatus3,{05A30352-EB25-45B6-8449-BCA7B0542CE5},1,0,0,exit_1
+metadata,Adobe Acrobat Browser Control Type Library 1.0,65,0,65,AcroPDFLib.AcroPDF,AcroPDFLib,live:{05BFD3F1-6319-4F30-B752-C7A22889BCC4}:1:0
+summary,Adobe Acrobat Browser Control Type Library 1.0,8,77,0,8,48,0
+typekind,Adobe Acrobat Browser Control Type Library 1.0,coclass,2
+typekind,Adobe Acrobat Browser Control Type Library 1.0,dispatch,6
+invkind,Adobe Acrobat Browser Control Type Library 1.0,func,73
+invkind,Adobe Acrobat Browser Control Type Library 1.0,property_get,2
+invkind,Adobe Acrobat Browser Control Type Library 1.0,property_put,2
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_BOOL,20
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_BSTR,30
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_DISPATCH,5
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_I1,4
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_I4,21
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_INT,4
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_PTR,60
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_R4,9
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_UI2,4
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_UI4,20
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_UINT,16
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_USERDEFINED,20
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_VARIANT,17
+vt,Adobe Acrobat Browser Control Type Library 1.0,VT_VOID,61
+metadata,Microsoft Scriptlet Library,27,0,27,,Scriptlet,live:{06290C00-48AA-11D2-8432-006008C3FBFC}:1:0
+summary,Microsoft Scriptlet Library,3,33,0,0,16,2
+typekind,Microsoft Scriptlet Library,dispatch,2
+typekind,Microsoft Scriptlet Library,interface,1
+invkind,Microsoft Scriptlet Library,func,19
+invkind,Microsoft Scriptlet Library,property_get,8
+invkind,Microsoft Scriptlet Library,property_put,6
+vt,Microsoft Scriptlet Library,VT_BSTR,11
+vt,Microsoft Scriptlet Library,VT_DISPATCH,8
+vt,Microsoft Scriptlet Library,VT_HRESULT,4
+vt,Microsoft Scriptlet Library,VT_I1,1
+vt,Microsoft Scriptlet Library,VT_I4,2
+vt,Microsoft Scriptlet Library,VT_PTR,20
+vt,Microsoft Scriptlet Library,VT_UI2,5
+vt,Microsoft Scriptlet Library,VT_UI4,7
+vt,Microsoft Scriptlet Library,VT_UINT,4
+vt,Microsoft Scriptlet Library,VT_USERDEFINED,6
+vt,Microsoft Scriptlet Library,VT_VARIANT,1
+vt,Microsoft Scriptlet Library,VT_VOID,20
+metadata,HP Status Server 1.0 Type Library,12,0,12,MISSILESVRLib.CHPBOID,MISSILESVRLib,live:{06333F23-D064-4A34-B2DE-C30630C0B567}:1:0
+summary,HP Status Server 1.0 Type Library,8,12,15,0,18,0
+typekind,HP Status Server 1.0 Type Library,alias,3
+typekind,HP Status Server 1.0 Type Library,coclass,1
+typekind,HP Status Server 1.0 Type Library,interface,1
+typekind,HP Status Server 1.0 Type Library,record,3
+invkind,HP Status Server 1.0 Type Library,func,12
+vt,HP Status Server 1.0 Type Library,VT_HRESULT,12
+vt,HP Status Server 1.0 Type Library,VT_I4,13
+vt,HP Status Server 1.0 Type Library,VT_LPWSTR,6
+vt,HP Status Server 1.0 Type Library,VT_PTR,24
+vt,HP Status Server 1.0 Type Library,VT_UI4,11
+vt,HP Status Server 1.0 Type Library,VT_USERDEFINED,15
+metadata,IMEFILES 1.0 Type Library,6,0,6,IMEFILES.CImeFileNameRedirectionManager,IMEFILES,live:{06AF565F-771E-47A3-A501-F41B3E8BDAC9}:1:0
+summary,IMEFILES 1.0 Type Library,6,6,3,0,3,0
+typekind,IMEFILES 1.0 Type Library,alias,1
+typekind,IMEFILES 1.0 Type Library,coclass,2
+typekind,IMEFILES 1.0 Type Library,enum,1
+typekind,IMEFILES 1.0 Type Library,interface,2
+invkind,IMEFILES 1.0 Type Library,func,6
+vt,IMEFILES 1.0 Type Library,VT_BSTR,7
+vt,IMEFILES 1.0 Type Library,VT_HRESULT,6
+vt,IMEFILES 1.0 Type Library,VT_I4,2
+vt,IMEFILES 1.0 Type Library,VT_PTR,3
+vt,IMEFILES 1.0 Type Library,VT_UINT,1
+vt,IMEFILES 1.0 Type Library,VT_USERDEFINED,2
+missing,Microsoft Forms 2.0 Object Library,{06DC55D7-B348-4EED-95EA-D6D6693FB378},2,0,0,exit_1
+missing,SyncEngineStorageProviderHandlerLibrary 1.0 Type Library,{082D3FEC-D0D0-4DF6-A988-053FECE7B884},1,0,0,exit_1
+missing,Microsoft Forms 2.0 Object Library,{095D0093-B652-4219-954C-0C2576EC9999},2,0,0,exit_1
+missing,EditionUpgradeHelper 1.0 Type Library,{09C6A793-92DC-4D27-A11D-3921C9314DED},1,0,0,exit_1
+metadata,SHGINA 1.0 Type Library,15,0,15,SHGINALib.ShellLocalMachine,SHGINALib,live:{0A055C02-BABE-4480-BB7B-A8EC723CE9C0}:1:0
+summary,SHGINA 1.0 Type Library,3,18,3,0,12,0
+typekind,SHGINA 1.0 Type Library,coclass,1
+typekind,SHGINA 1.0 Type Library,dispatch,1
+typekind,SHGINA 1.0 Type Library,enum,1
+invkind,SHGINA 1.0 Type Library,func,9
+invkind,SHGINA 1.0 Type Library,property_get,7
+invkind,SHGINA 1.0 Type Library,property_put,2
+vt,SHGINA 1.0 Type Library,VT_BOOL,7
+vt,SHGINA 1.0 Type Library,VT_I1,1
+vt,SHGINA 1.0 Type Library,VT_I4,2
+vt,SHGINA 1.0 Type Library,VT_PTR,15
+vt,SHGINA 1.0 Type Library,VT_UI2,1
+vt,SHGINA 1.0 Type Library,VT_UI4,5
+vt,SHGINA 1.0 Type Library,VT_UINT,4
+vt,SHGINA 1.0 Type Library,VT_USERDEFINED,8
+vt,SHGINA 1.0 Type Library,VT_VARIANT,4
+vt,SHGINA 1.0 Type Library,VT_VOID,11
+missing,DropboxUpdater TypeLib for IPolicyStatus,{0A668F6A-1C27-4A5E-A44A-9288757DCED0},1,0,0,exit_1
+metadata,Microsoft MSM Merge Type Library,110,0,110,MsmMergeTypeLib.MsmMerge,MsmMergeTypeLib,live:{0ADDA82F-2C26-11D2-AD65-00A0C9AF11A6}:2:0
+summary,Microsoft MSM Merge Type Library,15,143,18,0,134,0
+typekind,Microsoft MSM Merge Type Library,coclass,2
+typekind,Microsoft MSM Merge Type Library,dispatch,11
+typekind,Microsoft MSM Merge Type Library,enum,2
+invkind,Microsoft MSM Merge Type Library,func,104
+invkind,Microsoft MSM Merge Type Library,property_get,39
+vt,Microsoft MSM Merge Type Library,VT_BOOL,4
+vt,Microsoft MSM Merge Type Library,VT_BSTR,39
+vt,Microsoft MSM Merge Type Library,VT_I1,11
+vt,Microsoft MSM Merge Type Library,VT_I2,4
+vt,Microsoft MSM Merge Type Library,VT_I4,32
+vt,Microsoft MSM Merge Type Library,VT_PTR,181
+vt,Microsoft MSM Merge Type Library,VT_UI2,11
+vt,Microsoft MSM Merge Type Library,VT_UI4,55
+vt,Microsoft MSM Merge Type Library,VT_UINT,44
+vt,Microsoft MSM Merge Type Library,VT_UNKNOWN,5
+vt,Microsoft MSM Merge Type Library,VT_USERDEFINED,71
+vt,Microsoft MSM Merge Type Library,VT_VARIANT,11
+vt,Microsoft MSM Merge Type Library,VT_VOID,102
+missing,GoogleUpdater TypeLib for IAppVersionWeb,{0CD01D1E-4A1C-489D-93B9-9B6672877C57},1,0,0,exit_1
+missing,DropboxUpdater TypeLib for IAppWebSystem,{0CDCAEC8-4E2C-4669-96FE-38FCA288C019},1,0,0,exit_1
+metadata,Microsoft Forms 2.0 Object Library,1646,380,1646,MSForms.ReturnInteger,MSForms,live:{0D452EE1-E08F-101A-852E-02608C4D0BB4}:2:0
+summary,Microsoft Forms 2.0 Object Library,171,1757,199,43,810,0
+typekind,Microsoft Forms 2.0 Object Library,alias,4
+typekind,Microsoft Forms 2.0 Object Library,coclass,60
+typekind,Microsoft Forms 2.0 Object Library,dispatch,64
+typekind,Microsoft Forms 2.0 Object Library,enum,42
+typekind,Microsoft Forms 2.0 Object Library,interface,1
+invkind,Microsoft Forms 2.0 Object Library,func,611
+invkind,Microsoft Forms 2.0 Object Library,property_get,592
+invkind,Microsoft Forms 2.0 Object Library,property_put,519
+invkind,Microsoft Forms 2.0 Object Library,property_putref,35
+vt,Microsoft Forms 2.0 Object Library,VT_BOOL,277
+vt,Microsoft Forms 2.0 Object Library,VT_BSTR,216
+vt,Microsoft Forms 2.0 Object Library,VT_CY,22
+vt,Microsoft Forms 2.0 Object Library,VT_DISPATCH,6
+vt,Microsoft Forms 2.0 Object Library,VT_HRESULT,22
+vt,Microsoft Forms 2.0 Object Library,VT_I1,37
+vt,Microsoft Forms 2.0 Object Library,VT_I2,186
+vt,Microsoft Forms 2.0 Object Library,VT_I4,299
+vt,Microsoft Forms 2.0 Object Library,VT_INT,3
+vt,Microsoft Forms 2.0 Object Library,VT_PTR,985
+vt,Microsoft Forms 2.0 Object Library,VT_R4,214
+vt,Microsoft Forms 2.0 Object Library,VT_UI2,37
+vt,Microsoft Forms 2.0 Object Library,VT_UI4,185
+vt,Microsoft Forms 2.0 Object Library,VT_UINT,148
+vt,Microsoft Forms 2.0 Object Library,VT_UNKNOWN,7
+vt,Microsoft Forms 2.0 Object Library,VT_USERDEFINED,867
+vt,Microsoft Forms 2.0 Object Library,VT_VARIANT,137
+vt,Microsoft Forms 2.0 Object Library,VT_VOID,1126
+metadata,Microsoft Script Control 1.0,75,2,75,MSScriptControl.Procedure,MSScriptControl,live:{0E59F1D2-1FBE-11D0-8FF2-00A0D10038BC}:1:0
+summary,Microsoft Script Control 1.0,15,93,4,1,75,1
+typekind,Microsoft Script Control 1.0,coclass,6
+typekind,Microsoft Script Control 1.0,dispatch,7
+typekind,Microsoft Script Control 1.0,enum,1
+typekind,Microsoft Script Control 1.0,module,1
+invkind,Microsoft Script Control 1.0,func,57
+invkind,Microsoft Script Control 1.0,property_get,30
+invkind,Microsoft Script Control 1.0,property_put,6
+vt,Microsoft Script Control 1.0,VT_BOOL,6
+vt,Microsoft Script Control 1.0,VT_BSTR,18
+vt,Microsoft Script Control 1.0,VT_DISPATCH,3
+vt,Microsoft Script Control 1.0,VT_I1,6
+vt,Microsoft Script Control 1.0,VT_I4,23
+vt,Microsoft Script Control 1.0,VT_PTR,100
+vt,Microsoft Script Control 1.0,VT_SAFEARRAY,2
+vt,Microsoft Script Control 1.0,VT_UI2,6
+vt,Microsoft Script Control 1.0,VT_UI4,30
+vt,Microsoft Script Control 1.0,VT_UINT,24
+vt,Microsoft Script Control 1.0,VT_UNKNOWN,2
+vt,Microsoft Script Control 1.0,VT_USERDEFINED,39
+vt,Microsoft Script Control 1.0,VT_VARIANT,13
+vt,Microsoft Script Control 1.0,VT_VOID,58
+unsupported_vt,Microsoft Script Control 1.0,VT_USERDEFINED,6
+safearray_element_vt,Microsoft Script Control 1.0,VT_VARIANT,2
+missing,{0EA692EE-BB50-4E3C-AEF0-356D91732725}:1.0,{0EA692EE-BB50-4E3C-AEF0-356D91732725},1,0,0,exit_1
+metadata,Microsoft OneNote 15.0 Type Library,98,4,98,OneNote.Application,OneNote,live:{0EA692EE-BB50-4E3C-AEF0-356D91732725}:1:1
+summary,Microsoft OneNote 15.0 Type Library,24,113,119,0,74,25
+typekind,Microsoft OneNote 15.0 Type Library,coclass,2
+typekind,Microsoft OneNote 15.0 Type Library,dispatch,6
+typekind,Microsoft OneNote 15.0 Type Library,enum,15
+typekind,Microsoft OneNote 15.0 Type Library,record,1
+invkind,Microsoft OneNote 15.0 Type Library,func,73
+invkind,Microsoft OneNote 15.0 Type Library,property_get,28
+invkind,Microsoft OneNote 15.0 Type Library,property_put,12
+vt,Microsoft OneNote 15.0 Type Library,VT_BOOL,21
+vt,Microsoft OneNote 15.0 Type Library,VT_BSTR,67
+vt,Microsoft OneNote 15.0 Type Library,VT_DATE,3
+vt,Microsoft OneNote 15.0 Type Library,VT_DISPATCH,2
+vt,Microsoft OneNote 15.0 Type Library,VT_I1,5
+vt,Microsoft OneNote 15.0 Type Library,VT_I4,10
+vt,Microsoft OneNote 15.0 Type Library,VT_PTR,94
+vt,Microsoft OneNote 15.0 Type Library,VT_UI2,5
+vt,Microsoft OneNote 15.0 Type Library,VT_UI4,28
+vt,Microsoft OneNote 15.0 Type Library,VT_UI8,4
+vt,Microsoft OneNote 15.0 Type Library,VT_UINT,20
+vt,Microsoft OneNote 15.0 Type Library,VT_UNKNOWN,1
+vt,Microsoft OneNote 15.0 Type Library,VT_USERDEFINED,59
+vt,Microsoft OneNote 15.0 Type Library,VT_VARIANT,5
+vt,Microsoft OneNote 15.0 Type Library,VT_VOID,84
+missing,PDFPrevHndlr 1.0 Type Library,{0F6D3808-7974-4B1A-94C2-3200767EACE8},1,0,0,exit_1
+missing,Microsoft Forms 2.0 Object Library,{0F914E94-194B-49F7-ABED-4A2FAAC12281},2,0,0,exit_1
+metadata,Find Printers type library,6,0,6,FindNetPrintersLib.CFindNetPrinters,FindNetPrintersLib,live:{0FFF9602-69CF-4728-9EA4-141514866CA2}:1:0
+summary,Find Printers type library,6,6,21,0,3,0
+typekind,Find Printers type library,coclass,1
+typekind,Find Printers type library,enum,3
+typekind,Find Printers type library,interface,2
+invkind,Find Printers type library,func,6
+vt,Find Printers type library,VT_BSTR,4
+vt,Find Printers type library,VT_HRESULT,6
+vt,Find Printers type library,VT_I4,1
+vt,Find Printers type library,VT_PTR,3
+vt,Find Printers type library,VT_UI4,1
+vt,Find Printers type library,VT_UINT,3
+vt,Find Printers type library,VT_USERDEFINED,4
+metadata,dia 2.0 Type Library,526,0,526,Dia2Lib.DiaSource,Dia2Lib,live:{106173A0-0173-4E5C-84E7-E915422BE997}:2:0
+summary,dia 2.0 Type Library,50,526,136,0,573,0
+typekind,dia 2.0 Type Library,coclass,3
+typekind,dia 2.0 Type Library,enum,3
+typekind,dia 2.0 Type Library,interface,39
+typekind,dia 2.0 Type Library,record,5
+invkind,dia 2.0 Type Library,func,182
+invkind,dia 2.0 Type Library,property_get,341
+invkind,dia 2.0 Type Library,property_put,3
+vt,dia 2.0 Type Library,VT_BSTR,19
+vt,dia 2.0 Type Library,VT_HRESULT,526
+vt,dia 2.0 Type Library,VT_I4,146
+vt,dia 2.0 Type Library,VT_LPWSTR,22
+vt,dia 2.0 Type Library,VT_PTR,701
+vt,dia 2.0 Type Library,VT_UI1,16
+vt,dia 2.0 Type Library,VT_UI2,1
+vt,dia 2.0 Type Library,VT_UI4,346
+vt,dia 2.0 Type Library,VT_UI8,54
+vt,dia 2.0 Type Library,VT_UNKNOWN,15
+vt,dia 2.0 Type Library,VT_USERDEFINED,197
+vt,dia 2.0 Type Library,VT_VARIANT,3
+metadata,SPP WMI Provider 1.0 Type Library,82,0,82,SppWmiProviderLibrary.SppProvider,SppWmiProviderLibrary,live:{10E3A8C1-B46C-4B6C-B3EF-8E2F48D527D0}:1:0
+summary,SPP WMI Provider 1.0 Type Library,12,85,0,0,120,0
+typekind,SPP WMI Provider 1.0 Type Library,coclass,2
+typekind,SPP WMI Provider 1.0 Type Library,dispatch,1
+typekind,SPP WMI Provider 1.0 Type Library,interface,9
+invkind,SPP WMI Provider 1.0 Type Library,func,85
+vt,SPP WMI Provider 1.0 Type Library,VT_BSTR,35
+vt,SPP WMI Provider 1.0 Type Library,VT_HRESULT,77
+vt,SPP WMI Provider 1.0 Type Library,VT_I1,1
+vt,SPP WMI Provider 1.0 Type Library,VT_I4,67
+vt,SPP WMI Provider 1.0 Type Library,VT_LPWSTR,21
+vt,SPP WMI Provider 1.0 Type Library,VT_PTR,154
+vt,SPP WMI Provider 1.0 Type Library,VT_SAFEARRAY,3
+vt,SPP WMI Provider 1.0 Type Library,VT_UI2,1
+vt,SPP WMI Provider 1.0 Type Library,VT_UI4,9
+vt,SPP WMI Provider 1.0 Type Library,VT_UINT,4
+vt,SPP WMI Provider 1.0 Type Library,VT_USERDEFINED,82
+vt,SPP WMI Provider 1.0 Type Library,VT_VARIANT,15
+vt,SPP WMI Provider 1.0 Type Library,VT_VOID,7
+safearray_element_vt,SPP WMI Provider 1.0 Type Library,VT_BSTR,3
+metadata,azroles 1.0 Type Library,925,0,925,AZROLESLib.AzAuthorizationStore,AZROLESLib,live:{11A8B8EE-BF30-409A-8EF7-3A143EF70332}:1:0
+summary,azroles 1.0 Type Library,41,1027,102,350,418,23
+typekind,azroles 1.0 Type Library,alias,1
+typekind,azroles 1.0 Type Library,coclass,3
+typekind,azroles 1.0 Type Library,dispatch,34
+typekind,azroles 1.0 Type Library,enum,1
+typekind,azroles 1.0 Type Library,kind_7,1
+typekind,azroles 1.0 Type Library,record,1
+invkind,azroles 1.0 Type Library,func,641
+invkind,azroles 1.0 Type Library,property_get,284
+invkind,azroles 1.0 Type Library,property_put,102
+vt,azroles 1.0 Type Library,VT_BOOL,11
+vt,azroles 1.0 Type Library,VT_BSTR,467
+vt,azroles 1.0 Type Library,VT_I1,34
+vt,azroles 1.0 Type Library,VT_I4,267
+vt,azroles 1.0 Type Library,VT_PTR,646
+vt,azroles 1.0 Type Library,VT_UI2,34
+vt,azroles 1.0 Type Library,VT_UI4,178
+vt,azroles 1.0 Type Library,VT_UI8,3
+vt,azroles 1.0 Type Library,VT_UINT,136
+vt,azroles 1.0 Type Library,VT_UNKNOWN,8
+vt,azroles 1.0 Type Library,VT_USERDEFINED,297
+vt,azroles 1.0 Type Library,VT_VARIANT,571
+vt,azroles 1.0 Type Library,VT_VOID,613
+metadata,ndfapi 1.0 Type Library,97,0,97,ndfapiLib.NDFAPI,ndfapiLib,live:{11DD5EA9-F8DB-4F6E-BF7C-6AADBA404A3D}:1:0
+summary,ndfapi 1.0 Type Library,16,127,4,0,123,0
+typekind,ndfapi 1.0 Type Library,alias,1
+typekind,ndfapi 1.0 Type Library,coclass,2
+typekind,ndfapi 1.0 Type Library,dispatch,10
+typekind,ndfapi 1.0 Type Library,interface,1
+typekind,ndfapi 1.0 Type Library,kind_7,1
+typekind,ndfapi 1.0 Type Library,record,1
+invkind,ndfapi 1.0 Type Library,func,87
+invkind,ndfapi 1.0 Type Library,property_get,40
+vt,ndfapi 1.0 Type Library,VT_BSTR,20
+vt,ndfapi 1.0 Type Library,VT_HRESULT,4
+vt,ndfapi 1.0 Type Library,VT_I1,10
+vt,ndfapi 1.0 Type Library,VT_I4,20
+vt,ndfapi 1.0 Type Library,VT_LPWSTR,3
+vt,ndfapi 1.0 Type Library,VT_PTR,168
+vt,ndfapi 1.0 Type Library,VT_UI2,11
+vt,ndfapi 1.0 Type Library,VT_UI4,71
+vt,ndfapi 1.0 Type Library,VT_UINT,40
+vt,ndfapi 1.0 Type Library,VT_USERDEFINED,69
+vt,ndfapi 1.0 Type Library,VT_VARIANT,10
+vt,ndfapi 1.0 Type Library,VT_VOID,80
+metadata,UIProxy 1.0 Type Library,8,0,8,UIProxyLib.UIWrapper,UIProxyLib,live:{121932AD-6881-46E4-BCA8-9155A87E77F9}:1:0
+summary,UIProxy 1.0 Type Library,6,8,61,0,7,0
+typekind,UIProxy 1.0 Type Library,coclass,1
+typekind,UIProxy 1.0 Type Library,interface,2
+typekind,UIProxy 1.0 Type Library,record,3
+invkind,UIProxy 1.0 Type Library,func,8
+vt,UIProxy 1.0 Type Library,VT_HRESULT,8
+vt,UIProxy 1.0 Type Library,VT_I4,5
+vt,UIProxy 1.0 Type Library,VT_LPWSTR,3
+vt,UIProxy 1.0 Type Library,VT_PTR,7
+vt,UIProxy 1.0 Type Library,VT_UI1,1
+vt,UIProxy 1.0 Type Library,VT_UI4,1
+vt,UIProxy 1.0 Type Library,VT_USERDEFINED,5
+metadata,netcenter LUA 1.0 Type Library,5,0,5,NetCenterLUALib.NetCenterLUA,NetCenterLUALib,live:{122F1BB4-2723-4AC2-A36A-16BB9E8B99A6}:1:0
+summary,netcenter LUA 1.0 Type Library,2,8,0,0,12,0
+typekind,netcenter LUA 1.0 Type Library,coclass,1
+typekind,netcenter LUA 1.0 Type Library,dispatch,1
+invkind,netcenter LUA 1.0 Type Library,func,8
+vt,netcenter LUA 1.0 Type Library,VT_I1,1
+vt,netcenter LUA 1.0 Type Library,VT_I4,2
+vt,netcenter LUA 1.0 Type Library,VT_PTR,15
+vt,netcenter LUA 1.0 Type Library,VT_UI2,1
+vt,netcenter LUA 1.0 Type Library,VT_UI4,5
+vt,netcenter LUA 1.0 Type Library,VT_UINT,4
+vt,netcenter LUA 1.0 Type Library,VT_USERDEFINED,5
+vt,netcenter LUA 1.0 Type Library,VT_VARIANT,1
+vt,netcenter LUA 1.0 Type Library,VT_VOID,8
+missing,GoogleUpdater TypeLib for IProcessLauncher,{128C2DA6-2BC0-44C0-B3F6-4EC22E647964},1,0,0,exit_1
+metadata,CertEnc 1.0 Type Library,141,0,141,CERTENCODELib.CCertEncodeStringArray,CERTENCODELib,live:{13199C00-7494-11D0-8816-00A0C903B83C}:1:0
+summary,CertEnc 1.0 Type Library,19,177,22,0,144,16
+typekind,CertEnc 1.0 Type Library,coclass,6
+typekind,CertEnc 1.0 Type Library,dispatch,12
+typekind,CertEnc 1.0 Type Library,enum,1
+invkind,CertEnc 1.0 Type Library,func,177
+vt,CertEnc 1.0 Type Library,VT_BSTR,56
+vt,CertEnc 1.0 Type Library,VT_DATE,4
+vt,CertEnc 1.0 Type Library,VT_I1,12
+vt,CertEnc 1.0 Type Library,VT_I4,106
+vt,CertEnc 1.0 Type Library,VT_PTR,180
+vt,CertEnc 1.0 Type Library,VT_UI2,12
+vt,CertEnc 1.0 Type Library,VT_UI4,60
+vt,CertEnc 1.0 Type Library,VT_UINT,48
+vt,CertEnc 1.0 Type Library,VT_USERDEFINED,76
+vt,CertEnc 1.0 Type Library,VT_VARIANT,12
+vt,CertEnc 1.0 Type Library,VT_VOID,125
+metadata,Hyper-V Application Health Monitor Type Library,7,0,7,VmApplicationHealthMonitorLib.ComApplicationHealthMonitor,VmApplicationHealthMonitorLib,live:{132B42FB-871B-4077-AE2E-BF7FD772385E}:1:0
+summary,Hyper-V Application Health Monitor Type Library,5,10,3,0,13,0
+typekind,Hyper-V Application Health Monitor Type Library,coclass,2
+typekind,Hyper-V Application Health Monitor Type Library,dispatch,1
+typekind,Hyper-V Application Health Monitor Type Library,enum,1
+typekind,Hyper-V Application Health Monitor Type Library,interface,1
+invkind,Hyper-V Application Health Monitor Type Library,func,10
+vt,Hyper-V Application Health Monitor Type Library,VT_BSTR,2
+vt,Hyper-V Application Health Monitor Type Library,VT_HRESULT,1
+vt,Hyper-V Application Health Monitor Type Library,VT_I1,1
+vt,Hyper-V Application Health Monitor Type Library,VT_I4,2
+vt,Hyper-V Application Health Monitor Type Library,VT_PTR,16
+vt,Hyper-V Application Health Monitor Type Library,VT_UI2,1
+vt,Hyper-V Application Health Monitor Type Library,VT_UI4,5
+vt,Hyper-V Application Health Monitor Type Library,VT_UINT,4
+vt,Hyper-V Application Health Monitor Type Library,VT_USERDEFINED,7
+vt,Hyper-V Application Health Monitor Type Library,VT_VARIANT,1
+vt,Hyper-V Application Health Monitor Type Library,VT_VOID,9
+metadata,FCCOMIntDLL 1.0 Type Library,20,5,20,FCCOMINTDLLLib.VPN,FCCOMINTDLLLib,live:{1363D583-F150-478E-B40F-C69E3DA8ACEB}:1:0
+summary,FCCOMIntDLL 1.0 Type Library,3,23,0,0,18,0
+typekind,FCCOMIntDLL 1.0 Type Library,coclass,1
+typekind,FCCOMIntDLL 1.0 Type Library,dispatch,2
+invkind,FCCOMIntDLL 1.0 Type Library,func,23
+vt,FCCOMIntDLL 1.0 Type Library,VT_BOOL,15
+vt,FCCOMIntDLL 1.0 Type Library,VT_BSTR,13
+vt,FCCOMIntDLL 1.0 Type Library,VT_HRESULT,5
+vt,FCCOMIntDLL 1.0 Type Library,VT_I1,1
+vt,FCCOMIntDLL 1.0 Type Library,VT_I4,2
+vt,FCCOMIntDLL 1.0 Type Library,VT_INT,2
+vt,FCCOMIntDLL 1.0 Type Library,VT_PTR,21
+vt,FCCOMIntDLL 1.0 Type Library,VT_UI2,1
+vt,FCCOMIntDLL 1.0 Type Library,VT_UI4,5
+vt,FCCOMIntDLL 1.0 Type Library,VT_UINT,4
+vt,FCCOMIntDLL 1.0 Type Library,VT_USERDEFINED,5
+vt,FCCOMIntDLL 1.0 Type Library,VT_VARIANT,2
+vt,FCCOMIntDLL 1.0 Type Library,VT_VOID,14
+metadata,MSAAText 1.0 Type Library,27,0,27,MSAATEXTLib.MSAAControl,MSAATEXTLib,live:{150E2D7A-DAC1-4582-947D-2A8FD78B82CD}:1:0
+summary,MSAAText 1.0 Type Library,17,27,6,0,33,0
+typekind,MSAAText 1.0 Type Library,alias,1
+typekind,MSAAText 1.0 Type Library,coclass,6
+typekind,MSAAText 1.0 Type Library,interface,7
+typekind,MSAAText 1.0 Type Library,kind_7,1
+typekind,MSAAText 1.0 Type Library,record,2
+invkind,MSAAText 1.0 Type Library,func,27
+vt,MSAAText 1.0 Type Library,VT_BSTR,4
+vt,MSAAText 1.0 Type Library,VT_HRESULT,27
+vt,MSAAText 1.0 Type Library,VT_PTR,37
+vt,MSAAText 1.0 Type Library,VT_UI4,7
+vt,MSAAText 1.0 Type Library,VT_UNKNOWN,15
+vt,MSAAText 1.0 Type Library,VT_USERDEFINED,24
+vt,MSAAText 1.0 Type Library,VT_VARIANT,1
+metadata,AppPrelaunchInterface 1.0 Type Library,9,0,9,AppPrelaunchLib.AppPrelaunchInterface,AppPrelaunchLib,live:{15199C39-B5E0-4E9D-A6F2-B69C74D02724}:1:0
+summary,AppPrelaunchInterface 1.0 Type Library,2,12,0,0,12,0
+typekind,AppPrelaunchInterface 1.0 Type Library,coclass,1
+typekind,AppPrelaunchInterface 1.0 Type Library,dispatch,1
+invkind,AppPrelaunchInterface 1.0 Type Library,func,12
+vt,AppPrelaunchInterface 1.0 Type Library,VT_BOOL,1
+vt,AppPrelaunchInterface 1.0 Type Library,VT_BSTR,2
+vt,AppPrelaunchInterface 1.0 Type Library,VT_I1,1
+vt,AppPrelaunchInterface 1.0 Type Library,VT_I4,2
+vt,AppPrelaunchInterface 1.0 Type Library,VT_PTR,15
+vt,AppPrelaunchInterface 1.0 Type Library,VT_UI2,1
+vt,AppPrelaunchInterface 1.0 Type Library,VT_UI4,7
+vt,AppPrelaunchInterface 1.0 Type Library,VT_UINT,4
+vt,AppPrelaunchInterface 1.0 Type Library,VT_USERDEFINED,5
+vt,AppPrelaunchInterface 1.0 Type Library,VT_VARIANT,1
+vt,AppPrelaunchInterface 1.0 Type Library,VT_VOID,11
+metadata,WlanPref LUA LUA 1.0 Type Library,7,0,7,WlanPrefLUALib.WlanPrefLUA,WlanPrefLUALib,live:{157702D8-B1C1-40B8-8B46-AF2B40022085}:1:0
+summary,WlanPref LUA LUA 1.0 Type Library,4,7,0,0,8,0
+typekind,WlanPref LUA LUA 1.0 Type Library,coclass,2
+typekind,WlanPref LUA LUA 1.0 Type Library,interface,2
+invkind,WlanPref LUA LUA 1.0 Type Library,func,7
+vt,WlanPref LUA LUA 1.0 Type Library,VT_BOOL,4
+vt,WlanPref LUA LUA 1.0 Type Library,VT_BSTR,8
+vt,WlanPref LUA LUA 1.0 Type Library,VT_HRESULT,7
+vt,WlanPref LUA LUA 1.0 Type Library,VT_I4,2
+vt,WlanPref LUA LUA 1.0 Type Library,VT_PTR,8
+vt,WlanPref LUA LUA 1.0 Type Library,VT_USERDEFINED,8
+missing,GoogleUpdater TypeLib for IUpdateStateSystem,{1588C1A8-27D9-563E-9641-8D20767FB258},1,0,0,exit_1
+metadata,Winsat 1.0 Type Library,664,0,664,WINSATLib.CInitiateWinSAT,WINSATLib,live:{15AE3A36-E53B-454D-A816-A7C61CBAB8A4}:1:0
+summary,Winsat 1.0 Type Library,49,727,48,13,349,2
+typekind,Winsat 1.0 Type Library,alias,7
+typekind,Winsat 1.0 Type Library,coclass,6
+typekind,Winsat 1.0 Type Library,dispatch,21
+typekind,Winsat 1.0 Type Library,enum,5
+typekind,Winsat 1.0 Type Library,interface,5
+typekind,Winsat 1.0 Type Library,kind_7,2
+typekind,Winsat 1.0 Type Library,record,3
+invkind,Winsat 1.0 Type Library,func,336
+invkind,Winsat 1.0 Type Library,property_get,327
+invkind,Winsat 1.0 Type Library,property_put,63
+invkind,Winsat 1.0 Type Library,property_putref,1
+vt,Winsat 1.0 Type Library,VT_BOOL,59
+vt,Winsat 1.0 Type Library,VT_BSTR,220
+vt,Winsat 1.0 Type Library,VT_DISPATCH,2
+vt,Winsat 1.0 Type Library,VT_HRESULT,9
+vt,Winsat 1.0 Type Library,VT_I1,21
+vt,Winsat 1.0 Type Library,VT_I4,95
+vt,Winsat 1.0 Type Library,VT_LPWSTR,6
+vt,Winsat 1.0 Type Library,VT_PTR,689
+vt,Winsat 1.0 Type Library,VT_R4,3
+vt,Winsat 1.0 Type Library,VT_UI2,21
+vt,Winsat 1.0 Type Library,VT_UI4,105
+vt,Winsat 1.0 Type Library,VT_UINT,86
+vt,Winsat 1.0 Type Library,VT_UNKNOWN,2
+vt,Winsat 1.0 Type Library,VT_USERDEFINED,450
+vt,Winsat 1.0 Type Library,VT_VARIANT,138
+vt,Winsat 1.0 Type Library,VT_VOID,249
+metadata,SyncShare 1.0 Library,156,4,156,SyncShareInternalLibrary.SyncSharePartnershipManagerInternal,SyncShareInternalLibrary,live:{16986D82-12A9-4DD8-A72B-2A40D8A9CEEE}:1:0
+summary,SyncShare 1.0 Library,21,189,25,0,141,0
+typekind,SyncShare 1.0 Library,coclass,2
+typekind,SyncShare 1.0 Library,dispatch,12
+typekind,SyncShare 1.0 Library,enum,5
+typekind,SyncShare 1.0 Library,interface,2
+invkind,SyncShare 1.0 Library,func,132
+invkind,SyncShare 1.0 Library,property_get,38
+invkind,SyncShare 1.0 Library,property_put,19
+vt,SyncShare 1.0 Library,VT_BOOL,29
+vt,SyncShare 1.0 Library,VT_BSTR,85
+vt,SyncShare 1.0 Library,VT_HRESULT,10
+vt,SyncShare 1.0 Library,VT_I1,11
+vt,SyncShare 1.0 Library,VT_I4,42
+vt,SyncShare 1.0 Library,VT_PTR,193
+vt,SyncShare 1.0 Library,VT_UI2,11
+vt,SyncShare 1.0 Library,VT_UI4,59
+vt,SyncShare 1.0 Library,VT_UI8,6
+vt,SyncShare 1.0 Library,VT_UINT,44
+vt,SyncShare 1.0 Library,VT_UNKNOWN,1
+vt,SyncShare 1.0 Library,VT_USERDEFINED,87
+vt,SyncShare 1.0 Library,VT_VARIANT,11
+vt,SyncShare 1.0 Library,VT_VOID,128
+metadata,CertCOMLib,5,0,5,CertCOMLib.CertAPI,CertCOMLib,live:{179B730B-9F8B-4E78-92AF-5F788A047EBD}:1:0
+summary,CertCOMLib,3,8,8,0,14,0
+typekind,CertCOMLib,coclass,1
+typekind,CertCOMLib,dispatch,1
+typekind,CertCOMLib,record,1
+invkind,CertCOMLib,func,8
+vt,CertCOMLib,VT_BSTR,2
+vt,CertCOMLib,VT_I1,1
+vt,CertCOMLib,VT_I4,2
+vt,CertCOMLib,VT_PTR,17
+vt,CertCOMLib,VT_UI2,1
+vt,CertCOMLib,VT_UI4,5
+vt,CertCOMLib,VT_UINT,4
+vt,CertCOMLib,VT_USERDEFINED,6
+vt,CertCOMLib,VT_VARIANT,1
+vt,CertCOMLib,VT_VOID,8
+missing,TypeLib for Interface {17DF149F-BE61-447E-A305-522F55021B36},{17DF149F-BE61-447E-A305-522F55021B36},1,0,0,exit_1
+metadata,Definition: Internal API for MBAE Type Library.,137,0,137,MbaeApiLib.MbaeManagerInternal,MbaeApiLib,live:{1878A0BC-B9A1-4BD0-B67E-BE35EDE35A96}:1:0
+summary,Definition: Internal API for MBAE Type Library.,70,137,271,0,102,0
+typekind,Definition: Internal API for MBAE Type Library.,alias,2
+typekind,Definition: Internal API for MBAE Type Library.,coclass,5
+typekind,Definition: Internal API for MBAE Type Library.,enum,38
+typekind,Definition: Internal API for MBAE Type Library.,interface,13
+typekind,Definition: Internal API for MBAE Type Library.,record,12
+invkind,Definition: Internal API for MBAE Type Library.,func,137
+vt,Definition: Internal API for MBAE Type Library.,VT_BOOL,4
+vt,Definition: Internal API for MBAE Type Library.,VT_BSTR,4
+vt,Definition: Internal API for MBAE Type Library.,VT_CARRAY,6
+vt,Definition: Internal API for MBAE Type Library.,VT_HRESULT,140
+vt,Definition: Internal API for MBAE Type Library.,VT_I1,36
+vt,Definition: Internal API for MBAE Type Library.,VT_I4,3
+vt,Definition: Internal API for MBAE Type Library.,VT_INT,3
+vt,Definition: Internal API for MBAE Type Library.,VT_LPWSTR,41
+vt,Definition: Internal API for MBAE Type Library.,VT_PTR,105
+vt,Definition: Internal API for MBAE Type Library.,VT_UI1,1
+vt,Definition: Internal API for MBAE Type Library.,VT_UI4,27
+vt,Definition: Internal API for MBAE Type Library.,VT_USERDEFINED,123
+vt,Definition: Internal API for MBAE Type Library.,VT_VARIANT,1
+safearray_element_vt,Definition: Internal API for MBAE Type Library.,VT_UI2,6
+metadata,VEGAS Shell 5.0,0,0,0,,VBIDE,live:{18BEB7F2-CA98-11D1-B6E7-00A0C90F2744}:5:0
+summary,VEGAS Shell 5.0,0,0,0,0,0,0
+missing,GoogleUpdater TypeLib for IAppWeb,{18D0F672-18B4-48E6-AD36-6E6BF01DBBC4},1,0,0,exit_1
+metadata,Microsoft Development Environment 8.0,1297,11,1297,EnvDTE80.CodeModelEvents,EnvDTE80,live:{1A31287A-4D7D-413E-8E32-3B374931BD89}:8:0
+summary,Microsoft Development Environment 8.0,100,1459,332,34,742,158
+typekind,Microsoft Development Environment 8.0,coclass,6
+typekind,Microsoft Development Environment 8.0,dispatch,60
+typekind,Microsoft Development Environment 8.0,enum,24
+typekind,Microsoft Development Environment 8.0,interface,6
+typekind,Microsoft Development Environment 8.0,module,4
+invkind,Microsoft Development Environment 8.0,func,681
+invkind,Microsoft Development Environment 8.0,property_get,646
+invkind,Microsoft Development Environment 8.0,property_put,132
+vt,Microsoft Development Environment 8.0,VT_BOOL,172
+vt,Microsoft Development Environment 8.0,VT_BSTR,390
+vt,Microsoft Development Environment 8.0,VT_DISPATCH,50
+vt,Microsoft Development Environment 8.0,VT_HRESULT,13
+vt,Microsoft Development Environment 8.0,VT_I1,54
+vt,Microsoft Development Environment 8.0,VT_I2,1
+vt,Microsoft Development Environment 8.0,VT_I4,192
+vt,Microsoft Development Environment 8.0,VT_LPWSTR,5
+vt,Microsoft Development Environment 8.0,VT_PTR,1312
+vt,Microsoft Development Environment 8.0,VT_SAFEARRAY,10
+vt,Microsoft Development Environment 8.0,VT_UI2,54
+vt,Microsoft Development Environment 8.0,VT_UI4,276
+vt,Microsoft Development Environment 8.0,VT_UINT,216
+vt,Microsoft Development Environment 8.0,VT_UNKNOWN,7
+vt,Microsoft Development Environment 8.0,VT_USERDEFINED,933
+vt,Microsoft Development Environment 8.0,VT_VARIANT,239
+vt,Microsoft Development Environment 8.0,VT_VOID,637
+safearray_element_vt,Microsoft Development Environment 8.0,VT_VARIANT,10
+missing,DropboxUpdater TypeLib for ICompleteStatusSystem,{1AEC92C6-1D4C-5C91-85E6-6E11F8DDB5DF},1,0,0,exit_1
+metadata,System Monitor Control,481,5,481,SystemMonitor.SystemMonitor,SystemMonitor,live:{1B773E42-2509-11CF-942F-008029004347}:3:7
+summary,System Monitor Control,46,499,54,0,189,0
+typekind,System Monitor Control,alias,3
+typekind,System Monitor Control,coclass,12
+typekind,System Monitor Control,dispatch,7
+typekind,System Monitor Control,enum,6
+typekind,System Monitor Control,interface,11
+typekind,System Monitor Control,kind_7,1
+typekind,System Monitor Control,record,6
+invkind,System Monitor Control,func,137
+invkind,System Monitor Control,property_get,196
+invkind,System Monitor Control,property_put,162
+invkind,System Monitor Control,property_putref,4
+vt,System Monitor Control,VT_BOOL,132
+vt,System Monitor Control,VT_BSTR,63
+vt,System Monitor Control,VT_DATE,40
+vt,System Monitor Control,VT_HRESULT,243
+vt,System Monitor Control,VT_I1,2
+vt,System Monitor Control,VT_I4,14
+vt,System Monitor Control,VT_I8,1
+vt,System Monitor Control,VT_INT,85
+vt,System Monitor Control,VT_LPWSTR,1
+vt,System Monitor Control,VT_PTR,224
+vt,System Monitor Control,VT_R4,8
+vt,System Monitor Control,VT_R8,15
+vt,System Monitor Control,VT_UI2,2
+vt,System Monitor Control,VT_UI4,21
+vt,System Monitor Control,VT_UI8,1
+vt,System Monitor Control,VT_UINT,9
+vt,System Monitor Control,VT_UNKNOWN,4
+vt,System Monitor Control,VT_USERDEFINED,139
+vt,System Monitor Control,VT_VARIANT,9
+vt,System Monitor Control,VT_VOID,157
+metadata,WorkspaceRuntime 1.0 Type Library,56,2,56,WorkspaceRuntimeLib.Workspace,WorkspaceRuntimeLib,live:{1B8D8AE1-A595-4687-A7AD-9E3828E09B79}:1:0
+summary,WorkspaceRuntime 1.0 Type Library,13,65,4,0,46,0
+typekind,WorkspaceRuntime 1.0 Type Library,coclass,1
+typekind,WorkspaceRuntime 1.0 Type Library,dispatch,4
+typekind,WorkspaceRuntime 1.0 Type Library,interface,7
+typekind,WorkspaceRuntime 1.0 Type Library,record,1
+invkind,WorkspaceRuntime 1.0 Type Library,func,65
+vt,WorkspaceRuntime 1.0 Type Library,VT_BOOL,11
+vt,WorkspaceRuntime 1.0 Type Library,VT_BSTR,76
+vt,WorkspaceRuntime 1.0 Type Library,VT_HRESULT,18
+vt,WorkspaceRuntime 1.0 Type Library,VT_I1,3
+vt,WorkspaceRuntime 1.0 Type Library,VT_I4,18
+vt,WorkspaceRuntime 1.0 Type Library,VT_PTR,55
+vt,WorkspaceRuntime 1.0 Type Library,VT_SAFEARRAY,3
+vt,WorkspaceRuntime 1.0 Type Library,VT_UI2,3
+vt,WorkspaceRuntime 1.0 Type Library,VT_UI4,26
+vt,WorkspaceRuntime 1.0 Type Library,VT_UI8,1
+vt,WorkspaceRuntime 1.0 Type Library,VT_UINT,12
+vt,WorkspaceRuntime 1.0 Type Library,VT_USERDEFINED,21
+vt,WorkspaceRuntime 1.0 Type Library,VT_VARIANT,3
+vt,WorkspaceRuntime 1.0 Type Library,VT_VOID,41
+safearray_element_vt,WorkspaceRuntime 1.0 Type Library,VT_BSTR,3
+missing,TypeLib for Interface {1BF5208B-295F-4992-B5F4-3A9BB6494838},{1BF5208B-295F-4992-B5F4-3A9BB6494838},1,0,0,exit_1
+metadata,NATUPnP 1.0 Type Library,64,0,64,NATUPNPLib.UPnPNAT,NATUPNPLib,live:{1C565858-F302-471E-B409-F180AA4ABEC6}:1:0
+summary,NATUPnP 1.0 Type Library,7,82,0,0,72,0
+typekind,NATUPnP 1.0 Type Library,coclass,1
+typekind,NATUPnP 1.0 Type Library,dispatch,6
+invkind,NATUPnP 1.0 Type Library,func,55
+invkind,NATUPnP 1.0 Type Library,property_get,25
+invkind,NATUPnP 1.0 Type Library,property_put,2
+vt,NATUPnP 1.0 Type Library,VT_BOOL,6
+vt,NATUPnP 1.0 Type Library,VT_BSTR,26
+vt,NATUPnP 1.0 Type Library,VT_I1,6
+vt,NATUPnP 1.0 Type Library,VT_I4,32
+vt,NATUPnP 1.0 Type Library,VT_PTR,97
+vt,NATUPnP 1.0 Type Library,VT_UI2,6
+vt,NATUPnP 1.0 Type Library,VT_UI4,30
+vt,NATUPnP 1.0 Type Library,VT_UINT,24
+vt,NATUPnP 1.0 Type Library,VT_UNKNOWN,4
+vt,NATUPnP 1.0 Type Library,VT_USERDEFINED,37
+vt,NATUPnP 1.0 Type Library,VT_VARIANT,6
+vt,NATUPnP 1.0 Type Library,VT_VOID,54
+metadata,Microsoft MIMEEDIT Type Library 1.0,15,0,15,MIMEEDIT.MIMEEDIT,MIMEEDIT,live:{1C82EAD8-508E-11D1-8DCF-00C04FB951F9}:1:0
+summary,Microsoft MIMEEDIT Type Library 1.0,2,18,0,0,12,0
+typekind,Microsoft MIMEEDIT Type Library 1.0,coclass,1
+typekind,Microsoft MIMEEDIT Type Library 1.0,dispatch,1
+invkind,Microsoft MIMEEDIT Type Library 1.0,func,8
+invkind,Microsoft MIMEEDIT Type Library 1.0,property_get,7
+invkind,Microsoft MIMEEDIT Type Library 1.0,property_put,3
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_BOOL,2
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_BSTR,5
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_DISPATCH,1
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_I1,1
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_I4,4
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_PTR,15
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_UI2,1
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_UI4,5
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_UINT,4
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_USERDEFINED,5
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_VARIANT,1
+vt,Microsoft MIMEEDIT Type Library 1.0,VT_VOID,11
+metadata,Microsoft Visual Studio Command Bars 8.0,644,15,644,Microsoft_VisualStudio_CommandBars.CommandBars,Microsoft_VisualStudio_CommandBars,live:{1CBA492E-7263-47BB-87FE-639000619B15}:8:0
+summary,Microsoft Visual Studio Command Bars 8.0,33,695,80,159,254,0
+typekind,Microsoft Visual Studio Command Bars 8.0,coclass,3
+typekind,Microsoft Visual Studio Command Bars 8.0,dispatch,17
+typekind,Microsoft Visual Studio Command Bars 8.0,enum,13
+invkind,Microsoft Visual Studio Command Bars 8.0,func,247
+invkind,Microsoft Visual Studio Command Bars 8.0,property_get,318
+invkind,Microsoft Visual Studio Command Bars 8.0,property_put,130
+vt,Microsoft Visual Studio Command Bars 8.0,VT_BOOL,65
+vt,Microsoft Visual Studio Command Bars 8.0,VT_BSTR,160
+vt,Microsoft Visual Studio Command Bars 8.0,VT_DISPATCH,33
+vt,Microsoft Visual Studio Command Bars 8.0,VT_I1,17
+vt,Microsoft Visual Studio Command Bars 8.0,VT_I4,130
+vt,Microsoft Visual Studio Command Bars 8.0,VT_INT,92
+vt,Microsoft Visual Studio Command Bars 8.0,VT_PTR,336
+vt,Microsoft Visual Studio Command Bars 8.0,VT_UI2,17
+vt,Microsoft Visual Studio Command Bars 8.0,VT_UI4,85
+vt,Microsoft Visual Studio Command Bars 8.0,VT_UINT,68
+vt,Microsoft Visual Studio Command Bars 8.0,VT_UNKNOWN,5
+vt,Microsoft Visual Studio Command Bars 8.0,VT_USERDEFINED,154
+vt,Microsoft Visual Studio Command Bars 8.0,VT_VARIANT,250
+vt,Microsoft Visual Studio Command Bars 8.0,VT_VOID,345
+metadata,Accessibility,43,0,43,Accessibility.CAccPropServices,Accessibility,live:{1EA4DBF0-3C3B-11CF-810C-00AA00389B71}:1:1
+summary,Accessibility,11,46,6,13,46,0
+typekind,Accessibility,alias,2
+typekind,Accessibility,coclass,1
+typekind,Accessibility,dispatch,1
+typekind,Accessibility,enum,1
+typekind,Accessibility,interface,4
+typekind,Accessibility,kind_7,1
+typekind,Accessibility,record,1
+invkind,Accessibility,func,30
+invkind,Accessibility,property_get,14
+invkind,Accessibility,property_put,2
+vt,Accessibility,VT_BSTR,9
+vt,Accessibility,VT_DISPATCH,2
+vt,Accessibility,VT_HRESULT,18
+vt,Accessibility,VT_I1,1
+vt,Accessibility,VT_I4,15
+vt,Accessibility,VT_INT,6
+vt,Accessibility,VT_LPWSTR,2
+vt,Accessibility,VT_PTR,55
+vt,Accessibility,VT_UI1,9
+vt,Accessibility,VT_UI2,1
+vt,Accessibility,VT_UI4,33
+vt,Accessibility,VT_UINT,4
+vt,Accessibility,VT_USERDEFINED,38
+vt,Accessibility,VT_VARIANT,27
+vt,Accessibility,VT_VOID,12
+missing,DropboxUpdater TypeLib for IAppCommandWebSystem,{1ECAB068-D5BD-4CE8-8A94-5196A1F6F3EC},1,0,0,exit_1
+metadata,PortableDeviceApi 1.0 Type Library,233,0,233,PortableDeviceApiLib.PortableDevice,PortableDeviceApiLib,live:{1F001332-1A57-4934-BE31-AFFC99F4EE0A}:1:0
+summary,PortableDeviceApi 1.0 Type Library,110,236,353,0,327,0
+typekind,PortableDeviceApi 1.0 Type Library,alias,4
+typekind,PortableDeviceApi 1.0 Type Library,coclass,7
+typekind,PortableDeviceApi 1.0 Type Library,dispatch,1
+typekind,PortableDeviceApi 1.0 Type Library,enum,7
+typekind,PortableDeviceApi 1.0 Type Library,interface,27
+typekind,PortableDeviceApi 1.0 Type Library,kind_7,5
+typekind,PortableDeviceApi 1.0 Type Library,record,59
+invkind,PortableDeviceApi 1.0 Type Library,func,236
+vt,PortableDeviceApi 1.0 Type Library,VT_BSTR,16
+vt,PortableDeviceApi 1.0 Type Library,VT_DISPATCH,4
+vt,PortableDeviceApi 1.0 Type Library,VT_HRESULT,228
+vt,PortableDeviceApi 1.0 Type Library,VT_I1,1
+vt,PortableDeviceApi 1.0 Type Library,VT_I4,13
+vt,PortableDeviceApi 1.0 Type Library,VT_I8,2
+vt,PortableDeviceApi 1.0 Type Library,VT_INT,2
+vt,PortableDeviceApi 1.0 Type Library,VT_LPWSTR,54
+vt,PortableDeviceApi 1.0 Type Library,VT_PTR,417
+vt,PortableDeviceApi 1.0 Type Library,VT_R4,2
+vt,PortableDeviceApi 1.0 Type Library,VT_UI1,7
+vt,PortableDeviceApi 1.0 Type Library,VT_UI2,9
+vt,PortableDeviceApi 1.0 Type Library,VT_UI4,92
+vt,PortableDeviceApi 1.0 Type Library,VT_UI8,3
+vt,PortableDeviceApi 1.0 Type Library,VT_UINT,14
+vt,PortableDeviceApi 1.0 Type Library,VT_UNKNOWN,3
+vt,PortableDeviceApi 1.0 Type Library,VT_USERDEFINED,235
+vt,PortableDeviceApi 1.0 Type Library,VT_VARIANT,5
+vt,PortableDeviceApi 1.0 Type Library,VT_VOID,21
+missing,GoogleUpdater TypeLib for IAppCommandWebSystem,{1F1289FD-DD10-4579-81F6-1C59AAF2E1A9},1,0,0,exit_1
+missing,DropboxUpdater TypeLib for ICurrentStateSystem,{1F96F01D-7FA4-490C-B5C7-34D7FE30122C},1,0,0,exit_1
+metadata,dtsh 1.0 Type Library,5,0,5,dtshLib.DetectionAndSharing,dtshLib,live:{1FDA955A-61FF-11DA-978C-0008744FAAB7}:1:0
+summary,dtsh 1.0 Type Library,12,5,23,0,5,0
+typekind,dtsh 1.0 Type Library,alias,4
+typekind,dtsh 1.0 Type Library,coclass,1
+typekind,dtsh 1.0 Type Library,enum,4
+typekind,dtsh 1.0 Type Library,interface,1
+typekind,dtsh 1.0 Type Library,kind_7,1
+typekind,dtsh 1.0 Type Library,record,1
+invkind,dtsh 1.0 Type Library,func,5
+vt,dtsh 1.0 Type Library,VT_HRESULT,5
+vt,dtsh 1.0 Type Library,VT_I4,2
+vt,dtsh 1.0 Type Library,VT_PTR,6
+vt,dtsh 1.0 Type Library,VT_USERDEFINED,17
+metadata,UPnP 1.0 Type Library (Device Host),20,0,20,UPnPHostLib.UPnPRegistrar,UPnPHostLib,live:{204810B3-73B2-11D4-BF42-00B0D0118B56}:1:0
+summary,UPnP 1.0 Type Library (Device Host),10,20,0,0,11,0
+typekind,UPnP 1.0 Type Library (Device Host),coclass,2
+typekind,UPnP 1.0 Type Library (Device Host),interface,8
+invkind,UPnP 1.0 Type Library (Device Host),func,20
+vt,UPnP 1.0 Type Library (Device Host),VT_BSTR,40
+vt,UPnP 1.0 Type Library (Device Host),VT_DISPATCH,1
+vt,UPnP 1.0 Type Library (Device Host),VT_HRESULT,20
+vt,UPnP 1.0 Type Library (Device Host),VT_I4,6
+vt,UPnP 1.0 Type Library (Device Host),VT_PTR,11
+vt,UPnP 1.0 Type Library (Device Host),VT_UI4,2
+vt,UPnP 1.0 Type Library (Device Host),VT_UNKNOWN,2
+vt,UPnP 1.0 Type Library (Device Host),VT_USERDEFINED,3
+vt,UPnP 1.0 Type Library (Device Host),VT_VARIANT,1
+metadata,System_Windows_Forms,417,0,417,System_Windows_Forms.AccessibleObject,System_Windows_Forms,live:{215D64D2-031C-33C7-96E3-61794CD1EE61}:2:0
+summary,System_Windows_Forms,225,720,477,0,1216,0
+typekind,System_Windows_Forms,coclass,100
+typekind,System_Windows_Forms,dispatch,101
+typekind,System_Windows_Forms,enum,23
+typekind,System_Windows_Forms,interface,1
+invkind,System_Windows_Forms,func,719
+invkind,System_Windows_Forms,property_get,1
+vt,System_Windows_Forms,VT_BOOL,7
+vt,System_Windows_Forms,VT_BSTR,6
+vt,System_Windows_Forms,VT_HRESULT,1
+vt,System_Windows_Forms,VT_I1,101
+vt,System_Windows_Forms,VT_I4,203
+vt,System_Windows_Forms,VT_PTR,1519
+vt,System_Windows_Forms,VT_SAFEARRAY,2
+vt,System_Windows_Forms,VT_UI2,101
+vt,System_Windows_Forms,VT_UI4,505
+vt,System_Windows_Forms,VT_UINT,404
+vt,System_Windows_Forms,VT_USERDEFINED,508
+vt,System_Windows_Forms,VT_VARIANT,108
+vt,System_Windows_Forms,VT_VOID,711
+safearray_element_vt,System_Windows_Forms,VT_BSTR,2
+metadata,System_Windows_Forms,421,0,421,System_Windows_Forms.AccessibleObject,System_Windows_Forms,live:{215D64D2-031C-33C7-96E3-61794CD1EE61}:2:4
+summary,System_Windows_Forms,227,727,477,0,1228,0
+typekind,System_Windows_Forms,coclass,101
+typekind,System_Windows_Forms,dispatch,102
+typekind,System_Windows_Forms,enum,23
+typekind,System_Windows_Forms,interface,1
+invkind,System_Windows_Forms,func,726
+invkind,System_Windows_Forms,property_get,1
+vt,System_Windows_Forms,VT_BOOL,7
+vt,System_Windows_Forms,VT_BSTR,6
+vt,System_Windows_Forms,VT_HRESULT,1
+vt,System_Windows_Forms,VT_I1,102
+vt,System_Windows_Forms,VT_I4,205
+vt,System_Windows_Forms,VT_PTR,1534
+vt,System_Windows_Forms,VT_SAFEARRAY,2
+vt,System_Windows_Forms,VT_UI2,102
+vt,System_Windows_Forms,VT_UI4,510
+vt,System_Windows_Forms,VT_UINT,408
+vt,System_Windows_Forms,VT_USERDEFINED,513
+vt,System_Windows_Forms,VT_VARIANT,109
+vt,System_Windows_Forms,VT_VOID,718
+safearray_element_vt,System_Windows_Forms,VT_BSTR,2
+metadata,Microsoft TAPI 3.0 Type Library,895,2,895,TAPI3Lib.TAPI,TAPI3Lib,live:{21D6D480-A88B-11D0-83DD-00AA003CCABD}:1:0
+summary,Microsoft TAPI 3.0 Type Library,159,1081,458,0,932,0
+typekind,Microsoft TAPI 3.0 Type Library,alias,1
+typekind,Microsoft TAPI 3.0 Type Library,coclass,3
+typekind,Microsoft TAPI 3.0 Type Library,dispatch,63
+typekind,Microsoft TAPI 3.0 Type Library,enum,49
+typekind,Microsoft TAPI 3.0 Type Library,interface,37
+typekind,Microsoft TAPI 3.0 Type Library,kind_7,1
+typekind,Microsoft TAPI 3.0 Type Library,module,1
+typekind,Microsoft TAPI 3.0 Type Library,record,4
+invkind,Microsoft TAPI 3.0 Type Library,func,699
+invkind,Microsoft TAPI 3.0 Type Library,property_get,325
+invkind,Microsoft TAPI 3.0 Type Library,property_put,57
+vt,Microsoft TAPI 3.0 Type Library,VT_BOOL,47
+vt,Microsoft TAPI 3.0 Type Library,VT_BSTR,112
+vt,Microsoft TAPI 3.0 Type Library,VT_CY,2
+vt,Microsoft TAPI 3.0 Type Library,VT_DATE,1
+vt,Microsoft TAPI 3.0 Type Library,VT_DISPATCH,5
+vt,Microsoft TAPI 3.0 Type Library,VT_HRESULT,143
+vt,Microsoft TAPI 3.0 Type Library,VT_I1,62
+vt,Microsoft TAPI 3.0 Type Library,VT_I4,359
+vt,Microsoft TAPI 3.0 Type Library,VT_I8,1
+vt,Microsoft TAPI 3.0 Type Library,VT_PTR,1274
+vt,Microsoft TAPI 3.0 Type Library,VT_UI1,15
+vt,Microsoft TAPI 3.0 Type Library,VT_UI2,62
+vt,Microsoft TAPI 3.0 Type Library,VT_UI4,378
+vt,Microsoft TAPI 3.0 Type Library,VT_UINT,248
+vt,Microsoft TAPI 3.0 Type Library,VT_UNKNOWN,3
+vt,Microsoft TAPI 3.0 Type Library,VT_USERDEFINED,598
+vt,Microsoft TAPI 3.0 Type Library,VT_VARIANT,114
+vt,Microsoft TAPI 3.0 Type Library,VT_VOID,615
+metadata,Microsoft OLE DB Service Component 1.0 Type Library,54,0,54,MSDASC.DataLinks,MSDASC,live:{2206CEB0-19C1-11D1-89E0-00C04FD7A829}:1:0
+summary,Microsoft OLE DB Service Component 1.0 Type Library,37,57,63,0,98,0
+typekind,Microsoft OLE DB Service Component 1.0 Type Library,alias,1
+typekind,Microsoft OLE DB Service Component 1.0 Type Library,coclass,4
+typekind,Microsoft OLE DB Service Component 1.0 Type Library,dispatch,1
+typekind,Microsoft OLE DB Service Component 1.0 Type Library,interface,14
+typekind,Microsoft OLE DB Service Component 1.0 Type Library,kind_7,3
+typekind,Microsoft OLE DB Service Component 1.0 Type Library,record,14
+invkind,Microsoft OLE DB Service Component 1.0 Type Library,func,55
+invkind,Microsoft OLE DB Service Component 1.0 Type Library,property_get,1
+invkind,Microsoft OLE DB Service Component 1.0 Type Library,property_put,1
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_BOOL,1
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_BSTR,3
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_DISPATCH,2
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_HRESULT,47
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_I1,2
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_I4,5
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_LPWSTR,24
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_PTR,112
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_UI1,2
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_UI2,2
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_UI4,46
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_UI8,4
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_UINT,4
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_UNKNOWN,17
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_USERDEFINED,58
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_VARIANT,1
+vt,Microsoft OLE DB Service Component 1.0 Type Library,VT_VOID,15
+metadata,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,177,0,177,ADOMD.Catalog,ADOMD,live:{22813728-8BD3-11D0-B4EF-00A0C9138CA4}:2:8
+summary,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,23,234,9,2,229,0
+typekind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,coclass,2
+typekind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,dispatch,19
+typekind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,enum,2
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,func,152
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,property_get,74
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,property_put,5
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,property_putref,3
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_BOOL,2
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_BSTR,27
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_DISPATCH,6
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_I1,19
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_I2,1
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_I4,52
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_PTR,316
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_SAFEARRAY,1
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_UI2,19
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_UI4,95
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_UINT,76
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_UNKNOWN,8
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_USERDEFINED,127
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_VARIANT,31
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_VOID,151
+safearray_element_vt,Microsoft ActiveX Data Objects (Multi-dimensional) 2.8 Library,VT_VARIANT,1
+metadata,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,177,0,177,ADOMD.Catalog,ADOMD,live:{22813728-8BD3-11D0-B4EF-00A0C9138CA4}:6:0
+summary,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,23,234,9,2,229,0
+typekind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,coclass,2
+typekind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,dispatch,19
+typekind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,enum,2
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,func,152
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,property_get,74
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,property_put,5
+invkind,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,property_putref,3
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_BOOL,2
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_BSTR,27
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_DISPATCH,6
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_I1,19
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_I2,1
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_I4,52
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_PTR,316
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_SAFEARRAY,1
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_UI2,19
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_UI4,95
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_UINT,76
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_UNKNOWN,8
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_USERDEFINED,127
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_VARIANT,31
+vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_VOID,151
+safearray_element_vt,Microsoft ActiveX Data Objects (Multi-dimensional) 6.0 Library,VT_VARIANT,1
+metadata,Windows Media Player,454,20,454,MediaPlayer.MediaPlayer,MediaPlayer,live:{22D6F304-B0F6-11D0-94AB-0080C74C7E95}:1:0
+summary,Windows Media Player,13,463,51,0,36,0
+typekind,Windows Media Player,coclass,1
+typekind,Windows Media Player,dispatch,4
+typekind,Windows Media Player,enum,8
+invkind,Windows Media Player,func,117
+invkind,Windows Media Player,property_get,222
+invkind,Windows Media Player,property_put,124
+vt,Windows Media Player,VT_BOOL,160
+vt,Windows Media Player,VT_BSTR,77
+vt,Windows Media Player,VT_DATE,2
+vt,Windows Media Player,VT_DISPATCH,4
+vt,Windows Media Player,VT_I1,3
+vt,Windows Media Player,VT_I2,15
+vt,Windows Media Player,VT_I4,108
+vt,Windows Media Player,VT_PTR,46
+vt,Windows Media Player,VT_R8,26
+vt,Windows Media Player,VT_UI2,3
+vt,Windows Media Player,VT_UI4,52
+vt,Windows Media Player,VT_UINT,12
+vt,Windows Media Player,VT_USERDEFINED,57
+vt,Windows Media Player,VT_VARIANT,5
+vt,Windows Media Player,VT_VOID,210
+missing,JET Expression Service Type Library,{2358C810-62BA-11D1-B3DB-00600832C573},4,0,0,exit_1
+metadata,name 1.0 Type Library,11,2,11,NameServerLib.NameServer,NameServerLib,live:{2374F0B1-3220-4C71-B702-AF799F31ABB4}:1:0
+summary,name 1.0 Type Library,6,14,4,0,17,0
+typekind,name 1.0 Type Library,alias,1
+typekind,name 1.0 Type Library,coclass,1
+typekind,name 1.0 Type Library,dispatch,2
+typekind,name 1.0 Type Library,kind_7,1
+typekind,name 1.0 Type Library,record,1
+invkind,name 1.0 Type Library,func,13
+invkind,name 1.0 Type Library,property_get,1
+vt,name 1.0 Type Library,VT_BOOL,2
+vt,name 1.0 Type Library,VT_BSTR,3
+vt,name 1.0 Type Library,VT_HRESULT,2
+vt,name 1.0 Type Library,VT_I1,1
+vt,name 1.0 Type Library,VT_I4,13
+vt,name 1.0 Type Library,VT_PTR,21
+vt,name 1.0 Type Library,VT_UI2,1
+vt,name 1.0 Type Library,VT_UI4,14
+vt,name 1.0 Type Library,VT_UINT,4
+vt,name 1.0 Type Library,VT_USERDEFINED,8
+vt,name 1.0 Type Library,VT_VARIANT,1
+vt,name 1.0 Type Library,VT_VOID,11
+missing,GoogleUpdater TypeLib for ICurrentState,{247954F9-9EDC-4E68-8CC3-150C2B89EADF},1,0,0,exit_1
+metadata,AutoSync 1.0 Type Library,39,0,39,AutoSyncLib.DrDataBase,AutoSyncLib,live:{253D1996-0E15-43D1-A41E-2289839D76F9}:1:0
+summary,AutoSync 1.0 Type Library,6,42,12,0,44,0
+typekind,AutoSync 1.0 Type Library,coclass,1
+typekind,AutoSync 1.0 Type Library,dispatch,1
+typekind,AutoSync 1.0 Type Library,record,4
+invkind,AutoSync 1.0 Type Library,func,42
+vt,AutoSync 1.0 Type Library,VT_BSTR,10
+vt,AutoSync 1.0 Type Library,VT_I1,1
+vt,AutoSync 1.0 Type Library,VT_I4,16
+vt,AutoSync 1.0 Type Library,VT_INT,1
+vt,AutoSync 1.0 Type Library,VT_PTR,47
+vt,AutoSync 1.0 Type Library,VT_UI2,1
+vt,AutoSync 1.0 Type Library,VT_UI4,5
+vt,AutoSync 1.0 Type Library,VT_UINT,4
+vt,AutoSync 1.0 Type Library,VT_USERDEFINED,19
+vt,AutoSync 1.0 Type Library,VT_VARIANT,6
+vt,AutoSync 1.0 Type Library,VT_VOID,42
+metadata,Adobe Acrobat 1.0 WebView Proxy Type Library,4442,0,4442,,WebView2,live:{26D34152-879F-4065-BEA2-3DAA2CFADFB8}:1:0
+summary,Adobe Acrobat 1.0 WebView Proxy Type Library,373,5213,448,0,2921,0
+typekind,Adobe Acrobat 1.0 WebView Proxy Type Library,alias,7
+typekind,Adobe Acrobat 1.0 WebView Proxy Type Library,dispatch,256
+typekind,Adobe Acrobat 1.0 WebView Proxy Type Library,enum,51
+typekind,Adobe Acrobat 1.0 WebView Proxy Type Library,interface,14
+typekind,Adobe Acrobat 1.0 WebView Proxy Type Library,kind_7,10
+typekind,Adobe Acrobat 1.0 WebView Proxy Type Library,record,35
+invkind,Adobe Acrobat 1.0 WebView Proxy Type Library,func,3744
+invkind,Adobe Acrobat 1.0 WebView Proxy Type Library,property_get,1072
+invkind,Adobe Acrobat 1.0 WebView Proxy Type Library,property_put,397
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_HRESULT,104
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_I4,602
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_I8,3
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_INT,39
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_LPWSTR,1027
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_PTR,3489
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_R8,65
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_UI1,3
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_UI4,566
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_UI8,14
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_UINT,119
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_UNKNOWN,57
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_USERDEFINED,4244
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_VARIANT,34
+vt,Adobe Acrobat 1.0 WebView Proxy Type Library,VT_VOID,3632
+missing,DropboxUpdater TypeLib for IUpdaterInternalCallbackSystem,{26D525CD-4FC3-5613-9A78-CEC5B6000168},1,0,0,exit_1
+metadata,Microsoft IMAPI2 Base Functionality,405,7,405,IMAPI2.MsftDiscMaster2,IMAPI2,live:{2735412F-7F64-5B0F-8F00-5D77AFBE261E}:1:0
+summary,Microsoft IMAPI2 Base Functionality,88,468,191,0,344,0
+typekind,Microsoft IMAPI2 Base Functionality,alias,15
+typekind,Microsoft IMAPI2 Base Functionality,coclass,15
+typekind,Microsoft IMAPI2 Base Functionality,dispatch,21
+typekind,Microsoft IMAPI2 Base Functionality,enum,15
+typekind,Microsoft IMAPI2 Base Functionality,interface,17
+typekind,Microsoft IMAPI2 Base Functionality,record,5
+invkind,Microsoft IMAPI2 Base Functionality,func,247
+invkind,Microsoft IMAPI2 Base Functionality,property_get,185
+invkind,Microsoft IMAPI2 Base Functionality,property_put,36
+vt,Microsoft IMAPI2 Base Functionality,VT_BOOL,72
+vt,Microsoft IMAPI2 Base Functionality,VT_BSTR,23
+vt,Microsoft IMAPI2 Base Functionality,VT_CARRAY,3
+vt,Microsoft IMAPI2 Base Functionality,VT_DISPATCH,11
+vt,Microsoft IMAPI2 Base Functionality,VT_HRESULT,62
+vt,Microsoft IMAPI2 Base Functionality,VT_I1,24
+vt,Microsoft IMAPI2 Base Functionality,VT_I4,141
+vt,Microsoft IMAPI2 Base Functionality,VT_PTR,438
+vt,Microsoft IMAPI2 Base Functionality,VT_SAFEARRAY,23
+vt,Microsoft IMAPI2 Base Functionality,VT_UI1,16
+vt,Microsoft IMAPI2 Base Functionality,VT_UI2,21
+vt,Microsoft IMAPI2 Base Functionality,VT_UI4,162
+vt,Microsoft IMAPI2 Base Functionality,VT_UINT,84
+vt,Microsoft IMAPI2 Base Functionality,VT_UNKNOWN,1
+vt,Microsoft IMAPI2 Base Functionality,VT_USERDEFINED,213
+vt,Microsoft IMAPI2 Base Functionality,VT_VARIANT,21
+vt,Microsoft IMAPI2 Base Functionality,VT_VOID,210
+safearray_element_vt,Microsoft IMAPI2 Base Functionality,VT_UI1,3
+safearray_element_vt,Microsoft IMAPI2 Base Functionality,VT_VARIANT,23
+missing,GoogleUpdater TypeLib for IPolicyStatusValue,{27634814-8E41-4C35-8577-980134A96544},1,0,0,exit_1
+metadata,TAPI3 Terminal Manager 1.0 Type Library,50,0,50,TERMMGRLib.TerminalManager,TERMMGRLib,live:{28DCD85B-ACA4-11D0-A028-00AA00B605A4}:1:0
+summary,TAPI3 Terminal Manager 1.0 Type Library,13,59,12,0,43,0
+typekind,TAPI3 Terminal Manager 1.0 Type Library,alias,1
+typekind,TAPI3 Terminal Manager 1.0 Type Library,coclass,3
+typekind,TAPI3 Terminal Manager 1.0 Type Library,dispatch,3
+typekind,TAPI3 Terminal Manager 1.0 Type Library,enum,4
+typekind,TAPI3 Terminal Manager 1.0 Type Library,interface,2
+invkind,TAPI3 Terminal Manager 1.0 Type Library,func,34
+invkind,TAPI3 Terminal Manager 1.0 Type Library,property_get,16
+invkind,TAPI3 Terminal Manager 1.0 Type Library,property_put,9
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_BSTR,19
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_HRESULT,6
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_I1,3
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_I4,10
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_PTR,55
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_UI2,3
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_UI4,21
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_UINT,12
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_UNKNOWN,1
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_USERDEFINED,28
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_VARIANT,4
+vt,TAPI3 Terminal Manager 1.0 Type Library,VT_VOID,36
+missing,VSPerfControl 2.0 Type Library,{290171DB-AAD0-4126-A027-E4EF4842C933},2,0,0,exit_1
+metadata,EditionUpgradeManager 1.0 Type Library,6,0,6,EditionUpgradeManagerLib.EditionUpgradeManager,EditionUpgradeManagerLib,live:{2909004A-90C2-4937-A407-2DF113C6A0CC}:1:0
+summary,EditionUpgradeManager 1.0 Type Library,2,9,0,0,4,0
+typekind,EditionUpgradeManager 1.0 Type Library,coclass,1
+typekind,EditionUpgradeManager 1.0 Type Library,dispatch,1
+invkind,EditionUpgradeManager 1.0 Type Library,func,9
+vt,EditionUpgradeManager 1.0 Type Library,VT_HRESULT,2
+vt,EditionUpgradeManager 1.0 Type Library,VT_I4,5
+vt,EditionUpgradeManager 1.0 Type Library,VT_LPWSTR,3
+vt,EditionUpgradeManager 1.0 Type Library,VT_PTR,5
+vt,EditionUpgradeManager 1.0 Type Library,VT_UI4,2
+vt,EditionUpgradeManager 1.0 Type Library,VT_USERDEFINED,2
+vt,EditionUpgradeManager 1.0 Type Library,VT_VOID,8
+metadata,SendAsLink 1.0 Type Library,36,0,36,SendAsLinkLib.SendAsLink,SendAsLinkLib,live:{29CB2089-8CE9-41A0-9F1E-FE0F88BC011F}:1:0
+summary,SendAsLink 1.0 Type Library,2,39,0,0,12,0
+typekind,SendAsLink 1.0 Type Library,coclass,1
+typekind,SendAsLink 1.0 Type Library,dispatch,1
+invkind,SendAsLink 1.0 Type Library,func,39
+vt,SendAsLink 1.0 Type Library,VT_BOOL,1
+vt,SendAsLink 1.0 Type Library,VT_BSTR,14
+vt,SendAsLink 1.0 Type Library,VT_DISPATCH,7
+vt,SendAsLink 1.0 Type Library,VT_I1,2
+vt,SendAsLink 1.0 Type Library,VT_I4,4
+vt,SendAsLink 1.0 Type Library,VT_INT,5
+vt,SendAsLink 1.0 Type Library,VT_PTR,15
+vt,SendAsLink 1.0 Type Library,VT_UI2,1
+vt,SendAsLink 1.0 Type Library,VT_UI4,5
+vt,SendAsLink 1.0 Type Library,VT_UINT,4
+vt,SendAsLink 1.0 Type Library,VT_USERDEFINED,5
+vt,SendAsLink 1.0 Type Library,VT_VARIANT,1
+vt,SendAsLink 1.0 Type Library,VT_VOID,33
+metadata,COM+ Services Type Library,523,0,523,COMSVCSLib.SecurityCertificate,COMSVCSLib,live:{2A005C00-A5DE-11CF-9E66-00AA00A3F464}:1:0
+summary,COM+ Services Type Library,205,592,240,0,687,0
+typekind,COM+ Services Type Library,alias,17
+typekind,COM+ Services Type Library,coclass,33
+typekind,COM+ Services Type Library,dispatch,23
+typekind,COM+ Services Type Library,enum,19
+typekind,COM+ Services Type Library,interface,88
+typekind,COM+ Services Type Library,record,25
+invkind,COM+ Services Type Library,func,537
+invkind,COM+ Services Type Library,property_get,46
+invkind,COM+ Services Type Library,property_put,9
+vt,COM+ Services Type Library,VT_BOOL,22
+vt,COM+ Services Type Library,VT_BSTR,53
+vt,COM+ Services Type Library,VT_CARRAY,4
+vt,COM+ Services Type Library,VT_DISPATCH,1
+vt,COM+ Services Type Library,VT_HRESULT,342
+vt,COM+ Services Type Library,VT_I1,23
+vt,COM+ Services Type Library,VT_I4,114
+vt,COM+ Services Type Library,VT_INT,6
+vt,COM+ Services Type Library,VT_LPWSTR,33
+vt,COM+ Services Type Library,VT_PTR,801
+vt,COM+ Services Type Library,VT_SAFEARRAY,1
+vt,COM+ Services Type Library,VT_UI1,8
+vt,COM+ Services Type Library,VT_UI2,23
+vt,COM+ Services Type Library,VT_UI4,256
+vt,COM+ Services Type Library,VT_UI8,73
+vt,COM+ Services Type Library,VT_UINT,92
+vt,COM+ Services Type Library,VT_UNKNOWN,33
+vt,COM+ Services Type Library,VT_USERDEFINED,524
+vt,COM+ Services Type Library,VT_VARIANT,59
+vt,COM+ Services Type Library,VT_VOID,194
+safearray_element_vt,COM+ Services Type Library,VT_BSTR,1
+safearray_element_vt,COM+ Services Type Library,VT_UI2,4
+metadata,Microsoft ActiveX Data Objects 2.8 Library,748,20,748,ADODB.Connection,ADODB,live:{2A75196C-D9EB-4129-B803-931327F72D5C}:2:8
+summary,Microsoft ActiveX Data Objects 2.8 Library,97,826,422,44,465,137
+typekind,Microsoft ActiveX Data Objects 2.8 Library,alias,3
+typekind,Microsoft ActiveX Data Objects 2.8 Library,coclass,6
+typekind,Microsoft ActiveX Data Objects 2.8 Library,dispatch,28
+typekind,Microsoft ActiveX Data Objects 2.8 Library,enum,52
+typekind,Microsoft ActiveX Data Objects 2.8 Library,interface,8
+invkind,Microsoft ActiveX Data Objects 2.8 Library,func,403
+invkind,Microsoft ActiveX Data Objects 2.8 Library,property_get,260
+invkind,Microsoft ActiveX Data Objects 2.8 Library,property_put,144
+invkind,Microsoft ActiveX Data Objects 2.8 Library,property_putref,19
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_BOOL,32
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_BSTR,125
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_DISPATCH,14
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_HRESULT,56
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_I1,26
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_I4,168
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_I8,1
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_PTR,599
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_UI1,14
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_UI2,26
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_UI4,130
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_UINT,104
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_UNKNOWN,34
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_USERDEFINED,533
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_VARIANT,191
+vt,Microsoft ActiveX Data Objects 2.8 Library,VT_VOID,465
+metadata,PortableDeviceTypes 1.0 Type Library,143,0,143,PortableDeviceTypesLib.WpdSerializer,PortableDeviceTypesLib,live:{2B00BA2F-E750-4BEB-9235-97142EDE1D3E}:1:0
+summary,PortableDeviceTypes 1.0 Type Library,94,143,353,0,193,0
+typekind,PortableDeviceTypes 1.0 Type Library,alias,4
+typekind,PortableDeviceTypes 1.0 Type Library,coclass,5
+typekind,PortableDeviceTypes 1.0 Type Library,enum,7
+typekind,PortableDeviceTypes 1.0 Type Library,interface,14
+typekind,PortableDeviceTypes 1.0 Type Library,kind_7,5
+typekind,PortableDeviceTypes 1.0 Type Library,record,59
+invkind,PortableDeviceTypes 1.0 Type Library,func,143
+vt,PortableDeviceTypes 1.0 Type Library,VT_BSTR,14
+vt,PortableDeviceTypes 1.0 Type Library,VT_HRESULT,143
+vt,PortableDeviceTypes 1.0 Type Library,VT_I4,11
+vt,PortableDeviceTypes 1.0 Type Library,VT_I8,2
+vt,PortableDeviceTypes 1.0 Type Library,VT_INT,2
+vt,PortableDeviceTypes 1.0 Type Library,VT_LPWSTR,20
+vt,PortableDeviceTypes 1.0 Type Library,VT_PTR,231
+vt,PortableDeviceTypes 1.0 Type Library,VT_R4,2
+vt,PortableDeviceTypes 1.0 Type Library,VT_UI1,9
+vt,PortableDeviceTypes 1.0 Type Library,VT_UI2,5
+vt,PortableDeviceTypes 1.0 Type Library,VT_UI4,70
+vt,PortableDeviceTypes 1.0 Type Library,VT_UI8,3
+vt,PortableDeviceTypes 1.0 Type Library,VT_UINT,10
+vt,PortableDeviceTypes 1.0 Type Library,VT_UNKNOWN,3
+vt,PortableDeviceTypes 1.0 Type Library,VT_USERDEFINED,130
+vt,PortableDeviceTypes 1.0 Type Library,VT_VARIANT,4
+vt,PortableDeviceTypes 1.0 Type Library,VT_VOID,13
+missing,NewComServer,{2B33F60F-3FFF-CC3A-7A6C-FD0449BC840C},1,0,0,exit_1
+metadata,Microsoft Fax Service Extended COM Type Library,1010,70,1010,FAXCOMEXLib.FaxServer,FAXCOMEXLib,live:{2BF34C1A-8CAC-419F-8547-32FDF6505DB8}:1:0
+summary,Microsoft Fax Service Extended COM Type Library,131,1181,126,0,798,5
+typekind,Microsoft Fax Service Extended COM Type Library,coclass,50
+typekind,Microsoft Fax Service Extended COM Type Library,dispatch,58
+typekind,Microsoft Fax Service Extended COM Type Library,enum,20
+typekind,Microsoft Fax Service Extended COM Type Library,interface,2
+typekind,Microsoft Fax Service Extended COM Type Library,module,1
+invkind,Microsoft Fax Service Extended COM Type Library,func,629
+invkind,Microsoft Fax Service Extended COM Type Library,property_get,423
+invkind,Microsoft Fax Service Extended COM Type Library,property_put,127
+invkind,Microsoft Fax Service Extended COM Type Library,property_putref,2
+vt,Microsoft Fax Service Extended COM Type Library,VT_BOOL,106
+vt,Microsoft Fax Service Extended COM Type Library,VT_BSTR,269
+vt,Microsoft Fax Service Extended COM Type Library,VT_DATE,39
+vt,Microsoft Fax Service Extended COM Type Library,VT_DISPATCH,4
+vt,Microsoft Fax Service Extended COM Type Library,VT_HRESULT,62
+vt,Microsoft Fax Service Extended COM Type Library,VT_I1,57
+vt,Microsoft Fax Service Extended COM Type Library,VT_I4,288
+vt,Microsoft Fax Service Extended COM Type Library,VT_PTR,1055
+vt,Microsoft Fax Service Extended COM Type Library,VT_UI2,57
+vt,Microsoft Fax Service Extended COM Type Library,VT_UI4,285
+vt,Microsoft Fax Service Extended COM Type Library,VT_UINT,228
+vt,Microsoft Fax Service Extended COM Type Library,VT_UNKNOWN,11
+vt,Microsoft Fax Service Extended COM Type Library,VT_USERDEFINED,549
+vt,Microsoft Fax Service Extended COM Type Library,VT_VARIANT,89
+vt,Microsoft Fax Service Extended COM Type Library,VT_VOID,656
+metadata,Microsoft IMAPI2 File System Image Creator,421,2,421,IMAPI2FS.BootOptions,IMAPI2FS,live:{2C941FD0-975B-59BE-A960-9A2A262853A5}:1:0
+summary,Microsoft IMAPI2 File System Image Creator,53,472,55,0,256,0
+typekind,Microsoft IMAPI2 File System Image Creator,alias,1
+typekind,Microsoft IMAPI2 File System Image Creator,coclass,14
+typekind,Microsoft IMAPI2 File System Image Creator,dispatch,17
+typekind,Microsoft IMAPI2 File System Image Creator,enum,5
+typekind,Microsoft IMAPI2 File System Image Creator,interface,11
+typekind,Microsoft IMAPI2 File System Image Creator,record,5
+invkind,Microsoft IMAPI2 File System Image Creator,func,236
+invkind,Microsoft IMAPI2 File System Image Creator,property_get,171
+invkind,Microsoft IMAPI2 File System Image Creator,property_put,65
+vt,Microsoft IMAPI2 File System Image Creator,VT_BOOL,39
+vt,Microsoft IMAPI2 File System Image Creator,VT_BSTR,89
+vt,Microsoft IMAPI2 File System Image Creator,VT_DATE,30
+vt,Microsoft IMAPI2 File System Image Creator,VT_DISPATCH,2
+vt,Microsoft IMAPI2 File System Image Creator,VT_HRESULT,41
+vt,Microsoft IMAPI2 File System Image Creator,VT_I1,17
+vt,Microsoft IMAPI2 File System Image Creator,VT_I4,96
+vt,Microsoft IMAPI2 File System Image Creator,VT_I8,2
+vt,Microsoft IMAPI2 File System Image Creator,VT_PTR,358
+vt,Microsoft IMAPI2 File System Image Creator,VT_SAFEARRAY,23
+vt,Microsoft IMAPI2 File System Image Creator,VT_UI1,2
+vt,Microsoft IMAPI2 File System Image Creator,VT_UI2,17
+vt,Microsoft IMAPI2 File System Image Creator,VT_UI4,113
+vt,Microsoft IMAPI2 File System Image Creator,VT_UINT,68
+vt,Microsoft IMAPI2 File System Image Creator,VT_UNKNOWN,1
+vt,Microsoft IMAPI2 File System Image Creator,VT_USERDEFINED,219
+vt,Microsoft IMAPI2 File System Image Creator,VT_VARIANT,17
+vt,Microsoft IMAPI2 File System Image Creator,VT_VOID,225
+safearray_element_vt,Microsoft IMAPI2 File System Image Creator,VT_VARIANT,23
+metadata,Microsoft Development Environment 9.0,244,0,244,,EnvDTE90,live:{2CE2370E-D744-4936-A090-3FFFE667B0E1}:9:0
+summary,Microsoft Development Environment 9.0,17,283,12,0,164,21
+typekind,Microsoft Development Environment 9.0,dispatch,13
+typekind,Microsoft Development Environment 9.0,enum,4
+invkind,Microsoft Development Environment 9.0,func,146
+invkind,Microsoft Development Environment 9.0,property_get,120
+invkind,Microsoft Development Environment 9.0,property_put,17
+vt,Microsoft Development Environment 9.0,VT_BOOL,50
+vt,Microsoft Development Environment 9.0,VT_BSTR,64
+vt,Microsoft Development Environment 9.0,VT_DISPATCH,1
+vt,Microsoft Development Environment 9.0,VT_I1,13
+vt,Microsoft Development Environment 9.0,VT_I4,38
+vt,Microsoft Development Environment 9.0,VT_PTR,267
+vt,Microsoft Development Environment 9.0,VT_UI2,13
+vt,Microsoft Development Environment 9.0,VT_UI4,70
+vt,Microsoft Development Environment 9.0,VT_UI8,2
+vt,Microsoft Development Environment 9.0,VT_UINT,52
+vt,Microsoft Development Environment 9.0,VT_UNKNOWN,5
+vt,Microsoft Development Environment 9.0,VT_USERDEFINED,146
+vt,Microsoft Development Environment 9.0,VT_VARIANT,20
+vt,Microsoft Development Environment 9.0,VT_VOID,142
+metadata,Microsoft Vbe UI 7.1 Object Library,5011,37,5011,Office.CommandBars,Office,live:{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2:6
+summary,Microsoft Vbe UI 7.1 Object Library,481,5701,2663,336,3254,145
+typekind,Microsoft Vbe UI 7.1 Object Library,alias,1
+typekind,Microsoft Vbe UI 7.1 Object Library,coclass,8
+typekind,Microsoft Vbe UI 7.1 Object Library,dispatch,231
+typekind,Microsoft Vbe UI 7.1 Object Library,enum,221
+typekind,Microsoft Vbe UI 7.1 Object Library,interface,20
+invkind,Microsoft Vbe UI 7.1 Object Library,func,2445
+invkind,Microsoft Vbe UI 7.1 Object Library,property_get,2390
+invkind,Microsoft Vbe UI 7.1 Object Library,property_put,866
+vt,Microsoft Vbe UI 7.1 Object Library,VT_BOOL,405
+vt,Microsoft Vbe UI 7.1 Object Library,VT_BSTR,829
+vt,Microsoft Vbe UI 7.1 Object Library,VT_DATE,7
+vt,Microsoft Vbe UI 7.1 Object Library,VT_DISPATCH,445
+vt,Microsoft Vbe UI 7.1 Object Library,VT_HRESULT,451
+vt,Microsoft Vbe UI 7.1 Object Library,VT_I1,230
+vt,Microsoft Vbe UI 7.1 Object Library,VT_I4,928
+vt,Microsoft Vbe UI 7.1 Object Library,VT_INT,351
+vt,Microsoft Vbe UI 7.1 Object Library,VT_PTR,4421
+vt,Microsoft Vbe UI 7.1 Object Library,VT_R4,333
+vt,Microsoft Vbe UI 7.1 Object Library,VT_R8,109
+vt,Microsoft Vbe UI 7.1 Object Library,VT_SAFEARRAY,11
+vt,Microsoft Vbe UI 7.1 Object Library,VT_UI2,230
+vt,Microsoft Vbe UI 7.1 Object Library,VT_UI4,1175
+vt,Microsoft Vbe UI 7.1 Object Library,VT_UINT,923
+vt,Microsoft Vbe UI 7.1 Object Library,VT_UNKNOWN,96
+vt,Microsoft Vbe UI 7.1 Object Library,VT_USERDEFINED,2301
+vt,Microsoft Vbe UI 7.1 Object Library,VT_VARIANT,935
+vt,Microsoft Vbe UI 7.1 Object Library,VT_VOID,2810
+safearray_element_vt,Microsoft Vbe UI 7.1 Object Library,VT_BSTR,10
+safearray_element_vt,Microsoft Vbe UI 7.1 Object Library,VT_UI1,1
+metadata,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,5279,42,5279,Office.CommandBars,Office,live:{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2:8
+summary,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,521,5993,2855,339,3405,161
+typekind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,alias,1
+typekind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,coclass,9
+typekind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,dispatch,239
+typekind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,enum,247
+typekind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,interface,25
+invkind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,func,2567
+invkind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,property_get,2495
+invkind,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,property_put,931
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_BOOL,434
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_BSTR,894
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_DATE,7
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_DISPATCH,467
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_HRESULT,526
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_I1,238
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_I4,954
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_INT,359
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_PTR,4614
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_R4,372
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_R8,119
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_SAFEARRAY,11
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_UI2,238
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_UI4,1215
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_UINT,955
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_UNKNOWN,97
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_USERDEFINED,2425
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_VARIANT,987
+vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_VOID,2938
+safearray_element_vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_BSTR,10
+safearray_element_vt,{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2.7,VT_UI1,1
+metadata,Microsoft Office 16.0 Object Library,5279,42,5279,Office.CommandBars,Office,live:{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}:2:8
+summary,Microsoft Office 16.0 Object Library,521,5993,2855,339,3405,161
+typekind,Microsoft Office 16.0 Object Library,alias,1
+typekind,Microsoft Office 16.0 Object Library,coclass,9
+typekind,Microsoft Office 16.0 Object Library,dispatch,239
+typekind,Microsoft Office 16.0 Object Library,enum,247
+typekind,Microsoft Office 16.0 Object Library,interface,25
+invkind,Microsoft Office 16.0 Object Library,func,2567
+invkind,Microsoft Office 16.0 Object Library,property_get,2495
+invkind,Microsoft Office 16.0 Object Library,property_put,931
+vt,Microsoft Office 16.0 Object Library,VT_BOOL,434
+vt,Microsoft Office 16.0 Object Library,VT_BSTR,894
+vt,Microsoft Office 16.0 Object Library,VT_DATE,7
+vt,Microsoft Office 16.0 Object Library,VT_DISPATCH,467
+vt,Microsoft Office 16.0 Object Library,VT_HRESULT,526
+vt,Microsoft Office 16.0 Object Library,VT_I1,238
+vt,Microsoft Office 16.0 Object Library,VT_I4,954
+vt,Microsoft Office 16.0 Object Library,VT_INT,359
+vt,Microsoft Office 16.0 Object Library,VT_PTR,4614
+vt,Microsoft Office 16.0 Object Library,VT_R4,372
+vt,Microsoft Office 16.0 Object Library,VT_R8,119
+vt,Microsoft Office 16.0 Object Library,VT_SAFEARRAY,11
+vt,Microsoft Office 16.0 Object Library,VT_UI2,238
+vt,Microsoft Office 16.0 Object Library,VT_UI4,1215
+vt,Microsoft Office 16.0 Object Library,VT_UINT,955
+vt,Microsoft Office 16.0 Object Library,VT_UNKNOWN,97
+vt,Microsoft Office 16.0 Object Library,VT_USERDEFINED,2425
+vt,Microsoft Office 16.0 Object Library,VT_VARIANT,987
+vt,Microsoft Office 16.0 Object Library,VT_VOID,2938
+safearray_element_vt,Microsoft Office 16.0 Object Library,VT_BSTR,10
+safearray_element_vt,Microsoft Office 16.0 Object Library,VT_UI1,1
+missing,DropboxUpdater TypeLib for IUpdaterObserverSystem,{2E1A02FB-4076-5FAE-8456-47B1531D2DC7},1,0,0,exit_1
+metadata,TabBtnEx 1.0 Type Library,4,0,4,TabBtnExLib.TabletButtonExtendedActions,TabBtnExLib,live:{2E7D6A71-56CE-4A77-B58F-05DFFF85E251}:1:0
+summary,TabBtnEx 1.0 Type Library,8,10,0,0,4,0
+typekind,TabBtnEx 1.0 Type Library,coclass,6
+typekind,TabBtnEx 1.0 Type Library,dispatch,2
+invkind,TabBtnEx 1.0 Type Library,func,10
+vt,TabBtnEx 1.0 Type Library,VT_BOOL,4
+vt,TabBtnEx 1.0 Type Library,VT_PTR,7
+vt,TabBtnEx 1.0 Type Library,VT_UI4,6
+vt,TabBtnEx 1.0 Type Library,VT_USERDEFINED,3
+vt,TabBtnEx 1.0 Type Library,VT_VOID,5
+metadata,PrinterCustomActionsLib,8,0,8,PrinterCustomActionsLib.Printer,PrinterCustomActionsLib,live:{2FFDC44D-1269-4E67-9BC0-2486240E97F8}:1:0
+summary,PrinterCustomActionsLib,7,11,29,0,12,0
+typekind,PrinterCustomActionsLib,coclass,1
+typekind,PrinterCustomActionsLib,dispatch,1
+typekind,PrinterCustomActionsLib,enum,3
+typekind,PrinterCustomActionsLib,record,2
+invkind,PrinterCustomActionsLib,func,11
+vt,PrinterCustomActionsLib,VT_I1,1
+vt,PrinterCustomActionsLib,VT_I4,2
+vt,PrinterCustomActionsLib,VT_PTR,15
+vt,PrinterCustomActionsLib,VT_UI2,1
+vt,PrinterCustomActionsLib,VT_UI4,5
+vt,PrinterCustomActionsLib,VT_UINT,4
+vt,PrinterCustomActionsLib,VT_USERDEFINED,5
+vt,PrinterCustomActionsLib,VT_VARIANT,6
+vt,PrinterCustomActionsLib,VT_VOID,8
+metadata,Microsoft HTML Object Library,53905,13275,53905,MSHTML.HTMLCSSStyleDeclaration,MSHTML,live:{3050F1C5-98B5-11CF-BB82-00AA00BDCE0B}:4:0
+summary,Microsoft HTML Object Library,1467,55393,2210,608,10959,626
+typekind,Microsoft HTML Object Library,alias,7
+typekind,Microsoft HTML Object Library,coclass,289
+typekind,Microsoft HTML Object Library,dispatch,794
+typekind,Microsoft HTML Object Library,enum,264
+typekind,Microsoft HTML Object Library,interface,85
+typekind,Microsoft HTML Object Library,kind_7,3
+typekind,Microsoft HTML Object Library,record,25
+invkind,Microsoft HTML Object Library,func,14449
+invkind,Microsoft HTML Object Library,property_get,23518
+invkind,Microsoft HTML Object Library,property_put,17068
+invkind,Microsoft HTML Object Library,property_putref,358
+vt,Microsoft HTML Object Library,VT_BOOL,4682
+vt,Microsoft HTML Object Library,VT_BSTR,15848
+vt,Microsoft HTML Object Library,VT_DISPATCH,1273
+vt,Microsoft HTML Object Library,VT_HRESULT,373
+vt,Microsoft HTML Object Library,VT_I1,496
+vt,Microsoft HTML Object Library,VT_I2,671
+vt,Microsoft HTML Object Library,VT_I4,4497
+vt,Microsoft HTML Object Library,VT_I8,1
+vt,Microsoft HTML Object Library,VT_INT,4
+vt,Microsoft HTML Object Library,VT_LPSTR,12
+vt,Microsoft HTML Object Library,VT_LPWSTR,32
+vt,Microsoft HTML Object Library,VT_PTR,17020
+vt,Microsoft HTML Object Library,VT_R4,733
+vt,Microsoft HTML Object Library,VT_R8,54
+vt,Microsoft HTML Object Library,VT_SAFEARRAY,4
+vt,Microsoft HTML Object Library,VT_UI1,3
+vt,Microsoft HTML Object Library,VT_UI2,634
+vt,Microsoft HTML Object Library,VT_UI4,2648
+vt,Microsoft HTML Object Library,VT_UI8,80
+vt,Microsoft HTML Object Library,VT_UINT,2028
+vt,Microsoft HTML Object Library,VT_UNKNOWN,211
+vt,Microsoft HTML Object Library,VT_USERDEFINED,10880
+vt,Microsoft HTML Object Library,VT_VARIANT,23565
+vt,Microsoft HTML Object Library,VT_VOID,25187
+safearray_element_vt,Microsoft HTML Object Library,VT_VARIANT,4
+metadata,OptsHold 1.0 Type Library,27,0,27,OPTSHOLDLib.HtmlDlgHelper,OPTSHOLDLib,live:{3050F4E0-98B5-11CF-BB82-00AA00BDCE0B}:1:0
+summary,OptsHold 1.0 Type Library,4,36,0,23,36,0
+typekind,OptsHold 1.0 Type Library,coclass,1
+typekind,OptsHold 1.0 Type Library,dispatch,3
+invkind,OptsHold 1.0 Type Library,func,31
+invkind,OptsHold 1.0 Type Library,property_get,5
+vt,OptsHold 1.0 Type Library,VT_BSTR,8
+vt,OptsHold 1.0 Type Library,VT_DISPATCH,2
+vt,OptsHold 1.0 Type Library,VT_I1,3
+vt,OptsHold 1.0 Type Library,VT_I4,12
+vt,OptsHold 1.0 Type Library,VT_PTR,47
+vt,OptsHold 1.0 Type Library,VT_UI2,3
+vt,OptsHold 1.0 Type Library,VT_UI4,15
+vt,OptsHold 1.0 Type Library,VT_UINT,12
+vt,OptsHold 1.0 Type Library,VT_USERDEFINED,17
+vt,OptsHold 1.0 Type Library,VT_VARIANT,26
+vt,OptsHold 1.0 Type Library,VT_VOID,21
+metadata,Microsoft Visual Studio Project Model (8.0),708,3,708,VSLangProj80.VSLangProjWebReferencesEvents,VSLangProj80,live:{307953C0-7973-490A-A4A7-25999E023BE8}:8:0
+summary,Microsoft Visual Studio Project Model (8.0),30,744,86,0,149,1
+typekind,Microsoft Visual Studio Project Model (8.0),coclass,1
+typekind,Microsoft Visual Studio Project Model (8.0),dispatch,13
+typekind,Microsoft Visual Studio Project Model (8.0),enum,13
+typekind,Microsoft Visual Studio Project Model (8.0),interface,2
+typekind,Microsoft Visual Studio Project Model (8.0),module,1
+invkind,Microsoft Visual Studio Project Model (8.0),func,102
+invkind,Microsoft Visual Studio Project Model (8.0),property_get,381
+invkind,Microsoft Visual Studio Project Model (8.0),property_put,261
+vt,Microsoft Visual Studio Project Model (8.0),VT_BOOL,171
+vt,Microsoft Visual Studio Project Model (8.0),VT_BSTR,355
+vt,Microsoft Visual Studio Project Model (8.0),VT_DISPATCH,16
+vt,Microsoft Visual Studio Project Model (8.0),VT_HRESULT,4
+vt,Microsoft Visual Studio Project Model (8.0),VT_I1,12
+vt,Microsoft Visual Studio Project Model (8.0),VT_I4,29
+vt,Microsoft Visual Studio Project Model (8.0),VT_LPWSTR,10
+vt,Microsoft Visual Studio Project Model (8.0),VT_PTR,205
+vt,Microsoft Visual Studio Project Model (8.0),VT_UI2,12
+vt,Microsoft Visual Studio Project Model (8.0),VT_UI4,80
+vt,Microsoft Visual Studio Project Model (8.0),VT_UINT,48
+vt,Microsoft Visual Studio Project Model (8.0),VT_UNKNOWN,5
+vt,Microsoft Visual Studio Project Model (8.0),VT_USERDEFINED,155
+vt,Microsoft Visual Studio Project Model (8.0),VT_VARIANT,23
+vt,Microsoft Visual Studio Project Model (8.0),VT_VOID,354
+metadata,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,156,2,156,CinVPULib.C13rVPU,CinVPULib,live:{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1:0
+summary,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,118,159,475,0,194,1
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,alias,4
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,coclass,3
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,dispatch,1
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,enum,16
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,interface,20
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,kind_7,6
+typekind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,record,68
+invkind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,func,151
+invkind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,property_get,5
+invkind,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,property_put,3
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_BOOL,5
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_BSTR,15
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_HRESULT,139
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_I1,1
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_I4,28
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_I8,4
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_INT,2
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_LPWSTR,24
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_PTR,234
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_R8,5
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_UI1,8
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_UI2,4
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_UI4,67
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_UI8,3
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_UINT,27
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_UNKNOWN,3
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_USERDEFINED,117
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_VARIANT,7
+vt,{310BAFE3-A42B-4F30-8F06-EF627E8421E7}:1.0,VT_VOID,30
+metadata,Tabular Data Control 1.1 Type Library,50,5,50,TDCLib.CTDCCtl,TDCLib,live:{333C7BC1-460F-11D0-BC04-0080C7055A83}:1:1
+summary,Tabular Data Control 1.1 Type Library,4,56,0,0,24,0
+typekind,Tabular Data Control 1.1 Type Library,coclass,1
+typekind,Tabular Data Control 1.1 Type Library,dispatch,2
+typekind,Tabular Data Control 1.1 Type Library,interface,1
+invkind,Tabular Data Control 1.1 Type Library,func,19
+invkind,Tabular Data Control 1.1 Type Library,property_get,19
+invkind,Tabular Data Control 1.1 Type Library,property_put,18
+vt,Tabular Data Control 1.1 Type Library,VT_BOOL,8
+vt,Tabular Data Control 1.1 Type Library,VT_BSTR,27
+vt,Tabular Data Control 1.1 Type Library,VT_DISPATCH,1
+vt,Tabular Data Control 1.1 Type Library,VT_I1,2
+vt,Tabular Data Control 1.1 Type Library,VT_I4,6
+vt,Tabular Data Control 1.1 Type Library,VT_PTR,30
+vt,Tabular Data Control 1.1 Type Library,VT_UI2,2
+vt,Tabular Data Control 1.1 Type Library,VT_UI4,10
+vt,Tabular Data Control 1.1 Type Library,VT_UINT,8
+vt,Tabular Data Control 1.1 Type Library,VT_UNKNOWN,2
+vt,Tabular Data Control 1.1 Type Library,VT_USERDEFINED,10
+vt,Tabular Data Control 1.1 Type Library,VT_VARIANT,2
+vt,Tabular Data Control 1.1 Type Library,VT_VOID,36
+missing,GoogleUpdater TypeLib for IPolicyStatus2,{34527502-D3DB-4205-A69B-789B27EE0414},1,0,0,exit_1
+metadata,BdeUISrv 1.0 Type Library,8,0,8,BdeUISrvLib.BDEUILauncher,BdeUISrvLib,live:{353D638F-C81B-4476-8323-63A7EE274205}:1:0
+summary,BdeUISrv 1.0 Type Library,2,11,0,0,12,0
+typekind,BdeUISrv 1.0 Type Library,coclass,1
+typekind,BdeUISrv 1.0 Type Library,dispatch,1
+invkind,BdeUISrv 1.0 Type Library,func,11
+vt,BdeUISrv 1.0 Type Library,VT_BOOL,1
+vt,BdeUISrv 1.0 Type Library,VT_BSTR,6
+vt,BdeUISrv 1.0 Type Library,VT_I1,1
+vt,BdeUISrv 1.0 Type Library,VT_I4,7
+vt,BdeUISrv 1.0 Type Library,VT_I8,1
+vt,BdeUISrv 1.0 Type Library,VT_PTR,15
+vt,BdeUISrv 1.0 Type Library,VT_UI2,1
+vt,BdeUISrv 1.0 Type Library,VT_UI4,5
+vt,BdeUISrv 1.0 Type Library,VT_UINT,4
+vt,BdeUISrv 1.0 Type Library,VT_USERDEFINED,5
+vt,BdeUISrv 1.0 Type Library,VT_VARIANT,1
+vt,BdeUISrv 1.0 Type Library,VT_VOID,9
+metadata,DnaComServer,20,0,20,DnaComServer.ComLibraryC,DnaComServer,live:{3615E6B6-9B27-33EC-6139-AE2534CE8B54}:1:0
+summary,DnaComServer,6,32,0,0,48,0
+typekind,DnaComServer,coclass,2
+typekind,DnaComServer,dispatch,4
+invkind,DnaComServer,func,32
+vt,DnaComServer,VT_BSTR,2
+vt,DnaComServer,VT_I1,4
+vt,DnaComServer,VT_I4,8
+vt,DnaComServer,VT_PTR,60
+vt,DnaComServer,VT_R8,6
+vt,DnaComServer,VT_UI2,4
+vt,DnaComServer,VT_UI4,20
+vt,DnaComServer,VT_UINT,16
+vt,DnaComServer,VT_USERDEFINED,20
+vt,DnaComServer,VT_VARIANT,4
+vt,DnaComServer,VT_VOID,28
+metadata,CertCli 1.0 Type Library,105,0,105,CERTCLILib.CCertGetConfig,CERTCLILib,live:{372FCE32-4324-11D0-8810-00A0C903B83C}:1:0
+summary,CertCli 1.0 Type Library,14,129,5,0,98,0
+typekind,CertCli 1.0 Type Library,coclass,5
+typekind,CertCli 1.0 Type Library,dispatch,8
+typekind,CertCli 1.0 Type Library,enum,1
+invkind,CertCli 1.0 Type Library,func,129
+vt,CertCli 1.0 Type Library,VT_BOOL,1
+vt,CertCli 1.0 Type Library,VT_BSTR,68
+vt,CertCli 1.0 Type Library,VT_I1,8
+vt,CertCli 1.0 Type Library,VT_I4,101
+vt,CertCli 1.0 Type Library,VT_PTR,122
+vt,CertCli 1.0 Type Library,VT_UI2,8
+vt,CertCli 1.0 Type Library,VT_UI4,40
+vt,CertCli 1.0 Type Library,VT_UINT,32
+vt,CertCli 1.0 Type Library,VT_USERDEFINED,41
+vt,CertCli 1.0 Type Library,VT_VARIANT,20
+vt,CertCli 1.0 Type Library,VT_VOID,70
+metadata,DnaComServer,20,0,20,DnaComServer.ComLibraryC,DnaComServer,live:{39D80C20-72C1-609E-89E9-E7AA5DB075BB}:1:0
+summary,DnaComServer,6,32,0,0,48,0
+typekind,DnaComServer,coclass,2
+typekind,DnaComServer,dispatch,4
+invkind,DnaComServer,func,32
+vt,DnaComServer,VT_BSTR,2
+vt,DnaComServer,VT_I1,4
+vt,DnaComServer,VT_I4,8
+vt,DnaComServer,VT_PTR,60
+vt,DnaComServer,VT_R8,6
+vt,DnaComServer,VT_UI2,4
+vt,DnaComServer,VT_UI4,20
+vt,DnaComServer,VT_UINT,16
+vt,DnaComServer,VT_USERDEFINED,20
+vt,DnaComServer,VT_VARIANT,4
+vt,DnaComServer,VT_VOID,28
+missing,Genesis Teletext Server 1.0 Type Library,{3BAA3119-ECA1-4A32-9A08-595E71AE9DA9},1,0,0,exit_1
+metadata,cic 1.0 Type Library,132,6,132,CICLib.MMCCtrl,CICLib,live:{3D5905E0-523C-11D1-9FEA-00600832DB4A}:1:0
+summary,cic 1.0 Type Library,15,153,0,0,86,0
+typekind,cic 1.0 Type Library,alias,1
+typekind,cic 1.0 Type Library,coclass,6
+typekind,cic 1.0 Type Library,dispatch,8
+invkind,cic 1.0 Type Library,func,77
+invkind,cic 1.0 Type Library,property_get,76
+vt,cic 1.0 Type Library,VT_BSTR,89
+vt,cic 1.0 Type Library,VT_DISPATCH,5
+vt,cic 1.0 Type Library,VT_I1,7
+vt,cic 1.0 Type Library,VT_I2,5
+vt,cic 1.0 Type Library,VT_I4,59
+vt,cic 1.0 Type Library,VT_I8,1
+vt,cic 1.0 Type Library,VT_PTR,107
+vt,cic 1.0 Type Library,VT_UI2,7
+vt,cic 1.0 Type Library,VT_UI4,35
+vt,cic 1.0 Type Library,VT_UINT,28
+vt,cic 1.0 Type Library,VT_USERDEFINED,37
+vt,cic 1.0 Type Library,VT_VARIANT,9
+vt,cic 1.0 Type Library,VT_VOID,52
+metadata,VssEvent 1.0 Type Library,11,0,11,VssEventLib.VssEvent,VssEventLib,live:{3DE641EF-0556-4D4A-98D5-7DBD8AD5D70F}:1:0
+summary,VssEvent 1.0 Type Library,2,11,0,0,0,0
+typekind,VssEvent 1.0 Type Library,coclass,1
+typekind,VssEvent 1.0 Type Library,interface,1
+invkind,VssEvent 1.0 Type Library,func,11
+vt,VssEvent 1.0 Type Library,VT_BSTR,13
+vt,VssEvent 1.0 Type Library,VT_DISPATCH,7
+vt,VssEvent 1.0 Type Library,VT_HRESULT,11
+vt,VssEvent 1.0 Type Library,VT_I4,2
+vt,VssEvent 1.0 Type Library,VT_INT,1
+metadata,MsRdpWebAccess 1.0 Type Library,127,0,127,MsRdpWebAccessLib.MsRdpClientShell,MsRdpWebAccessLib,live:{3EA49599-AF67-4142-B379-C54786F112B2}:1:0
+summary,MsRdpWebAccess 1.0 Type Library,11,154,4,0,108,0
+typekind,MsRdpWebAccess 1.0 Type Library,coclass,1
+typekind,MsRdpWebAccess 1.0 Type Library,dispatch,9
+typekind,MsRdpWebAccess 1.0 Type Library,record,1
+invkind,MsRdpWebAccess 1.0 Type Library,func,115
+invkind,MsRdpWebAccess 1.0 Type Library,property_get,29
+invkind,MsRdpWebAccess 1.0 Type Library,property_put,10
+vt,MsRdpWebAccess 1.0 Type Library,VT_BOOL,27
+vt,MsRdpWebAccess 1.0 Type Library,VT_BSTR,102
+vt,MsRdpWebAccess 1.0 Type Library,VT_I1,9
+vt,MsRdpWebAccess 1.0 Type Library,VT_I4,40
+vt,MsRdpWebAccess 1.0 Type Library,VT_PTR,145
+vt,MsRdpWebAccess 1.0 Type Library,VT_UI2,9
+vt,MsRdpWebAccess 1.0 Type Library,VT_UI4,47
+vt,MsRdpWebAccess 1.0 Type Library,VT_UINT,36
+vt,MsRdpWebAccess 1.0 Type Library,VT_USERDEFINED,56
+vt,MsRdpWebAccess 1.0 Type Library,VT_VARIANT,19
+vt,MsRdpWebAccess 1.0 Type Library,VT_VOID,109
+metadata,Microsoft VBScript Regular Expressions 1.0,27,0,27,VBScript_RegExp_10.RegExp,VBScript_RegExp_10,live:{3F4DACA7-160D-11D2-A8E9-00104B365C9F}:1:0
+summary,Microsoft VBScript Regular Expressions 1.0,6,36,0,0,36,0
+typekind,Microsoft VBScript Regular Expressions 1.0,coclass,3
+typekind,Microsoft VBScript Regular Expressions 1.0,dispatch,3
+invkind,Microsoft VBScript Regular Expressions 1.0,func,24
+invkind,Microsoft VBScript Regular Expressions 1.0,property_get,9
+invkind,Microsoft VBScript Regular Expressions 1.0,property_put,3
+vt,Microsoft VBScript Regular Expressions 1.0,VT_BOOL,5
+vt,Microsoft VBScript Regular Expressions 1.0,VT_BSTR,8
+vt,Microsoft VBScript Regular Expressions 1.0,VT_DISPATCH,2
+vt,Microsoft VBScript Regular Expressions 1.0,VT_I1,3
+vt,Microsoft VBScript Regular Expressions 1.0,VT_I4,10
+vt,Microsoft VBScript Regular Expressions 1.0,VT_PTR,45
+vt,Microsoft VBScript Regular Expressions 1.0,VT_UI2,3
+vt,Microsoft VBScript Regular Expressions 1.0,VT_UI4,15
+vt,Microsoft VBScript Regular Expressions 1.0,VT_UINT,12
+vt,Microsoft VBScript Regular Expressions 1.0,VT_UNKNOWN,1
+vt,Microsoft VBScript Regular Expressions 1.0,VT_USERDEFINED,15
+vt,Microsoft VBScript Regular Expressions 1.0,VT_VARIANT,3
+vt,Microsoft VBScript Regular Expressions 1.0,VT_VOID,24
+metadata,Microsoft VBScript Regular Expressions 5.5,64,0,64,VBScript_RegExp_55.RegExp,VBScript_RegExp_55,live:{3F4DACA7-160D-11D2-A8E9-00104B365C9F}:5:5
+summary,Microsoft VBScript Regular Expressions 5.5,11,85,0,0,84,0
+typekind,Microsoft VBScript Regular Expressions 5.5,coclass,4
+typekind,Microsoft VBScript Regular Expressions 5.5,dispatch,7
+invkind,Microsoft VBScript Regular Expressions 5.5,func,55
+invkind,Microsoft VBScript Regular Expressions 5.5,property_get,23
+invkind,Microsoft VBScript Regular Expressions 5.5,property_put,7
+vt,Microsoft VBScript Regular Expressions 5.5,VT_BOOL,12
+vt,Microsoft VBScript Regular Expressions 5.5,VT_BSTR,15
+vt,Microsoft VBScript Regular Expressions 5.5,VT_DISPATCH,5
+vt,Microsoft VBScript Regular Expressions 5.5,VT_I1,7
+vt,Microsoft VBScript Regular Expressions 5.5,VT_I4,24
+vt,Microsoft VBScript Regular Expressions 5.5,VT_PTR,105
+vt,Microsoft VBScript Regular Expressions 5.5,VT_UI2,7
+vt,Microsoft VBScript Regular Expressions 5.5,VT_UI4,35
+vt,Microsoft VBScript Regular Expressions 5.5,VT_UINT,28
+vt,Microsoft VBScript Regular Expressions 5.5,VT_UNKNOWN,3
+vt,Microsoft VBScript Regular Expressions 5.5,VT_USERDEFINED,35
+vt,Microsoft VBScript Regular Expressions 5.5,VT_VARIANT,9
+vt,Microsoft VBScript Regular Expressions 5.5,VT_VOID,56
+metadata,WaaSRemediationLib,38,0,38,WaaSRemediationLib.WaaSRemediationAgent,WaaSRemediationLib,live:{3FF1AAB8-F3D8-11D4-825D-00104B3646C0}:1:0
+summary,WaaSRemediationLib,14,44,12,1,31,0
+typekind,WaaSRemediationLib,coclass,2
+typekind,WaaSRemediationLib,dispatch,2
+typekind,WaaSRemediationLib,enum,2
+typekind,WaaSRemediationLib,interface,8
+invkind,WaaSRemediationLib,func,44
+vt,WaaSRemediationLib,VT_BSTR,27
+vt,WaaSRemediationLib,VT_HRESULT,26
+vt,WaaSRemediationLib,VT_I1,2
+vt,WaaSRemediationLib,VT_I4,8
+vt,WaaSRemediationLib,VT_LPSTR,12
+vt,WaaSRemediationLib,VT_LPWSTR,10
+vt,WaaSRemediationLib,VT_PTR,37
+vt,WaaSRemediationLib,VT_UI2,2
+vt,WaaSRemediationLib,VT_UI4,13
+vt,WaaSRemediationLib,VT_UINT,8
+vt,WaaSRemediationLib,VT_UNKNOWN,1
+vt,WaaSRemediationLib,VT_USERDEFINED,16
+vt,WaaSRemediationLib,VT_VARIANT,9
+vt,WaaSRemediationLib,VT_VOID,14
+metadata,DnaComServer,20,0,20,DnaComServer.ComLibraryC,DnaComServer,live:{400B6B6A-224D-FED1-F5FC-636BF95A3809}:1:1
+summary,DnaComServer,6,32,0,0,48,0
+typekind,DnaComServer,coclass,2
+typekind,DnaComServer,dispatch,4
+invkind,DnaComServer,func,32
+vt,DnaComServer,VT_BSTR,2
+vt,DnaComServer,VT_I1,4
+vt,DnaComServer,VT_I4,8
+vt,DnaComServer,VT_PTR,60
+vt,DnaComServer,VT_R8,6
+vt,DnaComServer,VT_UI2,4
+vt,DnaComServer,VT_UI4,20
+vt,DnaComServer,VT_UINT,16
+vt,DnaComServer,VT_USERDEFINED,20
+vt,DnaComServer,VT_VARIANT,4
+vt,DnaComServer,VT_VOID,28
+metadata,ComSnap 1.0 Type Library,5,0,5,COMSNAPLib.COMNSView,COMSNAPLib,live:{410381CD-AF42-11D1-8F10-00C04FC2C17B}:1:0
+summary,ComSnap 1.0 Type Library,17,8,4,0,12,0
+typekind,ComSnap 1.0 Type Library,alias,1
+typekind,ComSnap 1.0 Type Library,coclass,10
+typekind,ComSnap 1.0 Type Library,dispatch,1
+typekind,ComSnap 1.0 Type Library,interface,3
+typekind,ComSnap 1.0 Type Library,kind_7,1
+typekind,ComSnap 1.0 Type Library,record,1
+invkind,ComSnap 1.0 Type Library,func,8
+vt,ComSnap 1.0 Type Library,VT_HRESULT,1
+vt,ComSnap 1.0 Type Library,VT_I1,1
+vt,ComSnap 1.0 Type Library,VT_I4,2
+vt,ComSnap 1.0 Type Library,VT_PTR,16
+vt,ComSnap 1.0 Type Library,VT_UI2,1
+vt,ComSnap 1.0 Type Library,VT_UI4,5
+vt,ComSnap 1.0 Type Library,VT_UINT,4
+vt,ComSnap 1.0 Type Library,VT_USERDEFINED,7
+vt,ComSnap 1.0 Type Library,VT_VARIANT,1
+vt,ComSnap 1.0 Type Library,VT_VOID,7
+metadata,AcroBrokerLib,45,0,45,AcroBrokerLib.Broker,AcroBrokerLib,live:{41738EEA-442F-477F-92CF-2889BD6CD7E7}:1:0
+summary,AcroBrokerLib,3,45,3,0,24,0
+typekind,AcroBrokerLib,coclass,1
+typekind,AcroBrokerLib,interface,1
+typekind,AcroBrokerLib,record,1
+invkind,AcroBrokerLib,func,45
+vt,AcroBrokerLib,VT_BSTR,66
+vt,AcroBrokerLib,VT_CARRAY,1
+vt,AcroBrokerLib,VT_HRESULT,45
+vt,AcroBrokerLib,VT_INT,1
+vt,AcroBrokerLib,VT_PTR,24
+vt,AcroBrokerLib,VT_SAFEARRAY,8
+vt,AcroBrokerLib,VT_UI4,58
+vt,AcroBrokerLib,VT_UI8,35
+safearray_element_vt,AcroBrokerLib,VT_RECORD,1
+safearray_element_vt,AcroBrokerLib,VT_UI1,8
+safearray_record,AcroBrokerLib,VT_RECORD,1
+metadata,Microsoft Scripting Runtime,187,0,187,Scripting.Dictionary,Scripting,live:{420B2830-E718-11CF-893D-00A0C9054228}:1:0
+summary,Microsoft Scripting Runtime,32,220,31,0,144,28
+typekind,Microsoft Scripting Runtime,alias,4
+typekind,Microsoft Scripting Runtime,coclass,10
+typekind,Microsoft Scripting Runtime,dispatch,11
+typekind,Microsoft Scripting Runtime,enum,7
+invkind,Microsoft Scripting Runtime,func,153
+invkind,Microsoft Scripting Runtime,property_get,58
+invkind,Microsoft Scripting Runtime,property_put,8
+invkind,Microsoft Scripting Runtime,property_putref,1
+vt,Microsoft Scripting Runtime,VT_BOOL,32
+vt,Microsoft Scripting Runtime,VT_BSTR,105
+vt,Microsoft Scripting Runtime,VT_DATE,6
+vt,Microsoft Scripting Runtime,VT_I1,11
+vt,Microsoft Scripting Runtime,VT_I4,33
+vt,Microsoft Scripting Runtime,VT_PTR,207
+vt,Microsoft Scripting Runtime,VT_UI2,11
+vt,Microsoft Scripting Runtime,VT_UI4,55
+vt,Microsoft Scripting Runtime,VT_UINT,44
+vt,Microsoft Scripting Runtime,VT_UNKNOWN,4
+vt,Microsoft Scripting Runtime,VT_USERDEFINED,105
+vt,Microsoft Scripting Runtime,VT_VARIANT,35
+vt,Microsoft Scripting Runtime,VT_VOID,113
+missing,DropboxUpdater TypeLib for IPolicyStatus3System,{4264E00F-61F7-46C6-8336-008168A7F830},1,0,0,exit_1
+metadata,FortiCliSh 1.0 Type Library,0,0,0,FORTICLISHLib.CShellExtFiles,FORTICLISHLib,live:{429BAC07-E02B-430F-A67D-1B2F01377889}:1:0
+summary,FortiCliSh 1.0 Type Library,2,0,0,0,0,0
+typekind,FortiCliSh 1.0 Type Library,coclass,2
+metadata,NodeMgr 1.0 Type Library,9,1,9,NODEMGRLib.NodeInit,NODEMGRLib,live:{43136EB0-D36C-11CF-ADBC-00AA00A80033}:1:0
+summary,NodeMgr 1.0 Type Library,8,12,0,0,12,0
+typekind,NodeMgr 1.0 Type Library,coclass,6
+typekind,NodeMgr 1.0 Type Library,dispatch,2
+invkind,NodeMgr 1.0 Type Library,func,12
+vt,NodeMgr 1.0 Type Library,VT_BOOL,1
+vt,NodeMgr 1.0 Type Library,VT_BSTR,4
+vt,NodeMgr 1.0 Type Library,VT_I1,1
+vt,NodeMgr 1.0 Type Library,VT_I4,2
+vt,NodeMgr 1.0 Type Library,VT_PTR,15
+vt,NodeMgr 1.0 Type Library,VT_UI2,1
+vt,NodeMgr 1.0 Type Library,VT_UI4,5
+vt,NodeMgr 1.0 Type Library,VT_UINT,4
+vt,NodeMgr 1.0 Type Library,VT_USERDEFINED,5
+vt,NodeMgr 1.0 Type Library,VT_VARIANT,1
+vt,NodeMgr 1.0 Type Library,VT_VOID,12
+metadata,PrintUI Objects 1.0 Type Library,288,0,288,PrintUIObjLib.CacheManager,PrintUIObjLib,live:{438EDB38-282C-435D-8BE3-4AB90B83CEF5}:1:0
+summary,PrintUI Objects 1.0 Type Library,123,291,370,0,277,0
+typekind,PrintUI Objects 1.0 Type Library,alias,9
+typekind,PrintUI Objects 1.0 Type Library,coclass,11
+typekind,PrintUI Objects 1.0 Type Library,dispatch,1
+typekind,PrintUI Objects 1.0 Type Library,enum,10
+typekind,PrintUI Objects 1.0 Type Library,interface,42
+typekind,PrintUI Objects 1.0 Type Library,kind_7,10
+typekind,PrintUI Objects 1.0 Type Library,record,40
+invkind,PrintUI Objects 1.0 Type Library,func,281
+invkind,PrintUI Objects 1.0 Type Library,property_get,8
+invkind,PrintUI Objects 1.0 Type Library,property_put,2
+vt,PrintUI Objects 1.0 Type Library,VT_BOOL,4
+vt,PrintUI Objects 1.0 Type Library,VT_BSTR,34
+vt,PrintUI Objects 1.0 Type Library,VT_HRESULT,282
+vt,PrintUI Objects 1.0 Type Library,VT_I1,1
+vt,PrintUI Objects 1.0 Type Library,VT_I4,77
+vt,PrintUI Objects 1.0 Type Library,VT_I8,1
+vt,PrintUI Objects 1.0 Type Library,VT_INT,34
+vt,PrintUI Objects 1.0 Type Library,VT_LPWSTR,13
+vt,PrintUI Objects 1.0 Type Library,VT_PTR,336
+vt,PrintUI Objects 1.0 Type Library,VT_UI1,4
+vt,PrintUI Objects 1.0 Type Library,VT_UI2,1
+vt,PrintUI Objects 1.0 Type Library,VT_UI4,54
+vt,PrintUI Objects 1.0 Type Library,VT_UI8,5
+vt,PrintUI Objects 1.0 Type Library,VT_UINT,20
+vt,PrintUI Objects 1.0 Type Library,VT_UNKNOWN,18
+vt,PrintUI Objects 1.0 Type Library,VT_USERDEFINED,286
+vt,PrintUI Objects 1.0 Type Library,VT_VARIANT,1
+vt,PrintUI Objects 1.0 Type Library,VT_VOID,14
+metadata,NetCon 1.0 Type Library,85,0,85,NETCONLib.NetSharingManager,NETCONLib,live:{43E734CA-043D-4A70-9A2C-A8F254063D91}:1:0
+summary,NetCon 1.0 Type Library,17,112,40,0,114,0
+typekind,NetCon 1.0 Type Library,coclass,1
+typekind,NetCon 1.0 Type Library,dispatch,9
+typekind,NetCon 1.0 Type Library,enum,5
+typekind,NetCon 1.0 Type Library,interface,1
+typekind,NetCon 1.0 Type Library,record,1
+invkind,NetCon 1.0 Type Library,func,79
+invkind,NetCon 1.0 Type Library,property_get,33
+vt,NetCon 1.0 Type Library,VT_BOOL,4
+vt,NetCon 1.0 Type Library,VT_BSTR,8
+vt,NetCon 1.0 Type Library,VT_HRESULT,7
+vt,NetCon 1.0 Type Library,VT_I1,9
+vt,NetCon 1.0 Type Library,VT_I4,25
+vt,NetCon 1.0 Type Library,VT_LPWSTR,2
+vt,NetCon 1.0 Type Library,VT_PTR,151
+vt,NetCon 1.0 Type Library,VT_UI1,2
+vt,NetCon 1.0 Type Library,VT_UI2,11
+vt,NetCon 1.0 Type Library,VT_UI4,47
+vt,NetCon 1.0 Type Library,VT_UINT,36
+vt,NetCon 1.0 Type Library,VT_UNKNOWN,4
+vt,NetCon 1.0 Type Library,VT_USERDEFINED,67
+vt,NetCon 1.0 Type Library,VT_VARIANT,9
+vt,NetCon 1.0 Type Library,VT_VOID,71
+metadata,LocationApi 1.0 Type Library,171,4,171,LocationApiLib.Location,LocationApiLib,live:{4486DF98-22A5-4F6B-BD5C-8CADCEC0A6DE}:1:0
+summary,LocationApi 1.0 Type Library,111,186,372,0,203,3
+typekind,LocationApi 1.0 Type Library,alias,5
+typekind,LocationApi 1.0 Type Library,coclass,8
+typekind,LocationApi 1.0 Type Library,dispatch,7
+typekind,LocationApi 1.0 Type Library,enum,9
+typekind,LocationApi 1.0 Type Library,interface,15
+typekind,LocationApi 1.0 Type Library,kind_7,6
+typekind,LocationApi 1.0 Type Library,record,61
+invkind,LocationApi 1.0 Type Library,func,155
+invkind,LocationApi 1.0 Type Library,property_get,25
+invkind,LocationApi 1.0 Type Library,property_put,6
+vt,LocationApi 1.0 Type Library,VT_BSTR,26
+vt,LocationApi 1.0 Type Library,VT_DATE,2
+vt,LocationApi 1.0 Type Library,VT_HRESULT,105
+vt,LocationApi 1.0 Type Library,VT_I1,5
+vt,LocationApi 1.0 Type Library,VT_I4,18
+vt,LocationApi 1.0 Type Library,VT_INT,2
+vt,LocationApi 1.0 Type Library,VT_LPWSTR,18
+vt,LocationApi 1.0 Type Library,VT_PTR,253
+vt,LocationApi 1.0 Type Library,VT_R8,10
+vt,LocationApi 1.0 Type Library,VT_UI1,4
+vt,LocationApi 1.0 Type Library,VT_UI2,8
+vt,LocationApi 1.0 Type Library,VT_UI4,102
+vt,LocationApi 1.0 Type Library,VT_UI8,1
+vt,LocationApi 1.0 Type Library,VT_UINT,30
+vt,LocationApi 1.0 Type Library,VT_UNKNOWN,1
+vt,LocationApi 1.0 Type Library,VT_USERDEFINED,119
+vt,LocationApi 1.0 Type Library,VT_VARIANT,9
+vt,LocationApi 1.0 Type Library,VT_VOID,67
+metadata,ATL 2.0 Type Library,47,0,47,,ATLLib,live:{44EC0535-400F-11D0-9DCD-00A0C90391D3}:1:0
+summary,ATL 2.0 Type Library,2,50,0,0,25,0
+typekind,ATL 2.0 Type Library,dispatch,1
+typekind,ATL 2.0 Type Library,interface,1
+invkind,ATL 2.0 Type Library,func,22
+invkind,ATL 2.0 Type Library,property_get,15
+invkind,ATL 2.0 Type Library,property_put,13
+vt,ATL 2.0 Type Library,VT_BOOL,18
+vt,ATL 2.0 Type Library,VT_BSTR,6
+vt,ATL 2.0 Type Library,VT_DISPATCH,2
+vt,ATL 2.0 Type Library,VT_HRESULT,18
+vt,ATL 2.0 Type Library,VT_I1,1
+vt,ATL 2.0 Type Library,VT_I4,6
+vt,ATL 2.0 Type Library,VT_PTR,29
+vt,ATL 2.0 Type Library,VT_UI2,1
+vt,ATL 2.0 Type Library,VT_UI4,24
+vt,ATL 2.0 Type Library,VT_UINT,4
+vt,ATL 2.0 Type Library,VT_UNKNOWN,10
+vt,ATL 2.0 Type Library,VT_USERDEFINED,11
+vt,ATL 2.0 Type Library,VT_VARIANT,1
+vt,ATL 2.0 Type Library,VT_VOID,22
+metadata,XllLambda Runtime Type Library,22,0,22,XllLambda.RuntimeHost,XllLambda,live:{44F9D29D-BD35-4D87-A1A6-E64B30902508}:1:0
+summary,XllLambda Runtime Type Library,4,28,0,8,24,0
+typekind,XllLambda Runtime Type Library,coclass,2
+typekind,XllLambda Runtime Type Library,dispatch,2
+invkind,XllLambda Runtime Type Library,func,17
+invkind,XllLambda Runtime Type Library,property_get,11
+vt,XllLambda Runtime Type Library,VT_BOOL,4
+vt,XllLambda Runtime Type Library,VT_BSTR,5
+vt,XllLambda Runtime Type Library,VT_DISPATCH,1
+vt,XllLambda Runtime Type Library,VT_I1,2
+vt,XllLambda Runtime Type Library,VT_I4,8
+vt,XllLambda Runtime Type Library,VT_PTR,30
+vt,XllLambda Runtime Type Library,VT_UI2,2
+vt,XllLambda Runtime Type Library,VT_UI4,10
+vt,XllLambda Runtime Type Library,VT_UINT,8
+vt,XllLambda Runtime Type Library,VT_USERDEFINED,10
+vt,XllLambda Runtime Type Library,VT_VARIANT,11
+vt,XllLambda Runtime Type Library,VT_VOID,14
