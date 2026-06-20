@@ -202,12 +202,15 @@ surface:
   (`LIBID`, version, LCID, record type GUID). Descriptor-backed record retvals are
   admitted and the vtable executor allocates caller-owned record storage through
   OleAut `GetRecordInfoFromGuids`/`IRecordInfo::RecordCreate`; name-only record
-  metadata still declines with an explicit missing-record-return-info reason.
+  metadata still declines with an explicit missing-record-return-info reason. The
+  record retval path is fixture-proven with a temporary registered OleAut typelib
+  that supplies a real `IRecordInfo`: the vtable slot writes into the allocated
+  record cell and the runtime returns the populated `ComRecord` carrier.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: record/UDT return execution still needs live or fixture
-evidence with a real `IRecordInfo` source before any broad support claim is made.
-Name-only records may fall back only with the specific missing allocation metadata
-fact, and any remaining record fallback must identify the exact unowned ABI or
-ownership rule.
+Residual after this slice: record/UDT live-typelib breadth still needs external
+evidence across more than the controlled single-field OleAut fixture before claiming
+foreign-record parity. Name-only records may fall back only with the specific missing
+allocation metadata fact, and any remaining record fallback must identify the exact
+unowned ABI, layout, registration, or ownership rule.

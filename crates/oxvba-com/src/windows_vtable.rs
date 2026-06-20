@@ -1510,10 +1510,11 @@ mod tests {
         DUAL_BYTE_VALUE, DUAL_CREATED_OLE_DATE, DUAL_DECIMAL_HI, DUAL_DECIMAL_LO, DUAL_DECIMAL_MID,
         DUAL_DECIMAL_NEGATIVE, DUAL_DECIMAL_SCALE, DUAL_DOUBLE_VALUE, DUAL_INTEGER_VALUE,
         DUAL_LONGLONG_VALUE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
-        DUAL_RAISE_ERROR_SOURCE, DUAL_RECORD_MUTATED_VALUE, DUAL_RECORD_VALUE, DUAL_SINGLE_VALUE,
-        DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE, DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED,
-        DUAL_SLOT_GET_DECIMAL_VALUE, DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE,
-        DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE,
+        DUAL_RAISE_ERROR_SOURCE, DUAL_RECORD_MUTATED_VALUE, DUAL_RECORD_RETURN_VALUE,
+        DUAL_RECORD_VALUE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE,
+        DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_DECIMAL_VALUE,
+        DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE,
+        DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_RECORD_VALUE,
         DUAL_SLOT_GET_SAFEARRAY_VALUE, DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE,
         DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP, DUAL_SLOT_MUTATE_BYREF_BREADTH,
         DUAL_SLOT_MUTATE_BYREF_LONG, DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY,
@@ -1672,6 +1673,296 @@ mod tests {
         // SAFETY: this helper only reads records created by `test_record_variant`
         // and mutated by the fixture's `DualRecordFixture` slot.
         unsafe { (*ptr.cast::<TestRecord>()).value }
+    }
+
+    #[repr(C)]
+    struct TestIUnknownVtbl {
+        query_interface: unsafe extern "system" fn(
+            *mut c_void,
+            *const windows_sys::core::GUID,
+            *mut *mut c_void,
+        ) -> i32,
+        add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+        release: unsafe extern "system" fn(*mut c_void) -> u32,
+    }
+
+    #[repr(C)]
+    struct TestCreateTypeLib2Vtbl {
+        query_interface: unsafe extern "system" fn(
+            *mut c_void,
+            *const windows_sys::core::GUID,
+            *mut *mut c_void,
+        ) -> i32,
+        add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+        release: unsafe extern "system" fn(*mut c_void) -> u32,
+        create_type_info:
+            unsafe extern "system" fn(*mut c_void, *const u16, i32, *mut *mut c_void) -> i32,
+        set_name: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+        set_version: unsafe extern "system" fn(*mut c_void, u16, u16) -> i32,
+        set_guid: unsafe extern "system" fn(*mut c_void, *const windows_sys::core::GUID) -> i32,
+        set_doc_string: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+        set_help_file_name: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+        set_help_context: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+        set_lcid: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+        set_lib_flags: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+        save_all_changes: unsafe extern "system" fn(*mut c_void) -> i32,
+    }
+
+    #[repr(C)]
+    struct TestCreateTypeInfoVtbl {
+        query_interface: unsafe extern "system" fn(
+            *mut c_void,
+            *const windows_sys::core::GUID,
+            *mut *mut c_void,
+        ) -> i32,
+        add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+        release: unsafe extern "system" fn(*mut c_void) -> u32,
+        set_guid: unsafe extern "system" fn(*mut c_void, *const windows_sys::core::GUID) -> i32,
+        set_type_flags: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+        set_doc_string: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+        set_help_context: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+        set_version: unsafe extern "system" fn(*mut c_void, u16, u16) -> i32,
+        add_ref_type_info: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut u32) -> i32,
+        add_func_desc: unsafe extern "system" fn(
+            *mut c_void,
+            u32,
+            *mut windows_sys::Win32::System::Com::FUNCDESC,
+        ) -> i32,
+        add_impl_type: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32,
+        set_impl_type_flags: unsafe extern "system" fn(*mut c_void, u32, i32) -> i32,
+        set_alignment: unsafe extern "system" fn(*mut c_void, u16) -> i32,
+        set_schema: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+        add_var_desc: unsafe extern "system" fn(
+            *mut c_void,
+            u32,
+            *mut windows_sys::Win32::System::Com::VARDESC,
+        ) -> i32,
+        set_func_and_param_names:
+            unsafe extern "system" fn(*mut c_void, u32, *mut *mut u16, u32) -> i32,
+        set_var_name: unsafe extern "system" fn(*mut c_void, u32, *const u16) -> i32,
+        set_type_desc_alias: unsafe extern "system" fn(
+            *mut c_void,
+            *mut windows_sys::Win32::System::Com::TYPEDESC,
+        ) -> i32,
+        define_func_as_dll_entry:
+            unsafe extern "system" fn(*mut c_void, u32, *const u16, *const u16) -> i32,
+        set_func_doc_string: unsafe extern "system" fn(*mut c_void, u32, *const u16) -> i32,
+        set_var_doc_string: unsafe extern "system" fn(*mut c_void, u32, *const u16) -> i32,
+        set_func_help_context: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32,
+        set_var_help_context: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32,
+        set_mops: unsafe extern "system" fn(*mut c_void, u32, *const u16) -> i32,
+        set_type_idldesc: unsafe extern "system" fn(
+            *mut c_void,
+            *mut windows_sys::Win32::System::Com::IDLDESC,
+        ) -> i32,
+        lay_out: unsafe extern "system" fn(*mut c_void) -> i32,
+    }
+
+    struct RegisteredRecordTypelib {
+        descriptor: TypeLibRecordInfo,
+        path: std::path::PathBuf,
+    }
+
+    impl Drop for RegisteredRecordTypelib {
+        fn drop(&mut self) {
+            let libid = self.descriptor.libid.to_guid();
+            unsafe {
+                let _ = windows_sys::Win32::System::Ole::UnRegisterTypeLibForUser(
+                    &libid,
+                    self.descriptor.major,
+                    self.descriptor.minor,
+                    self.descriptor.lcid,
+                    windows_sys::Win32::System::Com::SYS_WIN64,
+                );
+            }
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    fn wide_path(path: &std::path::Path) -> Vec<u16> {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    fn check_test_hr(op: &'static str, hr: i32) -> Result<(), String> {
+        if hr < 0 {
+            Err(format!("{op} failed with HRESULT {:#010X}", hr as u32))
+        } else {
+            Ok(())
+        }
+    }
+
+    unsafe fn test_vtbl<T>(ptr: *mut c_void) -> &'static T {
+        unsafe { &**(ptr as *const *const T) }
+    }
+
+    unsafe fn release_test_com_ptr(ptr: *mut c_void) {
+        if !ptr.is_null() {
+            let vtbl = unsafe { test_vtbl::<TestIUnknownVtbl>(ptr) };
+            unsafe {
+                let _ = (vtbl.release)(ptr);
+            }
+        }
+    }
+
+    fn create_registered_record_typelib() -> Result<RegisteredRecordTypelib, String> {
+        use windows_sys::Win32::System::Com::{
+            ELEMDESC, ELEMDESC_0, IDLFLAG_NONE, SYS_WIN64, TKIND_RECORD, TYPEDESC, VAR_PERINSTANCE,
+            VARDESC, VARDESC_0,
+        };
+        use windows_sys::Win32::System::Ole::{
+            CreateTypeLib2, LoadTypeLib, RegisterTypeLibForUser,
+        };
+        use windows_sys::Win32::System::Variant::VT_I4;
+
+        let libid = windows_sys::core::GUID {
+            data1: 0x67E5_2026,
+            data2: 0x0619,
+            data3: 0x1001,
+            data4: [0x90, 0x01, 0x10, 0x32, 0x54, 0x76, 0x98, 0x10],
+        };
+        let record_guid = windows_sys::core::GUID {
+            data1: 0x67E5_2026,
+            data2: 0x0619,
+            data3: 0x1002,
+            data4: [0x90, 0x01, 0x10, 0x32, 0x54, 0x76, 0x98, 0x11],
+        };
+        let path = std::env::temp_dir().join(format!(
+            "oxvba-record-retval-{}-{}.tlb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default()
+        ));
+        let path_w = wide_path(&path);
+        let mut typelib: *mut c_void = std::ptr::null_mut();
+        check_test_hr("CreateTypeLib2", unsafe {
+            CreateTypeLib2(SYS_WIN64, path_w.as_ptr(), &mut typelib)
+        })?;
+        if typelib.is_null() {
+            return Err("CreateTypeLib2 returned null".to_string());
+        }
+
+        let result = (|| {
+            let lib_vtbl = unsafe { test_vtbl::<TestCreateTypeLib2Vtbl>(typelib) };
+            let lib_name = wide("OxVbaRecordRetvalFixture");
+            check_test_hr("ICreateTypeLib2::SetGuid", unsafe {
+                (lib_vtbl.set_guid)(typelib, &libid)
+            })?;
+            check_test_hr("ICreateTypeLib2::SetName", unsafe {
+                (lib_vtbl.set_name)(typelib, lib_name.as_ptr())
+            })?;
+            check_test_hr("ICreateTypeLib2::SetVersion", unsafe {
+                (lib_vtbl.set_version)(typelib, 1, 0)
+            })?;
+            check_test_hr("ICreateTypeLib2::SetLcid", unsafe {
+                (lib_vtbl.set_lcid)(typelib, 0)
+            })?;
+
+            let record_name = wide("RecordRetvalFixture");
+            let mut create_info: *mut c_void = std::ptr::null_mut();
+            check_test_hr("ICreateTypeLib2::CreateTypeInfo", unsafe {
+                (lib_vtbl.create_type_info)(
+                    typelib,
+                    record_name.as_ptr(),
+                    TKIND_RECORD,
+                    &mut create_info,
+                )
+            })?;
+            if create_info.is_null() {
+                return Err("CreateTypeInfo returned null".to_string());
+            }
+
+            let create_result = (|| {
+                let ti_vtbl = unsafe { test_vtbl::<TestCreateTypeInfoVtbl>(create_info) };
+                check_test_hr("ICreateTypeInfo::SetGuid", unsafe {
+                    (ti_vtbl.set_guid)(create_info, &record_guid)
+                })?;
+                check_test_hr("ICreateTypeInfo::SetAlignment", unsafe {
+                    (ti_vtbl.set_alignment)(create_info, 4)
+                })?;
+                let mut vardesc = VARDESC {
+                    memid: 1,
+                    lpstrSchema: std::ptr::null_mut(),
+                    Anonymous: VARDESC_0 { oInst: 0 },
+                    elemdescVar: ELEMDESC {
+                        tdesc: TYPEDESC {
+                            Anonymous: unsafe { std::mem::zeroed() },
+                            vt: VT_I4,
+                        },
+                        Anonymous: ELEMDESC_0 {
+                            idldesc: windows_sys::Win32::System::Com::IDLDESC {
+                                dwReserved: 0,
+                                wIDLFlags: IDLFLAG_NONE,
+                            },
+                        },
+                    },
+                    wVarFlags: 0,
+                    varkind: VAR_PERINSTANCE,
+                };
+                check_test_hr("ICreateTypeInfo::AddVarDesc", unsafe {
+                    (ti_vtbl.add_var_desc)(create_info, 0, &mut vardesc)
+                })?;
+                let value_name = wide("Value");
+                check_test_hr("ICreateTypeInfo::SetVarName", unsafe {
+                    (ti_vtbl.set_var_name)(create_info, 0, value_name.as_ptr())
+                })?;
+                check_test_hr("ICreateTypeInfo::LayOut", unsafe {
+                    (ti_vtbl.lay_out)(create_info)
+                })
+            })();
+            unsafe { release_test_com_ptr(create_info) };
+            create_result?;
+
+            check_test_hr("ICreateTypeLib2::SaveAllChanges", unsafe {
+                (lib_vtbl.save_all_changes)(typelib)
+            })?;
+            Ok::<(), String>(())
+        })();
+        unsafe { release_test_com_ptr(typelib) };
+        if let Err(err) = result {
+            let _ = std::fs::remove_file(&path);
+            return Err(err);
+        }
+
+        let mut loaded: *mut c_void = std::ptr::null_mut();
+        if let Err(err) = check_test_hr("LoadTypeLib", unsafe {
+            LoadTypeLib(path_w.as_ptr(), &mut loaded)
+        }) {
+            let _ = std::fs::remove_file(&path);
+            return Err(err);
+        }
+        if loaded.is_null() {
+            let _ = std::fs::remove_file(&path);
+            return Err("LoadTypeLib returned null".to_string());
+        }
+        let register_result = check_test_hr("RegisterTypeLibForUser", unsafe {
+            RegisterTypeLibForUser(loaded, path_w.as_ptr(), std::ptr::null())
+        });
+        unsafe { release_test_com_ptr(loaded) };
+        if let Err(err) = register_result {
+            let _ = std::fs::remove_file(&path);
+            return Err(err);
+        }
+
+        Ok(RegisteredRecordTypelib {
+            descriptor: TypeLibRecordInfo {
+                libid: crate::ComInterfaceIid::from_guid(&libid),
+                major: 1,
+                minor: 0,
+                lcid: 0,
+                type_guid: crate::ComInterfaceIid::from_guid(&record_guid),
+            },
+            path,
+        })
     }
 
     #[test]
@@ -1975,6 +2266,38 @@ mod tests {
             record_variant_value(&result.writebacks[0].value),
             DUAL_RECORD_MUTATED_VALUE,
             "fixture mutation should be returned through the ByRef record writeback"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn record_return_allocates_descriptor_backed_record_cell() {
+        let registered_record =
+            create_registered_record_typelib().expect("temp record typelib should register");
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_GET_RECORD_VALUE,
+            vec![],
+            vec![],
+            vec![],
+            Some(TypeLibParamType::Record),
+            Some(TypeLibWireType::Record {
+                name: "OxVbaRecordRetvalFixture.RecordRetvalFixture".to_string(),
+                record_info: Some(registered_record.descriptor.clone()),
+            }),
+            TypeLibMemberInvokeKind::PropertyGet,
+        );
+        // SAFETY: slot 33 writes into the caller-owned record payload allocated
+        // from the descriptor-backed IRecordInfo source.
+        let value = unsafe { vtable_invoke(this, &plan, &[], 33, &mut resolve, &mut bind) }
+            .expect("record retval vtable call should succeed");
+        assert_eq!(
+            record_variant_value(&value),
+            DUAL_RECORD_RETURN_VALUE,
+            "record retval should decode the record cell populated by the slot"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };

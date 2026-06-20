@@ -3466,7 +3466,7 @@ pub unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
 //   9  put_Value(this, VARIANT*)                   -> HRESULT
 //   10 Lookup(this, BSTR, IDispatch**)             -> HRESULT
 //   11 raise_error(this, i32*) [SetErrorInfo+fail] -> HRESULT
-//   12..26 additional typed ABI coverage slots
+//   12..33 additional typed ABI coverage slots
 // ════════════════════════════════════════════════════════════════════════
 
 /// The custom-interface IErrorInfo IID, `{1CF2B120-547D-101B-8E65-08002B2BD119}`.
@@ -3511,6 +3511,7 @@ pub const DUAL_SLOT_MUTATE_BYREF_BREADTH: u16 = 29;
 pub const DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY: u16 = 30;
 pub const DUAL_SLOT_VALIDATE_RECORD_VALUE: u16 = 31;
 pub const DUAL_SLOT_MUTATE_BYREF_RECORD: u16 = 32;
+pub const DUAL_SLOT_GET_RECORD_VALUE: u16 = 33;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3530,6 +3531,7 @@ pub const DUAL_DECIMAL_SCALE: u8 = 3;
 pub const DUAL_DECIMAL_NEGATIVE: bool = true;
 pub const DUAL_RECORD_VALUE: i32 = 321_654;
 pub const DUAL_RECORD_MUTATED_VALUE: i32 = 654_321;
+pub const DUAL_RECORD_RETURN_VALUE: i32 = 777_321;
 
 /// The custom **dual interface IID** the fixture answers from `QueryInterface`
 /// (besides `IUnknown`/`IDispatch`). Workset S5a: the vtable dispatch path QIs the
@@ -3692,6 +3694,11 @@ struct RawDualVtbl {
         this: *mut core::ffi::c_void,
         record: *mut core::ffi::c_void,
     ) -> i32,
+    /// slot 33
+    get_record_value: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        record: *mut core::ffi::c_void,
+    ) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3742,6 +3749,7 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     mutate_byref_object_string_array: oxvba_dual_mutate_byref_object_string_array,
     validate_record_value: oxvba_dual_validate_record_value,
     mutate_byref_record: oxvba_dual_mutate_byref_record,
+    get_record_value: oxvba_dual_get_record_value,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4641,5 +4649,19 @@ unsafe extern "system" fn oxvba_dual_mutate_byref_record(
     }
     let record = &mut *(record.cast::<DualRecordFixture>());
     record.value = DUAL_RECORD_MUTATED_VALUE;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_get_record_value(
+    _this: *mut core::ffi::c_void,
+    record: *mut core::ffi::c_void,
+) -> i32 {
+    if record.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let record = &mut *(record.cast::<DualRecordFixture>());
+    record.value = DUAL_RECORD_RETURN_VALUE;
     COM_S_OK
 }
