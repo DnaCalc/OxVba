@@ -152,11 +152,24 @@ surface:
 - The shared runtime dispatch path has integration proof for both putref families:
   supported object/interface putref and scalar `Long` putref increment the vtable
   transport counter and do not also dispatch through IDispatch.
+- `ComInvokeArg` can now carry a `RuntimeByRefSlot`, and the vtable marshaller has
+  a writeback-capable executor returning `VtableInvokeResult { value, writebacks }`.
+  The value-only wrapper rejects unexpected writebacks instead of discarding them.
+- ByRef scalar, Decimal, and Variant cells are fixture-proven through real vtable
+  calls. The broad covered family is `ByRefInteger`, `ByRefByte`, `ByRefBoolean`,
+  `ByRefLong`, `ByRefLongLong`, `ByRefSingle`, `ByRefDouble`, `ByRefCurrency`,
+  `ByRefDate`, `ByRefDecimal`, and `ByRefVariant`. Admission requires a concrete
+  runtime writeback slot; missing slots decline before any slot call.
+- The existing value-only shared dispatch path declines supplied ByRef arguments
+  before vtable execution, because it cannot yet return `RuntimeCallResult`
+  writebacks to callers. That guard prevents silent mutation loss while the
+  writeback-capable bridge API is still pending.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: records/UDTs and arbitrary ByRef/writeback remain
-`in-progress` accepted scope. They may fall back only with a specific recorded
-missing fact or unowned ABI/ownership rule, and need the same descriptor,
-admission, fixture, runtime-integration, and fresh-eyes evidence discipline
-before any broader support claim is made.
+Residual after this slice: records/UDTs, `ByRefSafeArrayVariant`,
+`ByRefString`, `ByRefObject`, `ByRefLongPtr`, and runtime bridge propagation of
+`RuntimeCallResult.writebacks` remain `in-progress` accepted scope. They may fall
+back only with a specific recorded missing fact or unowned ABI/ownership rule,
+and need the same descriptor, admission, fixture, runtime-integration, and
+fresh-eyes evidence discipline before any broader support claim is made.

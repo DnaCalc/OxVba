@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Value, ObjectRef, Variant,
+    CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeByRefSlot, Variant,
     bstr::BStr,
     safe_array::{SafeArray, array_tag_from_safe_array, marshal_dispatch_argument},
 };
@@ -309,6 +309,7 @@ impl From<ComInvokeValue> for ComValue {
 pub struct ComInvokeArg {
     pub value: Option<ComInvokeValue>,
     pub name: Option<String>,
+    pub by_ref: Option<RuntimeByRefSlot>,
 }
 
 impl ComInvokeArg {
@@ -319,6 +320,7 @@ impl ComInvokeArg {
         Self {
             value: Some(ComValue::from_runtime_token(value).into()),
             name: None,
+            by_ref: None,
         }
     }
 
@@ -329,6 +331,7 @@ impl ComInvokeArg {
         Self {
             value: Some(ComValue::from_runtime_token(value).into()),
             name: Some(name.into()),
+            by_ref: None,
         }
     }
 
@@ -337,6 +340,16 @@ impl ComInvokeArg {
         Self {
             value: Some(value.into()),
             name: None,
+            by_ref: None,
+        }
+    }
+
+    /// Retained value-model positional ByRef argument.
+    pub fn positional_by_ref(value: ComValue, slot: RuntimeByRefSlot) -> Self {
+        Self {
+            value: Some(value.into()),
+            name: None,
+            by_ref: Some(slot),
         }
     }
 
@@ -345,6 +358,7 @@ impl ComInvokeArg {
         Self {
             value: Some(value.into()),
             name: Some(name.into()),
+            by_ref: None,
         }
     }
 
@@ -352,6 +366,7 @@ impl ComInvokeArg {
         Self {
             value: None,
             name: None,
+            by_ref: None,
         }
     }
 
@@ -359,6 +374,7 @@ impl ComInvokeArg {
         Self {
             value: None,
             name: Some(name.into()),
+            by_ref: None,
         }
     }
 }

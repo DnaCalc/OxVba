@@ -139,8 +139,8 @@ pub enum TypeLibWireType {
 impl TypeLibWireType {
     /// Whether this exact wire shape is currently supported as a vtable inbound
     /// parameter for the semantic typelib type. This is intentionally narrower
-    /// than the full descriptor vocabulary: ByRef interface/writeback shapes
-    /// remain IDispatch fallback until the marshaller owns them end to end.
+    /// than the full descriptor vocabulary: pointer-width and object ByRef
+    /// shapes remain IDispatch fallback until their ownership rules are proven.
     pub(crate) fn supports_vtable_param(&self, param_type: TypeLibParamType) -> bool {
         match self {
             Self::Automation(wire_param_type) => *wire_param_type == param_type,
@@ -183,6 +183,17 @@ impl TypeLibParamType {
                 | TypeLibParamType::Byte
                 | TypeLibParamType::LongLong
                 | TypeLibParamType::Decimal
+                | TypeLibParamType::ByRefVariant
+                | TypeLibParamType::ByRefLong
+                | TypeLibParamType::ByRefInteger
+                | TypeLibParamType::ByRefDouble
+                | TypeLibParamType::ByRefSingle
+                | TypeLibParamType::ByRefCurrency
+                | TypeLibParamType::ByRefDate
+                | TypeLibParamType::ByRefDecimal
+                | TypeLibParamType::ByRefByte
+                | TypeLibParamType::ByRefBoolean
+                | TypeLibParamType::ByRefLongLong
         )
     }
 
@@ -716,8 +727,18 @@ mod tests {
                 None,
                 None,
             ),
+            Ok(())
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::ByRefObject],
+                &[TypeLibWireType::Automation(TypeLibParamType::ByRefObject)],
+                &[],
+                None,
+                None,
+            ),
             Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
-                TypeLibParamType::ByRefLong
+                TypeLibParamType::ByRefObject
             ))
         );
         assert_eq!(

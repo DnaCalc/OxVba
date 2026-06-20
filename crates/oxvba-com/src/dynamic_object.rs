@@ -183,6 +183,7 @@ impl From<DynamicCallArg> for ComInvokeArg {
         Self {
             value: value.value.map(|value| value.to_com_value().into()),
             name: value.name,
+            by_ref: None,
         }
     }
 }

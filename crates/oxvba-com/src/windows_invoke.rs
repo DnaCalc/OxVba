@@ -5,7 +5,7 @@ use crate::{
     take_variant_result_value, take_variant_result_variant,
 };
 use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{ObjectRef, RuntimeByRefSlot, RuntimeValueType, Variant};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]
@@ -1930,6 +1930,8 @@ enum VtableDeclineReason {
     MissingInterfaceIid,
     NonStdcall,
     PropertyPutRefDeferred,
+    MissingByRefSlot,
+    ByRefSlotTypeMismatch,
     TooManyArgs,
     UnsynthesizableTrailingArgs,
     ScalarMethodReturnWithSynthesizedArgs,
@@ -1950,16 +1952,35 @@ pub(crate) struct VtableInvocationPlan {
     pub(crate) parameter_types: Vec<crate::TypeLibParamType>,
     pub(crate) parameter_wire_types: Vec<crate::TypeLibWireType>,
     pub(crate) parameter_iids: Vec<Option<crate::ComInterfaceIid>>,
+    pub(crate) parameter_byref_slots: Vec<Option<RuntimeByRefSlot>>,
     pub(crate) return_type: Option<crate::TypeLibParamType>,
     pub(crate) return_wire_type: Option<crate::TypeLibWireType>,
     pub(crate) invoke_kind: crate::TypeLibMemberInvokeKind,
     pub(crate) label: &'static str,
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", test))]
 fn build_vtable_invocation_plan(
     spec: &crate::ComMemberSpec,
     positional_arg_count: usize,
+    return_type: Option<crate::TypeLibParamType>,
+    label: &'static str,
+) -> Result<VtableInvocationPlan, VtableDeclineReason> {
+    let byref_slots = vec![None; positional_arg_count];
+    build_vtable_invocation_plan_with_byrefs(
+        spec,
+        positional_arg_count,
+        &byref_slots,
+        return_type,
+        label,
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn build_vtable_invocation_plan_with_byrefs(
+    spec: &crate::ComMemberSpec,
+    positional_arg_count: usize,
+    supplied_byref_slots: &[Option<RuntimeByRefSlot>],
     return_type: Option<crate::TypeLibParamType>,
     label: &'static str,
 ) -> Result<VtableInvocationPlan, VtableDeclineReason> {
@@ -1997,6 +2018,9 @@ fn build_vtable_invocation_plan(
     }
     if positional_arg_count > spec.parameter_types.len() {
         return Err(VtableDeclineReason::TooManyArgs);
+    }
+    if supplied_byref_slots.len() != positional_arg_count {
+        return Err(VtableDeclineReason::MissingByRefSlot);
     }
     if positional_arg_count < spec.parameter_types.len() {
         if !trailing_optionals_are_synthesizable(spec, positional_arg_count) {
@@ -2056,6 +2080,38 @@ fn build_vtable_invocation_plan(
             }
         });
     }
+    let mut parameter_byref_slots = vec![None; spec.parameter_types.len()];
+    for (index, (param_type, wire_type)) in spec
+        .parameter_types
+        .iter()
+        .zip(
+            spec.parameter_wire_types
+                .iter()
+                .map(Some)
+                .chain(std::iter::repeat(None)),
+        )
+        .take(spec.parameter_types.len())
+        .enumerate()
+    {
+        let requires_byref_slot = param_type.is_by_ref()
+            || matches!(
+                wire_type,
+                Some(crate::TypeLibWireType::ByRefSafeArrayVariant)
+            );
+        if requires_byref_slot {
+            let Some(Some(slot)) = supplied_byref_slots.get(index) else {
+                return Err(VtableDeclineReason::MissingByRefSlot);
+            };
+            if let Some(expected_type) = expected_runtime_type_for_byref(*param_type)
+                && slot
+                    .expected_type
+                    .is_some_and(|actual| actual != expected_type)
+            {
+                return Err(VtableDeclineReason::ByRefSlotTypeMismatch);
+            }
+            parameter_byref_slots[index] = Some(*slot);
+        }
+    }
     Ok(VtableInvocationPlan {
         slot,
         slot_bound,
@@ -2063,11 +2119,32 @@ fn build_vtable_invocation_plan(
         parameter_types: spec.parameter_types.clone(),
         parameter_wire_types: spec.parameter_wire_types.clone(),
         parameter_iids: spec.parameter_iids.clone(),
+        parameter_byref_slots,
         return_type,
         return_wire_type: spec.return_wire_type.clone(),
         invoke_kind: spec.invoke_kind,
         label,
     })
+}
+
+#[cfg(target_os = "windows")]
+fn expected_runtime_type_for_byref(
+    param_type: crate::TypeLibParamType,
+) -> Option<RuntimeValueType> {
+    match param_type {
+        crate::TypeLibParamType::ByRefVariant => Some(RuntimeValueType::Variant),
+        crate::TypeLibParamType::ByRefLong => Some(RuntimeValueType::Long),
+        crate::TypeLibParamType::ByRefInteger => Some(RuntimeValueType::Integer),
+        crate::TypeLibParamType::ByRefDouble => Some(RuntimeValueType::Double),
+        crate::TypeLibParamType::ByRefSingle => Some(RuntimeValueType::Single),
+        crate::TypeLibParamType::ByRefCurrency => Some(RuntimeValueType::Currency),
+        crate::TypeLibParamType::ByRefDate => Some(RuntimeValueType::Date),
+        crate::TypeLibParamType::ByRefDecimal => Some(RuntimeValueType::Decimal),
+        crate::TypeLibParamType::ByRefByte => Some(RuntimeValueType::Byte),
+        crate::TypeLibParamType::ByRefBoolean => Some(RuntimeValueType::Boolean),
+        crate::TypeLibParamType::ByRefLongLong => Some(RuntimeValueType::LongLong),
+        _ => None,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2305,7 +2382,22 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     };
     // Gate on the SUPPLIED positional count (the gate widens to admit fewer
     // supplied than declared when the missing trailing params are synthesizable).
-    let plan = match build_vtable_invocation_plan(spec, supplied_count, return_type, label) {
+    let supplied_byref_slots: Vec<Option<RuntimeByRefSlot>> = args[..supplied_count]
+        .iter()
+        .map(|arg| arg.by_ref)
+        .collect();
+    if supplied_byref_slots.iter().any(Option::is_some) {
+        // This value-only API cannot return writebacks. Decline before any slot
+        // call so ByRef mutations are never silently lost.
+        return Ok(None);
+    }
+    let plan = match build_vtable_invocation_plan_with_byrefs(
+        spec,
+        supplied_count,
+        &supplied_byref_slots,
+        return_type,
+        label,
+    ) {
         Ok(plan) => plan,
         Err(_) => return Ok(None),
     };
@@ -2636,10 +2728,12 @@ where
 #[cfg(all(target_os = "windows", test))]
 mod gate_tests {
     use super::{
-        VtableDeclineReason, build_vtable_invocation_plan, is_v1_vtable_vartype,
+        VtableDeclineReason, build_vtable_invocation_plan,
+        build_vtable_invocation_plan_with_byrefs, is_v1_vtable_vartype,
         synthesize_trailing_optional_args,
     };
     use crate::{ComInterfaceIid, ComMemberSpec, SourceTypeKind, TypeLibMemberInvokeKind};
+    use oxvba_runtime::RuntimeByRefSlot;
 
     /// A vtable-eligible spec: a real custom INTERFACE dual, CC_STDCALL, a slot
     /// at `slot` inside `bound`, a non-null IID, and a no-arg `Long` getter. The
@@ -3105,14 +3199,30 @@ mod gate_tests {
         ] {
             assert!(is_v1_vtable_vartype(ok), "{ok:?} must be in the v1 set");
         }
-        // Out-of-set parameter shapes (LongPtr, ByRef*) must NOT be admitted as
-        // inbound arguments.
-        for bad in [
-            crate::TypeLibParamType::LongPtr,
+        for ok in [
             crate::TypeLibParamType::ByRefVariant,
             crate::TypeLibParamType::ByRefLong,
-            crate::TypeLibParamType::ByRefObject,
+            crate::TypeLibParamType::ByRefInteger,
+            crate::TypeLibParamType::ByRefDouble,
+            crate::TypeLibParamType::ByRefSingle,
+            crate::TypeLibParamType::ByRefCurrency,
+            crate::TypeLibParamType::ByRefDate,
             crate::TypeLibParamType::ByRefDecimal,
+            crate::TypeLibParamType::ByRefByte,
+            crate::TypeLibParamType::ByRefBoolean,
+            crate::TypeLibParamType::ByRefLongLong,
+        ] {
+            assert!(
+                is_v1_vtable_vartype(ok),
+                "{ok:?} must be in the writeback-capable vtable set"
+            );
+        }
+        // Out-of-set parameter shapes still decline before slot-call.
+        for bad in [
+            crate::TypeLibParamType::LongPtr,
+            crate::TypeLibParamType::ByRefString,
+            crate::TypeLibParamType::ByRefObject,
+            crate::TypeLibParamType::ByRefLongPtr,
         ] {
             assert!(
                 !is_v1_vtable_vartype(bad),
@@ -3187,14 +3297,53 @@ mod gate_tests {
     }
 
     #[test]
+    fn gate_admits_byref_long_only_with_writeback_slot() {
+        let mut spec = eligible_spec(17, 58);
+        spec.parameter_types = vec![crate::TypeLibParamType::ByRefLong];
+        spec.parameter_wire_types = vec![crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::ByRefLong,
+        )];
+        spec.parameter_iids = vec![None];
+        assert_eq!(
+            vtable_gate_decline_reason(&spec, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingByRefSlot)
+        );
+        let slot = RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::Long));
+        assert!(
+            build_vtable_invocation_plan_with_byrefs(
+                &spec,
+                1,
+                &[Some(slot)],
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .is_ok(),
+            "ByRef Long is admitted when the caller supplies a writeback slot"
+        );
+        let wrong_slot = RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::String));
+        assert_eq!(
+            build_vtable_invocation_plan_with_byrefs(
+                &spec,
+                1,
+                &[Some(wrong_slot)],
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .expect_err("mismatched ByRef slot type must decline"),
+            VtableDeclineReason::ByRefSlotTypeMismatch
+        );
+    }
+
+    #[test]
     fn gate_decline_reasons_cover_abi_shape_predicates() {
         let mut bad_param = eligible_spec(17, 58);
         bad_param.parameter_types = vec![crate::TypeLibParamType::ByRefVariant];
+        bad_param.parameter_wire_types = vec![crate::TypeLibWireType::Automation(
+            crate::TypeLibParamType::ByRefVariant,
+        )];
         assert_eq!(
             vtable_gate_decline_reason(&bad_param, 1, Some(crate::TypeLibParamType::Long)),
-            Some(VtableDeclineReason::UnsupportedParameterType(
-                crate::TypeLibParamType::ByRefVariant
-            ))
+            Some(VtableDeclineReason::MissingByRefSlot)
         );
 
         let mut object_arg = eligible_spec(17, 58);

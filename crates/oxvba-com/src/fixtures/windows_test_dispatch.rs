@@ -3506,6 +3506,8 @@ pub const DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE: u16 = 24;
 pub const DUAL_SLOT_GET_SAFEARRAY_VALUE: u16 = 25;
 pub const DUAL_SLOT_GET_DECIMAL_VALUE: u16 = 26;
 pub const DUAL_SLOT_PUTREF_LONG_VALUE: u16 = 27;
+pub const DUAL_SLOT_MUTATE_BYREF_LONG: u16 = 28;
+pub const DUAL_SLOT_MUTATE_BYREF_BREADTH: u16 = 29;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3649,6 +3651,23 @@ struct RawDualVtbl {
         unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut DECIMAL) -> i32,
     /// slot 27
     putref_long_value: unsafe extern "system" fn(this: *mut core::ffi::c_void, value: i32) -> i32,
+    /// slot 28
+    mutate_byref_long:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, value: *mut i32) -> i32,
+    /// slot 29
+    mutate_byref_breadth: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        integer_value: *mut i16,
+        byte_value: *mut u8,
+        bool_value: *mut VARIANT_BOOL,
+        longlong_value: *mut i64,
+        single_value: *mut f32,
+        double_value: *mut f64,
+        currency_value: *mut CY,
+        date_value: *mut f64,
+        decimal_value: *mut DECIMAL,
+        variant_value: *mut VARIANT,
+    ) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3694,6 +3713,8 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     get_safearray_value: oxvba_dual_get_safearray_value,
     get_decimal_value: oxvba_dual_get_decimal_value,
     putref_long_value: oxvba_dual_putref_long_value,
+    mutate_byref_long: oxvba_dual_mutate_byref_long,
+    mutate_byref_breadth: oxvba_dual_mutate_byref_breadth,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4241,6 +4262,68 @@ unsafe extern "system" fn oxvba_dual_putref_long_value(
     (*as_oxvba_dual(this))
         .last_put_value
         .store(value, Ordering::SeqCst);
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_mutate_byref_long(
+    _this: *mut core::ffi::c_void,
+    value: *mut i32,
+) -> i32 {
+    if value.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *value = (*value).saturating_add(1_000);
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
+unsafe extern "system" fn oxvba_dual_mutate_byref_breadth(
+    _this: *mut core::ffi::c_void,
+    integer_value: *mut i16,
+    byte_value: *mut u8,
+    bool_value: *mut VARIANT_BOOL,
+    longlong_value: *mut i64,
+    single_value: *mut f32,
+    double_value: *mut f64,
+    currency_value: *mut CY,
+    date_value: *mut f64,
+    decimal_value: *mut DECIMAL,
+    variant_value: *mut VARIANT,
+) -> i32 {
+    if integer_value.is_null()
+        || byte_value.is_null()
+        || bool_value.is_null()
+        || longlong_value.is_null()
+        || single_value.is_null()
+        || double_value.is_null()
+        || currency_value.is_null()
+        || date_value.is_null()
+        || decimal_value.is_null()
+        || variant_value.is_null()
+    {
+        return COM_E_INVALIDARG;
+    }
+    *integer_value = -321;
+    *byte_value = 222;
+    *bool_value = -1;
+    *longlong_value = DUAL_LONGLONG_VALUE + 10;
+    *single_value = DUAL_SINGLE_VALUE + 1.0;
+    *double_value = DUAL_DOUBLE_VALUE - 1.0;
+    (*currency_value).int64 = DUAL_PRICE_SCALED_I64 + 10_000;
+    *date_value = DUAL_CREATED_OLE_DATE + 2.0;
+    *decimal_value = decimal_from_parts(
+        DUAL_DECIMAL_LO + 1,
+        DUAL_DECIMAL_MID,
+        DUAL_DECIMAL_HI,
+        DUAL_DECIMAL_SCALE,
+        DUAL_DECIMAL_NEGATIVE,
+    );
+    let _ = VariantClear(variant_value);
+    (*variant_value).Anonymous.Anonymous.vt = VT_I4;
+    (*variant_value).Anonymous.Anonymous.Anonymous.lVal = 77;
     COM_S_OK
 }
 

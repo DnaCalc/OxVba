@@ -30,7 +30,7 @@ use crate::windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, VtableInvocationPlan, bstr_to_string_and_free,
 };
 use crate::{ComValue, TypeLibParamType, TypeLibWireType};
-use oxvba_runtime::{Decimal96, ObjectRef, Variant};
+use oxvba_runtime::{Decimal96, ObjectRef, RuntimeByRefSlot, RuntimeByRefWriteback, Variant};
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{DECIMAL, SysAllocString, SysFreeString};
 use windows_sys::Win32::System::Com::SAFEARRAY;
@@ -181,6 +181,27 @@ enum InboundOwned {
     /// its declared param IID (Bug-4b); we own that one reference and `Release` it after
     /// the call (the callee only borrowed it).
     Interface(*mut c_void),
+    /// A mutable ByRef cell whose post-call contents must be decoded before cleanup.
+    ByRef(ByRefCell),
+}
+
+enum ByRefCell {
+    I32(RuntimeByRefSlot, Box<i32>),
+    I16(RuntimeByRefSlot, Box<i16>),
+    U8(RuntimeByRefSlot, Box<u8>),
+    Bool(RuntimeByRefSlot, Box<i16>),
+    I64(RuntimeByRefSlot, Box<i64>),
+    F64(RuntimeByRefSlot, Box<f64>),
+    F32(RuntimeByRefSlot, Box<f32>),
+    Currency(RuntimeByRefSlot, Box<i64>),
+    Date(RuntimeByRefSlot, Box<f64>),
+    Decimal(RuntimeByRefSlot, Box<DECIMAL>),
+    Variant(RuntimeByRefSlot, Box<VARIANT>),
+}
+
+pub(crate) struct VtableInvokeResult {
+    pub(crate) value: Variant,
+    pub(crate) writebacks: Vec<RuntimeByRefWriteback>,
 }
 
 /// The retval out-cell, sized to the member's return VARTYPE. The trailing
@@ -237,6 +258,48 @@ where
     FResolveObject: FnMut(ObjectRef) -> Result<*mut c_void, String>,
     FBindDispatch: FnMut(*mut c_void) -> Result<Variant, String>,
 {
+    if plan.parameter_byref_slots.iter().any(Option::is_some) {
+        return Err(validation_failure(
+            plan.label,
+            dispid,
+            "vtable ByRef writebacks require the writeback-capable invoke path",
+        ));
+    }
+    // SAFETY: this value-only wrapper has rejected writeback-capable plans, so
+    // forwarding the caller's safety contract cannot silently discard ByRef
+    // mutations.
+    let result = unsafe {
+        vtable_invoke_with_writebacks(
+            this,
+            plan,
+            args,
+            dispid,
+            resolve_object,
+            bind_dispatch_result,
+        )
+    }?;
+    if !result.writebacks.is_empty() {
+        return Err(validation_failure(
+            plan.label,
+            dispid,
+            "vtable ByRef writebacks require the writeback-capable invoke path",
+        ));
+    }
+    Ok(result.value)
+}
+
+pub(crate) unsafe fn vtable_invoke_with_writebacks<FResolveObject, FBindDispatch>(
+    this: *mut c_void,
+    plan: &VtableInvocationPlan,
+    args: &[Variant],
+    dispid: i32,
+    resolve_object: &mut FResolveObject,
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<VtableInvokeResult, ComInvokeFailure>
+where
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut c_void, String>,
+    FBindDispatch: FnMut(*mut c_void) -> Result<Variant, String>,
+{
     if this.is_null() {
         return Err(validation_failure(
             plan.label,
@@ -283,6 +346,23 @@ where
             ),
         ));
     }
+    for (index, param_type) in plan.parameter_types.iter().enumerate() {
+        let wire_type = plan.parameter_wire_types.get(index);
+        let needs_writeback = param_type.is_by_ref()
+            || matches!(wire_type, Some(TypeLibWireType::ByRefSafeArrayVariant));
+        if needs_writeback
+            && !plan
+                .parameter_byref_slots
+                .get(index)
+                .is_some_and(Option::is_some)
+        {
+            return Err(validation_failure(
+                plan.label,
+                dispid,
+                format!("vtable ByRef parameter {param_type:?} is missing its writeback slot"),
+            ));
+        }
+    }
 
     // Resolve the slot function pointer: this is `*const *const fnptr`, so the
     // vtable is `*(*this)` and the entry is `vtable[slot]`.
@@ -313,7 +393,15 @@ where
         // trailing optionals (which extend `args` beyond `parameter_iids`).
         let param_iid = plan.parameter_iids.get(i).copied().flatten();
         let wire_type = plan.parameter_wire_types.get(i);
-        match marshal_inbound_param(*param_type, wire_type, arg, param_iid, resolve_object) {
+        let byref_slot = plan.parameter_byref_slots.get(i).copied().flatten();
+        match marshal_inbound_param(
+            *param_type,
+            wire_type,
+            arg,
+            param_iid,
+            byref_slot,
+            resolve_object,
+        ) {
             Ok((ffi_arg, owned)) => {
                 ffi_args.push(ffi_arg);
                 inbound_owned.push(owned);
@@ -349,11 +437,10 @@ where
     // `inbound_owned`/`out_cell` locals and stays alive across the call.
     let hr = unsafe { call_via_libffi(fnptr as usize, &ffi_args, FfiReturnType::Long) } as i32;
 
-    // We own inbound [in] BSTRs (callee only borrowed them) and inbound VARIANT
-    // cells — free them now, on success and failure alike.
-    free_inbound(&mut inbound_owned);
-
     if hr < 0 {
+        // We own inbound cells even on failure; release them before surfacing the
+        // COM error. Writebacks are not valid on a failing HRESULT.
+        free_inbound(&mut inbound_owned);
         // Drop any retval cell payload the callee may have written before the
         // failure (defensive: most servers leave it zeroed on failure).
         discard_out_cell(out_cell);
@@ -367,10 +454,22 @@ where
         });
     }
 
+    let writebacks = match collect_writebacks(&mut inbound_owned, plan.label, dispid) {
+        Ok(writebacks) => writebacks,
+        Err(failure) => {
+            free_inbound(&mut inbound_owned);
+            discard_out_cell(out_cell);
+            return Err(failure);
+        }
+    };
+    // We own inbound [in] and ByRef cells; free them after writeback decoding.
+    free_inbound(&mut inbound_owned);
+
     // hr >= 0, so the callee populated the retval cell per its declared return
     // type; decode it and take ownership of any transferred BSTR/interface/
     // VARIANT payload.
-    decode_out_cell(out_cell, plan.label, dispid, bind_dispatch_result)
+    let value = decode_out_cell(out_cell, plan.label, dispid, bind_dispatch_result)?;
+    Ok(VtableInvokeResult { value, writebacks })
 }
 
 fn validation_failure(
@@ -427,6 +526,7 @@ fn marshal_inbound_param<FResolveObject>(
     wire_type: Option<&TypeLibWireType>,
     arg: &Variant,
     param_iid: Option<crate::ComInterfaceIid>,
+    byref_slot: Option<RuntimeByRefSlot>,
     resolve_object: &mut FResolveObject,
 ) -> Result<(FfiArg, InboundOwned), String>
 where
@@ -436,6 +536,9 @@ where
     let value = ComValue::from_variant(arg)?;
     if matches!(wire_type, Some(TypeLibWireType::SafeArrayVariant)) {
         return marshal_inbound_safearray_param(&value, resolve_object);
+    }
+    if param_type.is_by_ref() {
+        return marshal_byref_param(param_type, &value, arg, byref_slot, resolve_object);
     }
     Ok(match param_type {
         // Scalars by value (reusing the dynlink scalar conventions). BOOL is an
@@ -580,6 +683,104 @@ where
     })
 }
 
+fn marshal_byref_param<FResolveObject>(
+    param_type: TypeLibParamType,
+    value: &ComValue,
+    arg: &Variant,
+    byref_slot: Option<RuntimeByRefSlot>,
+    resolve_object: &mut FResolveObject,
+) -> Result<(FfiArg, InboundOwned), String>
+where
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut c_void, String>,
+{
+    use TypeLibParamType as P;
+    let slot = byref_slot.ok_or_else(|| {
+        format!("vtable ByRef parameter {param_type:?} requires a runtime ByRef slot")
+    })?;
+    let (ptr, cell) = match param_type {
+        P::ByRefLong => {
+            let mut cell = Box::new(com_value_to_i32(value, "VT_BYREF|VT_I4")?);
+            let ptr = cell.as_mut() as *mut i32;
+            (ptr.cast::<c_void>(), ByRefCell::I32(slot, cell))
+        }
+        P::ByRefInteger => {
+            let mut cell = Box::new(com_value_to_i16(value, "VT_BYREF|VT_I2")?);
+            let ptr = cell.as_mut() as *mut i16;
+            (ptr.cast::<c_void>(), ByRefCell::I16(slot, cell))
+        }
+        P::ByRefByte => {
+            let mut cell = Box::new(com_value_to_u8(value)?);
+            let ptr = cell.as_mut() as *mut u8;
+            (ptr.cast::<c_void>(), ByRefCell::U8(slot, cell))
+        }
+        P::ByRefBoolean => {
+            let b = arg
+                .as_bool()
+                .ok_or_else(|| "vtable VT_BYREF|VT_BOOL parameter expects Boolean".to_string())?;
+            let mut cell = Box::new(if b { -1 } else { 0 });
+            let ptr = cell.as_mut() as *mut i16;
+            (ptr.cast::<c_void>(), ByRefCell::Bool(slot, cell))
+        }
+        P::ByRefLongLong => {
+            let mut cell = Box::new(com_value_to_i64(value)?);
+            let ptr = cell.as_mut() as *mut i64;
+            (ptr.cast::<c_void>(), ByRefCell::I64(slot, cell))
+        }
+        P::ByRefDouble => {
+            let mut cell = Box::new(com_value_to_f64(value)?);
+            let ptr = cell.as_mut() as *mut f64;
+            (ptr.cast::<c_void>(), ByRefCell::F64(slot, cell))
+        }
+        P::ByRefSingle => {
+            let mut cell = Box::new(com_value_to_f64(value)? as f32);
+            let ptr = cell.as_mut() as *mut f32;
+            (ptr.cast::<c_void>(), ByRefCell::F32(slot, cell))
+        }
+        P::ByRefCurrency => {
+            let mut cell = Box::new(com_value_to_currency_i64(value)?);
+            let ptr = cell.as_mut() as *mut i64;
+            (ptr.cast::<c_void>(), ByRefCell::Currency(slot, cell))
+        }
+        P::ByRefDate => {
+            let mut cell = Box::new(com_value_to_f64(value)?);
+            let ptr = cell.as_mut() as *mut f64;
+            (ptr.cast::<c_void>(), ByRefCell::Date(slot, cell))
+        }
+        P::ByRefDecimal => {
+            let mut cell = Box::new(decimal96_to_windows(com_value_to_decimal(value)?));
+            let ptr = cell.as_mut() as *mut DECIMAL;
+            (ptr.cast::<c_void>(), ByRefCell::Decimal(slot, cell))
+        }
+        P::ByRefVariant => {
+            // SAFETY: an all-zero VARIANT is a valid VT_EMPTY VARIANT.
+            let mut cell: Box<VARIANT> = Box::new(unsafe { std::mem::zeroed() });
+            // SAFETY: the VARIANT cell owns any object reference written into it,
+            // so this AddRef is later balanced by VariantClear in free_byref_cell.
+            let mut add_ref = |dispatch: *mut c_void| unsafe {
+                let _ = crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+            };
+            // SAFETY: `cell` is writable, and the resolver/add-ref closures uphold
+            // set_variant_from_com_value's object ownership contract.
+            unsafe {
+                crate::set_variant_from_com_value(
+                    cell.as_mut(),
+                    value,
+                    resolve_object,
+                    &mut add_ref,
+                )?;
+            }
+            let ptr = cell.as_mut() as *mut VARIANT;
+            (ptr.cast::<c_void>(), ByRefCell::Variant(slot, cell))
+        }
+        other => {
+            return Err(format!(
+                "vtable ByRef parameter VARTYPE {other:?} is not supported yet"
+            ));
+        }
+    };
+    Ok((FfiArg::Pointer(ptr), InboundOwned::ByRef(cell)))
+}
+
 fn marshal_inbound_safearray_param<FResolveObject>(
     value: &ComValue,
     resolve_object: &mut FResolveObject,
@@ -660,6 +861,62 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
             // SAFETY: an Interface entry is the single reference our QueryInterface
             // handed us; the callee only borrowed it, so we Release it exactly once.
             InboundOwned::Interface(interface) => unsafe { crate::release_unknown(interface) },
+            InboundOwned::ByRef(cell) => free_byref_cell(cell),
+        }
+    }
+}
+
+fn collect_writebacks(
+    owned: &mut [InboundOwned],
+    label: &'static str,
+    dispid: i32,
+) -> Result<Vec<RuntimeByRefWriteback>, ComInvokeFailure> {
+    let mut writebacks = Vec::new();
+    for entry in owned.iter_mut() {
+        if let InboundOwned::ByRef(cell) = entry {
+            writebacks.push(decode_byref_cell(cell, label, dispid)?);
+        }
+    }
+    Ok(writebacks)
+}
+
+fn decode_byref_cell(
+    cell: &mut ByRefCell,
+    label: &'static str,
+    dispid: i32,
+) -> Result<RuntimeByRefWriteback, ComInvokeFailure> {
+    let (slot, value) = match cell {
+        ByRefCell::I32(slot, cell) => (*slot, Variant::from_i32(**cell)),
+        ByRefCell::I16(slot, cell) => (*slot, Variant::from_i16(**cell)),
+        ByRefCell::U8(slot, cell) => (*slot, Variant::from_u8(**cell)),
+        ByRefCell::Bool(slot, cell) => (*slot, Variant::from_bool(**cell != 0)),
+        ByRefCell::I64(slot, cell) => (*slot, Variant::from_i64(**cell)),
+        ByRefCell::F64(slot, cell) => (*slot, Variant::from_f64(**cell)),
+        ByRefCell::F32(slot, cell) => (*slot, Variant::from_f64(f64::from(**cell))),
+        ByRefCell::Currency(slot, cell) => (*slot, Variant::from_currency_scaled_i64(**cell)),
+        ByRefCell::Date(slot, cell) => (*slot, Variant::from_date_f64(**cell)),
+        ByRefCell::Decimal(slot, cell) => (
+            *slot,
+            Variant::from_decimal96(decimal96_from_windows(cell.as_ref())),
+        ),
+        ByRefCell::Variant(slot, cell) => {
+            // SAFETY: on a successful HRESULT the ByRef VARIANT cell is initialized
+            // and variant_to_com_value only reads its discriminant/payload.
+            let value = unsafe { crate::variant_to_com_value(cell.as_ref()) }
+                .and_then(|value| value.to_variant())
+                .map_err(|detail| validation_failure(label, dispid, detail))?;
+            (*slot, value)
+        }
+    };
+    Ok(RuntimeByRefWriteback::new(slot, value))
+}
+
+fn free_byref_cell(cell: ByRefCell) {
+    if let ByRefCell::Variant(_, mut cell) = cell {
+        // SAFETY: the ByRef VARIANT cell was initialized by this marshaller and
+        // is owned by the cell; clearing it releases any payload exactly once.
+        unsafe {
+            let _ = VariantClear(cell.as_mut());
         }
     }
 }
@@ -1003,14 +1260,14 @@ mod tests {
         DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE,
         DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SAFEARRAY_VALUE,
         DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE,
-        DUAL_SLOT_LOOKUP, DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE,
-        DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE,
-        DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object,
-        create_oxvba_test_dispatch,
+        DUAL_SLOT_LOOKUP, DUAL_SLOT_MUTATE_BYREF_BREADTH, DUAL_SLOT_MUTATE_BYREF_LONG,
+        DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
+        DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE,
+        DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
-    use oxvba_runtime::VarType;
     use oxvba_runtime::safe_array::SafeArray;
+    use oxvba_runtime::{RuntimeValueType, VarType};
 
     /// Resolver that never sees an object arg in these tests.
     fn no_object_resolver() -> impl FnMut(ObjectRef) -> Result<*mut c_void, String> {
@@ -1102,6 +1359,7 @@ mod tests {
             parameter_types,
             parameter_wire_types,
             parameter_iids,
+            parameter_byref_slots: vec![],
             return_type,
             return_wire_type,
             invoke_kind,
@@ -1482,6 +1740,147 @@ mod tests {
             "failure should identify the unsupported semantic type"
         );
         // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn byref_long_writeback_is_returned_from_writeback_capable_path() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let slot = RuntimeByRefSlot::new(0, Some(RuntimeValueType::Long));
+        let mut plan = invocation_plan(
+            DUAL_SLOT_MUTATE_BYREF_LONG,
+            vec![TypeLibParamType::ByRefLong],
+            vec![TypeLibWireType::Automation(TypeLibParamType::ByRefLong)],
+            vec![None],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        plan.parameter_byref_slots = vec![Some(slot)];
+        let result = unsafe {
+            vtable_invoke_with_writebacks(
+                this,
+                &plan,
+                &[Variant::from_i32(7)],
+                28,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("ByRef Long vtable call should succeed");
+        assert_eq!(result.value.vtype(), VarType::Empty);
+        assert_eq!(result.writebacks.len(), 1);
+        assert_eq!(result.writebacks[0].slot, slot);
+        assert_eq!(result.writebacks[0].value.as_i32(), Some(1_007));
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn byref_scalar_decimal_and_variant_breadth_returns_writebacks() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let parameter_types = vec![
+            TypeLibParamType::ByRefInteger,
+            TypeLibParamType::ByRefByte,
+            TypeLibParamType::ByRefBoolean,
+            TypeLibParamType::ByRefLongLong,
+            TypeLibParamType::ByRefSingle,
+            TypeLibParamType::ByRefDouble,
+            TypeLibParamType::ByRefCurrency,
+            TypeLibParamType::ByRefDate,
+            TypeLibParamType::ByRefDecimal,
+            TypeLibParamType::ByRefVariant,
+        ];
+        let mut plan = invocation_plan(
+            DUAL_SLOT_MUTATE_BYREF_BREADTH,
+            parameter_types.clone(),
+            parameter_types
+                .iter()
+                .copied()
+                .map(TypeLibWireType::Automation)
+                .collect(),
+            vec![None; parameter_types.len()],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        let slots: Vec<RuntimeByRefSlot> = [
+            RuntimeValueType::Integer,
+            RuntimeValueType::Byte,
+            RuntimeValueType::Boolean,
+            RuntimeValueType::LongLong,
+            RuntimeValueType::Single,
+            RuntimeValueType::Double,
+            RuntimeValueType::Currency,
+            RuntimeValueType::Date,
+            RuntimeValueType::Decimal,
+            RuntimeValueType::Variant,
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| RuntimeByRefSlot::new(index as u32, Some(*ty)))
+        .collect();
+        plan.parameter_byref_slots = slots.iter().copied().map(Some).collect();
+        let result = unsafe {
+            vtable_invoke_with_writebacks(
+                this,
+                &plan,
+                &[
+                    Variant::from_i16(1),
+                    Variant::from_u8(2),
+                    Variant::from_bool(false),
+                    Variant::from_i64(3),
+                    Variant::from_f64(4.0),
+                    Variant::from_f64(5.0),
+                    Variant::from_currency_scaled_i64(6),
+                    Variant::from_date_f64(7.0),
+                    Variant::from_decimal96(Decimal96::from_parts(8, 0, 0, 0, false)),
+                    Variant::from_i32(9),
+                ],
+                29,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("ByRef breadth vtable call should succeed");
+        assert_eq!(result.writebacks.len(), slots.len());
+        assert_eq!(result.writebacks[0].value.as_i16(), Some(-321));
+        assert_eq!(result.writebacks[1].value.as_u8(), Some(222));
+        assert_eq!(result.writebacks[2].value.as_bool(), Some(true));
+        assert_eq!(
+            result.writebacks[3].value.as_i64(),
+            Some(DUAL_LONGLONG_VALUE + 10)
+        );
+        assert_eq!(
+            result.writebacks[4].value.as_f64(),
+            Some(f64::from(DUAL_SINGLE_VALUE + 1.0))
+        );
+        assert_eq!(
+            result.writebacks[5].value.as_f64(),
+            Some(DUAL_DOUBLE_VALUE - 1.0)
+        );
+        assert_eq!(
+            result.writebacks[6].value.as_currency_scaled_i64(),
+            Some(DUAL_PRICE_SCALED_I64 + 10_000)
+        );
+        assert_eq!(
+            result.writebacks[7].value.as_date_f64(),
+            Some(DUAL_CREATED_OLE_DATE + 2.0)
+        );
+        assert_eq!(
+            result.writebacks[8].value.as_decimal96(),
+            Some(Decimal96::from_parts(
+                DUAL_DECIMAL_LO + 1,
+                DUAL_DECIMAL_MID,
+                DUAL_DECIMAL_HI,
+                DUAL_DECIMAL_SCALE,
+                DUAL_DECIMAL_NEGATIVE,
+            ))
+        );
+        assert_eq!(result.writebacks[9].value.as_i32(), Some(77));
         unsafe { release_dual(this) };
     }
 
