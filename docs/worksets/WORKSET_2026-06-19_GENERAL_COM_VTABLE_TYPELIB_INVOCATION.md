@@ -250,7 +250,11 @@ that scan found one foreign `safearray_record` occurrence in `AcroBrokerLib` and
 three unresolved user-defined SAFEARRAY elements in the installed Visio typelib.
 `docs/evidence/typelib_audit/acrobroker_record_safearray_site_20260620T153000/`
 identifies the concrete foreign record-array descriptor as
-`IBroker.BrokerUpdateIEContextMenu` zero-based `param2` (`VT_RECORD`). The next
-foreign-record step is targeted descriptor/value-oracle proof for that member or
+`IBroker.BrokerUpdateIEContextMenu` zero-based `param2` (`VT_RECORD`). The live
+metadata projection now has a regression proving that this foreign descriptor
+survives into runtime `TypeLibWireType::SafeArray { element_vt: VT_RECORD }`
+metadata; the dual-dispinterface enrichment path now carries partner wire types,
+parameter IIDs, and return wire metadata together with semantic parameter shape.
+The next foreign-record step is targeted value-oracle proof for that member or
 another captured typelib specimen, not a generic fallback. Malformed SAFEARRAY
 descriptors now decline rather than guessing `VT_VARIANT`.

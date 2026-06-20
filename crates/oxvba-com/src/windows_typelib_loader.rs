@@ -2641,10 +2641,12 @@ unsafe fn enrich_dual_dispinterface_members(
                 // stale name list would mis-count the args on the IDispatch fallback.
                 member.parameter_names = shape.parameter_names;
                 member.parameter_types = shape.parameter_types;
+                member.parameter_wire_types = shape.parameter_wire_types;
                 member.parameter_iids = shape.parameter_iids;
                 member.parameter_optional = shape.parameter_optional;
                 member.parameter_optional_defaults = shape.parameter_optional_defaults;
                 member.return_type = shape.return_type;
+                member.return_wire_type = shape.return_wire_type;
             }
         }
     }
@@ -2701,10 +2703,12 @@ struct PartnerMemberParamShape {
     /// arity check against the stale dispinterface names rejects the value arg.
     parameter_names: Vec<String>,
     parameter_types: Vec<TypeLibParamType>,
+    parameter_wire_types: Vec<TypeLibWireType>,
     parameter_iids: Vec<Option<crate::ComInterfaceIid>>,
     parameter_optional: Vec<bool>,
     parameter_optional_defaults: Vec<OptionalParamDefault>,
     return_type: Option<TypeLibParamType>,
+    return_wire_type: Option<TypeLibWireType>,
 }
 
 /// Cross from a dual `dispinterface` ITypeInfo to its FDUAL PARTNER
@@ -2889,10 +2893,12 @@ unsafe fn partner_member_param_shape(
             .map(|m| PartnerMemberParamShape {
                 parameter_names: m.parameter_names.clone(),
                 parameter_types: m.parameter_types.clone(),
+                parameter_wire_types: m.parameter_wire_types.clone(),
                 parameter_iids: m.parameter_iids.clone(),
                 parameter_optional: m.parameter_optional.clone(),
                 parameter_optional_defaults: m.parameter_optional_defaults.clone(),
                 return_type: m.return_type,
+                return_wire_type: m.return_wire_type.clone(),
             })
     };
 
@@ -3084,9 +3090,12 @@ pub unsafe fn live_member_metadata_from_dispatch(
                     // typelib-bind enricher), so a stale name list mis-counts args.
                     member.parameter_names = shape.parameter_names;
                     member.parameter_types = shape.parameter_types;
+                    member.parameter_wire_types = shape.parameter_wire_types;
+                    member.parameter_iids = shape.parameter_iids;
                     member.parameter_optional = shape.parameter_optional;
                     member.parameter_optional_defaults = shape.parameter_optional_defaults;
                     member.return_type = shape.return_type;
+                    member.return_wire_type = shape.return_wire_type;
                 }
             }
             member
@@ -4013,6 +4022,60 @@ mod tests {
             unsafe { ((*ti_vtbl).release)(ptinfo) };
         }
         unsafe { release_typelib(ptlib) };
+    }
+
+    #[test]
+    fn acrobroker_record_safearray_descriptor_survives_metadata_projection() {
+        // AcroBrokerLib is a useful installed-foreign specimen when Adobe is present:
+        // it exposes `IBroker.BrokerUpdateIEContextMenu` with a SAFEARRAY(VT_RECORD)
+        // parameter. Skip cleanly on machines without that typelib.
+        let guid = windows_sys::core::GUID {
+            data1: 0x4173_8EEA,
+            data2: 0x442F,
+            data3: 0x477F,
+            data4: [0x92, 0xCF, 0x28, 0x89, 0xBD, 0x6C, 0xD7, 0xE7],
+        };
+        let Ok(ptlib) = load_typelib_from_registry(&guid, 1, 0, 0) else {
+            return;
+        };
+        let identity = TypeLibResolvedIdentity {
+            reference_name: "AcroBrokerLib".to_string(),
+            requested_coclass: None,
+            importlib: "AcroBrokerLib".to_string(),
+            libid: Some("{41738EEA-442F-477F-92CF-2889BD6CD7E7}".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "test:acrobroker".to_string(),
+        };
+        let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        unsafe { release_typelib(ptlib) };
+        let blob =
+            blob_result.expect("AcroBroker typelib should build metadata when load succeeds");
+
+        let member = blob
+            .members
+            .iter()
+            .find(|member| member.name == "BrokerUpdateIEContextMenu")
+            .expect("AcroBrokerLib should expose BrokerUpdateIEContextMenu");
+        let record_wire = member.parameter_wire_types.iter().find(|wire_type| {
+            matches!(
+                wire_type,
+                TypeLibWireType::SafeArray {
+                    element_vt: VT_RECORD
+                }
+            )
+        });
+        assert!(
+            record_wire.is_some(),
+            "foreign SAFEARRAY(VT_RECORD) parameter wire metadata must survive metadata projection"
+        );
+        assert!(
+            record_wire.is_some_and(|wire_type| {
+                wire_type.supports_vtable_param(TypeLibParamType::Variant)
+            }),
+            "the projected record-array wire shape should be admitted by the vtable support matrix"
+        );
     }
 
     #[test]
