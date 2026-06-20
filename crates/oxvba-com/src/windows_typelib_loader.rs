@@ -888,17 +888,48 @@ unsafe fn safearray_wire_type(
     is_byref: bool,
 ) -> TypeLibWireType {
     let element_vt = safearray_element_vartype(owner_ptinfo, tdesc).unwrap_or(VT_EMPTY);
+    let record_info = if element_vt == VT_RECORD {
+        safearray_record_binding(owner_ptinfo, tdesc).and_then(|(_, info)| info)
+    } else {
+        None
+    };
     if is_byref {
         if element_vt == VT_VARIANT {
             TypeLibWireType::ByRefSafeArrayVariant
         } else {
-            TypeLibWireType::ByRefSafeArray { element_vt }
+            TypeLibWireType::ByRefSafeArray {
+                element_vt,
+                record_info,
+            }
         }
     } else if element_vt == VT_VARIANT {
         TypeLibWireType::SafeArrayVariant
     } else {
-        TypeLibWireType::SafeArray { element_vt }
+        TypeLibWireType::SafeArray {
+            element_vt,
+            record_info,
+        }
     }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn safearray_record_binding(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> Option<(String, Option<TypeLibRecordInfo>)> {
+    if !(tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY) || tdesc.union_field == 0 {
+        return None;
+    }
+    let element = if tdesc.vt == VT_SAFEARRAY {
+        &*(tdesc.union_field as *const TYPEDESC)
+    } else {
+        let array_desc = &*(tdesc.union_field as *const ARRAYDESC);
+        if array_desc.c_dims == 0 {
+            return None;
+        }
+        &array_desc.tdesc_elem
+    };
+    typedesc_to_record_binding(owner_ptinfo, element)
 }
 
 #[cfg(target_os = "windows")]
@@ -3875,11 +3906,17 @@ mod tests {
         };
         assert_eq!(
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &array_tdesc, false) },
-            TypeLibWireType::SafeArray { element_vt: VT_I4 }
+            TypeLibWireType::SafeArray {
+                element_vt: VT_I4,
+                record_info: None,
+            }
         );
         assert_eq!(
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc, false) },
-            TypeLibWireType::SafeArray { element_vt: VT_I4 }
+            TypeLibWireType::SafeArray {
+                element_vt: VT_I4,
+                record_info: None,
+            }
         );
         assert_eq!(
             unsafe { typedesc_to_param_type(std::ptr::null_mut(), &ptr_tdesc, false) },
@@ -3893,11 +3930,17 @@ mod tests {
         );
         assert_eq!(
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc, true) },
-            TypeLibWireType::ByRefSafeArray { element_vt: VT_I4 }
+            TypeLibWireType::ByRefSafeArray {
+                element_vt: VT_I4,
+                record_info: None,
+            }
         );
         assert_eq!(
             unsafe { retval_typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc) },
-            TypeLibWireType::SafeArray { element_vt: VT_I4 },
+            TypeLibWireType::SafeArray {
+                element_vt: VT_I4,
+                record_info: None,
+            },
             "retval SAFEARRAY pointers describe the member return wire shape, not a ByRef parameter"
         );
 
@@ -3914,7 +3957,10 @@ mod tests {
         };
         assert_eq!(
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &carray_tdesc, false) },
-            TypeLibWireType::SafeArray { element_vt: VT_I4 },
+            TypeLibWireType::SafeArray {
+                element_vt: VT_I4,
+                record_info: None,
+            },
             "CARRAY descriptors still read their element VARTYPE from ARRAYDESC"
         );
     }
@@ -3928,7 +3974,8 @@ mod tests {
         assert_eq!(
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &malformed, false) },
             TypeLibWireType::SafeArray {
-                element_vt: VT_EMPTY
+                element_vt: VT_EMPTY,
+                record_info: None,
             }
         );
     }
@@ -4087,7 +4134,8 @@ mod tests {
             matches!(
                 wire_type,
                 TypeLibWireType::SafeArray {
-                    element_vt: VT_RECORD
+                    element_vt: VT_RECORD,
+                    ..
                 }
             )
         });
@@ -4100,6 +4148,74 @@ mod tests {
                 wire_type.supports_vtable_param(TypeLibParamType::Variant)
             }),
             "the projected record-array wire shape should be admitted by the vtable support matrix"
+        );
+    }
+
+    #[test]
+    fn testeventserver_typed_record_safearray_descriptors_carry_record_info() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let typelib_path = manifest_dir
+            .join("..")
+            .join("..")
+            .join("tools")
+            .join("OxVba.TestEventServer")
+            .join("bin")
+            .join("Debug")
+            .join("net48")
+            .join("OxVba.TestEventServer.tlb");
+        if !typelib_path.exists() {
+            return;
+        }
+        let Ok(ptlib) = load_typelib_from_path(&typelib_path.display().to_string()) else {
+            return;
+        };
+        let identity = TypeLibResolvedIdentity {
+            reference_name: "OxVba_TestEventServer".to_string(),
+            requested_coclass: Some("TestEventServer".to_string()),
+            importlib: typelib_path.display().to_string(),
+            libid: Some("{E2A30001-0001-0001-0001-000000000001}".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "test:testeventserver-record-array".to_string(),
+        };
+        let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        unsafe { release_typelib(ptlib) };
+        let blob = blob_result.expect("TestEventServer typelib should build metadata");
+
+        let inbound = blob
+            .members
+            .iter()
+            .find(|member| member.name == "SumTypedRecordArray")
+            .expect("typed record-array inbound member should exist");
+        assert!(
+            inbound
+                .parameter_wire_types
+                .iter()
+                .any(|wire_type| matches!(
+                    wire_type,
+                    TypeLibWireType::SafeArray {
+                        element_vt: VT_RECORD,
+                        record_info: Some(_),
+                    }
+                )),
+            "typed record-array parameters should carry descriptor IRecordInfo metadata"
+        );
+
+        let retval = blob
+            .members
+            .iter()
+            .find(|member| member.name == "ReturnTypedRecordArray")
+            .expect("typed record-array retval member should exist");
+        assert!(
+            matches!(
+                retval.return_wire_type,
+                Some(TypeLibWireType::SafeArray {
+                    element_vt: VT_RECORD,
+                    record_info: Some(_),
+                })
+            ),
+            "typed record-array retvals should carry descriptor IRecordInfo metadata"
         );
     }
 
@@ -4136,6 +4252,7 @@ mod tests {
                     && member.return_wire_type
                         == Some(TypeLibWireType::SafeArray {
                             element_vt: VT_DISPATCH,
+                            record_info: None,
                         })),
                 "Visio should expose a {member_name} entry that normalizes user-defined SAFEARRAY object elements to VT_DISPATCH"
             );
@@ -4148,6 +4265,7 @@ mod tests {
                             member.return_wire_type,
                             Some(TypeLibWireType::SafeArray {
                                 element_vt: VT_USERDEFINED,
+                                record_info: None,
                             })
                         )
                     }),

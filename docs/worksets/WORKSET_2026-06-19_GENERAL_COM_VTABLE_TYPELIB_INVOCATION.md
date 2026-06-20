@@ -230,18 +230,34 @@ surface:
   record retval path is fixture-proven with a temporary registered OleAut typelib
   that supplies a real `IRecordInfo`: the vtable slot writes into the allocated
   record cell and the runtime returns the populated `ComRecord` carrier.
+- Typed SAFEARRAY record metadata now carries optional record allocation identity
+  on `TypeLibWireType::SafeArray` / `ByRefSafeArray` when the SAFEARRAY element
+  `TYPEDESC` resolves to a `TKIND_RECORD`. The admission plan uses that descriptor
+  identity to admit empty `SAFEARRAY(VT_RECORD)` arguments without inventing a
+  record type from runtime elements, while still rejecting non-empty non-record
+  arrays and mixed record identities before any slot call. The vtable marshaller
+  creates descriptor-backed empty record arrays through OleAut
+  `GetRecordInfoFromGuids` + `SafeArrayCreateEx`.
+- `tools/OxVba.TestEventServer` now provides a deterministic external COM value
+  oracle for typed record SAFEARRAYs: `SumTypedRecordArray`,
+  `ReturnTypedRecordArray`, and `MutateTypedRecordArray`. The exported typelib is
+  loader-proven to project descriptor-backed `SAFEARRAY(VT_RECORD)` metadata, and
+  the registered live server is value-oracle proven through the vtable path for
+  `SumTypedRecordArray` with an empty descriptor-backed record array. Evidence is
+  recorded in
+  `docs/evidence/typelib_audit/testeventserver_record_safearray_vtable_oracle_20260620T163000/`.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: record/UDT live-typelib breadth still needs external
-evidence across more than the controlled single-field OleAut fixture before claiming
-foreign-record parity. Name-only records may fall back only with the specific missing
-allocation metadata fact, and any remaining record fallback must identify the exact
-unowned ABI, layout, registration, or ownership rule. SAFEARRAY(VT_RECORD) support is
-currently proven for controlled descriptor-backed records, inbound params, ByRef
-writebacks, and the shared decode path; the loader now has the ABI path needed to
-resolve record-element SAFEARRAY descriptors when a real typelib exposes a resolvable
-record href. `docs/evidence/typelib_audit/com_vtable_safearray_elements_20260620T152250/`
+Residual after this slice: record/UDT support is now proven for descriptor-backed
+scalar records, descriptor-backed `SAFEARRAY(VT_RECORD)` inbound parameters,
+record SAFEARRAY retvals/writebacks in fixtures, shared decode, and a deterministic
+registered external `SumTypedRecordArray` vtable value oracle. Name-only records may
+fall back only with the specific missing allocation metadata fact, and any remaining
+record fallback must identify the exact unowned ABI, layout, registration, ownership
+rule, proxy safety rule, or custom-marshaling rule. Third-party foreign-record breadth
+still needs evidence beyond AcroBroker before broad ecosystem parity language is
+valid. `docs/evidence/typelib_audit/com_vtable_safearray_elements_20260620T152250/`
 records a bounded scan of the installed Excel, Office, VBA, and VBIDE typelibs: the
 scanner found SAFEARRAY element metadata but no `safearray_record` or unresolved
 user-defined SAFEARRAY rows. A broader registry sample is recorded in
@@ -252,8 +268,9 @@ three unresolved user-defined SAFEARRAY elements in the installed Visio typelib.
 identifies the concrete foreign record-array descriptor as
 `IBroker.BrokerUpdateIEContextMenu` zero-based `param2` (`VT_RECORD`). The live
 metadata projection now has a regression proving that this foreign descriptor
-survives into runtime `TypeLibWireType::SafeArray { element_vt: VT_RECORD }`
-metadata; the dual-dispinterface enrichment path now carries partner wire types,
+survives into runtime `TypeLibWireType::SafeArray { element_vt: VT_RECORD,
+record_info: ... }` metadata when allocation identity is recoverable; the
+dual-dispinterface enrichment path now carries partner wire types,
 parameter IIDs, and return wire metadata together with semantic parameter shape.
 The former Visio unresolved user-defined SAFEARRAY rows now resolve as object
 SAFEARRAY descriptors (`VT_DISPATCH`) instead of opaque user-defined elements;

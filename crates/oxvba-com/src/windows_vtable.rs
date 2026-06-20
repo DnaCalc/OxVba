@@ -561,12 +561,26 @@ where
     if let Some(element_vt) = wire_type.and_then(TypeLibWireType::safearray_element_vt)
         && wire_type.is_some_and(TypeLibWireType::is_safearray_wire)
     {
-        return marshal_inbound_safearray_param(&value, element_vt, resolve_object);
+        let record_info = match wire_type {
+            Some(TypeLibWireType::SafeArray { record_info, .. }) => record_info.as_ref(),
+            _ => None,
+        };
+        return marshal_inbound_safearray_param(&value, element_vt, record_info, resolve_object);
     }
     if let Some(element_vt) = wire_type.and_then(TypeLibWireType::safearray_element_vt)
         && wire_type.is_some_and(TypeLibWireType::is_byref_safearray_wire)
     {
-        return marshal_byref_safearray_param(&value, element_vt, byref_slot, resolve_object);
+        let record_info = match wire_type {
+            Some(TypeLibWireType::ByRefSafeArray { record_info, .. }) => record_info.as_ref(),
+            _ => None,
+        };
+        return marshal_byref_safearray_param(
+            &value,
+            element_vt,
+            record_info,
+            byref_slot,
+            resolve_object,
+        );
     }
     if param_type.is_by_ref() {
         return marshal_byref_param(
@@ -900,6 +914,7 @@ where
 fn marshal_byref_safearray_param<FResolveObject>(
     value: &ComValue,
     element_vt: u16,
+    record_info: Option<&crate::TypeLibRecordInfo>,
     byref_slot: Option<RuntimeByRefSlot>,
     resolve_object: &mut FResolveObject,
 ) -> Result<(FfiArg, InboundOwned), String>
@@ -908,7 +923,8 @@ where
 {
     let slot = byref_slot
         .ok_or_else(|| "vtable ByRef SAFEARRAY requires a runtime ByRef slot".to_string())?;
-    let (_, owned) = marshal_inbound_safearray_param(value, element_vt, resolve_object)?;
+    let (_, owned) =
+        marshal_inbound_safearray_param(value, element_vt, record_info, resolve_object)?;
     let InboundOwned::SafeArray(cell) = owned else {
         return Err("vtable ByRef SAFEARRAY lowered to an unexpected inbound cell".to_string());
     };
@@ -928,6 +944,7 @@ where
 fn marshal_inbound_safearray_param<FResolveObject>(
     value: &ComValue,
     element_vt: u16,
+    record_info: Option<&crate::TypeLibRecordInfo>,
     resolve_object: &mut FResolveObject,
 ) -> Result<(FfiArg, InboundOwned), String>
 where
@@ -953,7 +970,11 @@ where
         // Windows SAFEARRAY(VT_RECORD) payload owned by the VARIANT from a
         // runtime Variant array of Record elements.
         unsafe {
-            crate::windows_variant::set_record_safearray_from_com_value(cell.as_mut(), value)?;
+            crate::windows_variant::set_record_safearray_from_com_value(
+                cell.as_mut(),
+                value,
+                record_info,
+            )?;
         }
     } else {
         // SAFETY: `cell` is a fresh writable VARIANT. `set_variant_from_com_value`
@@ -2316,6 +2337,7 @@ mod tests {
             vec![TypeLibParamType::Variant],
             vec![TypeLibWireType::SafeArray {
                 element_vt: VT_I4_VALUE,
+                record_info: None,
             }],
             vec![],
             Some(TypeLibParamType::Boolean),
@@ -2357,6 +2379,7 @@ mod tests {
             vec![TypeLibParamType::Variant],
             vec![TypeLibWireType::SafeArray {
                 element_vt: VT_RECORD_TEST_VALUE,
+                record_info: None,
             }],
             vec![],
             Some(TypeLibParamType::Boolean),
@@ -2374,6 +2397,40 @@ mod tests {
             value.as_bool(),
             Some(true),
             "fixture must see a SAFEARRAY(VT_RECORD) wire pointer"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn descriptor_backed_empty_record_safearray_parameter_lowers_with_record_element_vartype() {
+        let registered_record =
+            create_registered_record_typelib().expect("temp record typelib should register");
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_VALIDATE_RECORD_SAFEARRAY_VALUE,
+            vec![TypeLibParamType::Variant],
+            vec![TypeLibWireType::SafeArray {
+                element_vt: VT_RECORD_TEST_VALUE,
+                record_info: Some(registered_record.descriptor.clone()),
+            }],
+            vec![],
+            Some(TypeLibParamType::Boolean),
+            Some(TypeLibWireType::Automation(TypeLibParamType::Boolean)),
+            TypeLibMemberInvokeKind::Method,
+        );
+        let arg = Variant::from_safearray(SafeArray::from_variants(Vec::new()));
+        // SAFETY: slot 36 validates that descriptor metadata created an inbound
+        // SAFEARRAY(VT_RECORD)* even though the runtime array has no first
+        // element from which record identity could be inferred.
+        let value = unsafe { vtable_invoke(this, &plan, &[arg], 36, &mut resolve, &mut bind) }
+            .expect("descriptor-backed empty record SAFEARRAY should lower");
+        assert_eq!(
+            value.as_bool(),
+            Some(true),
+            "fixture must see an empty SAFEARRAY(VT_RECORD) wire pointer"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
@@ -2542,6 +2599,7 @@ mod tests {
             Some(TypeLibParamType::Variant),
             Some(TypeLibWireType::SafeArray {
                 element_vt: VT_I4_VALUE,
+                record_info: None,
             }),
             TypeLibMemberInvokeKind::PropertyGet,
         );
@@ -2960,6 +3018,7 @@ mod tests {
             vec![TypeLibParamType::Variant],
             vec![TypeLibWireType::ByRefSafeArray {
                 element_vt: VT_I4_VALUE,
+                record_info: None,
             }],
             vec![None],
             None,
@@ -3007,6 +3066,7 @@ mod tests {
             vec![TypeLibParamType::Variant],
             vec![TypeLibWireType::ByRefSafeArray {
                 element_vt: VT_RECORD_TEST_VALUE,
+                record_info: None,
             }],
             vec![None],
             None,

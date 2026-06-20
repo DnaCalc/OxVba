@@ -52,20 +52,24 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ## Active blocker entries
 
 ### BLK-COM-VTABLE-RECORD-ORACLE-001: Foreign SAFEARRAY(VT_RECORD) value oracle needs a side-effect-safe specimen
-- Status: open for `docs/worksets/WORKSET_2026-06-19_GENERAL_COM_VTABLE_TYPELIB_INVOCATION.md`.
+- Status: resolved for deterministic repo-owned external oracle coverage; retained as third-party breadth residual for `docs/worksets/WORKSET_2026-06-19_GENERAL_COM_VTABLE_TYPELIB_INVOCATION.md`.
 - Impact:
-  - Blocks claiming foreign-record/UDT vtable parity beyond controlled descriptor-backed fixtures and descriptor projection evidence.
-  - Does not block descriptor normalization, admission, fixture marshalling, or IDispatch fallback behavior.
+  - No longer blocks descriptor normalization, admission, fixture marshalling, IDispatch fallback behavior, or repo-owned external value-oracle evidence for descriptor-backed `SAFEARRAY(VT_RECORD)`.
+  - Still blocks broad third-party foreign-record parity claims beyond the proven repo-owned external oracle, controlled descriptor-backed fixtures, AcroBroker descriptor evidence, and installed-typelib audits.
 - Current state:
+  - `OxVba.TestEventServer` now exposes typed record-array members (`SumTypedRecordArray`, `ReturnTypedRecordArray`, `MutateTypedRecordArray`) from an exported COM typelib.
+  - Runtime metadata projection preserves those members as descriptor-backed `SAFEARRAY(VT_RECORD)` wire metadata.
+  - `registered_testeventserver_typed_record_safearray_uses_vtable_oracle` activates the registered COM server, recovers live typeinfo metadata, and executes `SumTypedRecordArray` through the vtable path with an empty descriptor-backed record array.
+  - Evidence: `docs/evidence/typelib_audit/testeventserver_record_safearray_vtable_oracle_20260620T163000/summary.md`.
   - `AcroBrokerLib` provides a real foreign `SAFEARRAY(VT_RECORD)` descriptor at `IBroker.BrokerUpdateIEContextMenu` zero-based `param2`.
-  - Runtime metadata projection preserves that descriptor as `TypeLibWireType::SafeArray { element_vt: VT_RECORD }`.
+  - Runtime metadata projection preserves that descriptor as `TypeLibWireType::SafeArray { element_vt: VT_RECORD, record_info: ... }` when allocation identity is recoverable.
   - The AcroBroker coclass is registered as `{BD57A9B2-4E7D-4892-9107-9F4106472DA4}` / `AcroBroker.Broker.1`, implemented by local server `AcroBroker.exe`.
   - `IBroker` is PSOA-marshaled (`ProxyStubClsid32={00020424-0000-0000-C000-000000000046}`), so proxy shape is knowable.
   - The captured record-array member appears side-effectful against IE context-menu state and is not safe to invoke as an oracle in the normal developer environment.
-- Exact unblocking steps:
-  - Find a foreign `SAFEARRAY(VT_RECORD)` member with read-only or hermetic semantics; or
+- Remaining third-party breadth steps:
+  - Find a non-repo third-party `SAFEARRAY(VT_RECORD)` member with read-only or hermetic semantics; or
   - build an isolated AcroBroker oracle environment/snapshot where `BrokerUpdateIEContextMenu` side effects are acceptable and reversible; then
-  - capture paired IDispatch/vtable value-oracle evidence and update the workset before claiming foreign-record parity.
+  - capture paired IDispatch/vtable value-oracle evidence before claiming broad third-party foreign-record parity.
 
 ### FE-PROD-001: Frontend production replacement not complete
 - Status: open workset blocker after 2026-06-01 scope audit.

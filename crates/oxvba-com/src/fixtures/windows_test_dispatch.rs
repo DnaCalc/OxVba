@@ -4349,11 +4349,17 @@ unsafe extern "system" fn oxvba_dual_validate_record_safearray_value(
     }
     let mut lower = 0i32;
     let mut upper = 0i32;
-    if SafeArrayGetLBound(value.cast_const(), 1, &mut lower) < 0
-        || SafeArrayGetUBound(value.cast_const(), 1, &mut upper) < 0
-        || lower != 0
-        || upper != 1
-    {
+    let lower_hr = SafeArrayGetLBound(value.cast_const(), 1, &mut lower);
+    let upper_hr = SafeArrayGetUBound(value.cast_const(), 1, &mut upper);
+    if lower_hr < 0 || upper_hr < 0 {
+        *out = -1;
+        return COM_S_OK;
+    }
+    if lower == 0 && upper < lower {
+        *out = -1;
+        return COM_S_OK;
+    }
+    if lower != 0 || upper != 1 {
         *out = 0;
         return COM_S_OK;
     }

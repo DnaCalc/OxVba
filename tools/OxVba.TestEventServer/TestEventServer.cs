@@ -87,6 +87,15 @@ namespace OxVba.TestEventServer
 
         [DispId(122)]
         object ReturnRecordArray();
+
+        [DispId(123)]
+        int SumTypedRecordArray(TestRecord[] records);
+
+        [DispId(124)]
+        TestRecord[] ReturnTypedRecordArray();
+
+        [DispId(125)]
+        void MutateTypedRecordArray(ref TestRecord[] records);
     }
 
     [ComVisible(true)]
@@ -234,6 +243,40 @@ namespace OxVba.TestEventServer
         public object ReturnRecordArray()
         {
             return new TestRecord[] { new TestRecord { Number = 123 } };
+        }
+
+        public int SumTypedRecordArray(TestRecord[] records)
+        {
+            if (records == null)
+            {
+                return -1;
+            }
+
+            int sum = 0;
+            foreach (TestRecord record in records)
+            {
+                sum += record.Number;
+            }
+            return sum;
+        }
+
+        public TestRecord[] ReturnTypedRecordArray()
+        {
+            return new[]
+            {
+                new TestRecord { Number = 10 },
+                new TestRecord { Number = 20 },
+                new TestRecord { Number = 30 },
+            };
+        }
+
+        public void MutateTypedRecordArray(ref TestRecord[] records)
+        {
+            records = new[]
+            {
+                new TestRecord { Number = 100 },
+                new TestRecord { Number = 200 },
+            };
         }
 
         private static string FormatValue(object value)

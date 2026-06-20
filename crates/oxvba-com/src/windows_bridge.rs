@@ -1461,6 +1461,71 @@ mod tests {
         let _ = bridge.release_object_binding(object);
     }
 
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn registered_testeventserver_typed_record_safearray_uses_vtable_oracle() {
+        let Ok(dispatch) = crate::activate_dispatch_by_prog_id("OxVba.TestEventServer") else {
+            return;
+        };
+        let dispid = match unsafe { crate::get_dispid_by_name(dispatch, "SumTypedRecordArray") } {
+            Ok(dispid) => dispid,
+            Err(_) => {
+                // SAFETY: `dispatch` is the live reference returned by activation.
+                unsafe { crate::release_dispatch(dispatch) };
+                return;
+            }
+        };
+        let Some(metadata) = (unsafe {
+            crate::live_member_metadata_from_dispatch(
+                dispatch,
+                dispid,
+                crate::TypeLibMemberInvokeKind::Method,
+            )
+        }) else {
+            // SAFETY: `dispatch` is the live reference returned by activation.
+            unsafe { crate::release_dispatch(dispatch) };
+            return;
+        };
+        assert!(
+            metadata
+                .parameter_wire_types
+                .iter()
+                .any(|wire_type| matches!(
+                    wire_type,
+                    crate::TypeLibWireType::SafeArray {
+                        element_vt: 36,
+                        record_info: Some(_),
+                    }
+                )),
+            "live TestEventServer metadata should expose descriptor-backed SAFEARRAY(VT_RECORD)"
+        );
+        let spec = crate::map_member_metadata_to_spec(&metadata);
+        let bridge = WindowsComBridge::new(false);
+        let empty = oxvba_runtime::safe_array::SafeArray::from_variants(Vec::new());
+        let args = vec![crate::ComInvokeArg::positional_value(
+            crate::ComValue::ArrayIntent(empty),
+        )];
+        let value = unsafe {
+            crate::try_vtable_member_spec_invoke_with_shared_state(
+                dispatch.cast(),
+                dispid,
+                &spec,
+                &args,
+                true,
+                bridge.shared_state(),
+            )
+        }
+        .expect("registered TestEventServer vtable record-array call should not error")
+        .expect("registered TestEventServer typed record-array member should be vtable-admitted");
+        assert_eq!(
+            value.as_i32(),
+            Some(0),
+            "empty typed record array should reach SumTypedRecordArray through vtable"
+        );
+        // SAFETY: balances the activation reference.
+        unsafe { crate::release_dispatch(dispatch) };
+    }
+
     /// S5a HOST-AV SAFETY: a member that IS gate-eligible (a custom slot,
     /// CC_STDCALL, full v1 signature, an interface IID) but whose IID the live
     /// object does NOT expose must `QueryInterface`-fail and fall back to

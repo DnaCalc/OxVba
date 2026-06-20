@@ -2276,27 +2276,45 @@ fn supplied_record_safearray_missing_record_info(
     {
         let is_record_array = matches!(
             wire_type,
-            crate::TypeLibWireType::SafeArray { element_vt: 36 }
-                | crate::TypeLibWireType::ByRefSafeArray { element_vt: 36 }
+            crate::TypeLibWireType::SafeArray { element_vt: 36, .. }
+                | crate::TypeLibWireType::ByRefSafeArray { element_vt: 36, .. }
         );
         if !is_record_array {
             continue;
         }
+        let descriptor_record_info = match wire_type {
+            crate::TypeLibWireType::SafeArray { record_info, .. }
+            | crate::TypeLibWireType::ByRefSafeArray { record_info, .. } => record_info.as_ref(),
+            _ => None,
+        };
         let Some(array) = value.as_safearray() else {
             return true;
         };
+        if array.is_empty() && descriptor_record_info.is_some() {
+            continue;
+        }
         let Some(elements) = array.variant_elements() else {
             return true;
         };
-        let mut records = elements.iter().map(Variant::as_com_record);
-        let Some(Some(first_record)) = records.next() else {
+        if elements
+            .iter()
+            .any(|element| element.as_com_record().is_none())
+        {
             return true;
+        }
+        let mut records = elements
+            .iter()
+            .map(|element| element.as_com_record().expect("validated record element"));
+        let Some(first_record) = records.next() else {
+            return !elements.is_empty() || descriptor_record_info.is_none();
         };
+        if let Some(descriptor_record_info) = descriptor_record_info
+            && !descriptor_record_info_matches_record(descriptor_record_info, &first_record)
+        {
+            return true;
+        }
         let first_record_info = first_record.record_info_ptr();
         if records.any(|record| {
-            let Some(record) = record else {
-                return true;
-            };
             // SAFETY: both pointers come from live runtime ComRecord values cloned
             // from the supplied argument array and are only queried for type
             // identity.
@@ -2311,6 +2329,24 @@ fn supplied_record_safearray_missing_record_info(
         };
     }
     false
+}
+
+#[cfg(target_os = "windows")]
+fn descriptor_record_info_matches_record(
+    descriptor: &crate::TypeLibRecordInfo,
+    record: &oxvba_runtime::ComRecord,
+) -> bool {
+    let raw = crate::windows_variant::record_info_from_descriptor(descriptor);
+    let Ok(raw) = raw else {
+        return false;
+    };
+    // SAFETY: `raw` is an owned IRecordInfo reference from OleAut and
+    // `record.record_info_ptr()` is the live record type identity.
+    let matches =
+        unsafe { crate::windows_variant::record_info_matches(raw, record.record_info_ptr()) };
+    // SAFETY: balances the owned IRecordInfo reference returned by OleAut.
+    unsafe { crate::windows_variant::release_record_info_for_descriptor(raw) };
+    matches
 }
 
 #[cfg(target_os = "windows")]
@@ -3958,8 +3994,10 @@ mod gate_tests {
 
         let mut record_safearray_param = eligible_spec(17, 58);
         record_safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
-        record_safearray_param.parameter_wire_types =
-            vec![crate::TypeLibWireType::SafeArray { element_vt: 36 }];
+        record_safearray_param.parameter_wire_types = vec![crate::TypeLibWireType::SafeArray {
+            element_vt: 36,
+            record_info: None,
+        }];
         let empty_record_array = Variant::from_safearray(SafeArray::from_variants(Vec::new()));
         assert_eq!(
             build_vtable_invocation_plan_with_byrefs(
@@ -3974,6 +4012,37 @@ mod gate_tests {
             VtableDeclineReason::MissingRecordSafeArrayElementInfo,
             "SAFEARRAY(VT_RECORD) without a runtime record element declines before marshalling"
         );
+        record_safearray_param.parameter_wire_types = vec![crate::TypeLibWireType::SafeArray {
+            element_vt: 36,
+            record_info: Some(crate::TypeLibRecordInfo {
+                libid: crate::ComInterfaceIid {
+                    data1: 0x1111_1111,
+                    data2: 0x2222,
+                    data3: 0x3333,
+                    data4: [0x44; 8],
+                },
+                major: 1,
+                minor: 0,
+                lcid: 0,
+                type_guid: crate::ComInterfaceIid {
+                    data1: 0x5555_5555,
+                    data2: 0x6666,
+                    data3: 0x7777,
+                    data4: [0x88; 8],
+                },
+            }),
+        }];
+        let empty_descriptor_record_array =
+            Variant::from_safearray(SafeArray::from_variants(Vec::new()));
+        build_vtable_invocation_plan_with_byrefs(
+            &record_safearray_param,
+            1,
+            &[None],
+            Some(&[empty_descriptor_record_array]),
+            Some(crate::TypeLibParamType::Long),
+            "method",
+        )
+        .expect("descriptor-backed empty SAFEARRAY(VT_RECORD) should be admitted");
         let non_record_array =
             Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_i32(1)]));
         assert_eq!(
@@ -4020,7 +4089,10 @@ mod gate_tests {
         let mut typed_byref_safearray_param = eligible_spec(17, 58);
         typed_byref_safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
         typed_byref_safearray_param.parameter_wire_types =
-            vec![crate::TypeLibWireType::ByRefSafeArray { element_vt: 3 }];
+            vec![crate::TypeLibWireType::ByRefSafeArray {
+                element_vt: 3,
+                record_info: None,
+            }];
         assert_eq!(
             vtable_gate_decline_reason(
                 &typed_byref_safearray_param,

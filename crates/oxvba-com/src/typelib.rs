@@ -150,10 +150,12 @@ pub enum TypeLibWireType {
     },
     SafeArray {
         element_vt: u16,
+        record_info: Option<TypeLibRecordInfo>,
     },
     SafeArrayVariant,
     ByRefSafeArray {
         element_vt: u16,
+        record_info: Option<TypeLibRecordInfo>,
     },
     ByRefSafeArrayVariant,
     Record {
@@ -169,7 +171,7 @@ pub enum TypeLibWireType {
 impl TypeLibWireType {
     pub(crate) fn safearray_element_vt(&self) -> Option<u16> {
         match self {
-            Self::SafeArray { element_vt } | Self::ByRefSafeArray { element_vt } => {
+            Self::SafeArray { element_vt, .. } | Self::ByRefSafeArray { element_vt, .. } => {
                 Some(*element_vt)
             }
             Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => Some(VT_VARIANT_VALUE),
@@ -206,7 +208,7 @@ impl TypeLibWireType {
                     TypeLibParamType::Object | TypeLibParamType::ByRefObject
                 )
             }
-            Self::SafeArray { element_vt } | Self::ByRefSafeArray { element_vt } => {
+            Self::SafeArray { element_vt, .. } | Self::ByRefSafeArray { element_vt, .. } => {
                 matches!(param_type, TypeLibParamType::Variant)
                     && Self::safearray_element_vt_supported(*element_vt)
             }
@@ -224,7 +226,7 @@ impl TypeLibWireType {
         match self {
             Self::Automation(wire_return_type) => *wire_return_type == return_type,
             Self::InterfacePointer { .. } => matches!(return_type, TypeLibParamType::Object),
-            Self::SafeArray { element_vt } => {
+            Self::SafeArray { element_vt, .. } => {
                 matches!(return_type, TypeLibParamType::Variant)
                     && Self::safearray_element_vt_supported(*element_vt)
             }
@@ -827,11 +829,13 @@ mod tests {
                 &[TypeLibParamType::Variant],
                 &[TypeLibWireType::SafeArray {
                     element_vt: VT_I4_VALUE,
+                    record_info: None,
                 }],
                 &[],
                 Some(TypeLibParamType::Variant),
                 Some(&TypeLibWireType::SafeArray {
                     element_vt: VT_I4_VALUE,
+                    record_info: None,
                 }),
             ),
             Ok(()),
@@ -842,11 +846,13 @@ mod tests {
                 &[TypeLibParamType::Variant],
                 &[TypeLibWireType::SafeArray {
                     element_vt: VT_RECORD_TEST_VALUE,
+                    record_info: None,
                 }],
                 &[],
                 Some(TypeLibParamType::Variant),
                 Some(&TypeLibWireType::SafeArray {
                     element_vt: VT_RECORD_TEST_VALUE,
+                    record_info: None,
                 }),
             ),
             Ok(()),

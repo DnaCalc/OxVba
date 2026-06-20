@@ -17,9 +17,9 @@ use windows_sys::Win32::Foundation::{DECIMAL, SysFreeString, SysStringLen, VARIA
 use windows_sys::Win32::System::Com::{CY, SAFEARRAY, SAFEARRAYBOUND};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Ole::{
-    SafeArrayCreate, SafeArrayCreateEx, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim,
-    SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetRecordInfo, SafeArrayGetUBound,
-    SafeArrayGetVartype, SafeArrayPutElement,
+    GetRecordInfoFromGuids, SafeArrayCreate, SafeArrayCreateEx, SafeArrayCreateVector,
+    SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetLBound,
+    SafeArrayGetRecordInfo, SafeArrayGetUBound, SafeArrayGetVartype, SafeArrayPutElement,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
@@ -1313,31 +1313,59 @@ pub(crate) unsafe fn record_info_matches(left: *mut c_void, right: *mut c_void) 
 pub(crate) unsafe fn set_record_safearray_from_com_value(
     variant: *mut VARIANT,
     value: &ComValue,
+    descriptor_record_info: Option<&crate::TypeLibRecordInfo>,
 ) -> Result<(), String> {
     let ComValue::ArrayIntent(array) = value else {
         return Err(format!(
             "vtable SAFEARRAY(VT_RECORD) parameter expects an array argument, got {value:?}"
         ));
     };
-    let Some(values) = array.variant_elements() else {
+    let values = if let Some(values) = array.variant_elements() {
+        values
+    } else if array.is_empty() {
+        Vec::new()
+    } else {
         return Err(
             "SAFEARRAY(VT_RECORD) parameter requires materialized record elements".to_string(),
         );
     };
-    let first_record = values
-        .iter()
-        .find_map(Variant::as_com_record)
-        .ok_or_else(|| {
-            "SAFEARRAY(VT_RECORD) parameter requires at least one Record element".to_string()
-        })?;
-    let record_info = first_record.record_info_ptr();
+    let descriptor_record_info = descriptor_record_info
+        .map(record_info_from_descriptor)
+        .transpose()?;
+    let first_record = values.iter().find_map(Variant::as_com_record);
+    let record_info = if let Some(first_record) = first_record {
+        let record_info = first_record.record_info_ptr();
+        if let Some(descriptor_record_info) = descriptor_record_info
+            && !record_info_matches(record_info, descriptor_record_info)
+        {
+            release_record_info(descriptor_record_info);
+            return Err(
+                "SAFEARRAY(VT_RECORD) parameter elements do not match descriptor record type"
+                    .to_string(),
+            );
+        }
+        record_info
+    } else if let Some(descriptor_record_info) = descriptor_record_info {
+        descriptor_record_info
+    } else {
+        return Err(
+            "SAFEARRAY(VT_RECORD) parameter requires at least one Record element or descriptor IRecordInfo"
+                .to_string(),
+        );
+    };
     for value in &values {
         let Some(record) = value.as_com_record() else {
+            if let Some(descriptor_record_info) = descriptor_record_info {
+                release_record_info(descriptor_record_info);
+            }
             return Err(format!(
                 "SAFEARRAY(VT_RECORD) parameter element must be a Record, got {value:?}"
             ));
         };
         if !record_info_matches(record_info, record.record_info_ptr()) {
+            if let Some(descriptor_record_info) = descriptor_record_info {
+                release_record_info(descriptor_record_info);
+            }
             return Err(
                 "SAFEARRAY(VT_RECORD) parameter elements use different record types".to_string(),
             );
@@ -1362,6 +1390,9 @@ pub(crate) unsafe fn set_record_safearray_from_com_value(
     // SafeArrayCreateEx records it for the VT_RECORD array. The returned
     // SAFEARRAY owns its descriptor and elements.
     let psa = SafeArrayCreateEx(VT_RECORD_VALUE, dims, sa_bounds.as_ptr(), record_info);
+    if let Some(descriptor_record_info) = descriptor_record_info {
+        release_record_info(descriptor_record_info);
+    }
     if psa.is_null() {
         return Err("SafeArrayCreateEx(VT_RECORD) returned null".to_string());
     }
@@ -1386,6 +1417,40 @@ pub(crate) unsafe fn set_record_safearray_from_com_value(
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_RECORD_VALUE;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn record_info_from_descriptor(
+    record_info: &crate::TypeLibRecordInfo,
+) -> Result<*mut c_void, String> {
+    let libid = record_info.libid.to_guid();
+    let type_guid = record_info.type_guid.to_guid();
+    let mut raw: *mut c_void = std::ptr::null_mut();
+    // SAFETY: GUID/version/LCID values are copied from the loaded typelib record
+    // descriptor. On success OleAut writes one owned IRecordInfo reference.
+    let hr = unsafe {
+        GetRecordInfoFromGuids(
+            &libid,
+            u32::from(record_info.major),
+            u32::from(record_info.minor),
+            record_info.lcid,
+            &type_guid,
+            &mut raw,
+        )
+    };
+    if hr < 0 || raw.is_null() {
+        return Err(format!(
+            "GetRecordInfoFromGuids failed for SAFEARRAY(VT_RECORD) with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(raw)
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) unsafe fn release_record_info_for_descriptor(record_info: *mut c_void) {
+    // SAFETY: caller passes an owned IRecordInfo reference returned by OleAut.
+    unsafe { release_record_info(record_info) };
 }
 
 #[cfg(target_os = "windows")]
