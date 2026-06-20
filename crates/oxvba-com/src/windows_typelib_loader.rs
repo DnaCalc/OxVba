@@ -80,6 +80,8 @@ const IMPLTYPEFLAG_FSOURCE: i32 = 2;
 
 // VT_ constants for parameter type extraction
 #[cfg(target_os = "windows")]
+const VT_EMPTY: u16 = 0;
+#[cfg(target_os = "windows")]
 const VT_I2: u16 = 2;
 #[cfg(target_os = "windows")]
 const VT_I4: u16 = 3;
@@ -144,6 +146,13 @@ const VT_LPWSTR: u16 = 31;
 struct TYPEDESC {
     union_field: usize, // lptdesc or hreftype depending on vt
     vt: u16,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct ARRAYDESC {
+    tdesc_elem: TYPEDESC,
+    c_dims: u16,
 }
 
 #[cfg(target_os = "windows")]
@@ -741,6 +750,19 @@ unsafe fn typedesc_to_param_type(
 ) -> TypeLibParamType {
     if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
         let inner = &*(tdesc.union_field as *const TYPEDESC);
+        // A SAFEARRAY parameter is represented semantically as a Variant array;
+        // SAFEARRAY*/SAFEARRAY** transport is preserved separately in
+        // TypeLibWireType so the admission table can require writeback slots for
+        // the ByRef wire shape without misclassifying the language type.
+        if inner.vt == VT_SAFEARRAY || inner.vt == VT_CARRAY {
+            return TypeLibParamType::Variant;
+        }
+        if inner.vt == VT_PTR && inner.union_field != 0 {
+            let nested = &*(inner.union_field as *const TYPEDESC);
+            if nested.vt == VT_SAFEARRAY || nested.vt == VT_CARRAY {
+                return TypeLibParamType::Variant;
+            }
+        }
         // A `VARIANT` is ALWAYS pointer-transported in a vtable/dual ABI: even an
         // `[in]` VARIANT param is declared `VARIANT*`. So the single `VT_PTR →
         // VT_VARIANT` indirection of an `[in]` param is the NORMAL transport, not an
@@ -823,21 +845,17 @@ unsafe fn typedesc_to_wire_type(
     if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
         let inner = &*(tdesc.union_field as *const TYPEDESC);
         if inner.vt == VT_SAFEARRAY || inner.vt == VT_CARRAY {
-            return if is_byref {
-                TypeLibWireType::ByRefSafeArrayVariant
-            } else {
-                TypeLibWireType::SafeArrayVariant
-            };
+            return safearray_wire_type(inner, is_byref);
         }
         if inner.vt == VT_PTR && inner.union_field != 0 {
             let nested = &*(inner.union_field as *const TYPEDESC);
             if nested.vt == VT_SAFEARRAY || nested.vt == VT_CARRAY {
-                return TypeLibWireType::ByRefSafeArrayVariant;
+                return safearray_wire_type(nested, true);
             }
         }
     }
     if tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY {
-        return TypeLibWireType::SafeArrayVariant;
+        return safearray_wire_type(tdesc, false);
     }
     let param_type = typedesc_to_param_type(owner_ptinfo, tdesc, is_byref);
     if matches!(
@@ -859,6 +877,40 @@ unsafe fn typedesc_to_wire_type(
         };
     }
     TypeLibWireType::Automation(param_type)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn safearray_wire_type(tdesc: &TYPEDESC, is_byref: bool) -> TypeLibWireType {
+    let element_vt = safearray_element_vartype(tdesc).unwrap_or(VT_EMPTY);
+    if is_byref {
+        if element_vt == VT_VARIANT {
+            TypeLibWireType::ByRefSafeArrayVariant
+        } else {
+            TypeLibWireType::ByRefSafeArray { element_vt }
+        }
+    } else if element_vt == VT_VARIANT {
+        TypeLibWireType::SafeArrayVariant
+    } else {
+        TypeLibWireType::SafeArray { element_vt }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn safearray_element_vartype(tdesc: &TYPEDESC) -> Option<u16> {
+    if !(tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY) || tdesc.union_field == 0 {
+        return None;
+    }
+    let array_desc = &*(tdesc.union_field as *const ARRAYDESC);
+    if array_desc.c_dims == 0 {
+        return None;
+    }
+    match array_desc.tdesc_elem.vt {
+        VT_PTR if array_desc.tdesc_elem.union_field != 0 => {
+            let inner = &*(array_desc.tdesc_elem.union_field as *const TYPEDESC);
+            Some(inner.vt)
+        }
+        vt => Some(vt),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1031,12 +1083,12 @@ unsafe fn retval_typedesc_to_wire_type(
     if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
         let inner = &*(tdesc.union_field as *const TYPEDESC);
         if inner.vt == VT_SAFEARRAY || inner.vt == VT_CARRAY {
-            return TypeLibWireType::ByRefSafeArrayVariant;
+            return safearray_wire_type(inner, false);
         }
         return retval_typedesc_to_wire_type(owner_ptinfo, inner);
     }
     if tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY {
-        return TypeLibWireType::ByRefSafeArrayVariant;
+        return safearray_wire_type(tdesc, false);
     }
     let return_type = retval_typedesc_to_param_type(owner_ptinfo, tdesc);
     if return_type == TypeLibParamType::Object
@@ -3632,6 +3684,66 @@ mod tests {
         // Malformed / mis-aligned offsets carry no usable slot.
         assert_eq!(vtable_slot_index_from_ovft(-8), None);
         assert_eq!(vtable_slot_index_from_ovft(6), None);
+    }
+
+    #[test]
+    fn typedesc_wire_type_preserves_safearray_element_vartype() {
+        let array_desc = ARRAYDESC {
+            tdesc_elem: TYPEDESC {
+                union_field: 0,
+                vt: VT_I4,
+            },
+            c_dims: 1,
+        };
+        let array_tdesc = TYPEDESC {
+            union_field: (&array_desc as *const ARRAYDESC) as usize,
+            vt: VT_SAFEARRAY,
+        };
+        let ptr_tdesc = TYPEDESC {
+            union_field: (&array_tdesc as *const TYPEDESC) as usize,
+            vt: VT_PTR,
+        };
+        assert_eq!(
+            unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &array_tdesc, false) },
+            TypeLibWireType::SafeArray { element_vt: VT_I4 }
+        );
+        assert_eq!(
+            unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc, false) },
+            TypeLibWireType::SafeArray { element_vt: VT_I4 }
+        );
+        assert_eq!(
+            unsafe { typedesc_to_param_type(std::ptr::null_mut(), &ptr_tdesc, false) },
+            TypeLibParamType::Variant,
+            "SAFEARRAY* is semantically a Variant array; pointer transport lives in wire metadata"
+        );
+        assert_eq!(
+            unsafe { typedesc_to_param_type(std::ptr::null_mut(), &ptr_tdesc, true) },
+            TypeLibParamType::Variant,
+            "SAFEARRAY** still uses Variant semantics with ByRef SAFEARRAY wire metadata"
+        );
+        assert_eq!(
+            unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc, true) },
+            TypeLibWireType::ByRefSafeArray { element_vt: VT_I4 }
+        );
+        assert_eq!(
+            unsafe { retval_typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc) },
+            TypeLibWireType::SafeArray { element_vt: VT_I4 },
+            "retval SAFEARRAY pointers describe the member return wire shape, not a ByRef parameter"
+        );
+    }
+
+    #[test]
+    fn malformed_safearray_typedesc_does_not_infer_variant_element_type() {
+        let malformed = TYPEDESC {
+            union_field: 0,
+            vt: VT_SAFEARRAY,
+        };
+        assert_eq!(
+            unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &malformed, false) },
+            TypeLibWireType::SafeArray {
+                element_vt: VT_EMPTY
+            }
+        );
     }
 
     #[test]

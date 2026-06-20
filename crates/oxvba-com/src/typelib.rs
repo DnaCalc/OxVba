@@ -2,6 +2,7 @@ use oxvba_runtime::{
     RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RuntimeClassDescriptor, RuntimeInterfaceDescriptor,
     RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
     RuntimeValueType,
+    safe_array::{SafeArray, VT_VARIANT_VALUE},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,7 +146,13 @@ pub enum TypeLibWireType {
     InterfacePointer {
         name: String,
     },
+    SafeArray {
+        element_vt: u16,
+    },
     SafeArrayVariant,
+    ByRefSafeArray {
+        element_vt: u16,
+    },
     ByRefSafeArrayVariant,
     Record {
         name: String,
@@ -158,6 +165,31 @@ pub enum TypeLibWireType {
 }
 
 impl TypeLibWireType {
+    pub(crate) fn safearray_element_vt(&self) -> Option<u16> {
+        match self {
+            Self::SafeArray { element_vt } | Self::ByRefSafeArray { element_vt } => {
+                Some(*element_vt)
+            }
+            Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => Some(VT_VARIANT_VALUE),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_safearray_wire(&self) -> bool {
+        matches!(self, Self::SafeArray { .. } | Self::SafeArrayVariant)
+    }
+
+    pub(crate) fn is_byref_safearray_wire(&self) -> bool {
+        matches!(
+            self,
+            Self::ByRefSafeArray { .. } | Self::ByRefSafeArrayVariant
+        )
+    }
+
+    pub(crate) fn safearray_element_vt_supported(element_vt: u16) -> bool {
+        SafeArray::supports_intrinsic_element_vartype(element_vt)
+    }
+
     /// Whether this exact wire shape is currently supported as a vtable inbound
     /// parameter for the semantic typelib type. This is intentionally narrower
     /// than the full descriptor vocabulary: pointer-width and object ByRef
@@ -171,8 +203,13 @@ impl TypeLibWireType {
                     TypeLibParamType::Object | TypeLibParamType::ByRefObject
                 )
             }
-            Self::SafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
-            Self::ByRefSafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
+            Self::SafeArray { element_vt } | Self::ByRefSafeArray { element_vt } => {
+                matches!(param_type, TypeLibParamType::Variant)
+                    && Self::safearray_element_vt_supported(*element_vt)
+            }
+            Self::SafeArrayVariant | Self::ByRefSafeArrayVariant => {
+                matches!(param_type, TypeLibParamType::Variant)
+            }
             Self::Record { .. } => matches!(param_type, TypeLibParamType::Record),
             Self::ByRefRecord { .. } => matches!(param_type, TypeLibParamType::ByRefRecord),
         }
@@ -184,8 +221,12 @@ impl TypeLibWireType {
         match self {
             Self::Automation(wire_return_type) => *wire_return_type == return_type,
             Self::InterfacePointer { .. } => matches!(return_type, TypeLibParamType::Object),
+            Self::SafeArray { element_vt } => {
+                matches!(return_type, TypeLibParamType::Variant)
+                    && Self::safearray_element_vt_supported(*element_vt)
+            }
             Self::SafeArrayVariant => matches!(return_type, TypeLibParamType::Variant),
-            Self::ByRefSafeArrayVariant => false,
+            Self::ByRefSafeArray { .. } | Self::ByRefSafeArrayVariant => false,
             Self::Record { .. } => matches!(return_type, TypeLibParamType::Record),
             Self::ByRefRecord { .. } => false,
         }
@@ -698,9 +739,13 @@ fn leak_typelib_runtime_descriptor_str(value: String) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use oxvba_runtime::{RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType};
+    use oxvba_runtime::{
+        RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, safe_array::VT_I4_VALUE,
+    };
 
     use super::*;
+
+    const VT_RECORD_TEST_VALUE: u16 = 36;
 
     fn identity() -> TypeLibResolvedIdentity {
         TypeLibResolvedIdentity {
@@ -773,6 +818,21 @@ mod tests {
             ),
             Ok(()),
             "explicit SAFEARRAY wire metadata is supported for Variant-shaped params and returns"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Variant],
+                &[TypeLibWireType::SafeArray {
+                    element_vt: VT_I4_VALUE,
+                }],
+                &[],
+                Some(TypeLibParamType::Variant),
+                Some(&TypeLibWireType::SafeArray {
+                    element_vt: VT_I4_VALUE,
+                }),
+            ),
+            Ok(()),
+            "typed SAFEARRAY wire metadata is supported when the runtime bridge owns the element VARTYPE"
         );
     }
 
@@ -953,6 +1013,19 @@ mod tests {
                 Some(&TypeLibWireType::ByRefSafeArrayVariant),
             ),
             Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType)
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Variant],
+                &[TypeLibWireType::SafeArray {
+                    element_vt: VT_RECORD_TEST_VALUE,
+                }],
+                &[],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType),
+            "SAFEARRAY record elements decline until record-array ownership is explicitly supported"
         );
     }
 

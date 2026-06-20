@@ -132,8 +132,16 @@ surface:
   arguments to `SAFEARRAY*` through the existing Windows `VARIANT`/SAFEARRAY
   conversion helper, and decodes transferred retval `SAFEARRAY*` payloads through
   a temporary owning `VARIANT` so OLE SAFEARRAY ownership is released correctly.
-  Adjacent `ByRefSafeArrayVariant` shapes still decline once in the plan builder
-  until writeback semantics are implemented.
+- SAFEARRAY wire metadata is no longer implicitly `VT_VARIANT`-only. The live
+  typelib loader preserves `ARRAYDESC.tdescElem.vt` as explicit
+  `SafeArray { element_vt }` / `ByRefSafeArray { element_vt }` metadata when the
+  descriptor supplies a typed element VARTYPE, and malformed SAFEARRAY descriptors
+  preserve an unsupported zero VARTYPE rather than inferring `VT_VARIANT`.
+- Typed SAFEARRAY parameters, ByRef SAFEARRAY writebacks, and SAFEARRAY retvals
+  now validate their actual COM element VARTYPE against the admitted wire plan
+  before calling or decoding. `SAFEARRAY(I4)` is fixture-proven through real
+  vtable inbound and retval slots, while the existing `SAFEARRAY(VARIANT)` tests
+  remain a distinct wire-shape proof.
 - `Decimal` return values are admitted and fixture-proven as caller-owned
   `[out,retval] DECIMAL*` cells decoded into the runtime `Decimal96` carrier.
   Decimal inbound parameters are also admitted and fixture-proven through explicit
@@ -213,4 +221,7 @@ Residual after this slice: record/UDT live-typelib breadth still needs external
 evidence across more than the controlled single-field OleAut fixture before claiming
 foreign-record parity. Name-only records may fall back only with the specific missing
 allocation metadata fact, and any remaining record fallback must identify the exact
-unowned ABI, layout, registration, or ownership rule.
+unowned ABI, layout, registration, or ownership rule. SAFEARRAY record-element
+metadata remains an explicit unsupported wire shape until record-array allocation,
+copy, and destruction ownership are implemented and fixture-proven; malformed
+SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.
