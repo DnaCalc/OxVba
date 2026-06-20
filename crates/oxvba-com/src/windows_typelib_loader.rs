@@ -1346,6 +1346,13 @@ pub struct TypeLibSafeArraySite {
 
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TypeLibCoclassSite {
+    pub type_name: String,
+    pub guid: String,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TypeLibShapeAudit {
     pub type_count: u32,
     pub function_count: u32,
@@ -1356,6 +1363,7 @@ pub struct TypeLibShapeAudit {
     pub unsupported_vt_counts: BTreeMap<String, u32>,
     pub safearray_element_counts: BTreeMap<String, u32>,
     pub safearray_sites: Vec<TypeLibSafeArraySite>,
+    pub coclass_sites: Vec<TypeLibCoclassSite>,
     pub optional_param_count: u32,
     pub byref_param_count: u32,
     pub param_array_like_count: u32,
@@ -1417,6 +1425,13 @@ impl TypeLibShapeAudit {
                 csv_cell(&site.member_name),
                 csv_cell(&site.position),
                 vt_label(site.element_vt)
+            ));
+        }
+        for site in &self.coclass_sites {
+            rows.push(format!(
+                "coclass_site,{label},{},{}",
+                csv_cell(&site.type_name),
+                csv_cell(&site.guid)
             ));
         }
         rows
@@ -1665,6 +1680,12 @@ pub fn audit_typelib_shapes(ptlib: *mut c_void) -> Result<TypeLibShapeAudit, Str
                     audit_typedesc(ptinfo, &(*pattr).tdesc_alias, &mut audit, None);
                 }
                 let type_name = typeinfo_name(ptinfo).unwrap_or_else(|| format!("type_{i}"));
+                if (*pattr).typekind == TKIND_COCLASS {
+                    audit.coclass_sites.push(TypeLibCoclassSite {
+                        type_name: type_name.clone(),
+                        guid: guid_to_string(&(*pattr).guid),
+                    });
+                }
                 for func_idx in 0..((*pattr).cfuncs as u32) {
                     let mut pfuncdesc: *mut FUNCDESC = std::ptr::null_mut();
                     if ((*ti_vtbl).get_func_desc)(ptinfo, func_idx, &mut pfuncdesc) == COM_S_OK

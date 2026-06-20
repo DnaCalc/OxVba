@@ -259,6 +259,13 @@ The former Visio unresolved user-defined SAFEARRAY rows now resolve as object
 SAFEARRAY descriptors (`VT_DISPATCH`) instead of opaque user-defined elements;
 see
 `docs/evidence/typelib_audit/visio_userdefined_safearray_dispatch_20260620T154509/`.
-The next foreign-record step is targeted value-oracle proof for the AcroBroker
-member or another captured typelib specimen, not a generic fallback. Malformed
-SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.
+`docs/evidence/typelib_audit/acrobroker_activation_proxy_20260620T155100/`
+records the AcroBroker activation/proxy facts: the typelib coclass is
+`{BD57A9B2-4E7D-4892-9107-9F4106472DA4}` / `AcroBroker.Broker.1`, implemented
+by local server `AcroBroker.exe`, and `IBroker` is PSOA-marshaled. That makes
+activation/proxy safety knowable, but the captured `SAFEARRAY(VT_RECORD)` member
+(`BrokerUpdateIEContextMenu`) is side-effectful and must not be used as a live
+value oracle without an isolated oracle design. The next foreign-record step is
+therefore either that isolated AcroBroker oracle or another captured record-array
+typelib specimen with safe read-only semantics, not a generic fallback.
+Malformed SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.
