@@ -142,6 +142,14 @@ surface:
   before calling or decoding. `SAFEARRAY(I4)` is fixture-proven through real
   vtable inbound and retval slots, while the existing `SAFEARRAY(VARIANT)` tests
   remain a distinct wire-shape proof.
+- Record-element SAFEARRAY wire metadata (`SAFEARRAY(VT_RECORD)`) is admitted
+  through the same typed SAFEARRAY plan. The COM boundary keeps the runtime
+  carrier as a Variant SAFEARRAY whose elements are `Record` variants, and
+  creates/decodes Windows `SAFEARRAY(VT_RECORD)` payloads through `IRecordInfo`
+  clone/copy/destroy ownership. The inbound vtable path is fixture-proven with
+  descriptor-backed OleAut records, and the shared Windows VARIANT bridge has a
+  SAFEARRAY(VT_RECORD) decode test that clones record elements into runtime-owned
+  `ComRecord` carriers.
 - `Decimal` return values are admitted and fixture-proven as caller-owned
   `[out,retval] DECIMAL*` cells decoded into the runtime `Decimal96` carrier.
   Decimal inbound parameters are also admitted and fixture-proven through explicit
@@ -221,7 +229,7 @@ Residual after this slice: record/UDT live-typelib breadth still needs external
 evidence across more than the controlled single-field OleAut fixture before claiming
 foreign-record parity. Name-only records may fall back only with the specific missing
 allocation metadata fact, and any remaining record fallback must identify the exact
-unowned ABI, layout, registration, or ownership rule. SAFEARRAY record-element
-metadata remains an explicit unsupported wire shape until record-array allocation,
-copy, and destruction ownership are implemented and fixture-proven; malformed
-SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.
+unowned ABI, layout, registration, or ownership rule. SAFEARRAY(VT_RECORD) support is
+currently proven for controlled descriptor-backed records and the shared decode path;
+broader foreign record-array evidence is still required before claiming foreign-record
+parity. Malformed SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.

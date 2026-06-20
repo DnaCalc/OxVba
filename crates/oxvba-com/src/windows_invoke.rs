@@ -2053,6 +2053,7 @@ enum VtableDeclineReason {
     MissingObjectParameterIid,
     MissingRecordParameterWireType,
     MissingRecordReturnInfo,
+    MissingRecordSafeArrayElementInfo,
 }
 
 #[cfg(target_os = "windows")]
@@ -2083,6 +2084,7 @@ fn build_vtable_invocation_plan(
         spec,
         positional_arg_count,
         &byref_slots,
+        None,
         return_type,
         label,
     )
@@ -2093,6 +2095,7 @@ fn build_vtable_invocation_plan_with_byrefs(
     spec: &crate::ComMemberSpec,
     positional_arg_count: usize,
     supplied_byref_slots: &[Option<RuntimeByRefSlot>],
+    supplied_values: Option<&[Variant]>,
     return_type: Option<crate::TypeLibParamType>,
     label: &'static str,
 ) -> Result<VtableInvocationPlan, VtableDeclineReason> {
@@ -2198,6 +2201,18 @@ fn build_vtable_invocation_plan_with_byrefs(
             }
         });
     }
+    if let Some(values) = supplied_values {
+        if values.len() != positional_arg_count {
+            return Err(VtableDeclineReason::TooManyArgs);
+        }
+        if supplied_record_safearray_missing_record_info(
+            &spec.parameter_wire_types,
+            values,
+            positional_arg_count,
+        ) {
+            return Err(VtableDeclineReason::MissingRecordSafeArrayElementInfo);
+        }
+    }
     let mut parameter_byref_slots = vec![None; spec.parameter_types.len()];
     for (index, (param_type, wire_type)) in spec
         .parameter_types
@@ -2243,6 +2258,56 @@ fn build_vtable_invocation_plan_with_byrefs(
         invoke_kind: spec.invoke_kind,
         label,
     })
+}
+
+#[cfg(target_os = "windows")]
+fn supplied_record_safearray_missing_record_info(
+    wire_types: &[crate::TypeLibWireType],
+    values: &[Variant],
+    positional_arg_count: usize,
+) -> bool {
+    for (wire_type, value) in wire_types
+        .iter()
+        .zip(values.iter())
+        .take(positional_arg_count)
+    {
+        let is_record_array = matches!(
+            wire_type,
+            crate::TypeLibWireType::SafeArray { element_vt: 36 }
+                | crate::TypeLibWireType::ByRefSafeArray { element_vt: 36 }
+        );
+        if !is_record_array {
+            continue;
+        }
+        let Some(array) = value.as_safearray() else {
+            return true;
+        };
+        let Some(elements) = array.variant_elements() else {
+            return true;
+        };
+        let mut records = elements.iter().map(Variant::as_com_record);
+        let Some(Some(first_record)) = records.next() else {
+            return true;
+        };
+        let first_record_info = first_record.record_info_ptr();
+        if records.any(|record| {
+            let Some(record) = record else {
+                return true;
+            };
+            // SAFETY: both pointers come from live runtime ComRecord values cloned
+            // from the supplied argument array and are only queried for type
+            // identity.
+            unsafe {
+                !crate::windows_variant::record_info_matches(
+                    first_record_info,
+                    record.record_info_ptr(),
+                )
+            }
+        }) {
+            return true;
+        };
+    }
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -2513,17 +2578,9 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // call so ByRef mutations are never silently lost.
         return Ok(None);
     }
-    let plan = match build_vtable_invocation_plan_with_byrefs(
-        spec,
-        supplied_count,
-        &supplied_byref_slots,
-        return_type,
-        label,
-    ) {
-        Ok(plan) => plan,
-        Err(_) => return Ok(None),
-    };
-    // Marshal the supplied positional args to `Variant` (the marshaller's input).
+    // Marshal the supplied positional args to `Variant` (also used by the plan
+    // builder for argument-sensitive facts such as SAFEARRAY(VT_RECORD)
+    // IRecordInfo availability).
     let mut variant_args: Vec<Variant> = args[..supplied_count]
         .iter()
         .filter_map(|arg| arg.value.as_ref().map(|v| v.variant().clone()))
@@ -2532,6 +2589,17 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
         // A value went missing between the prefix count and here; be safe.
         return Ok(None);
     }
+    let plan = match build_vtable_invocation_plan_with_byrefs(
+        spec,
+        supplied_count,
+        &supplied_byref_slots,
+        Some(&variant_args),
+        return_type,
+        label,
+    ) {
+        Ok(plan) => plan,
+        Err(_) => return Ok(None),
+    };
     // Append the synthesized trailing optionals (declared order) so the slot call
     // passes the full positional list the FUNCDESC declares.
     if supplied_count < spec.parameter_types.len() {
@@ -2713,16 +2781,6 @@ pub unsafe fn try_vtable_member_spec_invoke_result_with_shared_state(
         .iter()
         .map(|arg| arg.by_ref)
         .collect();
-    let plan = match build_vtable_invocation_plan_with_byrefs(
-        spec,
-        supplied_count,
-        &supplied_byref_slots,
-        return_type,
-        label,
-    ) {
-        Ok(plan) => plan,
-        Err(_) => return Ok(None),
-    };
     let mut variant_args: Vec<Variant> = args[..supplied_count]
         .iter()
         .filter_map(|arg| arg.value.as_ref().map(|v| v.variant().clone()))
@@ -2730,6 +2788,17 @@ pub unsafe fn try_vtable_member_spec_invoke_result_with_shared_state(
     if variant_args.len() != supplied_count {
         return Ok(None);
     }
+    let plan = match build_vtable_invocation_plan_with_byrefs(
+        spec,
+        supplied_count,
+        &supplied_byref_slots,
+        Some(&variant_args),
+        return_type,
+        label,
+    ) {
+        Ok(plan) => plan,
+        Err(_) => return Ok(None),
+    };
     if supplied_count < spec.parameter_types.len() {
         match synthesize_trailing_optional_args(spec, supplied_count) {
             Some(extra) => variant_args.extend(extra),
@@ -3189,7 +3258,8 @@ mod gate_tests {
         synthesize_trailing_optional_args,
     };
     use crate::{ComInterfaceIid, ComMemberSpec, SourceTypeKind, TypeLibMemberInvokeKind};
-    use oxvba_runtime::RuntimeByRefSlot;
+    use oxvba_runtime::safe_array::SafeArray;
+    use oxvba_runtime::{RuntimeByRefSlot, Variant};
 
     /// A vtable-eligible spec: a real custom INTERFACE dual, CC_STDCALL, a slot
     /// at `slot` inside `bound`, a non-null IID, and a no-arg `Long` getter. The
@@ -3807,6 +3877,7 @@ mod gate_tests {
                 &spec,
                 1,
                 &[Some(slot)],
+                None,
                 Some(crate::TypeLibParamType::Long),
                 "method",
             )
@@ -3819,6 +3890,7 @@ mod gate_tests {
                 &spec,
                 1,
                 &[Some(wrong_slot)],
+                None,
                 Some(crate::TypeLibParamType::Long),
                 "method",
             )
@@ -3881,6 +3953,40 @@ mod gate_tests {
             "explicit SAFEARRAY parameter wire metadata is admitted"
         );
 
+        let mut record_safearray_param = eligible_spec(17, 58);
+        record_safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
+        record_safearray_param.parameter_wire_types =
+            vec![crate::TypeLibWireType::SafeArray { element_vt: 36 }];
+        let empty_record_array = Variant::from_safearray(SafeArray::from_variants(Vec::new()));
+        assert_eq!(
+            build_vtable_invocation_plan_with_byrefs(
+                &record_safearray_param,
+                1,
+                &[None],
+                Some(&[empty_record_array]),
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .expect_err("empty record array lacks IRecordInfo for vtable allocation"),
+            VtableDeclineReason::MissingRecordSafeArrayElementInfo,
+            "SAFEARRAY(VT_RECORD) without a runtime record element declines before marshalling"
+        );
+        let non_record_array =
+            Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_i32(1)]));
+        assert_eq!(
+            build_vtable_invocation_plan_with_byrefs(
+                &record_safearray_param,
+                1,
+                &[None],
+                Some(&[non_record_array]),
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .expect_err("non-record array lacks IRecordInfo for vtable allocation"),
+            VtableDeclineReason::MissingRecordSafeArrayElementInfo,
+            "SAFEARRAY(VT_RECORD) rejects non-record runtime arrays at admission"
+        );
+
         let mut byref_safearray_param = eligible_spec(17, 58);
         byref_safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
         byref_safearray_param.parameter_wire_types =
@@ -3929,6 +4035,7 @@ mod gate_tests {
                 &byref_record_param,
                 1,
                 &[Some(record_slot)],
+                None,
                 Some(crate::TypeLibParamType::Long),
                 "method",
             )
@@ -3941,6 +4048,7 @@ mod gate_tests {
                 &byref_record_param,
                 1,
                 &[Some(record_slot)],
+                None,
                 Some(crate::TypeLibParamType::Long),
                 "method",
             )

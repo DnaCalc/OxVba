@@ -17,8 +17,9 @@ use windows_sys::Win32::Foundation::{DECIMAL, SysFreeString, SysStringLen, VARIA
 use windows_sys::Win32::System::Com::{CY, SAFEARRAY, SAFEARRAYBOUND};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Ole::{
-    SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement,
-    SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayGetVartype, SafeArrayPutElement,
+    SafeArrayCreate, SafeArrayCreateEx, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim,
+    SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetRecordInfo, SafeArrayGetUBound,
+    SafeArrayGetVartype, SafeArrayPutElement,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
@@ -238,6 +239,76 @@ unsafe fn com_record_from_variant(variant: &VARIANT) -> Result<ComRecord, String
             destroy_com_record,
         )
     }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn com_record_from_array_element(
+    psa: *const SAFEARRAY,
+    indices: &[i32],
+    record_info: *mut c_void,
+) -> Result<ComRecord, String> {
+    // SAFETY: `record_info` is a live IRecordInfo borrowed from the SAFEARRAY;
+    // AddRef gives create_com_record_from_record_info one owned reference to
+    // adopt into the ComRecord it returns.
+    unsafe {
+        add_ref_record_info(record_info);
+    }
+    // SAFETY: the helper consumes the owned reference above and creates an empty
+    // record payload compatible with that IRecordInfo.
+    let record = unsafe { create_com_record_from_record_info(record_info) }?;
+    let record_data = record.record_data_ptr();
+    // SAFETY: `psa` is the live SAFEARRAY(VT_RECORD), `indices` names one valid
+    // element, and `record_data` points to initialized writable storage created
+    // by the matching IRecordInfo.
+    let hr = unsafe { SafeArrayGetElement(psa, indices.as_ptr(), record_data) };
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetElement(VT_RECORD) failed with HRESULT {:#010X} at indices {indices:?}",
+            hr as u32
+        ));
+    }
+    Ok(record)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn record_safearray_to_variant_array(
+    psa: *mut SAFEARRAY,
+    bounds: &[SafeArrayBound],
+    total_len: usize,
+) -> Result<SafeArray, String> {
+    let mut record_info: *mut c_void = std::ptr::null_mut();
+    // SAFETY: `psa` is a live SAFEARRAY whose VARTYPE was checked as VT_RECORD.
+    // On success OleAut writes one owned IRecordInfo reference into record_info.
+    let hr = unsafe { SafeArrayGetRecordInfo(psa.cast_const(), &mut record_info) };
+    if hr < 0 || record_info.is_null() {
+        return Err(format!(
+            "SafeArrayGetRecordInfo failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let mut values = Vec::with_capacity(total_len);
+    let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+    let result = (|| {
+        for _ in 0..total_len {
+            // SAFETY: `record_info` is live for this loop; each returned
+            // ComRecord gets its own AddRef-owned IRecordInfo reference.
+            let record =
+                unsafe { com_record_from_array_element(psa.cast_const(), &indices, record_info) }?;
+            values.push(Variant::from_com_record(record));
+            advance_indices_row_major(&mut indices, bounds);
+        }
+        Ok(if bounds.len() == 1 {
+            SafeArray::from_variants(values)
+        } else {
+            SafeArray::from_variants_nd(bounds.to_vec(), values)
+        })
+    })();
+    // SAFETY: balances the owned IRecordInfo reference returned by
+    // SafeArrayGetRecordInfo; per-element records own independent references.
+    unsafe {
+        release_record_info(record_info);
+    }
+    result
 }
 
 #[cfg(target_os = "windows")]
@@ -476,6 +547,14 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
             "SAFEARRAY total element count exceeds supported usize range".to_string()
         })?;
         bounds.push(SafeArrayBound { lower, count });
+    }
+
+    if element_vt == VT_RECORD_VALUE {
+        // SAFETY: `element_vt` came from SafeArrayGetVartype and proved the
+        // SAFEARRAY record shape. The helper clones each record element into a
+        // runtime-owned ComRecord while preserving the array bounds.
+        let array = unsafe { record_safearray_to_variant_array(psa, &bounds, total_len) }?;
+        return Ok(ComValue::ArrayIntent(array));
     }
 
     let values = if dims == 1 {
@@ -934,10 +1013,6 @@ where
                 .to_string(),
         );
     }
-    if element_vt == VT_RECORD_VALUE {
-        return Err("runtime error: 13 (Type mismatch)".to_string());
-    }
-
     // Collect per-dimension bounds.
     let mut bounds = Vec::with_capacity(dims as usize);
     let mut total_len: usize = 1;
@@ -968,6 +1043,14 @@ where
             "SAFEARRAY total element count exceeds supported usize range".to_string()
         })?;
         bounds.push(SafeArrayBound { lower, count });
+    }
+
+    if element_vt == VT_RECORD_VALUE {
+        // SAFETY: `element_vt` came from SafeArrayGetVartype and proved the
+        // SAFEARRAY record shape. The helper clones each record element into a
+        // runtime-owned ComRecord while preserving the array bounds.
+        let array = unsafe { record_safearray_to_variant_array(psa, &bounds, total_len) }?;
+        return Ok(Variant::from_safearray(array));
     }
 
     // Helper closure: extract one element by indices for variant/dispatch/unknown/typed paths.
@@ -1205,6 +1288,102 @@ where
         }
     }
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) unsafe fn record_info_matches(left: *mut c_void, right: *mut c_void) -> bool {
+    if left == right {
+        return true;
+    }
+    if left.is_null() || right.is_null() {
+        return false;
+    }
+    let info = left.cast::<RawIRecordInfo>();
+    // SAFETY: `left` is a live IRecordInfo pointer carried by a ComRecord.
+    let vtbl = unsafe { &*(*info).vtbl };
+    // SAFETY: both arguments are live IRecordInfo pointers; IsMatchingType only
+    // queries type identity and does not take ownership.
+    unsafe { (vtbl.is_matching_type)(left, right) == 0 }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(crate) unsafe fn set_record_safearray_from_com_value(
+    variant: *mut VARIANT,
+    value: &ComValue,
+) -> Result<(), String> {
+    let ComValue::ArrayIntent(array) = value else {
+        return Err(format!(
+            "vtable SAFEARRAY(VT_RECORD) parameter expects an array argument, got {value:?}"
+        ));
+    };
+    let Some(values) = array.variant_elements() else {
+        return Err(
+            "SAFEARRAY(VT_RECORD) parameter requires materialized record elements".to_string(),
+        );
+    };
+    let first_record = values
+        .iter()
+        .find_map(Variant::as_com_record)
+        .ok_or_else(|| {
+            "SAFEARRAY(VT_RECORD) parameter requires at least one Record element".to_string()
+        })?;
+    let record_info = first_record.record_info_ptr();
+    for value in &values {
+        let Some(record) = value.as_com_record() else {
+            return Err(format!(
+                "SAFEARRAY(VT_RECORD) parameter element must be a Record, got {value:?}"
+            ));
+        };
+        if !record_info_matches(record_info, record.record_info_ptr()) {
+            return Err(
+                "SAFEARRAY(VT_RECORD) parameter elements use different record types".to_string(),
+            );
+        }
+    }
+    let bounds = array.bounds().unwrap_or_else(|| {
+        vec![SafeArrayBound {
+            lower: 0,
+            count: u32::try_from(values.len()).unwrap_or(u32::MAX),
+        }]
+    });
+    let dims = u32::try_from(bounds.len())
+        .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
+    let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
+        .iter()
+        .map(|b| SAFEARRAYBOUND {
+            cElements: b.count,
+            lLbound: b.lower,
+        })
+        .collect();
+    // SAFETY: `record_info` is the live IRecordInfo common to all elements and
+    // SafeArrayCreateEx records it for the VT_RECORD array. The returned
+    // SAFEARRAY owns its descriptor and elements.
+    let psa = SafeArrayCreateEx(VT_RECORD_VALUE, dims, sa_bounds.as_ptr(), record_info);
+    if psa.is_null() {
+        return Err("SafeArrayCreateEx(VT_RECORD) returned null".to_string());
+    }
+    let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+    for value in &values {
+        let record = value
+            .as_com_record()
+            .expect("record elements were validated before array creation");
+        // SAFETY: `psa` is a live SAFEARRAY(VT_RECORD); record_data_ptr points to
+        // a record of the matching IRecordInfo type. OleAut copies the element
+        // into the SAFEARRAY slot.
+        let hr = SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), record.record_data_ptr());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_RECORD) failed with HRESULT {:#010X} at indices {indices:?}",
+                hr as u32
+            ));
+        }
+        advance_indices_row_major(&mut indices, &bounds);
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_RECORD_VALUE;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
 }
@@ -1948,7 +2127,9 @@ mod tests {
     };
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
+    use windows_sys::Win32::System::Ole::{
+        SafeArrayCreateEx, SafeArrayCreateVector, SafeArrayPutElement,
+    };
     use windows_sys::Win32::System::Variant::{
         VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_I8, VT_UI8,
         VT_UNKNOWN, VT_VARIANT, VariantClear,
@@ -2025,23 +2206,36 @@ mod tests {
         0
     }
 
-    unsafe extern "system" fn fake_record_init(_this: *mut c_void, _pvnew: *mut c_void) -> i32 {
-        0x8000_4001u32 as i32
+    unsafe extern "system" fn fake_record_init(_this: *mut c_void, pvnew: *mut c_void) -> i32 {
+        if pvnew.is_null() {
+            return 0x8007_0057u32 as i32;
+        }
+        *pvnew.cast::<i32>() = 0;
+        0
     }
 
     unsafe extern "system" fn fake_record_clear(
         _this: *mut c_void,
-        _pvexisting: *const c_void,
+        pvexisting: *const c_void,
     ) -> i32 {
-        0x8000_4001u32 as i32
+        if pvexisting.is_null() {
+            return 0x8007_0057u32 as i32;
+        }
+        0
     }
 
     unsafe extern "system" fn fake_record_copy(
-        _this: *mut c_void,
-        _pvexisting: *const c_void,
-        _pvnew: *mut c_void,
+        this: *mut c_void,
+        pvexisting: *const c_void,
+        pvnew: *mut c_void,
     ) -> i32 {
-        0x8000_4001u32 as i32
+        if pvexisting.is_null() || pvnew.is_null() {
+            return 0x8007_0057u32 as i32;
+        }
+        let info = &*(this.cast::<FakeRecordInfo>());
+        info.copies.fetch_add(1, Ordering::SeqCst);
+        *pvnew.cast::<i32>() = *pvexisting.cast::<i32>();
+        0
     }
 
     unsafe extern "system" fn fake_get_guid(
@@ -2058,8 +2252,12 @@ mod tests {
         0x8000_4001u32 as i32
     }
 
-    unsafe extern "system" fn fake_get_size(_this: *mut c_void, _pcbsize: *mut u32) -> i32 {
-        0x8000_4001u32 as i32
+    unsafe extern "system" fn fake_get_size(_this: *mut c_void, pcbsize: *mut u32) -> i32 {
+        if pcbsize.is_null() {
+            return 0x8007_0057u32 as i32;
+        }
+        *pcbsize = core::mem::size_of::<i32>() as u32;
+        0
     }
 
     unsafe extern "system" fn fake_get_type_info(
@@ -2123,8 +2321,10 @@ mod tests {
         0
     }
 
-    unsafe extern "system" fn fake_record_create(_this: *mut c_void) -> *mut c_void {
-        std::ptr::null_mut()
+    unsafe extern "system" fn fake_record_create(this: *mut c_void) -> *mut c_void {
+        let info = &*(this.cast::<FakeRecordInfo>());
+        info.copies.fetch_add(1, Ordering::SeqCst);
+        Box::into_raw(Box::new(0i32)).cast()
     }
 
     static FAKE_RECORD_INFO_VTBL: RawIRecordInfoVtbl = RawIRecordInfoVtbl {
@@ -2157,6 +2357,63 @@ mod tests {
         variant.Anonymous.Anonymous.Anonymous.Anonymous.pvRecord =
             Box::into_raw(Box::new(value)).cast();
         variant
+    }
+
+    #[test]
+    fn record_safearray_decodes_to_runtime_record_variant_array() {
+        let mut info = FakeRecordInfo::new();
+        let bound = windows_sys::Win32::System::Com::SAFEARRAYBOUND {
+            cElements: 2,
+            lLbound: 0,
+        };
+        let psa = unsafe {
+            SafeArrayCreateEx(
+                VT_RECORD_VALUE,
+                1,
+                &bound,
+                (&mut info as *mut FakeRecordInfo).cast(),
+            )
+        };
+        assert!(!psa.is_null(), "record SAFEARRAY should allocate");
+        for (index, value) in [123i32, 456i32].into_iter().enumerate() {
+            let index = i32::try_from(index).expect("test index fits i32");
+            let hr = unsafe {
+                SafeArrayPutElement(psa.cast_const(), &index, (&value as *const i32).cast())
+            };
+            assert!(
+                hr >= 0,
+                "SafeArrayPutElement(VT_RECORD) should succeed, got HRESULT {:#010X}",
+                hr as u32
+            );
+        }
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_RECORD_VALUE;
+        variant.Anonymous.Anonymous.Anonymous.parray = psa;
+        let array = match unsafe { variant_to_com_value(&variant) }
+            .expect("SAFEARRAY(VT_RECORD) should decode")
+        {
+            ComValue::ArrayIntent(array) => array,
+            other => panic!("expected record SAFEARRAY, got {other:?}"),
+        };
+        let values = array.variant_elements().expect("record array elements");
+        assert_eq!(values.len(), 2);
+        let decoded: Vec<i32> = values
+            .iter()
+            .map(|value| {
+                let record = value.as_com_record().expect("record element");
+                unsafe { *record.record_data_ptr().cast::<i32>() }
+            })
+            .collect();
+        assert_eq!(decoded, vec![123, 456]);
+        unsafe {
+            let _ = VariantClear(&mut variant);
+        }
+        drop(values);
+        drop(array);
+        assert!(
+            info.destroys.load(Ordering::SeqCst) >= 2,
+            "decoded runtime record clones should be destroyed"
+        );
     }
 
     #[test]

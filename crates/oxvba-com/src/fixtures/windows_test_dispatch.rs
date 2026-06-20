@@ -28,14 +28,14 @@ use windows_sys::Win32::{
             DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO, SAFEARRAY, SAFEARRAYBOUND,
         },
         Ole::{
-            SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim,
-            SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayGetVartype,
-            SafeArrayPutElement,
+            SafeArrayAccessData, SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy,
+            SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound,
+            SafeArrayGetVartype, SafeArrayPutElement, SafeArrayUnaccessData,
         },
         Variant::{
             VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_EMPTY,
-            VT_ERROR, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8,
-            VT_UINT, VT_UNKNOWN, VT_VARIANT, VariantClear,
+            VT_ERROR, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_NULL, VT_RECORD, VT_UI1, VT_UI2,
+            VT_UI4, VT_UI8, VT_UINT, VT_UNKNOWN, VT_VARIANT, VariantClear,
         },
     },
 };
@@ -3514,6 +3514,7 @@ pub const DUAL_SLOT_MUTATE_BYREF_RECORD: u16 = 32;
 pub const DUAL_SLOT_GET_RECORD_VALUE: u16 = 33;
 pub const DUAL_SLOT_VALIDATE_I4_SAFEARRAY_VALUE: u16 = 34;
 pub const DUAL_SLOT_GET_I4_SAFEARRAY_VALUE: u16 = 35;
+pub const DUAL_SLOT_VALIDATE_RECORD_SAFEARRAY_VALUE: u16 = 36;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3710,6 +3711,12 @@ struct RawDualVtbl {
     /// slot 35
     get_i4_safearray_value:
         unsafe extern "system" fn(this: *mut core::ffi::c_void, out: *mut *mut SAFEARRAY) -> i32,
+    /// slot 36
+    validate_record_safearray_value: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        value: *mut SAFEARRAY,
+        out: *mut VARIANT_BOOL,
+    ) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3763,6 +3770,7 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     get_record_value: oxvba_dual_get_record_value,
     validate_i4_safearray_value: oxvba_dual_validate_i4_safearray_value,
     get_i4_safearray_value: oxvba_dual_get_i4_safearray_value,
+    validate_record_safearray_value: oxvba_dual_validate_record_safearray_value,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4305,6 +4313,46 @@ unsafe extern "system" fn oxvba_dual_validate_i4_safearray_value(
         Ok(values) => values == [3, 5, 8],
         Err(_) => false,
     };
+    *out = if ok { -1 } else { 0 };
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_validate_record_safearray_value(
+    _this: *mut core::ffi::c_void,
+    value: *mut SAFEARRAY,
+    out: *mut VARIANT_BOOL,
+) -> i32 {
+    if out.is_null() || value.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let mut element_vt = 0u16;
+    if SafeArrayGetVartype(value.cast_const(), &mut element_vt) < 0 || element_vt != VT_RECORD {
+        *out = 0;
+        return COM_S_OK;
+    }
+    if SafeArrayGetDim(value.cast_const()) != 1 {
+        *out = 0;
+        return COM_S_OK;
+    }
+    let mut lower = 0i32;
+    let mut upper = 0i32;
+    if SafeArrayGetLBound(value.cast_const(), 1, &mut lower) < 0
+        || SafeArrayGetUBound(value.cast_const(), 1, &mut upper) < 0
+        || lower != 0
+        || upper != 1
+    {
+        *out = 0;
+        return COM_S_OK;
+    }
+    let mut data: *mut core::ffi::c_void = std::ptr::null_mut();
+    if SafeArrayAccessData(value.cast_const(), &mut data) < 0 || data.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let records = data.cast::<i32>();
+    let ok = *records == DUAL_RECORD_VALUE && *records.add(1) == DUAL_RECORD_MUTATED_VALUE;
+    let _ = SafeArrayUnaccessData(value.cast_const());
     *out = if ok { -1 } else { 0 };
     COM_S_OK
 }

@@ -5,6 +5,8 @@ use oxvba_runtime::{
     safe_array::{SafeArray, VT_VARIANT_VALUE},
 };
 
+const VT_RECORD_WIRE_VALUE: u16 = 36;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibResolveRequest {
     pub reference_name: String,
@@ -187,7 +189,8 @@ impl TypeLibWireType {
     }
 
     pub(crate) fn safearray_element_vt_supported(element_vt: u16) -> bool {
-        SafeArray::supports_intrinsic_element_vartype(element_vt)
+        element_vt == VT_RECORD_WIRE_VALUE
+            || SafeArray::supports_intrinsic_element_vartype(element_vt)
     }
 
     /// Whether this exact wire shape is currently supported as a vtable inbound
@@ -834,6 +837,21 @@ mod tests {
             Ok(()),
             "typed SAFEARRAY wire metadata is supported when the runtime bridge owns the element VARTYPE"
         );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Variant],
+                &[TypeLibWireType::SafeArray {
+                    element_vt: VT_RECORD_TEST_VALUE,
+                }],
+                &[],
+                Some(TypeLibParamType::Variant),
+                Some(&TypeLibWireType::SafeArray {
+                    element_vt: VT_RECORD_TEST_VALUE,
+                }),
+            ),
+            Ok(()),
+            "record-element SAFEARRAY wire metadata is supported through COM-boundary record cloning"
+        );
     }
 
     #[test]
@@ -1013,19 +1031,6 @@ mod tests {
                 Some(&TypeLibWireType::ByRefSafeArrayVariant),
             ),
             Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType)
-        );
-        assert_eq!(
-            validate_vtable_wire_signature(
-                &[TypeLibParamType::Variant],
-                &[TypeLibWireType::SafeArray {
-                    element_vt: VT_RECORD_TEST_VALUE,
-                }],
-                &[],
-                None,
-                None,
-            ),
-            Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType),
-            "SAFEARRAY record elements decline until record-array ownership is explicitly supported"
         );
     }
 

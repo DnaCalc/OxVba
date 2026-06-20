@@ -41,6 +41,8 @@ use windows_sys::Win32::System::Variant::{
     VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VariantClear,
 };
 
+const VT_RECORD_WIRE_VALUE: u16 = 36;
+
 // ── IErrorInfo + Get/SetErrorInfo ──
 //
 // windows-sys 0.59 exposes GetErrorInfo/SetErrorInfo as free functions over an
@@ -946,10 +948,19 @@ where
             let _ = crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
         }
     };
-    // SAFETY: `cell` is a fresh writable VARIANT. `set_variant_from_com_value`
-    // creates a Windows SAFEARRAY payload owned by the VARIANT.
-    unsafe {
-        crate::set_variant_from_com_value(cell.as_mut(), value, resolve_object, &mut add_ref)?;
+    if element_vt == VT_RECORD_WIRE_VALUE {
+        // SAFETY: `cell` is a fresh writable VARIANT. The helper creates a
+        // Windows SAFEARRAY(VT_RECORD) payload owned by the VARIANT from a
+        // runtime Variant array of Record elements.
+        unsafe {
+            crate::windows_variant::set_record_safearray_from_com_value(cell.as_mut(), value)?;
+        }
+    } else {
+        // SAFETY: `cell` is a fresh writable VARIANT. `set_variant_from_com_value`
+        // creates a Windows SAFEARRAY payload owned by the VARIANT.
+        unsafe {
+            crate::set_variant_from_com_value(cell.as_mut(), value, resolve_object, &mut add_ref)?;
+        }
     }
     // SAFETY: `cell` is initialized by `set_variant_from_com_value`, so reading
     // the VARIANT discriminant is valid.
@@ -1607,13 +1618,16 @@ mod tests {
         DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY, DUAL_SLOT_MUTATE_BYREF_RECORD,
         DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
         DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_I4_SAFEARRAY_VALUE,
-        DUAL_SLOT_VALIDATE_RECORD_VALUE, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE,
-        DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
+        DUAL_SLOT_VALIDATE_RECORD_SAFEARRAY_VALUE, DUAL_SLOT_VALIDATE_RECORD_VALUE,
+        DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE,
+        create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
     use oxvba_runtime::ComRecord;
     use oxvba_runtime::safe_array::{SafeArray, VT_I4_VALUE};
     use oxvba_runtime::{RuntimeByRefSlot, RuntimeValueType, VarType};
+
+    const VT_RECORD_TEST_VALUE: u16 = 36;
 
     /// Resolver that never sees an object arg in these tests.
     fn no_object_resolver() -> impl FnMut(ObjectRef) -> Result<*mut c_void, String> {
@@ -1760,6 +1774,21 @@ mod tests {
         // SAFETY: this helper only reads records created by `test_record_variant`
         // and mutated by the fixture's `DualRecordFixture` slot.
         unsafe { (*ptr.cast::<TestRecord>()).value }
+    }
+
+    fn descriptor_record_variant(record_info: &TypeLibRecordInfo, value: i32) -> Variant {
+        let raw = get_record_info_from_descriptor(record_info)
+            .expect("registered record descriptor should resolve to IRecordInfo");
+        // SAFETY: get_record_info_from_descriptor returned one owned IRecordInfo
+        // reference and the helper creates a matching owned record payload.
+        let record = unsafe { crate::windows_variant::create_com_record_from_record_info(raw) }
+            .expect("IRecordInfo should allocate record payload");
+        // SAFETY: the temporary test typelib defines a single Long field at
+        // offset 0, so writing i32 initializes the record value the fixture reads.
+        unsafe {
+            *record.record_data_ptr().cast::<i32>() = value;
+        }
+        Variant::from_com_record(record)
     }
 
     #[repr(C)]
@@ -2310,6 +2339,40 @@ mod tests {
             value.as_bool(),
             Some(true),
             "fixture must see a SAFEARRAY(I4) wire pointer, not SAFEARRAY(VARIANT)"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn record_safearray_parameter_lowers_with_record_element_vartype() {
+        let registered_record =
+            create_registered_record_typelib().expect("temp record typelib should register");
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_VALIDATE_RECORD_SAFEARRAY_VALUE,
+            vec![TypeLibParamType::Variant],
+            vec![TypeLibWireType::SafeArray {
+                element_vt: VT_RECORD_TEST_VALUE,
+            }],
+            vec![],
+            Some(TypeLibParamType::Boolean),
+            Some(TypeLibWireType::Automation(TypeLibParamType::Boolean)),
+            TypeLibMemberInvokeKind::Method,
+        );
+        let arg = Variant::from_safearray(SafeArray::from_variants(vec![
+            descriptor_record_variant(&registered_record.descriptor, DUAL_RECORD_VALUE),
+            descriptor_record_variant(&registered_record.descriptor, DUAL_RECORD_MUTATED_VALUE),
+        ]));
+        // SAFETY: slot 36 validates the inbound SAFEARRAY(VT_RECORD)* payload.
+        let value = unsafe { vtable_invoke(this, &plan, &[arg], 36, &mut resolve, &mut bind) }
+            .expect("record SAFEARRAY inbound vtable call should succeed");
+        assert_eq!(
+            value.as_bool(),
+            Some(true),
+            "fixture must see a SAFEARRAY(VT_RECORD) wire pointer"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
