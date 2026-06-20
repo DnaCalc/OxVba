@@ -9,18 +9,19 @@ use crate::{
     activate_runtime_dispatch, activate_runtime_object_binding_shared,
     bind_host_dispatch_object_shared, bind_native_dispatch_result_shared,
     binding_from_typelib_metadata, build_typelib_metadata, callback_arg, callback_arity,
-    callback_subscription_token, execute_bound_variant_with_shared_state,
-    host_dispatch_object_for_prog_id_shared, insert_bound_object_binding_at_handle_shared,
-    invoke_dispatch_variant_with_shared_state, legacy_runtime_arg_values,
-    member_spec_from_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
-    query_unknown_from_dispatch, release_callback, release_object_binding_shared,
-    release_subscription_transport, resolve_bound_native_dispatch_shared,
-    resolve_known_typelib_identity, resolve_named_argument_dispids,
-    resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
-    take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
+    callback_subscription_token, execute_bound_runtime_call_result_with_shared_state,
+    execute_bound_variant_with_shared_state, host_dispatch_object_for_prog_id_shared,
+    insert_bound_object_binding_at_handle_shared, invoke_dispatch_variant_with_shared_state,
+    legacy_runtime_arg_values, member_spec_from_typelib_metadata,
+    member_token_and_spec_from_typelib_metadata_name, query_unknown_from_dispatch,
+    release_callback, release_object_binding_shared, release_subscription_transport,
+    resolve_bound_native_dispatch_shared, resolve_known_typelib_identity,
+    resolve_named_argument_dispids, resolve_typelib_identity_for_prog_id_name,
+    subscribe_event_shared, take_polled_callback_payload, unsubscribe_event_shared,
+    validate_named_arg_order,
 };
 use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{ObjectRef, RuntimeCallResult, Variant};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -531,6 +532,61 @@ impl WindowsComBridge {
         Ok(None)
     }
 
+    pub fn dispatch_invoke_call_result(
+        &self,
+        request: &ComInvokeRequest,
+        prefer_vtable: bool,
+    ) -> Result<Option<RuntimeCallResult>, WindowsComBridgeDispatchError> {
+        validate_named_arg_order(request.args.as_slice())
+            .map_err(WindowsComBridgeDispatchError::Message)?;
+        let mut try_vtable_invoke =
+            |_dispatch: *mut RawIDispatch,
+             _binding: &ComBinding,
+             _member: i32,
+             _positional_values: &[i32]| Ok(None);
+        let mut known_member_spec = |binding: &ComBinding, token: ComMemberToken| {
+            self.known_member_spec_for_prog_id_name(&binding.prog_id_name, token)
+        };
+        let transport = crate::ComTransportCounters {
+            vtable: &self.vtable_call_count,
+            idispatch: &self.idispatch_call_count,
+        };
+        // SAFETY: the shared-state helper resolves any native dispatch pointer
+        // from the bridge bindings map, which owns the retained reference for
+        // the duration of this VM-thread call.
+        let early = unsafe {
+            execute_bound_runtime_call_result_with_shared_state(
+                &self.state,
+                request,
+                prefer_vtable,
+                transport,
+                &mut try_vtable_invoke,
+                &mut known_member_spec,
+            )
+        }
+        .map_err(WindowsComBridgeDispatchError::Message)?;
+        if early.is_some() {
+            return Ok(early);
+        }
+
+        let binding = {
+            let state = self
+                .lock_state("dispatch_invoke_call_result")
+                .map_err(WindowsComBridgeDispatchError::Message)?;
+            state
+                .bindings
+                .get(&ComObjectToken::new(request.object.raw()))
+                .cloned()
+        };
+        let Some(binding) = binding else {
+            return Ok(None);
+        };
+        if binding.native_dispatch == 0 {
+            return Ok(None);
+        }
+        Ok(None)
+    }
+
     /// Attempt a vtable this-call for a late-bound-by-name member whose dispid is
     /// already resolved, recovering the FUNCDESC signature from the LIVE object's
     /// own `ITypeInfo`. This is an OPPORTUNISTIC acceleration layer: it returns
@@ -981,6 +1037,31 @@ mod tests {
         }
     }
 
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn byref_long_method_spec(name: &str, vtable_slot: u16) -> crate::ComMemberSpec {
+        crate::ComMemberSpec {
+            name: name.to_string(),
+            requires_argument: true,
+            invoke_kind: crate::TypeLibMemberInvokeKind::Method,
+            parameter_names: vec!["value".to_string()],
+            is_default_member: false,
+            vtable_slot: Some(vtable_slot),
+            parameter_types: vec![crate::TypeLibParamType::ByRefLong],
+            parameter_wire_types: vec![crate::TypeLibWireType::Automation(
+                crate::TypeLibParamType::ByRefLong,
+            )],
+            parameter_iids: Vec::new(),
+            parameter_optional_defaults: vec![crate::OptionalParamDefault::Required],
+            return_type: None,
+            return_wire_type: None,
+            callconv_is_stdcall: true,
+            interface_iid: Some(crate::DUAL_FIXTURE_INTERFACE_IID),
+            is_dual: true,
+            source_typekind: Some(crate::SourceTypeKind::Interface),
+            vtable_slot_bound: Some(64),
+        }
+    }
+
     /// S3: under a `PreferVtable` policy, a member that passes the vtable gate (a
     /// real custom dual slot, CC_STDCALL, fully-typed v1 signature) dispatches
     /// through the COM vtable — proven by the real S2 dual-vtable fixture
@@ -1169,6 +1250,63 @@ mod tests {
             "covered scalar putref must not also dispatch through IDispatch"
         );
         let _ = scalar_bridge.release_object_binding(scalar_object);
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn dispatch_call_result_returns_vtable_byref_writebacks() {
+        let bridge = WindowsComBridge::new(false);
+        let dual = crate::create_oxvba_dual_vtable_object();
+        let member =
+            ComMemberToken::new(crate::windows_test_dispatch::DUAL_SLOT_MUTATE_BYREF_LONG as i32);
+        let object = insert_native_member_binding(
+            &bridge,
+            7012,
+            "OxVba.DualFixture",
+            dual,
+            member,
+            crate::windows_test_dispatch::DUAL_SLOT_MUTATE_BYREF_LONG as i32,
+            byref_long_method_spec(
+                "MutateByRefLong",
+                crate::windows_test_dispatch::DUAL_SLOT_MUTATE_BYREF_LONG,
+            ),
+        );
+        let slot =
+            oxvba_runtime::RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::Long));
+        let request = ComInvokeRequest {
+            object: object.clone(),
+            member,
+            args: vec![ComInvokeArg::positional_by_ref(
+                crate::ComValue::I32(7),
+                slot,
+            )],
+            invoke_kind_hint: None,
+        };
+        let before_vtable = bridge.vtable_call_count();
+        let before_idispatch = bridge.idispatch_call_count();
+        let result = bridge
+            .dispatch_invoke_call_result(&request, true)
+            .expect("ByRef vtable call-result dispatch should not error")
+            .expect("a call result should be produced");
+        assert_eq!(
+            result.value.as_ref().map(Variant::vtype),
+            Some(oxvba_runtime::VarType::Empty),
+            "HRESULT-only ByRef vtable methods produce an Empty result value"
+        );
+        assert_eq!(result.writebacks.len(), 1);
+        assert_eq!(result.writebacks[0].slot, slot);
+        assert_eq!(result.writebacks[0].value.as_i32(), Some(1_007));
+        assert_eq!(
+            bridge.vtable_call_count(),
+            before_vtable + 1,
+            "ByRef call-result dispatch must use the vtable transport"
+        );
+        assert_eq!(
+            bridge.idispatch_call_count(),
+            before_idispatch,
+            "ByRef vtable dispatch must not also invoke IDispatch"
+        );
+        let _ = bridge.release_object_binding(object);
     }
 
     /// S5a HOST-AV SAFETY: a member that IS gate-eligible (a custom slot,

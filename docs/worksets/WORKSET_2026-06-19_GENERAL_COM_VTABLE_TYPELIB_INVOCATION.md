@@ -160,16 +160,23 @@ surface:
   `ByRefLong`, `ByRefLongLong`, `ByRefSingle`, `ByRefDouble`, `ByRefCurrency`,
   `ByRefDate`, `ByRefDecimal`, and `ByRefVariant`. Admission requires a concrete
   runtime writeback slot; missing slots decline before any slot call.
-- The existing value-only shared dispatch path declines supplied ByRef arguments
-  before vtable execution, because it cannot yet return `RuntimeCallResult`
-  writebacks to callers. That guard prevents silent mutation loss while the
-  writeback-capable bridge API is still pending.
+- The existing value-only shared dispatch path still declines supplied ByRef
+  arguments before vtable execution because its API cannot return
+  `RuntimeCallResult.writebacks`. That guard remains intentional so value-only
+  callers never silently lose mutations.
+- The shared runtime bridge now has an opt-in `RuntimeCallResult` execution path
+  for early-bound COM calls. Eligible ByRef vtable calls propagate
+  `RuntimeCallResult.writebacks` through the bridge and fixture-prove transport
+  counter behavior. The value-only path remains unchanged and still declines
+  ByRef vtable execution before mutation; the writeback-capable path refuses
+  ByRef fallback through value-only IDispatch rather than silently dropping
+  mutations.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
 Residual after this slice: records/UDTs, `ByRefSafeArrayVariant`,
-`ByRefString`, `ByRefObject`, `ByRefLongPtr`, and runtime bridge propagation of
-`RuntimeCallResult.writebacks` remain `in-progress` accepted scope. They may fall
-back only with a specific recorded missing fact or unowned ABI/ownership rule,
-and need the same descriptor, admission, fixture, runtime-integration, and
-fresh-eyes evidence discipline before any broader support claim is made.
+`ByRefString`, `ByRefObject`, and `ByRefLongPtr` remain `in-progress` accepted
+scope. They may fall back only with a specific recorded missing fact or unowned
+ABI/ownership rule, and need the same descriptor, admission, fixture,
+runtime-integration, and fresh-eyes evidence discipline before any broader
+support claim is made.
