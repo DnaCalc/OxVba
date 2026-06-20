@@ -28,9 +28,10 @@ use windows_sys::Win32::{
             DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO, SAFEARRAY, SAFEARRAYBOUND,
         },
         Ole::{
-            SafeArrayAccessData, SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy,
-            SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound,
-            SafeArrayGetVartype, SafeArrayPutElement, SafeArrayUnaccessData,
+            SafeArrayAccessData, SafeArrayCreate, SafeArrayCreateEx, SafeArrayCreateVector,
+            SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetLBound,
+            SafeArrayGetRecordInfo, SafeArrayGetUBound, SafeArrayGetVartype, SafeArrayPutElement,
+            SafeArrayUnaccessData,
         },
         Variant::{
             VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_EMPTY,
@@ -3515,6 +3516,8 @@ pub const DUAL_SLOT_GET_RECORD_VALUE: u16 = 33;
 pub const DUAL_SLOT_VALIDATE_I4_SAFEARRAY_VALUE: u16 = 34;
 pub const DUAL_SLOT_GET_I4_SAFEARRAY_VALUE: u16 = 35;
 pub const DUAL_SLOT_VALIDATE_RECORD_SAFEARRAY_VALUE: u16 = 36;
+pub const DUAL_SLOT_MUTATE_BYREF_I4_SAFEARRAY: u16 = 37;
+pub const DUAL_SLOT_MUTATE_BYREF_RECORD_SAFEARRAY: u16 = 38;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3717,6 +3720,12 @@ struct RawDualVtbl {
         value: *mut SAFEARRAY,
         out: *mut VARIANT_BOOL,
     ) -> i32,
+    /// slot 37
+    mutate_byref_i4_safearray:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, value: *mut *mut SAFEARRAY) -> i32,
+    /// slot 38
+    mutate_byref_record_safearray:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, value: *mut *mut SAFEARRAY) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3771,6 +3780,8 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     validate_i4_safearray_value: oxvba_dual_validate_i4_safearray_value,
     get_i4_safearray_value: oxvba_dual_get_i4_safearray_value,
     validate_record_safearray_value: oxvba_dual_validate_record_safearray_value,
+    mutate_byref_i4_safearray: oxvba_dual_mutate_byref_i4_safearray,
+    mutate_byref_record_safearray: oxvba_dual_mutate_byref_record_safearray,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4354,6 +4365,89 @@ unsafe extern "system" fn oxvba_dual_validate_record_safearray_value(
     let ok = *records == DUAL_RECORD_VALUE && *records.add(1) == DUAL_RECORD_MUTATED_VALUE;
     let _ = SafeArrayUnaccessData(value.cast_const());
     *out = if ok { -1 } else { 0 };
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_mutate_byref_i4_safearray(
+    _this: *mut core::ffi::c_void,
+    value: *mut *mut SAFEARRAY,
+) -> i32 {
+    if value.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    match create_i4_vector(&[144, 233]) {
+        Ok(psa) => {
+            if !(*value).is_null() {
+                let _ = SafeArrayDestroy((*value).cast_const());
+            }
+            *value = psa;
+            COM_S_OK
+        }
+        Err(_) => COM_E_INVALIDARG,
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn create_record_i32_vector_from_record_info(
+    record_info: *mut core::ffi::c_void,
+    values: &[i32],
+) -> Result<*mut SAFEARRAY, String> {
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let bound = SAFEARRAYBOUND {
+        cElements: len,
+        lLbound: 0,
+    };
+    let psa = SafeArrayCreateEx(VT_RECORD, 1, &bound, record_info);
+    if psa.is_null() {
+        return Err("SafeArrayCreateEx(VT_RECORD) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, (value as *const i32).cast());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_RECORD) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    Ok(psa)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_mutate_byref_record_safearray(
+    _this: *mut core::ffi::c_void,
+    value: *mut *mut SAFEARRAY,
+) -> i32 {
+    if value.is_null() || (*value).is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let mut element_vt = 0u16;
+    if SafeArrayGetVartype((*value).cast_const(), &mut element_vt) < 0 || element_vt != VT_RECORD {
+        return COM_E_INVALIDARG;
+    }
+    let mut record_info: *mut core::ffi::c_void = std::ptr::null_mut();
+    if SafeArrayGetRecordInfo((*value).cast_const(), &mut record_info) < 0 || record_info.is_null()
+    {
+        return COM_E_INVALIDARG;
+    }
+    let replacement = create_record_i32_vector_from_record_info(
+        record_info,
+        &[DUAL_RECORD_MUTATED_VALUE, DUAL_RECORD_RETURN_VALUE],
+    );
+    raw_release_unknown(record_info);
+    let Ok(psa) = replacement else {
+        return COM_E_INVALIDARG;
+    };
+    let _ = SafeArrayDestroy((*value).cast_const());
+    *value = psa;
     COM_S_OK
 }
 

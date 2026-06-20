@@ -2227,15 +2227,18 @@ fn build_vtable_invocation_plan_with_byrefs(
         .enumerate()
     {
         let requires_byref_slot = param_type.is_by_ref()
-            || matches!(
-                wire_type,
-                Some(crate::TypeLibWireType::ByRefSafeArrayVariant)
-            );
+            || wire_type.is_some_and(crate::TypeLibWireType::is_byref_safearray_wire);
         if requires_byref_slot {
             let Some(Some(slot)) = supplied_byref_slots.get(index) else {
                 return Err(VtableDeclineReason::MissingByRefSlot);
             };
-            if let Some(expected_type) = expected_runtime_type_for_byref(*param_type)
+            let expected_type =
+                if wire_type.is_some_and(crate::TypeLibWireType::is_byref_safearray_wire) {
+                    Some(RuntimeValueType::Variant)
+                } else {
+                    expected_runtime_type_for_byref(*param_type)
+                };
+            if let Some(expected_type) = expected_type
                 && slot
                     .expected_type
                     .is_some_and(|actual| actual != expected_type)
@@ -3998,6 +4001,60 @@ mod gate_tests {
                 Some(crate::TypeLibParamType::Long)
             ),
             Some(VtableDeclineReason::MissingByRefSlot)
+        );
+        let byref_safearray_slot =
+            RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::Variant));
+        assert!(
+            build_vtable_invocation_plan_with_byrefs(
+                &byref_safearray_param,
+                1,
+                &[Some(byref_safearray_slot)],
+                None,
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .is_ok(),
+            "ByRef SAFEARRAY(VARIANT) is admitted with a writeback slot"
+        );
+
+        let mut typed_byref_safearray_param = eligible_spec(17, 58);
+        typed_byref_safearray_param.parameter_types = vec![crate::TypeLibParamType::Variant];
+        typed_byref_safearray_param.parameter_wire_types =
+            vec![crate::TypeLibWireType::ByRefSafeArray { element_vt: 3 }];
+        assert_eq!(
+            vtable_gate_decline_reason(
+                &typed_byref_safearray_param,
+                1,
+                Some(crate::TypeLibParamType::Long)
+            ),
+            Some(VtableDeclineReason::MissingByRefSlot),
+            "typed ByRef SAFEARRAY metadata also requires a runtime writeback slot"
+        );
+        assert!(
+            build_vtable_invocation_plan_with_byrefs(
+                &typed_byref_safearray_param,
+                1,
+                &[Some(byref_safearray_slot)],
+                None,
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .is_ok(),
+            "typed ByRef SAFEARRAY is admitted with a writeback slot"
+        );
+        let wrong_byref_safearray_slot =
+            RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::Long));
+        assert_eq!(
+            build_vtable_invocation_plan_with_byrefs(
+                &typed_byref_safearray_param,
+                1,
+                &[Some(wrong_byref_safearray_slot)],
+                None,
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .expect_err("mismatched SAFEARRAY writeback slot type must decline"),
+            VtableDeclineReason::ByRefSlotTypeMismatch
         );
 
         let mut record_param = eligible_spec(17, 58);

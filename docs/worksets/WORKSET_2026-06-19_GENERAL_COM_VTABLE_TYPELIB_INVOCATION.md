@@ -190,9 +190,14 @@ surface:
 - The remaining ByRef Automation families are now admitted and fixture-proven
   through the writeback-capable vtable marshaller: `ByRefString` uses BSTR*
   ownership, `ByRefObject` requires explicit `InterfacePointer` wire metadata
-  and a declared IID, `ByRefLongPtr` uses pointer-width cells on x64, and
-  explicit `ByRefSafeArrayVariant` wire metadata passes SAFEARRAY** cells and
-  decodes the final SAFEARRAY payload into the runtime array carrier.
+  and a declared IID, and `ByRefLongPtr` uses pointer-width cells on x64.
+  ByRef SAFEARRAY wire metadata now covers both `ByRefSafeArrayVariant` and typed
+  `ByRefSafeArray { element_vt }`; admission requires a runtime writeback slot,
+  passes SAFEARRAY** cells, validates the final COM element VARTYPE, and decodes
+  the final SAFEARRAY payload into the runtime array carrier. `SAFEARRAY(I4)**`
+  and `SAFEARRAY(VT_RECORD)**` writebacks are fixture-proven through real vtable
+  slots, with the record case preserving `IRecordInfo` through OleAut allocation
+  and runtime `ComRecord` decode.
 - `TKIND_RECORD` / `VT_USERDEFINED` records now survive typelib descriptor
   projection as explicit `TypeLibParamType::Record` / `ByRefRecord` plus
   `TypeLibWireType::Record` / `ByRefRecord` metadata instead of collapsing to
@@ -230,6 +235,7 @@ evidence across more than the controlled single-field OleAut fixture before clai
 foreign-record parity. Name-only records may fall back only with the specific missing
 allocation metadata fact, and any remaining record fallback must identify the exact
 unowned ABI, layout, registration, or ownership rule. SAFEARRAY(VT_RECORD) support is
-currently proven for controlled descriptor-backed records and the shared decode path;
-broader foreign record-array evidence is still required before claiming foreign-record
-parity. Malformed SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.
+currently proven for controlled descriptor-backed records, inbound params, ByRef
+writebacks, and the shared decode path; broader foreign record-array evidence is still
+required before claiming foreign-record parity. Malformed SAFEARRAY descriptors now
+decline rather than guessing `VT_VARIANT`.

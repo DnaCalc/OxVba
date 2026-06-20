@@ -1614,8 +1614,9 @@ mod tests {
         DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE,
         DUAL_SLOT_GET_RECORD_VALUE, DUAL_SLOT_GET_SAFEARRAY_VALUE, DUAL_SLOT_GET_SINGLE_VALUE,
         DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP,
-        DUAL_SLOT_MUTATE_BYREF_BREADTH, DUAL_SLOT_MUTATE_BYREF_LONG,
-        DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY, DUAL_SLOT_MUTATE_BYREF_RECORD,
+        DUAL_SLOT_MUTATE_BYREF_BREADTH, DUAL_SLOT_MUTATE_BYREF_I4_SAFEARRAY,
+        DUAL_SLOT_MUTATE_BYREF_LONG, DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY,
+        DUAL_SLOT_MUTATE_BYREF_RECORD, DUAL_SLOT_MUTATE_BYREF_RECORD_SAFEARRAY,
         DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
         DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_I4_SAFEARRAY_VALUE,
         DUAL_SLOT_VALIDATE_RECORD_SAFEARRAY_VALUE, DUAL_SLOT_VALIDATE_RECORD_VALUE,
@@ -2945,6 +2946,101 @@ mod tests {
         assert_eq!(
             array_values.iter().map(Variant::as_i32).collect::<Vec<_>>(),
             vec![Some(55), Some(89)]
+        );
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn typed_byref_i4_safearray_returns_typed_writeback() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolver = no_object_resolver();
+        let mut bind = release_and_bind();
+        let mut plan = invocation_plan(
+            DUAL_SLOT_MUTATE_BYREF_I4_SAFEARRAY,
+            vec![TypeLibParamType::Variant],
+            vec![TypeLibWireType::ByRefSafeArray {
+                element_vt: VT_I4_VALUE,
+            }],
+            vec![None],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        plan.parameter_byref_slots = vec![Some(RuntimeByRefSlot::new(
+            0,
+            Some(RuntimeValueType::Variant),
+        ))];
+        let arg = Variant::from_safearray(
+            SafeArray::from_typed_variants(
+                VT_I4_VALUE,
+                vec![Variant::from_i32(1), Variant::from_i32(2)],
+            )
+            .expect("typed i4 array"),
+        );
+        let result = unsafe {
+            vtable_invoke_with_writebacks(this, &plan, &[arg], 7031, &mut resolver, &mut bind)
+        }
+        .expect("typed ByRef SAFEARRAY(I4) vtable writeback should succeed");
+        assert_eq!(result.writebacks.len(), 1);
+        let array = result.writebacks[0]
+            .value
+            .as_safearray()
+            .expect("typed SAFEARRAY writeback");
+        assert_eq!(array.element_vartype(), VT_I4_VALUE);
+        let values = array.variant_elements().expect("typed elements");
+        assert_eq!(
+            values.iter().map(Variant::as_i32).collect::<Vec<_>>(),
+            vec![Some(144), Some(233)]
+        );
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn typed_byref_record_safearray_returns_record_writeback() {
+        let registered_record =
+            create_registered_record_typelib().expect("temp record typelib should register");
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolver = no_object_resolver();
+        let mut bind = release_and_bind();
+        let mut plan = invocation_plan(
+            DUAL_SLOT_MUTATE_BYREF_RECORD_SAFEARRAY,
+            vec![TypeLibParamType::Variant],
+            vec![TypeLibWireType::ByRefSafeArray {
+                element_vt: VT_RECORD_TEST_VALUE,
+            }],
+            vec![None],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        plan.parameter_byref_slots = vec![Some(RuntimeByRefSlot::new(
+            0,
+            Some(RuntimeValueType::Variant),
+        ))];
+        let arg = Variant::from_safearray(SafeArray::from_variants(vec![
+            descriptor_record_variant(&registered_record.descriptor, DUAL_RECORD_VALUE),
+            descriptor_record_variant(&registered_record.descriptor, DUAL_RECORD_VALUE),
+        ]));
+        let result = unsafe {
+            vtable_invoke_with_writebacks(this, &plan, &[arg], 7032, &mut resolver, &mut bind)
+        }
+        .expect("typed ByRef SAFEARRAY(VT_RECORD) vtable writeback should succeed");
+        assert_eq!(result.writebacks.len(), 1);
+        let array = result.writebacks[0]
+            .value
+            .as_safearray()
+            .expect("record SAFEARRAY writeback");
+        let values = array.variant_elements().expect("record elements");
+        let decoded: Vec<i32> = values
+            .iter()
+            .map(|value| {
+                let record = value.as_com_record().expect("record element");
+                unsafe { *record.record_data_ptr().cast::<i32>() }
+            })
+            .collect();
+        assert_eq!(
+            decoded,
+            vec![DUAL_RECORD_MUTATED_VALUE, DUAL_RECORD_RETURN_VALUE]
         );
         unsafe { release_dual(this) };
     }
