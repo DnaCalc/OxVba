@@ -236,7 +236,7 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
         VarType::Null => {
             return Err("runtime error: 13 (Type mismatch)".to_string());
         }
-        VarType::Object | VarType::ArrayVariant | VarType::ProcRef => {
+        VarType::Object | VarType::ArrayVariant | VarType::Record | VarType::ProcRef => {
             return Err(format!("cannot convert {:?} to String", value.vtype()));
         }
     };
@@ -342,6 +342,10 @@ pub fn print_display_text(value: &Variant) -> String {
             .as_object_ref()
             .map(|handle| format!("<object:{handle}>"))
             .unwrap_or_else(|| "<object:invalid>".to_string()),
+        VarType::Record => value
+            .as_com_record()
+            .map(|record| format!("<record:{:p}>", record.record_data_ptr()))
+            .unwrap_or_else(|| "<record:invalid>".to_string()),
         VarType::ProcRef => value
             .as_proc_ref()
             .map(|proc| format!("<proc:{proc}>"))

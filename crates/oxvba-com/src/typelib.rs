@@ -370,7 +370,7 @@ pub enum OptionalParamDefault {
 impl ComDefaultValue {
     /// Project a typelib default `ComValue` (read from `PARAMDESCEX.varDefaultValue`)
     /// into the `Send`-safe scalar carrier. Returns `None` for the non-scalar kinds
-    /// a constant default never legitimately is (object / SAFEARRAY / Decimal),
+    /// a constant default never legitimately is (object / SAFEARRAY / Decimal / record),
     /// which then decline a stored default (the param falls back to its optional
     /// rule).
     pub fn from_com_value(value: &crate::ComValue) -> Option<Self> {
@@ -391,8 +391,8 @@ impl ComDefaultValue {
             V::Currency(c) => Self::CurrencyScaled(c.scaled_i64()),
             V::String(s) => Self::Str(s.to_string()),
             V::ErrorCode(code) => Self::ErrorCode(*code),
-            // A constant default is never an object, array, or Decimal.
-            V::Object(_) | V::ArrayIntent(_) | V::Decimal(_) => return None,
+            // A constant default is never an object, array, Decimal, or record.
+            V::Object(_) | V::ArrayIntent(_) | V::Decimal(_) | V::Record(_) => return None,
         })
     }
 

@@ -421,6 +421,9 @@ unsafe fn set_windows_variant_from_variant(
             };
             set_windows_variant_array_arg(variant, &array)?;
         }
+        crate::VarType::Record => {
+            return Err("COM records cannot be marshaled by the generic pointer helper".to_string());
+        }
         crate::VarType::ProcRef => {
             return Err("procedure references cannot be marshaled as VARIANT values".to_string());
         }
@@ -694,6 +697,9 @@ pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
         )),
         crate::VarType::Decimal => {
             return Err("VarPtr/ObjPtr over Decimal is not yet supported".to_string());
+        }
+        crate::VarType::Record => {
+            return Err("VarPtr/ObjPtr over COM records is not supported".to_string());
         }
         crate::VarType::ProcRef => {
             return Err("VarPtr/ObjPtr over procedure references is not supported".to_string());

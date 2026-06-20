@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeByRefSlot, Variant,
+    ComRecord, CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeByRefSlot, Variant,
     bstr::BStr,
     safe_array::{SafeArray, array_tag_from_safe_array, marshal_dispatch_argument},
 };
@@ -92,6 +92,7 @@ pub enum ComValue {
     String(BStr),
     ArrayIntent(SafeArray),
     Object(ObjectRef),
+    Record(ComRecord),
 }
 
 impl ComValue {
@@ -201,6 +202,11 @@ impl ComValue {
                     .as_safearray()
                     .ok_or_else(|| "invalid SAFEARRAY VARIANT payload".to_string())?,
             ),
+            oxvba_runtime::VarType::Record => Self::Record(
+                value
+                    .as_com_record()
+                    .ok_or_else(|| "invalid Record VARIANT payload".to_string())?,
+            ),
             oxvba_runtime::VarType::ProcRef => {
                 return Err("procedure references cannot be converted to COM values".to_string());
             }
@@ -234,6 +240,7 @@ impl ComValue {
             Self::String(value) => Variant::from_string(value.clone()),
             Self::ArrayIntent(array) => Variant::from_safearray(array.clone()),
             Self::Object(handle) => Variant::from_object_ref(handle.clone()),
+            Self::Record(record) => Variant::from_com_record(record.clone()),
         })
     }
 

@@ -29,5 +29,6 @@ pub fn com_value_to_runtime_token(value: &ComValue) -> Result<i32, String> {
             .map_err(|err| format!("COM string value cannot be represented as i32: {err}")),
         ComValue::ArrayIntent(array) => Ok(array.len().min(i32::MAX as usize) as i32),
         ComValue::Object(object) => Ok(object.raw()),
+        ComValue::Record(_) => Err("COM record value cannot be represented as i32".to_string()),
     }
 }

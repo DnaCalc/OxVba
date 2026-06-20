@@ -181,14 +181,19 @@ surface:
   projection as explicit `TypeLibParamType::Record` / `ByRefRecord` plus
   `TypeLibWireType::Record` / `ByRefRecord` metadata instead of collapsing to
   generic `Variant` or `Object` facts. Vtable admission now declines those
-  records through the shared unsupported-type path until the runtime has a real
-  COM record carrier and the marshaller owns `IRecordInfo`/record-copy
-  ownership rules.
+  records through the shared unsupported-type path until the vtable marshaller
+  owns record param/return ABI rules.
+- The runtime now has an opaque `ComRecord` carrier for COM `VT_RECORD` payloads.
+  Windows VARIANT conversion clones records through `IRecordInfo::RecordCreateCopy`,
+  releases them through `IRecordInfo::RecordDestroy`/`Release`, and can write a
+  record value back into a Windows `VARIANT` as a distinct owned record copy.
+  A fake `IRecordInfo` fixture proves the clone, transfer, and destruction
+  ownership path without depending on a foreign typelib.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: record/UDT carrier plus vtable marshalling remain
-`in-progress` accepted scope. Records may fall back only with a specific recorded
-missing fact or unowned ABI/ownership rule, and need the same runtime carrier,
-marshaller, fixture, runtime-integration, and fresh-eyes evidence discipline
-before any broader support claim is made.
+Residual after this slice: record/UDT vtable marshalling remains `in-progress`
+accepted scope. Records may fall back only with a specific recorded missing fact
+or unowned ABI/ownership rule, and need the same marshaller, fixture,
+runtime-integration, and fresh-eyes evidence discipline before any broader
+support claim is made.

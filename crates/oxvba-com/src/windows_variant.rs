@@ -1,6 +1,6 @@
 use crate::ComValue;
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef, VarType, Variant,
+    ComRecord, CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef, VarType, Variant,
     bstr::BStr,
     safe_array::{
         SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
@@ -36,6 +36,173 @@ const VT_DATE_VARENUM: u16 = 7;
 pub enum VariantResultValue {
     Value(ComValue),
     Dispatch(*mut c_void),
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIRecordInfoVtbl {
+    query_interface: unsafe extern "system" fn(
+        this: *mut c_void,
+        iid: *const windows_sys::core::GUID,
+        ppv: *mut *mut c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(this: *mut c_void) -> u32,
+    release: unsafe extern "system" fn(this: *mut c_void) -> u32,
+    record_init: unsafe extern "system" fn(this: *mut c_void, pvnew: *mut c_void) -> i32,
+    record_clear: unsafe extern "system" fn(this: *mut c_void, pvexisting: *const c_void) -> i32,
+    record_copy: unsafe extern "system" fn(
+        this: *mut c_void,
+        pvexisting: *const c_void,
+        pvnew: *mut c_void,
+    ) -> i32,
+    get_guid:
+        unsafe extern "system" fn(this: *mut c_void, pguid: *mut windows_sys::core::GUID) -> i32,
+    get_name: unsafe extern "system" fn(
+        this: *mut c_void,
+        pbstrname: *mut windows_sys::core::BSTR,
+    ) -> i32,
+    get_size: unsafe extern "system" fn(this: *mut c_void, pcbsize: *mut u32) -> i32,
+    get_type_info:
+        unsafe extern "system" fn(this: *mut c_void, pptypeinfo: *mut *mut c_void) -> i32,
+    get_field: unsafe extern "system" fn(
+        this: *mut c_void,
+        pvdata: *const c_void,
+        szfieldname: *const u16,
+        pvarfield: *mut VARIANT,
+    ) -> i32,
+    get_field_no_copy: unsafe extern "system" fn(
+        this: *mut c_void,
+        pvdata: *const c_void,
+        szfieldname: *const u16,
+        pvarfield: *mut VARIANT,
+        ppvdatacarray: *mut *mut c_void,
+    ) -> i32,
+    put_field: unsafe extern "system" fn(
+        this: *mut c_void,
+        wflags: u32,
+        pvdata: *mut c_void,
+        szfieldname: *const u16,
+        pvarfield: *const VARIANT,
+    ) -> i32,
+    put_field_no_copy: unsafe extern "system" fn(
+        this: *mut c_void,
+        wflags: u32,
+        pvdata: *mut c_void,
+        szfieldname: *const u16,
+        pvarfield: *const VARIANT,
+    ) -> i32,
+    get_field_names: unsafe extern "system" fn(
+        this: *mut c_void,
+        pcnames: *mut u32,
+        rgbstrnames: *mut windows_sys::core::BSTR,
+    ) -> i32,
+    is_matching_type: unsafe extern "system" fn(this: *mut c_void, precordinfo: *mut c_void) -> i32,
+    record_create: unsafe extern "system" fn(this: *mut c_void) -> *mut c_void,
+    record_create_copy: unsafe extern "system" fn(
+        this: *mut c_void,
+        pvsource: *const c_void,
+        ppvdest: *mut *mut c_void,
+    ) -> i32,
+    record_destroy: unsafe extern "system" fn(this: *mut c_void, pvrecord: *const c_void) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIRecordInfo {
+    vtbl: *const RawIRecordInfoVtbl,
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn add_ref_record_info(record_info: *mut c_void) {
+    let info = record_info.cast::<RawIRecordInfo>();
+    // SAFETY: callers pass a non-null live IRecordInfo pointer; its first field is
+    // the COM vtable pointer matching RawIRecordInfoVtbl.
+    let vtbl = unsafe { &*(*info).vtbl };
+    // SAFETY: `record_info` is the live IRecordInfo whose vtable was read above.
+    unsafe {
+        (vtbl.add_ref)(record_info);
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn release_record_info(record_info: *mut c_void) {
+    let info = record_info.cast::<RawIRecordInfo>();
+    // SAFETY: callers pass a live IRecordInfo pointer whose reference they own.
+    let vtbl = unsafe { &*(*info).vtbl };
+    // SAFETY: this balances one owned IRecordInfo reference.
+    unsafe {
+        (vtbl.release)(record_info);
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn clone_com_record(
+    record_info: *mut c_void,
+    record_data: *const c_void,
+) -> Result<(*mut c_void, *mut c_void), String> {
+    if record_info.is_null() {
+        return Err("COM record carried null IRecordInfo".to_string());
+    }
+    if record_data.is_null() {
+        return Err("COM record carried null record data".to_string());
+    }
+    let info = record_info.cast::<RawIRecordInfo>();
+    // SAFETY: non-null `record_info` is a live IRecordInfo pointer for this record.
+    let vtbl = unsafe { &*(*info).vtbl };
+    let mut cloned: *mut c_void = std::ptr::null_mut();
+    // SAFETY: `record_data` belongs to `record_info`; RecordCreateCopy writes a
+    // fresh owned record allocation into `cloned` on success.
+    let hr = unsafe { (vtbl.record_create_copy)(record_info, record_data, &mut cloned) };
+    if hr < 0 || cloned.is_null() {
+        return Err(format!(
+            "IRecordInfo::RecordCreateCopy failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    // SAFETY: after a successful record copy, the returned ComRecord owns an
+    // IRecordInfo reference for destroying that copy later.
+    unsafe {
+        add_ref_record_info(record_info);
+    }
+    Ok((record_info, cloned))
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn destroy_com_record(record_info: *mut c_void, record_data: *mut c_void) {
+    if !record_info.is_null() && !record_data.is_null() {
+        let info = record_info.cast::<RawIRecordInfo>();
+        // SAFETY: `record_info` is the IRecordInfo paired with `record_data`.
+        let vtbl = unsafe { &*(*info).vtbl };
+        // SAFETY: this destroys the owned record allocation paired with this
+        // record-info reference.
+        unsafe {
+            let _ = (vtbl.record_destroy)(record_info, record_data);
+        }
+    }
+    if !record_info.is_null() {
+        // SAFETY: this releases the record-info reference owned by the ComRecord.
+        unsafe {
+            release_record_info(record_info);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn com_record_from_variant(variant: &VARIANT) -> Result<ComRecord, String> {
+    // SAFETY: caller checked/knows this VARIANT has vt == VT_RECORD, so the
+    // record arm of the VARIANT union is active.
+    let fields = unsafe { variant.Anonymous.Anonymous.Anonymous.Anonymous };
+    // SAFETY: the VT_RECORD union arm supplies a record payload and matching
+    // IRecordInfo; clone_com_record copies it into runtime-owned storage.
+    unsafe {
+        let (record_info, record_data) = clone_com_record(fields.pRecInfo, fields.pvRecord)?;
+        ComRecord::from_raw_parts(
+            record_info,
+            record_data,
+            clone_com_record,
+            destroy_com_record,
+        )
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1415,6 +1582,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
             let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
             ComValue::String(runtime_bstr_from_windows(bstr))
         }
+        VT_RECORD_VALUE => ComValue::Record(com_record_from_variant(variant)?),
         VT_NULL => ComValue::Null,
         VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
         vt => {
@@ -1532,7 +1700,7 @@ where
                 variant.Anonymous.Anonymous.Anonymous.ullVal,
             ));
         }
-        VT_RECORD_VALUE => return Err("runtime error: 13 (Type mismatch)".to_string()),
+        VT_RECORD_VALUE => return Ok(Variant::from_com_record(com_record_from_variant(variant)?)),
         _ => {}
     }
     variant_to_com_value(variant)?.to_variant()
@@ -1655,6 +1823,13 @@ where
             (*variant).Anonymous.Anonymous.vt = windows_sys::Win32::System::Variant::VT_DISPATCH;
             (*variant).Anonymous.Anonymous.Anonymous.pdispVal = dispatch;
         }
+        ComValue::Record(record) => {
+            let cloned = record.deep_clone()?;
+            let (record_info, record_data) = cloned.into_raw_parts()?;
+            (*variant).Anonymous.Anonymous.vt = VT_RECORD_VALUE;
+            (*variant).Anonymous.Anonymous.Anonymous.Anonymous.pRecInfo = record_info;
+            (*variant).Anonymous.Anonymous.Anonymous.Anonymous.pvRecord = record_data;
+        }
     }
     Ok(())
 }
@@ -1719,12 +1894,12 @@ where
 // Test-support code exercising the documented production marshalling paths above
 // (variant_to_com_value / set_variant_from_com_value / take_variant_result_value)
 // against OS-built VARIANT/SAFEARRAY fixtures.
-#[allow(clippy::undocumented_unsafe_blocks)]
+#[allow(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
-        VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
-        decimal96_to_windows, set_variant_from_com_value, take_variant_result_value,
-        variant_to_com_value, variant_to_variant_value,
+        RawIRecordInfoVtbl, VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM,
+        VT_RECORD_VALUE, VariantResultValue, decimal96_to_windows, set_variant_from_com_value,
+        take_variant_result_value, variant_to_com_value, variant_to_variant_value,
     };
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
@@ -1736,6 +1911,8 @@ mod tests {
             VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI8_VALUE,
         },
     };
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
         VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_I8, VT_UI8,
@@ -1745,6 +1922,290 @@ mod tests {
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
         System::Com::CY,
     };
+
+    #[repr(C)]
+    struct FakeRecordInfo {
+        vtbl: *const RawIRecordInfoVtbl,
+        refs: AtomicU32,
+        copies: AtomicU32,
+        destroys: AtomicU32,
+    }
+
+    impl FakeRecordInfo {
+        fn new() -> Self {
+            Self {
+                vtbl: &FAKE_RECORD_INFO_VTBL,
+                refs: AtomicU32::new(1),
+                copies: AtomicU32::new(0),
+                destroys: AtomicU32::new(0),
+            }
+        }
+    }
+
+    unsafe extern "system" fn fake_query_interface(
+        _this: *mut c_void,
+        _iid: *const windows_sys::core::GUID,
+        ppv: *mut *mut c_void,
+    ) -> i32 {
+        if !ppv.is_null() {
+            *ppv = std::ptr::null_mut();
+        }
+        0x8000_4002u32 as i32
+    }
+
+    unsafe extern "system" fn fake_add_ref(this: *mut c_void) -> u32 {
+        let info = &*(this.cast::<FakeRecordInfo>());
+        info.refs.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    unsafe extern "system" fn fake_release(this: *mut c_void) -> u32 {
+        let info = &*(this.cast::<FakeRecordInfo>());
+        info.refs.fetch_sub(1, Ordering::SeqCst) - 1
+    }
+
+    unsafe extern "system" fn fake_record_create_copy(
+        this: *mut c_void,
+        pvsource: *const c_void,
+        ppvdest: *mut *mut c_void,
+    ) -> i32 {
+        if pvsource.is_null() || ppvdest.is_null() {
+            return 0x8007_0057u32 as i32;
+        }
+        let info = &*(this.cast::<FakeRecordInfo>());
+        info.copies.fetch_add(1, Ordering::SeqCst);
+        let value = *(pvsource.cast::<i32>());
+        *ppvdest = Box::into_raw(Box::new(value)).cast();
+        0
+    }
+
+    unsafe extern "system" fn fake_record_destroy(
+        this: *mut c_void,
+        pvrecord: *const c_void,
+    ) -> i32 {
+        if !pvrecord.is_null() {
+            let info = &*(this.cast::<FakeRecordInfo>());
+            info.destroys.fetch_add(1, Ordering::SeqCst);
+            drop(Box::from_raw(pvrecord.cast_mut().cast::<i32>()));
+        }
+        0
+    }
+
+    unsafe extern "system" fn fake_record_init(_this: *mut c_void, _pvnew: *mut c_void) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_record_clear(
+        _this: *mut c_void,
+        _pvexisting: *const c_void,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_record_copy(
+        _this: *mut c_void,
+        _pvexisting: *const c_void,
+        _pvnew: *mut c_void,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_guid(
+        _this: *mut c_void,
+        _pguid: *mut windows_sys::core::GUID,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_name(
+        _this: *mut c_void,
+        _pbstrname: *mut windows_sys::core::BSTR,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_size(_this: *mut c_void, _pcbsize: *mut u32) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_type_info(
+        _this: *mut c_void,
+        _pptypeinfo: *mut *mut c_void,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_field(
+        _this: *mut c_void,
+        _pvdata: *const c_void,
+        _szfieldname: *const u16,
+        _pvarfield: *mut VARIANT,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_field_no_copy(
+        _this: *mut c_void,
+        _pvdata: *const c_void,
+        _szfieldname: *const u16,
+        _pvarfield: *mut VARIANT,
+        _ppvdatacarray: *mut *mut c_void,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_put_field(
+        _this: *mut c_void,
+        _wflags: u32,
+        _pvdata: *mut c_void,
+        _szfieldname: *const u16,
+        _pvarfield: *const VARIANT,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_put_field_no_copy(
+        _this: *mut c_void,
+        _wflags: u32,
+        _pvdata: *mut c_void,
+        _szfieldname: *const u16,
+        _pvarfield: *const VARIANT,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_get_field_names(
+        _this: *mut c_void,
+        _pcnames: *mut u32,
+        _rgbstrnames: *mut windows_sys::core::BSTR,
+    ) -> i32 {
+        0x8000_4001u32 as i32
+    }
+
+    unsafe extern "system" fn fake_is_matching_type(
+        _this: *mut c_void,
+        _precordinfo: *mut c_void,
+    ) -> i32 {
+        0
+    }
+
+    unsafe extern "system" fn fake_record_create(_this: *mut c_void) -> *mut c_void {
+        std::ptr::null_mut()
+    }
+
+    static FAKE_RECORD_INFO_VTBL: RawIRecordInfoVtbl = RawIRecordInfoVtbl {
+        query_interface: fake_query_interface,
+        add_ref: fake_add_ref,
+        release: fake_release,
+        record_init: fake_record_init,
+        record_clear: fake_record_clear,
+        record_copy: fake_record_copy,
+        get_guid: fake_get_guid,
+        get_name: fake_get_name,
+        get_size: fake_get_size,
+        get_type_info: fake_get_type_info,
+        get_field: fake_get_field,
+        get_field_no_copy: fake_get_field_no_copy,
+        put_field: fake_put_field,
+        put_field_no_copy: fake_put_field_no_copy,
+        get_field_names: fake_get_field_names,
+        is_matching_type: fake_is_matching_type,
+        record_create: fake_record_create,
+        record_create_copy: fake_record_create_copy,
+        record_destroy: fake_record_destroy,
+    };
+
+    fn fake_record_variant(info: &mut FakeRecordInfo, value: i32) -> VARIANT {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        variant.Anonymous.Anonymous.vt = VT_RECORD_VALUE;
+        variant.Anonymous.Anonymous.Anonymous.Anonymous.pRecInfo =
+            (info as *mut FakeRecordInfo).cast();
+        variant.Anonymous.Anonymous.Anonymous.Anonymous.pvRecord =
+            Box::into_raw(Box::new(value)).cast();
+        variant
+    }
+
+    #[test]
+    fn record_variant_clones_into_runtime_carrier_and_back_to_variant() {
+        let mut info = FakeRecordInfo::new();
+        let source = fake_record_variant(&mut info, 123);
+
+        let record = match unsafe { variant_to_com_value(&source) }.expect("VT_RECORD converts") {
+            ComValue::Record(record) => record,
+            other => panic!("expected record value, got {other:?}"),
+        };
+        assert_eq!(info.copies.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            unsafe { *record.record_data_ptr().cast::<i32>() },
+            123,
+            "runtime record owns a copied payload"
+        );
+
+        let source_record = unsafe { source.Anonymous.Anonymous.Anonymous.Anonymous.pvRecord };
+        unsafe {
+            fake_record_destroy((&mut info as *mut FakeRecordInfo).cast(), source_record);
+            fake_release((&mut info as *mut FakeRecordInfo).cast());
+        }
+        assert_eq!(
+            info.destroys.load(Ordering::SeqCst),
+            1,
+            "releasing the source record destroys only the source payload"
+        );
+        assert_eq!(
+            unsafe { *record.record_data_ptr().cast::<i32>() },
+            123,
+            "runtime copy remains live after source release"
+        );
+
+        let mut roundtrip: VARIANT = unsafe { std::mem::zeroed() };
+        let mut resolve_object = |_object| Ok(std::ptr::null_mut());
+        let mut add_ref = |_dispatch: *mut c_void| {};
+        unsafe {
+            set_variant_from_com_value(
+                &mut roundtrip,
+                &ComValue::Record(record.clone()),
+                &mut resolve_object,
+                &mut add_ref,
+            )
+            .expect("record VARIANT write");
+        }
+        assert_eq!(unsafe { roundtrip.Anonymous.Anonymous.vt }, VT_RECORD_VALUE);
+        assert_ne!(
+            unsafe { roundtrip.Anonymous.Anonymous.Anonymous.Anonymous.pvRecord },
+            record.record_data_ptr(),
+            "VARIANT write receives a distinct record copy"
+        );
+        assert_eq!(
+            unsafe {
+                *roundtrip
+                    .Anonymous
+                    .Anonymous
+                    .Anonymous
+                    .Anonymous
+                    .pvRecord
+                    .cast::<i32>()
+            },
+            123
+        );
+        assert_eq!(info.copies.load(Ordering::SeqCst), 2);
+
+        let roundtrip_record =
+            unsafe { roundtrip.Anonymous.Anonymous.Anonymous.Anonymous.pvRecord };
+        unsafe {
+            fake_record_destroy((&mut info as *mut FakeRecordInfo).cast(), roundtrip_record);
+            fake_release((&mut info as *mut FakeRecordInfo).cast());
+        }
+        drop(record);
+        assert_eq!(
+            info.destroys.load(Ordering::SeqCst),
+            3,
+            "source, roundtrip copy, and runtime copy are each destroyed exactly once"
+        );
+        assert_eq!(
+            info.refs.load(Ordering::SeqCst),
+            0,
+            "all cloned IRecordInfo references were released"
+        );
+    }
 
     #[test]
     fn bstr_decode_preserves_unpaired_surrogates_exactly() {

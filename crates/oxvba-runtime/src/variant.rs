@@ -1,6 +1,7 @@
 use crate::{
     Decimal96,
     bstr::{BStr, OwnedBStrCore},
+    com_record::ComRecord,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
     safe_array::SafeArray,
 };
@@ -28,6 +29,7 @@ pub enum VarType {
     LongLong = 0x0014,
     UnsignedLongLong = 0x0015,
     UnsignedInt = 0x0017,
+    Record = 0x0024,
     ArrayVariant = 0x200C,
     ProcRef = 0xFFF0,
 }
@@ -55,6 +57,7 @@ impl VarType {
             0x0014 => Some(Self::LongLong),
             0x0015 => Some(Self::UnsignedLongLong),
             0x0017 => Some(Self::UnsignedInt),
+            0x0024 => Some(Self::Record),
             0x200C => Some(Self::ArrayVariant),
             0xFFF0 => Some(Self::ProcRef),
             _ => None,
@@ -172,6 +175,10 @@ fn raw_safearray_ptr_to_bytes(ptr: *mut core::ffi::c_void) -> [u8; 8] {
     (ptr as usize as u64).to_le_bytes()
 }
 
+fn raw_com_record_ptr_to_bytes(ptr: *const ComRecord) -> [u8; 8] {
+    (ptr as usize as u64).to_le_bytes()
+}
+
 fn bytes_to_raw_bstr(bytes: [u8; 8]) -> *mut u16 {
     u64::from_le_bytes(bytes) as usize as *mut u16
 }
@@ -182,6 +189,10 @@ fn bytes_to_raw_iunknown(bytes: [u8; 8]) -> *mut RawRuntimeIUnknown {
 
 fn bytes_to_raw_safearray(bytes: [u8; 8]) -> *mut core::ffi::c_void {
     u64::from_le_bytes(bytes) as usize as *mut core::ffi::c_void
+}
+
+fn bytes_to_raw_com_record(bytes: [u8; 8]) -> *const ComRecord {
+    u64::from_le_bytes(bytes) as usize as *const ComRecord
 }
 
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
@@ -247,7 +258,7 @@ impl Variant {
     pub fn from_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
         let core = VariantCore::from_wire_bytes(bytes)?;
         match core.vtype {
-            VarType::String | VarType::Object | VarType::ArrayVariant => Err(format!(
+            VarType::String | VarType::Object | VarType::ArrayVariant | VarType::Record => Err(format!(
                 "pointer-carrying VARIANT wire bytes for {:?} require trusted in-process provenance",
                 core.vtype
             )),
@@ -296,6 +307,15 @@ impl Variant {
                     )));
                 };
                 Ok(Self::from_safearray(array))
+            }
+            VarType::Record => {
+                let ptr = bytes_to_raw_com_record(core.data_bytes());
+                if ptr.is_null() {
+                    return Ok(Self::from_core(VariantCore::from_bytes(VarType::Record, [0; 8])));
+                }
+                // SAFETY: guaranteed by this unsafe fn's caller.
+                let record = unsafe { (*ptr).clone() };
+                Ok(Self::from_com_record(record))
             }
             _ => Ok(Self::from_core(core)),
         }
@@ -624,6 +644,27 @@ impl Variant {
         // prefix and deep-clones, leaving ownership with this Variant.
         unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
     }
+
+    pub fn from_com_record(value: ComRecord) -> Self {
+        let raw = Box::into_raw(Box::new(value));
+        Self::from_core(VariantCore::from_bytes(
+            VarType::Record,
+            raw_com_record_ptr_to_bytes(raw),
+        ))
+    }
+
+    pub fn as_com_record(&self) -> Option<ComRecord> {
+        if self.vtype() != VarType::Record {
+            return None;
+        }
+        let raw = bytes_to_raw_com_record(self.data_bytes());
+        if raw.is_null() {
+            return None;
+        }
+        // SAFETY: vtype was checked to be Record, so the payload is a Box<ComRecord>
+        // pointer produced by `from_com_record` and owned by this Variant until drop.
+        Some(unsafe { (*raw).clone() })
+    }
 }
 
 impl Clone for Variant {
@@ -647,6 +688,10 @@ impl Clone for Variant {
             },
             VarType::ArrayVariant => match self.as_safearray() {
                 Some(array) => Self::from_safearray(array),
+                None => Self::from_core(self.core),
+            },
+            VarType::Record => match self.as_com_record() {
+                Some(record) => Self::from_com_record(record),
                 None => Self::from_core(self.core),
             },
             _ => Self::from_core(self.core),
@@ -687,6 +732,16 @@ impl Drop for Variant {
                     drop(array);
                 }
             }
+            VarType::Record => {
+                let raw = bytes_to_raw_com_record(self.data_bytes()).cast_mut();
+                if !raw.is_null() {
+                    // SAFETY: a Record Variant owns a Box<ComRecord> created by
+                    // `from_com_record`; taking the box here drops one handle clone.
+                    unsafe {
+                        drop(Box::from_raw(raw));
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -708,6 +763,9 @@ impl core::fmt::Debug for Variant {
             }
             VarType::ArrayVariant => {
                 dbg.field("array", &self.as_safearray());
+            }
+            VarType::Record => {
+                dbg.field("record", &self.as_com_record());
             }
             _ => {
                 dbg.field("data", &self.data_bytes());
@@ -733,6 +791,7 @@ impl PartialEq for Variant {
                     == bytes_to_raw_iunknown(other.data_bytes())
             }
             VarType::ArrayVariant => self.as_safearray() == other.as_safearray(),
+            VarType::Record => self.as_com_record() == other.as_com_record(),
             _ => self.data_bytes() == other.data_bytes(),
         }
     }

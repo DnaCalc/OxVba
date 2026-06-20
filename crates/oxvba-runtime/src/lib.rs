@@ -6,6 +6,7 @@ pub mod arithmetic;
 pub mod bstr;
 pub mod builtins;
 pub mod call_frame;
+pub mod com_record;
 pub mod coerce;
 pub mod date;
 pub mod decimal;
@@ -21,6 +22,7 @@ pub use call_frame::{
     RuntimeCallSource, RuntimeNamedArgument,
 };
 pub use coerce::{print_display_text, variant_to_vba_string};
+pub use com_record::{ComRecord, ComRecordCloneFn, ComRecordDestroyFn};
 pub use decimal::Decimal96;
 pub use object_ref::{
     ObjectRef, RUNTIME_GUID_ICONNECTIONPOINT, RUNTIME_GUID_ICONNECTIONPOINTCONTAINER,
