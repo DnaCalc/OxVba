@@ -133,10 +133,13 @@ surface:
   conversion helper, and decodes transferred retval `SAFEARRAY*` payloads through
   a temporary owning `VARIANT` so OLE SAFEARRAY ownership is released correctly.
 - SAFEARRAY wire metadata is no longer implicitly `VT_VARIANT`-only. The live
-  typelib loader preserves `ARRAYDESC.tdescElem.vt` as explicit
-  `SafeArray { element_vt }` / `ByRefSafeArray { element_vt }` metadata when the
-  descriptor supplies a typed element VARTYPE, and malformed SAFEARRAY descriptors
-  preserve an unsupported zero VARTYPE rather than inferring `VT_VARIANT`.
+  typelib loader now follows the loaded OLE `TYPEDESC` ABI: `VT_SAFEARRAY`
+  points at an element `TYPEDESC`, while `VT_CARRAY` uses
+  `ARRAYDESC.tdescElem`. Typed elements become explicit
+  `SafeArray { element_vt }` / `ByRefSafeArray { element_vt }` metadata, and
+  resolvable `VT_USERDEFINED` record elements map to `VT_RECORD`. Malformed
+  SAFEARRAY descriptors preserve an unsupported zero VARTYPE rather than
+  inferring `VT_VARIANT`.
 - Typed SAFEARRAY parameters, ByRef SAFEARRAY writebacks, and SAFEARRAY retvals
   now validate their actual COM element VARTYPE against the admitted wire plan
   before calling or decoding. `SAFEARRAY(I4)` is fixture-proven through real
@@ -236,6 +239,8 @@ foreign-record parity. Name-only records may fall back only with the specific mi
 allocation metadata fact, and any remaining record fallback must identify the exact
 unowned ABI, layout, registration, or ownership rule. SAFEARRAY(VT_RECORD) support is
 currently proven for controlled descriptor-backed records, inbound params, ByRef
-writebacks, and the shared decode path; broader foreign record-array evidence is still
-required before claiming foreign-record parity. Malformed SAFEARRAY descriptors now
-decline rather than guessing `VT_VARIANT`.
+writebacks, and the shared decode path; the loader now has the ABI path needed to
+resolve record-element SAFEARRAY descriptors when a real typelib exposes a resolvable
+record href, but broader foreign record-array evidence still requires an external
+IDL/MIDL or captured real typelib source. Malformed SAFEARRAY descriptors now decline
+rather than guessing `VT_VARIANT`.
