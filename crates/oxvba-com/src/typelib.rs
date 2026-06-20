@@ -211,11 +211,16 @@ impl TypeLibParamType {
                 | TypeLibParamType::ByRefString
                 | TypeLibParamType::ByRefObject
                 | TypeLibParamType::ByRefLongPtr
+                | TypeLibParamType::ByRefRecord
         )
     }
 
     pub(crate) fn supports_vtable_return_abi(self) -> bool {
-        self.supports_vtable_param_abi() && !matches!(self, TypeLibParamType::Record)
+        self.supports_vtable_param_abi()
+            && !matches!(
+                self,
+                TypeLibParamType::Record | TypeLibParamType::ByRefRecord
+            )
     }
 }
 
@@ -262,13 +267,21 @@ pub(crate) fn validate_vtable_wire_signature(
             return Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType);
         }
     }
-    if parameter_types.iter().enumerate().any(|(i, param_type)| {
-        matches!(param_type, TypeLibParamType::Record)
-            && !matches!(
+    if parameter_types
+        .iter()
+        .enumerate()
+        .any(|(i, param_type)| match param_type {
+            TypeLibParamType::Record => !matches!(
                 parameter_wire_types.get(i),
                 Some(TypeLibWireType::Record { .. })
-            )
-    }) {
+            ),
+            TypeLibParamType::ByRefRecord => !matches!(
+                parameter_wire_types.get(i),
+                Some(TypeLibWireType::ByRefRecord { .. })
+            ),
+            _ => false,
+        })
+    {
         return Err(TypeLibVtableSignatureIssue::MissingRecordParameterWireType);
     }
     if let (Some(rt), Some(wire_type)) = (return_type, return_wire_type)
@@ -823,6 +836,24 @@ mod tests {
             validate_vtable_wire_signature(&[TypeLibParamType::Record], &[], &[], None, None,),
             Err(TypeLibVtableSignatureIssue::MissingRecordParameterWireType),
             "typed record parameters require explicit record wire metadata"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::ByRefRecord],
+                &[TypeLibWireType::ByRefRecord {
+                    name: "TestLib.Point".to_string()
+                }],
+                &[],
+                None,
+                None,
+            ),
+            Ok(()),
+            "typed ByRef record parameters are admitted with explicit record wire metadata"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(&[TypeLibParamType::ByRefRecord], &[], &[], None, None,),
+            Err(TypeLibVtableSignatureIssue::MissingRecordParameterWireType),
+            "typed ByRef record parameters require explicit ByRef record wire metadata"
         );
         assert_eq!(
             validate_vtable_wire_signature(

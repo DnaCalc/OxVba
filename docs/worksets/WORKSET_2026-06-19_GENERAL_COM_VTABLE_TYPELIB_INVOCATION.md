@@ -192,11 +192,18 @@ surface:
   for the duration of the call while the runtime carrier keeps the payload alive,
   and a real fixture vtable slot proves the pointer reaches the callee as record
   data rather than a collapsed `VARIANT` or object pointer.
+- Typed ByRef record parameters are admitted when explicit `ByRefRecord` wire
+  metadata and a runtime writeback slot are present. The vtable marshaller passes
+  a deep-cloned mutable record payload to the callee and returns the mutated record
+  through `RuntimeByRefWriteback`, fixture-proven by a real slot that mutates the
+  record data in place and by the shared runtime bridge `dispatch_invoke_call_result`
+  path using vtable transport without an IDispatch fallback.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: record/UDT return allocation and ByRef/writeback
-marshalling remain `in-progress` accepted scope. Records may fall back only with a
-specific recorded missing fact or unowned ABI/ownership rule, and need the same
-marshaller, fixture, runtime-integration, and fresh-eyes evidence discipline
-before any broader support claim is made.
+Residual after this slice: record/UDT return allocation remains `in-progress`
+accepted scope because the current invocation plan still does not carry the
+record type-info allocation source needed to create caller-owned retval storage.
+Records may fall back only with a specific recorded missing fact or unowned
+ABI/ownership rule, and need the same marshaller, fixture, runtime-integration,
+and fresh-eyes evidence discipline before any broader support claim is made.

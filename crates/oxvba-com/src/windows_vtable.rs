@@ -206,6 +206,7 @@ enum ByRefCell {
     Interface(RuntimeByRefSlot, Box<*mut c_void>),
     LongPtr(RuntimeByRefSlot, Box<isize>),
     SafeArray(RuntimeByRefSlot, Box<VARIANT>),
+    Record(RuntimeByRefSlot, ComRecord),
 }
 
 pub(crate) struct VtableInvokeResult {
@@ -858,6 +859,21 @@ where
             let ptr = cell.as_mut() as *mut isize;
             (ptr.cast::<c_void>(), ByRefCell::LongPtr(slot, cell))
         }
+        P::ByRefRecord => {
+            if !matches!(wire_type, Some(TypeLibWireType::ByRefRecord { .. })) {
+                return Err(
+                    "vtable ByRef record requires explicit ByRefRecord wire metadata".to_string(),
+                );
+            }
+            let ComValue::Record(record) = value else {
+                return Err(format!(
+                    "vtable ByRef record parameter expects a Record argument, got {value:?}"
+                ));
+            };
+            let record = record.deep_clone()?;
+            let ptr = record.record_data_ptr();
+            (ptr.cast::<c_void>(), ByRefCell::Record(slot, record))
+        }
         other => {
             return Err(format!(
                 "vtable ByRef parameter VARTYPE {other:?} is not supported yet"
@@ -1067,6 +1083,7 @@ where
                 .map_err(|detail| validation_failure(label, dispid, detail))?;
             (*slot, value)
         }
+        ByRefCell::Record(slot, record) => (*slot, Variant::from_com_record(record.clone())),
     };
     Ok(RuntimeByRefWriteback::new(slot, value))
 }
@@ -1432,15 +1449,15 @@ mod tests {
         DUAL_BYTE_VALUE, DUAL_CREATED_OLE_DATE, DUAL_DECIMAL_HI, DUAL_DECIMAL_LO, DUAL_DECIMAL_MID,
         DUAL_DECIMAL_NEGATIVE, DUAL_DECIMAL_SCALE, DUAL_DOUBLE_VALUE, DUAL_INTEGER_VALUE,
         DUAL_LONGLONG_VALUE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
-        DUAL_RAISE_ERROR_SOURCE, DUAL_RECORD_VALUE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS,
-        DUAL_SLOT_GET_BYTE_VALUE, DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED,
+        DUAL_RAISE_ERROR_SOURCE, DUAL_RECORD_MUTATED_VALUE, DUAL_RECORD_VALUE, DUAL_SINGLE_VALUE,
+        DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE, DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED,
         DUAL_SLOT_GET_DECIMAL_VALUE, DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE,
         DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE,
         DUAL_SLOT_GET_SAFEARRAY_VALUE, DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE,
         DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP, DUAL_SLOT_MUTATE_BYREF_BREADTH,
         DUAL_SLOT_MUTATE_BYREF_LONG, DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY,
-        DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
-        DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_RECORD_VALUE,
+        DUAL_SLOT_MUTATE_BYREF_RECORD, DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE,
+        DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_RECORD_VALUE,
         DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE,
         create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
     };
@@ -1583,6 +1600,17 @@ mod tests {
         }
         .expect("test record pointers are non-null");
         Variant::from_com_record(record)
+    }
+
+    fn record_variant_value(value: &Variant) -> i32 {
+        let record = value
+            .as_com_record()
+            .expect("writeback should contain a COM record");
+        let ptr = record.record_data_ptr();
+        assert!(!ptr.is_null(), "record data pointer should be non-null");
+        // SAFETY: this helper only reads records created by `test_record_variant`
+        // and mutated by the fixture's `DualRecordFixture` slot.
+        unsafe { (*ptr.cast::<TestRecord>()).value }
     }
 
     #[test]
@@ -1843,6 +1871,47 @@ mod tests {
             value.as_bool(),
             Some(true),
             "fixture must see the typed record data pointer"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn byref_record_parameter_returns_mutated_record_writeback() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let slot = RuntimeByRefSlot::new(0, Some(RuntimeValueType::Record));
+        let mut plan = invocation_plan(
+            DUAL_SLOT_MUTATE_BYREF_RECORD,
+            vec![TypeLibParamType::ByRefRecord],
+            vec![TypeLibWireType::ByRefRecord {
+                name: "TestLib.Point".to_string(),
+            }],
+            vec![None],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        plan.parameter_byref_slots = vec![Some(slot)];
+        let result = unsafe {
+            vtable_invoke_with_writebacks(
+                this,
+                &plan,
+                &[test_record_variant(DUAL_RECORD_VALUE)],
+                32,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("ByRef record vtable call should succeed");
+        assert_eq!(result.value.vtype(), VarType::Empty);
+        assert_eq!(result.writebacks.len(), 1);
+        assert_eq!(result.writebacks[0].slot, slot);
+        assert_eq!(
+            record_variant_value(&result.writebacks[0].value),
+            DUAL_RECORD_MUTATED_VALUE,
+            "fixture mutation should be returned through the ByRef record writeback"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };

@@ -3510,6 +3510,7 @@ pub const DUAL_SLOT_MUTATE_BYREF_LONG: u16 = 28;
 pub const DUAL_SLOT_MUTATE_BYREF_BREADTH: u16 = 29;
 pub const DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY: u16 = 30;
 pub const DUAL_SLOT_VALIDATE_RECORD_VALUE: u16 = 31;
+pub const DUAL_SLOT_MUTATE_BYREF_RECORD: u16 = 32;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3528,6 +3529,7 @@ pub const DUAL_DECIMAL_HI: u32 = 0;
 pub const DUAL_DECIMAL_SCALE: u8 = 3;
 pub const DUAL_DECIMAL_NEGATIVE: bool = true;
 pub const DUAL_RECORD_VALUE: i32 = 321_654;
+pub const DUAL_RECORD_MUTATED_VALUE: i32 = 654_321;
 
 /// The custom **dual interface IID** the fixture answers from `QueryInterface`
 /// (besides `IUnknown`/`IDispatch`). Workset S5a: the vtable dispatch path QIs the
@@ -3685,6 +3687,11 @@ struct RawDualVtbl {
         record: *mut core::ffi::c_void,
         out: *mut VARIANT_BOOL,
     ) -> i32,
+    /// slot 32
+    mutate_byref_record: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        record: *mut core::ffi::c_void,
+    ) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3734,6 +3741,7 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     mutate_byref_breadth: oxvba_dual_mutate_byref_breadth,
     mutate_byref_object_string_array: oxvba_dual_mutate_byref_object_string_array,
     validate_record_value: oxvba_dual_validate_record_value,
+    mutate_byref_record: oxvba_dual_mutate_byref_record,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4619,5 +4627,19 @@ unsafe extern "system" fn oxvba_dual_validate_record_value(
     } else {
         0
     };
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_mutate_byref_record(
+    _this: *mut core::ffi::c_void,
+    record: *mut core::ffi::c_void,
+) -> i32 {
+    if record.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let record = &mut *(record.cast::<DualRecordFixture>());
+    record.value = DUAL_RECORD_MUTATED_VALUE;
     COM_S_OK
 }

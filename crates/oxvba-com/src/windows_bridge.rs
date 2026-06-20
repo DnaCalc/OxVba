@@ -1062,6 +1062,96 @@ mod tests {
         }
     }
 
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn byref_record_method_spec(name: &str, vtable_slot: u16) -> crate::ComMemberSpec {
+        crate::ComMemberSpec {
+            name: name.to_string(),
+            requires_argument: true,
+            invoke_kind: crate::TypeLibMemberInvokeKind::Method,
+            parameter_names: vec!["value".to_string()],
+            is_default_member: false,
+            vtable_slot: Some(vtable_slot),
+            parameter_types: vec![crate::TypeLibParamType::ByRefRecord],
+            parameter_wire_types: vec![crate::TypeLibWireType::ByRefRecord {
+                name: "TestLib.Point".to_string(),
+            }],
+            parameter_iids: Vec::new(),
+            parameter_optional_defaults: vec![crate::OptionalParamDefault::Required],
+            return_type: None,
+            return_wire_type: None,
+            callconv_is_stdcall: true,
+            interface_iid: Some(crate::DUAL_FIXTURE_INTERFACE_IID),
+            is_dual: true,
+            source_typekind: Some(crate::SourceTypeKind::Interface),
+            vtable_slot_bound: Some(64),
+        }
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct TestRecord {
+        value: i32,
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    unsafe fn clone_test_record(
+        record_info: *mut core::ffi::c_void,
+        record_data: *const core::ffi::c_void,
+    ) -> Result<(*mut core::ffi::c_void, *mut core::ffi::c_void), String> {
+        if record_info.is_null() || record_data.is_null() {
+            return Err("test record clone received a null record pointer".to_string());
+        }
+        let value = unsafe { *record_data.cast::<TestRecord>() };
+        Ok((
+            record_info,
+            Box::into_raw(Box::new(value)).cast::<core::ffi::c_void>(),
+        ))
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    unsafe fn destroy_test_record(
+        _record_info: *mut core::ffi::c_void,
+        record_data: *mut core::ffi::c_void,
+    ) {
+        if !record_data.is_null() {
+            unsafe {
+                drop(Box::from_raw(record_data.cast::<TestRecord>()));
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn test_record_com_value(value: i32) -> crate::ComValue {
+        static RECORD_INFO_SENTINEL: u8 = 0;
+        let data = Box::into_raw(Box::new(TestRecord { value })).cast::<core::ffi::c_void>();
+        let info = (&RECORD_INFO_SENTINEL as *const u8)
+            .cast_mut()
+            .cast::<core::ffi::c_void>();
+        let record = unsafe {
+            oxvba_runtime::ComRecord::from_raw_parts(
+                info,
+                data,
+                clone_test_record,
+                destroy_test_record,
+            )
+        }
+        .expect("test record pointers are non-null");
+        crate::ComValue::Record(record)
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn record_variant_value(value: &Variant) -> i32 {
+        let record = value
+            .as_com_record()
+            .expect("writeback should contain a COM record");
+        let ptr = record.record_data_ptr();
+        assert!(!ptr.is_null(), "record data pointer should be non-null");
+        // SAFETY: this helper only reads records created by `test_record_com_value`
+        // and mutated by the fixture's `DualRecordFixture` slot.
+        unsafe { (*ptr.cast::<TestRecord>()).value }
+    }
+
     /// S3: under a `PreferVtable` policy, a member that passes the vtable gate (a
     /// real custom dual slot, CC_STDCALL, fully-typed v1 signature) dispatches
     /// through the COM vtable — proven by the real S2 dual-vtable fixture
@@ -1305,6 +1395,67 @@ mod tests {
             bridge.idispatch_call_count(),
             before_idispatch,
             "ByRef vtable dispatch must not also invoke IDispatch"
+        );
+        let _ = bridge.release_object_binding(object);
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn dispatch_call_result_returns_vtable_byref_record_writeback() {
+        let bridge = WindowsComBridge::new(false);
+        let dual = crate::create_oxvba_dual_vtable_object();
+        let member =
+            ComMemberToken::new(crate::windows_test_dispatch::DUAL_SLOT_MUTATE_BYREF_RECORD as i32);
+        let object = insert_native_member_binding(
+            &bridge,
+            7013,
+            "OxVba.DualFixture",
+            dual,
+            member,
+            crate::windows_test_dispatch::DUAL_SLOT_MUTATE_BYREF_RECORD as i32,
+            byref_record_method_spec(
+                "MutateByRefRecord",
+                crate::windows_test_dispatch::DUAL_SLOT_MUTATE_BYREF_RECORD,
+            ),
+        );
+        let slot =
+            oxvba_runtime::RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::Record));
+        let request = ComInvokeRequest {
+            object: object.clone(),
+            member,
+            args: vec![ComInvokeArg::positional_by_ref(
+                test_record_com_value(crate::windows_test_dispatch::DUAL_RECORD_VALUE),
+                slot,
+            )],
+            invoke_kind_hint: None,
+        };
+        let before_vtable = bridge.vtable_call_count();
+        let before_idispatch = bridge.idispatch_call_count();
+        let result = bridge
+            .dispatch_invoke_call_result(&request, true)
+            .expect("ByRef record vtable dispatch should not error")
+            .expect("a call result should be produced");
+        assert_eq!(
+            result.value.as_ref().map(Variant::vtype),
+            Some(oxvba_runtime::VarType::Empty),
+            "HRESULT-only ByRef record vtable methods produce an Empty result value"
+        );
+        assert_eq!(result.writebacks.len(), 1);
+        assert_eq!(result.writebacks[0].slot, slot);
+        assert_eq!(
+            record_variant_value(&result.writebacks[0].value),
+            crate::windows_test_dispatch::DUAL_RECORD_MUTATED_VALUE,
+            "ByRef record writeback must carry the fixture-mutated record data"
+        );
+        assert_eq!(
+            bridge.vtable_call_count(),
+            before_vtable + 1,
+            "ByRef record call-result dispatch must use the vtable transport"
+        );
+        assert_eq!(
+            bridge.idispatch_call_count(),
+            before_idispatch,
+            "ByRef record vtable dispatch must not also invoke IDispatch"
         );
         let _ = bridge.release_object_binding(object);
     }

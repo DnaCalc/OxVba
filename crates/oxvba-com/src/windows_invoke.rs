@@ -3667,6 +3667,7 @@ mod gate_tests {
             crate::TypeLibParamType::ByRefString,
             crate::TypeLibParamType::ByRefObject,
             crate::TypeLibParamType::ByRefLongPtr,
+            crate::TypeLibParamType::ByRefRecord,
         ] {
             assert!(
                 is_v1_vtable_vartype(ok),
@@ -3674,10 +3675,7 @@ mod gate_tests {
             );
         }
         // Out-of-set parameter shapes still decline before slot-call.
-        for bad in [
-            crate::TypeLibParamType::LongPtr,
-            crate::TypeLibParamType::ByRefRecord,
-        ] {
+        for bad in [crate::TypeLibParamType::LongPtr] {
             assert!(
                 !is_v1_vtable_vartype(bad),
                 "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
@@ -3883,6 +3881,41 @@ mod gate_tests {
             vtable_gate_decline_reason(&record_param, 1, Some(crate::TypeLibParamType::Long)),
             Some(VtableDeclineReason::MissingRecordParameterWireType),
             "record parameters decline when the descriptor lacks explicit record wire metadata"
+        );
+
+        let mut byref_record_param = eligible_spec(17, 58);
+        byref_record_param.parameter_types = vec![crate::TypeLibParamType::ByRefRecord];
+        byref_record_param.parameter_wire_types = vec![crate::TypeLibWireType::ByRefRecord {
+            name: "TestLib.Point".to_string(),
+        }];
+        assert_eq!(
+            vtable_gate_decline_reason(&byref_record_param, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingByRefSlot),
+            "ByRef record parameters require a runtime writeback slot"
+        );
+        let record_slot = RuntimeByRefSlot::new(0, Some(oxvba_runtime::RuntimeValueType::Record));
+        assert!(
+            build_vtable_invocation_plan_with_byrefs(
+                &byref_record_param,
+                1,
+                &[Some(record_slot)],
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .is_ok(),
+            "ByRef record parameters are admitted with explicit wire metadata and a writeback slot"
+        );
+        byref_record_param.parameter_wire_types.clear();
+        assert_eq!(
+            build_vtable_invocation_plan_with_byrefs(
+                &byref_record_param,
+                1,
+                &[Some(record_slot)],
+                Some(crate::TypeLibParamType::Long),
+                "method",
+            )
+            .expect_err("missing ByRefRecord wire metadata must decline"),
+            VtableDeclineReason::MissingRecordParameterWireType
         );
 
         let mut safearray_return = eligible_spec(17, 58);
