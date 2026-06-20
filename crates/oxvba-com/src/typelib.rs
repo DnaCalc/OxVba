@@ -196,6 +196,7 @@ impl TypeLibParamType {
                 | TypeLibParamType::Byte
                 | TypeLibParamType::LongLong
                 | TypeLibParamType::Decimal
+                | TypeLibParamType::Record
                 | TypeLibParamType::ByRefVariant
                 | TypeLibParamType::ByRefLong
                 | TypeLibParamType::ByRefInteger
@@ -214,7 +215,7 @@ impl TypeLibParamType {
     }
 
     pub(crate) fn supports_vtable_return_abi(self) -> bool {
-        self.supports_vtable_param_abi()
+        self.supports_vtable_param_abi() && !matches!(self, TypeLibParamType::Record)
     }
 }
 
@@ -226,6 +227,7 @@ pub(crate) enum TypeLibVtableSignatureIssue {
     UnsupportedParameterWireType,
     UnsupportedReturnWireType,
     MissingObjectParameterIid,
+    MissingRecordParameterWireType,
 }
 
 pub(crate) fn validate_vtable_wire_signature(
@@ -259,6 +261,15 @@ pub(crate) fn validate_vtable_wire_signature(
         {
             return Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType);
         }
+    }
+    if parameter_types.iter().enumerate().any(|(i, param_type)| {
+        matches!(param_type, TypeLibParamType::Record)
+            && !matches!(
+                parameter_wire_types.get(i),
+                Some(TypeLibWireType::Record { .. })
+            )
+    }) {
+        return Err(TypeLibVtableSignatureIssue::MissingRecordParameterWireType);
     }
     if let (Some(rt), Some(wire_type)) = (return_type, return_wire_type)
         && !wire_type.supports_vtable_return(rt)
@@ -805,10 +816,13 @@ mod tests {
                 None,
                 None,
             ),
-            Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
-                TypeLibParamType::Record
-            )),
-            "records are explicit descriptor facts but still decline until the runtime has a record carrier"
+            Ok(()),
+            "typed record parameters are admitted as explicit record-data pointers"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(&[TypeLibParamType::Record], &[], &[], None, None,),
+            Err(TypeLibVtableSignatureIssue::MissingRecordParameterWireType),
+            "typed record parameters require explicit record wire metadata"
         );
         assert_eq!(
             validate_vtable_wire_signature(

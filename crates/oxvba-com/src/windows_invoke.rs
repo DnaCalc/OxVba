@@ -2051,6 +2051,7 @@ enum VtableDeclineReason {
     UnsupportedParameterWireType,
     UnsupportedReturnWireType,
     MissingObjectParameterIid,
+    MissingRecordParameterWireType,
 }
 
 #[cfg(target_os = "windows")]
@@ -2187,6 +2188,9 @@ fn build_vtable_invocation_plan_with_byrefs(
             }
             crate::typelib::TypeLibVtableSignatureIssue::MissingObjectParameterIid => {
                 VtableDeclineReason::MissingObjectParameterIid
+            }
+            crate::typelib::TypeLibVtableSignatureIssue::MissingRecordParameterWireType => {
+                VtableDeclineReason::MissingRecordParameterWireType
             }
         });
     }
@@ -3644,6 +3648,7 @@ mod gate_tests {
             crate::TypeLibParamType::Byte,
             crate::TypeLibParamType::LongLong,
             crate::TypeLibParamType::Decimal,
+            crate::TypeLibParamType::Record,
         ] {
             assert!(is_v1_vtable_vartype(ok), "{ok:?} must be in the v1 set");
         }
@@ -3671,7 +3676,6 @@ mod gate_tests {
         // Out-of-set parameter shapes still decline before slot-call.
         for bad in [
             crate::TypeLibParamType::LongPtr,
-            crate::TypeLibParamType::Record,
             crate::TypeLibParamType::ByRefRecord,
         ] {
             assert!(
@@ -3871,10 +3875,14 @@ mod gate_tests {
         }];
         assert_eq!(
             vtable_gate_decline_reason(&record_param, 1, Some(crate::TypeLibParamType::Long)),
-            Some(VtableDeclineReason::UnsupportedParameterType(
-                crate::TypeLibParamType::Record
-            )),
-            "record parameters decline as explicit records until record payload ownership is implemented"
+            None,
+            "record parameters are admitted when explicit record wire metadata is present"
+        );
+        record_param.parameter_wire_types.clear();
+        assert_eq!(
+            vtable_gate_decline_reason(&record_param, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::MissingRecordParameterWireType),
+            "record parameters decline when the descriptor lacks explicit record wire metadata"
         );
 
         let mut safearray_return = eligible_spec(17, 58);

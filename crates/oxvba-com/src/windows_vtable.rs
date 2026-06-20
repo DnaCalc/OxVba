@@ -30,7 +30,9 @@ use crate::windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, VtableInvocationPlan, bstr_to_string_and_free,
 };
 use crate::{ComValue, TypeLibParamType, TypeLibWireType};
-use oxvba_runtime::{Decimal96, ObjectRef, RuntimeByRefSlot, RuntimeByRefWriteback, Variant};
+use oxvba_runtime::{
+    ComRecord, Decimal96, ObjectRef, RuntimeByRefSlot, RuntimeByRefWriteback, Variant,
+};
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{DECIMAL, SysAllocString, SysFreeString};
 use windows_sys::Win32::System::Com::SAFEARRAY;
@@ -181,6 +183,9 @@ enum InboundOwned {
     /// its declared param IID (Bug-4b); we own that one reference and `Release` it after
     /// the call (the callee only borrowed it).
     Interface(*mut c_void),
+    /// A COM record handle held alive while its record data pointer is borrowed
+    /// by a typed record `[in]` vtable parameter.
+    Record(ComRecord),
     /// A mutable ByRef cell whose post-call contents must be decoded before cleanup.
     ByRef(ByRefCell),
 }
@@ -520,6 +525,9 @@ fn vtable_signature_issue_detail(
         crate::typelib::TypeLibVtableSignatureIssue::MissingObjectParameterIid => {
             "vtable object parameter is missing its declared interface IID".to_string()
         }
+        crate::typelib::TypeLibVtableSignatureIssue::MissingRecordParameterWireType => {
+            "vtable record parameter is missing explicit record wire metadata".to_string()
+        }
     }
 }
 
@@ -654,6 +662,17 @@ where
                 None => (FfiArg::Pointer(dispatch), InboundOwned::None),
             }
         }
+        P::Record => match value {
+            ComValue::Record(record) => (
+                FfiArg::Pointer(record.record_data_ptr()),
+                InboundOwned::Record(record),
+            ),
+            other => {
+                return Err(format!(
+                    "vtable record parameter expects a Record argument, got {other:?}"
+                ));
+            }
+        },
         // VT_VARIANT [in] by reference: marshal the value into a heap VARIANT and
         // pass its pointer; we VariantClear it after the call.
         P::Variant => {
@@ -955,6 +974,7 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
             // SAFETY: an Interface entry is the single reference our QueryInterface
             // handed us; the callee only borrowed it, so we Release it exactly once.
             InboundOwned::Interface(interface) => unsafe { crate::release_unknown(interface) },
+            InboundOwned::Record(record) => drop(record),
             InboundOwned::ByRef(cell) => free_byref_cell(cell),
         }
     }
@@ -1412,18 +1432,20 @@ mod tests {
         DUAL_BYTE_VALUE, DUAL_CREATED_OLE_DATE, DUAL_DECIMAL_HI, DUAL_DECIMAL_LO, DUAL_DECIMAL_MID,
         DUAL_DECIMAL_NEGATIVE, DUAL_DECIMAL_SCALE, DUAL_DOUBLE_VALUE, DUAL_INTEGER_VALUE,
         DUAL_LONGLONG_VALUE, DUAL_PRICE_SCALED_I64, DUAL_RAISE_ERROR_DESCRIPTION,
-        DUAL_RAISE_ERROR_SOURCE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS, DUAL_SLOT_GET_BYTE_VALUE,
-        DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED, DUAL_SLOT_GET_DECIMAL_VALUE,
-        DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE, DUAL_SLOT_GET_LONGLONG_VALUE,
-        DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SAFEARRAY_VALUE,
-        DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE,
-        DUAL_SLOT_LOOKUP, DUAL_SLOT_MUTATE_BYREF_BREADTH, DUAL_SLOT_MUTATE_BYREF_LONG,
-        DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY, DUAL_SLOT_PUT_VALUE,
-        DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS,
+        DUAL_RAISE_ERROR_SOURCE, DUAL_RECORD_VALUE, DUAL_SINGLE_VALUE, DUAL_SLOT_EXISTS,
+        DUAL_SLOT_GET_BYTE_VALUE, DUAL_SLOT_GET_COUNT, DUAL_SLOT_GET_CREATED,
+        DUAL_SLOT_GET_DECIMAL_VALUE, DUAL_SLOT_GET_DOUBLE_VALUE, DUAL_SLOT_GET_INTEGER_VALUE,
+        DUAL_SLOT_GET_LONGLONG_VALUE, DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE,
+        DUAL_SLOT_GET_SAFEARRAY_VALUE, DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE,
+        DUAL_SLOT_GET_VARIANT_VALUE, DUAL_SLOT_LOOKUP, DUAL_SLOT_MUTATE_BYREF_BREADTH,
+        DUAL_SLOT_MUTATE_BYREF_LONG, DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY,
+        DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
+        DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_RECORD_VALUE,
         DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE,
         create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
+    use oxvba_runtime::ComRecord;
     use oxvba_runtime::safe_array::SafeArray;
     use oxvba_runtime::{RuntimeByRefSlot, RuntimeValueType, VarType};
 
@@ -1523,6 +1545,44 @@ mod tests {
             invoke_kind,
             label,
         }
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct TestRecord {
+        value: i32,
+    }
+
+    unsafe fn clone_test_record(
+        record_info: *mut c_void,
+        record_data: *const c_void,
+    ) -> Result<(*mut c_void, *mut c_void), String> {
+        if record_info.is_null() || record_data.is_null() {
+            return Err("test record clone received a null record pointer".to_string());
+        }
+        let value = unsafe { *record_data.cast::<TestRecord>() };
+        Ok((record_info, Box::into_raw(Box::new(value)).cast::<c_void>()))
+    }
+
+    unsafe fn destroy_test_record(_record_info: *mut c_void, record_data: *mut c_void) {
+        if !record_data.is_null() {
+            unsafe {
+                drop(Box::from_raw(record_data.cast::<TestRecord>()));
+            }
+        }
+    }
+
+    fn test_record_variant(value: i32) -> Variant {
+        static RECORD_INFO_SENTINEL: u8 = 0;
+        let data = Box::into_raw(Box::new(TestRecord { value })).cast::<c_void>();
+        let info = (&RECORD_INFO_SENTINEL as *const u8)
+            .cast_mut()
+            .cast::<c_void>();
+        let record = unsafe {
+            ComRecord::from_raw_parts(info, data, clone_test_record, destroy_test_record)
+        }
+        .expect("test record pointers are non-null");
+        Variant::from_com_record(record)
     }
 
     #[test]
@@ -1744,6 +1804,45 @@ mod tests {
             value.as_bool(),
             Some(true),
             "fixture must see the array values through the SAFEARRAY wire pointer"
+        );
+        // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn record_parameter_lowers_to_record_data_pointer() {
+        let this = create_oxvba_dual_vtable_object();
+        let mut resolve = no_object_resolver();
+        let mut bind = release_and_bind();
+        let plan = invocation_plan(
+            DUAL_SLOT_VALIDATE_RECORD_VALUE,
+            vec![TypeLibParamType::Record],
+            vec![TypeLibWireType::Record {
+                name: "TestLib.Point".to_string(),
+            }],
+            vec![None],
+            Some(TypeLibParamType::Boolean),
+            Some(TypeLibWireType::Automation(TypeLibParamType::Boolean)),
+            TypeLibMemberInvokeKind::Method,
+        );
+        // SAFETY: slot 31 reads the inbound typed record pointer and writes a
+        // VARIANT_BOOL retval; the ComRecord carrier owns the borrowed data for
+        // the full duration of the libffi call.
+        let value = unsafe {
+            vtable_invoke(
+                this,
+                &plan,
+                &[test_record_variant(DUAL_RECORD_VALUE)],
+                31,
+                &mut resolve,
+                &mut bind,
+            )
+        }
+        .expect("record inbound vtable call should succeed");
+        assert_eq!(
+            value.as_bool(),
+            Some(true),
+            "fixture must see the typed record data pointer"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
