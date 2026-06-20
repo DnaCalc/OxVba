@@ -2256,6 +2256,7 @@ fn expected_runtime_type_for_byref(
         crate::TypeLibParamType::ByRefByte => Some(RuntimeValueType::Byte),
         crate::TypeLibParamType::ByRefBoolean => Some(RuntimeValueType::Boolean),
         crate::TypeLibParamType::ByRefLongLong => Some(RuntimeValueType::LongLong),
+        crate::TypeLibParamType::ByRefRecord => Some(RuntimeValueType::Record),
         _ => None,
     }
 }
@@ -3668,7 +3669,11 @@ mod gate_tests {
             );
         }
         // Out-of-set parameter shapes still decline before slot-call.
-        for bad in [crate::TypeLibParamType::LongPtr] {
+        for bad in [
+            crate::TypeLibParamType::LongPtr,
+            crate::TypeLibParamType::Record,
+            crate::TypeLibParamType::ByRefRecord,
+        ] {
             assert!(
                 !is_v1_vtable_vartype(bad),
                 "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
@@ -3701,6 +3706,19 @@ mod gate_tests {
             Some(VtableDeclineReason::UnsupportedReturnType(
                 crate::TypeLibParamType::LongPtr
             ))
+        );
+
+        let mut record_ret = eligible_spec(17, 58);
+        record_ret.return_type = Some(crate::TypeLibParamType::Record);
+        record_ret.return_wire_type = Some(crate::TypeLibWireType::Record {
+            name: "TestLib.Point".to_string(),
+        });
+        assert_eq!(
+            vtable_gate_decline_reason(&record_ret, 0, Some(crate::TypeLibParamType::Record)),
+            Some(VtableDeclineReason::UnsupportedReturnType(
+                crate::TypeLibParamType::Record
+            )),
+            "record retvals remain explicit unsupported records, not Variant/Object fallbacks"
         );
     }
 
@@ -3844,6 +3862,19 @@ mod gate_tests {
                 Some(crate::TypeLibParamType::Long)
             ),
             Some(VtableDeclineReason::MissingByRefSlot)
+        );
+
+        let mut record_param = eligible_spec(17, 58);
+        record_param.parameter_types = vec![crate::TypeLibParamType::Record];
+        record_param.parameter_wire_types = vec![crate::TypeLibWireType::Record {
+            name: "TestLib.Point".to_string(),
+        }];
+        assert_eq!(
+            vtable_gate_decline_reason(&record_param, 1, Some(crate::TypeLibParamType::Long)),
+            Some(VtableDeclineReason::UnsupportedParameterType(
+                crate::TypeLibParamType::Record
+            )),
+            "record parameters decline as explicit records until record payload ownership is implemented"
         );
 
         let mut safearray_return = eligible_spec(17, 58);

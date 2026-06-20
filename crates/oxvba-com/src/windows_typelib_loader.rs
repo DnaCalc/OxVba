@@ -701,6 +701,7 @@ fn vt_to_param_type(vt: u16, is_byref: bool) -> TypeLibParamType {
             TypeLibParamType::Boolean => TypeLibParamType::ByRefBoolean,
             TypeLibParamType::LongLong => TypeLibParamType::ByRefLongLong,
             TypeLibParamType::LongPtr => TypeLibParamType::ByRefLongPtr,
+            TypeLibParamType::Record => TypeLibParamType::ByRefRecord,
             _ => TypeLibParamType::ByRefVariant,
         }
     } else {
@@ -727,6 +728,7 @@ unsafe fn apply_byref_param_type(base: TypeLibParamType, is_byref: bool) -> Type
         TypeLibParamType::Boolean => TypeLibParamType::ByRefBoolean,
         TypeLibParamType::LongLong => TypeLibParamType::ByRefLongLong,
         TypeLibParamType::LongPtr => TypeLibParamType::ByRefLongPtr,
+        TypeLibParamType::Record => TypeLibParamType::ByRefRecord,
         _ => TypeLibParamType::ByRefVariant,
     }
 }
@@ -793,6 +795,8 @@ unsafe fn typedesc_to_param_type(
                     TypeLibParamType::Long
                 } else if typekind == TKIND_ALIAS {
                     typedesc_to_param_type(ref_ptinfo, &(*ref_attr).tdesc_alias, false)
+                } else if typekind == TKIND_RECORD {
+                    TypeLibParamType::Record
                 } else {
                     TypeLibParamType::Object
                 };
@@ -843,6 +847,17 @@ unsafe fn typedesc_to_wire_type(
     {
         return TypeLibWireType::InterfacePointer { name };
     }
+    if matches!(
+        param_type,
+        TypeLibParamType::Record | TypeLibParamType::ByRefRecord
+    ) && let Some(name) = typedesc_to_record_binding_name(owner_ptinfo, tdesc)
+    {
+        return if param_type == TypeLibParamType::ByRefRecord {
+            TypeLibWireType::ByRefRecord { name }
+        } else {
+            TypeLibWireType::Record { name }
+        };
+    }
     TypeLibWireType::Automation(param_type)
 }
 
@@ -877,6 +892,50 @@ unsafe fn typedesc_to_interface_binding_name(
                     qualified_typeinfo_binding_name(ref_ptinfo)
                 } else if typekind == TKIND_ALIAS {
                     typedesc_to_interface_binding_name(ref_ptinfo, &(*ref_attr).tdesc_alias)
+                } else {
+                    None
+                };
+                ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
+                name
+            } else {
+                None
+            };
+            ((*ref_vtbl).release)(ref_ptinfo);
+            result
+        }
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typedesc_to_record_binding_name(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> Option<String> {
+    match tdesc.vt {
+        VT_PTR if tdesc.union_field != 0 => {
+            let inner = &*(tdesc.union_field as *const TYPEDESC);
+            typedesc_to_record_binding_name(owner_ptinfo, inner)
+        }
+        VT_USERDEFINED => {
+            let href = u32::try_from(tdesc.union_field).unwrap_or(0);
+            let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
+            if ((*vtbl).get_ref_type_info)(owner_ptinfo, href, &mut ref_ptinfo) != COM_S_OK
+                || ref_ptinfo.is_null()
+            {
+                return None;
+            }
+            let ref_vtbl = *(ref_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
+            let result = if ((*ref_vtbl).get_type_attr)(ref_ptinfo, &mut ref_attr) == COM_S_OK
+                && !ref_attr.is_null()
+            {
+                let typekind = (*ref_attr).typekind;
+                let name = if typekind == TKIND_RECORD {
+                    qualified_typeinfo_binding_name(ref_ptinfo)
+                } else if typekind == TKIND_ALIAS {
+                    typedesc_to_record_binding_name(ref_ptinfo, &(*ref_attr).tdesc_alias)
                 } else {
                     None
                 };
@@ -944,6 +1003,11 @@ unsafe fn retval_typedesc_to_wire_type(
         && let Some(name) = typedesc_to_interface_binding_name(owner_ptinfo, tdesc)
     {
         return TypeLibWireType::InterfacePointer { name };
+    }
+    if return_type == TypeLibParamType::Record
+        && let Some(name) = typedesc_to_record_binding_name(owner_ptinfo, tdesc)
+    {
+        return TypeLibWireType::Record { name };
     }
     TypeLibWireType::Automation(return_type)
 }

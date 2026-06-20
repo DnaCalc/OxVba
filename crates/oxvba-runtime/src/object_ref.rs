@@ -298,6 +298,7 @@ pub enum RuntimeValueType {
     Byte,
     LongLong,
     LongPtr,
+    Record,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

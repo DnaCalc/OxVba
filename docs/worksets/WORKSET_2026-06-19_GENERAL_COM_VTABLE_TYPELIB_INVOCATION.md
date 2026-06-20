@@ -177,11 +177,18 @@ surface:
   and a declared IID, `ByRefLongPtr` uses pointer-width cells on x64, and
   explicit `ByRefSafeArrayVariant` wire metadata passes SAFEARRAY** cells and
   decodes the final SAFEARRAY payload into the runtime array carrier.
+- `TKIND_RECORD` / `VT_USERDEFINED` records now survive typelib descriptor
+  projection as explicit `TypeLibParamType::Record` / `ByRefRecord` plus
+  `TypeLibWireType::Record` / `ByRefRecord` metadata instead of collapsing to
+  generic `Variant` or `Object` facts. Vtable admission now declines those
+  records through the shared unsupported-type path until the runtime has a real
+  COM record carrier and the marshaller owns `IRecordInfo`/record-copy
+  ownership rules.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: records/UDTs remain `in-progress` accepted scope.
-They may fall back only with a specific recorded missing fact or unowned
-ABI/ownership rule, and need the same descriptor, admission, fixture,
-runtime-integration, and fresh-eyes evidence discipline before any broader
-support claim is made.
+Residual after this slice: record/UDT carrier plus vtable marshalling remain
+`in-progress` accepted scope. Records may fall back only with a specific recorded
+missing fact or unowned ABI/ownership rule, and need the same runtime carrier,
+marshaller, fixture, runtime-integration, and fresh-eyes evidence discipline
+before any broader support claim is made.

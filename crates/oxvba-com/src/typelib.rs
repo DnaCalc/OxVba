@@ -112,6 +112,7 @@ pub enum TypeLibParamType {
     Byte,
     LongLong,
     LongPtr,
+    Record,
     ByRefVariant,
     ByRefLong,
     ByRefInteger,
@@ -126,6 +127,7 @@ pub enum TypeLibParamType {
     ByRefBoolean,
     ByRefLongLong,
     ByRefLongPtr,
+    ByRefRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,6 +136,8 @@ pub enum TypeLibWireType {
     InterfacePointer { name: String },
     SafeArrayVariant,
     ByRefSafeArrayVariant,
+    Record { name: String },
+    ByRefRecord { name: String },
 }
 
 impl TypeLibWireType {
@@ -152,6 +156,8 @@ impl TypeLibWireType {
             }
             Self::SafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
             Self::ByRefSafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
+            Self::Record { .. } => matches!(param_type, TypeLibParamType::Record),
+            Self::ByRefRecord { .. } => matches!(param_type, TypeLibParamType::ByRefRecord),
         }
     }
 
@@ -163,6 +169,8 @@ impl TypeLibWireType {
             Self::InterfacePointer { .. } => matches!(return_type, TypeLibParamType::Object),
             Self::SafeArrayVariant => matches!(return_type, TypeLibParamType::Variant),
             Self::ByRefSafeArrayVariant => false,
+            Self::Record { .. } => matches!(return_type, TypeLibParamType::Record),
+            Self::ByRefRecord { .. } => false,
         }
     }
 }
@@ -288,6 +296,7 @@ impl TypeLibParamType {
                 | TypeLibParamType::ByRefBoolean
                 | TypeLibParamType::ByRefLongLong
                 | TypeLibParamType::ByRefLongPtr
+                | TypeLibParamType::ByRefRecord
         )
     }
 }
@@ -615,6 +624,7 @@ fn runtime_value_type_from_typelib_param(param_type: TypeLibParamType) -> (Runti
         TypeLibParamType::Byte => (RuntimeValueType::Byte, false),
         TypeLibParamType::LongLong => (RuntimeValueType::LongLong, false),
         TypeLibParamType::LongPtr => (RuntimeValueType::LongPtr, false),
+        TypeLibParamType::Record => (RuntimeValueType::Record, false),
         TypeLibParamType::ByRefVariant => (RuntimeValueType::Variant, true),
         TypeLibParamType::ByRefLong => (RuntimeValueType::Long, true),
         TypeLibParamType::ByRefInteger => (RuntimeValueType::Integer, true),
@@ -629,6 +639,7 @@ fn runtime_value_type_from_typelib_param(param_type: TypeLibParamType) -> (Runti
         TypeLibParamType::ByRefBoolean => (RuntimeValueType::Boolean, true),
         TypeLibParamType::ByRefLongLong => (RuntimeValueType::LongLong, true),
         TypeLibParamType::ByRefLongPtr => (RuntimeValueType::LongPtr, true),
+        TypeLibParamType::ByRefRecord => (RuntimeValueType::Record, true),
     }
 }
 
@@ -783,6 +794,36 @@ mod tests {
             ),
             Ok(()),
             "DECIMAL retvals are supported as out cells"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[TypeLibParamType::Record],
+                &[TypeLibWireType::Record {
+                    name: "TestLib.Point".to_string()
+                }],
+                &[],
+                None,
+                None,
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
+                TypeLibParamType::Record
+            )),
+            "records are explicit descriptor facts but still decline until the runtime has a record carrier"
+        );
+        assert_eq!(
+            validate_vtable_wire_signature(
+                &[],
+                &[],
+                &[],
+                Some(TypeLibParamType::Record),
+                Some(&TypeLibWireType::Record {
+                    name: "TestLib.Point".to_string()
+                }),
+            ),
+            Err(TypeLibVtableSignatureIssue::UnsupportedReturnType(
+                TypeLibParamType::Record
+            )),
+            "record retvals decline as records rather than collapsing to Variant/Object"
         );
     }
 
