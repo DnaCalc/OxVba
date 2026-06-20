@@ -3508,6 +3508,7 @@ pub const DUAL_SLOT_GET_DECIMAL_VALUE: u16 = 26;
 pub const DUAL_SLOT_PUTREF_LONG_VALUE: u16 = 27;
 pub const DUAL_SLOT_MUTATE_BYREF_LONG: u16 = 28;
 pub const DUAL_SLOT_MUTATE_BYREF_BREADTH: u16 = 29;
+pub const DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY: u16 = 30;
 
 /// The currency value `get_Price` returns: 12.3456 → scaled i64 123456.
 pub const DUAL_PRICE_SCALED_I64: i64 = 123_456;
@@ -3668,6 +3669,14 @@ struct RawDualVtbl {
         decimal_value: *mut DECIMAL,
         variant_value: *mut VARIANT,
     ) -> i32,
+    /// slot 30
+    mutate_byref_object_string_array: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        text: *mut windows_sys::core::BSTR,
+        object: *mut *mut core::ffi::c_void,
+        longptr_value: *mut isize,
+        array: *mut *mut SAFEARRAY,
+    ) -> i32,
 }
 
 #[cfg(target_os = "windows")]
@@ -3715,6 +3724,7 @@ static OXVBA_DUAL_VTBL: RawDualVtbl = RawDualVtbl {
     putref_long_value: oxvba_dual_putref_long_value,
     mutate_byref_long: oxvba_dual_mutate_byref_long,
     mutate_byref_breadth: oxvba_dual_mutate_byref_breadth,
+    mutate_byref_object_string_array: oxvba_dual_mutate_byref_object_string_array,
 };
 
 /// Construct the real custom dual-vtable fixture object. Returns the `this`
@@ -4325,6 +4335,81 @@ unsafe extern "system" fn oxvba_dual_mutate_byref_breadth(
     (*variant_value).Anonymous.Anonymous.vt = VT_I4;
     (*variant_value).Anonymous.Anonymous.Anonymous.lVal = 77;
     COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn create_variant_i32_vector(values: &[i32]) -> Result<*mut SAFEARRAY, String> {
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_VARIANT, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let mut element: VARIANT = std::mem::zeroed();
+        set_variant_i32(*value, &mut element);
+        let hr = SafeArrayPutElement(
+            psa.cast_const(),
+            &index,
+            (&element as *const VARIANT).cast(),
+        );
+        let _ = VariantClear(&mut element);
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_VARIANT) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    Ok(psa)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_dual_mutate_byref_object_string_array(
+    this: *mut core::ffi::c_void,
+    text: *mut windows_sys::core::BSTR,
+    object: *mut *mut core::ffi::c_void,
+    longptr_value: *mut isize,
+    array: *mut *mut SAFEARRAY,
+) -> i32 {
+    if text.is_null() || object.is_null() || longptr_value.is_null() || array.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    if !(*text).is_null() {
+        SysFreeString(*text);
+    }
+    let replacement: Vec<u16> = "byref-string-mutated"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    *text = SysAllocString(replacement.as_ptr());
+    if (*text).is_null() {
+        return COM_E_INVALIDARG;
+    }
+
+    if !(*object).is_null() {
+        raw_release_unknown(*object);
+    }
+    raw_add_ref_dispatch(this.cast::<RawIDispatch>());
+    *object = this;
+
+    *longptr_value = longptr_value.read().saturating_add(0x1000);
+
+    if !(*array).is_null() {
+        let _ = SafeArrayDestroy((*array).cast_const());
+    }
+    match create_variant_i32_vector(&[55, 89]) {
+        Ok(psa) => {
+            *array = psa;
+            COM_S_OK
+        }
+        Err(_) => COM_E_INVALIDARG,
+    }
 }
 
 // ── Minimal IErrorInfo implementation for the raise_error slot ──

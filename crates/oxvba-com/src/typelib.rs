@@ -144,9 +144,14 @@ impl TypeLibWireType {
     pub(crate) fn supports_vtable_param(&self, param_type: TypeLibParamType) -> bool {
         match self {
             Self::Automation(wire_param_type) => *wire_param_type == param_type,
-            Self::InterfacePointer { .. } => matches!(param_type, TypeLibParamType::Object),
+            Self::InterfacePointer { .. } => {
+                matches!(
+                    param_type,
+                    TypeLibParamType::Object | TypeLibParamType::ByRefObject
+                )
+            }
             Self::SafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
-            Self::ByRefSafeArrayVariant => false,
+            Self::ByRefSafeArrayVariant => matches!(param_type, TypeLibParamType::Variant),
         }
     }
 
@@ -194,6 +199,9 @@ impl TypeLibParamType {
                 | TypeLibParamType::ByRefByte
                 | TypeLibParamType::ByRefBoolean
                 | TypeLibParamType::ByRefLongLong
+                | TypeLibParamType::ByRefString
+                | TypeLibParamType::ByRefObject
+                | TypeLibParamType::ByRefLongPtr
         )
     }
 
@@ -250,8 +258,10 @@ pub(crate) fn validate_vtable_wire_signature(
         return Err(TypeLibVtableSignatureIssue::UnsupportedReturnWireType);
     }
     if parameter_types.iter().enumerate().any(|(i, param_type)| {
-        matches!(param_type, TypeLibParamType::Object)
-            && parameter_iids.get(i).copied().flatten().is_none()
+        matches!(
+            param_type,
+            TypeLibParamType::Object | TypeLibParamType::ByRefObject
+        ) && parameter_iids.get(i).copied().flatten().is_none()
     }) {
         return Err(TypeLibVtableSignatureIssue::MissingObjectParameterIid);
     }
@@ -731,14 +741,14 @@ mod tests {
         );
         assert_eq!(
             validate_vtable_wire_signature(
-                &[TypeLibParamType::ByRefObject],
-                &[TypeLibWireType::Automation(TypeLibParamType::ByRefObject)],
+                &[TypeLibParamType::LongPtr],
+                &[TypeLibWireType::Automation(TypeLibParamType::LongPtr)],
                 &[],
                 None,
                 None,
             ),
             Err(TypeLibVtableSignatureIssue::UnsupportedParameterType(
-                TypeLibParamType::ByRefObject
+                TypeLibParamType::LongPtr
             ))
         );
         assert_eq!(
@@ -786,7 +796,7 @@ mod tests {
                 None,
                 None,
             ),
-            Err(TypeLibVtableSignatureIssue::UnsupportedParameterWireType)
+            Ok(())
         );
         assert_eq!(
             validate_vtable_wire_signature(

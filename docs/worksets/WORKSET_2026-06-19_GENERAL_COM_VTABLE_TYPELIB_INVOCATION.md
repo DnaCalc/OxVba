@@ -171,12 +171,17 @@ surface:
   ByRef vtable execution before mutation; the writeback-capable path refuses
   ByRef fallback through value-only IDispatch rather than silently dropping
   mutations.
+- The remaining ByRef Automation families are now admitted and fixture-proven
+  through the writeback-capable vtable marshaller: `ByRefString` uses BSTR*
+  ownership, `ByRefObject` requires explicit `InterfacePointer` wire metadata
+  and a declared IID, `ByRefLongPtr` uses pointer-width cells on x64, and
+  explicit `ByRefSafeArrayVariant` wire metadata passes SAFEARRAY** cells and
+  decodes the final SAFEARRAY payload into the runtime array carrier.
 - The widened `ComMemberSpec` is boxed in sparse enum variants that only sometimes
   carry a spec, keeping clippy's large-enum guard clean without weakening lint policy.
 
-Residual after this slice: records/UDTs, `ByRefSafeArrayVariant`,
-`ByRefString`, `ByRefObject`, and `ByRefLongPtr` remain `in-progress` accepted
-scope. They may fall back only with a specific recorded missing fact or unowned
+Residual after this slice: records/UDTs remain `in-progress` accepted scope.
+They may fall back only with a specific recorded missing fact or unowned
 ABI/ownership rule, and need the same descriptor, admission, fixture,
 runtime-integration, and fresh-eyes evidence discipline before any broader
 support claim is made.

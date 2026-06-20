@@ -2250,6 +2250,9 @@ fn expected_runtime_type_for_byref(
         crate::TypeLibParamType::ByRefCurrency => Some(RuntimeValueType::Currency),
         crate::TypeLibParamType::ByRefDate => Some(RuntimeValueType::Date),
         crate::TypeLibParamType::ByRefDecimal => Some(RuntimeValueType::Decimal),
+        crate::TypeLibParamType::ByRefString => Some(RuntimeValueType::String),
+        crate::TypeLibParamType::ByRefObject => Some(RuntimeValueType::Object),
+        crate::TypeLibParamType::ByRefLongPtr => Some(RuntimeValueType::LongPtr),
         crate::TypeLibParamType::ByRefByte => Some(RuntimeValueType::Byte),
         crate::TypeLibParamType::ByRefBoolean => Some(RuntimeValueType::Boolean),
         crate::TypeLibParamType::ByRefLongLong => Some(RuntimeValueType::LongLong),
@@ -3655,6 +3658,9 @@ mod gate_tests {
             crate::TypeLibParamType::ByRefByte,
             crate::TypeLibParamType::ByRefBoolean,
             crate::TypeLibParamType::ByRefLongLong,
+            crate::TypeLibParamType::ByRefString,
+            crate::TypeLibParamType::ByRefObject,
+            crate::TypeLibParamType::ByRefLongPtr,
         ] {
             assert!(
                 is_v1_vtable_vartype(ok),
@@ -3662,12 +3668,7 @@ mod gate_tests {
             );
         }
         // Out-of-set parameter shapes still decline before slot-call.
-        for bad in [
-            crate::TypeLibParamType::LongPtr,
-            crate::TypeLibParamType::ByRefString,
-            crate::TypeLibParamType::ByRefObject,
-            crate::TypeLibParamType::ByRefLongPtr,
-        ] {
+        for bad in [crate::TypeLibParamType::LongPtr] {
             assert!(
                 !is_v1_vtable_vartype(bad),
                 "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
@@ -3842,7 +3843,7 @@ mod gate_tests {
                 1,
                 Some(crate::TypeLibParamType::Long)
             ),
-            Some(VtableDeclineReason::UnsupportedParameterWireType)
+            Some(VtableDeclineReason::MissingByRefSlot)
         );
 
         let mut safearray_return = eligible_spec(17, 58);

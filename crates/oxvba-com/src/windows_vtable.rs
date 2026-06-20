@@ -197,6 +197,10 @@ enum ByRefCell {
     Date(RuntimeByRefSlot, Box<f64>),
     Decimal(RuntimeByRefSlot, Box<DECIMAL>),
     Variant(RuntimeByRefSlot, Box<VARIANT>),
+    Bstr(RuntimeByRefSlot, Box<windows_sys::core::BSTR>),
+    Interface(RuntimeByRefSlot, Box<*mut c_void>),
+    LongPtr(RuntimeByRefSlot, Box<isize>),
+    SafeArray(RuntimeByRefSlot, Box<VARIANT>),
 }
 
 pub(crate) struct VtableInvokeResult {
@@ -454,14 +458,15 @@ where
         });
     }
 
-    let writebacks = match collect_writebacks(&mut inbound_owned, plan.label, dispid) {
-        Ok(writebacks) => writebacks,
-        Err(failure) => {
-            free_inbound(&mut inbound_owned);
-            discard_out_cell(out_cell);
-            return Err(failure);
-        }
-    };
+    let writebacks =
+        match collect_writebacks(&mut inbound_owned, plan.label, dispid, bind_dispatch_result) {
+            Ok(writebacks) => writebacks,
+            Err(failure) => {
+                free_inbound(&mut inbound_owned);
+                discard_out_cell(out_cell);
+                return Err(failure);
+            }
+        };
     // We own inbound [in] and ByRef cells; free them after writeback decoding.
     free_inbound(&mut inbound_owned);
 
@@ -537,8 +542,19 @@ where
     if matches!(wire_type, Some(TypeLibWireType::SafeArrayVariant)) {
         return marshal_inbound_safearray_param(&value, resolve_object);
     }
+    if matches!(wire_type, Some(TypeLibWireType::ByRefSafeArrayVariant)) {
+        return marshal_byref_safearray_param(&value, byref_slot, resolve_object);
+    }
     if param_type.is_by_ref() {
-        return marshal_byref_param(param_type, &value, arg, byref_slot, resolve_object);
+        return marshal_byref_param(
+            param_type,
+            wire_type,
+            &value,
+            arg,
+            param_iid,
+            byref_slot,
+            resolve_object,
+        );
     }
     Ok(match param_type {
         // Scalars by value (reusing the dynlink scalar conventions). BOOL is an
@@ -685,8 +701,10 @@ where
 
 fn marshal_byref_param<FResolveObject>(
     param_type: TypeLibParamType,
+    wire_type: Option<&TypeLibWireType>,
     value: &ComValue,
     arg: &Variant,
+    param_iid: Option<crate::ComInterfaceIid>,
     byref_slot: Option<RuntimeByRefSlot>,
     resolve_object: &mut FResolveObject,
 ) -> Result<(FfiArg, InboundOwned), String>
@@ -772,6 +790,55 @@ where
             let ptr = cell.as_mut() as *mut VARIANT;
             (ptr.cast::<c_void>(), ByRefCell::Variant(slot, cell))
         }
+        P::ByRefString => {
+            let text = match value {
+                ComValue::String(s) => s.to_string(),
+                other => {
+                    return Err(format!(
+                        "vtable VT_BYREF|VT_BSTR parameter expects a String, got {other:?}"
+                    ));
+                }
+            };
+            let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+            // SAFETY: `wide` is NUL-terminated and alive for the call;
+            // SysAllocString copies it into an owned BSTR variable cell.
+            let bstr = unsafe { SysAllocString(wide.as_ptr()) };
+            if bstr.is_null() {
+                return Err(
+                    "SysAllocString returned null for vtable VT_BYREF|VT_BSTR parameter"
+                        .to_string(),
+                );
+            }
+            let mut cell = Box::new(bstr);
+            let ptr = cell.as_mut() as *mut windows_sys::core::BSTR;
+            (ptr.cast::<c_void>(), ByRefCell::Bstr(slot, cell))
+        }
+        P::ByRefObject => {
+            if !matches!(wire_type, Some(TypeLibWireType::InterfacePointer { .. })) {
+                return Err(
+                    "vtable ByRef object requires explicit InterfacePointer wire metadata"
+                        .to_string(),
+                );
+            }
+            let iid = param_iid.ok_or_else(|| {
+                "vtable ByRef object parameter is missing its declared interface IID".to_string()
+            })?;
+            let object = arg.as_object_ref().ok_or_else(|| {
+                "vtable VT_BYREF|VT_DISPATCH parameter expects an object argument".to_string()
+            })?;
+            let dispatch = resolve_object(object)?;
+            // SAFETY: `dispatch` is a live COM pointer from the bindings map; QI
+            // returns one owned reference for the ByRef interface variable.
+            let interface = unsafe { crate::query_interface_pointer(dispatch, &iid.to_guid()) }?;
+            let mut cell = Box::new(interface);
+            let ptr = cell.as_mut() as *mut *mut c_void;
+            (ptr.cast::<c_void>(), ByRefCell::Interface(slot, cell))
+        }
+        P::ByRefLongPtr => {
+            let mut cell = Box::new(com_value_to_i64(value)? as isize);
+            let ptr = cell.as_mut() as *mut isize;
+            (ptr.cast::<c_void>(), ByRefCell::LongPtr(slot, cell))
+        }
         other => {
             return Err(format!(
                 "vtable ByRef parameter VARTYPE {other:?} is not supported yet"
@@ -779,6 +846,33 @@ where
         }
     };
     Ok((FfiArg::Pointer(ptr), InboundOwned::ByRef(cell)))
+}
+
+fn marshal_byref_safearray_param<FResolveObject>(
+    value: &ComValue,
+    byref_slot: Option<RuntimeByRefSlot>,
+    resolve_object: &mut FResolveObject,
+) -> Result<(FfiArg, InboundOwned), String>
+where
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut c_void, String>,
+{
+    let slot = byref_slot
+        .ok_or_else(|| "vtable ByRef SAFEARRAY requires a runtime ByRef slot".to_string())?;
+    let (_, owned) = marshal_inbound_safearray_param(value, resolve_object)?;
+    let InboundOwned::SafeArray(cell) = owned else {
+        return Err("vtable ByRef SAFEARRAY lowered to an unexpected inbound cell".to_string());
+    };
+    let mut cell = cell;
+    // SAFETY: `cell` is a VARIANT initialized by marshal_inbound_safearray_param
+    // with a SAFEARRAY payload, so taking the address of its parray field gives
+    // the SAFEARRAY** required by VT_BYREF|VT_ARRAY parameters.
+    let ptr = unsafe {
+        (&mut cell.Anonymous.Anonymous.Anonymous.parray as *mut *mut SAFEARRAY).cast::<c_void>()
+    };
+    Ok((
+        FfiArg::Pointer(ptr),
+        InboundOwned::ByRef(ByRefCell::SafeArray(slot, cell)),
+    ))
 }
 
 fn marshal_inbound_safearray_param<FResolveObject>(
@@ -866,25 +960,38 @@ fn free_inbound(owned: &mut Vec<InboundOwned>) {
     }
 }
 
-fn collect_writebacks(
+fn collect_writebacks<FBindDispatch>(
     owned: &mut [InboundOwned],
     label: &'static str,
     dispid: i32,
-) -> Result<Vec<RuntimeByRefWriteback>, ComInvokeFailure> {
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<Vec<RuntimeByRefWriteback>, ComInvokeFailure>
+where
+    FBindDispatch: FnMut(*mut c_void) -> Result<Variant, String>,
+{
     let mut writebacks = Vec::new();
     for entry in owned.iter_mut() {
         if let InboundOwned::ByRef(cell) = entry {
-            writebacks.push(decode_byref_cell(cell, label, dispid)?);
+            writebacks.push(decode_byref_cell(
+                cell,
+                label,
+                dispid,
+                bind_dispatch_result,
+            )?);
         }
     }
     Ok(writebacks)
 }
 
-fn decode_byref_cell(
+fn decode_byref_cell<FBindDispatch>(
     cell: &mut ByRefCell,
     label: &'static str,
     dispid: i32,
-) -> Result<RuntimeByRefWriteback, ComInvokeFailure> {
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<RuntimeByRefWriteback, ComInvokeFailure>
+where
+    FBindDispatch: FnMut(*mut c_void) -> Result<Variant, String>,
+{
     let (slot, value) = match cell {
         ByRefCell::I32(slot, cell) => (*slot, Variant::from_i32(**cell)),
         ByRefCell::I16(slot, cell) => (*slot, Variant::from_i16(**cell)),
@@ -907,17 +1014,67 @@ fn decode_byref_cell(
                 .map_err(|detail| validation_failure(label, dispid, detail))?;
             (*slot, value)
         }
+        ByRefCell::Bstr(slot, cell) => {
+            let raw = **cell;
+            **cell = std::ptr::null_mut();
+            // SAFETY: the ByRef BSTR cell owns the final BSTR value after a
+            // successful call; this converts and frees it exactly once.
+            let text = unsafe { bstr_to_string_and_free(raw) }.unwrap_or_default();
+            (*slot, Variant::from_string(text))
+        }
+        ByRefCell::Interface(slot, cell) => {
+            let raw = **cell;
+            **cell = std::ptr::null_mut();
+            if raw.is_null() {
+                (
+                    *slot,
+                    Variant::from_object_ref(ObjectRef::from_compat_identity(0)),
+                )
+            } else {
+                let value = bind_dispatch_result(raw).map_err(|detail| {
+                    validation_failure(label, dispid, format!("ByRef object writeback: {detail}"))
+                })?;
+                (*slot, value)
+            }
+        }
+        ByRefCell::LongPtr(slot, cell) => (*slot, Variant::from_i64(**cell as i64)),
+        ByRefCell::SafeArray(slot, cell) => {
+            // SAFETY: on success the VARIANT cell still describes the SAFEARRAY
+            // pointer variable. variant_to_com_value clones the array into the
+            // runtime carrier; free_byref_cell later clears the cell payload.
+            let value = unsafe { crate::variant_to_com_value(cell.as_ref()) }
+                .and_then(|value| value.to_variant())
+                .map_err(|detail| validation_failure(label, dispid, detail))?;
+            (*slot, value)
+        }
     };
     Ok(RuntimeByRefWriteback::new(slot, value))
 }
 
 fn free_byref_cell(cell: ByRefCell) {
-    if let ByRefCell::Variant(_, mut cell) = cell {
-        // SAFETY: the ByRef VARIANT cell was initialized by this marshaller and
-        // is owned by the cell; clearing it releases any payload exactly once.
-        unsafe {
-            let _ = VariantClear(cell.as_mut());
+    match cell {
+        ByRefCell::Variant(_, mut cell) | ByRefCell::SafeArray(_, mut cell) => {
+            // SAFETY: the ByRef VARIANT cell was initialized by this marshaller and
+            // is owned by the cell; clearing it releases any payload exactly once.
+            unsafe {
+                let _ = VariantClear(cell.as_mut());
+            }
         }
+        ByRefCell::Bstr(_, cell) => {
+            if !(*cell).is_null() {
+                // SAFETY: the BSTR cell still owns this BSTR because decode did
+                // not take it, typically due to an earlier decode failure.
+                unsafe { SysFreeString(*cell) };
+            }
+        }
+        ByRefCell::Interface(_, cell) => {
+            if !(*cell).is_null() {
+                // SAFETY: the interface cell still owns this QI/transferred
+                // reference because decode did not bind it.
+                unsafe { crate::release_unknown(*cell) };
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1261,13 +1418,14 @@ mod tests {
         DUAL_SLOT_GET_OWNER, DUAL_SLOT_GET_PRICE, DUAL_SLOT_GET_SAFEARRAY_VALUE,
         DUAL_SLOT_GET_SINGLE_VALUE, DUAL_SLOT_GET_TEXT_VALUE, DUAL_SLOT_GET_VARIANT_VALUE,
         DUAL_SLOT_LOOKUP, DUAL_SLOT_MUTATE_BYREF_BREADTH, DUAL_SLOT_MUTATE_BYREF_LONG,
-        DUAL_SLOT_PUT_VALUE, DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR,
-        DUAL_SLOT_VALIDATE_ALL_INPUTS, DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE,
-        DUAL_VARIANT_VALUE, create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
+        DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY, DUAL_SLOT_PUT_VALUE,
+        DUAL_SLOT_PUTREF_OBJECT_VALUE, DUAL_SLOT_RAISE_ERROR, DUAL_SLOT_VALIDATE_ALL_INPUTS,
+        DUAL_SLOT_VALIDATE_SAFEARRAY_VALUE, DUAL_TEXT_VALUE, DUAL_VARIANT_VALUE,
+        create_oxvba_dual_vtable_object, create_oxvba_test_dispatch,
     };
     use crate::{TypeLibMemberInvokeKind, TypeLibWireType};
     use oxvba_runtime::safe_array::SafeArray;
-    use oxvba_runtime::{RuntimeValueType, VarType};
+    use oxvba_runtime::{RuntimeByRefSlot, RuntimeValueType, VarType};
 
     /// Resolver that never sees an object arg in these tests.
     fn no_object_resolver() -> impl FnMut(ObjectRef) -> Result<*mut c_void, String> {
@@ -1480,11 +1638,11 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_byref_safearray_parameter_wire_shape_declines_before_slot_call() {
+    fn byref_safearray_parameter_requires_writeback_capable_path() {
         let this = create_oxvba_dual_vtable_object();
         let mut resolve = no_object_resolver();
         let mut bind = release_and_bind();
-        let plan = invocation_plan(
+        let mut plan = invocation_plan(
             DUAL_SLOT_PUT_VALUE,
             vec![TypeLibParamType::Variant],
             vec![TypeLibWireType::ByRefSafeArrayVariant],
@@ -1493,29 +1651,35 @@ mod tests {
             None,
             TypeLibMemberInvokeKind::PropertyPut,
         );
-        // SAFETY: `this` is a live fixture object. The unsupported SAFEARRAY wire
-        // shape must be rejected as a validation failure before the slot is read/called.
+        plan.parameter_byref_slots = vec![Some(RuntimeByRefSlot::new(
+            0,
+            Some(RuntimeValueType::Variant),
+        ))];
+        // SAFETY: `this` is a live fixture object. The value-only wrapper must
+        // reject writeback-capable plans before slot execution.
         let failure = unsafe {
             vtable_invoke(
                 this,
                 &plan,
-                &[Variant::from_i32(1234)],
+                &[Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(1234),
+                ]))],
                 300,
                 &mut resolve,
                 &mut bind,
             )
         }
-        .expect_err("unsupported parameter wire shape must decline");
+        .expect_err("ByRef SAFEARRAY requires writeback-capable vtable invoke");
         assert_eq!(
             failure.hr, None,
-            "wire-shape decline is a validation fallback"
+            "value-only writeback guard is a validation fallback"
         );
         assert!(
             failure
                 .detail
                 .as_deref()
-                .is_some_and(|detail| detail.contains("parameter wire shape")),
-            "failure should identify the unsupported parameter wire shape"
+                .is_some_and(|detail| detail.contains("writeback-capable invoke path")),
+            "failure should identify the writeback-capable invoke requirement"
         );
         // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
@@ -1923,6 +2087,82 @@ mod tests {
             "the bind closure's sentinel ObjectRef should surface"
         );
         // SAFETY: balances the create_* reference.
+        unsafe { release_dual(this) };
+    }
+
+    #[test]
+    fn byref_string_object_longptr_and_safearray_return_writebacks() {
+        let this = create_oxvba_dual_vtable_object();
+        let object = ObjectRef::from_compat_identity(44);
+        let plan = invocation_plan(
+            DUAL_SLOT_MUTATE_BYREF_OBJECT_STRING_ARRAY,
+            vec![
+                TypeLibParamType::ByRefString,
+                TypeLibParamType::ByRefObject,
+                TypeLibParamType::ByRefLongPtr,
+                TypeLibParamType::Variant,
+            ],
+            vec![
+                TypeLibWireType::Automation(TypeLibParamType::ByRefString),
+                TypeLibWireType::InterfacePointer {
+                    name: "IDispatch".to_string(),
+                },
+                TypeLibWireType::Automation(TypeLibParamType::ByRefLongPtr),
+                TypeLibWireType::ByRefSafeArrayVariant,
+            ],
+            vec![None, Some(idispatch_iid()), None, None],
+            None,
+            None,
+            TypeLibMemberInvokeKind::Method,
+        );
+        let args = vec![
+            Variant::from_string("initial"),
+            Variant::from_object_ref(object.clone()),
+            Variant::from_i64(0x20),
+            Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_i32(1)])),
+        ];
+        let slots: Vec<RuntimeByRefSlot> = [
+            RuntimeValueType::String,
+            RuntimeValueType::Object,
+            RuntimeValueType::LongPtr,
+            RuntimeValueType::Variant,
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| RuntimeByRefSlot::new(index as u32, Some(*ty)))
+        .collect();
+        let mut plan = plan;
+        plan.parameter_byref_slots = slots.iter().copied().map(Some).collect();
+        let mut resolver = object_resolver_for(object, this.cast::<crate::RawIDispatch>());
+        let mut bind = release_and_bind();
+        let result = unsafe {
+            vtable_invoke_with_writebacks(this, &plan, &args, 7030, &mut resolver, &mut bind)
+        }
+        .expect("ByRef object/string/LongPtr/SAFEARRAY vtable call should succeed");
+
+        assert_eq!(result.writebacks.len(), 4);
+        assert_eq!(
+            result.writebacks[0]
+                .value
+                .as_bstr()
+                .map(|value| value.to_string()),
+            Some("byref-string-mutated".to_string())
+        );
+        assert_eq!(
+            result.writebacks[1].value.as_object_ref().map(|o| o.raw()),
+            Some(99)
+        );
+        assert_eq!(result.writebacks[2].value.as_i64(), Some(0x1020));
+        let array_values = result.writebacks[3]
+            .value
+            .as_safearray()
+            .expect("SAFEARRAY writeback")
+            .variant_elements()
+            .expect("variant elements");
+        assert_eq!(
+            array_values.iter().map(Variant::as_i32).collect::<Vec<_>>(),
+            vec![Some(55), Some(89)]
+        );
         unsafe { release_dual(this) };
     }
 
