@@ -248,7 +248,9 @@ user-defined SAFEARRAY rows. A broader registry sample is recorded in
 `docs/evidence/typelib_audit/registered_typelib_safearray_elements_20260620T152846/`;
 that scan found one foreign `safearray_record` occurrence in `AcroBrokerLib` and
 three unresolved user-defined SAFEARRAY elements in the installed Visio typelib.
-The next foreign-record step is targeted descriptor/value-oracle proof for the
-`AcroBrokerLib` record-array member or another captured typelib specimen, not a
-generic fallback. Malformed SAFEARRAY descriptors now decline rather than guessing
-`VT_VARIANT`.
+`docs/evidence/typelib_audit/acrobroker_record_safearray_site_20260620T153000/`
+identifies the concrete foreign record-array descriptor as
+`IBroker.BrokerUpdateIEContextMenu` zero-based `param2` (`VT_RECORD`). The next
+foreign-record step is targeted descriptor/value-oracle proof for that member or
+another captured typelib specimen, not a generic fallback. Malformed SAFEARRAY
+descriptors now decline rather than guessing `VT_VARIANT`.

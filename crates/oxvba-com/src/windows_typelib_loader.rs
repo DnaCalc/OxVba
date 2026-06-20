@@ -1333,6 +1333,15 @@ pub unsafe fn live_object_typeinfo_name(
 
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TypeLibSafeArraySite {
+    pub type_name: String,
+    pub member_name: String,
+    pub position: String,
+    pub element_vt: u16,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TypeLibShapeAudit {
     pub type_count: u32,
     pub function_count: u32,
@@ -1342,6 +1351,7 @@ pub struct TypeLibShapeAudit {
     pub vt_counts: BTreeMap<String, u32>,
     pub unsupported_vt_counts: BTreeMap<String, u32>,
     pub safearray_element_counts: BTreeMap<String, u32>,
+    pub safearray_sites: Vec<TypeLibSafeArraySite>,
     pub optional_param_count: u32,
     pub byref_param_count: u32,
     pub param_array_like_count: u32,
@@ -1356,6 +1366,10 @@ impl TypeLibShapeAudit {
     }
 
     pub fn csv_rows(&self, label: &str) -> Vec<String> {
+        fn csv_cell(value: &str) -> String {
+            value.replace([',', '\r', '\n'], " ")
+        }
+
         let mut rows = vec![format!(
             "summary,{label},{},{},{},{},{},{}",
             self.type_count,
@@ -1390,6 +1404,15 @@ impl TypeLibShapeAudit {
             rows.push(format!(
                 "safearray_unresolved_userdefined,{label},VT_USERDEFINED,{}",
                 self.unresolved_userdefined_safearray_count
+            ));
+        }
+        for site in &self.safearray_sites {
+            rows.push(format!(
+                "safearray_site,{label},{},{},{},{}",
+                csv_cell(&site.type_name),
+                csv_cell(&site.member_name),
+                csv_cell(&site.position),
+                vt_label(site.element_vt)
             ));
         }
         rows
@@ -1538,6 +1561,7 @@ unsafe fn audit_typedesc(
     owner_ptinfo: *mut c_void,
     tdesc: &TYPEDESC,
     audit: &mut TypeLibShapeAudit,
+    site: Option<(&str, &str, &str)>,
 ) {
     increment_count(&mut audit.vt_counts, vt_label(tdesc.vt));
     let supported = if tdesc.vt == VT_USERDEFINED {
@@ -1557,11 +1581,33 @@ unsafe fn audit_typedesc(
         } else if element_vt == VT_USERDEFINED {
             audit.unresolved_userdefined_safearray_count += 1;
         }
+        if let Some((type_name, member_name, position)) = site {
+            audit.safearray_sites.push(TypeLibSafeArraySite {
+                type_name: type_name.to_string(),
+                member_name: member_name.to_string(),
+                position: position.to_string(),
+                element_vt,
+            });
+        }
     }
     if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
         let inner = &*(tdesc.union_field as *const TYPEDESC);
-        audit_typedesc(owner_ptinfo, inner, audit);
+        audit_typedesc(owner_ptinfo, inner, audit, site);
     }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn member_name_for_memid(ptinfo: *mut c_void, memid: i32) -> Option<String> {
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut name: *mut u16 = std::ptr::null_mut();
+    let mut name_count = 0u32;
+    if ((*vtbl).get_names)(ptinfo, memid, &mut name, 1, &mut name_count) != COM_S_OK
+        || name_count == 0
+        || name.is_null()
+    {
+        return None;
+    }
+    bstr_to_string_and_free(name)
 }
 
 #[cfg(target_os = "windows")]
@@ -1612,16 +1658,24 @@ pub fn audit_typelib_shapes(ptlib: *mut c_void) -> Result<TypeLibShapeAudit, Str
                 audit.function_count += (*pattr).cfuncs as u32;
                 audit.variable_count += (*pattr).cvars as u32;
                 if (*pattr).typekind == TKIND_ALIAS {
-                    audit_typedesc(ptinfo, &(*pattr).tdesc_alias, &mut audit);
+                    audit_typedesc(ptinfo, &(*pattr).tdesc_alias, &mut audit, None);
                 }
+                let type_name = typeinfo_name(ptinfo).unwrap_or_else(|| format!("type_{i}"));
                 for func_idx in 0..((*pattr).cfuncs as u32) {
                     let mut pfuncdesc: *mut FUNCDESC = std::ptr::null_mut();
                     if ((*ti_vtbl).get_func_desc)(ptinfo, func_idx, &mut pfuncdesc) == COM_S_OK
                         && !pfuncdesc.is_null()
                     {
                         let fd = &*pfuncdesc;
+                        let member_name = member_name_for_memid(ptinfo, fd.memid)
+                            .unwrap_or_else(|| format!("memid_{}", fd.memid));
                         increment_count(&mut audit.invkind_counts, invkind_label(fd.invkind));
-                        audit_typedesc(ptinfo, &fd.elemdescfunc.tdesc, &mut audit);
+                        audit_typedesc(
+                            ptinfo,
+                            &fd.elemdescfunc.tdesc,
+                            &mut audit,
+                            Some((&type_name, &member_name, "retval")),
+                        );
                         let cparams = fd.cparams.max(0) as u32;
                         let optional_count = fd.cparams_opt.max(0) as u32;
                         audit.optional_param_count += optional_count;
@@ -1634,7 +1688,13 @@ pub fn audit_typelib_shapes(ptlib: *mut c_void) -> Result<TypeLibShapeAudit, Str
                             if (flags & 0x0020) != 0 {
                                 audit.param_array_like_count += 1;
                             }
-                            audit_typedesc(ptinfo, &param_desc.tdesc, &mut audit);
+                            let position = format!("param{p}");
+                            audit_typedesc(
+                                ptinfo,
+                                &param_desc.tdesc,
+                                &mut audit,
+                                Some((&type_name, &member_name, &position)),
+                            );
                         }
                         ((*ti_vtbl).release_func_desc)(ptinfo, pfuncdesc);
                     }
