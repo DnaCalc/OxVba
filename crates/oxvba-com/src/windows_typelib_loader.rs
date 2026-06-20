@@ -1341,9 +1341,12 @@ pub struct TypeLibShapeAudit {
     pub invkind_counts: BTreeMap<String, u32>,
     pub vt_counts: BTreeMap<String, u32>,
     pub unsupported_vt_counts: BTreeMap<String, u32>,
+    pub safearray_element_counts: BTreeMap<String, u32>,
     pub optional_param_count: u32,
     pub byref_param_count: u32,
     pub param_array_like_count: u32,
+    pub record_safearray_count: u32,
+    pub unresolved_userdefined_safearray_count: u32,
 }
 
 #[cfg(target_os = "windows")]
@@ -1373,6 +1376,21 @@ impl TypeLibShapeAudit {
         }
         for (name, count) in &self.unsupported_vt_counts {
             rows.push(format!("unsupported_vt,{label},{name},{count}"));
+        }
+        for (name, count) in &self.safearray_element_counts {
+            rows.push(format!("safearray_element_vt,{label},{name},{count}"));
+        }
+        if self.record_safearray_count > 0 {
+            rows.push(format!(
+                "safearray_record,{label},VT_RECORD,{}",
+                self.record_safearray_count
+            ));
+        }
+        if self.unresolved_userdefined_safearray_count > 0 {
+            rows.push(format!(
+                "safearray_unresolved_userdefined,{label},VT_USERDEFINED,{}",
+                self.unresolved_userdefined_safearray_count
+            ));
         }
         rows
     }
@@ -1528,6 +1546,16 @@ unsafe fn audit_typedesc(
     };
     if !supported {
         increment_count(&mut audit.unsupported_vt_counts, vt_label(tdesc.vt));
+    }
+    if (tdesc.vt == VT_SAFEARRAY || tdesc.vt == VT_CARRAY)
+        && let Some(element_vt) = safearray_element_vartype(owner_ptinfo, tdesc)
+    {
+        increment_count(&mut audit.safearray_element_counts, vt_label(element_vt));
+        if element_vt == VT_RECORD {
+            audit.record_safearray_count += 1;
+        } else if element_vt == VT_USERDEFINED {
+            audit.unresolved_userdefined_safearray_count += 1;
+        }
     }
     if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
         let inner = &*(tdesc.union_field as *const TYPEDESC);

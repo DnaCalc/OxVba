@@ -241,6 +241,9 @@ unowned ABI, layout, registration, or ownership rule. SAFEARRAY(VT_RECORD) suppo
 currently proven for controlled descriptor-backed records, inbound params, ByRef
 writebacks, and the shared decode path; the loader now has the ABI path needed to
 resolve record-element SAFEARRAY descriptors when a real typelib exposes a resolvable
-record href, but broader foreign record-array evidence still requires an external
-IDL/MIDL or captured real typelib source. Malformed SAFEARRAY descriptors now decline
-rather than guessing `VT_VARIANT`.
+record href. `docs/evidence/typelib_audit/com_vtable_safearray_elements_20260620T152250/`
+records a bounded scan of the installed Excel, Office, VBA, and VBIDE typelibs: the
+scanner found SAFEARRAY element metadata but no `safearray_record` or unresolved
+user-defined SAFEARRAY rows. Broader foreign record-array evidence still requires an
+external IDL/MIDL or captured real typelib source. Malformed SAFEARRAY descriptors
+now decline rather than guessing `VT_VARIANT`.

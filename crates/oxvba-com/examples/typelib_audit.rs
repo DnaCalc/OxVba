@@ -29,7 +29,7 @@ fn main() -> Result<(), String> {
         request("VBIDE", "{0002E157-0000-0000-C000-000000000046}", 5, 3, 0),
     ];
 
-    println!("kind,library,field1,field2,field3,field4,field5,field6");
+    println!("kind,library,field1,field2,field3,field4,field5,field6,field7,field8");
     for req in requests {
         let Some(identity) =
             resolve_known_typelib_identity(&req).or_else(|| fallback_identity(&req))
