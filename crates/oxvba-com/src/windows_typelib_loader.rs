@@ -1457,6 +1457,7 @@ fn vt_label(vt: u16) -> String {
         VT_USERDEFINED => "VT_USERDEFINED".to_string(),
         VT_LPSTR => "VT_LPSTR".to_string(),
         VT_LPWSTR => "VT_LPWSTR".to_string(),
+        VT_RECORD => "VT_RECORD".to_string(),
         other => format!("VT_{other}"),
     }
 }

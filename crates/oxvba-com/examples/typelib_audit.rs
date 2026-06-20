@@ -22,12 +22,36 @@ fn main() -> Result<(), String> {
         }
     }
 
-    let requests = vec![
-        request("Excel", "{00020813-0000-0000-C000-000000000046}", 1, 9, 0),
-        request("Office", "{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}", 2, 8, 0),
-        request("VBA", "{000204EF-0000-0000-C000-000000000046}", 6, 0, 9),
-        request("VBIDE", "{0002E157-0000-0000-C000-000000000046}", 5, 3, 0),
-    ];
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let requests = if args.is_empty() {
+        vec![
+            request("Excel", "{00020813-0000-0000-C000-000000000046}", 1, 9, 0),
+            request("Office", "{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}", 2, 8, 0),
+            request("VBA", "{000204EF-0000-0000-C000-000000000046}", 6, 0, 9),
+            request("VBIDE", "{0002E157-0000-0000-C000-000000000046}", 5, 3, 0),
+        ]
+    } else {
+        if !args.len().is_multiple_of(5) {
+            return Err(
+                "usage: typelib_audit [label libid major minor lcid]... (or no args for defaults)"
+                    .to_string(),
+            );
+        }
+        args.chunks_exact(5)
+            .map(|chunk| {
+                let major = chunk[2]
+                    .parse::<u16>()
+                    .map_err(|err| format!("invalid major `{}`: {err}", chunk[2]))?;
+                let minor = chunk[3]
+                    .parse::<u16>()
+                    .map_err(|err| format!("invalid minor `{}`: {err}", chunk[3]))?;
+                let lcid = chunk[4]
+                    .parse::<u32>()
+                    .map_err(|err| format!("invalid lcid `{}`: {err}", chunk[4]))?;
+                Ok(request(&chunk[0], &chunk[1], major, minor, lcid))
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    };
 
     println!("kind,library,field1,field2,field3,field4,field5,field6,field7,field8");
     for req in requests {

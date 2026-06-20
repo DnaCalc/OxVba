@@ -244,6 +244,11 @@ resolve record-element SAFEARRAY descriptors when a real typelib exposes a resol
 record href. `docs/evidence/typelib_audit/com_vtable_safearray_elements_20260620T152250/`
 records a bounded scan of the installed Excel, Office, VBA, and VBIDE typelibs: the
 scanner found SAFEARRAY element metadata but no `safearray_record` or unresolved
-user-defined SAFEARRAY rows. Broader foreign record-array evidence still requires an
-external IDL/MIDL or captured real typelib source. Malformed SAFEARRAY descriptors
-now decline rather than guessing `VT_VARIANT`.
+user-defined SAFEARRAY rows. A broader registry sample is recorded in
+`docs/evidence/typelib_audit/registered_typelib_safearray_elements_20260620T152846/`;
+that scan found one foreign `safearray_record` occurrence in `AcroBrokerLib` and
+three unresolved user-defined SAFEARRAY elements in the installed Visio typelib.
+The next foreign-record step is targeted descriptor/value-oracle proof for the
+`AcroBrokerLib` record-array member or another captured typelib specimen, not a
+generic fallback. Malformed SAFEARRAY descriptors now decline rather than guessing
+`VT_VARIANT`.
