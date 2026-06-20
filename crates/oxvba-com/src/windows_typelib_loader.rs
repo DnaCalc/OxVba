@@ -946,6 +946,10 @@ unsafe fn typedesc_to_safearray_element_vartype(
                     Some(VT_RECORD)
                 } else if typekind == TKIND_ENUM {
                     Some(VT_I4)
+                } else if typekind == TKIND_DISPATCH {
+                    Some(VT_DISPATCH)
+                } else if typekind == TKIND_INTERFACE {
+                    Some(VT_UNKNOWN)
                 } else if typekind == TKIND_ALIAS {
                     typedesc_to_safearray_element_vartype(ref_ptinfo, &(*ref_attr).tdesc_alias)
                 } else {
@@ -4076,6 +4080,59 @@ mod tests {
             }),
             "the projected record-array wire shape should be admitted by the vtable support matrix"
         );
+    }
+
+    #[test]
+    fn visio_userdefined_safearray_dispatch_descriptors_are_not_left_opaque() {
+        // Visio exposes SAFEARRAY user-defined return elements for object collections
+        // such as IVCell.Dependents/Precedents. When Visio is absent, skip cleanly.
+        let guid = windows_sys::core::GUID {
+            data1: 0x0002_1A98,
+            data2: 0,
+            data3: 0,
+            data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+        };
+        let Ok(ptlib) = load_typelib_from_registry(&guid, 4, 16, 0) else {
+            return;
+        };
+        let identity = TypeLibResolvedIdentity {
+            reference_name: "Microsoft Visio 16.0 Type Library".to_string(),
+            requested_coclass: None,
+            importlib: "Visio".to_string(),
+            libid: Some("{00021A98-0000-0000-C000-000000000046}".to_string()),
+            major_version: 4,
+            minor_version: 16,
+            lcid: Some(0),
+            cache_key: "test:visio".to_string(),
+        };
+        let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        unsafe { release_typelib(ptlib) };
+        let blob = blob_result.expect("Visio typelib should build metadata when load succeeds");
+
+        for member_name in ["Dependents", "Precedents"] {
+            assert!(
+                blob.members.iter().any(|member| member.name == member_name
+                    && member.return_wire_type
+                        == Some(TypeLibWireType::SafeArray {
+                            element_vt: VT_DISPATCH,
+                        })),
+                "Visio should expose a {member_name} entry that normalizes user-defined SAFEARRAY object elements to VT_DISPATCH"
+            );
+            assert!(
+                blob.members
+                    .iter()
+                    .filter(|member| member.name == member_name)
+                    .all(|member| {
+                        !matches!(
+                            member.return_wire_type,
+                            Some(TypeLibWireType::SafeArray {
+                                element_vt: VT_USERDEFINED,
+                            })
+                        )
+                    }),
+                "Visio {member_name} should not leave SAFEARRAY object return elements opaque"
+            );
+        }
     }
 
     #[test]

@@ -255,6 +255,10 @@ metadata projection now has a regression proving that this foreign descriptor
 survives into runtime `TypeLibWireType::SafeArray { element_vt: VT_RECORD }`
 metadata; the dual-dispinterface enrichment path now carries partner wire types,
 parameter IIDs, and return wire metadata together with semantic parameter shape.
-The next foreign-record step is targeted value-oracle proof for that member or
-another captured typelib specimen, not a generic fallback. Malformed SAFEARRAY
-descriptors now decline rather than guessing `VT_VARIANT`.
+The former Visio unresolved user-defined SAFEARRAY rows now resolve as object
+SAFEARRAY descriptors (`VT_DISPATCH`) instead of opaque user-defined elements;
+see
+`docs/evidence/typelib_audit/visio_userdefined_safearray_dispatch_20260620T154509/`.
+The next foreign-record step is targeted value-oracle proof for the AcroBroker
+member or another captured typelib specimen, not a generic fallback. Malformed
+SAFEARRAY descriptors now decline rather than guessing `VT_VARIANT`.
