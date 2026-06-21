@@ -169,6 +169,31 @@ impl PortableDispatch for RecordingApplication {
     }
 }
 
+fn application_host_manifest() -> SymbolProjectManifest {
+    SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: "Public verdict As Long\n\
+                     Sub Main()\n\
+                     Dim r As Variant\n\
+                     r = Application.Run(\"MacroName\", 1)\n\
+                     Application.OnTime 0, \"MacroName\"\n\
+                     If r = 42 Then verdict = 1\n\
+                     End Sub\n"
+                .into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: Default::default(),
+    }
+}
+
 #[test]
 fn vba_web_dictionary_createobject_is_policy_gated() {
     let mut policy = HostPolicy::deterministic_runtime();
@@ -203,28 +228,7 @@ fn host_injected_application_run_and_ontime_execute_through_portable_host_root()
         .policy(HostPolicy::interactive_dev())
         .portable_objects(projection)
         .build();
-    let manifest = SymbolProjectManifest {
-        project_name: "Proj".into(),
-        project_kind: ProjectKind::Source,
-        modules: vec![ModuleUnit {
-            module_name: "Main".into(),
-            module_kind: ModuleKind::Procedural,
-            attributes: ModuleAttributes::named("Main"),
-            source: "Public verdict As Long\n\
-                     Sub Main()\n\
-                     Dim r As Variant\n\
-                     r = Application.Run(\"MacroName\", 1)\n\
-                     Application.OnTime 0, \"MacroName\"\n\
-                     If r = 42 Then verdict = 1\n\
-                     End Sub\n"
-                .into(),
-        }],
-        references: vec![ProjectReference::HostInjected {
-            referenced_project_name: "Excel".into(),
-        }],
-        reference_projects: Vec::new(),
-        conditional_constants: Default::default(),
-    };
+    let manifest = application_host_manifest();
 
     let program = oxvba_bind::bind_program(&manifest, &ApplicationTypeLibs).expect("bind");
     let bundle = oxvba_bundle::linearize(&program).expect("linearize");
@@ -281,32 +285,37 @@ fn engine_executes_host_injected_application_through_portable_host_root() {
     let engine = Engine::new(HostConfig { enable_jit: false })
         .with_typelib_resolver(Arc::new(ApplicationTypeLibs))
         .with_portable_com_projection(projection);
-    let manifest = SymbolProjectManifest {
-        project_name: "Proj".into(),
-        project_kind: ProjectKind::Source,
-        modules: vec![ModuleUnit {
-            module_name: "Main".into(),
-            module_kind: ModuleKind::Procedural,
-            attributes: ModuleAttributes::named("Main"),
-            source: "Public verdict As Long\n\
-                     Sub Main()\n\
-                     Dim r As Variant\n\
-                     r = Application.Run(\"MacroName\", 1)\n\
-                     Application.OnTime 0, \"MacroName\"\n\
-                     If r = 42 Then verdict = 1\n\
-                     End Sub\n"
-                .into(),
-        }],
-        references: vec![ProjectReference::HostInjected {
-            referenced_project_name: "Excel".into(),
-        }],
-        reference_projects: Vec::new(),
-        conditional_constants: Default::default(),
-    };
+    let manifest = application_host_manifest();
 
     let values = engine
         .execute_manifest_with_variant_snapshot(&manifest)
         .expect("host-injected Application should execute through Engine");
+
+    assert_eq!(first_i32(&values), Some(1));
+    assert_eq!(
+        calls.lock().expect("call log").as_slice(),
+        ["Run:2".to_string(), "OnTime:2".to_string()]
+    );
+}
+
+#[test]
+fn engine_project_closure_executes_host_injected_application_through_portable_host_root() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let projection = Arc::new(PortableComProjection::new());
+    projection.register_object(
+        "Excel.Application",
+        Arc::new(RecordingApplicationFactory {
+            calls: calls.clone(),
+        }),
+    );
+
+    let engine = Engine::new(HostConfig { enable_jit: false })
+        .with_typelib_resolver(Arc::new(ApplicationTypeLibs))
+        .with_portable_com_projection(projection);
+    let manifest = application_host_manifest();
+    let values = engine
+        .execute_project_closure_with_variant_snapshot(&[manifest])
+        .expect("host-injected Application should execute through Engine project closure");
 
     assert_eq!(first_i32(&values), Some(1));
     assert_eq!(
