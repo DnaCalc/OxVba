@@ -28,7 +28,9 @@ use oxvba_com::{TypeLibMemberInvokeKind, TypeLibParamType};
 use crate::manifest::{Instancing, ModuleKind, ModuleUnit};
 use crate::model::{SymbolId, SymbolImpl, SymbolKind, SymbolTable, Visibility};
 use crate::scanner::{ModuleScan, ScannedMember};
-use crate::signature::{BuiltinType, PassingMode, Signature, SignatureTable, VarTypeRef};
+use crate::signature::{
+    BuiltinType, DefaultValue, PassingMode, Signature, SignatureTable, VarTypeRef,
+};
 
 /// A project's complete public export surface.
 #[derive(Debug, Clone)]
@@ -99,6 +101,7 @@ pub struct SurfaceMember {
     pub parameter_names: Vec<String>,
     pub parameter_types: Vec<TypeLibParamType>,
     pub parameter_optional: Vec<bool>,
+    pub parameter_optional_defaults: Vec<Option<CoreConst>>,
     pub return_type: Option<TypeLibParamType>,
     /// The originating project symbol — the binder maps it to a `ProcId`
     /// (proc/property accessor) or a global place (field) for devirtualisation.
@@ -360,7 +363,7 @@ fn method_member(
     signatures: &SignatureTable,
 ) -> SurfaceMember {
     let sig = member_signature(symbols, signatures, member.symbol);
-    let (names, types, optional) = sig.map(param_lists).unwrap_or_default();
+    let (names, types, optional, defaults) = sig.map(param_lists).unwrap_or_default();
     let return_type = sig
         .and_then(|s| s.return_type.as_ref())
         .map(|t| param_type(t, false));
@@ -374,6 +377,7 @@ fn method_member(
         parameter_names: names,
         parameter_types: types,
         parameter_optional: optional,
+        parameter_optional_defaults: defaults,
         return_type,
         symbol: member.symbol,
         origin: MemberOrigin::Proc,
@@ -414,7 +418,7 @@ fn property_members(
     for (sig_id, invoke_kind, member_kind) in accessors {
         let Some(sig_id) = sig_id else { continue };
         let sig = signatures.get(sig_id);
-        let (names, types, optional) = sig.map(param_lists).unwrap_or_default();
+        let (names, types, optional, defaults) = sig.map(param_lists).unwrap_or_default();
         let return_type = sig
             .and_then(|s| s.return_type.as_ref())
             .map(|t| param_type(t, false));
@@ -428,6 +432,7 @@ fn property_members(
             parameter_names: names,
             parameter_types: types,
             parameter_optional: optional,
+            parameter_optional_defaults: defaults,
             return_type,
             symbol: member.symbol,
             origin: MemberOrigin::PropertyAccessor,
@@ -461,6 +466,7 @@ fn field_members(
         parameter_names: Vec::new(),
         parameter_types: Vec::new(),
         parameter_optional: Vec::new(),
+        parameter_optional_defaults: Vec::new(),
         return_type: Some(param_type(&ty, false)),
         symbol: member.symbol,
         origin: MemberOrigin::Field,
@@ -487,6 +493,7 @@ fn field_members(
         parameter_names: vec!["Value".to_string()],
         parameter_types: vec![param_type(&ty, false)],
         parameter_optional: vec![false],
+        parameter_optional_defaults: vec![None],
         return_type: None,
         symbol: member.symbol,
         origin: MemberOrigin::Field,
@@ -511,16 +518,39 @@ fn event_arity(symbols: &SymbolTable, signatures: &SignatureTable, sym: SymbolId
 }
 
 #[allow(clippy::type_complexity)]
-fn param_lists(sig: &Signature) -> (Vec<String>, Vec<TypeLibParamType>, Vec<bool>) {
+fn param_lists(
+    sig: &Signature,
+) -> (
+    Vec<String>,
+    Vec<TypeLibParamType>,
+    Vec<bool>,
+    Vec<Option<CoreConst>>,
+) {
     let mut names = Vec::with_capacity(sig.params.len());
     let mut types = Vec::with_capacity(sig.params.len());
     let mut optional = Vec::with_capacity(sig.params.len());
+    let mut defaults = Vec::with_capacity(sig.params.len());
     for p in &sig.params {
         names.push(p.name.clone());
         types.push(param_type(&p.ty, p.mode == PassingMode::ByRef));
         optional.push(p.optional);
+        defaults.push(p.default.as_ref().and_then(default_value_to_core_const));
     }
-    (names, types, optional)
+    (names, types, optional, defaults)
+}
+
+fn default_value_to_core_const(default: &DefaultValue) -> Option<CoreConst> {
+    Some(match default {
+        DefaultValue::I32(value) => CoreConst::I32(*value),
+        DefaultValue::I64(value) => CoreConst::I64(*value),
+        DefaultValue::F64(bits) => CoreConst::F64(*bits),
+        DefaultValue::F32(bits) => CoreConst::F32(*bits),
+        DefaultValue::Bool(value) => CoreConst::Bool(*value),
+        DefaultValue::Str(value) => CoreConst::Str(value.clone()),
+        DefaultValue::CurrencyScaledI64(value) => CoreConst::Currency(*value),
+        DefaultValue::DateSerialF64(bits) => CoreConst::Date(*bits),
+        DefaultValue::DeclaredTypeDefault | DefaultValue::VariantMissing => return None,
+    })
 }
 
 fn member_name(symbols: &SymbolTable, member: &ScannedMember) -> String {

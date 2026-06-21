@@ -62,6 +62,8 @@ impl<'a> ProcLower<'a> {
                 kind,
                 param_types,
                 param_names,
+                param_optional,
+                param_optional_defaults,
                 has_receiver,
             } => {
                 if *has_receiver {
@@ -77,7 +79,13 @@ impl<'a> ProcLower<'a> {
                         kind: *kind,
                     },
                 });
-                let args = self.bind_extern_proc_args(arglist, param_types, param_names)?;
+                let args = self.bind_extern_proc_args(
+                    arglist,
+                    param_types,
+                    param_names,
+                    param_optional,
+                    param_optional_defaults,
+                )?;
                 Ok(value_bound(
                     CoreValue::Call {
                         callee: CoreCallee::ExternProc { import },
@@ -637,7 +645,9 @@ impl<'a> ProcLower<'a> {
 
     /// Arguments for a cross-bundle **free function** (`ExternProc`): the callee is
     /// positional, so named args are reordered into their declared slots by name
-    /// (unfilled slots left `Omitted`) — exactly as a same-bundle `VbaProc` call.
+    /// and declared optional gaps receive the same default synthesis used for
+    /// same-bundle `VbaProc` calls. Required gaps remain `Omitted` so the callee
+    /// reports the call-shape error instead of receiving a fabricated value.
     /// Without this, an out-of-order named call (`Lib.F(b:=2, a:=1)`) would pass
     /// arguments in source order.
     fn bind_extern_proc_args(
@@ -645,6 +655,8 @@ impl<'a> ProcLower<'a> {
         arglist: Option<SyntaxNode<'_>>,
         param_types: &[TypeLibParamType],
         param_names: &[String],
+        param_optional: &[bool],
+        param_optional_defaults: &[Option<CoreConst>],
     ) -> Result<Vec<CoreArg>, BindError> {
         let items = match arglist {
             Some(a) => a.arg_items(),
@@ -711,10 +723,49 @@ impl<'a> ProcLower<'a> {
         }
         let mut args: Vec<CoreArg> = slots
             .into_iter()
-            .map(|s| s.unwrap_or(CoreArg::Omitted))
+            .enumerate()
+            .map(|(i, s)| match s {
+                Some(CoreArg::Omitted) | None => self.omitted_extern_optional_arg(
+                    i,
+                    param_types,
+                    param_names,
+                    param_optional,
+                    param_optional_defaults,
+                ),
+                Some(arg) => arg,
+            })
             .collect();
         args.extend(extra);
         Ok(args)
+    }
+
+    fn omitted_extern_optional_arg(
+        &self,
+        index: usize,
+        param_types: &[TypeLibParamType],
+        param_names: &[String],
+        param_optional: &[bool],
+        param_optional_defaults: &[Option<CoreConst>],
+    ) -> CoreArg {
+        if index >= param_names.len() || !param_optional.get(index).copied().unwrap_or(false) {
+            return CoreArg::Omitted;
+        }
+        if let Some(Some(default)) = param_optional_defaults.get(index) {
+            let ty = param_types
+                .get(index)
+                .map(tlb_param_to_vartype)
+                .unwrap_or(VarTypeRef::Variant);
+            return CoreArg::ByVal(types::coerce_store(CoreValue::Const(default.clone()), &ty));
+        }
+        let ty = param_types
+            .get(index)
+            .map(tlb_param_to_vartype)
+            .unwrap_or(VarTypeRef::Variant);
+        match &ty {
+            VarTypeRef::Variant => CoreArg::Omitted,
+            VarTypeRef::Object(_) => CoreArg::ByVal(CoreValue::Const(CoreConst::Nothing)),
+            ty => CoreArg::ByVal(types::coerce_store(zero_const(ty), ty)),
+        }
     }
 
     /// Arguments for native / late-bound / `Declare` callees: positional in order,
@@ -1503,11 +1554,31 @@ impl<'a> ProcLower<'a> {
         let recv = node.member_receiver()?;
         let mut parts = Vec::new();
         collect_qualified_member_parts(recv, &mut parts)?;
-        if parts.is_empty() || !self.is_namespace_qualifier(&parts[0]) {
+        if parts.is_empty() || self.resolves_to_local_value(&parts[0]) {
+            return None;
+        }
+        let mut candidate = parts.clone();
+        candidate.push(member.to_string());
+        let candidate_refs = candidate.iter().map(String::as_str).collect::<Vec<_>>();
+        if !self.is_namespace_qualifier(&parts[0])
+            && !self
+                .g
+                .env
+                .resolve_qualified(&candidate_refs)
+                .is_some_and(|binding| self.is_cross_surface_namespace_binding(&binding))
+        {
             return None;
         }
         parts.push(member.to_string());
         Some(parts)
+    }
+
+    fn is_cross_surface_namespace_binding(&self, binding: &Binding) -> bool {
+        match &binding.route {
+            DispatchRoute::ConstValue(_) => true,
+            DispatchRoute::ExternMember { has_receiver, .. } => !*has_receiver,
+            _ => false,
+        }
     }
 
     /// Lower an already-resolved name `binding` to a value or call, mirroring the
@@ -2051,17 +2122,18 @@ fn pointer_kind(intrinsic: StructuralIntrinsic, ty: &VarTypeRef) -> PtrKind {
 fn tlb_param_to_vartype(p: &TypeLibParamType) -> VarTypeRef {
     use TypeLibParamType as T;
     match p {
-        T::Boolean => VarTypeRef::Builtin(BuiltinType::Boolean),
-        T::Byte => VarTypeRef::Builtin(BuiltinType::Byte),
-        T::Integer => VarTypeRef::Builtin(BuiltinType::Integer),
-        T::Long => VarTypeRef::Builtin(BuiltinType::Long),
-        T::LongLong => VarTypeRef::Builtin(BuiltinType::LongLong),
-        T::LongPtr => VarTypeRef::Builtin(BuiltinType::LongPtr),
-        T::Single => VarTypeRef::Builtin(BuiltinType::Single),
-        T::Double => VarTypeRef::Builtin(BuiltinType::Double),
-        T::Currency => VarTypeRef::Builtin(BuiltinType::Currency),
-        T::Date => VarTypeRef::Builtin(BuiltinType::Date),
-        T::String => VarTypeRef::Builtin(BuiltinType::String),
+        T::Boolean | T::ByRefBoolean => VarTypeRef::Builtin(BuiltinType::Boolean),
+        T::Byte | T::ByRefByte => VarTypeRef::Builtin(BuiltinType::Byte),
+        T::Integer | T::ByRefInteger => VarTypeRef::Builtin(BuiltinType::Integer),
+        T::Long | T::ByRefLong => VarTypeRef::Builtin(BuiltinType::Long),
+        T::LongLong | T::ByRefLongLong => VarTypeRef::Builtin(BuiltinType::LongLong),
+        T::LongPtr | T::ByRefLongPtr => VarTypeRef::Builtin(BuiltinType::LongPtr),
+        T::Single | T::ByRefSingle => VarTypeRef::Builtin(BuiltinType::Single),
+        T::Double | T::ByRefDouble => VarTypeRef::Builtin(BuiltinType::Double),
+        T::Currency | T::ByRefCurrency => VarTypeRef::Builtin(BuiltinType::Currency),
+        T::Date | T::ByRefDate => VarTypeRef::Builtin(BuiltinType::Date),
+        T::String | T::ByRefString => VarTypeRef::Builtin(BuiltinType::String),
+        T::Object | T::ByRefObject => VarTypeRef::Object("Object".to_string()),
         _ => VarTypeRef::Variant,
     }
 }

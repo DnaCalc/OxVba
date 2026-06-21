@@ -102,6 +102,18 @@ fn link_run_global0_i32(closure_leaf_first: &[SymbolProjectManifest]) -> Option<
     vm.slot(0).and_then(|v| v.as_i32())
 }
 
+fn link_run_fails(closure_leaf_first: &[SymbolProjectManifest]) {
+    let programs = bind_projects(closure_leaf_first, &NullTypeLibs).expect("bind_projects");
+    let bundles: Vec<_> = programs
+        .iter()
+        .map(|p| oxvba_bundle::linearize(p).expect("linearize"))
+        .collect();
+    let refs: Vec<&_> = bundles.iter().collect();
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = oxvba_vm2::Vm::link(&refs, &host).expect("link");
+    assert!(vm.run().is_err());
+}
+
 fn bind_projects_error(closure_leaf_first: &[SymbolProjectManifest]) -> String {
     format!(
         "{:?}",
@@ -315,6 +327,149 @@ fn cross_bundle_free_function_rejects_positional_after_named_arg() {
         err.contains("positional argument cannot follow named argument"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn cross_bundle_free_function_applies_optional_defaults() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function Pack(ByVal text As String, Optional SpaceAsPlus As Boolean = False, Optional EncodeUnsafe As Boolean = True, Optional mode As Long = 7) As Long\n\
+             If text = \"\" Then text = \"x\"\n\
+             Pack = Len(text)\n\
+             If SpaceAsPlus Then Pack = Pack + 10\n\
+             If EncodeUnsafe Then Pack = Pack + 20\n\
+             Pack = Pack + mode * 100\n\
+             End Function\n\
+             Public Function TypedDefaults(Optional label As String, Optional enabled As Boolean, Optional count As Long) As Long\n\
+             TypedDefaults = Len(label)\n\
+             If enabled Then TypedDefaults = TypedDefaults + 10\n\
+             TypedDefaults = TypedDefaults + count * 100\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             r = Pack(\"abc\") + TypedDefaults()\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    // Pack: Len=3, SpaceAsPlus=False, EncodeUnsafe=True, mode=7 -> 723.
+    // TypedDefaults: string/boolean/long declared defaults -> "", False, 0 -> 0.
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(723));
+}
+
+#[test]
+fn cross_bundle_free_function_applies_named_optional_defaults_between_supplied_args() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function Pack(ByVal text As String, Optional SpaceAsPlus As Boolean = False, Optional EncodeUnsafe As Boolean = True, Optional mode As Long = 7) As Long\n\
+             Pack = Len(text)\n\
+             If SpaceAsPlus Then Pack = Pack + 10\n\
+             If EncodeUnsafe Then Pack = Pack + 20\n\
+             Pack = Pack + mode * 100\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             r = Pack(text:=\"abc\", mode:=2)\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    // The named `mode` argument must not leave the middle optionals as Missing:
+    // SpaceAsPlus=False and EncodeUnsafe=True still apply.
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(223));
+}
+
+#[test]
+fn cross_bundle_free_function_keeps_missing_required_arg_omitted() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function Needs(ByVal required As Long, Optional bonus As Long = 5) As Long\n\
+             Needs = required + bonus\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             r = Needs()\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    link_run_fails(&[lib, app]);
+}
+
+#[test]
+fn cross_project_enum_type_qualifier_resolves_from_referenced_surface() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Enum WebMethod\nHttpGet = 0\nHttpPost = 1\nEnd Enum\n\
+             Public Function MethodToName(ByVal method As WebMethod) As String\n\
+             If method = WebMethod.HttpPost Then\nMethodToName = \"POST\"\nElse\nMethodToName = \"GET\"\nEnd If\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             If MethodToName(WebMethod.HttpPost) = \"POST\" Then r = 42\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
+}
+
+#[test]
+fn cross_project_enum_type_qualifier_can_be_project_qualified() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Enum WebMethod\nHttpGet = 0\nHttpPost = 1\nEnd Enum\n\
+             Public Function IsPost(ByVal method As WebMethod) As Boolean\n\
+             IsPost = (method = WebMethod.HttpPost)\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             If IsPost(Lib.WebMethod.HttpPost) Then r = 42\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
 }
 
 #[test]

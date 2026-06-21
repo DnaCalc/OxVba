@@ -100,6 +100,8 @@ impl SurfaceProvider {
                 kind: m.member_kind,
                 param_types: m.parameter_types.clone(),
                 param_names: m.parameter_names.clone(),
+                param_optional: m.parameter_optional.clone(),
+                param_optional_defaults: m.parameter_optional_defaults.clone(),
                 has_receiver: Self::is_coclass(ty),
             },
         }

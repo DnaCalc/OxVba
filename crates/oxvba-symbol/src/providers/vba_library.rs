@@ -69,6 +69,8 @@ impl Provider for VbaLibraryProvider {
                             .iter()
                             .map(|name| (*name).to_string())
                             .collect(),
+                        param_optional: Vec::new(),
+                        param_optional_defaults: Vec::new(),
                         has_receiver: false,
                     },
                 ));
@@ -157,6 +159,8 @@ fn collection_member(name: &str) -> Option<Binding> {
             kind,
             param_types: Vec::new(),
             param_names: Vec::new(),
+            param_optional: Vec::new(),
+            param_optional_defaults: Vec::new(),
             has_receiver: true,
         },
     ))

@@ -70,6 +70,14 @@ pub enum DispatchRoute {
         /// (the cross-bundle callee is positional); the coclass `LateDispatch` path
         /// keeps names for runtime name-dispatch.
         param_names: Vec<String>,
+        /// Per-parameter optional flags. Missing required arguments remain omitted
+        /// so the callee/runtime reports the normal arity error; only declared
+        /// optional slots receive synthesized defaults.
+        param_optional: Vec<bool>,
+        /// Per-parameter explicit optional defaults. `None` means there is no
+        /// folded/default literal in the surface; callers still synthesize VBA's
+        /// declared-type default for omitted typed optional parameters.
+        param_optional_defaults: Vec<Option<CoreConst>>,
         /// `true` for a coclass member (dispatched on a receiver); `false` for a
         /// global-namespace / hidden-module function (no receiver).
         has_receiver: bool,
