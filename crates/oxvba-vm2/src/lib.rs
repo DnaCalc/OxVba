@@ -1973,6 +1973,56 @@ impl<'h> Vm<'h> {
                     pointer_helpers::read_back_byte_array_payload_variant(pointer)
                         .map_err(Fault::from_string)?
                 }
+                PtrWritebackKind::Boolean => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Boolean,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Byte => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Byte,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Integer => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Integer,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Long => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Long,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::LongLong => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::LongLong,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::LongPtr => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::LongPtr,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Single => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Single,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Double => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Double,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Currency => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Currency,
+                )
+                .map_err(Fault::from_string)?,
+                PtrWritebackKind::Date => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Date,
+                )
+                .map_err(Fault::from_string)?,
             };
             self.set(wb.target_slot, value)?;
         }

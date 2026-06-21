@@ -460,8 +460,15 @@ enum PointerEntry {
     #[cfg(not(target_os = "windows"))]
     Utf16(Box<[u16]>),
     Bytes(Box<[u8]>),
+    I8(Box<i8>),
+    U8(Box<u8>),
+    I16(Box<i16>),
+    U16(Box<u16>),
     I32(Box<i32>),
+    U32(Box<u32>),
     I64(Box<i64>),
+    U64(Box<u64>),
+    F32(Box<f32>),
     F64(Box<f64>),
     Bool(Box<i16>),
     ObjectIdentity(Box<i64>),
@@ -479,8 +486,15 @@ impl PointerEntry {
             #[cfg(not(target_os = "windows"))]
             Self::Utf16(value) => value.as_mut_ptr().cast(),
             Self::Bytes(value) => value.as_mut_ptr().cast(),
+            Self::I8(value) => (&mut **value as *mut i8).cast(),
+            Self::U8(value) => (&mut **value as *mut u8).cast(),
+            Self::I16(value) => (&mut **value as *mut i16).cast(),
+            Self::U16(value) => (&mut **value as *mut u16).cast(),
             Self::I32(value) => (&mut **value as *mut i32).cast(),
+            Self::U32(value) => (&mut **value as *mut u32).cast(),
             Self::I64(value) => (&mut **value as *mut i64).cast(),
+            Self::U64(value) => (&mut **value as *mut u64).cast(),
+            Self::F32(value) => (&mut **value as *mut f32).cast(),
             Self::F64(value) => (&mut **value as *mut f64).cast(),
             Self::Bool(value) => (&mut **value as *mut i16).cast(),
             Self::ObjectIdentity(value) => (&mut **value as *mut i64).cast(),
@@ -594,6 +608,59 @@ impl PointerRegistry {
             )),
         }
     }
+
+    fn read_back_scalar_payload_variant(
+        &self,
+        pointer: i64,
+        kind: ScalarPointerKind,
+    ) -> Result<Variant, String> {
+        let Some(entry) = self.entries.get(&(pointer as usize)) else {
+            return Err(format!(
+                "pointer helper registry does not contain scalar payload pointer {pointer}"
+            ));
+        };
+        match (kind, entry) {
+            (ScalarPointerKind::Boolean, PointerEntry::Bool(value)) => {
+                Ok(Variant::from_bool(**value != 0))
+            }
+            (ScalarPointerKind::Byte, PointerEntry::U8(value)) => Ok(Variant::from_u8(**value)),
+            (ScalarPointerKind::Integer, PointerEntry::I16(value)) => {
+                Ok(Variant::from_i16(**value))
+            }
+            (ScalarPointerKind::Long, PointerEntry::I32(value)) => Ok(Variant::from_i32(**value)),
+            (ScalarPointerKind::LongLong, PointerEntry::I64(value)) => {
+                Ok(Variant::from_i64(**value))
+            }
+            (ScalarPointerKind::LongPtr, PointerEntry::I64(value)) => {
+                Ok(Variant::from_i64(**value))
+            }
+            (ScalarPointerKind::Single, PointerEntry::F32(value)) => Ok(Variant::from_f32(**value)),
+            (ScalarPointerKind::Double, PointerEntry::F64(value)) => Ok(Variant::from_f64(**value)),
+            (ScalarPointerKind::Currency, PointerEntry::I64(value)) => {
+                Ok(Variant::from_currency_scaled_i64(**value))
+            }
+            (ScalarPointerKind::Date, PointerEntry::F64(value)) => {
+                Ok(Variant::from_date_f64(**value))
+            }
+            (_, other) => Err(format!(
+                "pointer helper entry {other:?} cannot be read back as {kind:?}"
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarPointerKind {
+    Boolean,
+    Byte,
+    Integer,
+    Long,
+    LongLong,
+    LongPtr,
+    Single,
+    Double,
+    Currency,
+    Date,
 }
 
 fn registry() -> &'static Mutex<PointerRegistry> {
@@ -620,35 +687,33 @@ pub fn register_utf16_string(text: &str) -> Result<i64, String> {
 pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
     let entry = match value.vtype() {
         crate::VarType::Empty | crate::VarType::Null => return Ok(0),
-        crate::VarType::Integer => PointerEntry::I32(Box::new(i32::from(
-            value.as_i16().expect("Integer Variant payload"),
-        ))),
+        crate::VarType::Integer => {
+            PointerEntry::I16(Box::new(value.as_i16().expect("Integer Variant payload")))
+        }
         crate::VarType::Long => {
             PointerEntry::I32(Box::new(value.as_i32().expect("Long Variant payload")))
         }
         crate::VarType::LongLong => {
             PointerEntry::I64(Box::new(value.as_i64().expect("LongLong Variant payload")))
         }
-        crate::VarType::SignedByte => PointerEntry::I32(Box::new(i32::from(
-            value.as_i8().expect("SignedByte Variant payload"),
-        ))),
-        crate::VarType::Byte => PointerEntry::I32(Box::new(i32::from(
-            value.as_u8().expect("Byte Variant payload"),
-        ))),
-        crate::VarType::UnsignedInteger => PointerEntry::I32(Box::new(i32::from(
+        crate::VarType::SignedByte => {
+            PointerEntry::I8(Box::new(value.as_i8().expect("SignedByte Variant payload")))
+        }
+        crate::VarType::Byte => {
+            PointerEntry::U8(Box::new(value.as_u8().expect("Byte Variant payload")))
+        }
+        crate::VarType::UnsignedInteger => PointerEntry::U16(Box::new(
             value.as_u16().expect("UnsignedInteger Variant payload"),
-        ))),
-        crate::VarType::UnsignedLong | crate::VarType::UnsignedInt => PointerEntry::I64(Box::new(
-            i64::from(value.as_u32().expect("unsigned 32-bit Variant payload")),
         )),
-        crate::VarType::UnsignedLongLong => PointerEntry::I64(Box::new(
-            i64::try_from(value.as_u64().expect("UnsignedLongLong Variant payload")).map_err(
-                |_| "UnsignedLongLong Variant payload exceeds pointer helper i64 carrier",
-            )?,
+        crate::VarType::UnsignedLong | crate::VarType::UnsignedInt => PointerEntry::U32(Box::new(
+            value.as_u32().expect("unsigned 32-bit Variant payload"),
         )),
-        crate::VarType::Single => PointerEntry::F64(Box::new(f64::from(
-            value.as_f32().expect("Single Variant payload"),
-        ))),
+        crate::VarType::UnsignedLongLong => PointerEntry::U64(Box::new(
+            value.as_u64().expect("UnsignedLongLong Variant payload"),
+        )),
+        crate::VarType::Single => {
+            PointerEntry::F32(Box::new(value.as_f32().expect("Single Variant payload")))
+        }
         crate::VarType::Double => {
             PointerEntry::F64(Box::new(value.as_f64().expect("Double Variant payload")))
         }
@@ -847,6 +912,16 @@ pub fn read_back_byte_array_payload_variant(pointer: i64) -> Result<Variant, Str
     guard.read_back_byte_array_payload_variant(pointer)
 }
 
+pub fn read_back_scalar_payload_variant(
+    pointer: i64,
+    kind: ScalarPointerKind,
+) -> Result<Variant, String> {
+    let guard = registry()
+        .lock()
+        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+    guard.read_back_scalar_payload_variant(pointer, kind)
+}
+
 pub fn register_byte_buffer(bytes: Vec<u8>) -> Result<i64, String> {
     let mut guard = registry()
         .lock()
@@ -889,9 +964,9 @@ pub fn live_pin_count() -> usize {
 #[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
-        free_pins, lookup_pointer, register_byte_buffer, register_object_variant_pointer,
-        register_string_variant_pointer, register_utf16_string, register_variant_pointer,
-        register_variant_var_variant_pointer,
+        ScalarPointerKind, free_pins, lookup_pointer, register_byte_buffer,
+        register_object_variant_pointer, register_string_variant_pointer, register_utf16_string,
+        register_variant_pointer, register_variant_var_variant_pointer,
     };
     use crate::{Decimal96, ObjectRef, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
@@ -978,6 +1053,50 @@ mod tests {
         assert!(!array_raw.is_null());
         let bytes = unsafe { std::slice::from_raw_parts(array_raw, 3) };
         assert_eq!(bytes, &[1, 0, 3]);
+    }
+
+    #[test]
+    fn scalar_pointer_readback_uses_declared_storage_widths() {
+        let long_ptr = register_variant_pointer(&Variant::from_i32(10)).expect("register long");
+        let long_raw = lookup_pointer(long_ptr)
+            .expect("lookup long pointer")
+            .cast::<i32>();
+        unsafe {
+            *long_raw = 0x11223344;
+        }
+        assert_eq!(
+            super::read_back_scalar_payload_variant(long_ptr, ScalarPointerKind::Long)
+                .expect("read back long"),
+            Variant::from_i32(0x11223344)
+        );
+
+        let int_ptr = register_variant_pointer(&Variant::from_i16(7)).expect("register integer");
+        let int_raw = lookup_pointer(int_ptr)
+            .expect("lookup integer pointer")
+            .cast::<i16>();
+        unsafe {
+            *int_raw = -1234;
+        }
+        assert_eq!(
+            super::read_back_scalar_payload_variant(int_ptr, ScalarPointerKind::Integer)
+                .expect("read back integer"),
+            Variant::from_i16(-1234)
+        );
+
+        let single_ptr =
+            register_variant_pointer(&Variant::from_f32(1.5)).expect("register single");
+        let single_raw = lookup_pointer(single_ptr)
+            .expect("lookup single pointer")
+            .cast::<f32>();
+        unsafe {
+            *single_raw = 2.25;
+        }
+        assert_eq!(
+            super::read_back_scalar_payload_variant(single_ptr, ScalarPointerKind::Single)
+                .expect("read back single"),
+            Variant::from_f32(2.25)
+        );
+        free_pins(&[long_ptr, int_ptr, single_ptr]);
     }
 
     #[cfg(target_os = "windows")]

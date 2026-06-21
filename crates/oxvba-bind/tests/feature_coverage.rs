@@ -239,6 +239,31 @@ fn pointer_helper_pins_are_freed_per_native_call_not_leaked() {
 }
 
 #[test]
+fn declare_longptr_pointer_params_preserve_64_bit_descriptor_types() {
+    let source = "Private Declare PtrSafe Function MemMove Lib \"msvcrt\" Alias \"memmove\" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr) As LongPtr\n\
+         Sub Main()\nEnd Sub\n";
+    let program = oxvba_bind::bind_program(&manifest(source), &NullTypeLibs)
+        .expect("bind MemMove declaration");
+    let descriptor = program
+        .external_calls
+        .iter()
+        .find(|call| call.declared_name.eq_ignore_ascii_case("MemMove"))
+        .expect("MemMove descriptor");
+    assert_eq!(
+        descriptor.param_types,
+        vec![
+            oxvba_bundle::DeclareParamType::LongPtr,
+            oxvba_bundle::DeclareParamType::LongPtr,
+            oxvba_bundle::DeclareParamType::LongPtr,
+        ]
+    );
+    assert_eq!(
+        descriptor.return_type,
+        Some(oxvba_bundle::DeclareParamType::LongPtr)
+    );
+}
+
+#[test]
 fn longptr_arithmetic_widens_to_64_bit_not_long() {
     // `LongPtr` is 64-bit on the Win64 runtime target, so `p + p` for p just under
     // 2^31 must compute in 64 bits (4_294_967_294). If `LongPtr` ranked with `Long`,

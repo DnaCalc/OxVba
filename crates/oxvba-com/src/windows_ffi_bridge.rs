@@ -884,6 +884,26 @@ mod tests {
     }
 
     #[test]
+    fn invoke_msvcrt_memmove_writes_through_pointer_arguments() {
+        let module = load_library("msvcrt.dll").expect("msvcrt.dll should load");
+        let addr = get_proc_address(module, "memmove").expect("memmove should resolve");
+        let src: i32 = 0x11223344;
+        let mut dst: i32 = 0;
+        let result = invoke_stdcall(
+            addr,
+            &[
+                FfiArg::Pointer((&mut dst as *mut i32).cast::<c_void>()),
+                FfiArg::Pointer((&src as *const i32).cast_mut().cast::<c_void>()),
+                FfiArg::LongLong(4),
+            ],
+            FfiReturnType::LongPtr,
+        )
+        .expect("invoke should succeed");
+        assert_eq!(result as usize, (&mut dst as *mut i32) as usize);
+        assert_eq!(dst, 0x11223344);
+    }
+
+    #[test]
     fn load_library_caches_modules() {
         let h1 = load_library("kernel32.dll").expect("first load");
         let h2 = load_library("kernel32.dll").expect("second load");

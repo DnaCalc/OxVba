@@ -1,6 +1,6 @@
 # Pointer Helpers Status
 
-Date: 2026-04-04
+Date: 2026-04-04; updated 2026-06-22
 Owner: Codex
 Status: in-progress
 
@@ -27,21 +27,28 @@ This note records the exact current support split for the `StrPtr` / `VarPtr` /
   - compiler recognition and typed runtime production are live for scalar
     values and canonical zero-based byte-buffer shapes such as
     `VarPtr(buf(0))`
+  - native writeback is now live for declared-width scalar l-values
+    (`Boolean`, `Byte`, `Integer`, `Long`, `LongLong`/`LongPtr`, `Single`,
+    `Double`, `Currency`, and `Date`) and for the existing string/byte-buffer
+    lanes
   - focused host evidence:
     - `cargo test -p oxvba-host --test pointer_helpers_end_to_end -- --nocapture`
     - `cargo test -p oxvba-host --test pointer_helpers_end_to_end windows_pointer_helper_e2e::varptr_supports_byte_buffer_native_read_in_vm_and_jit -- --exact --nocapture`
+    - `cargo test -p oxvba-host --test native_declare_lane riff_shaped_memmove_round_trips_varptr_scalars -- --nocapture`
   - current result:
     - non-zero scalar pointer-like production in both VM and JIT
     - byte-buffer registry materialization in both VM and JIT
     - real native byte-buffer read through `ucrtbase!strlen` in both VM and JIT
+    - real native scalar memory copy through `msvcrt!memmove` in the VM, with
+      the copied bytes written back into the original `Long` variable
 
 ## Still Open
 
 - runtime-sized dynamic arrays remain a later delivery area
 - the SQLite core fixture now stops at a narrower compile-time boundary around
   expression-bounded `ReDim`, not at the pointer-helper lane
-- native writeback semantics for pointer-backed array destinations are not yet
-  claimed by this note
+- fixed-string, `Variant` cell mutation, and UDT/record-address writeback lanes
+  need separate parity work before this note claims them broadly
 
 ## SQLite Movement
 

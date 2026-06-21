@@ -88,6 +88,27 @@ fn byval_ansi_string_declare_loads_library() {
 }
 
 #[test]
+fn riff_shaped_memmove_round_trips_varptr_scalars() {
+    // Riff uses RtlMoveMemory for this shape. Use the C runtime's `memmove` here:
+    // the pointer-helper and native-FFI requirements are the same, and the export
+    // has a conventional C ABI so this test isolates OxVBA's pointer marshalling.
+    let snapshot = run(
+        "Private Declare PtrSafe Function MemMove Lib \"msvcrt\" Alias \"memmove\" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr) As LongPtr\n\
+         Sub Main()\n\
+         Dim src As Long\n\
+         Dim copied As Long\n\
+         Dim ret As LongPtr\n\
+         src = &H11223344\n\
+         ret = MemMove(VarPtr(copied), VarPtr(src), 4)\n\
+         End Sub",
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x11223344)),
+        "expected RtlMoveMemory to copy scalar bytes through VarPtr pins: {snapshot:?}"
+    );
+}
+
+#[test]
 fn native_declare_rejects_jit_without_falling_back() {
     let mut engine = Engine::new(HostConfig { enable_jit: true });
     engine.set_host_policy(HostPolicy::interactive_dev());

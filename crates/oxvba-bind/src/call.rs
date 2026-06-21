@@ -614,12 +614,21 @@ impl<'a> ProcLower<'a> {
                     PtrKind::Var if matches!(ty, VarTypeRef::Array(_)) => {
                         Some((place.clone(), PtrWritebackKind::ByteArray))
                     }
+                    PtrKind::Var => {
+                        scalar_ptr_writeback_kind(&ty).map(|kind| (place.clone(), kind))
+                    }
                     _ => None,
                 }
             } else {
                 None
             };
-            return Ok((kind, CoreValue::Load(place), writeback));
+            let value = if matches!(kind, PtrKind::Var) && scalar_ptr_writeback_kind(&ty).is_some()
+            {
+                types::coerce_store(CoreValue::Load(place), &ty)
+            } else {
+                CoreValue::Load(place)
+            };
+            return Ok((kind, value, writeback));
         }
         // An r-value operand (literal / expression): pin the value, no write-back.
         let operand = self.bind_expr(operand)?;
@@ -2177,6 +2186,22 @@ fn pointer_kind(intrinsic: StructuralIntrinsic, ty: &VarTypeRef) -> PtrKind {
         // Not a pointer helper — callers restrict to the three above; default to
         // scalar storage defensively.
         _ => PtrKind::Var,
+    }
+}
+
+fn scalar_ptr_writeback_kind(ty: &VarTypeRef) -> Option<PtrWritebackKind> {
+    match ty {
+        VarTypeRef::Builtin(BuiltinType::Boolean) => Some(PtrWritebackKind::Boolean),
+        VarTypeRef::Builtin(BuiltinType::Byte) => Some(PtrWritebackKind::Byte),
+        VarTypeRef::Builtin(BuiltinType::Integer) => Some(PtrWritebackKind::Integer),
+        VarTypeRef::Builtin(BuiltinType::Long) => Some(PtrWritebackKind::Long),
+        VarTypeRef::Builtin(BuiltinType::LongLong) => Some(PtrWritebackKind::LongLong),
+        VarTypeRef::Builtin(BuiltinType::LongPtr) => Some(PtrWritebackKind::LongPtr),
+        VarTypeRef::Builtin(BuiltinType::Single) => Some(PtrWritebackKind::Single),
+        VarTypeRef::Builtin(BuiltinType::Double) => Some(PtrWritebackKind::Double),
+        VarTypeRef::Builtin(BuiltinType::Currency) => Some(PtrWritebackKind::Currency),
+        VarTypeRef::Builtin(BuiltinType::Date) => Some(PtrWritebackKind::Date),
+        _ => None,
     }
 }
 
