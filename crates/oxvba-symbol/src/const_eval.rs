@@ -510,6 +510,13 @@ fn resolve_qualified_const_symbol(
     let parts = qualified_ident_parts(node)?;
     let module_scope = enclosing_module_scope(symbols, scope)?;
     let project_scope = symbols.scope(module_scope).ok()?.parent?;
+    if let [enum_name, member_name] = parts.as_slice()
+        && !module_qualifier_shadowed(symbols, scope, enum_name)
+        && let Some(sym) = enum_member_symbol(symbols, module_scope, enum_name, member_name)
+    {
+        return Some(sym);
+    }
+
     let (module_name, member_name) = match parts.as_slice() {
         [module_name, member_name] if !module_qualifier_shadowed(symbols, scope, module_name) => {
             (*module_name, *member_name)
@@ -526,6 +533,30 @@ fn resolve_qualified_const_symbol(
         .find_in_scope(target_module, SymbolNamespace::Local, member_name)
         .ok()
         .flatten()
+}
+
+fn enum_member_symbol(
+    symbols: &SymbolTable,
+    module_scope: ScopeId,
+    enum_name: &str,
+    member_name: &str,
+) -> Option<SymbolId> {
+    let enum_sym = symbols
+        .find_in_scope(module_scope, SymbolNamespace::Type, enum_name)
+        .ok()
+        .flatten()?;
+    if symbols.symbol(enum_sym)?.kind != crate::model::SymbolKind::Enum {
+        return None;
+    }
+    symbols
+        .find_in_scope(module_scope, SymbolNamespace::Local, member_name)
+        .ok()
+        .flatten()
+        .filter(|sym| {
+            symbols
+                .symbol(*sym)
+                .is_some_and(|s| s.kind == crate::model::SymbolKind::EnumMember)
+        })
 }
 
 fn module_qualifier_shadowed(symbols: &SymbolTable, scope: ScopeId, name: &str) -> bool {

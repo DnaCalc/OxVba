@@ -831,12 +831,12 @@ End Sub
     );
     assert_eq!(
         text(5),
-        "a=A%20%2B%20B&c%20%26%20d=Howdy%21",
-        "omitted enum default still encodes spaces strictly: {snapshot:?}"
+        "a=A+%2B+B&c+%26+d=Howdy%21",
+        "omitted enum default should use form URL encoding: {snapshot:?}"
     );
     assert_eq!(
         text(6),
-        "a=A%20%2B%20B&c%20%26%20d=Howdy%21",
+        "a=A+%2B+B&c+%26+d=Howdy%21",
         "ByRef writeback to Variant-held Dictionary default member should no longer fault: {snapshot:?}"
     );
     assert_eq!(

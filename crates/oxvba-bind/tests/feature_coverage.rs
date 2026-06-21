@@ -1417,6 +1417,14 @@ fn optional_boolean_like_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn optional_enum_member_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Public Enum EncodingMode\nStrictUrlEncoding = 0\nFormUrlEncoding = 1\nEnd Enum\nSub Main()\nDim n As Long\nCall Fill(n)\nEnd Sub\nSub Fill(ByRef target As Long, Optional ByVal mode As EncodingMode = EncodingMode.FormUrlEncoding)\ntarget = mode\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(1)]);
+}
+
+#[test]
 fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nDim n As Long\nCall Fill(s, b, n)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, ByRef numberTarget As Long, Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal value As Long)\ntarget = text\nflagTarget = flag\nnumberTarget = value\nEnd Sub",
