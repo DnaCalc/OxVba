@@ -14,7 +14,7 @@ use oxvba_com::{
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_hal::{adapters::builder::HostBuilder, model::native_host_profile};
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, HostProfileProvider};
 use oxvba_runtime::Variant;
 use oxvba_symbol::TypeLibResolver;
 use oxvba_symbol::manifest::{
@@ -253,9 +253,10 @@ fn engine_preserves_portable_com_projection_across_policy_rebuild() {
         }),
     );
 
-    let mut engine =
-        Engine::new(HostConfig { enable_jit: false }).with_portable_com_projection(projection);
-    engine.set_host_policy(HostPolicy::interactive_dev());
+    let profile = HostProfileProvider::new()
+        .with_portable_com_projection(projection)
+        .with_host_policy(HostPolicy::interactive_dev());
+    let engine = Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile);
     let values = engine
         .execute_source_with_variant_snapshot_clean(
             "Public verdict As Long\n\
@@ -282,9 +283,10 @@ fn engine_executes_host_injected_application_through_portable_host_root() {
         }),
     );
 
-    let engine = Engine::new(HostConfig { enable_jit: false })
+    let profile = HostProfileProvider::new()
         .with_typelib_resolver(Arc::new(ApplicationTypeLibs))
         .with_portable_com_projection(projection);
+    let engine = Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile);
     let manifest = application_host_manifest();
 
     let values = engine
@@ -309,9 +311,10 @@ fn engine_project_closure_executes_host_injected_application_through_portable_ho
         }),
     );
 
-    let engine = Engine::new(HostConfig { enable_jit: false })
+    let profile = HostProfileProvider::new()
         .with_typelib_resolver(Arc::new(ApplicationTypeLibs))
         .with_portable_com_projection(projection);
+    let engine = Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile);
     let manifest = application_host_manifest();
     let values = engine
         .execute_project_closure_with_variant_snapshot(&[manifest])

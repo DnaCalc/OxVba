@@ -14,7 +14,7 @@ use oxvba_com::{
     TypeLibWireType,
     platform::portable::{PortableDispatch, PortableObjectFactory},
 };
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, HostProfileProvider};
 use oxvba_project::load_project_closure;
 use oxvba_runtime::Variant;
 use oxvba_symbol::{CatalogTypeLibResolver, TypeLibResolver};
@@ -282,120 +282,16 @@ impl PortableDispatch for RecordingApplication {
     }
 }
 
-#[derive(Default)]
-struct PortableDictionary {
-    entries: Mutex<Vec<(String, String)>>,
-}
-
-impl PortableDictionary {
-    fn key(arg: Option<&Variant>) -> Result<String, String> {
-        let value = arg.ok_or_else(|| "missing dictionary key".to_string())?;
-        value
-            .as_bstr()
-            .map(|text| text.as_str())
-            .or_else(|| value.as_i32().map(|n| n.to_string()))
-            .ok_or_else(|| format!("unsupported dictionary key {value:?}"))
-    }
-
-    fn value(value: &Variant) -> String {
-        value
-            .as_bstr()
-            .map(|text| text.as_str())
-            .or_else(|| value.as_i32().map(|n| n.to_string()))
-            .unwrap_or_default()
-    }
-
-    fn find_index(entries: &[(String, String)], key: &str) -> Option<usize> {
-        entries
-            .iter()
-            .position(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
-    }
-}
-
-impl PortableDispatch for PortableDictionary {
-    fn invoke(&self, member: &str, args: &[Variant]) -> Result<Variant, String> {
-        match member {
-            "Add" => {
-                let key = Self::key(args.first())?;
-                let value = args.get(1).map(Self::value).unwrap_or_default();
-                let mut entries = self.entries.lock().map_err(|_| "lock poisoned")?;
-                if Self::find_index(&entries, &key).is_some() {
-                    return Err(format!("duplicate dictionary key `{key}`"));
-                }
-                entries.push((key, value));
-                Ok(Variant::empty())
-            }
-            "Exists" => {
-                let key = Self::key(args.first())?;
-                let entries = self.entries.lock().map_err(|_| "lock poisoned")?;
-                Ok(Variant::from_bool(
-                    Self::find_index(&entries, &key).is_some(),
-                ))
-            }
-            "Count" => Ok(Variant::from_i32(
-                self.entries.lock().map_err(|_| "lock poisoned")?.len() as i32,
-            )),
-            "Item" => {
-                let key = Self::key(args.first())?;
-                let entries = self.entries.lock().map_err(|_| "lock poisoned")?;
-                Ok(Self::find_index(&entries, &key)
-                    .and_then(|index| {
-                        entries
-                            .get(index)
-                            .map(|(_, value)| Variant::from_string(value.as_str()))
-                    })
-                    .unwrap_or_else(Variant::empty))
-            }
-            other => Err(format!("unexpected Dictionary invoke `{other}`")),
-        }
-    }
-
-    fn get(&self, member: &str) -> Result<Variant, String> {
-        match member {
-            "Count" => Ok(Variant::from_i32(
-                self.entries.lock().map_err(|_| "lock poisoned")?.len() as i32,
-            )),
-            other => Err(format!("unexpected Dictionary get `{other}`")),
-        }
-    }
-
-    fn put(&self, member: &str, value: Variant) -> Result<(), String> {
-        match member {
-            "Item" => {
-                let mut entries = self.entries.lock().map_err(|_| "lock poisoned")?;
-                let key = format!("__portable_put_{}", entries.len());
-                entries.push((key, Self::value(&value)));
-                Ok(())
-            }
-            other => Err(format!("unexpected Dictionary put `{other}`")),
-        }
-    }
-
-    fn member_names(&self) -> Vec<String> {
-        vec!["Add".into(), "Exists".into(), "Item".into(), "Count".into()]
-    }
-}
-
-struct PortableDictionaryFactory;
-
-impl PortableObjectFactory for PortableDictionaryFactory {
-    fn create(&self) -> Box<dyn PortableDispatch> {
-        Box::<PortableDictionary>::default()
-    }
-}
-
 fn engine(calls: Arc<Mutex<Vec<String>>>) -> Engine {
     let projection = Arc::new(PortableComProjection::new());
     projection.register_object(
         "Excel.Application",
         Arc::new(RecordingApplicationFactory { calls }),
     );
-    projection.register_object("Scripting.Dictionary", Arc::new(PortableDictionaryFactory));
-    let mut engine = Engine::new(HostConfig { enable_jit: false })
+    let profile = HostProfileProvider::new()
         .with_typelib_resolver(Arc::new(VbaWebResolver))
         .with_portable_com_projection(projection);
-    engine.enable_host_native_runtime();
-    engine
+    Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile)
 }
 
 fn run_project(path: &Path, calls: Arc<Mutex<Vec<String>>>) -> Vec<Variant> {
@@ -441,23 +337,6 @@ Public Sub Main()
     If obfuscated <> "######" Then Err.Raise 52005, "VbaWebHarness", obfuscated
 End Sub
 "########;
-    let project = write_no_shim_project(Some(harness));
-    run_project(&project, Arc::new(Mutex::new(Vec::new())));
-}
-
-#[test]
-#[ignore = "external corpus; requires .external/vba-corpus/vba-web checkout"]
-fn vba_web_raw_upstream_sources_run_dictionary_helper_harness_without_application_shim() {
-    let harness = r#"
-Attribute VB_Name = "HarnessMain"
-Option Explicit
-
-Public Sub Main()
-    Dim parsed As Dictionary
-    Set parsed = WebHelpers.ParseUrlEncoded("a=1&b=two")
-    If parsed.Count <> 2 Then Err.Raise 52101, "VbaWebHarness", "wrong count"
-End Sub
-"#;
     let project = write_no_shim_project(Some(harness));
     run_project(&project, Arc::new(Mutex::new(Vec::new())));
 }

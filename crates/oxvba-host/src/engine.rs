@@ -110,6 +110,34 @@ pub struct HostConfig {
     pub enable_jit: bool,
 }
 
+#[derive(Clone, Default)]
+pub struct HostProfileProvider {
+    typelib_resolver: Option<Arc<dyn TypeLibResolver>>,
+    portable_com_projection: Option<Arc<PortableComProjection>>,
+    host_policy: Option<HostPolicy>,
+}
+
+impl HostProfileProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_typelib_resolver(mut self, resolver: Arc<dyn TypeLibResolver>) -> Self {
+        self.typelib_resolver = Some(resolver);
+        self
+    }
+
+    pub fn with_portable_com_projection(mut self, projection: Arc<PortableComProjection>) -> Self {
+        self.portable_com_projection = Some(projection);
+        self
+    }
+
+    pub fn with_host_policy(mut self, policy: HostPolicy) -> Self {
+        self.host_policy = Some(policy);
+        self
+    }
+}
+
 pub struct Engine {
     config: HostConfig,
     runtime_profile: RuntimeProfileId,
@@ -357,6 +385,23 @@ impl Engine {
 
     pub fn with_typelib_resolver(mut self, resolver: Arc<dyn TypeLibResolver>) -> Self {
         self.set_typelib_resolver(resolver);
+        self
+    }
+
+    pub fn set_host_profile_provider(&mut self, provider: HostProfileProvider) {
+        if let Some(resolver) = provider.typelib_resolver {
+            self.set_typelib_resolver(resolver);
+        }
+        if let Some(projection) = provider.portable_com_projection {
+            self.set_portable_com_projection(Some(projection));
+        }
+        if let Some(policy) = provider.host_policy {
+            self.set_host_policy(policy);
+        }
+    }
+
+    pub fn with_host_profile_provider(mut self, provider: HostProfileProvider) -> Self {
+        self.set_host_profile_provider(provider);
         self
     }
 
