@@ -703,7 +703,8 @@ impl WindowsComBridge {
         // member token resolves to a spec carrying a slot), and the late-bound
         // GetIDsOfNames tail genuinely has no static spec, so it stays IDispatch.
         match &request.member {
-            DynamicMemberSelector::Token(value) => {
+            DynamicMemberSelector::Token(value)
+            | DynamicMemberSelector::TokenNamed { token: value, .. } => {
                 return self.dispatch_invoke_variant(
                     &ComInvokeRequest {
                         object: request.object.clone(),
@@ -750,9 +751,9 @@ impl WindowsComBridge {
         };
         let member_name = match &request.member {
             DynamicMemberSelector::Name(name) => name.as_str(),
-            DynamicMemberSelector::Token(_) | DynamicMemberSelector::DefaultMember => {
-                unreachable!()
-            }
+            DynamicMemberSelector::Token(_)
+            | DynamicMemberSelector::TokenNamed { .. }
+            | DynamicMemberSelector::DefaultMember => unreachable!(),
         };
         if let Some((member_token, _spec)) = self
             .known_member_spec_for_prog_id_name_by_name(&binding.prog_id_name, member_name)

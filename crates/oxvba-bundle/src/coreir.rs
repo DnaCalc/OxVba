@@ -362,6 +362,7 @@ pub enum CoreCallee {
     /// Early-bound COM dispatch (typed receiver). The receiver is `args[0]`.
     EarlyCom {
         dispid: i32,
+        name: String,
         kind: Option<ProjectMemberKind>,
     },
     /// Late-bound COM dispatch (`Object`/`Variant` receiver, by name).

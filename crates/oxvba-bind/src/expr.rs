@@ -375,6 +375,7 @@ impl<'a> ProcLower<'a> {
                     }
                     DispatchRoute::ComMember {
                         dispid,
+                        member_name,
                         member_kind,
                         param_by_ref,
                         ..
@@ -392,7 +393,7 @@ impl<'a> ProcLower<'a> {
                         let recv = CoreValue::Load(self.place_by_name(tok.text)?);
                         let args = self.bind_args_byref(node.index_arg_list(), &by_ref)?;
                         return Ok(value_bound(
-                            self.early_com_call(dispid, member_kind, recv, args),
+                            self.early_com_call(dispid, member_name, member_kind, recv, args),
                             VarTypeRef::Variant,
                         ));
                     }

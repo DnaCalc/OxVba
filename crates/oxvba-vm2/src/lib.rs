@@ -1691,6 +1691,10 @@ impl<'h> Vm<'h> {
         }
         let member = match selector {
             ComMemberSelector::DispatchId(id) => DynamicMemberSelector::Token(*id),
+            ComMemberSelector::DispatchIdNamed { id, name } => DynamicMemberSelector::TokenNamed {
+                token: *id,
+                name: name.clone(),
+            },
             ComMemberSelector::Name(name) => DynamicMemberSelector::Name(name.clone()),
         };
         let mut call_args = Vec::new();
@@ -1747,6 +1751,7 @@ impl<'h> Vm<'h> {
         let obj_bundle = object.bundle_id() as usize;
         let name = match selector {
             ComMemberSelector::Name(name) => name.clone(),
+            ComMemberSelector::DispatchIdNamed { name, .. } => name.clone(),
             ComMemberSelector::DispatchId(_) => {
                 return Err(Fault::new(
                     438,

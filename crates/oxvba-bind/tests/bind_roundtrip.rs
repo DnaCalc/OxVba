@@ -1809,7 +1809,8 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
                 c,
                 CoreCallee::EarlyCom {
                     dispid: 0,
-                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet)
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    ..
                 }
             ))
             .count(),
@@ -1823,7 +1824,8 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
                 c,
                 CoreCallee::EarlyCom {
                     dispid: 0,
-                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet)
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    ..
                 }
             ))
             .count(),
@@ -1859,7 +1861,8 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
                 c,
                 CoreCallee::EarlyCom {
                     dispid: 0,
-                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet)
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    ..
                 }
             ))
             .count(),
@@ -1873,7 +1876,8 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
                 c,
                 CoreCallee::EarlyCom {
                     dispid: 0,
-                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet)
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    ..
                 }
             ))
             .count(),
@@ -1907,7 +1911,8 @@ fn host_injected_root_object_member_lowers_through_com_metadata() {
             c,
             CoreCallee::EarlyCom {
                 dispid: 0,
-                kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet)
+                kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                ..
             }
         )),
         "host root member should bind against host-injected typelib metadata: {callees:?}"
@@ -1939,7 +1944,8 @@ fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
             c,
             CoreCallee::EarlyCom {
                 dispid: 10,
-                kind: Some(oxvba_bundle::ProjectMemberKind::Method)
+                kind: Some(oxvba_bundle::ProjectMemberKind::Method),
+                ..
             }
         )),
         "Application.Run should bind through the host-injected Excel metadata: {callees:?}"
@@ -1949,7 +1955,8 @@ fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
             c,
             CoreCallee::EarlyCom {
                 dispid: 11,
-                kind: Some(oxvba_bundle::ProjectMemberKind::Method)
+                kind: Some(oxvba_bundle::ProjectMemberKind::Method),
+                ..
             }
         )),
         "Application.OnTime should bind through the host-injected Excel metadata: {callees:?}"

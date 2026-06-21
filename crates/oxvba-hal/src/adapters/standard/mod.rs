@@ -56,7 +56,10 @@ use crate::{
 #[cfg(test)]
 #[cfg(test)]
 use oxvba_com::RawIDispatch;
-use oxvba_com::{ComBinding, platform::portable::PortableComProjection};
+use oxvba_com::{
+    ComBinding,
+    platform::portable::{PortableComProjection, PortableDispatch},
+};
 #[cfg(target_os = "windows")]
 use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
@@ -140,11 +143,12 @@ pub(crate) struct StandardHostServices {
     callbacks: Option<Arc<dyn crate::callbacks::HostCallbacks>>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 struct ProjectionObjectState {
     next_handle: i32,
     handles_by_prog_id: std::collections::BTreeMap<String, i32>,
     prog_ids_by_handle: std::collections::BTreeMap<i32, String>,
+    portable_objects_by_handle: std::collections::BTreeMap<i32, Arc<dyn PortableDispatch>>,
 }
 
 impl std::fmt::Debug for StandardHostServices {
@@ -261,6 +265,7 @@ impl StandardHostServices {
                 next_handle: 5_003,
                 handles_by_prog_id: std::collections::BTreeMap::new(),
                 prog_ids_by_handle: std::collections::BTreeMap::new(),
+                portable_objects_by_handle: std::collections::BTreeMap::new(),
             })),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
             last_dll_error: Arc::new(std::sync::atomic::AtomicI32::new(0)),

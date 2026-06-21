@@ -806,12 +806,15 @@ impl<'p> Linearizer<'p> {
                 });
                 self.emit_arg_writebacks(writebacks)?;
             }
-            CoreCallee::EarlyCom { dispid, kind } => {
+            CoreCallee::EarlyCom { dispid, name, kind } => {
                 let (args, writebacks) = self.build_call_args(args)?;
                 self.emit(Op::CallNative {
                     dst,
                     callee: NativeCallee::ComDispatch {
-                        selector: ComMemberSelector::DispatchId(*dispid),
+                        selector: ComMemberSelector::DispatchIdNamed {
+                            id: *dispid,
+                            name: name.clone(),
+                        },
                         early_bound: true,
                         kind_hint: *kind,
                     },

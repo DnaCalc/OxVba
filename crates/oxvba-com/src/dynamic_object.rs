@@ -129,6 +129,7 @@ pub trait DynamicObjectBridge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DynamicMemberSelector {
     Token(i32),
+    TokenNamed { token: i32, name: String },
     Name(String),
     DefaultMember,
 }
@@ -215,6 +216,7 @@ impl DynamicCallRequest {
     pub fn try_into_com_invoke_request(&self) -> Result<ComInvokeRequest, String> {
         let member = match &self.member {
             DynamicMemberSelector::Token(value) => *value,
+            DynamicMemberSelector::TokenNamed { token, .. } => *token,
             DynamicMemberSelector::DefaultMember => 0,
             DynamicMemberSelector::Name(name) => {
                 return Err(format!(

@@ -310,6 +310,7 @@ impl<'a> ProcLower<'a> {
                     }) => {
                         let call = self.early_com_call(
                             dispid,
+                            member,
                             kind,
                             recv.value,
                             vec![CoreArg::ByVal(rhs.clone())],

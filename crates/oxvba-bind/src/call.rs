@@ -931,7 +931,7 @@ impl<'a> ProcLower<'a> {
                 let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
                 args.push(CoreArg::ByVal(rhs.clone()));
                 Ok(Some(vec![CoreStmt::Eval(
-                    self.early_com_call(dispid, kind, recv.value, args),
+                    self.early_com_call(dispid, member, kind, recv.value, args),
                 )]))
             }
             // A cross-project coclass property: late dispatch by name, index args
@@ -1008,9 +1008,13 @@ impl<'a> ProcLower<'a> {
                         Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
                         None => args.push(CoreArg::ByVal(rhs.clone())),
                     }
-                    Ok(Some(vec![CoreStmt::Eval(
-                        self.early_com_call(dispid, kind, recv, args),
-                    )]))
+                    Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
+                        dispid,
+                        member_name,
+                        kind,
+                        recv,
+                        args,
+                    ))]))
                 } else {
                     Ok(None)
                 }
@@ -1101,7 +1105,7 @@ impl<'a> ProcLower<'a> {
                     _ => ProjectMemberKind::PropertyGet,
                 };
                 Ok(Some(value_bound(
-                    self.early_com_call(*dispid, kind, receiver_value, Vec::new()),
+                    self.early_com_call(*dispid, receiver_label, kind, receiver_value, Vec::new()),
                     VarTypeRef::Variant,
                 )))
             }
@@ -1174,6 +1178,7 @@ impl<'a> ProcLower<'a> {
                     args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
                         dispid,
+                        member_name,
                         ProjectMemberKind::PropertyLet,
                         recv,
                         args,
@@ -1698,7 +1703,7 @@ impl<'a> ProcLower<'a> {
                         _ => ProjectMemberKind::PropertyGet,
                     };
                     Ok(value_bound(
-                        self.early_com_call(*dispid, member_kind, recv.value, Vec::new()),
+                        self.early_com_call(*dispid, member, member_kind, recv.value, Vec::new()),
                         VarTypeRef::Variant,
                     ))
                 }
@@ -1856,7 +1861,7 @@ impl<'a> ProcLower<'a> {
                     let by_ref = param_by_ref.clone();
                     let method_args = self.bind_args_byref(arglist, &by_ref)?;
                     Ok(value_bound(
-                        self.early_com_call(dispid, member_kind, recv.value, method_args),
+                        self.early_com_call(dispid, member, member_kind, recv.value, method_args),
                         VarTypeRef::Variant,
                     ))
                 }
@@ -1985,6 +1990,7 @@ impl<'a> ProcLower<'a> {
     pub(crate) fn early_com_call(
         &self,
         dispid: i32,
+        name: &str,
         kind: ProjectMemberKind,
         recv: CoreValue,
         mut method_args: Vec<CoreArg>,
@@ -1994,6 +2000,7 @@ impl<'a> ProcLower<'a> {
         CoreValue::Call {
             callee: CoreCallee::EarlyCom {
                 dispid,
+                name: name.to_string(),
                 kind: Some(kind),
             },
             args,

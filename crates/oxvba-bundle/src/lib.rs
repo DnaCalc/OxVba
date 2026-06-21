@@ -129,6 +129,7 @@ pub enum ProjectMemberKind {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ComMemberSelector {
     DispatchId(i32),
+    DispatchIdNamed { id: i32, name: String },
     Name(String),
 }
 
