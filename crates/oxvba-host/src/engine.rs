@@ -12,6 +12,7 @@
 use std::ffi::c_void;
 use std::sync::Arc;
 
+use oxvba_com::PortableComProjection;
 use oxvba_diagnostics::{Diagnostic as OxDiagnostic, DiagnosticPhase as OxDiagnosticPhase};
 use oxvba_hal::{
     adapters::builder::HostBuilder,
@@ -112,6 +113,7 @@ pub struct Engine {
     config: HostConfig,
     runtime_profile: RuntimeProfileId,
     host_callbacks: Option<Arc<dyn HostCallbacks>>,
+    portable_com_projection: Option<Arc<PortableComProjection>>,
     host_services: Arc<dyn HostServices>,
 }
 
@@ -195,6 +197,7 @@ fn build_host_services(
     runtime_class: oxvba_hal::model::HalRuntimeClass,
     policy: HostPolicy,
     callbacks: Option<Arc<dyn HostCallbacks>>,
+    portable_com_projection: Option<Arc<PortableComProjection>>,
 ) -> Arc<dyn HostServices> {
     let mut builder = HostBuilder::new()
         .profile(profile)
@@ -202,6 +205,9 @@ fn build_host_services(
         .policy(policy);
     if let Some(callbacks) = callbacks {
         builder = builder.callbacks(callbacks);
+    }
+    if let Some(projection) = portable_com_projection {
+        builder = builder.portable_objects(projection);
     }
     builder.build()
 }
@@ -215,10 +221,12 @@ impl Engine {
             config,
             runtime_profile,
             host_callbacks: None,
+            portable_com_projection: None,
             host_services: build_host_services(
                 runtime_profile.hal_profile(),
                 runtime_profile.runtime_class(),
                 policy,
+                None,
                 None,
             ),
         }
@@ -234,6 +242,7 @@ impl Engine {
             config,
             runtime_profile: RuntimeProfileId::default_for_hal_profile(HalProfileId::Null),
             host_callbacks: None,
+            portable_com_projection: None,
             host_services,
         }
     }
@@ -244,8 +253,13 @@ impl Engine {
         let runtime_class = policy
             .runtime_class
             .unwrap_or(self.runtime_profile.runtime_class());
-        self.host_services =
-            build_host_services(profile, runtime_class, policy, self.host_callbacks.clone());
+        self.host_services = build_host_services(
+            profile,
+            runtime_class,
+            policy,
+            self.host_callbacks.clone(),
+            self.portable_com_projection.clone(),
+        );
     }
 
     pub fn set_runtime_profile(&mut self, runtime_profile: RuntimeProfileId) {
@@ -257,6 +271,7 @@ impl Engine {
             runtime_profile.runtime_class(),
             policy,
             self.host_callbacks.clone(),
+            self.portable_com_projection.clone(),
         );
     }
 
@@ -283,8 +298,13 @@ impl Engine {
         let runtime_class = policy
             .runtime_class
             .unwrap_or(self.runtime_profile.runtime_class());
-        self.host_services =
-            build_host_services(profile, runtime_class, policy, self.host_callbacks.clone());
+        self.host_services = build_host_services(
+            profile,
+            runtime_class,
+            policy,
+            self.host_callbacks.clone(),
+            self.portable_com_projection.clone(),
+        );
     }
 
     pub fn set_host_callbacks(&mut self, callbacks: Option<Arc<dyn HostCallbacks>>) {
@@ -298,11 +318,32 @@ impl Engine {
             runtime_class,
             policy,
             self.host_callbacks.clone(),
+            self.portable_com_projection.clone(),
         );
     }
 
     pub fn with_host_callbacks(mut self, callbacks: Arc<dyn HostCallbacks>) -> Self {
         self.set_host_callbacks(Some(callbacks));
+        self
+    }
+
+    pub fn set_portable_com_projection(&mut self, projection: Option<Arc<PortableComProjection>>) {
+        self.portable_com_projection = projection;
+        let policy = self.host_services.policy().clone();
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
+        self.host_services = build_host_services(
+            self.host_services.profile(),
+            runtime_class,
+            policy,
+            self.host_callbacks.clone(),
+            self.portable_com_projection.clone(),
+        );
+    }
+
+    pub fn with_portable_com_projection(mut self, projection: Arc<PortableComProjection>) -> Self {
+        self.set_portable_com_projection(Some(projection));
         self
     }
 

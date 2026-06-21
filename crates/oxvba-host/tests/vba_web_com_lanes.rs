@@ -238,6 +238,35 @@ fn host_injected_application_run_and_ontime_execute_through_portable_host_root()
     );
 }
 
+#[test]
+fn engine_preserves_portable_com_projection_across_policy_rebuild() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let projection = Arc::new(PortableComProjection::new());
+    projection.register_object(
+        "Excel.Application",
+        Arc::new(RecordingApplicationFactory {
+            calls: calls.clone(),
+        }),
+    );
+
+    let mut engine =
+        Engine::new(HostConfig { enable_jit: false }).with_portable_com_projection(projection);
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let values = engine
+        .execute_source_with_variant_snapshot_clean(
+            "Public verdict As Long\n\
+             Sub Main()\n\
+             Dim app As Object\n\
+             Set app = CreateObject(\"Excel.Application\")\n\
+             verdict = app.Run(\"MacroName\", 1)\n\
+             End Sub\n",
+        )
+        .expect("portable CreateObject dispatch should run through Engine");
+
+    assert_eq!(first_i32(&values), Some(42));
+    assert_eq!(calls.lock().expect("call log").as_slice(), ["Run:2"]);
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "live COM; requires Scripting.Dictionary registration"]
