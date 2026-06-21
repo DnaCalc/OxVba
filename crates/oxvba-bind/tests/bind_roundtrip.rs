@@ -1667,6 +1667,116 @@ impl TypeLibResolver for DefaultValueTypeLibs {
     }
 }
 
+struct ApplicationTypeLibs;
+impl TypeLibResolver for ApplicationTypeLibs {
+    fn resolve(
+        &self,
+        _request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        Some(oxvba_com::TypeLibMetadataBlob {
+            identity: oxvba_com::TypeLibResolvedIdentity {
+                reference_name: "Excel".into(),
+                requested_coclass: Some("Application".into()),
+                importlib: "excel".into(),
+                libid: None,
+                major_version: 1,
+                minor_version: 0,
+                lcid: None,
+                cache_key: "excel-application-test".into(),
+            },
+            activation_prog_id: Some("Excel.Application".into()),
+            member_name_to_token: vec![("Run".into(), 10), ("OnTime".into(), 11)],
+            members: vec![
+                oxvba_com::TypeLibMemberMetadata {
+                    name: "Run".into(),
+                    token: 10,
+                    vtable_slot: None,
+                    requires_argument: true,
+                    invoke_kind: oxvba_com::TypeLibMemberInvokeKind::Method,
+                    parameter_names: vec!["Macro".into(), "Arg1".into()],
+                    parameter_optional: vec![false, true],
+                    parameter_optional_defaults: vec![
+                        oxvba_com::OptionalParamDefault::Required,
+                        oxvba_com::OptionalParamDefault::OptionalVariant,
+                    ],
+                    is_default_member: false,
+                    parameter_types: vec![
+                        oxvba_com::TypeLibParamType::Variant,
+                        oxvba_com::TypeLibParamType::Variant,
+                    ],
+                    parameter_iids: vec![None, None],
+                    return_type: Some(oxvba_com::TypeLibParamType::Variant),
+                    parameter_wire_types: vec![
+                        oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Variant,
+                        ),
+                        oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Variant,
+                        ),
+                    ],
+                    return_wire_type: Some(oxvba_com::TypeLibWireType::Automation(
+                        oxvba_com::TypeLibParamType::Variant,
+                    )),
+                    callconv_is_stdcall: false,
+                    is_dual: true,
+                    interface_iid: None,
+                    source_typekind: Some(oxvba_com::SourceTypeKind::Dispatch),
+                    vtable_slot_bound: None,
+                },
+                oxvba_com::TypeLibMemberMetadata {
+                    name: "OnTime".into(),
+                    token: 11,
+                    vtable_slot: None,
+                    requires_argument: true,
+                    invoke_kind: oxvba_com::TypeLibMemberInvokeKind::Method,
+                    parameter_names: vec![
+                        "EarliestTime".into(),
+                        "Procedure".into(),
+                        "LatestTime".into(),
+                        "Schedule".into(),
+                    ],
+                    parameter_optional: vec![false, false, true, true],
+                    parameter_optional_defaults: vec![
+                        oxvba_com::OptionalParamDefault::Required,
+                        oxvba_com::OptionalParamDefault::Required,
+                        oxvba_com::OptionalParamDefault::OptionalVariant,
+                        oxvba_com::OptionalParamDefault::OptionalVariant,
+                    ],
+                    is_default_member: false,
+                    parameter_types: vec![
+                        oxvba_com::TypeLibParamType::Variant,
+                        oxvba_com::TypeLibParamType::String,
+                        oxvba_com::TypeLibParamType::Variant,
+                        oxvba_com::TypeLibParamType::Variant,
+                    ],
+                    parameter_iids: vec![None, None, None, None],
+                    return_type: None,
+                    parameter_wire_types: vec![
+                        oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Variant,
+                        ),
+                        oxvba_com::TypeLibWireType::Automation(oxvba_com::TypeLibParamType::String),
+                        oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Variant,
+                        ),
+                        oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Variant,
+                        ),
+                    ],
+                    return_wire_type: None,
+                    callconv_is_stdcall: false,
+                    is_dual: true,
+                    interface_iid: None,
+                    source_typekind: Some(oxvba_com::SourceTypeKind::Dispatch),
+                    vtable_slot_bound: None,
+                },
+            ],
+            events: Vec::new(),
+            coclass_names: vec!["Application".into()],
+        })
+    }
+}
+
 #[test]
 fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Dim w2 As Widget\n    w = 10\n    Set w2 = w\n    r = w2\nEnd Sub\n";
@@ -1801,6 +1911,48 @@ fn host_injected_root_object_member_lowers_through_com_metadata() {
             }
         )),
         "host root member should bind against host-injected typelib metadata: {callees:?}"
+    );
+}
+
+#[test]
+fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
+    let main = "Sub Main()\n    Dim r As Variant\n    r = Application.Run(\"MacroName\", 1)\n    Application.OnTime 0, \"MacroName\"\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let program = bind_program(&manifest, &ApplicationTypeLibs).expect("bind_program");
+    let callees = top_level_callees(&program);
+    assert!(
+        callees.iter().any(|c| matches!(
+            c,
+            CoreCallee::EarlyCom {
+                dispid: 10,
+                kind: Some(oxvba_bundle::ProjectMemberKind::Method)
+            }
+        )),
+        "Application.Run should bind through the host-injected Excel metadata: {callees:?}"
+    );
+    assert!(
+        callees.iter().any(|c| matches!(
+            c,
+            CoreCallee::EarlyCom {
+                dispid: 11,
+                kind: Some(oxvba_bundle::ProjectMemberKind::Method)
+            }
+        )),
+        "Application.OnTime should bind through the host-injected Excel metadata: {callees:?}"
     );
 }
 
