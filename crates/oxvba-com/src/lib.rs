@@ -30,6 +30,8 @@ pub mod windows_ffi_bridge;
 #[cfg(target_os = "windows")]
 pub mod windows_invoke;
 #[cfg(target_os = "windows")]
+pub mod windows_runtime_object;
+#[cfg(target_os = "windows")]
 pub mod windows_runtime_state;
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 #[path = "fixtures/windows_test_dispatch.rs"]
@@ -141,7 +143,8 @@ pub use windows_runtime_state::{
     release_object_binding, release_object_binding_shared, release_subscription_transport,
     remove_subscription_callbacks, resolve_bound_native_dispatch,
     resolve_bound_native_dispatch_shared, resolve_bound_runtime_object,
-    resolve_bound_runtime_object_shared, resolve_member_dispid_cached,
+    resolve_bound_runtime_object_shared, resolve_dispatch_for_com_value,
+    resolve_dispatch_for_com_value_shared, resolve_member_dispid_cached,
     resolve_subscription_transport, subscribe_event_shared, take_polled_callback_payload,
     unsubscribe_event_shared,
 };

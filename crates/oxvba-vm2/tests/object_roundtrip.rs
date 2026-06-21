@@ -135,6 +135,7 @@ fn class(
                 name: n.into(),
                 kind,
                 proc: ProcId(p),
+                is_default_member: false,
             })
             .collect(),
         implements: Vec::new(),

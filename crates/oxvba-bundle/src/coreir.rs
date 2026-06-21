@@ -123,6 +123,7 @@ pub struct CoreClassMethod {
     pub name: String,
     pub kind: ProjectMemberKind,
     pub proc: ProcId,
+    pub is_default_member: bool,
 }
 
 // ── Places (l-values) ─────────────────────────────────────────────────────────

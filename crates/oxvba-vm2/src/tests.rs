@@ -1023,6 +1023,7 @@ fn late_bound_method_dispatch() {
             name: "Inc".to_string(),
             kind: ProjectMemberKind::Method,
             proc: 0,
+            is_default_member: false,
         }],
         implements: Vec::new(),
     }];

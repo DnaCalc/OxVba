@@ -715,7 +715,9 @@ where
         match arg.value {
             Some(ref value) => {
                 let value = value.to_com_value();
-                let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
+                let mut add_ref_dispatch = |dispatch: *mut core::ffi::c_void| {
+                    crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+                };
                 if let Err(detail) = set_variant_from_com_value(
                     &mut variant,
                     &value,
@@ -821,7 +823,9 @@ where
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
-        let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
+        let mut add_ref_dispatch = |dispatch: *mut core::ffi::c_void| {
+            crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+        };
         if let Err(detail) =
             set_variant_from_com_value(&mut variant, arg, resolve_object, &mut add_ref_dispatch)
         {
@@ -1738,7 +1742,7 @@ pub unsafe fn invoke_member_spec_variant_with_shared_state(
             )
         },
         &mut |handle| {
-            crate::resolve_bound_native_dispatch_shared(com_state, handle)
+            crate::resolve_dispatch_for_com_value_shared(com_state, handle)
                 .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
         },
         &mut |unknown: *mut core::ffi::c_void| {
@@ -1783,7 +1787,7 @@ pub unsafe fn invoke_direct_dispid_variant_with_shared_state(
         args,
         prog_id_hint,
         &mut |handle| {
-            crate::resolve_bound_native_dispatch_shared(com_state, handle)
+            crate::resolve_dispatch_for_com_value_shared(com_state, handle)
                 .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
         },
         &mut |unknown: *mut core::ffi::c_void| {
@@ -1834,7 +1838,7 @@ pub unsafe fn invoke_dispatch_variant_with_shared_state(
         label,
         prog_id_hint,
         &mut |handle| {
-            crate::resolve_bound_native_dispatch_shared(com_state, handle)
+            crate::resolve_dispatch_for_com_value_shared(com_state, handle)
                 .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
         },
         &mut |unknown: *mut core::ffi::c_void| {
@@ -2651,7 +2655,7 @@ pub unsafe fn try_vtable_member_spec_invoke_with_shared_state(
     }
 
     let mut resolve_object = |handle: ObjectRef| {
-        crate::resolve_bound_native_dispatch_shared(com_state, handle)
+        crate::resolve_dispatch_for_com_value_shared(com_state, handle)
             .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
     };
     // The vtable [out,retval] interface convention transfers one reference to
@@ -2846,7 +2850,7 @@ pub unsafe fn try_vtable_member_spec_invoke_result_with_shared_state(
     }
 
     let mut resolve_object = |handle: ObjectRef| {
-        crate::resolve_bound_native_dispatch_shared(com_state, handle)
+        crate::resolve_dispatch_for_com_value_shared(com_state, handle)
             .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
     };
     let mut bind_dispatch_result = |dispatch: *mut core::ffi::c_void| {

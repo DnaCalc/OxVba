@@ -571,6 +571,10 @@ Public Sub RunBroadProbe()
     Set json = WebHelpers.ParseJson("{""a"":1,""b"":3.14,""c"":""Howdy!"",""d"":true}")
     AssertEqual "ParseJson number", json("a"), 1
     AssertEqual "ParseJson string", json("c"), "Howdy!"
+    Dim nested As Object
+    Set nested = WebHelpers.ParseJson("{""child"":{""name"":""Ada""},""items"":[1,2]}")
+    AssertEqual "ParseJson nested object", nested("child")("name"), "Ada"
+    AssertEqual "ParseJson nested array", nested("items")(2), 2
 
     ProbeStage = 5
     Dim keyValue As Dictionary
@@ -725,7 +729,11 @@ End Function
 Public Function ProbeNestedJson() As String
     Dim nested As Dictionary
     Set nested = WebHelpers.ParseJson("{""child"":{""name"":""Ada""},""items"":[1,2]}")
-    ProbeNestedJson = nested("child")("name") & "|" & CStr(nested("items")(2))
+    Dim child As Object
+    Set child = nested("child")
+    Dim items As Object
+    Set items = nested("items")
+    ProbeNestedJson = child("name") & "|" & CStr(items(2))
 End Function
 
 Public Function ProbeDictionaryUrlEncoded() As String
@@ -830,6 +838,11 @@ End Sub
         "Collection JSON now depends on vbObject=9: {snapshot:?}"
     );
     assert_eq!(
+        text(4),
+        "Ada|2",
+        "nested JSON should preserve internal runtime objects through native COM containers: {snapshot:?}"
+    );
+    assert_eq!(
         text(5),
         "a=A+%2B+B&c+%26+d=Howdy%21",
         "omitted enum default should use form URL encoding: {snapshot:?}"
@@ -847,11 +860,12 @@ End Sub
     assert_eq!(text(8), "1|sid|abc 123", "cookie extraction: {snapshot:?}");
     let errors = text(9);
     assert!(
-        errors.contains("NestedJson=5:"),
-        "nested JSON object/array storage remains the only expected residual error: {snapshot:?}"
+        errors.is_empty(),
+        "all characterized VBA-Web residual probes should now pass: {snapshot:?}"
     );
     assert!(
-        !errors.contains("DictionaryJson=")
+        !errors.contains("NestedJson=")
+            && !errors.contains("DictionaryJson=")
             && !errors.contains("CollectionJson=")
             && !errors.contains("DictionaryUrlEncoded=")
             && !errors.contains("HeaderSummary=")

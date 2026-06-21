@@ -147,6 +147,7 @@ impl<'p> Linearizer<'p> {
                         name: m.name.clone(),
                         kind: m.kind,
                         proc: m.proc.0,
+                        is_default_member: m.is_default_member,
                     })
                     .collect(),
                 implements: class.implements.clone(),

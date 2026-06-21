@@ -2,6 +2,7 @@
 
 use crate::runtime_state::ComEventCallbackValue;
 use crate::windows_connection_point::WindowsEventArg;
+use crate::windows_runtime_object::{create_runtime_object_dispatch, runtime_object_from_dispatch};
 use crate::{
     ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComInvokeArg, ComMemberSpec,
     ComMemberToken, ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue,
@@ -54,6 +55,11 @@ pub struct WindowsComClientState {
     /// braced uppercase IID string so the registry read happens once per IID, not
     /// once per call. Holds no COM references — needs no teardown in `Drop`.
     psoa_interface_iid_cache: BTreeMap<String, bool>,
+    /// Bridge-owned `IDispatch` wrappers for VM/runtime objects that must cross
+    /// into native COM containers or callbacks as Automation object values.
+    /// The state owns one retained reference per entry; each VARIANT/container
+    /// gets its normal AddRef/Release on top of that reference.
+    runtime_object_dispatch_wrappers: BTreeMap<i32, usize>,
 }
 
 impl WindowsComClientState {
@@ -128,6 +134,15 @@ impl Drop for WindowsComClientState {
             binding.runtime_object = None;
         }
         self.bindings.clear();
+        for dispatch in self.runtime_object_dispatch_wrappers.values().copied() {
+            // SAFETY: every pointer in this map was created by
+            // `create_runtime_object_dispatch` with one state-owned retained
+            // reference. Releasing here balances that exact reference.
+            unsafe {
+                release_dispatch(dispatch as *mut RawIDispatch);
+            }
+        }
+        self.runtime_object_dispatch_wrappers.clear();
     }
 }
 
@@ -343,6 +358,39 @@ pub fn resolve_bound_native_dispatch(
     Ok(binding.native_dispatch as *mut RawIDispatch)
 }
 
+pub fn resolve_dispatch_for_com_value(
+    state: &mut WindowsComClientState,
+    object: ObjectRef,
+) -> Result<*mut RawIDispatch, String> {
+    if let Some(binding) = state.bindings.get(&ComObjectToken::new(object.raw())) {
+        if binding.native_dispatch != 0 {
+            return Ok(binding.native_dispatch as *mut RawIDispatch);
+        }
+        return Err(format!(
+            "COM-E-OBJECT-MARSHAL-UNSUPPORTED: object handle {} is not backed by native IDispatch",
+            object.raw()
+        ));
+    }
+    if object.is_project_instance() {
+        if let Some(dispatch) = state
+            .runtime_object_dispatch_wrappers
+            .get(&object.raw())
+            .copied()
+        {
+            return Ok(dispatch as *mut RawIDispatch);
+        }
+        let dispatch = create_runtime_object_dispatch(object.clone());
+        state
+            .runtime_object_dispatch_wrappers
+            .insert(object.raw(), dispatch as usize);
+        return Ok(dispatch);
+    }
+    Err(format!(
+        "COM-E-OBJECT-MISSING: unknown COM object handle {}",
+        object.raw()
+    ))
+}
+
 pub fn resolve_bound_runtime_object(
     state: &WindowsComClientState,
     object: ObjectRef,
@@ -394,6 +442,17 @@ pub unsafe fn bind_native_dispatch_result(
 ) -> ObjectRef {
     if dispatch.is_null() {
         return ObjectRef::from_compat_identity(0);
+    }
+    // SAFETY: `dispatch` is a non-null live IDispatch whose vtable may be read.
+    // If it is one of the bridge's VM-object wrappers, the native COM container
+    // is handing us a retained reference to our own projection. Consume that
+    // incoming reference and return the original runtime object, rather than
+    // creating a spurious native COM binding for the wrapper itself.
+    if let Some(object) = unsafe { runtime_object_from_dispatch(dispatch) } {
+        unsafe {
+            release_dispatch(dispatch);
+        }
+        return object;
     }
     // SAFETY: `dispatch` was checked non-null above, and per this function's `# Safety`
     // the caller transferred one retained reference to us, so it is a live `IDispatch`
@@ -801,6 +860,14 @@ pub fn resolve_bound_native_dispatch_shared(
     resolve_bound_native_dispatch(&state, object)
 }
 
+pub fn resolve_dispatch_for_com_value_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectRef,
+) -> Result<*mut RawIDispatch, String> {
+    let mut state = lock_state(com_state, "resolve_dispatch_for_com_value")?;
+    resolve_dispatch_for_com_value(&mut state, object)
+}
+
 pub fn resolve_bound_runtime_object_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
     object: ObjectRef,
@@ -838,6 +905,9 @@ pub unsafe fn bind_native_runtime_object_result_shared(
     // precondition of the shared binding path (which takes ownership of that reference).
     let handle = unsafe { bind_native_dispatch_result_shared(com_state, dispatch, prog_id_hint) }?;
     if handle.raw() == 0 {
+        return Ok(handle);
+    }
+    if handle.is_project_instance() {
         return Ok(handle);
     }
     resolve_bound_runtime_object_shared(com_state, handle)
@@ -1052,9 +1122,9 @@ pub fn queue_projection_event_callbacks_shared(
 #[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::{
-        WindowsComClientState, WindowsComSubscriptionTransport,
+        WindowsComClientState, WindowsComSubscriptionTransport, bind_native_dispatch_result,
         bind_native_runtime_object_result_shared, event_callback_args_from_invoke_args,
-        queue_projection_event_callbacks_shared,
+        queue_projection_event_callbacks_shared, resolve_dispatch_for_com_value,
     };
     use crate::{
         ComBinding, ComEventPath, ComEventSpec, ComEventSubscription, ComEventTriggerSpec,
@@ -1201,5 +1271,83 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![ComValue::String(BStr::from("payload"))]
         );
+    }
+
+    #[test]
+    fn project_runtime_object_resolves_to_reusable_dispatch_wrapper() {
+        let descriptor_owner = ObjectRef::from_compat_identity(90_001);
+        let object = ObjectRef::from_project_instance(
+            90_002,
+            90_001,
+            0,
+            false,
+            descriptor_owner.class_descriptor(),
+        );
+        assert!(object.is_project_instance());
+
+        let mut state = WindowsComClientState::default();
+        let first = resolve_dispatch_for_com_value(&mut state, object.clone())
+            .expect("project object should marshal as IDispatch wrapper");
+        let second = resolve_dispatch_for_com_value(&mut state, object.clone())
+            .expect("project object wrapper should be reused");
+
+        assert_eq!(first, second);
+        assert_eq!(state.runtime_object_dispatch_wrappers.len(), 1);
+    }
+
+    #[test]
+    fn native_dispatch_result_unwraps_runtime_object_wrapper() {
+        let descriptor_owner = ObjectRef::from_compat_identity(91_001);
+        let object = ObjectRef::from_project_instance(
+            91_002,
+            91_001,
+            0,
+            false,
+            descriptor_owner.class_descriptor(),
+        );
+        let mut state = WindowsComClientState::default();
+        let dispatch = resolve_dispatch_for_com_value(&mut state, object.clone())
+            .expect("project object should marshal as IDispatch wrapper");
+
+        unsafe {
+            crate::add_ref_dispatch(dispatch);
+        }
+        let rebound = unsafe { bind_native_dispatch_result(&mut state, dispatch, "wrapped") };
+
+        assert_eq!(rebound.raw(), object.raw());
+        assert!(
+            state.bindings.is_empty(),
+            "wrapper results should not allocate native COM bindings"
+        );
+    }
+
+    #[test]
+    fn native_runtime_object_result_accepts_unwrapped_project_object() {
+        let descriptor_owner = ObjectRef::from_compat_identity(92_001);
+        let object = ObjectRef::from_project_instance(
+            92_002,
+            92_001,
+            0,
+            false,
+            descriptor_owner.class_descriptor(),
+        );
+        let state = Arc::new(Mutex::new(WindowsComClientState::default()));
+        let dispatch = {
+            let mut locked = state.lock().expect("state");
+            resolve_dispatch_for_com_value(&mut locked, object.clone())
+                .expect("project object should marshal as IDispatch wrapper")
+        };
+
+        unsafe {
+            crate::add_ref_dispatch(dispatch);
+        }
+        let rebound = unsafe {
+            bind_native_runtime_object_result_shared(&state, dispatch, "wrapped")
+                .expect("unwrapped runtime object result should not require a COM binding")
+        };
+
+        assert_eq!(rebound.raw(), object.raw());
+        assert!(rebound.is_project_instance());
+        assert!(state.lock().expect("state").bindings.is_empty());
     }
 }

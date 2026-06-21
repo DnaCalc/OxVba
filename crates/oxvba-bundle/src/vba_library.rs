@@ -105,6 +105,7 @@ fn build() -> Bundle {
             name: spec.name.to_string(),
             kind: spec.member_kind,
             proc,
+            is_default_member: spec.name.eq_ignore_ascii_case("Item"),
         });
     }
 

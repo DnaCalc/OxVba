@@ -238,6 +238,7 @@ pub struct ClassMethod {
     pub name: String,
     pub kind: ProjectMemberKind,
     pub proc: usize,
+    pub is_default_member: bool,
 }
 
 /// A project class: its name, lifecycle hooks, and late-bound member table.

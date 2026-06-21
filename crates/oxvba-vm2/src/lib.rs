@@ -1749,30 +1749,44 @@ impl<'h> Vm<'h> {
         // bundle dispatch resolves the method by name there, and the method body
         // runs against that bundle — exactly like a COM call into another image).
         let obj_bundle = object.bundle_id() as usize;
-        let name = match selector {
-            ComMemberSelector::Name(name) => name.clone(),
-            ComMemberSelector::DispatchIdNamed { name, .. } => name.clone(),
-            ComMemberSelector::DispatchId(_) => {
-                return Err(Fault::new(
-                    438,
-                    "late-bound dispatch by dispid on a project object",
-                ));
-            }
-        };
-        let proc = self
+        let class = self
             .bundles
             .get(obj_bundle)
             .and_then(|lb| lb.bundle.classes.get(class_idx))
-            .and_then(|class| {
-                class
+            .ok_or_else(|| Fault::new(438, "Object doesn't support this member"))?;
+        let member = match selector {
+            ComMemberSelector::Name(name) | ComMemberSelector::DispatchIdNamed { name, .. } => {
+                class.methods.iter().find(|m| {
+                    m.name.eq_ignore_ascii_case(name) && kind_hint.is_none_or(|k| k == m.kind)
+                })
+            }
+            ComMemberSelector::DispatchId(0) => {
+                let mut matches = class
                     .methods
                     .iter()
-                    .find(|m| {
-                        m.name.eq_ignore_ascii_case(&name) && kind_hint.is_none_or(|k| k == m.kind)
-                    })
-                    .map(|m| m.proc)
-            })
-            .ok_or_else(|| Fault::new(438, format!("Object doesn't support '{name}'")))?;
+                    .filter(|m| m.is_default_member && kind_hint.is_none_or(|kind| kind == m.kind));
+                let first = matches.next();
+                if matches.next().is_some() {
+                    None
+                } else {
+                    first
+                }
+            }
+            ComMemberSelector::DispatchId(_) => None,
+        };
+        let member = member.ok_or_else(|| match selector {
+            ComMemberSelector::Name(name) | ComMemberSelector::DispatchIdNamed { name, .. } => {
+                Fault::new(438, format!("Object doesn't support '{name}'"))
+            }
+            ComMemberSelector::DispatchId(0) => Fault::new(
+                438,
+                "Object doesn't support a unique default member for this call",
+            ),
+            ComMemberSelector::DispatchId(id) => {
+                Fault::new(438, format!("Object doesn't support dispatch id {id}"))
+            }
+        })?;
+        let proc = member.proc;
         let proc_args: Vec<ProcArg> = method_args
             .iter()
             .map(|a| match a {

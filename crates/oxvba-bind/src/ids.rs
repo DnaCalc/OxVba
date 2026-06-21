@@ -22,6 +22,7 @@ use oxvba_bundle::coreir::{
     ProcId,
 };
 use oxvba_bundle::{ProcedureKind, ProjectMemberKind, StringCompareMode};
+use oxvba_symbol::binding::DispatchRoute;
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
@@ -202,6 +203,19 @@ impl IdAllocator {
                 predeclared_class_of.insert(fold_identifier(&display), class_id);
             }
             let folded = fold_identifier(&display);
+            let default_member = env
+                .resolve_default_member(&VarTypeRef::Object(display.clone()))
+                .and_then(|binding| {
+                    let symbol = binding.symbol?;
+                    let member_name = symbols
+                        .symbol(symbol)
+                        .and_then(|sym| symbols.name(sym.name))
+                        .map(|name| name.first_spelling.clone())?;
+                    match binding.route {
+                        DispatchRoute::ProjectMember { kind } => Some((member_name, kind)),
+                        _ => None,
+                    }
+                });
             let mut initialize = None;
             let mut terminate = None;
             let mut methods = Vec::new();
@@ -216,6 +230,10 @@ impl IdAllocator {
                         name: info.name.clone(),
                         kind: member_kind_of(info.kind),
                         proc: info.proc_id,
+                        is_default_member: default_member.as_ref().is_some_and(|(name, kind)| {
+                            fold_identifier(name) == fold_identifier(&info.name)
+                                && *kind == member_kind_of(info.kind)
+                        }),
                     }),
                 }
             }
