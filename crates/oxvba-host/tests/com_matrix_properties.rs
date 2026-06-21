@@ -83,6 +83,21 @@ fn p3_dictionary_default_member_equals_item() {
     assert_differential("P3", late, early, Some(do_run), find_verdict, 77, Some(4));
 }
 
+#[test]
+#[ignore = "live COM; run explicitly"]
+fn p3b_dictionary_default_member_indexed_let_preserves_key_argument() {
+    // `d("k") = 20` is the default-member spelling of `d.Item("k") = 20`; the
+    // indexed key must remain an argument and the assigned value must be appended
+    // as the trailing propput value.
+    let body = "Dim verdict As Long\n\
+         d(\"k\") = 20\n\
+         verdict = d(\"k\")\n";
+    let late = run_clean(&dict_late(body));
+    let early = run_clean_with_references_prefer_vtable(&dict_early(body), scripting_ref());
+    let do_run = run_clean_with_references_dispatch_only(&dict_early(body), scripting_ref());
+    assert_differential("P3b", late, early, Some(do_run), find_verdict, 20, Some(2));
+}
+
 // ── P4: Dictionary Count (ro) + Exists (Bool) ────────────────────────────────
 
 #[test]

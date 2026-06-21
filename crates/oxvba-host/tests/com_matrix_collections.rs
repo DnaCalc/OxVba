@@ -59,6 +59,95 @@ fn c2_dictionary_keys_items_safearray() {
     assert_differential("C2", late, early, Some(do_run), find_verdict, 210, None);
 }
 
+#[test]
+#[ignore = "live COM; run explicitly"]
+fn c2b_dictionary_keys_foreach_through_variant_parameter() {
+    let source = "Dim verdict As Long\n\
+         Function SumDict(ByVal Obj As Variant) As Long\n\
+             If TypeOf Obj Is Collection Then\n\
+                 SumDict = -1000\n\
+                 Exit Function\n\
+             End If\n\
+             Dim k As Variant\n\
+             For Each k In Obj.Keys()\n\
+                 SumDict = SumDict + Obj(k)\n\
+             Next k\n\
+         End Function\n\
+         Sub Main()\n\
+             Dim d As Scripting.Dictionary\n\
+             Set d = CreateObject(\"Scripting.Dictionary\")\n\
+             d(\"a\") = 10\n\
+             d(\"b\") = 32\n\
+             verdict = SumDict(d)\n\
+         End Sub\n";
+    let early = run_clean_with_references_prefer_vtable(source, scripting_ref());
+    let do_run = run_clean_with_references_dispatch_only(source, scripting_ref());
+    assert_differential(
+        "C2b",
+        early.clone().map(|run| run.0),
+        early,
+        Some(do_run),
+        find_verdict,
+        42,
+        None,
+    );
+}
+
+#[test]
+#[ignore = "live COM; run explicitly"]
+fn c2c_bare_dictionary_typeof_collection_guard_stays_false() {
+    let source = "Dim verdict As Long\n\
+         Function SumDict(ByVal Obj As Variant) As Long\n\
+             If TypeOf Obj Is Collection Then\n\
+                 SumDict = -1000\n\
+                 Exit Function\n\
+             End If\n\
+             Dim k As Variant\n\
+             For Each k In Obj.Keys()\n\
+                 SumDict = SumDict + Obj(k)\n\
+             Next k\n\
+         End Function\n\
+         Sub Main()\n\
+             Dim d As New Dictionary\n\
+             d(\"a\") = 10\n\
+             d(\"b\") = 32\n\
+             verdict = SumDict(d)\n\
+         End Sub\n";
+    let early = run_clean_with_references_prefer_vtable(source, scripting_ref());
+    let do_run = run_clean_with_references_dispatch_only(source, scripting_ref());
+    assert_differential(
+        "C2c",
+        early.clone().map(|run| run.0),
+        early,
+        Some(do_run),
+        find_verdict,
+        42,
+        None,
+    );
+}
+
+#[test]
+#[ignore = "live COM; run explicitly"]
+fn c2d_variant_held_dictionary_typeof_dictionary_is_true() {
+    let source = "Dim verdict As Long\n\
+         Sub Main()\n\
+             Dim body As Variant\n\
+             Set body = New Dictionary\n\
+             If TypeOf body Is Dictionary Then verdict = 42\n\
+         End Sub\n";
+    let early = run_clean_with_references_prefer_vtable(source, scripting_ref());
+    let do_run = run_clean_with_references_dispatch_only(source, scripting_ref());
+    assert_differential(
+        "C2d",
+        early.clone().map(|run| run.0),
+        early,
+        Some(do_run),
+        find_verdict,
+        42,
+        None,
+    );
+}
+
 // ── C3 (P0): Dictionary For Each (IEnumVARIANT) order/count ──────────────────
 
 #[test]

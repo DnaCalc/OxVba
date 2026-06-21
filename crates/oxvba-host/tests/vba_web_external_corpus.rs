@@ -14,6 +14,7 @@ use oxvba_com::{
     TypeLibWireType,
     platform::portable::{PortableDispatch, PortableObjectFactory},
 };
+use oxvba_hal::model::HostPolicy;
 use oxvba_host::{Engine, HostConfig, HostProfileProvider};
 use oxvba_project::load_project_closure;
 use oxvba_runtime::Variant;
@@ -92,7 +93,18 @@ End Sub
 "#
 }
 
-fn core_basproj(root: &Path, shape: HostShape) -> String {
+fn scripting_com_reference_xml() -> &'static str {
+    r#"    <COMReference Include="Scripting">
+      <Guid>{420B2830-E718-11CF-893D-00A0C9054228}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <ImportLib>scrrun.dll</ImportLib>
+    </COMReference>
+"#
+}
+
+fn core_basproj(root: &Path, shape: HostShape, extra_core_module: Option<&str>) -> String {
     let project_name = format!("VbaWebCore{}", shape.suffix());
     let host_reference = match shape {
         HostShape::InlineHostFile => r#"    <Module Include="Application.bas" />
@@ -109,6 +121,9 @@ fn core_basproj(root: &Path, shape: HostShape) -> String {
 "#
         .to_string(),
     };
+    let extra_core_module = extra_core_module
+        .map(|module| format!("    <Module Include=\"{module}\" />\n"))
+        .unwrap_or_default();
     format!(
         r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -117,14 +132,7 @@ fn core_basproj(root: &Path, shape: HostShape) -> String {
   </PropertyGroup>
   <ItemGroup>
 {}    <Module Include="HostProbe.bas" />
-    <COMReference Include="Scripting">
-      <Guid>{{420B2830-E718-11CF-893D-00A0C9054228}}</Guid>
-      <VersionMajor>1</VersionMajor>
-      <VersionMinor>0</VersionMinor>
-      <Lcid>0</Lcid>
-      <ImportLib>scrrun.dll</ImportLib>
-    </COMReference>
-    <Module Include="{}" />
+{}{}    <Module Include="{}" />
     <ClassModule Include="{}" />
     <ClassModule Include="{}" />
     <ClassModule Include="{}" />
@@ -146,6 +154,8 @@ fn core_basproj(root: &Path, shape: HostShape) -> String {
 "#,
         project_name,
         host_reference,
+        extra_core_module,
+        scripting_com_reference_xml(),
         q(&root.join("src/WebHelpers.bas")),
         q(&root.join("src/IWebAuthenticator.cls")),
         q(&root.join("src/WebAsyncWrapper.cls")),
@@ -184,7 +194,11 @@ fn write_fake_host_project(temp: &Path) {
     .expect("write fake host basproj");
 }
 
-fn write_synthetic_project(shape: HostShape, harness_source: Option<&str>) -> PathBuf {
+fn write_synthetic_project(
+    shape: HostShape,
+    harness_source: Option<&str>,
+    core_probe_source: Option<&str>,
+) -> PathBuf {
     let root = require_vba_web_root();
     let temp = std::env::temp_dir().join(format!(
         "oxvba-vbaweb-{}-{}-{}",
@@ -204,9 +218,17 @@ fn write_synthetic_project(shape: HostShape, harness_source: Option<&str>) -> Pa
         write_fake_host_project(&temp);
     }
     std::fs::write(temp.join("HostProbe.bas"), host_probe_module()).expect("write HostProbe");
+    if let Some(core_probe_source) = core_probe_source {
+        std::fs::write(temp.join("VbaWebCoreProbe.bas"), core_probe_source)
+            .expect("write core probe module");
+    }
     let core_project = format!("VbaWebCore{}.basproj", shape.suffix());
-    std::fs::write(temp.join(&core_project), core_basproj(&root, shape))
-        .expect("write core basproj");
+    let core_probe_module = core_probe_source.map(|_| "VbaWebCoreProbe.bas");
+    std::fs::write(
+        temp.join(&core_project),
+        core_basproj(&root, shape, core_probe_module),
+    )
+    .expect("write core basproj");
     if let Some(harness_source) = harness_source {
         std::fs::write(temp.join("HarnessMain.bas"), harness_source).expect("write harness module");
         let harness_project = format!("VbaWebHarness{}.basproj", shape.suffix());
@@ -221,12 +243,13 @@ fn write_synthetic_project(shape: HostShape, harness_source: Option<&str>) -> Pa
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="{}" />
-    <Module Include="HarnessMain.bas" />
+{}    <Module Include="HarnessMain.bas" />
   </ItemGroup>
 </Project>
 "#,
                 shape.suffix(),
-                core_project
+                core_project,
+                scripting_com_reference_xml()
             ),
         )
         .expect("write harness basproj");
@@ -391,7 +414,8 @@ fn engine(shape: HostShape, calls: Arc<Mutex<Vec<String>>>) -> Engine {
     );
     let profile = HostProfileProvider::new()
         .with_typelib_resolver(Arc::new(VbaWebResolver))
-        .with_portable_com_projection(projection);
+        .with_portable_com_projection(projection)
+        .with_host_policy(HostPolicy::interactive_dev());
     Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile)
 }
 
@@ -403,7 +427,18 @@ fn run_project(path: &Path, shape: HostShape, calls: Arc<Mutex<Vec<String>>>) ->
 }
 
 fn run_harness_for_shape(shape: HostShape, harness: &str) -> Arc<Mutex<Vec<String>>> {
-    let project = write_synthetic_project(shape, Some(harness));
+    let project = write_synthetic_project(shape, Some(harness), None);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    run_project(&project, shape, calls.clone());
+    calls
+}
+
+fn run_harness_with_core_probe_for_shape(
+    shape: HostShape,
+    core_probe: &str,
+    harness: &str,
+) -> Arc<Mutex<Vec<String>>> {
+    let project = write_synthetic_project(shape, Some(harness), Some(core_probe));
     let calls = Arc::new(Mutex::new(Vec::new()));
     run_project(&project, shape, calls.clone());
     calls
@@ -412,7 +447,7 @@ fn run_harness_for_shape(shape: HostShape, harness: &str) -> Arc<Mutex<Vec<Strin
 #[test]
 #[ignore = "external corpus; requires .external/vba-corpus/vba-web checkout"]
 fn vba_web_raw_upstream_sources_build_without_application_shim() {
-    let project = write_synthetic_project(HostShape::HostInjectedProfile, None);
+    let project = write_synthetic_project(HostShape::HostInjectedProfile, None, None);
     let _values = run_project(
         &project,
         HostShape::HostInjectedProfile,
@@ -482,4 +517,172 @@ End Sub
         calls.lock().expect("call log").as_slice(),
         ["Run:2".to_string(), "OnTime:2".to_string()]
     );
+}
+
+#[test]
+#[ignore = "external corpus; requires .external/vba-corpus/vba-web checkout and normal Scripting.Dictionary COM registration"]
+fn vba_web_broad_library_harness_executes_with_normal_com_dependencies() {
+    let core_probe = r########"
+Attribute VB_Name = "VbaWebCoreProbe"
+Option Explicit
+
+Private AssertCounter As Long
+Private ProbeStage As Long
+
+Private Sub AssertEqual(ByVal label As String, ByVal actual As Variant, ByVal expected As Variant)
+    AssertCounter = AssertCounter + 1
+    If actual <> expected Then Err.Raise 52300 + AssertCounter, "VbaWebBroadHarness", label & ": " & CStr(actual) & " <> " & CStr(expected)
+End Sub
+
+Public Sub RunBroadProbe()
+    On Error GoTo ProbeFailed
+    ProbeStage = 1
+    HostProbe.AssertHostRoot
+
+    AssertEqual "Obfuscate default", WebHelpers.Obfuscate("secret"), "******"
+    AssertEqual "Obfuscate custom", WebHelpers.Obfuscate("abc", "_"), "___"
+    AssertEqual "MethodToName GET", WebHelpers.MethodToName(WebMethod.HttpGet), "GET"
+    AssertEqual "MethodToName PATCH", WebHelpers.MethodToName(WebMethod.HttpPatch), "PATCH"
+    AssertEqual "Json media type", WebHelpers.FormatToMediaType(WebFormat.Json), "application/json"
+    AssertEqual "Plain media type", WebHelpers.FormatToMediaType(WebFormat.PlainText), "text/plain"
+    AssertEqual "JoinUrl left slash", WebHelpers.JoinUrl("a/", "b"), "a/b"
+    AssertEqual "JoinUrl right slash", WebHelpers.JoinUrl("a", "/b"), "a/b"
+    AssertEqual "UrlEncode strict", WebHelpers.UrlEncode("A + B"), "A%20%2B%20B"
+    AssertEqual "UrlEncode form", WebHelpers.UrlEncode("A + B", EncodingMode:=UrlEncodingMode.FormUrlEncoding), "A+%2B+B"
+    AssertEqual "UrlDecode form", WebHelpers.UrlDecode("A+%2B+B", EncodingMode:=UrlEncodingMode.FormUrlEncoding), "A + B"
+
+    ProbeStage = 2
+    Dim parsed As Dictionary
+    Set parsed = WebHelpers.ParseUrlEncoded("a=1&b=3.14&c=Howdy%21&d+%26+e=A+%2B+B")
+    AssertEqual "ParseUrlEncoded count", parsed.Count, 4
+    If IsEmpty(parsed("c")) Then Err.Raise 52331, "VbaWebBroadHarness", "ParseUrlEncoded c is Empty"
+    If IsNull(parsed("c")) Then Err.Raise 52332, "VbaWebBroadHarness", "ParseUrlEncoded c is Null"
+    AssertEqual "ParseUrlEncoded c", parsed("c"), "Howdy!"
+    AssertEqual "ParseUrlEncoded encoded key", parsed("d & e"), "A + B"
+
+    ProbeStage = 3
+    Dim obj As New Dictionary
+    obj.Add "a", 1
+    obj.Add "b", "Howdy!"
+    obj.Add "c & d", "A + B"
+
+    ProbeStage = 4
+    Dim json As Object
+    Set json = WebHelpers.ParseJson("{""a"":1,""b"":3.14,""c"":""Howdy!"",""d"":true}")
+    AssertEqual "ParseJson number", json("a"), 1
+    AssertEqual "ParseJson string", json("c"), "Howdy!"
+
+    ProbeStage = 5
+    Dim keyValue As Dictionary
+    Set keyValue = WebHelpers.CreateKeyValue("abc", 123)
+    AssertEqual "CreateKeyValue key", keyValue("Key"), "abc"
+    AssertEqual "CreateKeyValue value", keyValue("Value"), 123
+
+    Dim keyValues As New Collection
+    keyValues.Add WebHelpers.CreateKeyValue("a", 123)
+    keyValues.Add WebHelpers.CreateKeyValue("b", 456)
+    AssertEqual "FindInKeyValues", WebHelpers.FindInKeyValues(keyValues, "b"), 456
+    WebHelpers.AddOrReplaceInKeyValues keyValues, "b", "def"
+    WebHelpers.AddOrReplaceInKeyValues keyValues, "c", "ghi"
+    AssertEqual "AddOrReplace count", keyValues.Count, 3
+    AssertEqual "AddOrReplace retained order", keyValues(2)("Value"), "def"
+
+    Dim cloned As Dictionary
+    Set cloned = WebHelpers.CloneDictionary(obj)
+    AssertEqual "CloneDictionary count", cloned.Count, obj.Count
+    AssertEqual "CloneDictionary value", cloned("b"), "Howdy!"
+
+    Dim coll As New Collection
+    coll.Add "abc"
+    coll.Add 123
+    Dim clonedColl As Collection
+    Set clonedColl = WebHelpers.CloneCollection(coll)
+    AssertEqual "CloneCollection count", clonedColl.Count, 2
+    AssertEqual "CloneCollection value", clonedColl(1), "abc"
+
+    ProbeStage = 6
+    Dim request As New WebRequest
+    request.Resource = "orders/{id}"
+    request.Method = WebMethod.HttpPost
+    request.AddUrlSegment "id", "A + B"
+    AssertEqual "Request encoded segment value", WebHelpers.UrlEncode(request.UrlSegments("id")), "A%20%2B%20B"
+    AssertEqual "Request segment formatted resource", request.FormattedResource, "orders/A%20%2B%20B"
+    request.AddQuerystringParam "page", 2
+    AssertEqual "Request one query formatted resource", request.FormattedResource, "orders/A%20%2B%20B?page=2"
+    request.AddQuerystringParam "active", True
+    request.AddHeader "X-Test", "yes"
+    request.AddCookie "session", "abc 123"
+    request.AddBodyParameter "message", "Howdy!"
+    request.AddBodyParameter "count", 3
+    AssertEqual "Request resource field", request.Resource, "orders/{id}"
+    AssertEqual "Request segment count", request.UrlSegments.Count, 1
+    AssertEqual "Request formatted resource", request.FormattedResource, "orders/A%20%2B%20B?page=2&active=true"
+    AssertEqual "Request content type", request.ContentType, "application/json"
+    AssertEqual "Request accept", request.Accept, "application/json"
+    AssertEqual "Request header count", request.Headers.Count, 1
+    AssertEqual "Request cookie count", request.Cookies.Count, 1
+
+    Dim requestClone As WebRequest
+    Set requestClone = request.Clone
+    AssertEqual "Request clone method", requestClone.Method, WebMethod.HttpPost
+    AssertEqual "Request clone resource", requestClone.Resource, "orders/{id}"
+    AssertEqual "Request clone body", requestClone.Body, request.Body
+
+    Dim options As New Dictionary
+    Dim segments As New Dictionary
+    segments.Add "id", "bob@example.test"
+    options.Add "UrlSegments", segments
+    Dim requestFromOptions As New WebRequest
+    requestFromOptions.CreateFromOptions options
+    AssertEqual "CreateFromOptions segment count", requestFromOptions.UrlSegments.Count, 1
+    AssertEqual "CreateFromOptions segment value", requestFromOptions.UrlSegments("id"), "bob@example.test"
+
+    ProbeStage = 7
+    Dim response As New WebResponse
+
+    Dim updated As New WebResponse
+    updated.StatusCode = WebStatusCode.Created
+    updated.StatusDescription = "Created"
+    updated.Content = "Ok"
+    response.Update updated
+    AssertEqual "Response update status", response.StatusCode, WebStatusCode.Created
+    AssertEqual "Response update content", response.Content, "Ok"
+
+    Dim client As New WebClient
+    client.BaseUrl = "https://example.test/api"
+    AssertEqual "Client GetFullUrl", client.GetFullUrl(request), "https://example.test/api/orders/A%20%2B%20B?page=2&active=true"
+    client.SetProxy "proxy:8080", "user", "pass", "skip"
+    AssertEqual "Client proxy server", client.ProxyServer, "proxy:8080"
+    AssertEqual "Client proxy bypass", client.ProxyBypassList, "skip"
+
+    ProbeStage = 8
+    Dim basic As New HttpBasicAuthenticator
+    basic.Setup "user", "pass"
+    AssertEqual "Basic username", basic.Username, "user"
+    AssertEqual "Basic password", basic.Password, "pass"
+
+    Dim digest As New DigestAuthenticator
+    digest.Setup "Mufasa", "Circle Of Life"
+    AssertEqual "Digest initially unauthenticated", digest.IsAuthenticated, False
+    Exit Sub
+
+ProbeFailed:
+    Dim errNumber As Long
+    Dim errDescription As String
+    errNumber = Err.Number
+    errDescription = Err.Description
+    On Error GoTo 0
+    If errNumber >= 52300 Then Err.Raise errNumber, "VbaWebBroadHarness", errDescription
+    Err.Raise 52400 + ProbeStage, "VbaWebBroadHarness", "stage " & CStr(ProbeStage) & ": " & errDescription
+End Sub
+"########;
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public Sub Main()
+    VbaWebCoreProbe.RunBroadProbe
+End Sub
+"########;
+    run_harness_with_core_probe_for_shape(HostShape::HostInjectedProfile, core_probe, harness);
 }

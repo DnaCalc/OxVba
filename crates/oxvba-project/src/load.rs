@@ -1003,13 +1003,16 @@ fn discover_modules_recursive(
                     path: path.display().to_string(),
                     source: e,
                 })?;
+                let header_instancing = source_class_header_instancing(kind, &source);
                 let source = normalize_loaded_module_source(kind, source);
-                let unit = module_unit_from_source(&module_name, kind, source).map_err(|err| {
-                    BasProjError::ModuleSourceInvalid {
-                        include: path.display().to_string(),
-                        message: err.to_string(),
-                    }
-                })?;
+                let mut unit =
+                    module_unit_from_source(&module_name, kind, source).map_err(|err| {
+                        BasProjError::ModuleSourceInvalid {
+                            include: path.display().to_string(),
+                            message: err.to_string(),
+                        }
+                    })?;
+                unit.attributes.instancing = header_instancing;
                 modules.push(unit);
             }
         }
@@ -1039,6 +1042,7 @@ fn load_explicit_modules(
             BasProjModuleKind::ClassModule => ModuleKind::Class,
             BasProjModuleKind::DocumentModule => ModuleKind::Document,
         };
+        let header_instancing = source_class_header_instancing(module_kind, &source);
         let source = normalize_loaded_module_source(module_kind, source);
         let mut unit =
             module_unit_from_source(&module_name, module_kind, source).map_err(|err| {
@@ -1047,13 +1051,100 @@ fn load_explicit_modules(
                     message: err.to_string(),
                 }
             })?;
-        unit.attributes.vb_global_namespace = bm.vb_global_namespace;
-        unit.attributes.vb_creatable = bm.vb_creatable;
-        unit.attributes.vb_predeclared_id = bm.vb_predeclared_id;
-        unit.attributes.vb_exposed = bm.vb_exposed;
+        unit.attributes.vb_global_namespace |= bm.vb_global_namespace;
+        unit.attributes.vb_creatable |= bm.vb_creatable;
+        unit.attributes.vb_predeclared_id |= bm.vb_predeclared_id;
+        unit.attributes.vb_exposed |= bm.vb_exposed;
+        unit.attributes.instancing = bm
+            .instancing
+            .map(project_manifest_instancing)
+            .or(header_instancing);
         modules.push(unit);
     }
     Ok(modules)
+}
+
+fn source_class_header_instancing(
+    module_kind: ModuleKind,
+    source: &str,
+) -> Option<crate::manifest::Instancing> {
+    if !matches!(module_kind, ModuleKind::Class | ModuleKind::Document) {
+        return None;
+    }
+
+    let lines = source.lines().collect::<Vec<_>>();
+    let first = lines.first()?.trim().to_ascii_lowercase();
+    if !(first.starts_with("version ") && first.ends_with(" class")) {
+        return None;
+    }
+
+    let mut idx = 1usize;
+    if idx >= lines.len() || !lines[idx].trim().eq_ignore_ascii_case("BEGIN") {
+        return None;
+    }
+    idx += 1;
+    while idx < lines.len() {
+        let trimmed = lines[idx].trim();
+        if trimmed.eq_ignore_ascii_case("END") {
+            break;
+        }
+        if let Some(instancing) = parse_class_header_instancing_line(trimmed) {
+            return Some(instancing);
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn parse_class_header_instancing_line(line: &str) -> Option<crate::manifest::Instancing> {
+    let without_comment = line.split_once('\'').map_or(line, |(head, _)| head).trim();
+    let (key, value) = without_comment.split_once('=')?;
+    let key = key.trim().to_ascii_lowercase();
+    let value = value.trim().trim_matches('"');
+    if key == "instancing" {
+        return parse_instancing_value(value);
+    }
+    if !is_truthy_vb_header_value(value) {
+        return None;
+    }
+    match key.as_str() {
+        "private" => Some(crate::manifest::Instancing::Private),
+        "publicnotcreatable" => Some(crate::manifest::Instancing::PublicNotCreatable),
+        "multiuse" => Some(crate::manifest::Instancing::MultiUse),
+        "globalmultiuse" => Some(crate::manifest::Instancing::GlobalMultiUse),
+        "singleuse" => Some(crate::manifest::Instancing::SingleUse),
+        "globalsingleuse" => Some(crate::manifest::Instancing::GlobalSingleUse),
+        _ => None,
+    }
+}
+
+fn parse_instancing_value(value: &str) -> Option<crate::manifest::Instancing> {
+    match value.trim() {
+        "1" | "Private" => Some(crate::manifest::Instancing::Private),
+        "2" | "PublicNotCreatable" => Some(crate::manifest::Instancing::PublicNotCreatable),
+        "3" | "SingleUse" => Some(crate::manifest::Instancing::SingleUse),
+        "4" | "GlobalSingleUse" => Some(crate::manifest::Instancing::GlobalSingleUse),
+        "5" | "MultiUse" => Some(crate::manifest::Instancing::MultiUse),
+        "6" | "GlobalMultiUse" => Some(crate::manifest::Instancing::GlobalMultiUse),
+        _ => None,
+    }
+}
+
+fn is_truthy_vb_header_value(value: &str) -> bool {
+    matches!(value.trim(), "-1" | "1")
+        || value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("yes")
+}
+
+fn project_manifest_instancing(instancing: Instancing) -> crate::manifest::Instancing {
+    match instancing {
+        Instancing::Private => crate::manifest::Instancing::Private,
+        Instancing::PublicNotCreatable => crate::manifest::Instancing::PublicNotCreatable,
+        Instancing::MultiUse => crate::manifest::Instancing::MultiUse,
+        Instancing::GlobalMultiUse => crate::manifest::Instancing::GlobalMultiUse,
+        Instancing::SingleUse => crate::manifest::Instancing::SingleUse,
+        Instancing::GlobalSingleUse => crate::manifest::Instancing::GlobalSingleUse,
+    }
 }
 
 /// Extract a project name from a `ProjectReference` include path.

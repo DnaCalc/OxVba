@@ -63,6 +63,17 @@ pub struct ModuleAttributes {
     pub vb_predeclared_id: bool,
     pub vb_exposed: bool,
     pub option_private_module: bool,
+    pub instancing: Option<Instancing>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Instancing {
+    Private,
+    PublicNotCreatable,
+    MultiUse,
+    GlobalMultiUse,
+    SingleUse,
+    GlobalSingleUse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -27,7 +27,7 @@ use oxvba_symbol::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::provider::ResolutionEnvironment;
-use oxvba_symbol::signature::{PassingMode, Signature, VarTypeRef};
+use oxvba_symbol::signature::{BuiltinType, PassingMode, Signature, VarTypeRef};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
@@ -305,6 +305,7 @@ impl IdAllocator {
         let return_type = signature
             .as_ref()
             .and_then(|s| s.return_type.clone())
+            .map(|ty| normalize_declared_type(env, ty))
             .unwrap_or(VarTypeRef::Variant);
         let is_class_member = class_name.is_some();
         let (params, locals, return_local, local_of, me_local) = build_frame(
@@ -362,6 +363,16 @@ impl IdAllocator {
             .iter()
             .find(|p| fold_identifier(&p.name) == main)
             .map(|p| p.proc_id)
+    }
+}
+
+fn normalize_declared_type(env: &ResolutionEnvironment, ty: VarTypeRef) -> VarTypeRef {
+    match ty {
+        VarTypeRef::Object(name) if env.is_udt(&name) => VarTypeRef::Udt(name),
+        VarTypeRef::Object(name) if env.is_enum_type(&name) => {
+            VarTypeRef::Builtin(BuiltinType::Long)
+        }
+        other => other,
     }
 }
 

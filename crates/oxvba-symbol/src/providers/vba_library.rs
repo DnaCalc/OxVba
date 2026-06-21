@@ -106,6 +106,18 @@ impl Provider for VbaLibraryProvider {
         Some(Binding::new(None, route))
     }
 
+    fn resolve_default_member(&self, recv: &VarTypeRef) -> Option<Binding> {
+        let VarTypeRef::Object(type_name) = recv else {
+            return None;
+        };
+        if fold_identifier(type_name) == "collection" {
+            let mut binding = collection_member("Item")?;
+            binding.is_default = true;
+            return Some(binding);
+        }
+        None
+    }
+
     fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
         if parts.len() == 2 && fold_identifier(parts[0]) == "vba" {
             return self.resolve(parts[1]);

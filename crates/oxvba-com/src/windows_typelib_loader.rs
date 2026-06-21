@@ -4006,6 +4006,41 @@ mod tests {
     }
 
     #[test]
+    fn scrrun_library_metadata_exposes_dictionary_coclass_name() {
+        // Scripting Runtime LIBID: {420B2830-E718-11CF-893D-00A0C9054228}
+        let guid = windows_sys::core::GUID {
+            data1: 0x420B_2830,
+            data2: 0xE718,
+            data3: 0x11CF,
+            data4: [0x89, 0x3D, 0x00, 0xA0, 0xC9, 0x05, 0x42, 0x28],
+        };
+        let Ok(ptlib) = load_typelib_from_registry(&guid, 1, 0, 0) else {
+            return;
+        };
+        let identity = TypeLibResolvedIdentity {
+            reference_name: "Scripting".to_string(),
+            requested_coclass: None,
+            importlib: "scrrun.dll".to_string(),
+            libid: Some("{420B2830-E718-11CF-893D-00A0C9054228}".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "test:scrrun-library".to_string(),
+        };
+        let blob = build_metadata_blob_from_typelib(ptlib, identity)
+            .expect("Scripting typelib should build library metadata");
+        unsafe { release_typelib(ptlib) };
+
+        assert!(
+            blob.coclass_names
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("Dictionary")),
+            "Scripting library metadata should expose Dictionary as an activatable type; got {:?}",
+            blob.coclass_names
+        );
+    }
+
+    #[test]
     fn resolve_typelib_identity_with_libid() {
         let request = TypeLibResolveRequest {
             reference_name: "Scripting".to_string(),

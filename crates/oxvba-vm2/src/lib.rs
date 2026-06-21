@@ -2927,8 +2927,22 @@ impl<'h> Vm<'h> {
                             .any(|i| i.eq_ignore_ascii_case(bare))
                 }));
         }
+        let bare = type_name.rsplit('.').next().unwrap_or(type_name);
+        if let Ok(Some(name)) = self.host.com().object_type_name(object.clone())
+            && (name.eq_ignore_ascii_case(type_name) || name.eq_ignore_ascii_case(bare))
+        {
+            return Ok(true);
+        }
         match self.host.com().describe_object(object) {
-            Ok(Some(descriptor)) => Ok(descriptor.prog_id_name.eq_ignore_ascii_case(type_name)),
+            Ok(Some(descriptor)) => {
+                let descriptor_bare = descriptor
+                    .prog_id_name
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(&descriptor.prog_id_name);
+                Ok(descriptor.prog_id_name.eq_ignore_ascii_case(type_name)
+                    || descriptor_bare.eq_ignore_ascii_case(bare))
+            }
             _ => Ok(false),
         }
     }

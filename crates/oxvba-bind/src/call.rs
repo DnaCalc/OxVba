@@ -355,6 +355,7 @@ impl<'a> ProcLower<'a> {
         let forced_by_val = expr.kind() == SyntaxKind::ParenExpr;
         if by_ref
             && !forced_by_val
+            && !self.is_object_default_member_index_expr(expr)
             && let Ok((place, _)) = self.bind_place(expr)
         {
             return Ok(CoreArg::ByRef(place));
@@ -385,11 +386,24 @@ impl<'a> ProcLower<'a> {
         };
         if by_ref
             && expr.kind() != SyntaxKind::ParenExpr
+            && !self.is_object_default_member_index_expr(expr)
             && let Ok((place, _)) = self.bind_place(expr)
         {
             return Ok(CoreArg::ByRef(place));
         }
         Ok(CoreArg::ByVal(self.bind_expr(expr)?.value))
+    }
+
+    fn is_object_default_member_index_expr(&mut self, expr: SyntaxNode<'_>) -> bool {
+        if expr.kind() != SyntaxKind::IndexExpr {
+            return false;
+        }
+        let Some(base) = expr.index_base() else {
+            return false;
+        };
+        self.bind_expr(base)
+            .map(|bound| matches!(bound.ty, VarTypeRef::Object(_)))
+            .unwrap_or(false)
     }
 
     /// Arguments for a COM / `Declare` callee whose per-parameter by-ref directions
@@ -846,6 +860,18 @@ impl<'a> ProcLower<'a> {
                 rhs,
             );
         }
+        if let DispatchRoute::Value = binding.route
+            && let Some(sym) = binding.symbol
+            && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
+            && self.is_late_bound_receiver(&ty)
+        {
+            let mut args = self.bind_args(target.index_arg_list(), None)?;
+            args.push(CoreArg::ByVal(rhs.clone()));
+            let recv = CoreValue::Load(self.place_by_name(name)?);
+            return Ok(Some(vec![CoreStmt::Eval(
+                self.late_member_call("Item", kind, recv, args),
+            )]));
+        }
         if !matches!(
             binding.route,
             DispatchRoute::ProjectMember {
@@ -1004,10 +1030,7 @@ impl<'a> ProcLower<'a> {
                 } = writer.route
                 {
                     let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
-                    match args.last_mut() {
-                        Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
-                        None => args.push(CoreArg::ByVal(rhs.clone())),
-                    }
+                    args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
                         dispid,
                         member_name,
@@ -1030,10 +1053,7 @@ impl<'a> ProcLower<'a> {
                 } = writer.route
                 {
                     let mut args = self.bind_extern_args(arglist, &param_types)?;
-                    match args.last_mut() {
-                        Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
-                        None => args.push(CoreArg::ByVal(rhs.clone())),
-                    }
+                    args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(
                         self.late_member_call(&member, kind, recv, args),
                     )]))
@@ -2022,9 +2042,11 @@ impl<'a> ProcLower<'a> {
     /// The declared return type of a project member (for inference); `Variant`
     /// when unknown.
     fn member_return_type(&self, sym: Option<SymbolId>, kind: ProjectMemberKind) -> VarTypeRef {
-        sym.and_then(|s| self.proc_signature_for(s, kind))
+        let ty = sym
+            .and_then(|s| self.proc_signature_for(s, kind))
             .and_then(|s| s.return_type)
-            .unwrap_or(VarTypeRef::Variant)
+            .unwrap_or(VarTypeRef::Variant);
+        self.g.resolve_udt_type(ty)
     }
 
     /// True if `recv` denotes the predeclared `Err` object.

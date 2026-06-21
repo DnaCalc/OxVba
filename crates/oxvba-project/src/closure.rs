@@ -227,7 +227,10 @@ fn adapt_module(m: &legacy::ModuleUnit, meta: &HashMap<String, &BasProjModule>) 
             vb_exposed: m.attributes.vb_exposed,
             option_private_module: m.attributes.option_private_module,
             host_document_type: bm.and_then(|b| b.host_document_type.clone()),
-            instancing: bm.and_then(|b| b.instancing).map(adapt_instancing),
+            instancing: bm
+                .and_then(|b| b.instancing)
+                .map(adapt_model_instancing)
+                .or_else(|| m.attributes.instancing.map(adapt_manifest_instancing)),
             prog_id: bm.and_then(|b| b.prog_id.clone()),
             description: bm.and_then(|b| b.description.clone()),
         },
@@ -297,7 +300,7 @@ fn adapt_module_kind(kind: legacy::ModuleKind) -> sym::ModuleKind {
     }
 }
 
-fn adapt_instancing(instancing: model::Instancing) -> sym::Instancing {
+fn adapt_model_instancing(instancing: model::Instancing) -> sym::Instancing {
     match instancing {
         model::Instancing::Private => sym::Instancing::Private,
         model::Instancing::PublicNotCreatable => sym::Instancing::PublicNotCreatable,
@@ -305,6 +308,17 @@ fn adapt_instancing(instancing: model::Instancing) -> sym::Instancing {
         model::Instancing::GlobalMultiUse => sym::Instancing::GlobalMultiUse,
         model::Instancing::SingleUse => sym::Instancing::SingleUse,
         model::Instancing::GlobalSingleUse => sym::Instancing::GlobalSingleUse,
+    }
+}
+
+fn adapt_manifest_instancing(instancing: legacy::Instancing) -> sym::Instancing {
+    match instancing {
+        legacy::Instancing::Private => sym::Instancing::Private,
+        legacy::Instancing::PublicNotCreatable => sym::Instancing::PublicNotCreatable,
+        legacy::Instancing::MultiUse => sym::Instancing::MultiUse,
+        legacy::Instancing::GlobalMultiUse => sym::Instancing::GlobalMultiUse,
+        legacy::Instancing::SingleUse => sym::Instancing::SingleUse,
+        legacy::Instancing::GlobalSingleUse => sym::Instancing::GlobalSingleUse,
     }
 }
 
@@ -346,7 +360,13 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("create project dir");
         let module_items: String = modules
             .iter()
-            .map(|(file, _)| format!("    <Module Include=\"{file}\" />\n"))
+            .map(|(file, _)| {
+                if file.ends_with(".cls") {
+                    format!("    <ClassModule Include=\"{file}\" />\n")
+                } else {
+                    format!("    <Module Include=\"{file}\" />\n")
+                }
+            })
             .collect();
         let ref_items: String = project_refs
             .iter()
@@ -497,6 +517,56 @@ mod tests {
         // D precedes both B and C (leaf-first).
         let pos = |n: &str| names.iter().position(|x| *x == n).unwrap();
         assert!(pos("D") < pos("B") && pos("D") < pos("C"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn referenced_exported_class_header_instancing_reaches_surface_metadata() {
+        let root = unique_root("class_header_instancing");
+        write_project(
+            &root,
+            "Lib",
+            "Library",
+            None,
+            &[(
+                "Widget.cls",
+                "VERSION 1.0 CLASS\n\
+                 BEGIN\n\
+                   MultiUse = -1  'True\n\
+                 END\n\
+                 Attribute VB_Name = \"Widget\"\n\
+                 Attribute VB_GlobalNameSpace = False\n\
+                 Attribute VB_Creatable = False\n\
+                 Attribute VB_PredeclaredId = False\n\
+                 Attribute VB_Exposed = True\n\
+                 Public Function Value() As Long\n\
+                 Value = 7\n\
+                 End Function\n",
+            )],
+            &[],
+        );
+        let app = write_project(
+            &root,
+            "App",
+            "Exe",
+            Some("Main.Run"),
+            &[("Main.bas", "Public Sub Run()\nEnd Sub\n")],
+            &["../Lib/Lib.basproj"],
+        );
+
+        let closure = load_project_closure(&app).expect("closure");
+        let app_manifest = closure.last().expect("app manifest");
+        let widget = app_manifest.reference_projects[0]
+            .modules
+            .iter()
+            .find(|module| module.module_name == "Widget")
+            .expect("referenced Widget class should be public");
+
+        assert_eq!(
+            widget.attributes.instancing,
+            Some(sym::Instancing::MultiUse),
+            "exported .cls MultiUse header metadata should survive normalization"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 

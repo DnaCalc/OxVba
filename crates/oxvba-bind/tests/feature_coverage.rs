@@ -727,6 +727,18 @@ fn replace_honors_start_count_and_compare() {
 }
 
 #[test]
+fn qualified_vba_replace_preserves_positional_arguments() {
+    let snap = run("Sub Main()\n\
+         Dim value As String\n\
+         value = VBA.Replace(\"orders/{id}\", \"{id}\", \"A%20B\")\n\
+         End Sub");
+    assert!(
+        snap.contains(&Variant::from_string(BStr::from("orders/A%20B"))),
+        "qualified VBA.Replace should match bare Replace argument binding: {snap:?}"
+    );
+}
+
+#[test]
 fn strings_library_functions_route_through_vba_bundle() {
     // The `Strings` library functions are native-bodied procs of the synthetic
     // `VBA` bundle: the binder resolves each as `ExternMember { has_receiver:

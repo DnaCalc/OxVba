@@ -308,6 +308,19 @@ impl ResolutionEnvironment {
             .contains_key(&crate::model::fold_identifier(name))
     }
 
+    /// Is `name` (any case) a declared enum type?
+    pub fn is_enum_type(&self, name: &str) -> bool {
+        let folded = crate::model::fold_identifier(name);
+        self.symbols.scopes().iter().any(|scope| {
+            self.symbols
+                .find_in_scope(scope.id, crate::model::SymbolNamespace::Type, &folded)
+                .ok()
+                .flatten()
+                .and_then(|id| self.symbols.symbol(id))
+                .is_some_and(|symbol| symbol.kind == crate::model::SymbolKind::Enum)
+        })
+    }
+
     /// The field count of UDT `name` (for record allocation).
     pub fn udt_field_count(&self, name: &str) -> Option<usize> {
         self.udt_fields

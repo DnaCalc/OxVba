@@ -472,12 +472,15 @@ impl Lower<'_> {
         self.imports.borrow_mut().intern(import)
     }
 
-    /// A declared type names a class *or* a `Type` (UDT) — the parser/scanner can't
-    /// tell them apart, so an `Object(name)` whose name is a declared UDT is a record
-    /// value type. (Applied wherever the binder reads a variable's declared type.)
+    /// A declared type name may be a class, a `Type` (UDT), or an `Enum`; the
+    /// parser/scanner initially carries all user-defined names as `Object(name)`.
+    /// Normalize the value-type cases wherever the binder reads a declared type.
     fn resolve_udt_type(&self, ty: VarTypeRef) -> VarTypeRef {
         match ty {
             VarTypeRef::Object(name) if self.env.is_udt(&name) => VarTypeRef::Udt(name),
+            VarTypeRef::Object(name) if self.env.is_enum_type(&name) => {
+                VarTypeRef::Builtin(oxvba_symbol::signature::BuiltinType::Long)
+            }
             other => other,
         }
     }
