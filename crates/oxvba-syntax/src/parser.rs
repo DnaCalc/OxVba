@@ -222,6 +222,7 @@ impl<'a> Parser<'a> {
             && !self.at(SyntaxKind::Newline)
             && !self.at(SyntaxKind::Comment)
             && !self.at(SyntaxKind::Colon)
+            && !self.at(SyntaxKind::KwElse)
         {
             self.bump();
         }
@@ -365,7 +366,11 @@ impl<'a> Parser<'a> {
         match kind {
             SyntaxKind::Eof => true,
             SyntaxKind::Newline | SyntaxKind::Comment if self.paren_depth == 0 => true,
-            SyntaxKind::KwThen | SyntaxKind::KwTo | SyntaxKind::KwStep | SyntaxKind::Colon => true,
+            SyntaxKind::KwThen
+            | SyntaxKind::KwElse
+            | SyntaxKind::KwTo
+            | SyntaxKind::KwStep
+            | SyntaxKind::Colon => true,
             _ => false,
         }
     }
@@ -1617,6 +1622,10 @@ impl<'a> Parser<'a> {
 
         loop {
             self.eat_trivia();
+            while self.at(SyntaxKind::Colon) {
+                self.bump();
+                self.eat_whitespace();
+            }
             if self.at_eof() {
                 break;
             }
@@ -1710,6 +1719,9 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwInput if self.peek_next_non_trivia_is(SyntaxKind::Hash) => {
                 self.parse_input_stmt()
             }
+            k if Self::is_contextual_name_keyword(k) && self.peek_is_label_colon() => {
+                self.parse_label_stmt()
+            }
             SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::IntLiteral
                 if self.peek_is_label_colon() =>
             {
@@ -1779,7 +1791,13 @@ impl<'a> Parser<'a> {
             if self.at(SyntaxKind::KwThen) {
                 self.bump();
             }
-            self.eat_to_eol();
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Colon) {
+                self.parse_inline_statement_block(&[]);
+                self.eat_to_eol();
+            } else {
+                self.eat_to_eol();
+            }
 
             self.parse_block(&[SyntaxKind::KwElseIf, SyntaxKind::KwElse, SyntaxKind::KwEnd]);
             self.finish_node();
@@ -1790,7 +1808,13 @@ impl<'a> Parser<'a> {
             self.start_node(SyntaxKind::ElseClause);
             self.eat_trivia();
             self.bump(); // Else
-            self.eat_to_eol();
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Colon) {
+                self.parse_inline_statement_block(&[]);
+                self.eat_to_eol();
+            } else {
+                self.eat_to_eol();
+            }
 
             self.parse_block(&[SyntaxKind::KwEnd]);
             self.finish_node();
@@ -2940,6 +2964,32 @@ mod tests {
     }
 
     #[test]
+    fn structures_keyword_identifiers_in_declaration_name_contexts() {
+        let src = concat!(
+            "Public Property Get Name() As String\n",
+            "    Name = \"ok\"\n",
+            "End Property\n",
+            "Public Sub UseKeywords(Name As String, Print As Long)\n",
+            "End Sub\n",
+            "Type Rec\n",
+            "    Name As String * 32\n",
+            "    Print As Long\n",
+            "End Type\n",
+            "Public Enum Options\n",
+            "    Name = 1\n",
+            "    Print = 2\n",
+            "End Enum\n",
+        );
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::PropertyDecl));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::Param).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::TypeField).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::EnumMember).len(), 2);
+    }
+
+    #[test]
     fn structures_type_block_fields() {
         let src = "Type Rec\n    Id As Long\n    Name As String * 32\n    Tags(1 To 3) As Integer\nEnd Type\n";
         let p = parse_ok(src);
@@ -3272,6 +3322,17 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_inline_statement_separators_allow_empty_segments() {
+        let src = "Sub T()\n    : x = 1:: Set cache = New Dictionary: Exit Sub:\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::AssignStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::SetStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ExitStmt));
+    }
+
+    #[test]
     fn round_trip_inline_on_error_and_resume() {
         let src = "Sub T()\n    On Error Resume Next: Resume Next\nEnd Sub\n";
         let p = parse(src);
@@ -3289,6 +3350,25 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LabelStmt).len(), 2);
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::GoToStmt).len(), 2);
+    }
+
+    #[test]
+    fn parses_contextual_keyword_labels() {
+        let src = "Sub T()\nGoTo Name\nName:\nGoTo Print\nPrint:\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LabelStmt).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::GoToStmt).len(), 2);
+    }
+
+    #[test]
+    fn parses_keyword_named_arguments() {
+        let src = "Sub T()\n    Configure Name:=\"api\", Print:=1\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
     }
 
     #[test]
@@ -3573,6 +3653,40 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert!(has_node_kind(&p.syntax(), SyntaxKind::IfStmt));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::AssignStmt));
+    }
+
+    #[test]
+    fn single_line_if_accepts_same_line_else_and_empty_segments() {
+        let src = "Sub T()\nIf ready Then:: On Error Resume Next: Set cache = New Dictionary Else: Exit Sub\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IfStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseClause));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::OnErrorStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::SetStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ExitStmt));
+    }
+
+    #[test]
+    fn nested_single_line_if_with_else_stays_inside_multiline_branch() {
+        let src = "Sub T()\nIf outer Then\n    If inner Then: a = 1 Else: a = 2\nElse\n    a = 3\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::IfStmt).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::ElseClause).len(), 2);
+    }
+
+    #[test]
+    fn multiline_if_accepts_inline_statements_after_elseif_and_else_colons() {
+        let src = "Sub T()\nIf a Then\n    x = 1\nElseIf b Then: x = 2: y = 3\nElse: x = 4\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseIfClause));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ElseClause));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::AssignStmt).len(), 4);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! High-level `.basproj` loading: parse XML, resolve filesystem, produce `ProjectManifest`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::error::BasProjError;
@@ -10,6 +10,7 @@ use crate::manifest::{
 };
 use crate::model::*;
 use crate::parse::{merge_import, parse_basproj_xml};
+use oxvba_symbol::cond_comp;
 
 /// Result of loading a `.basproj` file: a `ProjectManifest` for compilation plus
 /// any native export descriptors declared in the project.
@@ -120,11 +121,13 @@ pub(crate) fn build_loaded_project(
     } else {
         load_explicit_modules(&basproj.modules, project_dir)?
     };
-    validate_top_level_mainline_policy(output_type, &modules)?;
+    let cc_constants = cond_comp::base_cc_constants(&conditional_constants);
+    validate_top_level_mainline_policy(output_type, &modules, &cc_constants)?;
     let effective_entry_point = resolve_effective_entry_point(
         output_type,
         configured_entry_point.as_deref(),
         &mut modules,
+        &cc_constants,
     )?;
     if let Some(entry_point) = effective_entry_point.as_deref() {
         inject_entry_point_startup_shim(&mut modules, entry_point)?;
@@ -245,6 +248,7 @@ fn resolve_effective_entry_point(
     output_type: OutputType,
     configured_entry_point: Option<&str>,
     modules: &mut [ModuleUnit],
+    cc_constants: &cond_comp::CcConstants,
 ) -> Result<Option<String>, BasProjError> {
     if let Some(entry_point) = configured_entry_point {
         return Ok(Some(entry_point.to_string()));
@@ -252,7 +256,7 @@ fn resolve_effective_entry_point(
     if output_type != OutputType::Exe {
         return Ok(None);
     }
-    if let Some(entry_point) = prepare_unique_top_level_mainline_entry(modules)? {
+    if let Some(entry_point) = prepare_unique_top_level_mainline_entry(modules, cc_constants)? {
         return Ok(Some(entry_point));
     }
     discover_unique_sub_main_entry_point(modules).map(Some)
@@ -261,6 +265,7 @@ fn resolve_effective_entry_point(
 fn validate_top_level_mainline_policy(
     output_type: OutputType,
     modules: &[ModuleUnit],
+    cc_constants: &cond_comp::CcConstants,
 ) -> Result<(), BasProjError> {
     if !matches!(
         output_type,
@@ -272,8 +277,15 @@ fn validate_top_level_mainline_policy(
     let Some(module_name) = modules
         .iter()
         .filter(|module| module.module_kind == ModuleKind::Procedural)
-        .find(|module| !extract_top_level_mainline_lines(&module.source).is_empty())
-        .map(|module| module.module_name.clone())
+        .filter_map(
+            |module| match extract_top_level_mainline_lines(module, cc_constants) {
+                Ok(lines) if lines.is_empty() => None,
+                Ok(_) => Some(Ok(module.module_name.clone())),
+                Err(err) => Some(Err(err)),
+            },
+        )
+        .next()
+        .transpose()?
     else {
         return Ok(());
     };
@@ -286,19 +298,26 @@ fn validate_top_level_mainline_policy(
 
 fn prepare_unique_top_level_mainline_entry(
     modules: &mut [ModuleUnit],
+    cc_constants: &cond_comp::CcConstants,
 ) -> Result<Option<String>, BasProjError> {
     let candidates = modules
         .iter()
         .enumerate()
         .filter(|(_, module)| module.module_kind == ModuleKind::Procedural)
-        .filter(|(_, module)| !extract_top_level_mainline_lines(&module.source).is_empty())
-        .map(|(idx, module)| (idx, module.module_name.clone()))
-        .collect::<Vec<_>>();
+        .filter_map(
+            |(idx, module)| match extract_top_level_mainline_lines(module, cc_constants) {
+                Ok(lines) if lines.is_empty() => None,
+                Ok(_) => Some(Ok((idx, module.module_name.clone()))),
+                Err(err) => Some(Err(err)),
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
 
     match candidates.as_slice() {
         [] => Ok(None),
         [(idx, module_name)] => {
-            let (rewritten, proc_name) = rewrite_module_with_top_level_mainline(&modules[*idx])?;
+            let (rewritten, proc_name) =
+                rewrite_module_with_top_level_mainline(&modules[*idx], cc_constants)?;
             modules[*idx] = rewritten;
             Ok(Some(format!("{module_name}.{proc_name}")))
         }
@@ -355,8 +374,9 @@ fn discover_unique_sub_main_entry_point(modules: &[ModuleUnit]) -> Result<String
 
 fn rewrite_module_with_top_level_mainline(
     module: &ModuleUnit,
+    cc_constants: &cond_comp::CcConstants,
 ) -> Result<(ModuleUnit, String), BasProjError> {
-    let (retained_lines, mainline_lines) = split_top_level_mainline_lines(&module.source);
+    let (retained_lines, mainline_lines) = split_top_level_mainline_lines(module, cc_constants)?;
     let proc_name = next_top_level_mainline_proc_name(&module.source);
     let mut rewritten = retained_lines.join("\n");
     if !rewritten.is_empty() && !rewritten.ends_with('\n') {
@@ -408,35 +428,70 @@ fn module_has_public_parameterless_main(module: &ModuleUnit) -> bool {
         .any(line_is_public_parameterless_main_sub_signature)
 }
 
-fn split_top_level_mainline_lines(source: &str) -> (Vec<String>, Vec<String>) {
+fn split_top_level_mainline_lines(
+    module: &ModuleUnit,
+    cc_constants: &cond_comp::CcConstants,
+) -> Result<(Vec<String>, Vec<String>), BasProjError> {
+    let source = &module.source;
     let lines = source
         .lines()
         .map(|line| line.trim_end_matches('\r').to_string())
         .collect::<Vec<_>>();
-    let mainline = extract_top_level_mainline_lines(source);
+    let mainline = extract_top_level_mainline_lines_with_indices(module, cc_constants)?;
     if mainline.is_empty() {
-        return (lines, Vec::new());
+        return Ok((lines, Vec::new()));
     }
 
     let mut retained = Vec::new();
-    let mut remaining = mainline.clone();
-    for line in lines {
-        if let Some(pos) = remaining.iter().position(|candidate| candidate == &line) {
-            remaining.remove(pos);
+    let mut mainline_lines = Vec::new();
+    let mainline_indices = mainline
+        .iter()
+        .map(|(idx, _)| *idx)
+        .collect::<BTreeSet<_>>();
+    for (idx, line) in lines.into_iter().enumerate() {
+        if mainline_indices.contains(&idx) {
+            mainline_lines.push(line);
         } else {
             retained.push(line);
         }
     }
-    (retained, mainline)
+    Ok((retained, mainline_lines))
 }
 
-fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
+fn extract_top_level_mainline_lines(
+    module: &ModuleUnit,
+    cc_constants: &cond_comp::CcConstants,
+) -> Result<Vec<String>, BasProjError> {
+    Ok(
+        extract_top_level_mainline_lines_with_indices(module, cc_constants)?
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect(),
+    )
+}
+
+fn extract_top_level_mainline_lines_with_indices(
+    module: &ModuleUnit,
+    cc_constants: &cond_comp::CcConstants,
+) -> Result<Vec<(usize, String)>, BasProjError> {
+    let active_source = cond_comp::preprocess(&module.source, cc_constants).map_err(|message| {
+        BasProjError::ModuleSourceInvalid {
+            include: module.module_name.clone(),
+            message: format!("syntax preprocessing failed: {message}"),
+        }
+    })?;
+    Ok(extract_top_level_mainline_lines_from_active_source(
+        &active_source,
+    ))
+}
+
+fn extract_top_level_mainline_lines_from_active_source(source: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut active_proc_end: Option<&'static str> = None;
     let mut active_decl_block_end: Option<&'static str> = None;
     let mut active_non_mainline_continuation = false;
 
-    for raw in source.lines() {
+    for (idx, raw) in source.lines().enumerate() {
         let line = raw.trim_end_matches('\r');
         let trimmed = line.trim();
         let lower = trimmed.to_ascii_lowercase();
@@ -485,7 +540,7 @@ fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
             active_non_mainline_continuation = continues;
             continue;
         }
-        out.push(line.to_string());
+        out.push((idx, line.to_string()));
     }
 
     out
@@ -1069,6 +1124,36 @@ mod tests {
     }
 
     #[test]
+    fn top_level_mainline_classifier_ignores_inactive_conditional_branches() {
+        let module = ModuleUnit {
+            module_name: "ConditionalModule".to_string(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::default(),
+            source: concat!(
+                "#Const LOCAL_OFF = 0\n",
+                "#If LOCAL_OFF Then\n",
+                "valueOut = 99\n",
+                "#ElseIf Mac Then\n",
+                "valueOut = 88\n",
+                "#Else\n",
+                "Public Const K = 1\n",
+                "#End If\n",
+                "Public Sub Warmup()\n",
+                "End Sub\n",
+            )
+            .to_string(),
+        };
+        let cc_constants = cond_comp::base_cc_constants(&BTreeMap::new());
+
+        let lines = extract_top_level_mainline_lines(&module, &cc_constants)
+            .expect("conditional preprocessing should succeed");
+        assert!(
+            lines.is_empty(),
+            "inactive top-level executable lines must not count as mainline: {lines:?}"
+        );
+    }
+
+    #[test]
     fn configured_entry_point_injects_startup_shim_ahead_of_loaded_modules() {
         let unique = format!(
             "oxvba_project_load_entrypoint_test_{}_{}",
@@ -1636,6 +1721,130 @@ mod tests {
             .expect("conditional module-level Declare is not executable mainline");
         assert_eq!(loaded.output_type, OutputType::Library);
         assert!(loaded.entry_point.is_none());
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn library_with_inactive_top_level_code_and_procedure_local_conditionals_loads() {
+        let unique = format!(
+            "oxvba_project_load_library_conditional_inactive_mainline_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("ConditionalModule.bas"),
+            concat!(
+                "Attribute VB_Name = \"ConditionalModule\"\n",
+                "Option Explicit\n",
+                "#Const LOCAL_OFF = 0\n",
+                "Public Type Payload\n",
+                "    Name As String\n",
+                "End Type\n",
+                "#If LOCAL_OFF Then\n",
+                "valueOut = 99\n",
+                "#ElseIf Mac Then\n",
+                "valueOut = 88\n",
+                "#Else\n",
+                "Private Declare PtrSafe Sub CopyMemory Lib \"kernel32\" Alias \"RtlMoveMemory\" _\n",
+                "    (ByVal dest As LongPtr, ByVal src As LongPtr, ByVal size As Long)\n",
+                "#End If\n",
+                "Public Sub Warmup()\n",
+                "#If VBA7 Then\n",
+                "    Dim p As LongPtr\n",
+                "#Else\n",
+                "    Dim p As Long\n",
+                "#End If\n",
+                "End Sub\n",
+            ),
+        )
+        .expect("write module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjectLibrary</ProjectName>
+    <DefineConstants>Mac=0;VBA7=1</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ConditionalModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("inactive conditional mainline code must not reject a library module");
+        assert_eq!(loaded.output_type, OutputType::Library);
+        assert!(loaded.entry_point.is_none());
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_top_level_rewrite_moves_active_conditional_mainline_by_line_identity() {
+        let unique = format!(
+            "oxvba_project_load_exe_conditional_duplicate_mainline_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("ScriptModule.bas"),
+            concat!(
+                "#If Mac Then\n",
+                "valueOut = 41\n",
+                "#Else\n",
+                "valueOut = 41\n",
+                "#End If\n",
+            ),
+        )
+        .expect("write module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectExe</ProjectName>
+    <DefineConstants>Mac=0</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ScriptModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("project should load with conditional top-level rewrite");
+        let script_module = loaded
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name == "ScriptModule")
+            .expect("rewritten module should exist");
+        let proc_pos = script_module
+            .source
+            .find("Public Sub __OxVbaTopLevelMainline")
+            .expect("expected generated top-level proc");
+        let before_proc = &script_module.source[..proc_pos];
+        let inside_proc = &script_module.source[proc_pos..];
+        assert!(
+            before_proc.contains("valueOut = 41"),
+            "inactive duplicate line should remain in original conditional block: {}",
+            script_module.source
+        );
+        assert!(
+            inside_proc.contains("valueOut = 41"),
+            "active duplicate line should move into generated proc: {}",
+            script_module.source
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }
