@@ -24,6 +24,7 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_symbol::{CatalogTypeLibResolver, TypeLibResolver};
 
 use crate::runner::RuntimeProfileId;
 
@@ -114,6 +115,7 @@ pub struct Engine {
     runtime_profile: RuntimeProfileId,
     host_callbacks: Option<Arc<dyn HostCallbacks>>,
     portable_com_projection: Option<Arc<PortableComProjection>>,
+    typelib_resolver: Arc<dyn TypeLibResolver>,
     host_services: Arc<dyn HostServices>,
 }
 
@@ -222,6 +224,7 @@ impl Engine {
             runtime_profile,
             host_callbacks: None,
             portable_com_projection: None,
+            typelib_resolver: Arc::new(CatalogTypeLibResolver),
             host_services: build_host_services(
                 runtime_profile.hal_profile(),
                 runtime_profile.runtime_class(),
@@ -243,6 +246,7 @@ impl Engine {
             runtime_profile: RuntimeProfileId::default_for_hal_profile(HalProfileId::Null),
             host_callbacks: None,
             portable_com_projection: None,
+            typelib_resolver: Arc::new(CatalogTypeLibResolver),
             host_services,
         }
     }
@@ -347,6 +351,15 @@ impl Engine {
         self
     }
 
+    pub fn set_typelib_resolver(&mut self, resolver: Arc<dyn TypeLibResolver>) {
+        self.typelib_resolver = resolver;
+    }
+
+    pub fn with_typelib_resolver(mut self, resolver: Arc<dyn TypeLibResolver>) -> Self {
+        self.set_typelib_resolver(resolver);
+        self
+    }
+
     pub fn set_host_policy_preset(&mut self, preset: HostPolicyPreset) {
         self.set_host_policy(HostPolicy::for_preset(preset));
     }
@@ -433,8 +446,7 @@ impl Engine {
         if self.config.enable_jit {
             return Err(jit_not_implemented_diagnostic());
         }
-        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
-        let programs = oxvba_bind::bind_projects(closure, &typelibs)
+        let programs = oxvba_bind::bind_projects(closure, &*self.typelib_resolver)
             .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
         let bundles: Vec<oxvba_bundle::Bundle> = programs
             .iter()
@@ -519,8 +531,7 @@ impl Engine {
         if self.config.enable_jit {
             return Err(jit_not_implemented_diagnostic());
         }
-        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
-        let program = oxvba_bind::bind_program(manifest, &typelibs)
+        let program = oxvba_bind::bind_program(manifest, &*self.typelib_resolver)
             .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
         let bundle = oxvba_bundle::linearize(&program)
             .map_err(|e| PhaseDiagnostic::from_diagnostic(linearize_diagnostic(e)))?;
