@@ -107,6 +107,27 @@ fn vba_collection_default_member_indexing() {
 }
 
 #[test]
+fn vartype_of_object_reports_vba_vbobject_discriminant() {
+    let snap = run("Public vt As Long\n\
+         Public tn As String\n\
+         Sub Main()\n\
+             Dim c As New Collection\n\
+             vt = VBA.VarType(c)\n\
+             tn = VBA.TypeName(c)\n\
+         End Sub\n");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(9),
+        "VarType(Object) must be vbObject=9: {snap:?}"
+    );
+    assert!(
+        snap.iter()
+            .any(|v| v.as_bstr().map(|s| s.as_str()).as_deref() == Some("Collection")),
+        "TypeName(Collection) should remain host/class aware: {snap:?}"
+    );
+}
+
+#[test]
 fn vba_collection_keys_position_and_for_each() {
     // String keys (Add item,key / Item(key) / Remove key), `after`-positioned
     // insertion (Add 20 after "a" ⇒ [10,20,30]), and `For Each` enumeration in

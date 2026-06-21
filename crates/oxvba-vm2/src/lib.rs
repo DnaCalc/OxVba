@@ -2368,6 +2368,30 @@ impl<'h> Vm<'h> {
                 indices,
                 src,
             } => {
+                // `x(i…) = v` where `x` is statically a bare `Variant`/`As Object`
+                // follows the same runtime split as `ArrayGet`: a real array writes
+                // an element, while an object receiver writes its default member
+                // (`Item`, dispid 0). This also covers ByRef temporary write-back
+                // after passing `dict(key)` to a default-ByRef Variant parameter.
+                let value = self.get(*array)?;
+                if value.as_safearray().is_none() && value.as_object_ref().is_some() {
+                    let object = variant_to_object(value)?;
+                    let mut method_args: Vec<CallArg> =
+                        indices.iter().map(|s| CallArg::Slot(*s)).collect();
+                    method_args.push(CallArg::Slot(*src));
+                    let kind = if self.get(*src)?.vtype() == VarType::Object {
+                        ProjectMemberKind::PropertySet
+                    } else {
+                        ProjectMemberKind::PropertyLet
+                    };
+                    let _ = self.dispatch_by_object(
+                        object,
+                        &ComMemberSelector::DispatchId(0),
+                        Some(kind),
+                        &method_args,
+                    )?;
+                    return Ok(());
+                }
                 let arr = self.array_of(*array)?;
                 let bounds = arr
                     .bounds()

@@ -621,6 +621,7 @@ Public Sub RunBroadProbe()
     AssertEqual "Request accept", request.Accept, "application/json"
     AssertEqual "Request header count", request.Headers.Count, 1
     AssertEqual "Request cookie count", request.Cookies.Count, 1
+    AssertEqual "Request body JSON", request.Body, "{""message"":""Howdy!"",""count"":3}"
 
     Dim requestClone As WebRequest
     Set requestClone = request.Clone
@@ -685,4 +686,176 @@ Public Sub Main()
 End Sub
 "########;
     run_harness_with_core_probe_for_shape(HostShape::HostInjectedProfile, core_probe, harness);
+}
+
+#[test]
+#[ignore = "external corpus characterization; requires .external/vba-corpus/vba-web checkout and normal Scripting.Dictionary COM registration"]
+fn vba_web_residuals_are_isolated_and_characterized() {
+    let core_probe = r########"
+Attribute VB_Name = "VbaWebResidualProbe"
+Option Explicit
+
+Public Function ProbeScalarJson() As String
+    ProbeScalarJson = WebHelpers.ConvertToJson("Howdy!") & "|" & WebHelpers.ConvertToJson(True) & "|" & WebHelpers.ConvertToJson(3)
+End Function
+
+Public Function ProbeDictionaryJson() As String
+    Dim dict As New Dictionary
+    dict.Add "message", "Howdy!"
+    dict.Add "count", 3
+    ProbeDictionaryJson = WebHelpers.ConvertToJson(dict)
+End Function
+
+Public Function ProbeDictionaryIntrospection() As String
+    Dim dict As New Dictionary
+    ProbeDictionaryIntrospection = CStr(VBA.VarType(dict)) & "|" & VBA.TypeName(dict) & "|" & ProbeVariantIntrospection(dict)
+End Function
+
+Private Function ProbeVariantIntrospection(ByVal Value As Variant) As String
+    ProbeVariantIntrospection = CStr(VBA.VarType(Value)) & "|" & VBA.TypeName(Value)
+End Function
+
+Public Function ProbeCollectionJson() As String
+    Dim coll As New Collection
+    coll.Add "abc"
+    coll.Add 123
+    ProbeCollectionJson = WebHelpers.ConvertToJson(coll)
+End Function
+
+Public Function ProbeNestedJson() As String
+    Dim nested As Dictionary
+    Set nested = WebHelpers.ParseJson("{""child"":{""name"":""Ada""},""items"":[1,2]}")
+    ProbeNestedJson = nested("child")("name") & "|" & CStr(nested("items")(2))
+End Function
+
+Public Function ProbeDictionaryUrlEncoded() As String
+    Dim form As New Dictionary
+    form.Add "a", "A + B"
+    form.Add "c & d", "Howdy!"
+    ProbeDictionaryUrlEncoded = WebHelpers.ConvertToUrlEncoded(form)
+End Function
+
+Public Function ProbeCollectionUrlEncoded() As String
+    Dim kv As New Collection
+    kv.Add WebHelpers.CreateKeyValue("a", "A + B")
+    kv.Add WebHelpers.CreateKeyValue("c & d", "Howdy!")
+    ProbeCollectionUrlEncoded = WebHelpers.ConvertToUrlEncoded(kv)
+End Function
+
+Public Function ProbeHeaders() As String
+    Dim response As New WebResponse
+    Dim headers As Collection
+    Set headers = response.ExtractHeaders("Content-Type: application/json" & vbCrLf & "Set-Cookie: sid=abc%20123; Path=/" & vbCrLf)
+    ProbeHeaders = CStr(headers.Count) & "|" & headers(1)("Key") & "|" & headers(1)("Value")
+End Function
+
+Public Function ProbeCookies() As String
+    Dim response As New WebResponse
+    Dim headers As Collection
+    Set headers = response.ExtractHeaders("Content-Type: application/json" & vbCrLf & "Set-Cookie: sid=abc%20123; Path=/" & vbCrLf)
+    Dim cookies As Collection
+    Set cookies = response.ExtractCookies(headers)
+    ProbeCookies = CStr(cookies.Count) & "|" & cookies(1)("Key") & "|" & cookies(1)("Value")
+End Function
+"########;
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ScalarJson As String
+Public DictionaryJson As String
+Public DictionaryIntrospection As String
+Public CollectionJson As String
+Public NestedJson As String
+Public DictionaryUrlEncoded As String
+Public CollectionUrlEncoded As String
+Public HeaderSummary As String
+Public CookieSummary As String
+Public ErrorSummary As String
+
+Public Sub Main()
+    On Error Resume Next
+    ScalarJson = VbaWebResidualProbe.ProbeScalarJson
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "ScalarJson=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    DictionaryJson = VbaWebResidualProbe.ProbeDictionaryJson
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "DictionaryJson=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    DictionaryIntrospection = VbaWebResidualProbe.ProbeDictionaryIntrospection
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "DictionaryIntrospection=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    CollectionJson = VbaWebResidualProbe.ProbeCollectionJson
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "CollectionJson=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    NestedJson = VbaWebResidualProbe.ProbeNestedJson
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "NestedJson=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    DictionaryUrlEncoded = VbaWebResidualProbe.ProbeDictionaryUrlEncoded
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "DictionaryUrlEncoded=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    CollectionUrlEncoded = VbaWebResidualProbe.ProbeCollectionUrlEncoded
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "CollectionUrlEncoded=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    HeaderSummary = VbaWebResidualProbe.ProbeHeaders
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "HeaderSummary=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    CookieSummary = VbaWebResidualProbe.ProbeCookies
+    If Err.Number <> 0 Then ErrorSummary = ErrorSummary & "CookieSummary=" & CStr(Err.Number) & ":" & Err.Description & ";": Err.Clear
+    On Error GoTo 0
+End Sub
+"########;
+    let project = write_synthetic_project(
+        HostShape::HostInjectedProfile,
+        Some(harness),
+        Some(core_probe),
+    );
+    let snapshot = run_project(
+        &project,
+        HostShape::HostInjectedProfile,
+        Arc::new(Mutex::new(Vec::new())),
+    );
+    let text = |index: usize| {
+        snapshot
+            .get(index)
+            .and_then(|value| value.as_bstr())
+            .map(|text| text.as_str().to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(text(0), "\"Howdy!\"|true|3", "scalar JSON: {snapshot:?}");
+    assert_eq!(
+        text(1),
+        "{\"message\":\"Howdy!\",\"count\":3}",
+        "Dictionary JSON now depends on vbObject=9: {snapshot:?}"
+    );
+    assert_eq!(
+        text(2),
+        "9|Dictionary|9|Dictionary",
+        "VarType/TypeName for Dictionary object and ByVal Variant object: {snapshot:?}"
+    );
+    assert_eq!(
+        text(3),
+        "[\"abc\",123]",
+        "Collection JSON now depends on vbObject=9: {snapshot:?}"
+    );
+    assert_eq!(
+        text(5),
+        "a=A%20%2B%20B&c%20%26%20d=Howdy%21",
+        "omitted enum default still encodes spaces strictly: {snapshot:?}"
+    );
+    assert_eq!(
+        text(6),
+        "a=A%20%2B%20B&c%20%26%20d=Howdy%21",
+        "ByRef writeback to Variant-held Dictionary default member should no longer fault: {snapshot:?}"
+    );
+    assert_eq!(
+        text(7),
+        "2|Content-Type|application/json",
+        "header extraction: {snapshot:?}"
+    );
+    assert_eq!(text(8), "1|sid|abc 123", "cookie extraction: {snapshot:?}");
+    let errors = text(9);
+    assert!(
+        errors.contains("NestedJson=5:"),
+        "nested JSON object/array storage remains the only expected residual error: {snapshot:?}"
+    );
+    assert!(
+        !errors.contains("DictionaryJson=")
+            && !errors.contains("CollectionJson=")
+            && !errors.contains("DictionaryUrlEncoded=")
+            && !errors.contains("HeaderSummary=")
+            && !errors.contains("CookieSummary="),
+        "resolved residuals should stay resolved: {snapshot:?}"
+    );
 }
