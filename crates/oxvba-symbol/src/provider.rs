@@ -574,9 +574,13 @@ pub fn build_resolution_environment(
         {
             // A host-injected reference that names a registered typelib contributes
             // the host object model (Application/ThisWorkbook) via the same path.
+            let (reference_name, requested_coclass) = referenced_project_name
+                .rsplit_once('.')
+                .map(|(library, coclass)| (library.to_string(), Some(coclass.to_string())))
+                .unwrap_or_else(|| (referenced_project_name.clone(), None));
             let request = oxvba_com::TypeLibResolveRequest {
-                reference_name: referenced_project_name.clone(),
-                requested_coclass: None,
+                reference_name,
+                requested_coclass,
                 importlib_hint: None,
                 libid_hint: None,
                 major_version_hint: None,

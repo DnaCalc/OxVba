@@ -197,6 +197,7 @@ each item needs a broader grammar/semantic audit and non-corpus regression tests
 | VW-15 | fixed | Referenced-project enum type exposure | The first harness used `WebHelpers.MethodToName(WebMethod.HttpPost)` and failed binding with unresolved `WebMethod`, even though `WebMethod` is a public enum in the referenced VBA-Web library. | Referenced project enum type qualifiers now resolve through the synthesized surface, including both `Enum.Member` and `Project.Enum.Member` forms, without misclassifying coclass members as namespace-qualified static calls. Keep coverage for local variable shadowing of qualifier names. |
 | VW-16 | fixed, const-default lane remains | Cross-project optional defaults at runtime | Calling `WebHelpers.UrlEncode("a b+c")` from the harness reached runtime and failed with error 13, `unsupported coercion from Error to Double`. The omitted optional parameters arrived as the Missing/Error sentinel, then `If SpaceAsPlus = True` tried to coerce that sentinel numerically. | Referenced-project surfaces now carry literal optional defaults and the cross-bundle binder synthesizes explicit defaults, typed zero defaults, object `Nothing`, and Variant Missing as appropriate. Remaining scrutiny: optional defaults expressed as module constants or enum-qualified constants need folded-default metadata in the surface rather than only signature-literal metadata. |
 | VW-17 | fixed, parity edge remains | Conversion functions and VBA radix-prefixed strings | `WebHelpers.UrlDecode("a%20b%2Bc", True, 0)` reaches `VBA.CInt("&H" & web_Temp)` and previously failed at runtime with error 13, `expected a numeric value`. VBA conversion functions accept hex/octal-prefixed numeric strings such as `&H20`; OxVBA treated that as non-numeric text. | `CInt`/`CLng`/`CLngLng`/`CDbl`/`CBool` conversion parsing now accepts VBA `&H`/`&O`/bare-octal string forms, including signed prefixes where valid, and rejects malformed radix strings. Remaining scrutiny: exact VBA overflow and type-suffix behavior for very large prefixed strings. |
+| VW-18 | Engine no-shim corpus proof added, CLI/live-host boundary remains | Raw upstream VBA-Web source execution without source shims | Review showed the local `.external` fixture still carried an untracked `ExcelApplicationShim.bas`, so the previous CLI fixture was not a no-changes proof. | Ignored tracked tests in `vba_web_external_corpus` now synthesize temporary `.basproj` files that reference the raw upstream VBA-Web `.bas`/`.cls` files without `ExcelApplicationShim.bas`, inject `Excel.Application` as a host object-model reference, and execute broad pure-helper plus Dictionary-helper harnesses through `Engine`. The symbol layer now splits host-injected ProgID-style references such as `Excel.Application` into library/coclass resolver requests. Remaining work: direct `oxvba-cli run-project` no-shim execution still depends on live host metadata availability and is not a deterministic CI claim; portable dispatch also still cannot faithfully carry indexed `Dictionary.Item(key) = value` writeback keys, so the Dictionary corpus smoke asserts parse/count rather than indexed value retrieval. |
 
 ### Per project
 - **Riff**: surfaces F2 (and WithEvents member-access in `If`), plus heavy
@@ -208,10 +209,12 @@ each item needs a broader grammar/semantic audit and non-corpus regression tests
   `oxvba-cli run-project .external/vba-corpus/vba-web/fixtures/VbaWebCore.basproj
   --diagnostic-format json` exits successfully with no diagnostics. This is a compile/admission
   proof for the adapted core fixture, not a runtime or Excel-host parity claim; `Application`
-  remains shimmed in the ignored fixture. A separate ignored `VbaWebHarness.basproj` now starts
-  runtime proofing through a host `Exe` that references the core library. The current passing
-  smoke covers selected pure helpers only, now including URL decode's radix-string conversion
-  path; blocked adjacent cases are cataloged as VW-15/VW-16 and later rows.
+  remains shimmed in that ignored fixture. Tracked ignored `vba_web_external_corpus` tests now
+  provide the no-shim raw-source Engine proof by synthesizing temporary project files over the
+  upstream source tree. A separate ignored `VbaWebHarness.basproj` starts runtime proofing through
+  a host `Exe` that references the core library. The current passing smoke covers selected pure
+  helpers and a bounded Dictionary-backed parse/count lane; blocked adjacent cases are cataloged
+  as VW-15/VW-16/VW-18 and later rows.
 
 ## Related prior corpus work
 

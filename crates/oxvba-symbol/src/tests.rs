@@ -13,7 +13,7 @@ use oxvba_com::{
 
 use crate::binding::DispatchRoute;
 use crate::manifest::{
-    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference, SymbolProjectManifest,
 };
 use crate::model::{
     ScopeKind, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace, SymbolTable,
@@ -629,6 +629,41 @@ fn library_level_coclass_resolves_bare_and_qualified_names() {
             .is_some()
     );
     assert_eq!(provider.resolve_coclass("Scripting.Nope"), None);
+}
+
+struct ExcelHostTypeLibs;
+
+impl TypeLibResolver for ExcelHostTypeLibs {
+    fn resolve(&self, request: &oxvba_com::TypeLibResolveRequest) -> Option<TypeLibMetadataBlob> {
+        assert_eq!(request.reference_name, "Excel");
+        assert_eq!(request.requested_coclass.as_deref(), Some("Application"));
+        let mut blob = widget_blob();
+        blob.identity.reference_name = "Excel".into();
+        blob.identity.requested_coclass = Some("Application".into());
+        blob.activation_prog_id = Some("Excel.Application".into());
+        blob.coclass_names = vec!["Application".into()];
+        Some(blob)
+    }
+}
+
+#[test]
+fn host_injected_prog_id_reference_splits_library_and_coclass() {
+    let mut manifest = manifest("Proj", vec![module("Main", "Sub Main()\nEnd Sub\n")]);
+    manifest.references = vec![ProjectReference::HostInjected {
+        referenced_project_name: "Excel.Application".into(),
+    }];
+    let env = build_resolution_environment(&manifest, &ExcelHostTypeLibs).unwrap();
+    let scope = env.module_scope("Main").expect("main module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "Application")
+        .expect("host Application root");
+    match binding.route {
+        DispatchRoute::ComObjectRoot { type_name, prog_id } => {
+            assert_eq!(type_name, "Application");
+            assert_eq!(prog_id.as_deref(), Some("Excel.Application"));
+        }
+        other => panic!("expected host COM object root, got {other:?}"),
+    }
 }
 
 #[test]
