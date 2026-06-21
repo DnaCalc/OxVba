@@ -21,6 +21,23 @@ use oxvba_symbol::{CatalogTypeLibResolver, TypeLibResolver};
 
 const VBA_WEB_ROOT: &str = ".external/vba-corpus/vba-web";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostShape {
+    InlineHostFile,
+    ReferencedHostProject,
+    HostInjectedProfile,
+}
+
+impl HostShape {
+    fn suffix(self) -> &'static str {
+        match self {
+            HostShape::InlineHostFile => "InlineHost",
+            HostShape::ReferencedHostProject => "ReferencedHost",
+            HostShape::HostInjectedProfile => "HostInjected",
+        }
+    }
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -47,17 +64,59 @@ fn q(path: &Path) -> String {
     path.display().to_string()
 }
 
-fn core_basproj(root: &Path) -> String {
+fn application_module() -> &'static str {
+    r#"
+Attribute VB_Name = "Application"
+Option Explicit
+
+Public Function Run(ByVal Macro As Variant, Optional ByVal Arg1 As Variant) As Variant
+    Run = 42
+End Function
+
+Public Sub OnTime(ByVal EarliestTime As Variant, ByVal Procedure As String, Optional ByVal LatestTime As Variant, Optional ByVal Schedule As Variant)
+End Sub
+"#
+}
+
+fn host_probe_module() -> &'static str {
+    r#"
+Attribute VB_Name = "HostProbe"
+Option Explicit
+
+Public Sub AssertHostRoot()
+    Dim value As Variant
+    value = Application.Run("MacroName", 1)
+    If value <> 42 Then Err.Raise 52901, "VbaWebHostProbe", "Application.Run returned " & CStr(value)
+    Application.OnTime 0, "MacroName"
+End Sub
+"#
+}
+
+fn core_basproj(root: &Path, shape: HostShape) -> String {
+    let project_name = format!("VbaWebCore{}", shape.suffix());
+    let host_reference = match shape {
+        HostShape::InlineHostFile => r#"    <Module Include="Application.bas" />
+"#
+        .to_string(),
+        HostShape::ReferencedHostProject => {
+            r#"    <ProjectReference Include="FakeExcelHost.basproj" />
+"#
+            .to_string()
+        }
+        HostShape::HostInjectedProfile => r#"    <ProjectReference Include="Excel.Application">
+      <Kind>HostInjected</Kind>
+    </ProjectReference>
+"#
+        .to_string(),
+    };
     format!(
         r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <ProjectName>VbaWebCoreNoShim</ProjectName>
+    <ProjectName>{}</ProjectName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="Excel.Application">
-      <Kind>HostInjected</Kind>
-    </ProjectReference>
+{}    <Module Include="HostProbe.bas" />
     <COMReference Include="Scripting">
       <Guid>{{420B2830-E718-11CF-893D-00A0C9054228}}</Guid>
       <VersionMajor>1</VersionMajor>
@@ -85,6 +144,8 @@ fn core_basproj(root: &Path) -> String {
   </ItemGroup>
 </Project>
 "#,
+        project_name,
+        host_reference,
         q(&root.join("src/WebHelpers.bas")),
         q(&root.join("src/IWebAuthenticator.cls")),
         q(&root.join("src/WebAsyncWrapper.cls")),
@@ -105,10 +166,29 @@ fn core_basproj(root: &Path) -> String {
     )
 }
 
-fn write_no_shim_project(harness_source: Option<&str>) -> PathBuf {
+fn write_fake_host_project(temp: &Path) {
+    std::fs::write(temp.join("Application.bas"), application_module()).expect("write Application");
+    std::fs::write(
+        temp.join("FakeExcelHost.basproj"),
+        r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>FakeExcelHost</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Application.bas" />
+  </ItemGroup>
+</Project>
+"#,
+    )
+    .expect("write fake host basproj");
+}
+
+fn write_synthetic_project(shape: HostShape, harness_source: Option<&str>) -> PathBuf {
     let root = require_vba_web_root();
     let temp = std::env::temp_dir().join(format!(
-        "oxvba-vbaweb-nosim-{}-{}",
+        "oxvba-vbaweb-{}-{}-{}",
+        shape.suffix().to_ascii_lowercase(),
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -116,29 +196,43 @@ fn write_no_shim_project(harness_source: Option<&str>) -> PathBuf {
             .as_nanos()
     ));
     std::fs::create_dir_all(&temp).expect("create temp project");
-    std::fs::write(temp.join("VbaWebCoreNoShim.basproj"), core_basproj(&root))
+    if shape != HostShape::HostInjectedProfile {
+        std::fs::write(temp.join("Application.bas"), application_module())
+            .expect("write Application module");
+    }
+    if shape == HostShape::ReferencedHostProject {
+        write_fake_host_project(&temp);
+    }
+    std::fs::write(temp.join("HostProbe.bas"), host_probe_module()).expect("write HostProbe");
+    let core_project = format!("VbaWebCore{}.basproj", shape.suffix());
+    std::fs::write(temp.join(&core_project), core_basproj(&root, shape))
         .expect("write core basproj");
     if let Some(harness_source) = harness_source {
         std::fs::write(temp.join("HarnessMain.bas"), harness_source).expect("write harness module");
+        let harness_project = format!("VbaWebHarness{}.basproj", shape.suffix());
         std::fs::write(
-            temp.join("VbaWebHarnessNoShim.basproj"),
-            r#"<Project Sdk="OxVba.Sdk/0.1.0">
+            temp.join(&harness_project),
+            format!(
+                r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <ProjectName>VbaWebHarnessNoShim</ProjectName>
+    <ProjectName>VbaWebHarness{}</ProjectName>
     <EntryPoint>HarnessMain.Main</EntryPoint>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="VbaWebCoreNoShim.basproj" />
+    <ProjectReference Include="{}" />
     <Module Include="HarnessMain.bas" />
   </ItemGroup>
 </Project>
 "#,
+                shape.suffix(),
+                core_project
+            ),
         )
         .expect("write harness basproj");
-        temp.join("VbaWebHarnessNoShim.basproj")
+        temp.join(harness_project)
     } else {
-        temp.join("VbaWebCoreNoShim.basproj")
+        temp.join(core_project)
     }
 }
 
@@ -266,7 +360,11 @@ impl PortableDispatch for RecordingApplication {
             .lock()
             .map_err(|_| "call log poisoned".to_string())?
             .push(format!("{member}:{}", args.len()));
-        Ok(Variant::empty())
+        match member {
+            "Run" => Ok(Variant::from_i32(42)),
+            "OnTime" => Ok(Variant::empty()),
+            other => Err(format!("unexpected Application invoke `{other}`")),
+        }
     }
 
     fn get(&self, member: &str) -> Result<Variant, String> {
@@ -282,7 +380,10 @@ impl PortableDispatch for RecordingApplication {
     }
 }
 
-fn engine(calls: Arc<Mutex<Vec<String>>>) -> Engine {
+fn engine(shape: HostShape, calls: Arc<Mutex<Vec<String>>>) -> Engine {
+    if shape != HostShape::HostInjectedProfile {
+        return Engine::new(HostConfig { enable_jit: false });
+    }
     let projection = Arc::new(PortableComProjection::new());
     projection.register_object(
         "Excel.Application",
@@ -294,18 +395,29 @@ fn engine(calls: Arc<Mutex<Vec<String>>>) -> Engine {
     Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile)
 }
 
-fn run_project(path: &Path, calls: Arc<Mutex<Vec<String>>>) -> Vec<Variant> {
+fn run_project(path: &Path, shape: HostShape, calls: Arc<Mutex<Vec<String>>>) -> Vec<Variant> {
     let closure = load_project_closure(path).expect("load project closure");
-    engine(calls)
+    engine(shape, calls)
         .execute_project_closure_with_variant_snapshot(&closure)
         .expect("execute project closure")
+}
+
+fn run_harness_for_shape(shape: HostShape, harness: &str) -> Arc<Mutex<Vec<String>>> {
+    let project = write_synthetic_project(shape, Some(harness));
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    run_project(&project, shape, calls.clone());
+    calls
 }
 
 #[test]
 #[ignore = "external corpus; requires .external/vba-corpus/vba-web checkout"]
 fn vba_web_raw_upstream_sources_build_without_application_shim() {
-    let project = write_no_shim_project(None);
-    let _values = run_project(&project, Arc::new(Mutex::new(Vec::new())));
+    let project = write_synthetic_project(HostShape::HostInjectedProfile, None);
+    let _values = run_project(
+        &project,
+        HostShape::HostInjectedProfile,
+        Arc::new(Mutex::new(Vec::new())),
+    );
 }
 
 #[test]
@@ -337,6 +449,37 @@ Public Sub Main()
     If obfuscated <> "######" Then Err.Raise 52005, "VbaWebHarness", obfuscated
 End Sub
 "########;
-    let project = write_no_shim_project(Some(harness));
-    run_project(&project, Arc::new(Mutex::new(Vec::new())));
+    run_harness_for_shape(HostShape::HostInjectedProfile, harness);
+}
+
+#[test]
+#[ignore = "external corpus; requires .external/vba-corpus/vba-web checkout"]
+fn vba_web_host_root_shapes_execute_equivalent_harnesses() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public Sub Main()
+    HostProbe.AssertHostRoot
+
+    Dim encoded As String
+    encoded = WebHelpers.UrlEncode("a b+c")
+    If encoded <> "a%20b%2Bc" Then Err.Raise 52201, "VbaWebHarness", encoded
+
+    Dim decoded As String
+    decoded = WebHelpers.UrlDecode("a%20b%2Bc")
+    If decoded <> "a b+c" Then Err.Raise 52202, "VbaWebHarness", decoded
+
+    Dim joined As String
+    joined = WebHelpers.JoinUrl("https://example.test/api/", "/v1")
+    If joined <> "https://example.test/api/v1" Then Err.Raise 52203, "VbaWebHarness", joined
+End Sub
+"########;
+    run_harness_for_shape(HostShape::InlineHostFile, harness);
+    run_harness_for_shape(HostShape::ReferencedHostProject, harness);
+    let calls = run_harness_for_shape(HostShape::HostInjectedProfile, harness);
+    assert_eq!(
+        calls.lock().expect("call log").as_slice(),
+        ["Run:2".to_string(), "OnTime:2".to_string()]
+    );
 }
