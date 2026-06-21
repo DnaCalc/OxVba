@@ -278,6 +278,10 @@ pub enum BoundWhich {
 pub enum CoreValue {
     Const(CoreConst),
     Load(CorePlace),
+    /// Procedure-local scratch slot holding a `With` receiver. The binder assigns
+    /// ids; the linearizer maps each id to the slot where the enclosing `With`
+    /// receiver was evaluated once.
+    WithTemp(usize),
     // `num` is the arithmetic numeric regime (the operands' promoted fixed type or
     // `Widening`); it drives `Negate`/arithmetic ops and is `Widening` otherwise.
     Unary {
@@ -495,6 +499,12 @@ pub enum CoreStmt {
     ForEach {
         item: CorePlace,
         source: CoreValue,
+        body: Vec<CoreStmt>,
+    },
+    /// `With receiver ... End With`; the receiver is evaluated once.
+    With {
+        id: usize,
+        receiver: CoreValue,
         body: Vec<CoreStmt>,
     },
     Exit(ExitKind),

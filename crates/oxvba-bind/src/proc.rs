@@ -19,6 +19,7 @@ impl<'a> Lower<'a> {
             g: self,
             info,
             with_stack: Vec::new(),
+            next_with_temp: 0,
             labels: HashMap::new(),
             label_order: Vec::new(),
         }

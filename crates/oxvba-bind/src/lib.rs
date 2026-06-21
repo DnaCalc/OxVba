@@ -528,6 +528,7 @@ struct ProcLower<'a> {
     info: &'a ProcInfo,
     /// Active `With` receivers (for leading-dot member access).
     with_stack: Vec<Bound>,
+    next_with_temp: usize,
     /// Label name → its allocated id (allocated on first reference).
     labels: HashMap<String, LabelId>,
     label_order: Vec<String>,

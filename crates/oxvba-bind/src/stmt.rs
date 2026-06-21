@@ -10,7 +10,7 @@ use oxvba_bundle::coreir::{
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
 use oxvba_symbol::binding::{Binding, DispatchRoute};
-use oxvba_symbol::model::fold_identifier;
+use oxvba_symbol::model::{SymbolId, SymbolKind, fold_identifier};
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
@@ -415,24 +415,63 @@ impl<'a> ProcLower<'a> {
         let source = self
             .me_value()
             .ok_or_else(|| BindError::Malformed("RaiseEvent outside a class module".into()))?;
-        let binding = self
-            .resolve(name)
+        let symbol = self
+            .resolve_event_in_enclosing_module(name)?
             .ok_or_else(|| self.unresolved(name, "event"))?;
-        let symbol = binding.symbol;
-        let event = symbol
-            .and_then(|s| self.g.ids.event_index_of.get(&s).copied())
+        let event = self
+            .g
+            .ids
+            .event_index_of
+            .get(&symbol)
+            .copied()
             .ok_or_else(|| self.unresolved(name, "event index"))?;
         // Bind against the event's declared signature so ByRef parameters (the
         // VBA default) bind ByRef and write back to the raiser, and ByVal
         // parameters bind ByVal. Without it every argument defaulted to ByVal,
         // silently dropping ByRef event-parameter write-backs.
-        let signature = symbol.and_then(|s| self.event_signature(s));
+        let signature = self.event_signature(symbol);
         let args = self.bind_args(node.raise_event_arg_list(), signature.as_ref())?;
         Ok(vec![CoreStmt::RaiseEvent {
             source,
             event,
             args,
         }])
+    }
+
+    fn resolve_event_in_enclosing_module(&self, name: &str) -> Result<Option<SymbolId>, BindError> {
+        let Some(module_scope) = self
+            .g
+            .env
+            .symbols
+            .scopes()
+            .iter()
+            .find(|scope| scope.id == self.info.proc_scope)
+            .and_then(|scope| scope.parent)
+        else {
+            return Ok(None);
+        };
+        let folded = fold_identifier(name);
+        let symbols = self
+            .g
+            .env
+            .symbols
+            .symbols_in_scope(module_scope)
+            .map_err(|e| BindError::Malformed(format!("{e:?}")))?;
+        for sym_id in symbols {
+            let Some(sym) = self.g.env.symbols.symbol(sym_id) else {
+                continue;
+            };
+            if sym.kind != SymbolKind::Event {
+                continue;
+            }
+            let Some(sym_name) = self.g.env.symbols.name(sym.name) else {
+                continue;
+            };
+            if sym_name.folded == folded {
+                return Ok(Some(sym_id));
+            }
+        }
+        Ok(None)
     }
 
     fn bind_err_statement(
@@ -586,10 +625,20 @@ impl<'a> ProcLower<'a> {
 
     fn bind_with(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let obj = self.bind_required_bound(node.condition_expr(), "With object")?;
-        self.with_stack.push(obj);
+        let id = self.next_with_temp;
+        self.next_with_temp += 1;
+        self.with_stack.push(crate::Bound {
+            value: CoreValue::WithTemp(id),
+            ty: obj.ty.clone(),
+            place: obj.place.clone(),
+        });
         let body = self.bind_opt_block(node.body_block());
         self.with_stack.pop();
-        body
+        Ok(vec![CoreStmt::With {
+            id,
+            receiver: obj.value,
+            body: body?,
+        }])
     }
 
     fn bind_exit(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {

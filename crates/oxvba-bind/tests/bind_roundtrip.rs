@@ -235,6 +235,13 @@ fn enum_qualified_member_binds_as_constant_value() {
 }
 
 #[test]
+fn public_enum_member_binds_unqualified_as_constant_value() {
+    let src = "Public Enum WebFormat\n  PlainText = 0\n  Json = 1\nEnd Enum\n\
+               Sub Main()\n    Dim r As Long\n    r = PlainText\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(0.0));
+}
+
+#[test]
 fn keyword_token_can_be_parameter_name() {
     let src = "Sub UseName(Name As String)\n    Dim r As Long\n    r = Len(Name)\nEnd Sub\n\
                Sub Main()\n    Dim r As Long\n    UseName \"abc\"\n    r = 1\nEnd Sub\n";
@@ -1134,6 +1141,137 @@ fn as_new_auto_instantiates_a_user_class() {
 }
 
 #[test]
+fn class_initialize_can_set_collection_field_and_read_count() {
+    let main =
+        "Sub Main()\n    Dim r As Long\n    Dim t As New Thing\n    r = t.ItemCount\nEnd Sub\n";
+    let thing = "Private Items As VBA.Collection\n\n\
+                 Private Sub Class_Initialize()\n    Set Items = New VBA.Collection\nEnd Sub\n\n\
+                 Public Property Get ItemCount() As Long\n    ItemCount = Items.Count\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        Some(0.0)
+    );
+}
+
+#[test]
+fn variant_property_set_preserves_collection_object_for_readback() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim h As New Holder\n    Dim c As New VBA.Collection\n    c.Add \"A\"\n    c.Add \"B\"\n    Set h.Body = c\n    r = h.Body.Count\nEnd Sub\n";
+    let holder = "Private pBody As Variant\n\n\
+                  Public Property Get Body() As Variant\n    Set Body = pBody\nEnd Property\n\n\
+                  Public Property Set Body(Value As Variant)\n    Set pBody = Value\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Holder", ModuleKind::Class, holder),
+        ]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn variant_collection_typename_and_foreach_work_after_property_readback() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim h As New Holder\n    Dim c As New VBA.Collection\n    c.Add \"A\"\n    c.Add \"B\"\n    Set h.Body = c\n    r = CountItems(h.Body)\nEnd Sub\n\n\
+                Public Function CountItems(Value As Variant) As Long\n    Dim item As Variant\n    If VBA.TypeName(Value) <> \"Collection\" Then\n        CountItems = -100\n        Exit Function\n    End If\n    For Each item In Value\n        CountItems = CountItems + 1\n    Next item\nEnd Function\n";
+    let holder = "Private pBody As Variant\n\n\
+                  Public Property Get Body() As Variant\n    Set Body = pBody\nEnd Property\n\n\
+                  Public Property Set Body(Value As Variant)\n    Set pBody = Value\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Holder", ModuleKind::Class, holder),
+        ]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn with_receiver_function_result_is_evaluated_once_for_leading_dot_calls() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim s As New Suite\n    With s.It()\n        .Expect(\"actual\").ToEqual \"expected\"\n    End With\n    r = s.Created\nEnd Sub\n";
+    let suite = "Public Created As Long\n\n\
+                 Public Function It() As Spec\n    Created = Created + 1\n    Set It = New Spec\nEnd Function\n";
+    let spec = "Public Expectations As VBA.Collection\n\n\
+                Private Sub Class_Initialize()\n    Set Expectations = New VBA.Collection\nEnd Sub\n\n\
+                Public Function Expect(Optional Actual As Variant) As Expectation\n    Dim e As New Expectation\n    If VBA.VarType(Actual) = VBA.vbObject Then\n        Set e.Actual = Actual\n    Else\n        e.Actual = Actual\n    End If\n    Expectations.Add e\n    Set Expect = e\nEnd Function\n";
+    let expectation = "Public Actual As Variant\nPublic Expected As Variant\nPublic Passed As Boolean\n\n\
+                       Public Sub ToEqual(Expected As Variant)\n    Check IsEqual(Me.Actual, Expected), Expected:=Expected\nEnd Sub\n\n\
+                       Private Function IsEqual(Actual As Variant, Expected As Variant) As Variant\n    If VBA.IsObject(Actual) Or VBA.IsObject(Expected) Then\n        IsEqual = False\n    Else\n        IsEqual = Actual = Expected\n    End If\nEnd Function\n\n\
+                       Private Sub Check(Result As Variant, Optional Expected As Variant)\n    If Not VBA.IsMissing(Expected) Then\n        If VBA.IsObject(Expected) Then\n            Set Me.Expected = Expected\n        Else\n            Me.Expected = Expected\n        End If\n    End If\n    Passed = Result\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Suite", ModuleKind::Class, suite),
+            ("Spec", ModuleKind::Class, spec),
+            ("Expectation", ModuleKind::Class, expectation),
+        ]),
+        Some(1.0)
+    );
+}
+
+#[test]
+fn isobject_false_for_scalar_variant_named_optional_argument() {
+    let source = "Sub Main()\n    Dim r As Long\n    r = Outer(\"text\")\nEnd Sub\n\n\
+                  Function Outer(Expected As Variant) As Long\n    Outer = Inner(Expected:=Expected)\nEnd Function\n\n\
+                  Function Inner(Optional Expected As Variant) As Long\n    If VBA.IsObject(Expected) Then\n        Inner = 1\n    Else\n        Inner = 0\n    End If\nEnd Function\n";
+    assert_eq!(run_main_local0(source), Some(0.0));
+}
+
+#[test]
+fn isobject_guarded_set_branch_not_taken_for_scalar_named_optional_method_arg() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim e As New Expectation\n    e.ToEqual \"expected\"\n    r = e.Branch\nEnd Sub\n";
+    let expectation = "Public Branch As Long\nPublic Expected As Variant\n\n\
+                       Public Sub ToEqual(Expected As Variant)\n    Check Expected:=Expected\nEnd Sub\n\n\
+                       Private Sub Check(Optional Expected As Variant)\n    If VBA.IsObject(Expected) Then\n        Branch = 1\n        Set Me.Expected = Expected\n    Else\n        Branch = 2\n        Me.Expected = Expected\n    End If\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Expectation", ModuleKind::Class, expectation),
+        ]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn method_argument_string_is_not_object_in_class_method() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim e As New Expectation\n    e.ToEqual \"expected\"\n    r = e.Branch\nEnd Sub\n";
+    let expectation = "Public Branch As Long\n\n\
+                       Public Sub ToEqual(Expected As Variant)\n    If VBA.IsObject(Expected) Then\n        Branch = 1\n    Else\n        Branch = 2\n    End If\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Expectation", ModuleKind::Class, expectation),
+        ]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn named_argument_to_private_class_method_binds_caller_parameter_value() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim e As New Expectation\n    e.ToEqual \"expected\"\n    r = e.Branch\nEnd Sub\n";
+    let expectation = "Public Branch As Long\n\n\
+                       Public Sub ToEqual(Expected As Variant)\n    Check Expected:=Expected\nEnd Sub\n\n\
+                       Private Sub Check(Optional Expected As Variant)\n    If VBA.IsMissing(Expected) Then\n        Branch = 1\n    ElseIf Expected = \"expected\" Then\n        Branch = 2\n    Else\n        Branch = 3\n    End If\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Expectation", ModuleKind::Class, expectation),
+        ]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn statement_form_named_argument_binds_in_standard_module() {
+    let source = "Sub Main()\n    Dim r As Long\n    ToEqual \"expected\"\n    r = g\nEnd Sub\n\n\
+                  Public g As Long\n\n\
+                  Public Sub ToEqual(Expected As Variant)\n    Check Expected:=Expected\nEnd Sub\n\n\
+                  Private Sub Check(Optional Expected As Variant)\n    If VBA.IsMissing(Expected) Then\n        g = 1\n    ElseIf Expected = \"expected\" Then\n        g = 2\n    Else\n        g = 3\n    End If\nEnd Sub\n";
+    assert_eq!(run_main_local0(source), Some(2.0));
+}
+
+#[test]
 fn implements_typeof_false_for_non_implementer() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim o As Object\n    Set o = New CRock\n    If TypeOf o Is IAnimal Then\n        r = 1\n    Else\n        r = 0\n    End If\nEnd Sub\n";
     let crock = "Public Function Foo() As Long\nEnd Function\n";
@@ -1347,6 +1485,26 @@ fn raise_event_byref_param_writes_back_to_raiser() {
         ]),
         Some(1234.0),
         "the handler's write to its ByRef parameter must reach the raiser's variable"
+    );
+}
+
+#[test]
+fn raise_event_prefers_event_over_same_named_property() {
+    // `RaiseEvent Result(...)` must target the event declaration even when the
+    // class also has a `Result` property. VBA-Web's SpecSuite has this shape.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim k As Sink\n    Dim s As Source\n    Set s = New Source\n    Set k = New Sink\n    Set k.Watched = s\n    s.Fire\n    r = k.Got\nEnd Sub\n";
+    let sink = "Public WithEvents Watched As Source\nPublic Got As Long\n\n\
+                Private Sub Watched_Result(ByVal v As Long)\n    Got = v\nEnd Sub\n";
+    let source = "Public Event Result(ByVal v As Long)\n\n\
+                  Public Property Get Result() As Long\n    Result = -1\nEnd Property\n\n\
+                  Public Sub Fire()\n    RaiseEvent Result(7)\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Sink", ModuleKind::Class, sink),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        Some(7.0)
     );
 }
 

@@ -316,10 +316,24 @@ impl<'a> ProcLower<'a> {
         .ok_or_else(|| self.unresolved(name, "project proc"))?;
 
         let signature = self.proc_signature_for(sym, kind);
-        let args = match &signature {
+        let mut args = match &signature {
             Some(sig) => self.bind_proc_args(arglist, sig, sym)?,
             None => self.bind_args(arglist, None)?,
         };
+        if let Some(target_class) = self
+            .g
+            .ids
+            .procs
+            .get(proc_id.0)
+            .and_then(|info| info.class_name.as_deref())
+            && self.info.class_name.as_deref().map(fold_identifier)
+                == Some(fold_identifier(target_class))
+        {
+            let me = self
+                .me_value()
+                .ok_or_else(|| BindError::Malformed(format!("class member `{name}` without Me")))?;
+            args.insert(0, CoreArg::ByVal(me));
+        }
         let ty = signature
             .and_then(|s| s.return_type)
             .unwrap_or(VarTypeRef::Variant);
@@ -1747,7 +1761,12 @@ impl<'a> ProcLower<'a> {
             },
             // No declared member on an untyped/foreign receiver → late binding.
             None if self.is_late_bound_receiver(&recv.ty) => Ok(value_bound(
-                self.late_member_call(member, ProjectMemberKind::Method, recv.value, Vec::new()),
+                self.late_member_call(
+                    member,
+                    ProjectMemberKind::PropertyGet,
+                    recv.value,
+                    Vec::new(),
+                ),
                 VarTypeRef::Variant,
             )),
             None => Err(self.unresolved(member, "member")),

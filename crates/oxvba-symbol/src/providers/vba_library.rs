@@ -98,7 +98,7 @@ impl Provider for VbaLibraryProvider {
         // The built-in `Collection` resolves like a referenced coclass: its members
         // bind cross-bundle to the `VBA` library class (late dispatch by name), not
         // via a predeclared/`NativeImplId` route.
-        if fold_identifier(type_name) == "collection" {
+        if is_collection_type(type_name) {
             return collection_member(name);
         }
         let object = predeclared_object(type_name)?;
@@ -110,7 +110,7 @@ impl Provider for VbaLibraryProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        if fold_identifier(type_name) == "collection" {
+        if is_collection_type(type_name) {
             let mut binding = collection_member("Item")?;
             binding.is_default = true;
             return Some(binding);
@@ -147,6 +147,12 @@ impl Provider for VbaLibraryProvider {
         let bare = folded.strip_prefix("vba.").unwrap_or(&folded);
         (bare == "collection").then(|| (VBA_UNIT.to_string(), "Collection".to_string()))
     }
+}
+
+fn is_collection_type(type_name: &str) -> bool {
+    let folded = fold_identifier(type_name);
+    let bare = folded.strip_prefix("vba.").unwrap_or(&folded);
+    bare == "collection"
 }
 
 /// Resolve a `Collection` member to its cross-bundle [`DispatchRoute::ExternMember`]

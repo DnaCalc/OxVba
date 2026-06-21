@@ -65,6 +65,7 @@ struct Linearizer<'p> {
     gosub_ret_slot: Option<usize>,
     gosub_return_pcs: Vec<usize>,
     gosub_return_jumps: Vec<usize>,
+    with_temps: HashMap<usize, usize>,
 }
 
 impl<'p> Linearizer<'p> {
@@ -84,6 +85,7 @@ impl<'p> Linearizer<'p> {
             gosub_ret_slot: None,
             gosub_return_pcs: Vec::new(),
             gosub_return_jumps: Vec::new(),
+            with_temps: HashMap::new(),
         }
     }
 
@@ -197,6 +199,7 @@ impl<'p> Linearizer<'p> {
         self.gosub_ret_slot = None;
         self.gosub_return_pcs.clear();
         self.gosub_return_jumps.clear();
+        self.with_temps.clear();
     }
 
     fn new_temp(&mut self) -> usize {
@@ -442,6 +445,11 @@ impl<'p> Linearizer<'p> {
                 Ok(slot)
             }
             CoreValue::Load(place) => self.lower_place_load(place),
+            CoreValue::WithTemp(id) => self
+                .with_temps
+                .get(id)
+                .copied()
+                .ok_or_else(|| LinearizeError::Malformed(format!("unbound With temp {id}"))),
             CoreValue::Unary { op, expr, num } => {
                 let src = self.lower_value(expr)?;
                 let dst = self.new_temp();
@@ -1119,6 +1127,19 @@ impl<'p> Linearizer<'p> {
                 let after = self.here();
                 self.patch(jz, after);
                 self.close_loop(after);
+            }
+            CoreStmt::With { id, receiver, body } => {
+                let slot = self.lower_value(receiver)?;
+                let previous = self.with_temps.insert(*id, slot);
+                self.lower_block(body)?;
+                match previous {
+                    Some(prev) => {
+                        self.with_temps.insert(*id, prev);
+                    }
+                    None => {
+                        self.with_temps.remove(id);
+                    }
+                }
             }
             CoreStmt::Exit(kind) => match kind {
                 ExitKind::Proc => {

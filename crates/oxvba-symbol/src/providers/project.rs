@@ -141,6 +141,7 @@ fn is_public_member(kind: SymbolKind) -> bool {
             | SymbolKind::Property
             | SymbolKind::Type
             | SymbolKind::Enum
+            | SymbolKind::EnumMember
             | SymbolKind::Const
             | SymbolKind::Field
             | SymbolKind::WithEventsField
