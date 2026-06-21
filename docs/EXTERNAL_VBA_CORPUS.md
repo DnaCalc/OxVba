@@ -26,7 +26,7 @@ here is not a compatibility claim.
 
 | Project | Reference | What we're checking | Status |
 | --- | --- | --- | --- |
-| Riff | https://github.com/uesleibros/riff | `Declare`/Win32 interop, COM vtable dispatch, pointer-heavy VBA, conditional 32/64-bit compilation, UDTs/arrays, machine-code callback thunks, host-reset safety | gathered |
+| Riff | https://github.com/uesleibros/riff | `Declare`/Win32 interop, COM vtable dispatch, pointer-heavy VBA, conditional 32/64-bit compilation, UDTs/arrays, machine-code callback thunks, host-reset safety | running/initial characterization |
 | Wasabi | https://github.com/uesleibros/wasabi | Win32 networking `Declare`s, byte-array/string transport, async callback/event patterns, handler-class lifetimes, `DoEvents` host behavior, TLS/proxy surfaces | gathered |
 | VBA-Web | https://github.com/VBA-tools/VBA-Web | Real-world VBA web-service library: `WinHttpRequest`, `InternetExplorer.Application`, `Scripting.Dictionary`, `MSXML2.DOMDocument`, `System.Security.Cryptography`, `WithEvents`, `Implements`, Win32/macOS `Declare`s, conditional compilation, JSON/URL/XML helpers, optional args, arrays, collections, class modules | running/characterized |
 | Awesome VBA | https://github.com/sancarn/awesome-vba | Index for sourcing further candidates (JSON/CSV/XML, data structures, parsers, Win32, add-ins, …) | watchlisted |
@@ -204,9 +204,30 @@ each item needs a broader grammar/semantic audit and non-corpus regression tests
 | VW-22 | investigated, fixed for focused residual set | Residual JSON/URL/header paths before spec-runner work | A focused residual probe isolated the previously broad failures so the spec runner does not inherit vague "VBA-Web still fails" buckets. | Fixed and pinned: dictionary/collection JSON conversion now works because runtime `VarType(Object)` reports `9`; `WebRequest.Body` exact JSON is asserted in the broad harness; ByRef writeback to a Variant-held Dictionary default member no longer faults; ordinary `ExtractHeaders`/`ExtractCookies` pass; enum-qualified optional defaults such as `UrlEncodingMode.FormUrlEncoding` are honored in omitted-argument paths, so `ConvertToUrlEncoded` uses form URL encoding by default; nested JSON object/array storage through `Set json_ParseObject.Item(key) = json_ParseValue(...)` now succeeds without any `Scripting.Dictionary` special case because internal OxVBA objects are projected at the COM boundary as unwrap-capable `IDispatch` wrappers. |
 | VW-23 | extracted WebRequest spec runner passing | Extracted `.xlsm` spec workbook runner | The ignored `vba_web_external_corpus` tests now synthesize a temporary project from locally extracted `VBA-Web - Specs.xlsm` modules and run workbook spec-framework slices through OxVBA. The runner keeps upstream modules in the ignored corpus area, relocates exported default-member attributes such as `Attribute Item.VB_UserMemId = 0` so existing symbol scanning preserves semantics, replaces workbook/UI reporter behavior with console-style `ImmediateReporter` and `WorkbookReporter` shims instead of dropping those concepts, and imports `Scripting.Dictionary` through the normal COM reference path. This pass produced general regressions for unqualified enum members, `RaiseEvent` when an event and property share a name, `VBA.Collection` qualified type/member lookup, late-bound property reads on Variant-held objects, `With <function result>` one-time receiver evaluation, same-class bare method calls needing implicit `Me`, dimension-aware `LBound`/`UBound`, project-instance default-member dispatch, default accessor metadata propagation across Get/Let/Set, and ByRef copy-back from nested/indexed/default-member expressions. | Bounded ignored probes now pass for returned-suite `Class_Terminate` registration, `With Suite.It(...)` temporary behavior, WebRequest collection/dictionary/array body formatting, `SpecExpectation` named-argument paths, cookie/default-member expectation chains, and the full extracted upstream `Specs_WebRequest.Specs` run. The `Array("A","B","C")` JSON mismatch is fixed by binding/lowering optional `LBound`/`UBound` dimensions instead of ignoring the second argument, and the nested `Spec.Expect(Request.Cookies(1)("Key"))` path is fixed by guarded ByRef copy-back that stores back to non-slot places only when the callee actually mutates the temporary. Direct parser support for member-level exported attributes remains a follow-up; the runner currently relocates only default-member metadata in the temporary copy. |
 
+## Riff first-pass issue-family catalog
+
+Riff is the next external proofing lane after VBA-Web. Local upstream source is
+stored only under `.external/vba-corpus/riff/`; tracked tests synthesize temporary
+projects over that source instead of committing or modifying it. The first pass
+intentionally stays short of `RiffOpen`, because that path activates WASAPI and
+Media Foundation, allocates executable memory, installs timer callbacks, and uses
+manual COM/vtable thunks. Those are the core future compatibility targets, not
+things to mask inside a small smoke.
+
+| ID | Status | Family | What Riff exposed | Broader scrutiny needed |
+| --- | --- | --- | --- | --- |
+| RF-01 | fixed | Bare standard-module `Property Let` assignment | Riff exposes module-level public properties such as `RiffMasterVolume`. A simple harness assignment `RiffMasterVolume = 0.25!` was rejected as `BIND-E-INVALID-ASSIGNMENT` because the binder only lowered bare property setters as implicit class `Me.Property` calls. | Standard-module property setters now lower directly to the owning `VbaProc` when the accessor has no class owner, while class properties still use implicit `Me`. Regression coverage includes scalar and module-level UDT-backed storage. Keep indexed standard-module properties and `Property Set` in the same semantic family when expanding tests. |
+| RF-02 | characterized/running | Closed-state public property behavior | Before `RiffOpen`, Riff intentionally no-ops property setters and returns default/empty values from reads guarded by `rCtx.Initialized`. A tracked ignored harness now executes `RiffIsInitialized`, `RiffMasterVolume`, `RiffBusVolume`, and invalid `RiffVoiceVolume` paths without opening native audio devices. | Treat this as a real runtime smoke for raw Riff source, not a native-audio compatibility claim. The next useful Riff pass should move from closed-state property execution into a controlled native lane with explicit host policy for COM activation, `Declare`, callbacks, and executable memory. |
+| RF-03 | future native lane | WASAPI/Media Foundation, hand-written COM vtables, callback thunks | The interesting Riff path uses `CoCreateInstance`, `MFStartup`, `DispCallFunc`, `AddressOf`, `VirtualAlloc`, `CallWindowProcW`, timer callbacks, packed UDTs, and 32/64-bit conditional assembly. | Build this as an isolated native execution lane with narrow admission diagnostics and cleanup proofs: policy-gated `Declare` execution, pointer-size/UDT layout checks, callback lifetime/reset safety, COM object release discipline, and vtable/`DispCallFunc` equivalence against the current COM client path. |
+
 ### Per project
-- **Riff**: surfaces F2 (and WithEvents member-access in `If`), plus heavy
-  `Declare PtrSafe`/`As Any`/`LongPtr` and `#If VBA7` paths (pending VBA7 predefinition).
+- **Riff**: upstream fetched into the ignored corpus area from
+  `uesleibros/riff` commit `cafe9bc01cba35f4e226e445d855ea0d701138e1`.
+  A tracked ignored `riff_external_corpus` test now synthesizes a temporary host project
+  over raw `Riff.bas` and executes the closed-state public property paths. This surfaced
+  and fixed the general bare standard-module `Property Let` binder gap. The native
+  `RiffOpen` path remains future work because it exercises WASAPI/Media Foundation,
+  hand-written COM vtables, callbacks, executable memory, and host reset safety.
 - **Wasabi**: surfaces F1, F2, and (examples/tests) cross-module + project-class usage.
 - **VBA-Web**: first pass gathered upstream at commit
   `9dbcc751d177099f20c96c5ee332ec10ef47423c` into the ignored corpus area and authored an

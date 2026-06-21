@@ -246,7 +246,23 @@ impl<'a> ProcLower<'a> {
                     return Ok(None);
                 };
                 self.project_property_accessor_signature(sym, kind, name)?;
-                // A bare property name is an implicit `Me.Prop` (class member).
+                let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied() else {
+                    return Ok(None);
+                };
+                if self
+                    .g
+                    .ids
+                    .procs
+                    .get(proc_id.0)
+                    .and_then(|info| info.class_name.as_deref())
+                    .is_none()
+                {
+                    return Ok(Some(vec![CoreStmt::Eval(CoreValue::Call {
+                        callee: CoreCallee::VbaProc { proc: proc_id },
+                        args: vec![CoreArg::ByVal(rhs.clone())],
+                    })]));
+                }
+                // A bare class property name is an implicit `Me.Prop`.
                 let Some(recv) = self.me_value() else {
                     return Ok(None);
                 };

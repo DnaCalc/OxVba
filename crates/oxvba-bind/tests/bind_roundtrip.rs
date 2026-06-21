@@ -880,6 +880,34 @@ fn property_get_let_roundtrip() {
 }
 
 #[test]
+fn standard_module_property_let_roundtrip() {
+    let src = "Private mV As Long\n\n\
+               Public Property Get Value() As Long\n    Value = mV\nEnd Property\n\n\
+               Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\n\n\
+               Public Sub Main()\n    Dim r As Long\n    Value = 17\n    r = Value\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(17.0));
+}
+
+#[test]
+fn standard_module_property_let_updates_global_udt_field() {
+    let src = "Private Type State\n    Value As Single\nEnd Type\n\
+               Private s As State\n\n\
+               Public Property Get Value() As Single\n    Value = s.Value\nEnd Property\n\n\
+               Public Property Let Value(ByVal v As Single)\n    s.Value = v\nEnd Property\n\n\
+               Public Sub Main()\n    Dim r As Single\n    Value = 0.25!\n    r = Value\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(0.25));
+}
+
+#[test]
+fn local_variable_shadows_standard_module_property_let() {
+    let src = "Private mV As Long\n\n\
+               Public Property Get Value() As Long\n    Value = mV\nEnd Property\n\n\
+               Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\n\n\
+               Public Sub Main()\n    Dim Value As Long\n    Dim r As Long\n    Value = 17\n    r = Value\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(17.0));
+}
+
+#[test]
 fn indexed_property_get_let_roundtrip() {
     // `w.Value(3) = 10` is an indexed Property Let, not an array-element write
     // through a synthesized helper. The setter receives index args followed by
