@@ -33,10 +33,10 @@ impl std::fmt::Display for LinearizeError {
 
 type Res<T> = Result<T, LinearizeError>;
 
-/// Lowered arguments (`A` = `ProcArg`/`CallArg`) plus the `(place, temp-slot)`
-/// write-backs to replay after the call — for ByRef Field/Index/WithEvents args
-/// that have no slot to alias directly (copy-in temp, copy back on return).
-type LoweredArgs<A> = (Vec<A>, Vec<(CorePlace, usize)>);
+/// Lowered arguments (`A` = `ProcArg`/`CallArg`) plus the
+/// `(place, temp-slot, original-slot)` write-backs to replay after the call for
+/// ByRef Field/Index/WithEvents args that have no slot to alias directly.
+type LoweredArgs<A> = (Vec<A>, Vec<(CorePlace, usize, usize)>);
 
 /// Flatten a resolved [`CoreProgram`] into a runnable [`Bundle`].
 pub fn linearize(program: &CoreProgram) -> Res<Bundle> {
@@ -592,17 +592,27 @@ impl<'p> Linearizer<'p> {
                 });
                 Ok(dst)
             }
-            CoreValue::Bound { which, array } => {
+            CoreValue::Bound {
+                which,
+                array,
+                dimension,
+            } => {
                 let (array_slot, _writeback) = self.array_target(array)?;
+                let dimension = dimension
+                    .as_ref()
+                    .map(|value| self.lower_value(value))
+                    .transpose()?;
                 let dst = self.new_temp();
                 self.emit(match which {
                     BoundWhich::Lower => Op::LBound {
                         dst,
                         src: array_slot,
+                        dimension,
                     },
                     BoundWhich::Upper => Op::UBound {
                         dst,
                         src: array_slot,
+                        dimension,
                     },
                 });
                 Ok(dst)
@@ -731,8 +741,13 @@ impl<'p> Linearizer<'p> {
                     _ => {
                         // No slot to alias: copy in, alias the temp, copy back.
                         let tmp = self.lower_place_load(place)?;
+                        let original = self.new_temp();
+                        self.emit(Op::Copy {
+                            dst: original,
+                            src: tmp,
+                        });
                         out.push(ProcArg::ByRef(tmp));
-                        writebacks.push((place.clone(), tmp));
+                        writebacks.push((place.clone(), tmp, original));
                     }
                 },
                 CoreArg::Omitted => out.push(ProcArg::Omitted),
@@ -760,8 +775,13 @@ impl<'p> Linearizer<'p> {
                     }
                     _ => {
                         let tmp = self.lower_place_load(place)?;
+                        let original = self.new_temp();
+                        self.emit(Op::Copy {
+                            dst: original,
+                            src: tmp,
+                        });
                         out.push(CallArg::ByRef(tmp));
-                        writebacks.push((place.clone(), tmp));
+                        writebacks.push((place.clone(), tmp, original));
                     }
                 },
                 CoreArg::Omitted => out.push(CallArg::Omitted),
@@ -777,9 +797,21 @@ impl<'p> Linearizer<'p> {
     }
 
     /// Copy `ByRef` Field/Index/WithEvents temps back to their places after a call.
-    fn emit_arg_writebacks(&mut self, writebacks: Vec<(CorePlace, usize)>) -> Res<()> {
-        for (place, tmp) in writebacks {
+    fn emit_arg_writebacks(&mut self, writebacks: Vec<(CorePlace, usize, usize)>) -> Res<()> {
+        for (place, tmp, original) in writebacks {
+            let changed = self.new_temp();
+            self.emit(Op::VariantChanged {
+                dst: changed,
+                current: tmp,
+                original,
+            });
+            let skip = self.emit(Op::JumpIfZero {
+                cond_slot: changed,
+                target_pc: 0,
+            });
             self.lower_place_store(&place, tmp)?;
+            let after = self.ops.len();
+            self.patch(skip, after);
         }
         Ok(())
     }
@@ -1258,9 +1290,7 @@ impl<'p> Linearizer<'p> {
                     event: *event,
                     args: event_args,
                 });
-                for (place, tmp) in writebacks {
-                    self.lower_place_store(&place, tmp)?;
-                }
+                self.emit_arg_writebacks(writebacks)?;
             }
             CoreStmt::Select {
                 selector,

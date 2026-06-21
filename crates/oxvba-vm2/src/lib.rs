@@ -35,9 +35,9 @@ use std::ffi::c_void;
 
 use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
-    ArrayElementType, Bundle, CallArg, ComMemberSelector, DeclarePtrWriteback, ExportTarget,
-    NativeBody, NativeCallee, NativeImplId, NativeMethodId, NumericMode, Op, ProcArg,
-    ProjectMemberKind, PtrWritebackKind,
+    ArrayElementType, Bundle, CallArg, ClassDescriptor, ClassMethod, ComMemberSelector,
+    DeclarePtrWriteback, ExportTarget, NativeBody, NativeCallee, NativeImplId, NativeMethodId,
+    NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -611,12 +611,25 @@ impl<'h> Vm<'h> {
             .get(obj_bundle)
             .and_then(|loaded| loaded.bundle.classes.get(class_idx))
             .and_then(|class| {
-                class
-                    .methods
-                    .iter()
-                    .find(|method| {
-                        method.name.eq_ignore_ascii_case(member_name)
-                            && kind_hint.is_none_or(|kind| kind == method.kind)
+                let exact = class.methods.iter().find(|method| {
+                    method.name.eq_ignore_ascii_case(member_name)
+                        && kind_hint.is_none_or(|kind| kind == method.kind)
+                });
+                exact
+                    .or_else(|| {
+                        if kind_hint == Some(ProjectMemberKind::PropertyGet) && args.is_empty() {
+                            class.methods.iter().find(|method| {
+                                method.name.eq_ignore_ascii_case(member_name)
+                                    && method.kind == ProjectMemberKind::Method
+                            })
+                        } else if kind_hint == Some(ProjectMemberKind::Method) {
+                            class.methods.iter().find(|method| {
+                                method.name.eq_ignore_ascii_case(member_name)
+                                    && method.kind == ProjectMemberKind::PropertyGet
+                            })
+                        } else {
+                            None
+                        }
                     })
                     .map(|method| method.proc)
             })
@@ -1756,20 +1769,63 @@ impl<'h> Vm<'h> {
             .ok_or_else(|| Fault::new(438, "Object doesn't support this member"))?;
         let member = match selector {
             ComMemberSelector::Name(name) | ComMemberSelector::DispatchIdNamed { name, .. } => {
-                class.methods.iter().find(|m| {
+                let exact = class.methods.iter().find(|m| {
                     m.name.eq_ignore_ascii_case(name) && kind_hint.is_none_or(|k| k == m.kind)
+                });
+                exact.or_else(|| {
+                    if kind_hint == Some(ProjectMemberKind::PropertyGet) && method_args.is_empty() {
+                        class.methods.iter().find(|m| {
+                            m.name.eq_ignore_ascii_case(name) && m.kind == ProjectMemberKind::Method
+                        })
+                    } else if kind_hint == Some(ProjectMemberKind::Method) {
+                        class.methods.iter().find(|m| {
+                            m.name.eq_ignore_ascii_case(name)
+                                && m.kind == ProjectMemberKind::PropertyGet
+                        })
+                    } else {
+                        None
+                    }
                 })
             }
             ComMemberSelector::DispatchId(0) => {
-                let mut matches = class
-                    .methods
-                    .iter()
-                    .filter(|m| m.is_default_member && kind_hint.is_none_or(|kind| kind == m.kind));
-                let first = matches.next();
-                if matches.next().is_some() {
-                    None
+                if kind_hint.is_none() {
+                    unique_read_default_member(class)?
+                } else if matches!(
+                    kind_hint,
+                    Some(ProjectMemberKind::Method | ProjectMemberKind::PropertyGet)
+                ) {
+                    let exact = class
+                        .methods
+                        .iter()
+                        .find(|m| m.is_default_member && kind_hint == Some(m.kind));
+                    match exact {
+                        Some(member) => Some(member),
+                        None => unique_read_default_member(class)?,
+                    }
                 } else {
-                    first
+                    let mut exact_matches = class.methods.iter().filter(|m| {
+                        m.is_default_member && kind_hint.is_none_or(|kind| kind == m.kind)
+                    });
+                    let exact = exact_matches.next();
+                    if exact_matches.next().is_some() {
+                        let names = class
+                            .methods
+                            .iter()
+                            .filter(|m| {
+                                m.is_default_member && kind_hint.is_none_or(|kind| kind == m.kind)
+                            })
+                            .map(|member| format!("{}:{:?}", member.name, member.kind))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(Fault::new(
+                            438,
+                            format!(
+                                "Object `{}` doesn't support a unique default member for this call ({names})",
+                                class.name
+                            ),
+                        ));
+                    }
+                    exact
                 }
             }
             ComMemberSelector::DispatchId(_) => None,
@@ -1780,7 +1836,10 @@ impl<'h> Vm<'h> {
             }
             ComMemberSelector::DispatchId(0) => Fault::new(
                 438,
-                "Object doesn't support a unique default member for this call",
+                format!(
+                    "Object `{}` doesn't support a unique default member for this call",
+                    class.name
+                ),
             ),
             ComMemberSelector::DispatchId(id) => {
                 Fault::new(438, format!("Object doesn't support dispatch id {id}"))
@@ -1977,6 +2036,25 @@ impl<'h> Vm<'h> {
             .ok_or_else(|| Fault::new(13, "expected an array"))
     }
 
+    fn array_bound_index(
+        &self,
+        dimension: Option<usize>,
+        bounds: &[SafeArrayBound],
+    ) -> Result<usize, Fault> {
+        let dim = match dimension {
+            Some(slot) => arith::int(self.get(slot)?).map_err(Fault::from_arith)?,
+            None => 1,
+        };
+        if dim < 1 {
+            return Err(Fault::new(9, "subscript out of range"));
+        }
+        let index = (dim - 1) as usize;
+        if index >= bounds.len() {
+            return Err(Fault::new(9, "subscript out of range"));
+        }
+        Ok(index)
+    }
+
     // ── WithEvents ───────────────────────────────────────────────────────────
     fn withevents_key(owner: &ObjectRef, binding: i64) -> i64 {
         (i64::from(owner.raw()) << 32) | (binding & 0xFFFF_FFFF)
@@ -2100,6 +2178,14 @@ impl<'h> Vm<'h> {
             Op::Copy { dst, src } => {
                 let v = self.cloned(*src)?;
                 self.set(*dst, v)?;
+            }
+            Op::VariantChanged {
+                dst,
+                current,
+                original,
+            } => {
+                let changed = self.get(*current)? != self.get(*original)?;
+                self.set(*dst, Variant::from_bool(changed))?;
             }
 
             // ── Coercion ──
@@ -2459,23 +2545,30 @@ impl<'h> Vm<'h> {
                     .map_err(Fault::from_string)?;
                 self.set(*record, Variant::from_safearray(updated))?;
             }
-            Op::LBound { dst, src } => {
+            Op::LBound {
+                dst,
+                src,
+                dimension,
+            } => {
                 let arr = self.array_of(*src)?;
                 let bounds = arr
                     .bounds()
                     .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
-                let lower = bounds.first().map(|b| b.lower).unwrap_or(0);
+                let bound = &bounds[self.array_bound_index(*dimension, &bounds)?];
+                let lower = bound.lower;
                 self.set(*dst, Variant::from_i32(lower))?;
             }
-            Op::UBound { dst, src } => {
+            Op::UBound {
+                dst,
+                src,
+                dimension,
+            } => {
                 let arr = self.array_of(*src)?;
                 let bounds = arr
                     .bounds()
                     .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
-                let upper = bounds
-                    .first()
-                    .map(|b| b.lower + b.count as i32 - 1)
-                    .unwrap_or(-1);
+                let bound = &bounds[self.array_bound_index(*dimension, &bounds)?];
+                let upper = bound.lower + bound.count as i32 - 1;
                 self.set(*dst, Variant::from_i32(upper))?;
             }
             Op::ForEachInit { iter, src } => {
@@ -3135,6 +3228,38 @@ fn member_kind_to_dynamic(kind: ProjectMemberKind) -> DynamicCallKind {
         ProjectMemberKind::PropertyGet => DynamicCallKind::PropertyGet,
         ProjectMemberKind::PropertyLet => DynamicCallKind::PropertyLet,
         ProjectMemberKind::PropertySet => DynamicCallKind::PropertySet,
+    }
+}
+
+fn unique_read_default_member(class: &ClassDescriptor) -> Result<Option<&ClassMethod>, Fault> {
+    let read_matches = class
+        .methods
+        .iter()
+        .filter(|m| {
+            m.is_default_member
+                && matches!(
+                    m.kind,
+                    ProjectMemberKind::Method | ProjectMemberKind::PropertyGet
+                )
+        })
+        .collect::<Vec<_>>();
+    match read_matches.as_slice() {
+        [] => Ok(None),
+        [member] => Ok(Some(*member)),
+        matches => {
+            let names = matches
+                .iter()
+                .map(|member| format!("{}:{:?}", member.name, member.kind))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(Fault::new(
+                438,
+                format!(
+                    "Object `{}` doesn't support a unique default member for this call ({names})",
+                    class.name
+                ),
+            ))
+        }
     }
 }
 

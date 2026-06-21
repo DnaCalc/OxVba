@@ -230,9 +230,8 @@ impl IdAllocator {
                         name: info.name.clone(),
                         kind: member_kind_of(info.kind),
                         proc: info.proc_id,
-                        is_default_member: default_member.as_ref().is_some_and(|(name, kind)| {
+                        is_default_member: default_member.as_ref().is_some_and(|(name, _)| {
                             fold_identifier(name) == fold_identifier(&info.name)
-                                && *kind == member_kind_of(info.kind)
                         }),
                     }),
                 }

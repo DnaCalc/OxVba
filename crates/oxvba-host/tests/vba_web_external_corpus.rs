@@ -5,6 +5,7 @@
 //! local `ExcelApplicationShim.bas` fixture, so failures here catch regressions
 //! in host-injected `Application` metadata and project-closure execution.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -19,6 +20,8 @@ use oxvba_host::{Engine, HostConfig, HostProfileProvider};
 use oxvba_project::load_project_closure;
 use oxvba_runtime::Variant;
 use oxvba_symbol::{CatalogTypeLibResolver, TypeLibResolver};
+
+static EXTRACTED_SPEC_RUN_LOCK: Mutex<()> = Mutex::new(());
 
 const VBA_WEB_ROOT: &str = ".external/vba-corpus/vba-web";
 const VBA_WEB_EXTRACTED_SPECS_ROOT: &str =
@@ -460,8 +463,14 @@ fn run_harness_with_core_probe_for_shape(
     calls
 }
 
-fn sanitized_spec_module_copy(source: &Path, temp: &Path) -> String {
-    let text = std::fs::read_to_string(source).expect("read extracted spec module");
+fn sanitized_spec_module_copy_with_override(
+    source: &Path,
+    temp: &Path,
+    override_text: Option<&str>,
+) -> String {
+    let text = override_text
+        .map(str::to_string)
+        .unwrap_or_else(|| std::fs::read_to_string(source).expect("read extracted spec module"));
     let mut sanitized = String::new();
     let mut relocated_default_attrs = Vec::new();
     for line in text.lines() {
@@ -491,6 +500,13 @@ fn sanitized_spec_module_copy(source: &Path, temp: &Path) -> String {
 }
 
 fn write_extracted_spec_runner_project(harness_source: &str) -> PathBuf {
+    write_extracted_spec_runner_project_with_overrides(harness_source, &HashMap::new())
+}
+
+fn write_extracted_spec_runner_project_with_overrides(
+    harness_source: &str,
+    overrides: &HashMap<&'static str, String>,
+) -> PathBuf {
     let root = require_vba_web_extracted_specs_root();
     let temp = std::env::temp_dir().join(format!(
         "oxvba-vbaweb-spec-runner-{}-{}",
@@ -628,14 +644,22 @@ End Sub
     ];
     let mut items = String::new();
     for name in module_names {
-        let copied = sanitized_spec_module_copy(&root.join(name), &temp);
+        let copied = sanitized_spec_module_copy_with_override(
+            &root.join(name),
+            &temp,
+            overrides.get(name).map(String::as_str),
+        );
         items.push_str(&format!(
             "    <Module Include=\"{}\" />\n",
             q(&temp.join(copied))
         ));
     }
     for name in class_names {
-        let copied = sanitized_spec_module_copy(&root.join(name), &temp);
+        let copied = sanitized_spec_module_copy_with_override(
+            &root.join(name),
+            &temp,
+            overrides.get(name).map(String::as_str),
+        );
         items.push_str(&format!(
             "    <ClassModule Include=\"{}\" />\n",
             q(&temp.join(copied))
@@ -675,12 +699,51 @@ End Sub
 }
 
 fn run_extracted_spec_harness(harness: &str) -> Vec<Variant> {
+    let _guard = EXTRACTED_SPEC_RUN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let project = write_extracted_spec_runner_project(harness);
     run_project(
         &project,
         HostShape::HostInjectedProfile,
         Arc::new(Mutex::new(Vec::new())),
     )
+}
+
+fn run_extracted_spec_harness_with_overrides(
+    harness: &str,
+    overrides: &HashMap<&'static str, String>,
+) -> Vec<Variant> {
+    let _guard = EXTRACTED_SPEC_RUN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let project = write_extracted_spec_runner_project_with_overrides(harness, overrides);
+    run_project(
+        &project,
+        HostShape::HostInjectedProfile,
+        Arc::new(Mutex::new(Vec::new())),
+    )
+}
+
+fn limited_webrequest_specs_source(limit: usize) -> String {
+    let root = require_vba_web_extracted_specs_root();
+    let source = std::fs::read_to_string(root.join("Specs_WebRequest.bas"))
+        .expect("read extracted Specs_WebRequest module");
+    let mut out = String::new();
+    let mut seen = 0usize;
+    let mut inserted = false;
+    for line in source.lines() {
+        if !inserted && line.trim_start().starts_with("With Specs.It(") {
+            if seen >= limit {
+                out.push_str("    Exit Function\n");
+                inserted = true;
+            }
+            seen += 1;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 #[test]
@@ -1063,6 +1126,10 @@ End Sub
         "VBA-Web extracted WebRequest collection body probe failed: {snapshot:?}"
     );
     assert!(
+        combined.contains("[\"A\",\"B\",\"C\"];array-body;"),
+        "VBA-Web extracted WebRequest array body probe did not format Array(...) as JSON: {snapshot:?}"
+    );
+    assert!(
         combined.contains("[\"A\",\"B\",\"C\"];collection-body;"),
         "VBA-Web extracted WebRequest collection body probe did not complete: {snapshot:?}"
     );
@@ -1086,6 +1153,7 @@ Public Sub Main()
     On Error GoTo Failed
     Dim Suite As New SpecSuite
     Dim Spec As SpecDefinition
+    Dim Expectation As SpecExpectation
     Dim Request As WebRequest
     Dim Body As Object
     Set Spec = Suite.It("probe")
@@ -1093,7 +1161,8 @@ Public Sub Main()
     Set Request = New WebRequest
     Request.Body = Array("A", "B", "C")
     Mark "array-let"
-    Spec.Expect(Request.Body).ToEqual "[[null,null,null],[null,null,null],[null,null,null]]"
+    ProbeSummary = ProbeSummary & "array=" & Request.Body & ";"
+    Spec.Expect(Request.Body).ToEqual "[""A"",""B"",""C""]"
     Mark "array-expect"
     Set Body = New Collection
     Body.Add "A"
@@ -1101,10 +1170,14 @@ Public Sub Main()
     Body.Add "C"
     Set Request.Body = Body
     Mark "set-body"
-    Spec.Expect(Request.Body).ToEqual "[\"A\",\"B\",\"C\"]"
+    ProbeSummary = ProbeSummary & "collection=" & Request.Body & ";"
+    Spec.Expect(Request.Body).ToEqual "[""A"",""B"",""C""]"
     Mark "collection-expect"
     Suite.SpecDone Spec
     Mark "done"
+    For Each Expectation In Spec.FailedExpectations
+        ProbeSummary = ProbeSummary & "failure=" & Expectation.FailureMessage & ";"
+    Next Expectation
     ProbeSummary = ProbeSummary & CStr(Suite.Specs.Count) & ":" & CStr(Suite.PassedSpecs.Count) & ":" & CStr(Suite.FailedSpecs.Count)
     Exit Sub
 
@@ -1120,8 +1193,513 @@ End Sub
         .collect::<Vec<_>>()
         .join("|");
     assert!(
-        combined.contains("done;1:0:1"),
-        "VBA-Web extracted WebRequest expectation probe should complete with the known array-format failure recorded: {snapshot:?}"
+        combined.contains("done;1:1:0"),
+        "VBA-Web extracted WebRequest expectation probe should complete with array and collection body expectations passing: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; runs extracted VBA-Web WebRequest spec suite"]
+fn vba_web_extracted_webrequest_spec_suite_records_results() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public SuiteSummary As String
+Public FailureSummary As String
+Public ErrorSummary As String
+Public PhaseSummary As String
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Suite As SpecSuite
+    Dim Spec As SpecDefinition
+    Dim Expectation As SpecExpectation
+    PhaseSummary = "start;"
+    Set Suite = Specs_WebRequest.Specs
+    PhaseSummary = PhaseSummary & "suite-built;"
+    SuiteSummary = CStr(Suite.Specs.Count) & ":" & CStr(Suite.PassedSpecs.Count) & ":" & CStr(Suite.FailedSpecs.Count) & ":" & CStr(Suite.PendingSpecs.Count)
+    For Each Spec In Suite.FailedSpecs
+        FailureSummary = FailureSummary & Spec.Description & vbLf
+        For Each Expectation In Spec.FailedExpectations
+            FailureSummary = FailureSummary & "  " & Expectation.FailureMessage & vbLf
+        Next Expectation
+    Next Spec
+    PhaseSummary = PhaseSummary & "done;"
+    Exit Sub
+
+Failed:
+    ErrorSummary = PhaseSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("done;"),
+        "VBA-Web extracted WebRequest spec suite should finish: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; set VBA_WEB_SPEC_LIMIT to run a prefix of Specs_WebRequest.Specs"]
+fn vba_web_extracted_webrequest_spec_suite_prefix_records_results() {
+    let limit = std::env::var("VBA_WEB_SPEC_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(10);
+    let mut overrides = HashMap::new();
+    overrides.insert(
+        "Specs_WebRequest.bas",
+        limited_webrequest_specs_source(limit),
+    );
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public SuiteSummary As String
+Public FailureSummary As String
+Public ErrorSummary As String
+Public PhaseSummary As String
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Suite As SpecSuite
+    Dim Spec As SpecDefinition
+    Dim Expectation As SpecExpectation
+    PhaseSummary = "start;"
+    Set Suite = Specs_WebRequest.Specs
+    PhaseSummary = PhaseSummary & "suite-built;"
+    SuiteSummary = CStr(Suite.Specs.Count) & ":" & CStr(Suite.PassedSpecs.Count) & ":" & CStr(Suite.FailedSpecs.Count) & ":" & CStr(Suite.PendingSpecs.Count)
+    For Each Spec In Suite.FailedSpecs
+        FailureSummary = FailureSummary & Spec.Description & vbLf
+        For Each Expectation In Spec.FailedExpectations
+            FailureSummary = FailureSummary & "  " & Expectation.FailureMessage & vbLf
+        Next Expectation
+    Next Spec
+    PhaseSummary = PhaseSummary & "done;"
+    Exit Sub
+
+Failed:
+    ErrorSummary = PhaseSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness_with_overrides(harness, &overrides);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("done;"),
+        "VBA-Web extracted WebRequest spec suite prefix {limit} should finish: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_immediate_reporter_event_probe() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Suite As New SpecSuite
+    Dim Reporter As New ImmediateReporter
+    Reporter.ListenTo Suite
+    Mark "listen"
+    With Suite.It("reported")
+        .Expect("actual").ToEqual "expected"
+    End With
+    Mark "with"
+    ProbeSummary = ProbeSummary & CStr(Suite.Specs.Count) & ":" & CStr(Suite.FailedSpecs.Count)
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("with;0:0"),
+        "VBA-Web extracted ImmediateReporter event probe should complete before returned spec termination: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_many_returned_specs_terminate() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Function BuildSuite() As SpecSuite
+    Set BuildSuite = New SpecSuite
+    Dim i As Long
+    For i = 1 To 60
+        With BuildSuite.It("probe " & CStr(i))
+            .Expect(i).ToEqual i
+        End With
+    Next i
+End Function
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Suite As SpecSuite
+    Set Suite = BuildSuite()
+    ProbeSummary = CStr(Suite.Specs.Count) & ":" & CStr(Suite.PassedSpecs.Count) & ":" & CStr(Suite.FailedSpecs.Count)
+    Exit Sub
+
+Failed:
+    ErrorSummary = CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("60:60:0"),
+        "VBA-Web extracted many returned specs should terminate and register: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_webrequest_add_body_parameter_error_probe() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Request As WebRequest
+    Set Request = New WebRequest
+    Request.Body = "Howdy"
+    Mark "body"
+    On Error Resume Next
+    Request.AddBodyParameter "Message", "Goodby"
+    Mark "after-add"
+    ProbeSummary = ProbeSummary & CStr(Err.Number)
+    On Error GoTo Failed
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("body;after-add;"),
+        "VBA-Web extracted AddBodyParameter error probe should resume after error: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_webrequest_body_parameter_format_probe() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Request As WebRequest
+    Set Request = New WebRequest
+    Request.AddBodyParameter "A", 123
+    Mark "add-a"
+    Request.AddBodyParameter "B", "Howdy!"
+    Mark "add-b"
+    ProbeSummary = ProbeSummary & "json=" & Request.Body & ";"
+    Request.Format = WebFormat.Json
+    Mark "json-format"
+    ProbeSummary = ProbeSummary & "json2=" & Request.Body & ";"
+    Request.Format = WebFormat.FormUrlEncoded
+    Mark "form-format"
+    ProbeSummary = ProbeSummary & "form=" & Request.Body & ";"
+    Mark "done"
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("done;"),
+        "VBA-Web extracted WebRequest body parameter format probe should complete: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_webrequest_cookie_default_chain_probe() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Request As WebRequest
+    Set Request = New WebRequest
+    Request.AddCookie "A[1]", "cookie"
+    Request.AddCookie "B", "cookie 2"
+    Mark "added"
+    ProbeSummary = ProbeSummary & "count=" & CStr(Request.Cookies.Count) & ";"
+    ProbeSummary = ProbeSummary & "k1=" & CStr(Request.Cookies(1)("Key")) & ";"
+    ProbeSummary = ProbeSummary & "v2=" & CStr(Request.Cookies(2)("Value")) & ";"
+    Mark "done"
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("k1=A%5B1%5D;v2=cookie%202;done;"),
+        "VBA-Web extracted WebRequest cookie default chain probe should complete: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_webrequest_cookie_expectation_probe() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Suite As New SpecSuite
+    Dim Spec As SpecDefinition
+    Set Spec = Suite.It("cookie")
+    Dim Request As WebRequest
+    Set Request = New WebRequest
+    Request.AddCookie "A[1]", "cookie"
+    Request.AddCookie "B", "cookie 2"
+    Mark "added"
+    Spec.Expect(Request.Cookies.Count).ToEqual 2
+    Mark "count"
+    Spec.Expect(Request.Cookies(1)("Key")).ToEqual "A%5B1%5D"
+    Mark "key"
+    Spec.Expect(Request.Cookies(2)("Value")).ToEqual "cookie%202"
+    Mark "value"
+    Suite.SpecDone Spec
+    ProbeSummary = ProbeSummary & CStr(Suite.Specs.Count) & ":" & CStr(Suite.PassedSpecs.Count) & ":" & CStr(Suite.FailedSpecs.Count)
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("value;1:1:0"),
+        "VBA-Web extracted WebRequest cookie expectation probe should complete: {snapshot:?}"
+    );
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_webrequest_dictionary_body_probe() {
+    let step_limit = std::env::var("VBA_WEB_DICT_STEP")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(99);
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+Public StepLimit As Long
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Request As WebRequest
+    Dim Body As Object
+    Set Request = New WebRequest
+    Mark "request"
+    If StepLimit <= 1 Then Exit Sub
+    Set Body = New Dictionary
+    Mark "new-dict"
+    If StepLimit <= 2 Then Exit Sub
+    Body.Add "A", 123
+    Mark "add-a"
+    If StepLimit <= 3 Then Exit Sub
+    Body.Add "B", "456"
+    Mark "add-b"
+    If StepLimit <= 4 Then Exit Sub
+    Body.Add "C", 789
+    Mark "add-c"
+    If StepLimit <= 5 Then Exit Sub
+    Set Request.Body = Body
+    Mark "set-body"
+    If StepLimit <= 6 Then Exit Sub
+    ProbeSummary = ProbeSummary & Request.Body & ";"
+    Mark "body"
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let harness = harness
+        .replace(
+            "Public StepLimit As Long",
+            &format!(
+                "Public StepLimit As Long\nPrivate Const HarnessStepLimit As Long = {step_limit}"
+            ),
+        )
+        .replace(
+            "On Error GoTo Failed\n    Dim Request As WebRequest",
+            "On Error GoTo Failed\n    StepLimit = HarnessStepLimit\n    Dim Request As WebRequest",
+        );
+    let snapshot = run_extracted_spec_harness(&harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    if step_limit >= 7 {
+        assert!(
+            combined.contains("{\"A\":123,\"B\":\"456\",\"C\":789};body;"),
+            "VBA-Web extracted WebRequest dictionary body probe should format Dictionary as JSON: {snapshot:?}"
+        );
+    } else {
+        assert!(
+            !combined.contains("Error"),
+            "VBA-Web extracted WebRequest dictionary body prefix {step_limit} should not fail: {snapshot:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "external corpus investigation; requires extracted VBA-Web spec workbook modules and normal Scripting.Dictionary COM registration"]
+fn vba_web_extracted_dictionary_keys_and_default_member_probe() {
+    let harness = r########"
+Attribute VB_Name = "HarnessMain"
+Option Explicit
+
+Public ProbeSummary As String
+Public ErrorSummary As String
+
+Private Sub Mark(ByVal Name As String)
+    ProbeSummary = ProbeSummary & Name & ";"
+End Sub
+
+Public Sub Main()
+    On Error GoTo Failed
+    Dim Body As Object
+    Dim Key As Variant
+    Set Body = New Dictionary
+    Body.Add "A", 123
+    Body.Add "B", "456"
+    Body.Add "C", 789
+    Mark "added"
+    For Each Key In Body.Keys
+        ProbeSummary = ProbeSummary & CStr(Key) & "=" & CStr(Body(Key)) & ";"
+    Next Key
+    Mark "done"
+    Exit Sub
+
+Failed:
+    ErrorSummary = ProbeSummary & CStr(Err.Number) & ":" & Err.Description
+End Sub
+"########;
+    let snapshot = run_extracted_spec_harness(harness);
+    let combined = snapshot
+        .iter()
+        .filter_map(|value| value.as_bstr())
+        .map(|text| text.as_str().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(
+        combined.contains("A=123;B=456;C=789;done;"),
+        "VBA-Web extracted Dictionary keys/default-member probe should enumerate and index values: {snapshot:?}"
     );
 }
 
@@ -1149,7 +1727,7 @@ Public Sub Main()
         Set Request = New WebRequest
         Request.Body = Array("A", "B", "C")
         Mark "array-let"
-        .Expect(Request.Body).ToEqual "[\"A\",\"B\",\"C\"]"
+        .Expect(Request.Body).ToEqual "[""A"",""B"",""C""]"
         Mark "array-expect"
         Set Body = New Collection
         Body.Add "A"
@@ -1157,7 +1735,7 @@ Public Sub Main()
         Body.Add "C"
         Set Request.Body = Body
         Mark "set-body"
-        .Expect(Request.Body).ToEqual "[\"A\",\"B\",\"C\"]"
+        .Expect(Request.Body).ToEqual "[""A"",""B"",""C""]"
         Mark "collection-expect"
     End With
     Mark "after-with"

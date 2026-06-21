@@ -220,6 +220,11 @@ pub enum Op {
         dst: usize,
         src: usize,
     },
+    VariantChanged {
+        dst: usize,
+        current: usize,
+        original: usize,
+    },
 
     // ── UDT records (value aggregates, backed by a record store) ───────────
     /// Allocate a default-initialized record of `fields` fields.
@@ -443,10 +448,12 @@ pub enum Op {
     LBound {
         dst: usize,
         src: usize,
+        dimension: Option<usize>,
     },
     UBound {
         dst: usize,
         src: usize,
+        dimension: Option<usize>,
     },
     ForEachInit {
         iter: usize,

@@ -502,6 +502,12 @@ fn paramarray_mixed_fixed_and_variadic() {
 }
 
 #[test]
+fn lbound_ubound_invalid_dimension_raises_under_resume_next() {
+    let src = "Sub Main()\n    Dim r As Long\n    Dim xs As Variant\n    Dim lower2 As Long\n    xs = Array(\"A\", \"B\", \"C\")\n    On Error Resume Next\n    lower2 = LBound(xs, 2)\n    If Err.Number <> 0 Then\n        Err.Clear\n        r = UBound(xs, 1) - LBound(xs, 1) + 1\n    Else\n        r = -100\n    End If\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(3.0));
+}
+
+#[test]
 fn random_access_file_statements_bind_and_lower() {
     // Get/Put/Seek/Width/Lock/Unlock/Name previously errored in the binder; they
     // now route to native impls (Get lowers as an assignment of the read value).

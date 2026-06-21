@@ -155,19 +155,35 @@ impl<'a> ProcLower<'a> {
                     VarTypeRef::Variant,
                 ))
             }
-            // `UBound`/`LBound` take an array l-value (single dimension; any 2nd
-            // dimension argument is ignored — multi-dim arrays are not modeled).
+            // `UBound`/`LBound` take an array l-value plus an optional
+            // one-based dimension argument. Invalid dimensions must remain a
+            // run-time error so VBA `On Error Resume Next` feature probes work.
             DispatchRoute::SpecialForm(sf @ (SpecialForm::UBound | SpecialForm::LBound)) => {
                 let which = if matches!(sf, SpecialForm::UBound) {
                     BoundWhich::Upper
                 } else {
                     BoundWhich::Lower
                 };
-                let first = arglist
-                    .and_then(|a| a.arg_items().into_iter().next())
-                    .ok_or_else(|| {
-                        BindError::Malformed(format!("`{name}` requires an array argument"))
-                    })?;
+                let mut items = arglist.map(|a| a.arg_items()).unwrap_or_default();
+                if items.is_empty() {
+                    return Err(BindError::Malformed(format!(
+                        "`{name}` requires an array argument"
+                    )));
+                }
+                if items.len() > 2 {
+                    return Err(BindError::Malformed(format!(
+                        "`{name}` accepts at most array and dimension arguments"
+                    )));
+                }
+                let first = items.remove(0);
+                let dimension = items
+                    .into_iter()
+                    .next()
+                    .map(|item| match item {
+                        ArgItem::Positional(e, _) => self.bind_expr(e).map(|bound| bound.value),
+                        _ => Err(BindError::Malformed(format!("`{name}` dimension argument"))),
+                    })
+                    .transpose()?;
                 let expr = match first {
                     ArgItem::Positional(e, _) => e,
                     _ => return Err(BindError::Malformed(format!("`{name}` array argument"))),
@@ -177,6 +193,7 @@ impl<'a> ProcLower<'a> {
                     CoreValue::Bound {
                         which,
                         array: Box::new(place),
+                        dimension: dimension.map(Box::new),
                     },
                     builtin(BuiltinType::Long),
                 ))
