@@ -1029,7 +1029,7 @@ impl<'a> ProcLower<'a> {
         };
         let place = self.place_by_name(name)?;
         let mut out = Vec::new();
-        self.emit_udt_record_init(place, &udt, name, &mut out);
+        self.emit_udt_record_init(place, &udt, name, &mut out)?;
         Ok(out)
     }
 
@@ -1038,14 +1038,14 @@ impl<'a> ProcLower<'a> {
     /// materialized. VBA forbids by-value self-referential UDTs, so the
     /// recursion terminates.
     fn emit_udt_record_init(
-        &self,
+        &mut self,
         place: CorePlace,
         udt: &str,
         label: &str,
         out: &mut Vec<CoreStmt>,
-    ) {
+    ) -> Result<(), BindError> {
         let Some(field_count) = self.g.env.udt_field_count(udt) else {
-            return;
+            return Ok(());
         };
         out.push(CoreStmt::Assign {
             place: place.clone(),
@@ -1059,7 +1059,7 @@ impl<'a> ProcLower<'a> {
         });
         // The (index, inner-UDT-name) of each scalar UDT field, collected first
         // so the env borrow is dropped before the recursive calls.
-        let nested: Vec<(usize, String)> = self
+        let fields: Vec<(usize, String, VarTypeRef)> = self
             .g
             .env
             .udt_field_list(udt)
@@ -1067,20 +1067,64 @@ impl<'a> ProcLower<'a> {
                 fields
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, (_, ty))| match self.g.resolve_udt_type(ty.clone()) {
-                        oxvba_symbol::signature::VarTypeRef::Udt(inner) => Some((i, inner)),
-                        _ => None,
-                    })
+                    .map(|(i, (name, ty))| (i, name.clone(), self.g.resolve_udt_type(ty.clone())))
                     .collect()
             })
             .unwrap_or_default();
-        for (index, inner) in nested {
+        for (index, field_name, ty) in fields {
             let sub = CorePlace::RecordField {
                 base: Box::new(place.clone()),
                 index,
             };
-            self.emit_udt_record_init(sub, &inner, &format!("{label}.{inner}"), out);
+            match ty {
+                VarTypeRef::Udt(inner) => {
+                    self.emit_udt_record_init(sub, &inner, &format!("{label}.{inner}"), out)?;
+                }
+                VarTypeRef::Array(inner) => {
+                    if let Some(bounds) = self.udt_fixed_array_field_bounds(udt, &field_name)? {
+                        out.push(CoreStmt::ReDim {
+                            array: sub,
+                            bounds,
+                            element_type: self.g.array_element_layout(&inner),
+                            preserve: false,
+                        });
+                    }
+                }
+                _ => {}
+            }
         }
+        Ok(())
+    }
+
+    fn udt_fixed_array_field_bounds(
+        &mut self,
+        udt: &str,
+        field: &str,
+    ) -> Result<Option<Vec<CoreBound>>, BindError> {
+        let udt = fold_identifier(udt);
+        let field = fold_identifier(field);
+        for module in self.g.env.all_modules() {
+            for type_block in module.syntax.children_of(SyntaxKind::TypeBlock) {
+                let Some(type_name) = type_block_name(type_block) else {
+                    continue;
+                };
+                if fold_identifier(type_name.trim_matches(['[', ']'])) != udt {
+                    continue;
+                }
+                for type_field in type_block.type_fields() {
+                    let Some(field_name) = type_field.declarator_name() else {
+                        continue;
+                    };
+                    if fold_identifier(field_name.text.trim_matches(['[', ']'])) == field
+                        && let Some(bounds) = type_field.array_bounds()
+                        && !bounds.children_of(SyntaxKind::Bound).is_empty()
+                    {
+                        return self.bind_array_bounds(bounds).map(Some);
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     fn bind_erase(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -1507,4 +1551,21 @@ fn is_property_route(route: &DispatchRoute) -> bool {
             ..
         }
     )
+}
+
+fn type_block_name(node: SyntaxNode<'_>) -> Option<&str> {
+    let mut saw_type = false;
+    for token in node.child_tokens() {
+        if token.kind == SyntaxKind::KwType {
+            saw_type = true;
+            continue;
+        }
+        if saw_type
+            && (matches!(token.kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent)
+                || token.kind.is_keyword())
+        {
+            return Some(token.text);
+        }
+    }
+    None
 }

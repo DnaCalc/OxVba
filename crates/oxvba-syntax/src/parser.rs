@@ -2726,7 +2726,11 @@ impl<'a> Parser<'a> {
             self.start_node(SyntaxKind::CallStmt);
             self.eat_trivia();
             if self.is_expr_start() {
-                self.parse_expr(); // callee (possibly with member/index postfix)
+                // Statement-position calls split the callable expression from the
+                // following bare argument list. Parse only the name/member/index
+                // callee here so `Proc -1, x` is a call with a negative first
+                // argument, not a binary-expression callee `Proc - 1`.
+                self.parse_lvalue_expr();
             }
             // Bare argument list. A leading call-site `ByVal`/`ByRef` modifier
             // (`Inc ByVal r`) also starts the argument list even though the

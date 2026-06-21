@@ -899,6 +899,32 @@ fn standard_module_property_let_updates_global_udt_field() {
 }
 
 #[test]
+fn module_udt_fixed_array_field_round_trips() {
+    let src = "Private Type State\n    Buses(0 To 1) As Single\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    Dim r As Single\n    s.Buses(1) = 0.5!\n    r = s.Buses(1)\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(0.5));
+}
+
+#[test]
+fn module_udt_fixed_array_field_accepts_const_bounds() {
+    let src = "Private Const LastBus As Long = 1\n\
+               Private Type State\n    Buses(0 To LastBus) As Single\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    Dim r As Single\n    s.Buses(1) = 0.75!\n    r = s.Buses(1)\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(0.75));
+}
+
+#[test]
+fn module_udt_fixed_array_field_of_udt_elements_round_trips() {
+    let src = "Private Type Buffer\n    Value As Long\nEnd Type\n\
+               Private Type State\n    Buffers(0 To 1) As Buffer\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    Dim r As Long\n    s.Buffers(1).Value = 42\n    r = s.Buffers(1).Value\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(42.0));
+}
+
+#[test]
 fn local_variable_shadows_standard_module_property_let() {
     let src = "Private mV As Long\n\n\
                Public Property Get Value() As Long\n    Value = mV\nEnd Property\n\n\
@@ -1303,6 +1329,14 @@ fn statement_form_named_argument_binds_in_standard_module() {
                   Public Sub ToEqual(Expected As Variant)\n    Check Expected:=Expected\nEnd Sub\n\n\
                   Private Sub Check(Optional Expected As Variant)\n    If VBA.IsMissing(Expected) Then\n        g = 1\n    ElseIf Expected = \"expected\" Then\n        g = 2\n    Else\n        g = 3\n    End If\nEnd Sub\n";
     assert_eq!(run_main_local0(source), Some(2.0));
+}
+
+#[test]
+fn statement_form_call_accepts_negative_first_argument() {
+    let source = "Sub Main()\n    Dim r As Long\n    Capture -1, 2\n    r = g\nEnd Sub\n\n\
+                  Public g As Long\n\n\
+                  Private Sub Capture(ByVal first As Long, ByVal second As Long)\n    g = first + second\nEnd Sub\n";
+    assert_eq!(run_main_local0(source), Some(1.0));
 }
 
 #[test]
