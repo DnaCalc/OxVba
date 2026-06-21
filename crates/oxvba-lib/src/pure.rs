@@ -1021,14 +1021,14 @@ pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
 // type with VBA banker's rounding and raises Overflow (6) when the rounded value is
 // out of the target's range — matching `CLng`/`CInt`/etc.
 
-/// Read a conversion argument as `f64`, parsing a numeric string (VBA `CDbl("3.5")`
-/// etc.). `as_f64` alone does not parse strings — only numeric Variants.
+/// Read a conversion argument as `f64`, parsing a numeric string (VBA `CDbl("3.5")`,
+/// `CInt("&H20")`, etc.). `as_f64` alone does not parse strings — only numeric
+/// Variants.
 fn conv_f64(value: &Variant) -> LibResult<f64> {
     if value.vtype() == VarType::String {
-        return as_str(value)?
-            .trim()
-            .parse::<f64>()
-            .map_err(|_| LibError::type_mismatch("expected a numeric value"));
+        return parse_vba_numeric_string(&as_str(value)?)
+            .map(|n| n as f64)
+            .ok_or_else(|| LibError::type_mismatch("expected a numeric value"));
     }
     as_f64(value)
 }
@@ -1464,27 +1464,51 @@ pub fn is_numeric(args: &[Variant]) -> LibResult<Variant> {
 /// This needs a FULL-parse check, not Val's leading-prefix parse: `IsNumeric("12a")`
 /// must be False.
 fn is_numeric_string(s: &str) -> bool {
+    parse_vba_numeric_string(s).is_some()
+}
+
+fn parse_vba_numeric_string(s: &str) -> Option<f64> {
     let t = s.trim();
     if t.is_empty() {
-        return false;
+        return None;
     }
-    // VBA hex (`&H…`) / octal (`&O…` or bare `&` + octal digits) integer literals,
-    // with an optional trailing `&` Long-type suffix.
-    if let Some(rest) = t.strip_prefix('&') {
-        let (radix, digits) = match rest.as_bytes().first() {
-            Some(b'H' | b'h') => (16, &rest[1..]),
-            Some(b'O' | b'o') => (8, &rest[1..]),
-            // Bare `&` followed by octal digits (VBA's terse octal form).
-            _ => (8, rest),
-        };
-        let digits = digits.strip_suffix('&').unwrap_or(digits);
-        return !digits.is_empty() && i64::from_str_radix(digits, radix).is_ok();
+    if let Some(value) = parse_vba_prefixed_integer(t) {
+        return Some(value as f64);
     }
     // Decimal / sign / exponent. Require the first significant byte to be a
     // sign/dot/digit so we reject Rust's "inf"/"nan"/"infinity" (which start with a
     // letter) that VBA does not treat as numeric, while still accepting "42", "+1.5",
     // ".5", "-3", "1.5e3", "1E3".
-    matches!(t.as_bytes()[0], b'+' | b'-' | b'.' | b'0'..=b'9') && t.parse::<f64>().is_ok()
+    if matches!(t.as_bytes()[0], b'+' | b'-' | b'.' | b'0'..=b'9') {
+        return t.parse::<f64>().ok().filter(|value| value.is_finite());
+    }
+    None
+}
+
+fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
+    let (sign, rest) = if let Some(rest) = t.strip_prefix('-') {
+        (-1_i64, rest)
+    } else if let Some(rest) = t.strip_prefix('+') {
+        (1_i64, rest)
+    } else {
+        (1_i64, t)
+    };
+    // VBA hex (`&H…`) / octal (`&O…` or bare `&` + octal digits) integer literals,
+    // with an optional trailing `&` Long-type suffix.
+    let rest = rest.strip_prefix('&')?;
+    let (radix, digits) = match rest.as_bytes().first() {
+        Some(b'H' | b'h') => (16, &rest[1..]),
+        Some(b'O' | b'o') => (8, &rest[1..]),
+        // Bare `&` followed by octal digits (VBA's terse octal form).
+        _ => (8, rest),
+    };
+    let digits = digits.strip_suffix('&').unwrap_or(digits);
+    if digits.is_empty() {
+        return None;
+    }
+    i64::from_str_radix(digits, radix)
+        .ok()
+        .and_then(|value| value.checked_mul(sign))
 }
 
 pub fn is_date(args: &[Variant]) -> LibResult<Variant> {

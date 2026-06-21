@@ -276,9 +276,25 @@ fn mid_assignment_mutates_target_string() {
 }
 
 #[test]
+fn mid_assignment_omitted_length_and_qualified_spelling_mutate_target_string() {
+    assert_eq!(
+        run_main_local0_string(&main_sub(
+            "    Dim s As String\n    s = \"abcdef\"\n    VBA.Mid$(s, 4) = \"XYZ\"\n"
+        )),
+        Some("abcXYZ".to_string())
+    );
+}
+
+#[test]
 fn err_raise_accepts_foldable_error_number_expression() {
     let src = "Sub Main()\n    On Error Resume Next\n    Err.Raise 11099 + vbObjectError\n    Dim r As Long\n    r = Err.Number\nEnd Sub\n";
     assert_eq!(run_main_local0(src), Some(-2147210405.0));
+}
+
+#[test]
+fn err_raise_accepts_named_number_and_clear_resets_number() {
+    let src = "Sub Main()\n    On Error Resume Next\n    Err.Raise Number:=12\n    Err.Clear\n    Dim r As Long\n    r = Err.Number\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(0.0));
 }
 
 #[test]

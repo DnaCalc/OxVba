@@ -301,6 +301,38 @@ fn numeric_conversion_intrinsics_with_bankers_rounding() {
 }
 
 #[test]
+fn numeric_conversion_intrinsics_accept_vba_radix_strings() {
+    let snap = run("Sub Main()\n\
+         Dim a As Integer\nDim b As Long\nDim c As Long\nDim d As Double\nDim e As Boolean\n\
+         a = CInt(\"&H20\")\n\
+         b = CLng(\"&O17\")\n\
+         c = CLng(\"+&H7F\")\n\
+         d = CDbl(\"&H2A\")\n\
+         e = CBool(\"&H1\")\n\
+         End Sub");
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i16(32),
+            Variant::from_i32(15),
+            Variant::from_i32(127),
+            Variant::from_f64(42.0),
+            Variant::from_bool(true),
+        ]
+    );
+}
+
+#[test]
+fn numeric_conversion_intrinsics_reject_invalid_vba_radix_strings() {
+    let err = run_result("Sub Main()\nDim x As Integer\nx = CInt(\"&HZZ\")\nEnd Sub")
+        .expect_err("invalid hex string should be a runtime error");
+    assert!(
+        err.contains("expected a numeric value"),
+        "unexpected diagnostic: {err}"
+    );
+}
+
+#[test]
 fn conversion_intrinsic_overflow_is_error_6() {
     let err = run_result("Sub Main()\nDim x As Integer\nx = CInt(100000)\nEnd Sub")
         .expect_err("CInt overflow should be a runtime error");
