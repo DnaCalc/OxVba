@@ -600,6 +600,109 @@ unsafe fn encode_element_variant(
     Ok(())
 }
 
+unsafe fn replace_element_variant(
+    kind: SafeArrayElementKind,
+    payload: *mut u8,
+    index: usize,
+    value: &Variant,
+) -> Result<(), String> {
+    let ptr = unsafe { payload.add(payload_offset(kind, index)) };
+    match kind {
+        SafeArrayElementKind::Variant => {
+            let old = unsafe { ptr.cast::<Variant>().replace(value.clone()) };
+            drop(old);
+        }
+        SafeArrayElementKind::I1 => unsafe {
+            *ptr.cast::<i8>() = i8::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_I1 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::Ui1 => unsafe {
+            *ptr.cast::<u8>() = u8::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI1 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::I2 => unsafe {
+            *ptr.cast::<i16>() = i16::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_I2 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::Ui2 => unsafe {
+            *ptr.cast::<u16>() = u16::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI2 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::I4 | SafeArrayElementKind::Int => unsafe {
+            *ptr.cast::<i32>() = i32::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_I4 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => unsafe {
+            *ptr.cast::<u32>() = u32::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI4 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::I8 => unsafe {
+            *ptr.cast::<i64>() = variant_i64(value)?;
+        },
+        SafeArrayElementKind::Ui8 => unsafe {
+            *ptr.cast::<u64>() = u64::try_from(variant_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI8 SAFEARRAY element"))?;
+        },
+        SafeArrayElementKind::R4 => unsafe {
+            *ptr.cast::<f32>() = variant_f64(value)? as f32;
+        },
+        SafeArrayElementKind::R8 => unsafe {
+            *ptr.cast::<f64>() = variant_f64(value)?;
+        },
+        SafeArrayElementKind::Currency => unsafe {
+            *ptr.cast::<i64>() = value
+                .as_currency_scaled_i64()
+                .ok_or_else(|| format!("expected Currency SAFEARRAY element, got {value:?}"))?;
+        },
+        SafeArrayElementKind::Date => unsafe {
+            *ptr.cast::<f64>() = value
+                .as_date_f64()
+                .or_else(|| value.as_f64())
+                .ok_or_else(|| format!("expected Date SAFEARRAY element, got {value:?}"))?;
+        },
+        SafeArrayElementKind::Bool => unsafe {
+            *ptr.cast::<i16>() = if value
+                .as_bool()
+                .ok_or_else(|| format!("expected Bool SAFEARRAY element, got {value:?}"))?
+            {
+                -1
+            } else {
+                0
+            };
+        },
+        SafeArrayElementKind::BStr => unsafe {
+            let new = alloc_raw_bstr_from_bstr(
+                &value
+                    .as_bstr()
+                    .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?,
+            )?;
+            let old = ptr.cast::<*mut u16>().replace(new);
+            free_raw_bstr(old);
+        },
+        SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => unsafe {
+            let object = value
+                .as_object_ref()
+                .ok_or_else(|| format!("expected Object SAFEARRAY element, got {value:?}"))?;
+            let raw = object.raw_iunknown();
+            core::mem::forget(object);
+            let old = ptr
+                .cast::<[u8; 8]>()
+                .replace(raw_iunknown_ptr_to_bytes(raw));
+            if let Some(object) = ObjectRef::from_raw_iunknown_owned(bytes_to_raw_iunknown(old)) {
+                drop(object);
+            }
+        },
+        SafeArrayElementKind::Decimal => unsafe {
+            *ptr.cast::<RawDecimalArrayElement>() = RawDecimalArrayElement::from_decimal96(
+                value
+                    .as_decimal96()
+                    .ok_or_else(|| format!("expected Decimal SAFEARRAY element, got {value:?}"))?,
+            );
+        },
+    }
+    Ok(())
+}
+
 unsafe fn drop_element(kind: SafeArrayElementKind, payload: *mut u8, index: usize) {
     // SAFETY: the caller guarantees `payload` holds more than `index`
     // initialized elements of `kind` and visits each index at most once, so
@@ -934,6 +1037,20 @@ impl SafeArray {
             self.element_vartype(),
             Some(values),
         )
+    }
+
+    pub fn set_variant_element(&mut self, index: usize, value: &Variant) -> Result<(), String> {
+        if index >= self.len() {
+            return Err(format!(
+                "SAFEARRAY index {index} out of range for length {}",
+                self.len()
+            ));
+        }
+        let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
+        if data.is_null() {
+            return Err("SAFEARRAY has no materialized element payload".to_string());
+        }
+        unsafe { replace_element_variant(self.element_kind(), data, index, value) }
     }
 
     pub fn raw_safearray_ptr(&self) -> *mut core::ffi::c_void {
@@ -1294,6 +1411,60 @@ mod tests {
             .expect("replace");
         assert_eq!(replaced.bounds(), shape.bounds());
         assert_eq!(replaced.variant_elements().expect("elements").len(), 4);
+    }
+
+    #[test]
+    fn safe_array_set_variant_element_mutates_payload_without_rebuilding_descriptor() {
+        let mut array = SafeArray::from_typed_variants(
+            VT_I2_VALUE,
+            vec![Variant::from_i16(4), Variant::from_i16(9)],
+        )
+        .expect("typed array");
+        let raw = array.raw_safearray_ptr();
+
+        array
+            .set_variant_element(1, &Variant::from_i16(42))
+            .expect("set element");
+
+        assert_eq!(array.raw_safearray_ptr(), raw);
+        assert_eq!(
+            array.variant_elements(),
+            Some(vec![Variant::from_i16(4), Variant::from_i16(42)])
+        );
+    }
+
+    #[test]
+    fn safe_array_set_variant_element_replaces_owned_bstr_payload() {
+        let mut array =
+            SafeArray::from_typed_variants(VT_BSTR_VALUE, vec![Variant::from_string("before")])
+                .expect("typed bstr array");
+        let raw = array.raw_safearray_ptr();
+
+        array
+            .set_variant_element(0, &Variant::from_string("after"))
+            .expect("set bstr element");
+
+        assert_eq!(array.raw_safearray_ptr(), raw);
+        assert_eq!(
+            array.variant_elements(),
+            Some(vec![Variant::from_string("after")])
+        );
+    }
+
+    #[test]
+    fn safe_array_set_variant_element_replaces_variant_payload() {
+        let mut array = SafeArray::from_variants(vec![Variant::from_i32(1)]);
+        let raw = array.raw_safearray_ptr();
+
+        array
+            .set_variant_element(0, &Variant::from_string("variant"))
+            .expect("set variant element");
+
+        assert_eq!(array.raw_safearray_ptr(), raw);
+        assert_eq!(
+            array.variant_elements(),
+            Some(vec![Variant::from_string("variant")])
+        );
     }
 
     #[test]

@@ -97,13 +97,15 @@ logic; it must not change the physical layout of an already stored carrier.
 
 ## Current Slice Evidence
 
-The 2026-06-22 typed SAFEARRAY slice changes VM `ReDim` so scalar declared
-arrays allocate typed SAFEARRAY payloads instead of `VT_VARIANT` payloads. The
-targeted test anchor is:
+The 2026-06-22 typed SAFEARRAY slices change VM `ReDim` so scalar declared
+arrays allocate typed SAFEARRAY payloads instead of `VT_VARIANT` payloads, and
+move VM array element assignment onto checked in-place SAFEARRAY element
+replacement instead of descriptor rebuild through `Vec<Variant>`. The targeted
+test anchors are:
 
 - `cargo test -p oxvba-vm2 --test linearize_roundtrip redim`
+- `cargo test -p oxvba-runtime safe_array::tests::safe_array_set_variant_element --lib`
 
 Remaining exact-layout work includes UDT/record SAFEARRAY element storage,
-broader in-place array mutation APIs, expanded pointer-helper addressability
-tests, and COM/HAL call paths that still clone through `variant_elements()` for
-non-temporary places.
+expanded pointer-helper addressability tests, and COM/HAL call paths that still
+clone through `variant_elements()` for non-temporary places.

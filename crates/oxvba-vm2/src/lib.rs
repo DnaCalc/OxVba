@@ -2583,20 +2583,18 @@ impl<'h> Vm<'h> {
                     )?;
                     return Ok(());
                 }
-                let arr = self.array_of(*array)?;
+                let mut arr = self.array_of(*array)?;
                 let bounds = arr
                     .bounds()
                     .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
                 let flat = self.flat_index(indices, &bounds)?;
-                let mut elems = arr.variant_elements().unwrap_or_default();
-                if flat >= elems.len() {
+                if flat >= arr.len() {
                     return Err(Fault::new(9, "subscript out of range"));
                 }
-                elems[flat] = self.cloned(*src)?;
-                let updated = arr
-                    .replace_variant_elements(elems)
+                let value = self.cloned(*src)?;
+                arr.set_variant_element(flat, &value)
                     .map_err(Fault::from_string)?;
-                self.set(*array, Variant::from_safearray(updated))?;
+                self.set(*array, Variant::from_safearray(arr))?;
             }
 
             // ── UDT records (a value aggregate backed by a record store) ──

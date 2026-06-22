@@ -447,6 +447,43 @@ fn redim_scalar_arrays_seed_matching_exact_carriers() {
 }
 
 #[test]
+fn array_set_out_of_range_still_raises_error_9() {
+    let elem = |idx: i32| CorePlace::Index {
+        array: Box::new(CorePlace::Local(LocalId(0))),
+        indices: vec![ci(idx)],
+    };
+    let p = single(
+        1,
+        vec![
+            CoreStmt::ReDim {
+                array: CorePlace::Local(LocalId(0)),
+                bounds: vec![CoreBound {
+                    upper: ci(0),
+                    lower: 0,
+                }],
+                element_type: ArrayElementType::Long,
+                preserve: false,
+            },
+            CoreStmt::Assign {
+                place: elem(1),
+                value: ci(77),
+                intent: AssignmentIntent::Let,
+                target_kind: AssignmentTargetKind::Scalar,
+                target_name: "v0".into(),
+                target_type_name: "Long".into(),
+            },
+        ],
+    );
+    let bundle = linearize(&p).expect("linearize");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let err = match oxvba_vm2::run(&bundle, &host) {
+        Ok(_) => panic!("out of range assignment should fail"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code, 9);
+}
+
+#[test]
 fn on_error_resume_next_records_err_number() {
     // On Error Resume Next; Err.Raise 11; v0 = Err.Number  → 11
     let p = single(
