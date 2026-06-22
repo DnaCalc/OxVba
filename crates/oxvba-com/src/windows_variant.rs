@@ -1329,6 +1329,12 @@ pub(crate) unsafe fn set_record_safearray_from_com_value(
             "SAFEARRAY(VT_RECORD) parameter requires materialized record elements".to_string(),
         );
     };
+    if values.iter().any(|value| value.as_vba_record().is_some()) {
+        return Err(
+            "SAFEARRAY(VT_RECORD) COM projection requires COM record elements with IRecordInfo; native VBA record arrays need descriptor-proven record conversion"
+                .to_string(),
+        );
+    }
     let descriptor_record_info = descriptor_record_info
         .map(record_info_from_descriptor)
         .transpose()?;
@@ -2177,13 +2183,15 @@ where
 mod tests {
     use super::{
         RawIRecordInfoVtbl, VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM,
-        VT_RECORD_VALUE, VariantResultValue, decimal96_to_windows, set_variant_from_com_value,
-        take_variant_result_value, variant_to_com_value, variant_to_variant_value,
+        VT_RECORD_VALUE, VariantResultValue, decimal96_to_windows,
+        set_record_safearray_from_com_value, set_variant_from_com_value, take_variant_result_value,
+        variant_to_com_value, variant_to_variant_value,
     };
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, Variant,
+        CurrencyValue, Decimal96, F64Value, Variant, VbaRecord, VbaRecordFieldKind,
+        VbaRecordFieldSpec, VbaRecordLayout,
         bstr::BStr,
         safe_array::{
             SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_I2_VALUE,
@@ -2191,6 +2199,7 @@ mod tests {
         },
     };
     use std::ffi::c_void;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
     use windows_sys::Win32::System::Ole::{
         SafeArrayCreateEx, SafeArrayCreateVector, SafeArrayPutElement,
@@ -2478,6 +2487,37 @@ mod tests {
         assert!(
             info.destroys.load(Ordering::SeqCst) >= 2,
             "decoded runtime record clones should be destroyed"
+        );
+    }
+
+    #[test]
+    fn native_vba_record_safearray_declines_com_record_projection_without_provenance() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![VbaRecordFieldSpec::named(
+                "Value",
+                VbaRecordFieldKind::Long,
+            )])
+            .expect("layout"),
+        );
+        let mut record = VbaRecord::new_default(layout.clone()).expect("record");
+        let field = record.layout().fields()[0].clone();
+        unsafe {
+            record.field_mut_ptr(&field).cast::<i32>().write(42);
+        }
+        let array = SafeArray::from_vba_records_nd(
+            vec![oxvba_runtime::safe_array::SafeArrayBound { count: 1, lower: 0 }],
+            layout,
+            vec![record],
+        )
+        .expect("native record array");
+        let value = ComValue::ArrayIntent(array);
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+
+        let err = unsafe { set_record_safearray_from_com_value(&mut variant, &value, None) }
+            .expect_err("native record array should not project as COM record");
+        assert_eq!(
+            err,
+            "SAFEARRAY(VT_RECORD) COM projection requires COM record elements with IRecordInfo; native VBA record arrays need descriptor-proven record conversion"
         );
     }
 
