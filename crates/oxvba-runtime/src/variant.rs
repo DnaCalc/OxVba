@@ -650,6 +650,26 @@ impl Variant {
         unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
     }
 
+    pub fn set_safearray_element(&mut self, index: usize, value: &Variant) -> Result<(), String> {
+        if self.vtype() != VarType::ArrayVariant {
+            return Err(format!(
+                "expected Array Variant for SAFEARRAY element write, got {:?}",
+                self.vtype()
+            ));
+        }
+        // SAFETY: `&mut self` proves exclusive access to this Variant. An
+        // ArrayVariant owns its raw SAFEARRAY descriptor until drop, so mutating
+        // one element through the descriptor preserves ownership and aliases no
+        // other safe reference to the same descriptor.
+        unsafe {
+            SafeArray::set_raw_safearray_variant_element(
+                bytes_to_raw_safearray(self.data_bytes()),
+                index,
+                value,
+            )
+        }
+    }
+
     pub fn from_com_record(value: ComRecord) -> Self {
         let raw = Box::into_raw(Box::new(value));
         Self::from_core(VariantCore::from_bytes(
@@ -912,6 +932,25 @@ mod tests {
         // the full call.
         let roundtrip = unsafe { Variant::from_trusted_wire_bytes(wire) }.expect("wire roundtrip");
         assert_eq!(roundtrip.as_bstr(), Some(BStr::from("A\0BC")));
+    }
+
+    #[test]
+    fn array_variant_set_element_preserves_owned_safearray_pointer() {
+        let array = crate::safe_array::SafeArray::from_variants(vec![Variant::from_i32(1)]);
+        let mut value = Variant::from_safearray(array);
+        let raw_before = u64::from_le_bytes(value.data_bytes());
+
+        value
+            .set_safearray_element(0, &Variant::from_i32(2))
+            .expect("set element");
+
+        assert_eq!(u64::from_le_bytes(value.data_bytes()), raw_before);
+        assert_eq!(
+            value
+                .as_safearray()
+                .and_then(|array| array.variant_elements()),
+            Some(vec![Variant::from_i32(2)])
+        );
     }
 
     #[test]

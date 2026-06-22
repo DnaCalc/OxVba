@@ -777,6 +777,21 @@ impl<'h> Vm<'h> {
         }
     }
 
+    fn read_place_mut(&mut self, place: Place) -> Result<&mut Variant, Fault> {
+        match place {
+            Place::Global(b, i) => self
+                .bundles
+                .get_mut(b)
+                .and_then(|lb| lb.globals.get_mut(i))
+                .ok_or_else(|| Fault::new(9, "global slot out of range")),
+            Place::Local(fi, ri) => self
+                .frames
+                .get_mut(fi)
+                .and_then(|f| f.locals.get_mut(ri))
+                .ok_or_else(|| Fault::new(9, "local slot out of range")),
+        }
+    }
+
     fn write_place(&mut self, place: Place, value: Variant) -> Result<(), Fault> {
         let target = match place {
             Place::Global(b, i) => self.bundles.get_mut(b).and_then(|lb| lb.globals.get_mut(i)),
@@ -2583,7 +2598,7 @@ impl<'h> Vm<'h> {
                     )?;
                     return Ok(());
                 }
-                let mut arr = self.array_of(*array)?;
+                let arr = self.array_of(*array)?;
                 let bounds = arr
                     .bounds()
                     .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
@@ -2592,9 +2607,10 @@ impl<'h> Vm<'h> {
                     return Err(Fault::new(9, "subscript out of range"));
                 }
                 let value = self.cloned(*src)?;
-                arr.set_variant_element(flat, &value)
+                let place = self.target(*array)?;
+                self.read_place_mut(place)?
+                    .set_safearray_element(flat, &value)
                     .map_err(Fault::from_string)?;
-                self.set(*array, Variant::from_safearray(arr))?;
             }
 
             // ── UDT records (a value aggregate backed by a record store) ──

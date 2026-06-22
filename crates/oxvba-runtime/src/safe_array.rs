@@ -1101,6 +1101,27 @@ impl SafeArray {
         core::mem::forget(borrowed);
         Some(cloned)
     }
+
+    /// Mutates one element of a raw SAFEARRAY descriptor produced by this runtime.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must point at a live OxVba-owned descriptor, and the caller must
+    /// have exclusive access to that descriptor for the duration of this call.
+    pub unsafe fn set_raw_safearray_variant_element(
+        raw: *mut core::ffi::c_void,
+        index: usize,
+        value: &Variant,
+    ) -> Result<(), String> {
+        let header = NonNull::new(raw.cast::<RawSafeArray>())
+            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
+        unsafe { validated_header_prefix(header.as_ptr()) }
+            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
+        let mut borrowed = Self(header);
+        let result = borrowed.set_variant_element(index, value);
+        core::mem::forget(borrowed);
+        result
+    }
 }
 
 impl Clone for SafeArray {
