@@ -356,6 +356,61 @@ fn riff_shaped_as_any_scalar_byref_writes_back() {
     );
 }
 
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn riff_shaped_dispcallfunc_vtable_call_writes_variant_result() {
+    // Riff's vCall wrapper invokes `oleaut32!DispCallFunc` with a COM instance
+    // pointer, a byte offset into the vtable, null argument tables for the zero-arg
+    // case, and a ByRef Variant result. Use a private synthetic vtable whose slot
+    // points at a harmless kernel32 no-arg export, avoiding real WASAPI activation.
+    let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
+         Private Const MEM_RESERVE As Long = &H2000\n\
+         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const PAGE_READWRITE As Long = &H4\n\
+         Private Const CC_STDCALL As Long = 4\n\
+         Private Const vbLong As Integer = 3\n\
+         Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr\n\
+         Private Declare PtrSafe Function VirtualFree Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal dwFreeType As Long) As Long\n\
+         Private Declare PtrSafe Sub RtlMoveMemory Lib \"kernel32\" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Private Declare PtrSafe Function GetModuleHandleA Lib \"kernel32\" (ByVal lpModuleName As String) As LongPtr\n\
+         Private Declare PtrSafe Function GetProcAddress Lib \"kernel32\" (ByVal hModule As LongPtr, ByVal lpProcName As String) As LongPtr\n\
+         Private Declare PtrSafe Function DispCallFunc Lib \"oleaut32\" (ByVal pvInstance As LongPtr, ByVal oVft As LongPtr, ByVal cc As Long, ByVal vtReturn As Integer, ByVal cActuals As Long, ByRef prgvt As Any, ByRef prgpvarg As Any, ByRef pvargResult As Variant) As Long\n\
+         Public HrInvoke As Long\n\
+         Public SlotResult As Long\n\
+         Public DispCallFuncProof As Long\n\
+         Sub Main()\n\
+         Dim obj As LongPtr\n\
+         Dim vt As LongPtr\n\
+         Dim proc As LongPtr\n\
+         Dim hKernel As LongPtr\n\
+         Dim vRet As Variant\n\
+         Dim freedObj As Long\n\
+         Dim freedVt As Long\n\
+         obj = VirtualAlloc(0, 8, MEM_COMMIT Or MEM_RESERVE, PAGE_READWRITE)\n\
+         vt = VirtualAlloc(0, 8, MEM_COMMIT Or MEM_RESERVE, PAGE_READWRITE)\n\
+         If obj = 0 Or vt = 0 Then Err.Raise 720, \"RiffNative\", \"VirtualAlloc returned null\"\n\
+         hKernel = GetModuleHandleA(\"kernel32.dll\")\n\
+         proc = GetProcAddress(hKernel, \"GetTickCount\")\n\
+         If proc = 0 Then Err.Raise 721, \"RiffNative\", \"GetProcAddress failed\"\n\
+         RtlMoveMemory ByVal obj, VarPtr(vt), LenB(vt)\n\
+         RtlMoveMemory ByVal vt, VarPtr(proc), LenB(proc)\n\
+         HrInvoke = DispCallFunc(obj, 0, CC_STDCALL, vbLong, 0, ByVal 0&, ByVal 0&, vRet)\n\
+         If HrInvoke = 0 Then SlotResult = CLng(vRet)\n\
+         If SlotResult > 0 Then DispCallFuncProof = &H51512\n\
+         freedVt = VirtualFree(vt, 0, MEM_RELEASE)\n\
+         freedObj = VirtualFree(obj, 0, MEM_RELEASE)\n\
+         If freedVt = 0 Or freedObj = 0 Then Err.Raise 722, \"RiffNative\", \"VirtualFree failed\"\n\
+         End Sub");
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0)),
+        "expected DispCallFunc to return S_OK in {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x51512)),
+        "expected the vtable slot result Variant to set the positive-result proof marker: {snapshot:?}"
+    );
+}
+
 #[test]
 fn native_declare_rejects_jit_without_falling_back() {
     let mut engine = Engine::new(HostConfig { enable_jit: true });

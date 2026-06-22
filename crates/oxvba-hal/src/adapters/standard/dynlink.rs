@@ -485,7 +485,9 @@ fn invoke_m1_native(
     let result = unmarshal_ffi_to_variant(raw_result, descriptor.return_type.as_deref());
     let mut writeback_values = args.to_vec();
     for cell in &byref_cells {
-        writeback_values[cell.index] = cell.storage.read_back_variant();
+        writeback_values[cell.index] = cell.storage.read_back_variant().map_err(|msg| {
+            HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
+        })?;
     }
     Ok((result, writeback_values))
 }
@@ -670,6 +672,7 @@ enum NativeByRefStorage {
         cell: Box<*mut u8>,
     },
     GuidRecordBytes(Box<[u8; 16]>),
+    VariantCell(Box<windows_sys::Win32::System::Variant::VARIANT>),
 }
 
 #[cfg(target_os = "windows")]
@@ -717,6 +720,7 @@ impl NativeByRefStorage {
                 let cell = Box::new(buffer.as_mut_ptr());
                 Self::AnsiStringCell { buffer, cell }
             }
+            "Variant" => variant_cell_storage_from_variant(value)?,
             "Any" => any_byref_storage_from_variant(value)?,
             other => {
                 return Err(format!(
@@ -745,11 +749,14 @@ impl NativeByRefStorage {
                 FfiArg::Pointer((&mut **cell as *mut *mut u8).cast::<c_void>())
             }
             Self::GuidRecordBytes(bytes) => FfiArg::Pointer(bytes.as_mut_ptr().cast::<c_void>()),
+            Self::VariantCell(cell) => FfiArg::Pointer(
+                (&mut **cell as *mut windows_sys::Win32::System::Variant::VARIANT).cast::<c_void>(),
+            ),
         }
     }
 
-    fn read_back_variant(&self) -> Variant {
-        match self {
+    fn read_back_variant(&self) -> Result<Variant, String> {
+        Ok(match self {
             Self::I32(value) => Variant::from_i32(**value),
             Self::I16(value) => Variant::from_i16(**value),
             Self::U8(value) => Variant::from_i32(**value as i32),
@@ -774,6 +781,37 @@ impl NativeByRefStorage {
                 }
             }
             Self::GuidRecordBytes(bytes) => guid_record_variant_from_bytes(bytes.as_ref()),
+            Self::VariantCell(cell) => unsafe {
+                oxvba_com::variant_to_variant_value(
+                    cell,
+                    &mut |_unknown| {
+                        Err(
+                            "native Declare ByRef Variant read-back cannot bind VT_UNKNOWN values"
+                                .to_string(),
+                        )
+                    },
+                    &mut |_dispatch| {},
+                    &mut |_dispatch, _prog_id_hint, _op| {
+                        Err(
+                            "native Declare ByRef Variant read-back cannot bind VT_DISPATCH values"
+                                .to_string(),
+                        )
+                    },
+                    "",
+                    "native_byref_variant",
+                )?
+            },
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for NativeByRefStorage {
+    fn drop(&mut self) {
+        if let Self::VariantCell(cell) = self {
+            unsafe {
+                let _ = windows_sys::Win32::System::Variant::VariantClear(&mut **cell);
+            }
         }
     }
 }
@@ -819,6 +857,24 @@ fn any_byref_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage,
             "native ByRef As Any marshaling for value type `{other:?}` is not yet supported"
         )),
     }
+}
+
+#[cfg(target_os = "windows")]
+fn variant_cell_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage, String> {
+    let mut cell: Box<windows_sys::Win32::System::Variant::VARIANT> =
+        Box::new(unsafe { std::mem::zeroed() });
+    let com_value = oxvba_com::ComValue::from_variant(value)?;
+    unsafe {
+        oxvba_com::set_variant_from_com_value(
+            &mut *cell,
+            &com_value,
+            &mut |_object| {
+                Err("native Declare ByRef Variant cannot marshal Object values".to_string())
+            },
+            &mut |_dispatch| {},
+        )?;
+    }
+    Ok(NativeByRefStorage::VariantCell(cell))
 }
 
 #[cfg(target_os = "windows")]
