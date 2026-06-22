@@ -1031,6 +1031,20 @@ impl SafeArray {
         Some(values)
     }
 
+    pub fn variant_element(&self, index: usize) -> Result<Variant, String> {
+        if index >= self.len() {
+            return Err(format!(
+                "SAFEARRAY index {index} out of range for length {}",
+                self.len()
+            ));
+        }
+        let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
+        if data.is_null() {
+            return Err("SAFEARRAY has no materialized element payload".to_string());
+        }
+        unsafe { decode_element_variant(self.element_kind(), data, index) }
+    }
+
     pub fn replace_variant_elements(&self, values: Vec<Variant>) -> Result<Self, String> {
         Self::from_bounds_and_variants(
             self.bounds_for_shape(),
@@ -1485,6 +1499,45 @@ mod tests {
         assert_eq!(
             array.variant_elements(),
             Some(vec![Variant::from_string("variant")])
+        );
+    }
+
+    #[test]
+    fn safe_array_variant_element_reads_one_typed_payload_slot() {
+        let array = SafeArray::from_typed_variants(
+            VT_I2_VALUE,
+            vec![
+                Variant::from_i16(4),
+                Variant::from_i16(9),
+                Variant::from_i16(16),
+            ],
+        )
+        .expect("typed array");
+
+        assert_eq!(
+            array.variant_element(1).expect("element"),
+            Variant::from_i16(9)
+        );
+        assert_eq!(
+            array.variant_element(3).expect_err("out of range"),
+            "SAFEARRAY index 3 out of range for length 3"
+        );
+    }
+
+    #[test]
+    fn safe_array_variant_element_reads_owned_bstr_payload_slot() {
+        let array = SafeArray::from_typed_variants(
+            VT_BSTR_VALUE,
+            vec![
+                Variant::from_string("first"),
+                Variant::from_string("second"),
+            ],
+        )
+        .expect("typed bstr array");
+
+        assert_eq!(
+            array.variant_element(1).expect("element"),
+            Variant::from_string("second")
         );
     }
 

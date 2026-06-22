@@ -2561,11 +2561,10 @@ impl<'h> Vm<'h> {
                         .bounds()
                         .ok_or_else(|| Fault::new(9, "array has no bounds"))?;
                     let flat = self.flat_index(indices, &bounds)?;
-                    let elems = arr.variant_elements().unwrap_or_default();
-                    let value = elems
-                        .get(flat)
-                        .cloned()
-                        .ok_or_else(|| Fault::new(9, "subscript out of range"))?;
+                    if flat >= arr.len() {
+                        return Err(Fault::new(9, "subscript out of range"));
+                    }
+                    let value = arr.variant_element(flat).map_err(Fault::from_string)?;
                     self.set(*dst, value)?;
                 }
             }

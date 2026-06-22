@@ -107,6 +107,7 @@ replacement on the slot-owned ArrayVariant instead of descriptor rebuild through
 - `cargo test -p oxvba-runtime safe_array::tests::safe_array_set_variant_element --lib`
 - `cargo test -p oxvba-runtime array_variant_set_element_preserves_owned_safearray_pointer --lib`
 - `cargo test -p oxvba-runtime record_variant_clone_deep_copies_record_payload --lib`
+- `cargo test -p oxvba-runtime safe_array_variant_element_reads --lib`
 
 Remaining exact-layout work includes UDT/record SAFEARRAY element storage,
 expanded pointer-helper addressability tests, and COM/HAL call paths that still
