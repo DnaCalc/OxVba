@@ -4,6 +4,7 @@ use crate::{
     com_record::ComRecord,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
     safe_array::SafeArray,
+    vba_record::VbaRecord,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,7 +176,22 @@ fn raw_safearray_ptr_to_bytes(ptr: *mut core::ffi::c_void) -> [u8; 8] {
     (ptr as usize as u64).to_le_bytes()
 }
 
-fn raw_com_record_ptr_to_bytes(ptr: *const ComRecord) -> [u8; 8] {
+#[derive(Debug)]
+enum RecordPayload {
+    Com(ComRecord),
+    Vba(VbaRecord),
+}
+
+impl RecordPayload {
+    fn deep_clone(&self) -> Result<Self, String> {
+        match self {
+            Self::Com(record) => Ok(Self::Com(record.deep_clone()?)),
+            Self::Vba(record) => Ok(Self::Vba(record.clone())),
+        }
+    }
+}
+
+fn raw_record_payload_ptr_to_bytes(ptr: *const RecordPayload) -> [u8; 8] {
     (ptr as usize as u64).to_le_bytes()
 }
 
@@ -191,8 +207,8 @@ fn bytes_to_raw_safearray(bytes: [u8; 8]) -> *mut core::ffi::c_void {
     u64::from_le_bytes(bytes) as usize as *mut core::ffi::c_void
 }
 
-fn bytes_to_raw_com_record(bytes: [u8; 8]) -> *const ComRecord {
-    u64::from_le_bytes(bytes) as usize as *const ComRecord
+fn bytes_to_raw_record_payload(bytes: [u8; 8]) -> *const RecordPayload {
+    u64::from_le_bytes(bytes) as usize as *const RecordPayload
 }
 
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
@@ -269,13 +285,14 @@ impl Variant {
     }
 
     /// Rebuilds a Variant from wire bytes that may contain process-local pointer
-    /// carriers (`BSTR`, runtime object identity, or OxVba-owned SAFEARRAY).
+    /// carriers (`BSTR`, runtime object identity, OxVba-owned SAFEARRAY, or
+    /// runtime-owned record payload).
     ///
     /// # Safety
-    /// For `String`, `Object`, and `ArrayVariant` payloads, the pointer encoded in
-    /// the wire bytes must have been produced by `Variant::to_wire_bytes` in this
-    /// process and the source allocation/object must still be live for the whole
-    /// call. Arbitrary or stale pointer bytes are undefined behavior.
+    /// For `String`, `Object`, `ArrayVariant`, and `Record` payloads, the pointer
+    /// encoded in the wire bytes must have been produced by `Variant::to_wire_bytes`
+    /// in this process and the source allocation/object must still be live for the
+    /// whole call. Arbitrary or stale pointer bytes are undefined behavior.
     pub unsafe fn from_trusted_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
         let core = VariantCore::from_wire_bytes(bytes)?;
         match core.vtype {
@@ -311,7 +328,7 @@ impl Variant {
                 Ok(Self::from_safearray(array))
             }
             VarType::Record => {
-                let ptr = bytes_to_raw_com_record(core.data_bytes());
+                let ptr = bytes_to_raw_record_payload(core.data_bytes());
                 if ptr.is_null() {
                     return Ok(Self::from_core(VariantCore::from_bytes(
                         VarType::Record,
@@ -319,8 +336,8 @@ impl Variant {
                     )));
                 }
                 // SAFETY: guaranteed by this unsafe fn's caller.
-                let record = unsafe { (*ptr).deep_clone()? };
-                Ok(Self::from_com_record(record))
+                let payload = unsafe { (*ptr).deep_clone()? };
+                Ok(Self::from_record_payload(payload))
             }
             _ => Ok(Self::from_core(core)),
         }
@@ -671,24 +688,47 @@ impl Variant {
     }
 
     pub fn from_com_record(value: ComRecord) -> Self {
+        Self::from_record_payload(RecordPayload::Com(value))
+    }
+
+    pub fn from_vba_record(value: VbaRecord) -> Self {
+        Self::from_record_payload(RecordPayload::Vba(value))
+    }
+
+    fn from_record_payload(value: RecordPayload) -> Self {
         let raw = Box::into_raw(Box::new(value));
         Self::from_core(VariantCore::from_bytes(
             VarType::Record,
-            raw_com_record_ptr_to_bytes(raw),
+            raw_record_payload_ptr_to_bytes(raw),
         ))
     }
 
-    pub fn as_com_record(&self) -> Option<ComRecord> {
+    fn as_record_payload(&self) -> Option<&RecordPayload> {
         if self.vtype() != VarType::Record {
             return None;
         }
-        let raw = bytes_to_raw_com_record(self.data_bytes());
+        let raw = bytes_to_raw_record_payload(self.data_bytes());
         if raw.is_null() {
             return None;
         }
-        // SAFETY: vtype was checked to be Record, so the payload is a Box<ComRecord>
-        // pointer produced by `from_com_record` and owned by this Variant until drop.
-        Some(unsafe { (*raw).clone() })
+        // SAFETY: vtype was checked to be Record, so the payload is a
+        // Box<RecordPayload> pointer produced by `from_record_payload` and owned by
+        // this Variant until drop.
+        Some(unsafe { &*raw })
+    }
+
+    pub fn as_com_record(&self) -> Option<ComRecord> {
+        match self.as_record_payload()? {
+            RecordPayload::Com(record) => Some(record.clone()),
+            RecordPayload::Vba(_) => None,
+        }
+    }
+
+    pub fn as_vba_record(&self) -> Option<VbaRecord> {
+        match self.as_record_payload()? {
+            RecordPayload::Com(_) => None,
+            RecordPayload::Vba(record) => Some(record.clone()),
+        }
     }
 }
 
@@ -715,11 +755,11 @@ impl Clone for Variant {
                 Some(array) => Self::from_safearray(array),
                 None => Self::from_core(self.core),
             },
-            VarType::Record => match self.as_com_record() {
-                Some(record) => Self::from_com_record(
-                    record
+            VarType::Record => match self.as_record_payload() {
+                Some(payload) => Self::from_record_payload(
+                    payload
                         .deep_clone()
-                        .expect("record Variant clone should deep-copy COM record payload"),
+                        .expect("record Variant clone should deep-copy record payload"),
                 ),
                 None => Self::from_core(self.core),
             },
@@ -762,10 +802,10 @@ impl Drop for Variant {
                 }
             }
             VarType::Record => {
-                let raw = bytes_to_raw_com_record(self.data_bytes()).cast_mut();
+                let raw = bytes_to_raw_record_payload(self.data_bytes()).cast_mut();
                 if !raw.is_null() {
-                    // SAFETY: a Record Variant owns a Box<ComRecord> created by
-                    // `from_com_record`; taking the box here drops one handle clone.
+                    // SAFETY: a Record Variant owns a Box<RecordPayload> created by
+                    // `from_record_payload`; taking the box here drops that payload.
                     unsafe {
                         drop(Box::from_raw(raw));
                     }
@@ -794,7 +834,7 @@ impl core::fmt::Debug for Variant {
                 dbg.field("array", &self.as_safearray());
             }
             VarType::Record => {
-                dbg.field("record", &self.as_com_record());
+                dbg.field("record", &self.as_record_payload());
             }
             _ => {
                 dbg.field("data", &self.data_bytes());
@@ -820,7 +860,14 @@ impl PartialEq for Variant {
                     == bytes_to_raw_iunknown(other.data_bytes())
             }
             VarType::ArrayVariant => self.as_safearray() == other.as_safearray(),
-            VarType::Record => self.as_com_record() == other.as_com_record(),
+            VarType::Record => match (self.as_record_payload(), other.as_record_payload()) {
+                (Some(RecordPayload::Com(left)), Some(RecordPayload::Com(right))) => left == right,
+                (Some(RecordPayload::Vba(left)), Some(RecordPayload::Vba(right))) => {
+                    left.data_ptr() == right.data_ptr()
+                }
+                (None, None) => true,
+                _ => false,
+            },
             _ => self.data_bytes() == other.data_bytes(),
         }
     }
@@ -832,7 +879,9 @@ impl Eq for Variant {}
 mod tests {
     use core::ffi::c_void;
 
-    use crate::{Decimal96, bstr::BStr};
+    use crate::{
+        Decimal96, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec, VbaRecordLayout, bstr::BStr,
+    };
 
     use super::{VarType, Variant, VariantCore, VariantData};
 
@@ -1019,6 +1068,44 @@ mod tests {
         assert_eq!(
             unsafe { *cloned_record.record_data_ptr().cast::<i32>() },
             41
+        );
+    }
+
+    #[test]
+    fn vba_record_variant_clone_deep_copies_native_payload() {
+        let layout = std::sync::Arc::new(
+            VbaRecordLayout::new(vec![VbaRecordFieldSpec::named(
+                "Value",
+                VbaRecordFieldKind::Long,
+            )])
+            .expect("layout"),
+        );
+        let mut record = VbaRecord::new_default(layout).expect("record");
+        let field = record.layout().fields()[0].clone();
+        unsafe {
+            record.field_mut_ptr(&field).cast::<i32>().write(41);
+        }
+        let original = Variant::from_vba_record(record);
+        let cloned = original.clone();
+
+        assert!(original.as_com_record().is_none());
+        assert!(cloned.as_com_record().is_none());
+        let original_record = original.as_vba_record().expect("original record");
+        let cloned_record = cloned.as_vba_record().expect("cloned record");
+        assert_ne!(original_record.data_ptr(), cloned_record.data_ptr());
+        assert_eq!(
+            original_record
+                .read_field_variant(0)
+                .expect("original field")
+                .as_i32(),
+            Some(41)
+        );
+        assert_eq!(
+            cloned_record
+                .read_field_variant(0)
+                .expect("cloned field")
+                .as_i32(),
+            Some(41)
         );
     }
 
