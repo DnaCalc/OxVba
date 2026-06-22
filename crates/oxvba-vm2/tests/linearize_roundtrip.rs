@@ -404,6 +404,48 @@ fn redim_long_array_uses_typed_safearray_storage() {
 }
 
 #[test]
+fn record_field_set_and_get_use_backing_record_slot() {
+    let field = |base: usize, index: usize| CorePlace::RecordField {
+        base: Box::new(CorePlace::Local(LocalId(base))),
+        index,
+    };
+    let p = single(
+        2,
+        vec![
+            set(1, CoreValue::NewRecord { fields: 2 }),
+            CoreStmt::Assign {
+                place: field(1, 0),
+                value: ci(42),
+                intent: AssignmentIntent::Let,
+                target_kind: AssignmentTargetKind::Variant,
+                target_name: "v1.X".into(),
+                target_type_name: "Variant".into(),
+            },
+            set(0, CoreValue::Load(field(1, 0))),
+        ],
+    );
+
+    let (bundle, vm) = run_program(&p);
+    assert_eq!(
+        vm.slot(bundle.global_count)
+            .and_then(|value| value.as_i32()),
+        Some(42)
+    );
+    let record = vm
+        .slot(bundle.global_count + 1)
+        .and_then(|value| value.as_safearray())
+        .expect("record slot");
+    assert_eq!(
+        record.variant_element(0).expect("record field").as_i32(),
+        Some(42)
+    );
+    assert_eq!(
+        record.variant_element(1).expect("record field").vtype(),
+        oxvba_runtime::Variant::empty().vtype()
+    );
+}
+
+#[test]
 fn redim_scalar_arrays_seed_matching_exact_carriers() {
     let cases = [
         (ArrayElementType::Integer, VT_I2_VALUE),

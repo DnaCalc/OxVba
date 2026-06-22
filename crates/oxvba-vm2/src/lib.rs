@@ -2626,12 +2626,10 @@ impl<'h> Vm<'h> {
                     .get(*record)?
                     .as_safearray()
                     .ok_or_else(|| Fault::new(13, "record expected"))?;
-                let value = rec
-                    .variant_elements()
-                    .unwrap_or_default()
-                    .get(*index)
-                    .cloned()
-                    .ok_or_else(|| Fault::new(9, "record field out of range"))?;
+                if *index >= rec.len() {
+                    return Err(Fault::new(9, "record field out of range"));
+                }
+                let value = rec.variant_element(*index).map_err(Fault::from_string)?;
                 self.set(*dst, value)?;
             }
             Op::RecordSet { record, index, src } => {
@@ -2639,15 +2637,14 @@ impl<'h> Vm<'h> {
                     .get(*record)?
                     .as_safearray()
                     .ok_or_else(|| Fault::new(13, "record expected"))?;
-                let mut elems = rec.variant_elements().unwrap_or_default();
-                if *index >= elems.len() {
+                if *index >= rec.len() {
                     return Err(Fault::new(9, "record field out of range"));
                 }
-                elems[*index] = self.cloned(*src)?;
-                let updated = rec
-                    .replace_variant_elements(elems)
+                let value = self.cloned(*src)?;
+                let place = self.target(*record)?;
+                self.read_place_mut(place)?
+                    .set_safearray_element(*index, &value)
                     .map_err(Fault::from_string)?;
-                self.set(*record, Variant::from_safearray(updated))?;
             }
             Op::LBound {
                 dst,
