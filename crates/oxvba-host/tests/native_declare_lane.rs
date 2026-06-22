@@ -268,6 +268,95 @@ fn riff_exact_vtableproc_reads_synthetic_vtable_slot() {
 }
 
 #[test]
+fn riff_exact_iidfromstring_writes_guid_udt_through_as_any() {
+    // Riff uses `IIDFromString StrPtr("{...}"), guid` where `guid` is a UDT:
+    // Long, Integer, Integer, Byte(0 To 7). The native `As Any` ByRef lane must
+    // expose that record as the 16-byte GUID ABI layout and copy native writes
+    // back into the record fields.
+    let snapshot = run("Private Type GUID\n\
+         Data1 As Long\n\
+         Data2 As Integer\n\
+         Data3 As Integer\n\
+         Data4(0 To 7) As Byte\n\
+         End Type\n\
+         Private Declare PtrSafe Function IIDFromString Lib \"ole32\" (ByVal lpsz As LongPtr, ByRef lpiid As Any) As Long\n\
+         Public Hr As Long\n\
+         Public Data4First As Long\n\
+         Public Data4Last As Long\n\
+         Public Checksum As Long\n\
+         Sub Main()\n\
+         Dim iid As GUID\n\
+         Hr = IIDFromString(StrPtr(\"{00000000-0000-0000-C000-000000000046}\"), iid)\n\
+         Data4First = iid.Data4(0)\n\
+         Data4Last = iid.Data4(7)\n\
+         Checksum = iid.Data1 + iid.Data2 + iid.Data3 + iid.Data4(0) + iid.Data4(7)\n\
+         End Sub");
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0)),
+        "expected IIDFromString to return S_OK in {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0xC0)),
+        "expected GUID Data4(0)=&HC0 after native UDT writeback: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x46)),
+        "expected GUID Data4(7)=&H46 after native UDT writeback: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x106)),
+        "expected checksum over GUID fields to include native writeback bytes: {snapshot:?}"
+    );
+}
+
+#[test]
+fn riff_shaped_as_any_scalar_byref_writes_back() {
+    // Riff's DispCallFunc wrapper passes `vTypes(0)` and `pArgs(0)` to ByRef
+    // `As Any` parameters. Those are scalar array elements, so `As Any` must
+    // expose a native-width cell, not only GUID-shaped records.
+    let snapshot = run(
+        "Private Declare PtrSafe Function RtlMoveMemoryAny Lib \"kernel32\" Alias \"RtlMoveMemory\" (ByRef Destination As Any, ByVal Source As LongPtr, ByVal Length As LongPtr) As LongPtr\n\
+         Public CopiedInteger As Long\n\
+         Public CopiedLongPtr As LongLong\n\
+         Public CopiedArrayInteger As Long\n\
+         Public CopiedArrayLongPtr As LongLong\n\
+         Sub Main()\n\
+         Dim srcInt As Integer\n\
+         Dim dstInt As Integer\n\
+         Dim srcPtr As LongPtr\n\
+         Dim dstPtr As LongPtr\n\
+         Dim dstInts(0 To 0) As Integer\n\
+         Dim dstPtrs(0 To 0) As LongPtr\n\
+         srcInt = 1234\n\
+         srcPtr = &H12345678\n\
+         dstInts(0) = 0\n\
+         dstPtrs(0) = 0\n\
+         RtlMoveMemoryAny dstInt, VarPtr(srcInt), LenB(dstInt)\n\
+         RtlMoveMemoryAny dstPtr, VarPtr(srcPtr), LenB(dstPtr)\n\
+         RtlMoveMemoryAny dstInts(0), VarPtr(srcInt), LenB(dstInts(0))\n\
+         RtlMoveMemoryAny dstPtrs(0), VarPtr(srcPtr), LenB(dstPtrs(0))\n\
+         CopiedInteger = dstInt\n\
+         CopiedLongPtr = dstPtr\n\
+         CopiedArrayInteger = dstInts(0)\n\
+         CopiedArrayLongPtr = dstPtrs(0)\n\
+         End Sub",
+    );
+    let integer_hits = snapshot.iter().filter(|v| v.as_i32() == Some(1234)).count();
+    assert!(
+        integer_hits >= 2,
+        "expected ByRef As Any Integer writeback for local and array element: {snapshot:?}"
+    );
+    let longptr_hits = snapshot
+        .iter()
+        .filter(|v| v.as_i64() == Some(0x12345678))
+        .count();
+    assert!(
+        longptr_hits >= 2,
+        "expected ByRef As Any LongPtr writeback for local and array element: {snapshot:?}"
+    );
+}
+
+#[test]
 fn native_declare_rejects_jit_without_falling_back() {
     let mut engine = Engine::new(HostConfig { enable_jit: true });
     engine.set_host_policy(HostPolicy::interactive_dev());
