@@ -1,4 +1,5 @@
-use crate::VariantCore;
+use crate::{Variant, VariantCore, bstr::BStr};
+use core::{ptr, slice};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +56,11 @@ pub struct VbaRecordLayout {
     fields: Vec<VbaRecordFieldLayout>,
     size: usize,
     align: usize,
+}
+
+pub struct VbaRecord {
+    layout: Arc<VbaRecordLayout>,
+    data: Vec<u64>,
 }
 
 impl VbaRecordLayout {
@@ -142,6 +148,258 @@ impl VbaRecordFieldKind {
     }
 }
 
+impl VbaRecord {
+    pub fn new_default(layout: Arc<VbaRecordLayout>) -> Result<Self, String> {
+        if layout.align() > core::mem::align_of::<u64>() {
+            return Err(format!(
+                "VBA record layout alignment {} exceeds native buffer alignment {}",
+                layout.align(),
+                core::mem::align_of::<u64>()
+            ));
+        }
+        let words = layout.size().div_ceil(core::mem::size_of::<u64>());
+        let mut record = Self {
+            layout,
+            data: vec![0; words],
+        };
+        let fields = record.layout.fields().to_vec();
+        for field in &fields {
+            // SAFETY: the buffer is sized to `layout.size()`, and each field offset
+            // and recursive fixed-array stride was computed by `VbaRecordLayout`.
+            unsafe {
+                init_field_at(record.field_mut_ptr(field), &field.kind)?;
+            }
+        }
+        Ok(record)
+    }
+
+    pub fn layout(&self) -> &Arc<VbaRecordLayout> {
+        &self.layout
+    }
+
+    pub fn data_ptr(&self) -> *const u8 {
+        self.data.as_ptr().cast()
+    }
+
+    pub fn data_mut_ptr(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr().cast()
+    }
+
+    pub fn field_ptr(&self, field: &VbaRecordFieldLayout) -> *const u8 {
+        unsafe { self.data_ptr().add(field.offset) }
+    }
+
+    pub fn field_mut_ptr(&mut self, field: &VbaRecordFieldLayout) -> *mut u8 {
+        unsafe { self.data_mut_ptr().add(field.offset) }
+    }
+
+    pub fn field_bytes(&self, index: usize) -> Option<&[u8]> {
+        let field = self.layout.fields().get(index)?;
+        // SAFETY: the layout field is within the owned buffer by construction.
+        Some(unsafe { slice::from_raw_parts(self.data_ptr().add(field.offset), field.size) })
+    }
+
+    pub fn read_field_variant(&self, index: usize) -> Result<Variant, String> {
+        let field = self
+            .layout
+            .fields()
+            .get(index)
+            .ok_or_else(|| format!("record field {index} out of range"))?;
+        // SAFETY: the field pointer is in range and aligned for `field.kind`.
+        unsafe { read_field_variant_at(self.field_ptr(field), &field.kind) }
+    }
+}
+
+impl Clone for VbaRecord {
+    fn clone(&self) -> Self {
+        let mut clone = Self {
+            layout: self.layout.clone(),
+            data: vec![0; self.data.len()],
+        };
+        let fields = self.layout.fields().to_vec();
+        for field in &fields {
+            // SAFETY: source and destination are distinct buffers with the same
+            // descriptor-backed layout.
+            unsafe {
+                clone_field_at(
+                    self.field_ptr(field),
+                    clone.field_mut_ptr(field),
+                    &field.kind,
+                )
+                .expect("VBA record deep clone should succeed");
+            }
+        }
+        clone
+    }
+}
+
+impl Drop for VbaRecord {
+    fn drop(&mut self) {
+        let fields = self.layout.fields().to_vec();
+        for field in &fields {
+            // SAFETY: each initialized field is dropped exactly once while the owning
+            // record buffer is still live.
+            unsafe {
+                let ptr = self.data_mut_ptr().add(field.offset);
+                drop_field_at(ptr, &field.kind);
+            }
+        }
+    }
+}
+
+impl core::fmt::Debug for VbaRecord {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("VbaRecord")
+            .field("layout", &self.layout)
+            .field("data_ptr", &self.data_ptr())
+            .finish()
+    }
+}
+
+unsafe fn init_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) -> Result<(), String> {
+    match kind {
+        VbaRecordFieldKind::Variant => unsafe { ptr.cast::<Variant>().write(Variant::empty()) },
+        VbaRecordFieldKind::String => unsafe { ptr.cast::<*mut u16>().write(ptr::null_mut()) },
+        VbaRecordFieldKind::Record(layout) => {
+            for field in layout.fields() {
+                unsafe { init_field_at(ptr.add(field.offset), &field.kind)? };
+            }
+        }
+        VbaRecordFieldKind::FixedArray { element, len } => {
+            let (element_size, element_align) = element.storage_shape()?;
+            let stride = align_to(element_size, element_align);
+            for i in 0..*len {
+                unsafe { init_field_at(ptr.add(i * stride), element)? };
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+unsafe fn clone_field_at(
+    src: *const u8,
+    dst: *mut u8,
+    kind: &VbaRecordFieldKind,
+) -> Result<(), String> {
+    match kind {
+        VbaRecordFieldKind::Variant => {
+            let value = unsafe { &*src.cast::<Variant>() };
+            unsafe { dst.cast::<Variant>().write(value.clone()) };
+        }
+        VbaRecordFieldKind::String => {
+            let raw = unsafe { *src.cast::<*mut u16>() };
+            let cloned = clone_bstr_raw(raw)?;
+            unsafe { dst.cast::<*mut u16>().write(cloned) };
+        }
+        VbaRecordFieldKind::Record(layout) => {
+            for field in layout.fields() {
+                unsafe {
+                    clone_field_at(src.add(field.offset), dst.add(field.offset), &field.kind)?
+                };
+            }
+        }
+        VbaRecordFieldKind::FixedArray { element, len } => {
+            let (element_size, element_align) = element.storage_shape()?;
+            let stride = align_to(element_size, element_align);
+            for i in 0..*len {
+                unsafe { clone_field_at(src.add(i * stride), dst.add(i * stride), element)? };
+            }
+        }
+        _ => {
+            let (size, _) = kind.storage_shape()?;
+            unsafe { ptr::copy_nonoverlapping(src, dst, size) };
+        }
+    }
+    Ok(())
+}
+
+unsafe fn drop_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) {
+    match kind {
+        VbaRecordFieldKind::Variant => unsafe { ptr::drop_in_place(ptr.cast::<Variant>()) },
+        VbaRecordFieldKind::String => {
+            let raw = unsafe { *ptr.cast::<*mut u16>() };
+            if !raw.is_null() {
+                // SAFETY: string fields own the BSTR pointer stored in the record slot.
+                let _ = unsafe { BStr::from_raw_bstr(raw) };
+            }
+        }
+        VbaRecordFieldKind::Record(layout) => {
+            for field in layout.fields() {
+                unsafe { drop_field_at(ptr.add(field.offset), &field.kind) };
+            }
+        }
+        VbaRecordFieldKind::FixedArray { element, len } => {
+            let Ok((element_size, element_align)) = element.storage_shape() else {
+                return;
+            };
+            let stride = align_to(element_size, element_align);
+            for i in 0..*len {
+                unsafe { drop_field_at(ptr.add(i * stride), element) };
+            }
+        }
+        _ => {}
+    }
+}
+
+unsafe fn read_field_variant_at(
+    ptr: *const u8,
+    kind: &VbaRecordFieldKind,
+) -> Result<Variant, String> {
+    let value = match kind {
+        VbaRecordFieldKind::Variant => unsafe { (&*ptr.cast::<Variant>()).clone() },
+        VbaRecordFieldKind::Integer => Variant::from_i16(unsafe { *ptr.cast::<i16>() }),
+        VbaRecordFieldKind::Long => Variant::from_i32(unsafe { *ptr.cast::<i32>() }),
+        VbaRecordFieldKind::LongLong => Variant::from_i64(unsafe { *ptr.cast::<i64>() }),
+        VbaRecordFieldKind::LongPtr => {
+            if core::mem::size_of::<usize>() == 8 {
+                Variant::from_i64(unsafe { *ptr.cast::<isize>() as i64 })
+            } else {
+                Variant::from_i32(unsafe { *ptr.cast::<isize>() as i32 })
+            }
+        }
+        VbaRecordFieldKind::Byte => Variant::from_u8(unsafe { *ptr.cast::<u8>() }),
+        VbaRecordFieldKind::Single => Variant::from_f32(unsafe { *ptr.cast::<f32>() }),
+        VbaRecordFieldKind::Double => Variant::from_f64(unsafe { *ptr.cast::<f64>() }),
+        VbaRecordFieldKind::Currency => {
+            Variant::from_currency_scaled_i64(unsafe { *ptr.cast::<i64>() })
+        }
+        VbaRecordFieldKind::Date => Variant::from_date_f64(unsafe { *ptr.cast::<f64>() }),
+        VbaRecordFieldKind::String => {
+            let raw = unsafe { *ptr.cast::<*mut u16>() };
+            if raw.is_null() {
+                Variant::from_string(BStr::empty())
+            } else {
+                let text = unsafe { borrow_bstr_raw(raw) };
+                let value = Variant::from_string(text.clone());
+                core::mem::forget(text);
+                value
+            }
+        }
+        VbaRecordFieldKind::Boolean => Variant::from_bool(unsafe { *ptr.cast::<i16>() != 0 }),
+        VbaRecordFieldKind::Record(_) | VbaRecordFieldKind::FixedArray { .. } => {
+            return Err("record aggregate field cannot be read as a scalar Variant".into());
+        }
+    };
+    Ok(value)
+}
+
+unsafe fn borrow_bstr_raw(raw: *mut u16) -> BStr {
+    // SAFETY: the caller guarantees `raw` is a live BSTR owned elsewhere. The
+    // wrapper must be forgotten before it would drop.
+    unsafe { BStr::from_raw_bstr(raw) }
+}
+
+fn clone_bstr_raw(raw: *mut u16) -> Result<*mut u16, String> {
+    if raw.is_null() {
+        return Ok(ptr::null_mut());
+    }
+    let text = unsafe { borrow_bstr_raw(raw) };
+    let cloned = text.clone_raw_bstr();
+    core::mem::forget(text);
+    cloned
+}
+
 fn align_to(value: usize, align: usize) -> usize {
     debug_assert!(align.is_power_of_two());
     (value + align - 1) & !(align - 1)
@@ -149,7 +407,11 @@ fn align_to(value: usize, align: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{VbaRecordFieldKind as Kind, VbaRecordFieldSpec as Field, VbaRecordLayout};
+    use super::{
+        VbaRecord, VbaRecordFieldKind as Kind, VbaRecordFieldSpec as Field, VbaRecordLayout,
+    };
+    use crate::{Variant, bstr::BStr};
+    use std::sync::Arc;
 
     #[test]
     fn guid_shaped_udt_layout_matches_native_offsets() {
@@ -215,6 +477,94 @@ mod tests {
         assert_eq!(
             layout.fields()[2].size,
             core::mem::size_of::<crate::VariantCore>()
+        );
+    }
+
+    #[test]
+    fn native_record_defaults_and_reads_scalar_fields_from_buffer() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("Id", Kind::Long),
+                Field::named(
+                    "Bytes",
+                    Kind::FixedArray {
+                        element: Box::new(Kind::Byte),
+                        len: 4,
+                    },
+                ),
+            ])
+            .expect("layout"),
+        );
+        let mut record = VbaRecord::new_default(layout).expect("record");
+        let fields = record.layout().fields().to_vec();
+
+        unsafe {
+            record.field_mut_ptr(&fields[0]).cast::<i32>().write(1234);
+            core::ptr::copy_nonoverlapping(
+                [1u8, 2, 3, 4].as_ptr(),
+                record.field_mut_ptr(&fields[1]),
+                4,
+            );
+        }
+
+        assert_eq!(
+            record.read_field_variant(0).expect("id").as_i32(),
+            Some(1234)
+        );
+        assert_eq!(record.field_bytes(1).expect("bytes"), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn native_record_clone_deep_copies_bstr_and_variant_fields() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("Text", Kind::String),
+                Field::named("Value", Kind::Variant),
+            ])
+            .expect("layout"),
+        );
+        let mut record = VbaRecord::new_default(layout).expect("record");
+        let fields = record.layout().fields().to_vec();
+        let bstr = BStr::from("alpha");
+        let raw_bstr = bstr.clone_raw_bstr().expect("clone bstr");
+
+        unsafe {
+            record
+                .field_mut_ptr(&fields[0])
+                .cast::<*mut u16>()
+                .write(raw_bstr);
+            record
+                .field_mut_ptr(&fields[1])
+                .cast::<Variant>()
+                .drop_in_place();
+            record
+                .field_mut_ptr(&fields[1])
+                .cast::<Variant>()
+                .write(Variant::from_string("payload"));
+        }
+
+        let clone = record.clone();
+        let original_raw = unsafe { *record.field_ptr(&fields[0]).cast::<*mut u16>() };
+        let clone_raw = unsafe { *clone.field_ptr(&fields[0]).cast::<*mut u16>() };
+
+        assert!(!original_raw.is_null());
+        assert!(!clone_raw.is_null());
+        assert_ne!(original_raw, clone_raw);
+        assert_eq!(
+            clone
+                .read_field_variant(0)
+                .expect("text")
+                .as_bstr()
+                .map(|text| text.as_str()),
+            Some("alpha".to_string())
+        );
+        assert_eq!(
+            clone
+                .read_field_variant(1)
+                .expect("variant")
+                .as_bstr()
+                .map(|text| text.as_str()),
+            Some("payload".to_string())
         );
     }
 }

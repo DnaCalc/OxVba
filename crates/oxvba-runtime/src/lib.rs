@@ -43,5 +43,5 @@ pub use object_ref::{
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};
 pub use vba_record::{
-    VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
+    VbaRecord, VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
 };
