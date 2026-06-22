@@ -319,7 +319,7 @@ impl Variant {
                     )));
                 }
                 // SAFETY: guaranteed by this unsafe fn's caller.
-                let record = unsafe { (*ptr).clone() };
+                let record = unsafe { (*ptr).deep_clone()? };
                 Ok(Self::from_com_record(record))
             }
             _ => Ok(Self::from_core(core)),
@@ -716,7 +716,11 @@ impl Clone for Variant {
                 None => Self::from_core(self.core),
             },
             VarType::Record => match self.as_com_record() {
-                Some(record) => Self::from_com_record(record),
+                Some(record) => Self::from_com_record(
+                    record
+                        .deep_clone()
+                        .expect("record Variant clone should deep-copy COM record payload"),
+                ),
                 None => Self::from_core(self.core),
             },
             _ => Self::from_core(self.core),
@@ -826,6 +830,8 @@ impl Eq for Variant {}
 
 #[cfg(test)]
 mod tests {
+    use core::ffi::c_void;
+
     use crate::{Decimal96, bstr::BStr};
 
     use super::{VarType, Variant, VariantCore, VariantData};
@@ -950,6 +956,69 @@ mod tests {
                 .as_safearray()
                 .and_then(|array| array.variant_elements()),
             Some(vec![Variant::from_i32(2)])
+        );
+    }
+
+    unsafe fn clone_test_record(
+        record_info: *mut c_void,
+        record_data: *const c_void,
+    ) -> Result<(*mut c_void, *mut c_void), String> {
+        let value = unsafe { *record_data.cast::<i32>() };
+        Ok((record_info, Box::into_raw(Box::new(value)).cast()))
+    }
+
+    unsafe fn destroy_test_record(_record_info: *mut c_void, record_data: *mut c_void) {
+        unsafe {
+            drop(Box::from_raw(record_data.cast::<i32>()));
+        }
+    }
+
+    fn test_record_variant(value: i32) -> Variant {
+        let record_info = core::ptr::NonNull::<u8>::dangling()
+            .as_ptr()
+            .cast::<c_void>();
+        let record_data = Box::into_raw(Box::new(value)).cast::<c_void>();
+        let record = unsafe {
+            crate::ComRecord::from_raw_parts(
+                record_info,
+                record_data,
+                clone_test_record,
+                destroy_test_record,
+            )
+            .expect("test record")
+        };
+        Variant::from_com_record(record)
+    }
+
+    #[test]
+    fn record_variant_clone_deep_copies_record_payload() {
+        let original = test_record_variant(41);
+        let cloned = original.clone();
+        let original_record = original.as_com_record().expect("original record");
+        let cloned_record = cloned.as_com_record().expect("cloned record");
+
+        assert_ne!(
+            original_record.record_data_ptr(),
+            cloned_record.record_data_ptr()
+        );
+        assert_eq!(
+            unsafe { *original_record.record_data_ptr().cast::<i32>() },
+            41
+        );
+        assert_eq!(
+            unsafe { *cloned_record.record_data_ptr().cast::<i32>() },
+            41
+        );
+        unsafe {
+            *original_record.record_data_ptr().cast::<i32>() = 99;
+        }
+        assert_eq!(
+            unsafe { *original_record.record_data_ptr().cast::<i32>() },
+            99
+        );
+        assert_eq!(
+            unsafe { *cloned_record.record_data_ptr().cast::<i32>() },
+            41
         );
     }
 
