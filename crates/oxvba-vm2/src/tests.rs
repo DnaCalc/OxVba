@@ -472,6 +472,69 @@ fn call_proc_ref_dispatches_through_address_of() {
     assert_eq!(vm.slot(2).unwrap().as_i32(), Some(42));
 }
 
+fn native_callback_count_for_owner(owner: usize) -> usize {
+    crate::NATIVE_CALLBACKS.with(|callbacks| {
+        callbacks
+            .borrow()
+            .iter()
+            .filter(|slot| slot.is_some_and(|registration| registration.owner == owner))
+            .count()
+    })
+}
+
+#[test]
+fn native_callback_slots_are_released_when_vm_drops() {
+    let b = bundle(
+        vec![
+            Op::Halt,   // entry
+            Op::Return, // callback proc 0
+            Op::Return, // callback proc 1
+        ],
+        0,
+        vec![proc("TimerA", 1, 4, 4, None), proc("TimerB", 2, 4, 4, None)],
+    );
+    let h1 = host();
+    let h2 = host();
+    let mut vm1 = run(&b, &h1).unwrap();
+    let mut vm2 = run(&b, &h2).unwrap();
+    let vm1_owner = vm1.native_callback_owner;
+    let vm2_owner = vm2.native_callback_owner;
+
+    let first = vm1.native_callback_pointer(0).unwrap();
+    let duplicate = vm1.native_callback_pointer(0).unwrap();
+    let second = vm1.native_callback_pointer(1).unwrap();
+    let other_vm = vm2.native_callback_pointer(0).unwrap();
+    assert_ne!(first, 0);
+    assert_eq!(
+        first, duplicate,
+        "same VM/bundle/proc should reuse the callback slot"
+    );
+    assert_ne!(
+        first, second,
+        "different callback procs should use distinct thunks"
+    );
+    assert_ne!(
+        first, other_vm,
+        "different VM registrations should not alias while both VMs are live"
+    );
+    assert_eq!(native_callback_count_for_owner(vm1_owner), 2);
+    assert_eq!(native_callback_count_for_owner(vm2_owner), 1);
+
+    drop(vm1);
+    assert_eq!(
+        native_callback_count_for_owner(vm1_owner),
+        0,
+        "dropping a VM must clear its native callback registrations"
+    );
+    assert_eq!(
+        native_callback_count_for_owner(vm2_owner),
+        1,
+        "dropping one VM must not clear another VM's callback registrations"
+    );
+    drop(vm2);
+    assert_eq!(native_callback_count_for_owner(vm2_owner), 0);
+}
+
 #[test]
 fn proc_function_return() {
     // Function Double(ByVal n) = n + n.  Double(21) → 42 into caller local 1.

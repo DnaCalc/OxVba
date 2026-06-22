@@ -32,6 +32,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
@@ -65,11 +66,13 @@ use arith::CmpOp;
 /// VBA `Missing` (an omitted optional argument): vbError `&H80020004`.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
 const MAX_NATIVE_CALLBACKS: usize = 32;
+static NEXT_NATIVE_CALLBACK_OWNER: AtomicUsize = AtomicUsize::new(1);
 
 type ProjectEventSink<'h> = dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h;
 
 #[derive(Clone, Copy)]
 struct NativeCallbackRegistration {
+    owner: usize,
     vm: usize,
     bundle: usize,
     proc: usize,
@@ -78,6 +81,16 @@ struct NativeCallbackRegistration {
 thread_local! {
     static NATIVE_CALLBACKS: RefCell<[Option<NativeCallbackRegistration>; MAX_NATIVE_CALLBACKS]> =
         const { RefCell::new([None; MAX_NATIVE_CALLBACKS]) };
+}
+
+fn release_native_callbacks_for_owner(owner: usize) {
+    NATIVE_CALLBACKS.with(|callbacks| {
+        for slot in callbacks.borrow_mut().iter_mut() {
+            if slot.is_some_and(|registration| registration.owner == owner) {
+                *slot = None;
+            }
+        }
+    });
 }
 
 /// A VBA run-time error surfaced to the embedder (uncaught by any handler).
@@ -325,6 +338,7 @@ impl<'h> LoadedBundle<'h> {
 
 /// The interpreter.
 pub struct Vm<'h> {
+    native_callback_owner: usize,
     /// Loaded bundles (".NET assemblies"); bundle `0` is the entry bundle.
     bundles: Vec<LoadedBundle<'h>>,
     /// The bundle whose `ops` the `pc` currently indexes (the executing frame's).
@@ -368,6 +382,12 @@ pub struct Vm<'h> {
     collections: HashMap<i32, CollectionData>,
     /// Optional host/wrapper event publication hook for project `RaiseEvent`.
     project_event_sink: Option<Box<ProjectEventSink<'h>>>,
+}
+
+impl Drop for Vm<'_> {
+    fn drop(&mut self) {
+        release_native_callbacks_for_owner(self.native_callback_owner);
+    }
 }
 
 /// A cross-bundle link failure (an unresolved/mismatched import).
@@ -480,6 +500,7 @@ impl<'h> Vm<'h> {
             saved_resume: ResumePoint::default(),
         };
         Ok(Self {
+            native_callback_owner: NEXT_NATIVE_CALLBACK_OWNER.fetch_add(1, Ordering::Relaxed),
             bundles: loaded,
             cur: entry,
             host,
@@ -1271,10 +1292,22 @@ impl<'h> Vm<'h> {
         suppress: bool,
         capture: bool,
     ) -> Result<Variant, Fault> {
+        self.run_proc_with_values_from_slot(proc, me, values, 1, suppress, capture)
+    }
+
+    fn run_proc_with_values_from_slot(
+        &mut self,
+        proc: usize,
+        me: Variant,
+        values: Vec<Variant>,
+        first_slot: usize,
+        suppress: bool,
+        capture: bool,
+    ) -> Result<Variant, Fault> {
         let byval = values
             .into_iter()
             .enumerate()
-            .map(|(i, v)| (1 + i, v))
+            .map(|(i, v)| (first_slot + i, v))
             .collect();
         self.run_proc_core(proc, me, byval, HashMap::new(), suppress, capture)
     }
@@ -1585,21 +1618,25 @@ impl<'h> Vm<'h> {
             return Err(Fault::new(490, "invalid procedure reference"));
         }
         let registration = NativeCallbackRegistration {
+            owner: self.native_callback_owner,
             vm: (self as *mut Vm<'h>) as usize,
             bundle: self.cur,
             proc,
         };
         NATIVE_CALLBACKS.with(|callbacks| {
             let mut callbacks = callbacks.borrow_mut();
-            if let Some((index, _)) = callbacks.iter().enumerate().find(|(_, existing)| {
-                existing
-                    .map(|existing| {
-                        existing.vm == registration.vm
-                            && existing.bundle == registration.bundle
-                            && existing.proc == registration.proc
-                    })
-                    .unwrap_or(false)
-            }) {
+            if let Some((index, existing)) =
+                callbacks.iter_mut().enumerate().find(|(_, existing)| {
+                    existing
+                        .map(|existing| {
+                            existing.owner == registration.owner
+                                && existing.bundle == registration.bundle
+                                && existing.proc == registration.proc
+                        })
+                        .unwrap_or(false)
+                })
+            {
+                *existing = Some(registration);
                 return native_callback_thunk(index)
                     .map(|ptr| ptr as isize as i64)
                     .ok_or_else(|| Fault::new(5, "unsupported native callback slot"));
@@ -3190,7 +3227,7 @@ unsafe fn invoke_native_timer_callback(
         let vm = unsafe { &mut *(registration.vm as *mut Vm<'static>) };
         let saved_cur = vm.cur;
         vm.cur = registration.bundle;
-        let _ = vm.run_proc_with_values(
+        let _ = vm.run_proc_with_values_from_slot(
             registration.proc,
             Variant::empty(),
             vec![
@@ -3199,6 +3236,7 @@ unsafe fn invoke_native_timer_callback(
                 Variant::from_i64(timer_id as i64),
                 Variant::from_i32(time as i32),
             ],
+            0,
             true,
             false,
         );

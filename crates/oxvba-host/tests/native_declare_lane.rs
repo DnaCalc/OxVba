@@ -185,6 +185,47 @@ fn riff_exact_rtlmovememory_typed_byref_destinations_write_back() {
 }
 
 #[test]
+fn riff_shaped_callwindowproc_invokes_address_of_callback() {
+    // Riff uses AddressOf plus native thunks to bridge into timer callbacks. This
+    // bounded probe calls the VM callback thunk synchronously through
+    // CallWindowProcW's four-argument callback ABI, without installing a timer or
+    // touching executable memory.
+    let snapshot = run(
+        "Private Declare PtrSafe Function RiffCallPtr4 Lib \"user32\" Alias \"CallWindowProcW\" (ByVal lpPrevWndFunc As LongPtr, ByVal a0 As LongPtr, ByVal a1 As LongPtr, ByVal a2 As LongPtr, ByVal a3 As LongPtr) As LongPtr\n\
+         Public CallbackHwnd As LongLong\n\
+         Public CallbackMsg As Long\n\
+         Public CallbackId As LongLong\n\
+         Public CallbackTime As Long\n\
+         Sub Main()\n\
+         Dim ignored As LongPtr\n\
+         ignored = RiffCallPtr4(AddressOf RiffTimerLikeCallback, 11, 22, 33, 44)\n\
+         End Sub\n\
+         Sub RiffTimerLikeCallback(ByVal hWnd As LongPtr, ByVal uMsg As Long, ByVal idEvent As LongPtr, ByVal dwTime As Long)\n\
+         CallbackHwnd = hWnd\n\
+         CallbackMsg = uMsg\n\
+         CallbackId = idEvent\n\
+         CallbackTime = dwTime\n\
+         End Sub",
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i64() == Some(11)),
+        "expected CallWindowProcW to pass hwnd/a0 to the AddressOf callback: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(22)),
+        "expected CallWindowProcW to pass msg/a1 to the AddressOf callback: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i64() == Some(33)),
+        "expected CallWindowProcW to pass id/a2 to the AddressOf callback: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(44)),
+        "expected CallWindowProcW to invoke the AddressOf callback with four native args: {snapshot:?}"
+    );
+}
+
+#[test]
 fn native_declare_rejects_jit_without_falling_back() {
     let mut engine = Engine::new(HostConfig { enable_jit: true });
     engine.set_host_policy(HostPolicy::interactive_dev());
