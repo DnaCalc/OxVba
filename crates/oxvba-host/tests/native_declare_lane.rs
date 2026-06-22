@@ -109,6 +109,82 @@ fn riff_shaped_memmove_round_trips_varptr_scalars() {
 }
 
 #[test]
+fn riff_exact_kernel32_memory_lane_handles_raw_pointer_offsets_and_zeroing() {
+    // Riff allocates raw buffers, writes through pointer arithmetic (`ByVal (p+n)`),
+    // reads back into scalar locals, then zeroes/frees the memory. This keeps the
+    // native side effect bounded to one private allocation.
+    let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
+         Private Const MEM_RESERVE As Long = &H2000\n\
+         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const PAGE_READWRITE As Long = &H4\n\
+         Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr\n\
+         Private Declare PtrSafe Function VirtualFree Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal dwFreeType As Long) As Long\n\
+         Private Declare PtrSafe Sub RtlMoveMemory Lib \"kernel32\" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Private Declare PtrSafe Sub RtlZeroMemory Lib \"kernel32\" (ByVal Destination As LongPtr, ByVal Length As LongPtr)\n\
+         Sub Main()\n\
+         Dim mem As LongPtr\n\
+         Dim src As Long\n\
+         Dim copied As Long\n\
+         Dim zeroed As Long\n\
+         Dim zeroProof As Long\n\
+         Dim freed As Long\n\
+         mem = VirtualAlloc(0, 16, MEM_COMMIT Or MEM_RESERVE, PAGE_READWRITE)\n\
+         If mem = 0 Then Err.Raise 700, \"RiffNative\", \"VirtualAlloc returned null\"\n\
+         src = &H11223344\n\
+         RtlMoveMemory ByVal (mem + 4), VarPtr(src), 4\n\
+         RtlMoveMemory VarPtr(copied), ByVal (mem + 4), 4\n\
+         RtlZeroMemory ByVal (mem + 4), 4\n\
+         RtlMoveMemory VarPtr(zeroed), ByVal (mem + 4), 4\n\
+         If zeroed = 0 Then zeroProof = &H556677\n\
+         freed = VirtualFree(mem, 0, MEM_RELEASE)\n\
+         If freed = 0 Then Err.Raise 701, \"RiffNative\", \"VirtualFree failed\"\n\
+         End Sub");
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x11223344)),
+        "expected RtlMoveMemory to copy through a raw pointer offset: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x556677)),
+        "expected RtlZeroMemory to clear the raw pointer offset and set zeroProof: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i64().is_some_and(|n| n != 0)),
+        "expected a non-zero VirtualAlloc pointer in {snapshot:?}"
+    );
+}
+
+#[test]
+fn riff_exact_rtlmovememory_typed_byref_destinations_write_back() {
+    // Riff declares helper aliases with a typed ByRef destination and a raw source
+    // pointer. These must use ordinary Declare ByRef writeback, not VarPtr
+    // expression-shape writeback.
+    let snapshot = run(
+        "Private Declare PtrSafe Sub RtlMoveMemoryToSingle Lib \"kernel32\" Alias \"RtlMoveMemory\" (ByRef Destination As Single, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Private Declare PtrSafe Sub RtlMoveMemoryToInteger Lib \"kernel32\" Alias \"RtlMoveMemory\" (ByRef Destination As Integer, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Sub Main()\n\
+         Dim srcSingle As Single\n\
+         Dim copiedSingle As Single\n\
+         Dim srcInt As Integer\n\
+         Dim copiedInt As Integer\n\
+         srcSingle = 12.5!\n\
+         srcInt = 1234\n\
+         RtlMoveMemoryToSingle copiedSingle, VarPtr(srcSingle), 4\n\
+         RtlMoveMemoryToInteger copiedInt, VarPtr(srcInt), 2\n\
+         End Sub",
+    );
+    assert!(
+        snapshot
+            .iter()
+            .any(|v| v.as_f32().is_some_and(|n| (n - 12.5).abs() < f32::EPSILON)),
+        "expected typed Single destination writeback through RtlMoveMemory: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i16() == Some(1234)),
+        "expected typed Integer destination writeback through RtlMoveMemory: {snapshot:?}"
+    );
+}
+
+#[test]
 fn native_declare_rejects_jit_without_falling_back() {
     let mut engine = Engine::new(HostConfig { enable_jit: true });
     engine.set_host_policy(HostPolicy::interactive_dev());

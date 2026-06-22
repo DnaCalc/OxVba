@@ -35,12 +35,17 @@ This note records the exact current support split for the `StrPtr` / `VarPtr` /
     - `cargo test -p oxvba-host --test pointer_helpers_end_to_end -- --nocapture`
     - `cargo test -p oxvba-host --test pointer_helpers_end_to_end windows_pointer_helper_e2e::varptr_supports_byte_buffer_native_read_in_vm_and_jit -- --exact --nocapture`
     - `cargo test -p oxvba-host --test native_declare_lane riff_shaped_memmove_round_trips_varptr_scalars -- --nocapture`
+    - `cargo test -p oxvba-host --test native_declare_lane riff_exact_kernel32_memory_lane_handles_raw_pointer_offsets_and_zeroing -- --nocapture`
+    - `cargo test -p oxvba-host --test native_declare_lane riff_exact_rtlmovememory_typed_byref_destinations_write_back -- --nocapture`
   - current result:
     - non-zero scalar pointer-like production in both VM and JIT
     - byte-buffer registry materialization in both VM and JIT
     - real native byte-buffer read through `ucrtbase!strlen` in both VM and JIT
     - real native scalar memory copy through `msvcrt!memmove` in the VM, with
       the copied bytes written back into the original `Long` variable
+    - exact Riff-shaped `kernel32!RtlMoveMemory` / `RtlZeroMemory` over raw
+      pointer offsets, plus typed `RtlMoveMemory` aliases with ByRef `Single`
+      and `Integer` destinations
 
 ## Still Open
 
