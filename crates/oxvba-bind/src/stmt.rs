@@ -11,7 +11,7 @@ use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
 use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::model::{SymbolId, SymbolKind, fold_identifier};
-use oxvba_symbol::signature::VarTypeRef;
+use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
@@ -940,6 +940,25 @@ impl<'a> ProcLower<'a> {
         self.bind_dim_filtered(node, false)
     }
 
+    pub(crate) fn function_return_default_init(&mut self) -> Result<Vec<CoreStmt>, BindError> {
+        let Some(local) = self.info.return_local else {
+            return Ok(Vec::new());
+        };
+        let Some((value, intent, target_kind, type_name)) =
+            default_value_for_type(&self.info.return_type)
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(vec![CoreStmt::Assign {
+            place: CorePlace::Local(local),
+            value,
+            intent,
+            target_kind,
+            target_name: self.info.name.clone(),
+            target_type_name: type_name,
+        }])
+    }
+
     /// The per-program-entry allocation of a `Static` declarator's array/record
     /// (the complement of [`Self::bind_dim`], which skips statics).
     pub(crate) fn bind_static_dim(
@@ -1000,6 +1019,20 @@ impl<'a> ProcLower<'a> {
             // A UDT value allocates a default record (recursively, so nested
             // UDT fields are themselves records).
             out.extend(self.udt_record_init(name.text)?);
+            if let Some(sym) = self.resolve(name.text).and_then(|b| b.symbol) {
+                let ty = self.symbol_type(sym);
+                if let Some((value, intent, target_kind, type_name)) = default_value_for_type(&ty) {
+                    let place = self.place_by_name(name.text)?;
+                    out.push(CoreStmt::Assign {
+                        place,
+                        value,
+                        intent,
+                        target_kind,
+                        target_name: name.text.to_string(),
+                        target_type_name: type_name,
+                    });
+                }
+            }
         }
         Ok(out)
     }
@@ -1415,6 +1448,46 @@ fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
         _ => Vt::Empty,
     };
     vt as i32
+}
+
+fn default_value_for_type(
+    ty: &VarTypeRef,
+) -> Option<(
+    CoreValue,
+    AssignmentIntent,
+    oxvba_bundle::AssignmentTargetKind,
+    String,
+)> {
+    let value = match ty {
+        VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_) => {
+            CoreValue::Const(CoreConst::Str(String::new()))
+        }
+        VarTypeRef::Builtin(BuiltinType::Boolean) => CoreValue::Const(CoreConst::Bool(false)),
+        VarTypeRef::Builtin(
+            BuiltinType::Byte
+            | BuiltinType::Integer
+            | BuiltinType::Long
+            | BuiltinType::LongLong
+            | BuiltinType::LongPtr
+            | BuiltinType::Single
+            | BuiltinType::Double
+            | BuiltinType::Currency
+            | BuiltinType::Date,
+        ) => types::coerce_store(CoreValue::Const(CoreConst::I32(0)), ty),
+        VarTypeRef::Object(_) => CoreValue::Const(CoreConst::Nothing),
+        VarTypeRef::Variant | VarTypeRef::Array(_) | VarTypeRef::Udt(_) => return None,
+    };
+    let intent = if matches!(ty, VarTypeRef::Object(_)) {
+        AssignmentIntent::Set
+    } else {
+        AssignmentIntent::Let
+    };
+    Some((
+        value,
+        intent,
+        types::assignment_target_kind(ty),
+        types::type_name(ty),
+    ))
 }
 
 impl<'a> ProcLower<'a> {

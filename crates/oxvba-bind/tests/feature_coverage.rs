@@ -636,6 +636,33 @@ fn time_and_weekday_intrinsics() {
 }
 
 #[test]
+fn lenb_reports_scalar_storage_widths() {
+    let snap = run(
+        "Public bByte As Long\nPublic bInteger As Long\nPublic bLong As Long\nPublic bLongPtr As Long\nPublic bSingle As Long\nPublic bDouble As Long\n\
+         Sub Main()\n\
+         Dim by As Byte\n\
+         Dim i As Integer\n\
+         Dim l As Long\n\
+         Dim p As LongPtr\n\
+         Dim s As Single\n\
+         Dim d As Double\n\
+         bByte = LenB(by)\n\
+         bInteger = LenB(i)\n\
+         bLong = LenB(l)\n\
+         bLongPtr = LenB(p)\n\
+         bSingle = LenB(s)\n\
+         bDouble = LenB(d)\n\
+         End Sub",
+    );
+    assert_eq!(snap[0], Variant::from_i32(1));
+    assert_eq!(snap[1], Variant::from_i32(2));
+    assert_eq!(snap[2], Variant::from_i32(4));
+    assert_eq!(snap[3], Variant::from_i32(8));
+    assert_eq!(snap[4], Variant::from_i32(4));
+    assert_eq!(snap[5], Variant::from_i32(8));
+}
+
+#[test]
 fn nested_scalar_udt_fields_are_recursively_materialized() {
     // A UDT field that is itself a UDT (`Outer.Item As Inner`) is recursively
     // default-initialized as a record, so `o.Item.N` is a live nested-record

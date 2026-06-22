@@ -133,7 +133,7 @@ End Sub
         .collect::<Vec<_>>()
         .join("|");
     assert!(
-        combined.contains("master=;bus0=;invalidVoice=;ok"),
+        combined.contains("master=0;bus0=0;invalidVoice=0;ok"),
         "Riff closed-state harness should complete without opening WASAPI: {snapshot:?}"
     );
 }

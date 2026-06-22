@@ -93,6 +93,7 @@ impl<'a> Lower<'a> {
                 // VBA hoists declarations: a fixed-size array `Dim` allocates once at
                 // proc entry, before any statement (so a `Dim` in a loop or after its
                 // first use still works), then the body runs.
+                stmts.extend(pl.function_return_default_init()?);
                 stmts.extend(pl.collect_fixed_array_inits(block)?);
                 stmts.extend(pl.bind_block(block)?);
                 Ok(stmts)

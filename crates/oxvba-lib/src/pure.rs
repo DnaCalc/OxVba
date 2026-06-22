@@ -887,12 +887,25 @@ pub fn weekday_name(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(if abbreviate { &name[..3] } else { name }))
 }
 
-/// `LenB(string)` — byte length. VBA stores strings as UTF-16, so the byte
-/// count is twice the code-unit count.
+/// `LenB(value)` — byte count. For strings, VBA reports UTF-16 payload bytes;
+/// for scalar variables it reports the storage width of the value's VarType.
 pub fn len_b(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vi32(
-        (as_str(need(args, 0)?)?.encode_utf16().count() * 2) as i32,
-    ))
+    let value = need(args, 0)?;
+    let bytes = match value.vtype() {
+        VarType::String => match value.string_units() {
+            Some(units) => units.len() * 2,
+            None => as_str(value)?.encode_utf16().count() * 2,
+        },
+        VarType::Boolean | VarType::Integer | VarType::UnsignedInteger => 2,
+        VarType::Byte | VarType::SignedByte => 1,
+        VarType::Long | VarType::UnsignedLong | VarType::UnsignedInt | VarType::Error => 4,
+        VarType::LongLong | VarType::UnsignedLongLong => 8,
+        VarType::Single => 4,
+        VarType::Double | VarType::Currency | VarType::Date => 8,
+        VarType::Empty | VarType::Null => 0,
+        _ => as_str(value)?.encode_utf16().count() * 2,
+    };
+    Ok(vi32(bytes as i32))
 }
 
 /// `DatePart(interval, date, [firstdayofweek], [firstweekofyear])` — extract a

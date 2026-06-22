@@ -226,6 +226,48 @@ fn riff_shaped_callwindowproc_invokes_address_of_callback() {
 }
 
 #[test]
+fn riff_exact_vtableproc_reads_synthetic_vtable_slot() {
+    // Riff's manual COM path first dereferences the object's vtable pointer, then
+    // reads a procedure pointer by slot index. Use private synthetic memory so
+    // the exact VTableProc byte-copy shape is covered without activating WASAPI
+    // or calling an arbitrary native function pointer.
+    let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
+         Private Const MEM_RESERVE As Long = &H2000\n\
+         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const PAGE_READWRITE As Long = &H4\n\
+         Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr\n\
+         Private Declare PtrSafe Function VirtualFree Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal dwFreeType As Long) As Long\n\
+         Private Declare PtrSafe Sub RtlMoveMemory Lib \"kernel32\" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Public SlotPtr As LongPtr\n\
+         Private Function VTableProc(ByVal pUnk As LongPtr, ByVal vTableIndex As Long) As LongPtr\n\
+         Dim pVtbl As LongPtr\n\
+         RtlMoveMemory VarPtr(pVtbl), ByVal pUnk, LenB(pVtbl)\n\
+         RtlMoveMemory VarPtr(VTableProc), ByVal (pVtbl + (vTableIndex * LenB(pVtbl))), LenB(pVtbl)\n\
+         End Function\n\
+         Sub Main()\n\
+         Dim obj As LongPtr\n\
+         Dim vt As LongPtr\n\
+         Dim slotValue As LongPtr\n\
+         Dim freedObj As Long\n\
+         Dim freedVt As Long\n\
+         obj = VirtualAlloc(0, 8, MEM_COMMIT Or MEM_RESERVE, PAGE_READWRITE)\n\
+         vt = VirtualAlloc(0, 24, MEM_COMMIT Or MEM_RESERVE, PAGE_READWRITE)\n\
+         If obj = 0 Or vt = 0 Then Err.Raise 710, \"RiffNative\", \"VirtualAlloc returned null\"\n\
+         slotValue = &H12345678\n\
+         RtlMoveMemory ByVal obj, VarPtr(vt), LenB(vt)\n\
+         RtlMoveMemory ByVal (vt + (2 * LenB(vt))), VarPtr(slotValue), LenB(slotValue)\n\
+         SlotPtr = VTableProc(obj, 2)\n\
+         freedVt = VirtualFree(vt, 0, MEM_RELEASE)\n\
+         freedObj = VirtualFree(obj, 0, MEM_RELEASE)\n\
+         If freedVt = 0 Or freedObj = 0 Then Err.Raise 711, \"RiffNative\", \"VirtualFree failed\"\n\
+         End Sub");
+    assert!(
+        snapshot.iter().any(|v| v.as_i64() == Some(0x12345678)),
+        "expected exact Riff VTableProc shape to read slot 2 from the synthetic vtable: {snapshot:?}"
+    );
+}
+
+#[test]
 fn native_declare_rejects_jit_without_falling_back() {
     let mut engine = Engine::new(HostConfig { enable_jit: true });
     engine.set_host_policy(HostPolicy::interactive_dev());
