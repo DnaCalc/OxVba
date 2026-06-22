@@ -810,6 +810,12 @@ mod tests {
 
     use super::{VarType, Variant, VariantCore, VariantData};
 
+    fn offset_of<T, U>(field: fn(*const T) -> *const U) -> usize {
+        let value = core::mem::MaybeUninit::<T>::uninit();
+        let base = value.as_ptr();
+        field(base) as usize - base as usize
+    }
+
     #[test]
     fn numeric_roundtrip() {
         let i16v = Variant::from_i16(-12);
@@ -862,8 +868,31 @@ mod tests {
     #[test]
     fn com_variant_layout_shape() {
         assert_eq!(core::mem::size_of::<VariantCore>(), 16);
+        assert_eq!(core::mem::align_of::<VariantCore>(), 8);
         assert_eq!(core::mem::size_of::<VariantData>(), 8);
+        assert_eq!(core::mem::align_of::<VariantData>(), 8);
         assert_eq!(core::mem::size_of::<Variant>(), 16);
+        assert_eq!(core::mem::align_of::<Variant>(), 8);
+        assert_eq!(
+            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).vtype) }),
+            0
+        );
+        assert_eq!(
+            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).reserved1) }),
+            2
+        );
+        assert_eq!(
+            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).reserved2) }),
+            4
+        );
+        assert_eq!(
+            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).reserved3) }),
+            6
+        );
+        assert_eq!(
+            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).data) }),
+            8
+        );
     }
 
     #[test]

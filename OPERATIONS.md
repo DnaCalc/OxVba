@@ -146,17 +146,28 @@ Fresh-eyes review and bead closure rules:
 ### 3.3 External Boundary Ownership Doctrine
 
 Binding architecture rules:
-- OxVba semantic values are the canonical runtime value model.
-- External integration domains translate to and from that model at their boundary crates; they do not redefine the core value model.
-- For Windows COM, `oxvba-com` owns translation to and from COM wire representations, including `VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, connection-point callback payloads, and related metadata/interop helpers.
+- OxVba semantic values are the canonical runtime value model, and the carrier
+  families named in `docs/spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md`
+  (`BSTR`, `VARIANT`, `SAFEARRAY`, `IUnknown`, and numeric primitives) are
+  intended to store those values in exact Windows/VBA/COM-compatible layout
+  throughout the runtime stack.
+- External integration domains translate semantics and invocation policy at
+  their boundary crates; they do not justify replacing exact runtime carrier
+  storage with boundary-only projections.
+- For Windows COM, `oxvba-com` owns invocation, typelib, dispatch, connection
+  point, and COM policy semantics, while using exact runtime carriers directly
+  where an addressable value already has the required layout.
 - `oxvba-hal` owns capability gating, profile/policy selection, bootstrap, and delegation seams. It must not become the long-term owner of COM dispatch semantics or COM wire-format logic.
-- Do not thread raw external wire types through bytecode, VM slots, or host/runtime APIs as the canonical OxVba value model.
-- Layout compatibility between OxVba runtime values and external wire formats may be used as an implementation optimization, but it does not change semantic ownership or crate responsibility.
-- Known internal/external representation differences are acceptable when documented explicitly:
-  - the current string carrier may remain Rust-owned UTF-8 text even when VBA/COM boundaries require `BSTR`,
-  - object/interface identity may remain handle- or facade-based internally even when boundaries require COM interface pointers,
-  - and similar type-level differences may exist for other supported lanes.
-- Those differences must be treated as known compatibility risk surfaces:
+- Do not thread boundary invocation structs such as `DISPPARAMS` or
+  `EXCEPINFO` through bytecode, VM slots, or host/runtime APIs as the canonical
+  OxVba value model.
+- Layout compatibility of the named carrier families is no longer merely an
+  optimization; it is a runtime storage invariant. Semantic ownership and crate
+  responsibility still stay explicit.
+- Known internal/external representation differences outside the exact carrier
+  families are acceptable when documented explicitly.
+- Any remaining difference inside the exact carrier families must be treated as
+  a known compatibility risk surface:
   - they may leak at specific boundaries from time to time,
   - they should be monitored through conformance/evidence work,
   - and they may be revisited later if they become a real interop blocker.

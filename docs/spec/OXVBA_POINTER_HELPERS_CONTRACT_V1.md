@@ -167,7 +167,8 @@ Current status on step 5:
   current values
 - object-valued `Variant` container materialization now exposes `VT_UNKNOWN`
   through the current runtime/object bridge
-- array-valued `Variant` container materialization now exposes
-  `VT_ARRAY | VT_VARIANT` with a real boundary SAFEARRAY
+- array-valued `Variant` container materialization now exposes a real SAFEARRAY;
+  declared scalar arrays should preserve their typed SAFEARRAY element VARTYPE
+  rather than always normalizing to `VT_ARRAY | VT_VARIANT`
 - `ObjPtr` now reflects the runtime object's retained `IUnknown` pointer truth
   for the supported object categories rather than token-era compat identity

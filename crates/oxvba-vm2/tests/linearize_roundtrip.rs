@@ -17,6 +17,10 @@ use oxvba_bundle::{
 };
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
+use oxvba_runtime::safe_array::{
+    VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_I2_VALUE, VT_I4_VALUE,
+    VT_I8_VALUE, VT_R4_VALUE,
+};
 
 // ── Builders ───────────────────────────────────────────────────────────────
 
@@ -105,6 +109,15 @@ fn first_local_string(program: &CoreProgram) -> Option<String> {
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
     let vm = oxvba_vm2::run(&bundle, &host).expect("run");
     vm.slot(bundle.global_count)?.as_bstr().map(|b| b.as_str())
+}
+
+fn run_program(program: &CoreProgram) -> (&'static oxvba_bundle::Bundle, oxvba_vm2::Vm<'static>) {
+    let bundle = Box::leak(Box::new(linearize(program).expect("linearize")));
+    let host = Box::leak(Box::new(NullHostServices::new(
+        HostPolicy::deterministic_runtime(),
+    )));
+    let vm = oxvba_vm2::run(bundle, host).expect("run");
+    (bundle, vm)
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -338,6 +351,99 @@ fn redim_array_set_get_roundtrip() {
         ],
     );
     assert_eq!(first_local_f64(&p), Some(77.0));
+}
+
+#[test]
+fn redim_long_array_uses_typed_safearray_storage() {
+    let elem = |idx: i32| CorePlace::Index {
+        array: Box::new(CorePlace::Local(LocalId(1))),
+        indices: vec![ci(idx)],
+    };
+    let p = single(
+        2,
+        vec![
+            CoreStmt::ReDim {
+                array: CorePlace::Local(LocalId(1)),
+                bounds: vec![CoreBound {
+                    upper: ci(2),
+                    lower: 0,
+                }],
+                element_type: ArrayElementType::Long,
+                preserve: false,
+            },
+            CoreStmt::Assign {
+                place: elem(1),
+                value: ci(77),
+                intent: AssignmentIntent::Let,
+                target_kind: AssignmentTargetKind::Scalar,
+                target_name: "v1".into(),
+                target_type_name: "Long".into(),
+            },
+            set(0, CoreValue::Load(elem(1))),
+        ],
+    );
+    let (bundle, vm) = run_program(&p);
+    let array = vm
+        .slot(bundle.global_count + 1)
+        .and_then(|value| value.as_safearray())
+        .expect("array slot");
+    assert_eq!(array.element_vartype(), VT_I4_VALUE);
+    assert_eq!(
+        array.variant_elements().expect("elements"),
+        vec![
+            oxvba_runtime::Variant::from_i32(0),
+            oxvba_runtime::Variant::from_i32(77),
+            oxvba_runtime::Variant::from_i32(0),
+        ]
+    );
+    assert_eq!(
+        vm.slot(bundle.global_count)
+            .and_then(|value| value.as_i32()),
+        Some(77)
+    );
+}
+
+#[test]
+fn redim_scalar_arrays_seed_matching_exact_carriers() {
+    let cases = [
+        (ArrayElementType::Integer, VT_I2_VALUE),
+        (ArrayElementType::Long, VT_I4_VALUE),
+        (
+            ArrayElementType::LongPtr,
+            if core::mem::size_of::<usize>() == 8 {
+                VT_I8_VALUE
+            } else {
+                VT_I4_VALUE
+            },
+        ),
+        (ArrayElementType::Single, VT_R4_VALUE),
+        (ArrayElementType::Currency, VT_CY_VALUE),
+        (ArrayElementType::Date, VT_DATE_VALUE),
+        (ArrayElementType::String, VT_BSTR_VALUE),
+        (ArrayElementType::Boolean, VT_BOOL_VALUE),
+    ];
+
+    for (element_type, expected_vt) in cases {
+        let p = single(
+            1,
+            vec![CoreStmt::ReDim {
+                array: CorePlace::Local(LocalId(0)),
+                bounds: vec![CoreBound {
+                    upper: ci(0),
+                    lower: 0,
+                }],
+                element_type,
+                preserve: false,
+            }],
+        );
+        let (bundle, vm) = run_program(&p);
+        let array = vm
+            .slot(bundle.global_count)
+            .and_then(|value| value.as_safearray())
+            .expect("array slot");
+        assert_eq!(array.element_vartype(), expected_vt);
+        assert_eq!(array.variant_elements().expect("elements").len(), 1);
+    }
 }
 
 #[test]

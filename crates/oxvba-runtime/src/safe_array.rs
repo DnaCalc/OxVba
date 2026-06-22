@@ -1101,13 +1101,60 @@ pub fn marshal_dispatch_argument(value: i32) -> i32 {
 mod tests {
     use super::{
         ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,
-        FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, SafeArray, SafeArrayBound, VT_BOOL_VALUE,
-        VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_DISPATCH_VALUE,
-        VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
+        FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, RawSafeArray, SafeArray, SafeArrayBound,
+        VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
+        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
         array_tag_from_safe_array, header_prefix_ptr, marshal_dispatch_argument,
         safe_array_from_tag,
     };
     use crate::{Decimal96, ObjectRef, Variant, bstr::BStr};
+
+    fn offset_of<T, U>(field: fn(*const T) -> *const U) -> usize {
+        let value = core::mem::MaybeUninit::<T>::uninit();
+        let base = value.as_ptr();
+        field(base) as usize - base as usize
+    }
+
+    #[test]
+    fn safearray_descriptor_layout_matches_com_header_shape() {
+        let pointer_sized_offsets = core::mem::size_of::<usize>() == 8;
+        assert_eq!(core::mem::size_of::<SafeArrayBound>(), 8);
+        assert_eq!(core::mem::align_of::<SafeArrayBound>(), 4);
+        assert_eq!(
+            core::mem::size_of::<RawSafeArray>(),
+            if pointer_sized_offsets { 32 } else { 24 }
+        );
+        assert_eq!(
+            core::mem::align_of::<RawSafeArray>(),
+            core::mem::align_of::<*mut core::ffi::c_void>()
+        );
+        assert_eq!(
+            offset_of::<RawSafeArray, _>(|base| unsafe { core::ptr::addr_of!((*base).c_dims) }),
+            0
+        );
+        assert_eq!(
+            offset_of::<RawSafeArray, _>(|base| unsafe { core::ptr::addr_of!((*base).f_features) }),
+            2
+        );
+        assert_eq!(
+            offset_of::<RawSafeArray, _>(|base| unsafe {
+                core::ptr::addr_of!((*base).cb_elements)
+            }),
+            4
+        );
+        assert_eq!(
+            offset_of::<RawSafeArray, _>(|base| unsafe { core::ptr::addr_of!((*base).c_locks) }),
+            8
+        );
+        assert_eq!(
+            offset_of::<RawSafeArray, _>(|base| unsafe { core::ptr::addr_of!((*base).pv_data) }),
+            if pointer_sized_offsets { 16 } else { 12 }
+        );
+        assert_eq!(
+            offset_of::<RawSafeArray, _>(|base| unsafe { core::ptr::addr_of!((*base).rgsabound) }),
+            if pointer_sized_offsets { 24 } else { 16 }
+        );
+    }
 
     #[test]
     fn safe_array_tag_roundtrip_for_vector_shape() {

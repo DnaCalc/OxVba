@@ -178,31 +178,30 @@ coordination. `RuntimeValue` has been removed from active Rust source; any
 remaining mentions are historical docs/evidence or recovery notes, not active
 runtime architecture.
 
+The current representation direction is exact Windows/VBA/COM storage for the
+runtime carrier families named in
+[`docs/spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md`](spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md):
+`BSTR`, `VARIANT`, `SAFEARRAY`, `IUnknown`, and numeric primitives. These are no
+longer treated as boundary-only projections.
+
 Important boundaries:
-- retained `Variant` values are the semantic runtime substrate;
-- `BStr` exposes a Windows-style owned UTF-16 core view (`OwnedBStrCore`) for
-  boundary projection;
-- canonical runtime object identity flows through `ObjectRef`, whose base
-  object implements a runtime `IUnknown`-style vtable with `AddRef` and
-  `Release`;
+- retained `Variant` values are the runtime substrate and must remain faithful
+  `VARIANT`-compatible cells;
+- `BStr` owns a BSTR-shaped UTF-16 allocation, and string pointer helpers should
+  expose that storage when the expression is addressable;
+- canonical runtime object identity flows through `ObjectRef`, whose base object
+  exposes a runtime `IUnknown`-compatible vtable with `AddRef` and `Release`;
+- `SafeArray` is the runtime array carrier and must preserve descriptor and
+  typed element storage; VM `ReDim` now allocates typed scalar SAFEARRAY payloads
+  rather than normalizing declared scalar arrays to `VT_VARIANT`;
 - `BindingHandle` remains a typed semantic leaf for non-object binding identity;
 - raw integer identities remain only where they are explicit control-plane
-  tokens or projection/debug compatibility data;
-- `ComValue` in `oxvba-com` mirrors the semantic carrier direction rather than
-  redefining the runtime around raw COM wire types.
+  tokens or debug compatibility data.
 
-Windows-facing layout truth is projected at helper or boundary seams instead of
-falling out of the canonical substrate directly:
-- `BSTR` cells for `StrPtr` and `VarPtr(String)` are synthesized in
-  pointer-helper logic;
-- `VARIANT` truth for COM calls is translated in `oxvba-com`;
-- native COM pointer truth remains retained in `oxvba-com`, while runtime
-  object identity is `ObjectRef` rather than a raw COM interface pointer or an
-  integer handle.
-
-These are current checked-in differences, not hidden assumptions. Any remaining
-compatibility projection must be tracked as a named boundary, not treated as
-execution truth.
+Remaining named layout risks must be tracked explicitly. The largest current
+runtime risk is UDT/record element storage: record array elements still use a
+runtime record value carrier while exact COM-compatible record SAFEARRAY payloads
+are still in progress.
 
 ## Current IR Truth
 

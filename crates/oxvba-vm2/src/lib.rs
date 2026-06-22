@@ -52,7 +52,11 @@ use oxvba_runtime::object_ref::{
     ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
     RuntimeInterfaceDescriptor,
 };
-use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
+use oxvba_runtime::safe_array::{
+    SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
+    VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
+    VT_VARIANT_VALUE,
+};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, pointer_helpers};
 
@@ -2476,13 +2480,13 @@ impl<'h> Vm<'h> {
                 let count: usize = bounds.iter().map(|b| b.count as usize).product();
                 // `from_shape` alone leaves a null payload (no element storage); a
                 // freshly `ReDim`-ed array must hold `count` default elements so a
-                // following `ArraySet`/`ArrayGet` lands in range. A UDT-array element
-                // is seeded with a default record (recursively) so `Lines(i).Field`
-                // reads back; any other element type defaults to `Empty`.
+                // following `ArraySet`/`ArrayGet` lands in range. Use the declared
+                // element type for the SAFEARRAY storage instead of normalizing typed
+                // arrays to VT_VARIANT.
                 let elems = (0..count)
                     .map(|_| default_array_element(element_type))
                     .collect();
-                let array = SafeArray::from_shape_and_variants(bounds, elems)
+                let array = redim_safearray_from_elements(bounds, element_type, elems)
                     .map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(array))?;
             }
@@ -2509,7 +2513,7 @@ impl<'h> Vm<'h> {
                         None => elems.push(default_array_element(element_type)),
                     }
                 }
-                let array = SafeArray::from_shape_and_variants(bounds, elems)
+                let array = redim_safearray_from_elements(bounds, element_type, elems)
                     .map_err(Fault::from_string)?;
                 self.set(*dst, Variant::from_safearray(array))?;
             }
@@ -3295,18 +3299,67 @@ native_timer_callback!(native_timer_callback_31, 31);
 
 // ── Free helpers ──────────────────────────────────────────────────────────────
 
+fn redim_safearray_from_elements(
+    bounds: Vec<SafeArrayBound>,
+    element_type: &ArrayElementType,
+    elems: Vec<Variant>,
+) -> Result<SafeArray, String> {
+    SafeArray::from_typed_variants_nd(bounds, safearray_vartype_for_element(element_type), elems)
+}
+
+fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
+    match element_type {
+        ArrayElementType::Variant | ArrayElementType::Record(_) => VT_VARIANT_VALUE,
+        ArrayElementType::Integer => VT_I2_VALUE,
+        ArrayElementType::Long => VT_I4_VALUE,
+        ArrayElementType::LongPtr => {
+            if core::mem::size_of::<usize>() == 8 {
+                VT_I8_VALUE
+            } else {
+                VT_I4_VALUE
+            }
+        }
+        ArrayElementType::LongLong => VT_I8_VALUE,
+        ArrayElementType::Byte => VT_UI1_VALUE,
+        ArrayElementType::Single => VT_R4_VALUE,
+        ArrayElementType::Double => VT_R8_VALUE,
+        ArrayElementType::Currency => VT_CY_VALUE,
+        ArrayElementType::Date => VT_DATE_VALUE,
+        ArrayElementType::String => VT_BSTR_VALUE,
+        ArrayElementType::Boolean => VT_BOOL_VALUE,
+    }
+}
+
 /// The default value for a freshly-`ReDim`-ed array element. A UDT-record element
 /// is a default record (a `SafeArray` of its field defaults), built recursively so
 /// nested scalar-UDT subfields are themselves default records — mirroring the
-/// binder's `emit_udt_record_init` so `Lines(i).Words(j).Rect.X` reads back. Every
-/// other element type defaults to `Empty` (VBA's zero), matching scalar `ReDim`.
+/// binder's `emit_udt_record_init` so `Lines(i).Words(j).Rect.X` reads back.
+/// Scalar defaults are typed zero values so typed SAFEARRAY storage can encode
+/// them directly instead of relying on a boundary-time Variant projection.
 fn default_array_element(element_type: &ArrayElementType) -> Variant {
     match element_type {
+        ArrayElementType::Variant => Variant::empty(),
+        ArrayElementType::Integer => Variant::from_i16(0),
+        ArrayElementType::Long => Variant::from_i32(0),
+        ArrayElementType::LongPtr => {
+            if core::mem::size_of::<usize>() == 8 {
+                Variant::from_i64(0)
+            } else {
+                Variant::from_i32(0)
+            }
+        }
+        ArrayElementType::LongLong => Variant::from_i64(0),
+        ArrayElementType::Byte => Variant::from_u8(0),
+        ArrayElementType::Single => Variant::from_f32(0.0),
+        ArrayElementType::Double => Variant::from_f64(0.0),
+        ArrayElementType::Currency => Variant::from_currency_scaled_i64(0),
+        ArrayElementType::Date => Variant::from_date_f64(0.0),
+        ArrayElementType::String => Variant::from_string(""),
+        ArrayElementType::Boolean => Variant::from_bool(false),
         ArrayElementType::Record(fields) => {
             let elems = fields.iter().map(default_array_element).collect();
             Variant::from_safearray(SafeArray::from_variants(elems))
         }
-        _ => Variant::empty(),
     }
 }
 

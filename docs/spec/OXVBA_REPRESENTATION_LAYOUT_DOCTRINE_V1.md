@@ -1,117 +1,109 @@
 # OxVba Representation and Layout Doctrine V1
 
-Date: 2026-04-27
-Status: accepted for V0.2
+Date: 2026-06-22
+Status: accepted direction, in-progress implementation
 Owner: Codex
-Workset: `bd-bqm8.5`
 
 ## Decision
 
-OxVba keeps semantic OxVba runtime values as the canonical internal execution
-model. Raw VBA 7.1 / OLE Automation wire layouts are boundary representations,
-not the core compiler, bytecode, VM, JIT, or host value model.
-
-The permanent doctrine is boundary translation with targeted layout convergence
-only where correctness requires an honest native boundary object.
+OxVba's runtime carriers for `BSTR`, `VARIANT`, `SAFEARRAY`, `IUnknown`, and
+the numeric primitives are intended to be exact Windows/VBA/COM storage
+representations throughout the runtime stack. These carriers are not merely
+temporary boundary projections.
 
 This means:
 
-- `oxvba-runtime` owns semantic carriers such as `Variant`, `RuntimeValue`,
-  `BStr`, `SafeArray`, and `ObjectRef`.
-- `oxvba-com` owns translation to and from COM/OLE Automation wire forms such
-  as `VARIANT`, `BSTR`, `SAFEARRAY`, `IUnknown`, `IDispatch`, `DISPPARAMS`,
-  `EXCEPINFO`, and connection-point event payloads.
-- `oxvba-hal` owns capability gating, profile selection, and delegation seams;
-  it must not become the owner of COM wire-format semantics.
-- VM/JIT bytecode and execution slots must not treat raw external wire structs
-  as canonical execution truth.
+- `oxvba-runtime` owns the exact-layout carrier types and their ownership rules.
+- VM slots may still store high-level `Variant` values, but that `Variant` must
+  itself be a faithful native `VARIANT`-compatible cell.
+- `SafeArray` descriptors, bounds, feature flags, element sizes, and payload
+  storage must match the declared element layout instead of normalizing typed
+  arrays into `VT_VARIANT` arrays.
+- `ObjectRef` must retain a COM-compatible `IUnknown` object/vtable pointer
+  shape for object identity.
+- `oxvba-com` still owns COM invocation and typelib semantics, but it should use
+  the runtime's exact carriers directly where a value is addressable.
+- Copy-in/copy-out remains valid only for temporaries, coercions, rvalues, or
+  ABI-required conversions.
 
-## Type-Level Doctrine
+Non-Windows builds must keep compatible simulated Windows layouts for these
+carriers so tests and cross-platform execution do not rely on a different
+semantic-only representation.
 
-### Strings
+## Carrier Requirements
 
-The internal string carrier is `BStr`, an owned BSTR-shaped UTF-16 payload.
-This is targeted layout convergence because VBA/native interop requires honest
-BSTR payload pointers for `StrPtr`, `VarPtr(String)`, COM, and native calls.
+### BSTR
 
-The runtime still does not promise arbitrary pointer stability across unrelated
-later statements. Pointer helper lifetimes remain bounded to the supported
-native-interop window.
+`BStr` is an owned BSTR-shaped UTF-16 allocation. `StrPtr` exposes the BSTR data
+pointer for addressable string storage or for a bounded temporary when the input
+is not addressable.
 
-### Variant / VARIANT
+### VARIANT
 
-`Variant` is the canonical semantic container. It carries a VBA-visible
-`VarType` plus owned payload state and conversion helpers.
+`Variant` is the canonical execution cell and must remain layout-compatible with
+Windows `VARIANT`, including the 16-byte discriminant/data/`DECIMAL` overlay,
+VARENUM tags, payload ownership, `VARIANT_BOOL`, `CY`, `DATE`, object, BSTR, and
+SAFEARRAY pointer payloads.
 
-Native `VARIANT` cells are materialized only at boundaries that require them:
-COM marshaling, native pointer-helper cells, and supported external call
-surfaces. The in-memory Rust `Variant` API is not a promise that every VM/JIT
-carrier is byte-identical to a Windows `VARIANT`.
+APIs that expose a variant cell pointer must point at this real cell. Any helper
+that serializes or clones bytes must not imply a second non-native wire format.
 
-### Date
+### SAFEARRAY
 
-`Date` is represented semantically as an OLE Automation serial `f64` with a
-Date subtype. Boundary code must preserve `VT_DATE` where the external contract
-requires it. The core runtime should not reintroduce packed date integers as
-execution truth; packed date compatibility remains an explicit adapter concern.
+`SafeArray` is the runtime array carrier and must expose a COM-compatible
+descriptor pointer. Declared scalar arrays must allocate typed SAFEARRAY payloads
+such as `VT_I2`, `VT_I4`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_BSTR`, and
+`VT_BOOL`; only declared `Variant` arrays should use `VT_VARIANT` by default.
 
-### Object / Interface Identity
+The current implementation now preserves typed storage for VM `ReDim` scalar
+arrays. UDT/record array elements still use a runtime record value carrier and
+remain an in-progress exact-layout lane until record descriptors and element
+payloads are made COM-compatible.
 
-`ObjectRef` is the internal object identity carrier. For supported object
-categories it retains an honest runtime `IUnknown`-shaped pointer identity.
+### IUnknown
 
-COM-backed objects are adapted by `oxvba-com`/HAL standard adapters into the
-same internal object protocol used by other OxVba objects. VM/JIT code should
-operate on semantic object identity and member intent, not raw COM vtables or
-`IDispatch` calls.
+`ObjectRef` must expose a COM-compatible identity pointer whose first field is a
+vtable pointer with `QueryInterface`, `AddRef`, and `Release` shape compatible
+with the supported runtime interfaces. COM-backed and runtime-backed objects may
+have different dispatch implementations, but their object identity carrier must
+not be an arbitrary integer token.
 
-### Arrays / SAFEARRAY
+### Numeric Primitives
 
-`SafeArray` is the canonical array carrier for the current runtime value model.
-Boundary code may materialize real `SAFEARRAY` values where COM, native calls,
-or pointer helpers require them. Multi-dimensional bounds and element types
-remain semantic runtime metadata until a boundary materialization is required.
+Numeric primitive payloads must match VBA/COM storage:
 
-### Structures and Event Payloads
+- `Integer`/`Long`/`LongLong` as signed 16/32/64-bit integers.
+- `Byte` as unsigned 8-bit.
+- `Single`/`Double` as IEEE 32/64-bit floats.
+- `Currency` as scaled signed 64-bit `CY`.
+- `Date` as OLE Automation `f64`.
+- `Boolean` as `VARIANT_BOOL` (`-1` true, `0` false) where stored in VARIANT or
+  SAFEARRAY carriers.
 
-Structure and event payloads use semantic OxVba values internally. COM event
-callbacks and dispatch payloads cross through `oxvba-com`/HAL adapters, which
-translate to or from `DISPPARAMS`, `VARIANT`, connection-point metadata, and
-callback tokens.
+Semantic coercion and overflow behavior still belongs to arithmetic/binder/VM
+logic; it must not change the physical layout of an already stored carrier.
 
-Raw event wire payloads must not become the canonical VM or compiler payload
-format.
+## Migration Consequences
 
-## Migration Path
+- Replace boundary-only materialization paths with direct use of exact runtime
+  storage whenever the source expression denotes an addressable place.
+- Add layout and pointer-stability tests for every carrier before widening
+  compatibility claims.
+- Treat `SAFEARRAY`, UDT/record, `Decimal`, and ByRef support as in-scope
+  implementation work. Only truly unknown or foreign ABI cases should remain
+  blocked.
+- Keep docs, worksets, and evidence explicit about any carrier family that is
+  exact only for a subset.
 
-The V0.2 migration path is:
+## Current Slice Evidence
 
-1. Preserve the completed compat-slot excision rule: legacy slot projection
-   remains an explicit adapter, never core execution truth.
-2. Keep targeted boundary cells where they are already required for correctness:
-   BSTR payloads, VARIANT cells, SAFEARRAY cells, and retained object pointers.
-3. Route new COM and native-boundary features through the owning boundary crate
-   rather than threading raw wire structs into VM/JIT APIs.
-4. Classify remaining representation risks as boundary risks, not as a mandate
-   to rewrite the core runtime into raw OLE Automation layouts.
-5. Use downstream hardening, COM corpus, and native-compilation beads to add
-   evidence for the boundary materialization paths they depend on.
+The 2026-06-22 typed SAFEARRAY slice changes VM `ReDim` so scalar declared
+arrays allocate typed SAFEARRAY payloads instead of `VT_VARIANT` payloads. The
+targeted test anchor is:
 
-## Consequences
+- `cargo test -p oxvba-vm2 --test linearize_roundtrip redim`
 
-- `bd-bqm8.6` should harden malformed or unsupported boundary materialization
-  paths without reopening the canonical runtime value model.
-- `bd-bqm8.7` should expand Excel/Access/JET COM evidence through `oxvba-com`
-  and HAL delegation, not by adding COM-specific execution rules to the VM.
-- `bd-bqm8.10` should treat native compilation ABI obligations as wrapper or
-  boundary obligations. Native compilation must preserve the semantic value
-  model internally unless a declared external ABI requires materialization.
-
-## Non-Goals
-
-- No V0.2 rewrite to make every internal carrier byte-identical to Windows
-  Automation structs.
-- No raw `VARIANT`, `DISPPARAMS`, `SAFEARRAY`, `BSTR`, `IUnknown`, or
-  `IDispatch` threading through bytecode as the primary value model.
-- No broad promise that pointer-helper materialized cells are globally stable
-  beyond the documented supported interop window.
+Remaining exact-layout work includes UDT/record SAFEARRAY element storage,
+broader in-place array mutation APIs, expanded pointer-helper addressability
+tests, and COM/HAL call paths that still clone through `variant_elements()` for
+non-temporary places.
