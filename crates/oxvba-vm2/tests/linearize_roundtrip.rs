@@ -468,6 +468,10 @@ fn redim_udt_array_uses_native_vba_record_elements() {
         .slot(bundle.global_count)
         .and_then(|value| value.as_safearray())
         .expect("array slot");
+    assert_eq!(
+        array.element_vartype(),
+        oxvba_runtime::safe_array::VT_RECORD_VALUE
+    );
     let element = array.variant_element(0).expect("record element");
     assert_eq!(element.vtype(), oxvba_runtime::VarType::Record);
     assert!(element.as_safearray().is_none());

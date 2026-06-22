@@ -57,7 +57,7 @@ use oxvba_runtime::object_ref::{
 };
 use oxvba_runtime::safe_array::{
     SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
-    VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
+    VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_RECORD_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE,
 };
 use oxvba_runtime::variant::VarType;
@@ -3325,12 +3325,25 @@ fn redim_safearray_from_elements(
     element_type: &ArrayElementType,
     elems: Vec<Variant>,
 ) -> Result<SafeArray, String> {
+    if let ArrayElementType::Record(fields) = element_type {
+        let layout = vba_record_layout_for_fields(fields)?;
+        let records = elems
+            .into_iter()
+            .map(|value| {
+                value
+                    .as_vba_record()
+                    .ok_or_else(|| "UDT array element default was not a VBA record".to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        return SafeArray::from_vba_records_nd(bounds, layout, records);
+    }
     SafeArray::from_typed_variants_nd(bounds, safearray_vartype_for_element(element_type), elems)
 }
 
 fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
     match element_type {
-        ArrayElementType::Variant | ArrayElementType::Record(_) => VT_VARIANT_VALUE,
+        ArrayElementType::Variant => VT_VARIANT_VALUE,
+        ArrayElementType::Record(_) => VT_RECORD_VALUE,
         ArrayElementType::Integer => VT_I2_VALUE,
         ArrayElementType::Long => VT_I4_VALUE,
         ArrayElementType::LongPtr => {

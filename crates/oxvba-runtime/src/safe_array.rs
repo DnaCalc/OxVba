@@ -1,9 +1,10 @@
 use crate::{
-    Decimal96, VarType, Variant,
+    Decimal96, VarType, Variant, VbaRecord, VbaRecordLayout,
     bstr::BStr,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
 };
 use core::ptr::NonNull;
+use std::sync::Arc;
 
 pub const ARRAY_TAG_BASE: i32 = -1_000_000_000;
 pub const ARRAY_TAG_LIMIT: i32 = ARRAY_TAG_BASE + 1_000_000;
@@ -29,8 +30,10 @@ pub const VT_I8_VALUE: u16 = 0x0014;
 pub const VT_UI8_VALUE: u16 = 0x0015;
 pub const VT_INT_VALUE: u16 = 0x0016;
 pub const VT_UINT_VALUE: u16 = 0x0017;
+pub const VT_RECORD_VALUE: u16 = 0x0024;
 
 pub const FADF_HAVEVARTYPE_VALUE: u16 = 0x0080;
+pub const FADF_RECORD_VALUE: u16 = 0x0020;
 pub const FADF_BSTR_VALUE: u16 = 0x0100;
 pub const FADF_UNKNOWN_VALUE: u16 = 0x0200;
 pub const FADF_DISPATCH_VALUE: u16 = 0x0400;
@@ -52,6 +55,9 @@ struct RawSafeArrayOwnerPrefix {
     magic: u32,
     version: u16,
     element_vt: u16,
+    // Non-null only for OxVba-owned native record SAFEARRAYs. This is not an
+    // IRecordInfo pointer and must not be projected as one at COM boundaries.
+    record_layout: *const VbaRecordLayout,
 }
 
 #[repr(C)]
@@ -275,6 +281,18 @@ fn payload_layout(kind: SafeArrayElementKind, count: usize) -> Result<std::alloc
         .map_err(|_| "SAFEARRAY payload layout invalid".to_string())
 }
 
+fn record_payload_layout(
+    layout: &VbaRecordLayout,
+    count: usize,
+) -> Result<std::alloc::Layout, String> {
+    let size = layout
+        .size()
+        .checked_mul(count)
+        .ok_or_else(|| "SAFEARRAY record payload layout overflow".to_string())?;
+    std::alloc::Layout::from_size_align(size.max(1), layout.align())
+        .map_err(|_| "SAFEARRAY record payload layout invalid".to_string())
+}
+
 fn default_bounds_for_len(len: usize) -> Result<Vec<SafeArrayBound>, String> {
     Ok(vec![SafeArrayBound {
         count: u32::try_from(len).map_err(|_| {
@@ -326,8 +344,24 @@ unsafe fn validated_header_prefix(
     }
 }
 
+unsafe fn header_record_layout(header: *const RawSafeArray) -> Option<Arc<VbaRecordLayout>> {
+    let prefix = unsafe { validated_header_prefix(header)? };
+    let raw = unsafe { (*prefix).record_layout };
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: non-null record_layout pointers are stored from Arc::into_raw in
+    // alloc_header and released when the SAFEARRAY descriptor is dropped.
+    unsafe { Arc::increment_strong_count(raw) };
+    Some(unsafe { Arc::from_raw(raw) })
+}
+
 fn payload_offset(kind: SafeArrayElementKind, index: usize) -> usize {
     kind.element_size() * index
+}
+
+fn record_payload_offset(layout: &VbaRecordLayout, index: usize) -> usize {
+    layout.size() * index
 }
 
 fn raw_iunknown_ptr_to_bytes(ptr: *mut RawRuntimeIUnknown) -> [u8; 8] {
@@ -793,12 +827,85 @@ fn alloc_payload_from_variants(
     Ok(raw.cast())
 }
 
+fn alloc_record_payload_from_records(
+    layout: &Arc<VbaRecordLayout>,
+    values: &[VbaRecord],
+) -> Result<*mut core::ffi::c_void, String> {
+    if values.is_empty() {
+        return Ok(core::ptr::null_mut());
+    }
+    let payload_layout = record_payload_layout(layout, values.len())?;
+    let raw = unsafe { std::alloc::alloc_zeroed(payload_layout) };
+    if raw.is_null() {
+        return Err("failed to allocate SAFEARRAY record payload".to_string());
+    }
+    let mut initialized = 0usize;
+    while initialized < values.len() {
+        if values[initialized].layout().as_ref() != layout.as_ref() {
+            let mut index = 0usize;
+            while index < initialized {
+                unsafe {
+                    VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout)
+                };
+                index += 1;
+            }
+            unsafe { std::alloc::dealloc(raw, payload_layout) };
+            return Err("SAFEARRAY record element layout mismatch".to_string());
+        }
+        let dst = unsafe { raw.add(record_payload_offset(layout, initialized)) };
+        if let Err(err) = unsafe { values[initialized].clone_into_raw(dst) } {
+            let mut index = 0usize;
+            while index < initialized {
+                unsafe {
+                    VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout)
+                };
+                index += 1;
+            }
+            unsafe { std::alloc::dealloc(raw, payload_layout) };
+            return Err(err);
+        }
+        initialized += 1;
+    }
+    Ok(raw.cast())
+}
+
+unsafe fn free_record_payload(
+    layout: &VbaRecordLayout,
+    payload: *mut core::ffi::c_void,
+    count: usize,
+) {
+    let raw = payload.cast::<u8>();
+    if raw.is_null() {
+        return;
+    }
+    let mut index = 0usize;
+    while index < count {
+        unsafe { VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout) };
+        index += 1;
+    }
+    if let Ok(payload_layout) = record_payload_layout(layout, count) {
+        unsafe { std::alloc::dealloc(raw, payload_layout) };
+    }
+}
+
 fn alloc_header(
     bounds: &[SafeArrayBound],
     element_vt: u16,
     cb_elements: usize,
     pv_data: *mut core::ffi::c_void,
+    record_layout: Option<Arc<VbaRecordLayout>>,
 ) -> Result<NonNull<RawSafeArray>, String> {
+    let c_dims = u16::try_from(bounds.len())
+        .map_err(|_| "SAFEARRAY dimension count exceeds u16 capacity".to_string())?;
+    let cb_elements = u32::try_from(cb_elements)
+        .map_err(|_| "SAFEARRAY cbElements exceeds u32 capacity".to_string())?;
+    let f_features = if element_vt == VT_RECORD_VALUE {
+        FADF_HAVEVARTYPE_VALUE | FADF_RECORD_VALUE
+    } else {
+        SafeArrayElementKind::from_vartype(element_vt)
+            .map(SafeArrayElementKind::feature_flags)
+            .unwrap_or(FADF_HAVEVARTYPE_VALUE)
+    };
     let layout = owner_layout(bounds.len())?;
     // SAFETY: `layout` has non-zero size (owner prefix plus at least the
     // RawSafeArray header), satisfying `alloc_zeroed`; allocation failure is
@@ -823,18 +930,17 @@ fn alloc_header(
                 magic: OXVBA_SAFEARRAY_OWNER_MAGIC,
                 version: OXVBA_SAFEARRAY_OWNER_VERSION,
                 element_vt,
+                record_layout: record_layout
+                    .map(Arc::into_raw)
+                    .unwrap_or(core::ptr::null()),
             });
         let header = raw_owner
             .as_ptr()
             .add(core::mem::size_of::<RawSafeArrayOwnerPrefix>())
             .cast::<RawSafeArray>();
-        (*header).c_dims = u16::try_from(bounds.len())
-            .map_err(|_| "SAFEARRAY dimension count exceeds u16 capacity".to_string())?;
-        (*header).f_features = SafeArrayElementKind::from_vartype(element_vt)
-            .map(SafeArrayElementKind::feature_flags)
-            .unwrap_or(FADF_HAVEVARTYPE_VALUE);
-        (*header).cb_elements = u32::try_from(cb_elements)
-            .map_err(|_| "SAFEARRAY cbElements exceeds u32 capacity".to_string())?;
+        (*header).c_dims = c_dims;
+        (*header).f_features = f_features;
+        (*header).cb_elements = cb_elements;
         (*header).c_locks = 0;
         (*header).pv_data = pv_data;
         let dst = core::ptr::addr_of_mut!((*header).rgsabound).cast::<SafeArrayBound>();
@@ -870,7 +976,7 @@ impl SafeArray {
             }
             None => core::ptr::null_mut(),
         };
-        let header = match alloc_header(&bounds, element_vt, kind.element_size(), pv_data) {
+        let header = match alloc_header(&bounds, element_vt, kind.element_size(), pv_data, None) {
             Ok(header) => header,
             Err(err) => {
                 // SAFETY: `pv_data` is null (shape-only) or the payload just
@@ -878,6 +984,36 @@ impl SafeArray {
                 // exactly `expected_len` initialized elements; it never escaped,
                 // so this is its sole release.
                 unsafe { free_payload(kind, pv_data, expected_len) };
+                return Err(err);
+            }
+        };
+        Ok(Self(header))
+    }
+
+    pub fn from_vba_records_nd(
+        bounds: Vec<SafeArrayBound>,
+        layout: Arc<VbaRecordLayout>,
+        values: Vec<VbaRecord>,
+    ) -> Result<Self, String> {
+        let expected_len = bounds_total_len(&bounds)?;
+        if values.len() != expected_len {
+            return Err(format!(
+                "SAFEARRAY payload length {} does not match shape length {}",
+                values.len(),
+                expected_len
+            ));
+        }
+        let pv_data = alloc_record_payload_from_records(&layout, &values)?;
+        let header = match alloc_header(
+            &bounds,
+            VT_RECORD_VALUE,
+            layout.size(),
+            pv_data,
+            Some(layout.clone()),
+        ) {
+            Ok(header) => header,
+            Err(err) => {
+                unsafe { free_record_payload(&layout, pv_data, expected_len) };
                 return Err(err);
             }
         };
@@ -966,6 +1102,13 @@ impl SafeArray {
             .expect("internal SAFEARRAY element vartype should remain supported")
     }
 
+    pub fn vba_record_layout(&self) -> Option<Arc<VbaRecordLayout>> {
+        if self.element_vartype() != VT_RECORD_VALUE {
+            return None;
+        }
+        unsafe { header_record_layout(self.0.as_ptr()) }
+    }
+
     fn raw_bounds(&self) -> Vec<SafeArrayBound> {
         let dims = self.dimensions() as usize;
         if dims == 0 {
@@ -1015,6 +1158,19 @@ impl SafeArray {
         if data.is_null() {
             return None;
         }
+        if let Some(layout) = self.vba_record_layout() {
+            let mut values = Vec::with_capacity(self.len());
+            let mut index = 0usize;
+            while index < self.len() {
+                let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
+                values.push(Variant::from_vba_record(
+                    unsafe { VbaRecord::clone_from_raw(ptr, layout.clone()) }
+                        .expect("SAFEARRAY record payload should clone into VbaRecord"),
+                ));
+                index += 1;
+            }
+            return Some(values);
+        }
         let kind = self.element_kind();
         let mut values = Vec::with_capacity(self.len());
         let mut index = 0usize;
@@ -1042,6 +1198,12 @@ impl SafeArray {
         if data.is_null() {
             return Err("SAFEARRAY has no materialized element payload".to_string());
         }
+        if let Some(layout) = self.vba_record_layout() {
+            let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
+            return Ok(Variant::from_vba_record(unsafe {
+                VbaRecord::clone_from_raw(ptr, layout)
+            }?));
+        }
         unsafe { decode_element_variant(self.element_kind(), data, index) }
     }
 
@@ -1063,6 +1225,23 @@ impl SafeArray {
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
             return Err("SAFEARRAY has no materialized element payload".to_string());
+        }
+        if let Some(layout) = self.vba_record_layout() {
+            let Some(record) = value.as_vba_record() else {
+                return Err(format!(
+                    "expected VBA record SAFEARRAY element, got {:?}",
+                    value.vtype()
+                ));
+            };
+            if record.layout().as_ref() != layout.as_ref() {
+                return Err("VBA record SAFEARRAY element layout mismatch".to_string());
+            }
+            let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
+            unsafe {
+                VbaRecord::drop_raw(ptr, &layout);
+                record.clone_into_raw(ptr)?;
+            }
+            return Ok(());
         }
         unsafe { replace_element_variant(self.element_kind(), data, index, value) }
     }
@@ -1141,6 +1320,20 @@ impl SafeArray {
 impl Clone for SafeArray {
     fn clone(&self) -> Self {
         let bounds = self.bounds_for_shape();
+        if let Some(layout) = self.vba_record_layout() {
+            let values = self
+                .variant_elements()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|value| {
+                    value
+                        .as_vba_record()
+                        .expect("record SAFEARRAY elements should decode to VbaRecord")
+                })
+                .collect();
+            return Self::from_vba_records_nd(bounds, layout, values)
+                .expect("cloning native record SAFEARRAY should succeed");
+        }
         match self.variant_elements() {
             Some(values) => {
                 Self::from_bounds_and_variants(bounds, self.element_vartype(), Some(values))
@@ -1155,16 +1348,33 @@ impl Clone for SafeArray {
 impl Drop for SafeArray {
     fn drop(&mut self) {
         let len = self.len();
-        let kind = self.element_kind();
         // SAFETY: `self.0` is the live descriptor this value owns; reading
         // `pv_data` is valid until the deallocation below.
         let data = unsafe { (*self.0.as_ptr()).pv_data };
-        // SAFETY: `data` is null or the payload built by
-        // `alloc_payload_from_variants` with this descriptor's `kind` and
-        // exactly `len` initialized elements; `drop` runs at most once, so the
-        // elements and the buffer are released exactly once.
-        unsafe { free_payload(kind, data, len) };
+        if let Some(layout) = self.vba_record_layout() {
+            // SAFETY: `data` is null or the payload built by
+            // `alloc_record_payload_from_records` with this descriptor's
+            // layout and exactly `len` initialized elements.
+            unsafe { free_record_payload(&layout, data, len) };
+        } else {
+            let kind = self.element_kind();
+            // SAFETY: `data` is null or the payload built by
+            // `alloc_payload_from_variants` with this descriptor's `kind` and
+            // exactly `len` initialized elements; `drop` runs at most once, so
+            // the elements and the buffer are released exactly once.
+            unsafe { free_payload(kind, data, len) };
+        }
         if let Ok(layout) = owner_layout(self.dimensions() as usize) {
+            let prefix = unsafe { validated_header_prefix(self.0.as_ptr()) };
+            if let Some(prefix) = prefix {
+                let record_layout = unsafe { (*prefix).record_layout };
+                if !record_layout.is_null() {
+                    // SAFETY: non-null record_layout pointers are stored from
+                    // Arc::into_raw in alloc_header; this releases the owner
+                    // prefix's strong reference exactly once.
+                    unsafe { drop(Arc::from_raw(record_layout)) };
+                }
+            }
             // SAFETY: `alloc_header` placed the descriptor exactly
             // `size_of::<RawSafeArrayOwnerPrefix>()` bytes into the owner
             // allocation, so this `sub` recovers the allocation's base pointer
@@ -1255,11 +1465,15 @@ mod tests {
         ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,
         FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, RawSafeArray, SafeArray, SafeArrayBound,
         VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
-        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
-        array_tag_from_safe_array, header_prefix_ptr, marshal_dispatch_argument,
-        safe_array_from_tag,
+        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_RECORD_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE,
+        array_len_from_tag, array_tag_from_safe_array, header_prefix_ptr,
+        marshal_dispatch_argument, safe_array_from_tag,
     };
-    use crate::{Decimal96, ObjectRef, Variant, bstr::BStr};
+    use crate::{
+        Decimal96, ObjectRef, Variant, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec,
+        VbaRecordLayout, bstr::BStr,
+    };
+    use std::sync::Arc;
 
     fn offset_of<T, U>(field: fn(*const T) -> *const U) -> usize {
         let value = core::mem::MaybeUninit::<T>::uninit();
@@ -1499,6 +1713,62 @@ mod tests {
         assert_eq!(
             array.variant_elements(),
             Some(vec![Variant::from_string("variant")])
+        );
+    }
+
+    #[test]
+    fn native_record_safearray_stores_contiguous_record_payloads() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![VbaRecordFieldSpec::named(
+                "Value",
+                VbaRecordFieldKind::Long,
+            )])
+            .expect("layout"),
+        );
+        let make_record = |value: i32| {
+            let mut record = VbaRecord::new_default(layout.clone()).expect("record");
+            let field = record.layout().fields()[0].clone();
+            unsafe {
+                record.field_mut_ptr(&field).cast::<i32>().write(value);
+            }
+            record
+        };
+        let mut array = SafeArray::from_vba_records_nd(
+            vec![SafeArrayBound { count: 2, lower: 0 }],
+            layout.clone(),
+            vec![make_record(10), make_record(20)],
+        )
+        .expect("record array");
+
+        assert_eq!(array.element_vartype(), VT_RECORD_VALUE);
+        assert_eq!(
+            array.feature_flags(),
+            FADF_HAVEVARTYPE_VALUE | super::FADF_RECORD_VALUE
+        );
+        assert!(array.vba_record_layout().is_some());
+        assert_eq!(
+            array
+                .variant_element(1)
+                .expect("element")
+                .as_vba_record()
+                .expect("record")
+                .read_field_variant(0)
+                .expect("field")
+                .as_i32(),
+            Some(20)
+        );
+
+        array
+            .set_variant_element(1, &Variant::from_vba_record(make_record(99)))
+            .expect("replace record element");
+        assert_eq!(
+            array.variant_elements().expect("elements")[1]
+                .as_vba_record()
+                .expect("record")
+                .read_field_variant(0)
+                .expect("field")
+                .as_i32(),
+            Some(99)
         );
     }
 

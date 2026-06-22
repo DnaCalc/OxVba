@@ -219,6 +219,39 @@ impl VbaRecord {
         // SAFETY: the field pointer is in range and aligned for `field.kind`.
         unsafe { write_field_variant_at(self.field_mut_ptr(&field), &field.kind, value) }
     }
+
+    /// Clone a record value from raw storage described by `layout`.
+    ///
+    /// # Safety
+    /// `src` must point to a live record payload initialized according to `layout`
+    /// for the duration of this call.
+    pub unsafe fn clone_from_raw(
+        src: *const u8,
+        layout: Arc<VbaRecordLayout>,
+    ) -> Result<Self, String> {
+        unsafe { clone_record_from_ptr(src, layout) }
+    }
+
+    /// Clone this record into uninitialized raw storage described by its layout.
+    ///
+    /// # Safety
+    /// `dst` must point to writable, properly aligned, uninitialized storage of at
+    /// least `self.layout().size()` bytes. The caller becomes responsible for
+    /// eventually dropping the initialized raw record with [`Self::drop_raw`].
+    pub unsafe fn clone_into_raw(&self, dst: *mut u8) -> Result<(), String> {
+        unsafe { clone_record_into_ptr(self.data_ptr(), dst, self.layout()) }
+    }
+
+    /// Drop a raw record payload initialized according to `layout`.
+    ///
+    /// # Safety
+    /// `ptr` must point to a live record payload initialized according to `layout`,
+    /// and this function must be called at most once for that payload.
+    pub unsafe fn drop_raw(ptr: *mut u8, layout: &VbaRecordLayout) {
+        for field in layout.fields() {
+            unsafe { drop_field_at(ptr.add(field.offset), &field.kind) };
+        }
+    }
 }
 
 impl Clone for VbaRecord {
