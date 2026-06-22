@@ -15,6 +15,7 @@ pub mod pointer_helpers;
 pub mod safe_array;
 pub mod value_types;
 pub mod variant;
+pub mod vba_record;
 
 pub use call_frame::{
     RuntimeByRefSlot, RuntimeByRefWriteback, RuntimeCallArgument, RuntimeCallContext,
@@ -41,3 +42,6 @@ pub use object_ref::{
 };
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};
+pub use vba_record::{
+    VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
+};
