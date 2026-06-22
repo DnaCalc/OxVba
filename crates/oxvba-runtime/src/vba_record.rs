@@ -208,6 +208,17 @@ impl VbaRecord {
         // SAFETY: the field pointer is in range and aligned for `field.kind`.
         unsafe { read_field_variant_at(self.field_ptr(field), &field.kind) }
     }
+
+    pub fn write_field_variant(&mut self, index: usize, value: &Variant) -> Result<(), String> {
+        let field = self
+            .layout
+            .fields()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("record field {index} out of range"))?;
+        // SAFETY: the field pointer is in range and aligned for `field.kind`.
+        unsafe { write_field_variant_at(self.field_mut_ptr(&field), &field.kind, value) }
+    }
 }
 
 impl Clone for VbaRecord {
@@ -377,11 +388,139 @@ unsafe fn read_field_variant_at(
             }
         }
         VbaRecordFieldKind::Boolean => Variant::from_bool(unsafe { *ptr.cast::<i16>() != 0 }),
-        VbaRecordFieldKind::Record(_) | VbaRecordFieldKind::FixedArray { .. } => {
-            return Err("record aggregate field cannot be read as a scalar Variant".into());
+        VbaRecordFieldKind::Record(layout) => {
+            Variant::from_vba_record(unsafe { clone_record_from_ptr(ptr, layout.clone())? })
+        }
+        VbaRecordFieldKind::FixedArray { .. } => {
+            return Err("fixed-array record field cannot be read as a scalar Variant".into());
         }
     };
     Ok(value)
+}
+
+unsafe fn write_field_variant_at(
+    ptr: *mut u8,
+    kind: &VbaRecordFieldKind,
+    value: &Variant,
+) -> Result<(), String> {
+    match kind {
+        VbaRecordFieldKind::Variant => unsafe {
+            ptr.cast::<Variant>().drop_in_place();
+            ptr.cast::<Variant>().write(value.clone());
+        },
+        VbaRecordFieldKind::Integer => {
+            let value = value
+                .as_i16()
+                .ok_or_else(|| "Integer record field requires Integer value".to_string())?;
+            unsafe { ptr.cast::<i16>().write(value) };
+        }
+        VbaRecordFieldKind::Long => {
+            let value = value
+                .as_i32()
+                .ok_or_else(|| "Long record field requires Long value".to_string())?;
+            unsafe { ptr.cast::<i32>().write(value) };
+        }
+        VbaRecordFieldKind::LongLong => {
+            let value = value
+                .as_i64()
+                .ok_or_else(|| "LongLong record field requires LongLong value".to_string())?;
+            unsafe { ptr.cast::<i64>().write(value) };
+        }
+        VbaRecordFieldKind::LongPtr => {
+            if core::mem::size_of::<usize>() == 8 {
+                let value = value
+                    .as_i64()
+                    .ok_or_else(|| "LongPtr record field requires LongLong value".to_string())?;
+                unsafe { ptr.cast::<isize>().write(value as isize) };
+            } else {
+                let value = value
+                    .as_i32()
+                    .ok_or_else(|| "LongPtr record field requires Long value".to_string())?;
+                unsafe { ptr.cast::<isize>().write(value as isize) };
+            }
+        }
+        VbaRecordFieldKind::Byte => {
+            let value = value
+                .as_u8()
+                .ok_or_else(|| "Byte record field requires Byte value".to_string())?;
+            unsafe { ptr.cast::<u8>().write(value) };
+        }
+        VbaRecordFieldKind::Single => {
+            let value = value
+                .as_f32()
+                .ok_or_else(|| "Single record field requires Single value".to_string())?;
+            unsafe { ptr.cast::<f32>().write(value) };
+        }
+        VbaRecordFieldKind::Double => {
+            let value = value
+                .as_f64()
+                .ok_or_else(|| "Double record field requires Double value".to_string())?;
+            unsafe { ptr.cast::<f64>().write(value) };
+        }
+        VbaRecordFieldKind::Currency => {
+            let value = value
+                .as_currency_scaled_i64()
+                .ok_or_else(|| "Currency record field requires Currency value".to_string())?;
+            unsafe { ptr.cast::<i64>().write(value) };
+        }
+        VbaRecordFieldKind::Date => {
+            let value = value
+                .as_date_f64()
+                .ok_or_else(|| "Date record field requires Date value".to_string())?;
+            unsafe { ptr.cast::<f64>().write(value) };
+        }
+        VbaRecordFieldKind::String => {
+            let Some(text) = value.as_bstr() else {
+                return Err("String record field requires String value".to_string());
+            };
+            let raw = text.raw_bstr();
+            core::mem::forget(text);
+            unsafe { drop_field_at(ptr, kind) };
+            unsafe { ptr.cast::<*mut u16>().write(raw) };
+        }
+        VbaRecordFieldKind::Boolean => {
+            let value = value
+                .as_bool()
+                .ok_or_else(|| "Boolean record field requires Boolean value".to_string())?;
+            unsafe { ptr.cast::<i16>().write(if value { -1 } else { 0 }) };
+        }
+        VbaRecordFieldKind::Record(layout) => {
+            let Some(source) = value.as_vba_record() else {
+                return Err("nested record field requires VBA record value".to_string());
+            };
+            if source.layout().as_ref() != layout.as_ref() {
+                return Err("nested record field layout mismatch".to_string());
+            }
+            unsafe {
+                drop_field_at(ptr, kind);
+                clone_record_into_ptr(source.data_ptr(), ptr, layout)?;
+            }
+        }
+        VbaRecordFieldKind::FixedArray { .. } => {
+            return Err("fixed-array record field cannot be assigned as a scalar Variant".into());
+        }
+    }
+    Ok(())
+}
+
+unsafe fn clone_record_from_ptr(
+    src: *const u8,
+    layout: Arc<VbaRecordLayout>,
+) -> Result<VbaRecord, String> {
+    let mut record = VbaRecord::new_default(layout.clone())?;
+    unsafe { clone_record_into_ptr(src, record.data_mut_ptr(), &layout)? };
+    Ok(record)
+}
+
+unsafe fn clone_record_into_ptr(
+    src: *const u8,
+    dst: *mut u8,
+    layout: &VbaRecordLayout,
+) -> Result<(), String> {
+    for field in layout.fields() {
+        unsafe { clone_field_at(src.add(field.offset), dst.add(field.offset), &field.kind)? };
+    }
+    Ok(())
 }
 
 unsafe fn borrow_bstr_raw(raw: *mut u16) -> BStr {

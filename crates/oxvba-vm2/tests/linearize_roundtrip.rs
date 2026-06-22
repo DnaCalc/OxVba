@@ -446,6 +446,47 @@ fn record_field_set_and_get_use_backing_record_slot() {
 }
 
 #[test]
+fn redim_udt_array_uses_native_vba_record_elements() {
+    let p = single(
+        1,
+        vec![CoreStmt::ReDim {
+            array: CorePlace::Local(LocalId(0)),
+            bounds: vec![CoreBound {
+                upper: ci(0),
+                lower: 0,
+            }],
+            element_type: ArrayElementType::Record(vec![
+                ArrayElementType::Long,
+                ArrayElementType::String,
+            ]),
+            preserve: false,
+        }],
+    );
+
+    let (bundle, vm) = run_program(&p);
+    let array = vm
+        .slot(bundle.global_count)
+        .and_then(|value| value.as_safearray())
+        .expect("array slot");
+    let element = array.variant_element(0).expect("record element");
+    assert_eq!(element.vtype(), oxvba_runtime::VarType::Record);
+    assert!(element.as_safearray().is_none());
+    let record = element.as_vba_record().expect("native VBA record");
+    assert_eq!(
+        record.read_field_variant(0).expect("long field").as_i32(),
+        Some(0)
+    );
+    assert_eq!(
+        record
+            .read_field_variant(1)
+            .expect("string field")
+            .as_bstr()
+            .map(|text| text.as_str()),
+        Some(String::new())
+    );
+}
+
+#[test]
 fn redim_scalar_arrays_seed_matching_exact_carriers() {
     let cases = [
         (ArrayElementType::Integer, VT_I2_VALUE),

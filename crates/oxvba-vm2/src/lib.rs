@@ -32,7 +32,10 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
@@ -58,7 +61,9 @@ use oxvba_runtime::safe_array::{
     VT_VARIANT_VALUE,
 };
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{Variant, pointer_helpers};
+use oxvba_runtime::{
+    Variant, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec, VbaRecordLayout, pointer_helpers,
+};
 
 /// Project-instance ids start above any class route key (a class's `route_key`
 /// is its index, so this keeps `compat_identity != route_key`, i.e. every
@@ -2622,29 +2627,35 @@ impl<'h> Vm<'h> {
                 self.set(*dst, Variant::from_safearray(record))?;
             }
             Op::RecordGet { dst, record, index } => {
-                let rec = self
-                    .get(*record)?
-                    .as_safearray()
-                    .ok_or_else(|| Fault::new(13, "record expected"))?;
-                if *index >= rec.len() {
-                    return Err(Fault::new(9, "record field out of range"));
-                }
-                let value = rec.variant_element(*index).map_err(Fault::from_string)?;
+                let source = self.get(*record)?;
+                let value = if let Some(rec) = source.as_safearray() {
+                    if *index >= rec.len() {
+                        return Err(Fault::new(9, "record field out of range"));
+                    }
+                    rec.variant_element(*index).map_err(Fault::from_string)?
+                } else {
+                    source
+                        .read_record_field_variant(*index)
+                        .map_err(Fault::from_string)?
+                };
                 self.set(*dst, value)?;
             }
             Op::RecordSet { record, index, src } => {
-                let rec = self
-                    .get(*record)?
-                    .as_safearray()
-                    .ok_or_else(|| Fault::new(13, "record expected"))?;
-                if *index >= rec.len() {
-                    return Err(Fault::new(9, "record field out of range"));
-                }
                 let value = self.cloned(*src)?;
                 let place = self.target(*record)?;
-                self.read_place_mut(place)?
-                    .set_safearray_element(*index, &value)
-                    .map_err(Fault::from_string)?;
+                let target = self.read_place_mut(place)?;
+                if let Some(rec) = target.as_safearray() {
+                    if *index >= rec.len() {
+                        return Err(Fault::new(9, "record field out of range"));
+                    }
+                    target
+                        .set_safearray_element(*index, &value)
+                        .map_err(Fault::from_string)?;
+                } else {
+                    target
+                        .write_record_field_variant(*index, &value)
+                        .map_err(Fault::from_string)?;
+                }
             }
             Op::LBound {
                 dst,
@@ -3341,8 +3352,8 @@ fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
 }
 
 /// The default value for a freshly-`ReDim`-ed array element. A UDT-record element
-/// is a default record (a `SafeArray` of its field defaults), built recursively so
-/// nested scalar-UDT subfields are themselves default records — mirroring the
+/// is a native VBA record with descriptor-backed field offsets, built recursively
+/// so nested scalar-UDT subfields are themselves default records — mirroring the
 /// binder's `emit_udt_record_init` so `Lines(i).Words(j).Rect.X` reads back.
 /// Scalar defaults are typed zero values so typed SAFEARRAY storage can encode
 /// them directly instead of relying on a boundary-time Variant projection.
@@ -3367,10 +3378,44 @@ fn default_array_element(element_type: &ArrayElementType) -> Variant {
         ArrayElementType::String => Variant::from_string(""),
         ArrayElementType::Boolean => Variant::from_bool(false),
         ArrayElementType::Record(fields) => {
-            let elems = fields.iter().map(default_array_element).collect();
-            Variant::from_safearray(SafeArray::from_variants(elems))
+            let layout = vba_record_layout_for_fields(fields)
+                .expect("bundle UDT array element layout should map to VBA record layout");
+            let record = VbaRecord::new_default(layout)
+                .expect("default VBA record allocation should succeed");
+            Variant::from_vba_record(record)
         }
     }
+}
+
+fn vba_record_layout_for_fields(
+    fields: &[ArrayElementType],
+) -> Result<Arc<VbaRecordLayout>, String> {
+    let specs = fields
+        .iter()
+        .map(|field| Ok(VbaRecordFieldSpec::anonymous(vba_record_field_kind(field)?)))
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(Arc::new(VbaRecordLayout::new(specs)?))
+}
+
+fn vba_record_field_kind(element_type: &ArrayElementType) -> Result<VbaRecordFieldKind, String> {
+    let kind = match element_type {
+        ArrayElementType::Variant => VbaRecordFieldKind::Variant,
+        ArrayElementType::Integer => VbaRecordFieldKind::Integer,
+        ArrayElementType::Long => VbaRecordFieldKind::Long,
+        ArrayElementType::LongLong => VbaRecordFieldKind::LongLong,
+        ArrayElementType::LongPtr => VbaRecordFieldKind::LongPtr,
+        ArrayElementType::Byte => VbaRecordFieldKind::Byte,
+        ArrayElementType::Single => VbaRecordFieldKind::Single,
+        ArrayElementType::Double => VbaRecordFieldKind::Double,
+        ArrayElementType::Currency => VbaRecordFieldKind::Currency,
+        ArrayElementType::Date => VbaRecordFieldKind::Date,
+        ArrayElementType::String => VbaRecordFieldKind::String,
+        ArrayElementType::Boolean => VbaRecordFieldKind::Boolean,
+        ArrayElementType::Record(fields) => {
+            VbaRecordFieldKind::Record(vba_record_layout_for_fields(fields)?)
+        }
+    };
+    Ok(kind)
 }
 
 fn member_kind_to_dynamic(kind: ProjectMemberKind) -> DynamicCallKind {

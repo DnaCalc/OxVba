@@ -717,6 +717,19 @@ impl Variant {
         Some(unsafe { &*raw })
     }
 
+    fn as_record_payload_mut(&mut self) -> Option<&mut RecordPayload> {
+        if self.vtype() != VarType::Record {
+            return None;
+        }
+        let raw = bytes_to_raw_record_payload(self.data_bytes()).cast_mut();
+        if raw.is_null() {
+            return None;
+        }
+        // SAFETY: `&mut self` proves exclusive access to the record Variant and the
+        // payload box it owns.
+        Some(unsafe { &mut *raw })
+    }
+
     pub fn as_com_record(&self) -> Option<ComRecord> {
         match self.as_record_payload()? {
             RecordPayload::Com(record) => Some(record.clone()),
@@ -728,6 +741,26 @@ impl Variant {
         match self.as_record_payload()? {
             RecordPayload::Com(_) => None,
             RecordPayload::Vba(record) => Some(record.clone()),
+        }
+    }
+
+    pub fn read_record_field_variant(&self, index: usize) -> Result<Variant, String> {
+        match self.as_record_payload() {
+            Some(RecordPayload::Vba(record)) => record.read_field_variant(index),
+            Some(RecordPayload::Com(_)) => Err("COM record fields require COM metadata".into()),
+            None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
+        }
+    }
+
+    pub fn write_record_field_variant(
+        &mut self,
+        index: usize,
+        value: &Variant,
+    ) -> Result<(), String> {
+        match self.as_record_payload_mut() {
+            Some(RecordPayload::Vba(record)) => record.write_field_variant(index, value),
+            Some(RecordPayload::Com(_)) => Err("COM record fields require COM metadata".into()),
+            None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
         }
     }
 }
