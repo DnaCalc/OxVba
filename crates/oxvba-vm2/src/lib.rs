@@ -2618,13 +2618,13 @@ impl<'h> Vm<'h> {
             }
 
             // ── UDT records (a value aggregate backed by a record store) ──
-            // The `SafeArray` backing is internal: it is read/written only through these
-            // record ops and value-copied by the normal `Variant` clone. It must NOT be
-            // exposed across the native-interop boundary — UDT marshalling lays fields
-            // out per the static UDT type (see POST_CLEANUP.md).
+            // Records use native VBA layout storage when the package carries the
+            // recursive field layout. Legacy SAFEARRAY-backed record bags remain
+            // readable/writable below for old or hand-built internal values.
             Op::NewRecord { dst, fields } => {
-                let record = SafeArray::from_variants(vec![Variant::empty(); *fields]);
-                self.set(*dst, Variant::from_safearray(record))?;
+                let layout = vba_record_layout_for_fields(fields).map_err(Fault::from_string)?;
+                let record = VbaRecord::new_default(layout).map_err(Fault::from_string)?;
+                self.set(*dst, Variant::from_vba_record(record))?;
             }
             Op::RecordGet { dst, record, index } => {
                 let source = self.get(*record)?;

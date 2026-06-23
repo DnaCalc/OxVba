@@ -3856,6 +3856,7 @@ mod gate_tests {
                     data3: 0xCCCC,
                     data4: [12, 13, 14, 15, 16, 17, 18, 19],
                 },
+                layout: None,
             }),
         });
         assert_eq!(
@@ -4034,6 +4035,7 @@ mod gate_tests {
                     data3: 0x7777,
                     data4: [0x88; 8],
                 },
+                layout: None,
             }),
         }];
         let empty_descriptor_record_array =

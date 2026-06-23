@@ -493,7 +493,7 @@ impl<'p> Linearizer<'p> {
                 let dst = self.new_temp();
                 self.emit(Op::NewRecord {
                     dst,
-                    fields: *fields,
+                    fields: fields.clone(),
                 });
                 Ok(dst)
             }

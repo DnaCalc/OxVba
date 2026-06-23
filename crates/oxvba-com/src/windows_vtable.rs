@@ -2098,6 +2098,7 @@ mod tests {
                 minor: 0,
                 lcid: 0,
                 type_guid: crate::ComInterfaceIid::from_guid(&record_guid),
+                layout: None,
             },
             path,
         })

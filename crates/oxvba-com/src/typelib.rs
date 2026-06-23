@@ -140,6 +140,45 @@ pub struct TypeLibRecordInfo {
     pub minor: u16,
     pub lcid: u32,
     pub type_guid: ComInterfaceIid,
+    pub layout: Option<TypeLibRecordLayout>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibRecordLayout {
+    pub size: u32,
+    pub fields: Vec<TypeLibRecordField>,
+    pub has_unknown_fields: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibRecordField {
+    pub name: String,
+    pub offset: u32,
+    pub kind: TypeLibRecordFieldKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeLibRecordFieldKind {
+    I16,
+    I32,
+    I64,
+    U8,
+    F32,
+    F64,
+    Currency,
+    Date,
+    Bool,
+    BStr,
+    Variant,
+    Dispatch,
+    Unknown,
+    Record {
+        record_info: Box<TypeLibRecordInfo>,
+    },
+    FixedArray {
+        element: Box<TypeLibRecordFieldKind>,
+        len: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -791,6 +830,7 @@ mod tests {
                 data3: 0xCCCC,
                 data4: [12, 13, 14, 15, 16, 17, 18, 19],
             },
+            layout: None,
         }
     }
 

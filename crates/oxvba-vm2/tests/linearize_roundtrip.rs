@@ -412,7 +412,12 @@ fn record_field_set_and_get_use_backing_record_slot() {
     let p = single(
         2,
         vec![
-            set(1, CoreValue::NewRecord { fields: 2 }),
+            set(
+                1,
+                CoreValue::NewRecord {
+                    fields: vec![ArrayElementType::Long, ArrayElementType::Variant],
+                },
+            ),
             CoreStmt::Assign {
                 place: field(1, 0),
                 value: ci(42),
@@ -433,14 +438,14 @@ fn record_field_set_and_get_use_backing_record_slot() {
     );
     let record = vm
         .slot(bundle.global_count + 1)
-        .and_then(|value| value.as_safearray())
+        .and_then(|value| value.as_vba_record())
         .expect("record slot");
     assert_eq!(
-        record.variant_element(0).expect("record field").as_i32(),
+        record.read_field_variant(0).expect("record field").as_i32(),
         Some(42)
     );
     assert_eq!(
-        record.variant_element(1).expect("record field").vtype(),
+        record.read_field_variant(1).expect("record field").vtype(),
         oxvba_runtime::Variant::empty().vtype()
     );
 }

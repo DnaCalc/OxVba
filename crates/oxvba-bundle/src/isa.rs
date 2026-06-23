@@ -227,10 +227,10 @@ pub enum Op {
     },
 
     // ── UDT records (value aggregates, backed by a record store) ───────────
-    /// Allocate a default-initialized record of `fields` fields.
+    /// Allocate a default-initialized record using its recursive field layout.
     NewRecord {
         dst: usize,
-        fields: usize,
+        fields: Vec<ArrayElementType>,
     },
     /// Read field `index` of the record in slot `record`.
     RecordGet {

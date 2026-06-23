@@ -70,7 +70,8 @@ pub use typelib::{
     ComDefaultValue, ComInterfaceIid, OptionalParamDefault, SourceTypeKind, TypeLibCacheScope,
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibInterfaceMetadata,
     TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType,
-    TypeLibRecordInfo, TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibWireType,
+    TypeLibRecordField, TypeLibRecordFieldKind, TypeLibRecordInfo, TypeLibRecordLayout,
+    TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibWireType,
     runtime_class_descriptor_from_typelib_metadata,
 };
 pub use typelib_cache::TypeLibMetadataCacheState;

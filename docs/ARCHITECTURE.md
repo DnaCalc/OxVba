@@ -198,10 +198,13 @@ Important boundaries:
 - raw integer identities remain only where they are explicit control-plane
   tokens or debug compatibility data.
 
-Remaining named layout risks must be tracked explicitly. The largest current
-runtime risk is UDT/record element storage: record array elements still use a
-runtime record value carrier while exact COM-compatible record SAFEARRAY payloads
-are still in progress.
+Remaining named layout risks must be tracked explicitly. Scalar UDT values and
+UDT array elements now use native `VbaRecord` storage with descriptor-backed
+field offsets. Windows COM typelib metadata can carry record size/field
+offset/kind evidence, and native VBA record arrays can project to
+`SAFEARRAY(VT_RECORD)` only when descriptor proof matches the runtime scalar
+layout. Nested/fixed-array/object record-field COM conversion and broad foreign
+record writeback remain bounded parity work, not closed claims.
 
 ## Current IR Truth
 

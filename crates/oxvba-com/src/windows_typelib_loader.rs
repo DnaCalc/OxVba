@@ -11,8 +11,9 @@
 #[cfg(target_os = "windows")]
 use crate::typelib::{
     OptionalParamDefault, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
-    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibRecordInfo,
-    TypeLibResolvedIdentity, TypeLibWireType,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibRecordField,
+    TypeLibRecordFieldKind, TypeLibRecordInfo, TypeLibRecordLayout, TypeLibResolvedIdentity,
+    TypeLibWireType,
 };
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
@@ -209,6 +210,20 @@ struct FUNCDESC {
     elemdescfunc: ELEMDESC,
     wfuncdescflags: u16,
 }
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct VARDESC {
+    memid: i32,
+    lpstr_schema: *mut u16,
+    union_field: usize, // oInst for VAR_PERINSTANCE; lpvarValue for VAR_CONST
+    elemdesc_var: ELEMDESC,
+    w_var_flags: u16,
+    varkind: u32,
+}
+
+#[cfg(target_os = "windows")]
+const VAR_PERINSTANCE: u32 = 0;
 
 // FUNCDESC is read from COM-owned memory (ITypeInfo::GetFuncDesc), so its
 // layout must match oaidl.h exactly — pin the fields after each historically
@@ -1090,6 +1105,130 @@ unsafe fn typedesc_to_record_binding(
 }
 
 #[cfg(target_os = "windows")]
+unsafe fn record_typeinfo_layout(
+    ptinfo: *mut c_void,
+    type_attr: &TYPEATTR,
+) -> Option<TypeLibRecordLayout> {
+    if type_attr.typekind != TKIND_RECORD {
+        return None;
+    }
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut fields = Vec::new();
+    let mut has_unknown_fields = false;
+    for index in 0..u32::from(type_attr.cvars) {
+        let mut raw: *mut c_void = std::ptr::null_mut();
+        if ((*vtbl).get_var_desc)(ptinfo, index, &mut raw) != COM_S_OK || raw.is_null() {
+            has_unknown_fields = true;
+            continue;
+        }
+        let vardesc = &*(raw as *const VARDESC);
+        let name =
+            typeinfo_member_name(ptinfo, vardesc.memid).unwrap_or_else(|| format!("field_{index}"));
+        let kind = if vardesc.varkind == VAR_PERINSTANCE {
+            typedesc_to_record_field_kind(ptinfo, &vardesc.elemdesc_var.tdesc)
+        } else {
+            TypeLibRecordFieldKind::Unknown
+        };
+        if matches!(kind, TypeLibRecordFieldKind::Unknown) {
+            has_unknown_fields = true;
+        }
+        fields.push(TypeLibRecordField {
+            name,
+            offset: vardesc.union_field as u32,
+            kind,
+        });
+        ((*vtbl).release_var_desc)(ptinfo, raw);
+    }
+    fields.sort_by_key(|field| field.offset);
+    Some(TypeLibRecordLayout {
+        size: type_attr.cb_size_instance,
+        fields,
+        has_unknown_fields,
+    })
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typeinfo_member_name(ptinfo: *mut c_void, memid: i32) -> Option<String> {
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut name: *mut u16 = std::ptr::null_mut();
+    let mut count = 0u32;
+    let hr = ((*vtbl).get_names)(ptinfo, memid, &mut name, 1, &mut count);
+    if hr != COM_S_OK || count == 0 {
+        return None;
+    }
+    bstr_to_string_and_free(name)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typedesc_to_record_field_kind(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+) -> TypeLibRecordFieldKind {
+    match tdesc.vt {
+        VT_I2 => TypeLibRecordFieldKind::I16,
+        VT_I4 | VT_INT => TypeLibRecordFieldKind::I32,
+        VT_I8 => TypeLibRecordFieldKind::I64,
+        VT_UI1 => TypeLibRecordFieldKind::U8,
+        VT_R4 => TypeLibRecordFieldKind::F32,
+        VT_R8 => TypeLibRecordFieldKind::F64,
+        VT_CY => TypeLibRecordFieldKind::Currency,
+        VT_DATE => TypeLibRecordFieldKind::Date,
+        VT_BOOL => TypeLibRecordFieldKind::Bool,
+        VT_BSTR => TypeLibRecordFieldKind::BStr,
+        VT_VARIANT => TypeLibRecordFieldKind::Variant,
+        VT_DISPATCH | VT_UNKNOWN => TypeLibRecordFieldKind::Dispatch,
+        VT_PTR if tdesc.union_field != 0 => {
+            let inner = &*(tdesc.union_field as *const TYPEDESC);
+            typedesc_to_record_field_kind(owner_ptinfo, inner)
+        }
+        VT_CARRAY if tdesc.union_field != 0 => {
+            let array_desc = &*(tdesc.union_field as *const ARRAYDESC);
+            TypeLibRecordFieldKind::FixedArray {
+                element: Box::new(typedesc_to_record_field_kind(
+                    owner_ptinfo,
+                    &array_desc.tdesc_elem,
+                )),
+                len: None,
+            }
+        }
+        VT_USERDEFINED if !owner_ptinfo.is_null() => {
+            let href = u32::try_from(tdesc.union_field).unwrap_or(0);
+            let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
+            if ((*vtbl).get_ref_type_info)(owner_ptinfo, href, &mut ref_ptinfo) != COM_S_OK
+                || ref_ptinfo.is_null()
+            {
+                return TypeLibRecordFieldKind::Unknown;
+            }
+            let ref_vtbl = *(ref_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
+            let result = if ((*ref_vtbl).get_type_attr)(ref_ptinfo, &mut ref_attr) == COM_S_OK
+                && !ref_attr.is_null()
+            {
+                let attr = &*ref_attr;
+                let kind = match attr.typekind {
+                    TKIND_ENUM => TypeLibRecordFieldKind::I32,
+                    TKIND_RECORD => record_typeinfo_descriptor(ref_ptinfo, attr)
+                        .map(|record_info| TypeLibRecordFieldKind::Record {
+                            record_info: Box::new(record_info),
+                        })
+                        .unwrap_or(TypeLibRecordFieldKind::Unknown),
+                    TKIND_ALIAS => typedesc_to_record_field_kind(ref_ptinfo, &attr.tdesc_alias),
+                    _ => TypeLibRecordFieldKind::Unknown,
+                };
+                ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
+                kind
+            } else {
+                TypeLibRecordFieldKind::Unknown
+            };
+            ((*ref_vtbl).release)(ref_ptinfo);
+            result
+        }
+        _ => TypeLibRecordFieldKind::Unknown,
+    }
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn record_typeinfo_descriptor(
     ptinfo: *mut c_void,
     type_attr: &TYPEATTR,
@@ -1117,6 +1256,7 @@ unsafe fn record_typeinfo_descriptor(
                     minor: attr.w_minor_ver_num,
                     lcid: attr.lcid,
                     type_guid,
+                    layout: record_typeinfo_layout(ptinfo, type_attr),
                 };
                 ((*lib_vtbl).release_t_lib_attr)(ptlib, lib_attr);
                 Some(info)

@@ -315,9 +315,9 @@ pub enum CoreValue {
     },
     /// `New <Class>` — allocate a project instance and run `Class_Initialize`.
     New(ClassId),
-    /// Allocate a default-initialized UDT record of `fields` fields (a value aggregate).
+    /// Allocate a default-initialized UDT record using its recursive field layout.
     NewRecord {
-        fields: usize,
+        fields: Vec<ArrayElementType>,
     },
     Coerce {
         value: Box<CoreValue>,

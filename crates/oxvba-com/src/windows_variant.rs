@@ -1,6 +1,7 @@
 use crate::ComValue;
 use oxvba_runtime::{
     ComRecord, CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef, VarType, Variant,
+    VbaRecord, VbaRecordFieldKind, VbaRecordLayout,
     bstr::BStr,
     safe_array::{
         SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
@@ -32,6 +33,8 @@ const VT_R4_VARENUM: u16 = 4;
 const VT_R8_VARENUM: u16 = 5;
 const VT_CY_VARENUM: u16 = 6;
 const VT_DATE_VARENUM: u16 = 7;
+#[cfg(target_os = "windows")]
+const INVOKE_PROPERTYPUT: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VariantResultValue {
@@ -1330,9 +1333,11 @@ pub(crate) unsafe fn set_record_safearray_from_com_value(
         );
     };
     if values.iter().any(|value| value.as_vba_record().is_some()) {
-        return Err(
-            "SAFEARRAY(VT_RECORD) COM projection requires COM record elements with IRecordInfo; native VBA record arrays need descriptor-proven record conversion"
-                .to_string(),
+        return set_native_vba_record_safearray_from_values(
+            variant,
+            array,
+            &values,
+            descriptor_record_info,
         );
     }
     let descriptor_record_info = descriptor_record_info
@@ -1423,6 +1428,228 @@ pub(crate) unsafe fn set_record_safearray_from_com_value(
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_RECORD_VALUE;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_native_vba_record_safearray_from_values(
+    variant: *mut VARIANT,
+    array: &SafeArray,
+    values: &[Variant],
+    descriptor_record_info: Option<&crate::TypeLibRecordInfo>,
+) -> Result<(), String> {
+    let Some(descriptor) = descriptor_record_info else {
+        return Err(
+            "SAFEARRAY(VT_RECORD) native VBA record projection requires descriptor record metadata"
+                .to_string(),
+        );
+    };
+    let Some(first_record) = values.iter().find_map(Variant::as_vba_record) else {
+        return Err("native VBA record projection found no record elements".to_string());
+    };
+    ensure_vba_record_layout_matches_descriptor(first_record.layout(), descriptor)?;
+    let records = values
+        .iter()
+        .map(|value| {
+            value.as_vba_record().ok_or_else(|| {
+                format!("SAFEARRAY(VT_RECORD) element must be a native VBA record, got {value:?}")
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for record in &records {
+        ensure_same_vba_record_layout(first_record.layout(), record.layout())?;
+    }
+
+    let record_info = record_info_from_descriptor(descriptor)?;
+    let bounds = array.bounds().unwrap_or_else(|| {
+        vec![SafeArrayBound {
+            lower: 0,
+            count: u32::try_from(values.len()).unwrap_or(u32::MAX),
+        }]
+    });
+    let dims = u32::try_from(bounds.len())
+        .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
+    let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
+        .iter()
+        .map(|b| SAFEARRAYBOUND {
+            cElements: b.count,
+            lLbound: b.lower,
+        })
+        .collect();
+    let psa = SafeArrayCreateEx(VT_RECORD_VALUE, dims, sa_bounds.as_ptr(), record_info);
+    if psa.is_null() {
+        release_record_info(record_info);
+        return Err("SafeArrayCreateEx(VT_RECORD) returned null".to_string());
+    }
+
+    let result = (|| {
+        let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+        for record in &records {
+            let com_record = create_com_record_from_vba_record(record_info, record, descriptor)?;
+            let hr = SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                com_record.record_data_ptr(),
+            );
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayPutElement(VT_RECORD) failed with HRESULT {:#010X} at indices {indices:?}",
+                    hr as u32
+                ));
+            }
+            advance_indices_row_major(&mut indices, &bounds);
+        }
+        Ok(())
+    })();
+
+    release_record_info(record_info);
+    if let Err(err) = result {
+        let _ = SafeArrayDestroy(psa.cast_const());
+        return Err(err);
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_RECORD_VALUE;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_same_vba_record_layout(
+    expected: &std::sync::Arc<VbaRecordLayout>,
+    actual: &std::sync::Arc<VbaRecordLayout>,
+) -> Result<(), String> {
+    if expected.as_ref() == actual.as_ref() {
+        Ok(())
+    } else {
+        Err("SAFEARRAY(VT_RECORD) native record elements use different layouts".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_vba_record_layout_matches_descriptor(
+    layout: &std::sync::Arc<VbaRecordLayout>,
+    descriptor: &crate::TypeLibRecordInfo,
+) -> Result<(), String> {
+    let Some(descriptor_layout) = descriptor.layout.as_ref() else {
+        return Err(
+            "SAFEARRAY(VT_RECORD) native VBA record projection requires descriptor field layout"
+                .to_string(),
+        );
+    };
+    if descriptor_layout.has_unknown_fields {
+        return Err(
+            "SAFEARRAY(VT_RECORD) native VBA record projection cannot use unknown descriptor fields"
+                .to_string(),
+        );
+    }
+    if descriptor_layout.size as usize != layout.size() {
+        return Err(format!(
+            "SAFEARRAY(VT_RECORD) native VBA record size mismatch: descriptor {}, runtime {}",
+            descriptor_layout.size,
+            layout.size()
+        ));
+    }
+    let fields = layout.fields();
+    if descriptor_layout.fields.len() != fields.len() {
+        return Err(format!(
+            "SAFEARRAY(VT_RECORD) native VBA record field count mismatch: descriptor {}, runtime {}",
+            descriptor_layout.fields.len(),
+            fields.len()
+        ));
+    }
+    for (index, (descriptor_field, runtime_field)) in
+        descriptor_layout.fields.iter().zip(fields).enumerate()
+    {
+        if descriptor_field.offset as usize != runtime_field.offset {
+            return Err(format!(
+                "SAFEARRAY(VT_RECORD) native VBA record field {index} offset mismatch: descriptor {}, runtime {}",
+                descriptor_field.offset, runtime_field.offset
+            ));
+        }
+        if !record_field_kind_matches(&runtime_field.kind, &descriptor_field.kind) {
+            return Err(format!(
+                "SAFEARRAY(VT_RECORD) native VBA record field `{}` kind is not descriptor-compatible",
+                descriptor_field.name
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn record_field_kind_matches(
+    runtime: &VbaRecordFieldKind,
+    descriptor: &crate::TypeLibRecordFieldKind,
+) -> bool {
+    use crate::TypeLibRecordFieldKind as D;
+    match (runtime, descriptor) {
+        (VbaRecordFieldKind::Integer, D::I16)
+        | (VbaRecordFieldKind::Long, D::I32)
+        | (VbaRecordFieldKind::LongLong, D::I64)
+        | (VbaRecordFieldKind::Byte, D::U8)
+        | (VbaRecordFieldKind::Single, D::F32)
+        | (VbaRecordFieldKind::Double, D::F64)
+        | (VbaRecordFieldKind::Currency, D::Currency)
+        | (VbaRecordFieldKind::Date, D::Date)
+        | (VbaRecordFieldKind::Boolean, D::Bool)
+        | (VbaRecordFieldKind::String, D::BStr)
+        | (VbaRecordFieldKind::Variant, D::Variant) => true,
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn create_com_record_from_vba_record(
+    record_info: *mut c_void,
+    record: &VbaRecord,
+    descriptor: &crate::TypeLibRecordInfo,
+) -> Result<ComRecord, String> {
+    add_ref_record_info(record_info);
+    let com_record = create_com_record_from_record_info(record_info)?;
+    let layout = descriptor
+        .layout
+        .as_ref()
+        .ok_or_else(|| "descriptor layout was required before COM record creation".to_string())?;
+    for (index, field) in layout.fields.iter().enumerate() {
+        let value = record.read_field_variant(index)?;
+        let com_value = ComValue::from_variant(&value)?;
+        let mut field_variant: VARIANT = std::mem::zeroed();
+        let mut resolve_object = |_object: ObjectRef| -> Result<*mut c_void, String> {
+            Err("object fields in native VBA record COM projection are not yet supported".into())
+        };
+        let mut add_ref_dispatch = |_dispatch: *mut c_void| {};
+        if let Err(err) = set_variant_from_com_value(
+            &mut field_variant,
+            &com_value,
+            &mut resolve_object,
+            &mut add_ref_dispatch,
+        ) {
+            let _ = VariantClear(&mut field_variant);
+            return Err(err);
+        }
+        let wide_name: Vec<u16> = field
+            .name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let info = record_info.cast::<RawIRecordInfo>();
+        let vtbl = &*(*info).vtbl;
+        let hr = (vtbl.put_field)(
+            record_info,
+            INVOKE_PROPERTYPUT,
+            com_record.record_data_ptr(),
+            wide_name.as_ptr(),
+            &field_variant,
+        );
+        let _ = VariantClear(&mut field_variant);
+        if hr < 0 {
+            return Err(format!(
+                "IRecordInfo::PutField failed for `{}` with HRESULT {:#010X}",
+                field.name, hr as u32
+            ));
+        }
+    }
+    Ok(com_record)
 }
 
 #[cfg(target_os = "windows")]
@@ -2184,11 +2411,15 @@ mod tests {
     use super::{
         RawIRecordInfoVtbl, VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM,
         VT_RECORD_VALUE, VariantResultValue, decimal96_to_windows,
-        set_record_safearray_from_com_value, set_variant_from_com_value, take_variant_result_value,
-        variant_to_com_value, variant_to_variant_value,
+        ensure_vba_record_layout_matches_descriptor, set_record_safearray_from_com_value,
+        set_variant_from_com_value, take_variant_result_value, variant_to_com_value,
+        variant_to_variant_value,
     };
-    use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
+    use crate::{
+        ComInterfaceIid, ComValue, TypeLibRecordField, TypeLibRecordFieldKind, TypeLibRecordInfo,
+        TypeLibRecordLayout,
+    };
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, Variant, VbaRecord, VbaRecordFieldKind,
         VbaRecordFieldSpec, VbaRecordLayout,
@@ -2212,6 +2443,121 @@ mod tests {
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
         System::Com::CY,
     };
+
+    fn record_descriptor_with_layout(layout: TypeLibRecordLayout) -> TypeLibRecordInfo {
+        TypeLibRecordInfo {
+            libid: ComInterfaceIid {
+                data1: 0x1111_1111,
+                data2: 0x2222,
+                data3: 0x3333,
+                data4: [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            major: 1,
+            minor: 0,
+            lcid: 0,
+            type_guid: ComInterfaceIid {
+                data1: 0xAAAA_AAAA,
+                data2: 0xBBBB,
+                data3: 0xCCCC,
+                data4: [8, 7, 6, 5, 4, 3, 2, 1],
+            },
+            layout: Some(layout),
+        }
+    }
+
+    #[test]
+    fn native_vba_record_layout_requires_descriptor_field_layout() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![VbaRecordFieldSpec::named(
+                "X",
+                VbaRecordFieldKind::Long,
+            )])
+            .expect("layout"),
+        );
+        let descriptor = TypeLibRecordInfo {
+            libid: ComInterfaceIid {
+                data1: 0,
+                data2: 0,
+                data3: 0,
+                data4: [0; 8],
+            },
+            major: 1,
+            minor: 0,
+            lcid: 0,
+            type_guid: ComInterfaceIid {
+                data1: 0,
+                data2: 0,
+                data3: 0,
+                data4: [0; 8],
+            },
+            layout: None,
+        };
+
+        let err = ensure_vba_record_layout_matches_descriptor(&layout, &descriptor)
+            .expect_err("missing descriptor layout should decline");
+        assert!(err.contains("requires descriptor field layout"));
+    }
+
+    #[test]
+    fn native_vba_record_layout_matches_descriptor_scalar_fields() {
+        let runtime = Arc::new(
+            VbaRecordLayout::new(vec![
+                VbaRecordFieldSpec::named("X", VbaRecordFieldKind::Long),
+                VbaRecordFieldSpec::named("Name", VbaRecordFieldKind::String),
+                VbaRecordFieldSpec::named("Any", VbaRecordFieldKind::Variant),
+            ])
+            .expect("layout"),
+        );
+        let fields = runtime.fields();
+        let descriptor = record_descriptor_with_layout(TypeLibRecordLayout {
+            size: runtime.size() as u32,
+            has_unknown_fields: false,
+            fields: vec![
+                TypeLibRecordField {
+                    name: "X".to_string(),
+                    offset: fields[0].offset as u32,
+                    kind: TypeLibRecordFieldKind::I32,
+                },
+                TypeLibRecordField {
+                    name: "Name".to_string(),
+                    offset: fields[1].offset as u32,
+                    kind: TypeLibRecordFieldKind::BStr,
+                },
+                TypeLibRecordField {
+                    name: "Any".to_string(),
+                    offset: fields[2].offset as u32,
+                    kind: TypeLibRecordFieldKind::Variant,
+                },
+            ],
+        });
+
+        ensure_vba_record_layout_matches_descriptor(&runtime, &descriptor)
+            .expect("matching scalar descriptor should be admitted");
+    }
+
+    #[test]
+    fn native_vba_record_layout_declines_unknown_descriptor_fields() {
+        let runtime = Arc::new(
+            VbaRecordLayout::new(vec![VbaRecordFieldSpec::named(
+                "X",
+                VbaRecordFieldKind::Long,
+            )])
+            .expect("layout"),
+        );
+        let descriptor = record_descriptor_with_layout(TypeLibRecordLayout {
+            size: runtime.size() as u32,
+            has_unknown_fields: true,
+            fields: vec![TypeLibRecordField {
+                name: "X".to_string(),
+                offset: 0,
+                kind: TypeLibRecordFieldKind::I32,
+            }],
+        });
+
+        let err = ensure_vba_record_layout_matches_descriptor(&runtime, &descriptor)
+            .expect_err("unknown descriptor fields should decline");
+        assert!(err.contains("unknown descriptor fields"));
+    }
 
     #[repr(C)]
     struct FakeRecordInfo {
@@ -2517,7 +2863,7 @@ mod tests {
             .expect_err("native record array should not project as COM record");
         assert_eq!(
             err,
-            "SAFEARRAY(VT_RECORD) COM projection requires COM record elements with IRecordInfo; native VBA record arrays need descriptor-proven record conversion"
+            "SAFEARRAY(VT_RECORD) native VBA record projection requires descriptor record metadata"
         );
     }
 

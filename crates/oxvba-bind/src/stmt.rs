@@ -1048,11 +1048,9 @@ impl<'a> ProcLower<'a> {
     }
 
     /// Default-record allocation statements if `name` is a UDT-typed variable: a
-    /// fresh record (a `SafeArray` of the type's fields) for the value, plus a
-    /// nested record for each field that is itself a (scalar) UDT — so
-    /// `o.Item.N` works without a separate per-field allocation. (A UDT field
-    /// that is an *array* of UDT stays unallocated until `ReDim`; materializing
-    /// its elements as records is a separate runtime feature.)
+    /// fresh native record with the type's recursive field layout. UDT array
+    /// fields stay unallocated until their own `ReDim`, while fixed-array fields
+    /// are materialized by the existing follow-up `ReDim` statement below.
     pub(crate) fn udt_record_init(&mut self, name: &str) -> Result<Vec<CoreStmt>, BindError> {
         let Some(sym) = self.resolve(name).and_then(|b| b.symbol) else {
             return Ok(Vec::new());
@@ -1077,14 +1075,15 @@ impl<'a> ProcLower<'a> {
         label: &str,
         out: &mut Vec<CoreStmt>,
     ) -> Result<(), BindError> {
-        let Some(field_count) = self.g.env.udt_field_count(udt) else {
+        let oxvba_bundle::ArrayElementType::Record(fields) = self
+            .g
+            .array_element_layout(&VarTypeRef::Udt(udt.to_string()))
+        else {
             return Ok(());
         };
         out.push(CoreStmt::Assign {
             place: place.clone(),
-            value: CoreValue::NewRecord {
-                fields: field_count,
-            },
+            value: CoreValue::NewRecord { fields },
             intent: AssignmentIntent::Let,
             target_kind: oxvba_bundle::AssignmentTargetKind::Scalar,
             target_name: label.to_string(),
