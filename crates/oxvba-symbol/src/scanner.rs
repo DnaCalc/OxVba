@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use oxvba_bundle::{DeclareParamType, coreir::CoreConst};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
-use crate::manifest::ModuleUnit;
+use crate::manifest::{ModuleKind, ModuleUnit};
 use crate::model::{
     PropertyGroup, ScopeId, SourceProvenance, SourceSpan, SymbolId, SymbolImpl, SymbolKind,
     SymbolModelError, SymbolNamespace, SymbolTable, Visibility, fold_identifier,
@@ -42,6 +42,10 @@ pub struct ModuleScan {
     /// these into `ModuleAttributes`; keeping the source facts here makes direct
     /// symbol/binder manifests follow exported `.bas`/`.cls` headers.
     pub source_attributes: ScannedModuleAttributes,
+    /// Public members from standard modules, or modules explicitly marked as a
+    /// global namespace, participate in bare project-name lookup. Public class,
+    /// document, and form members otherwise require a receiver.
+    pub exposes_unqualified_members: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -93,6 +97,10 @@ pub fn scan_module(
             (!module.attributes.vb_name.is_empty()).then(|| module.attributes.vb_name.clone())
         })
         .unwrap_or_else(|| module.module_name.clone());
+    let exposes_unqualified_members = module.module_kind == ModuleKind::Procedural
+        || source_attributes
+            .vb_global_namespace
+            .unwrap_or(module.attributes.vb_global_namespace);
     let module_symbol = symbols.declare_symbol(
         project_scope,
         SymbolNamespace::Module,
@@ -119,6 +127,7 @@ pub fn scan_module(
         option_private_module: module.attributes.option_private_module
             || option_private_module(module_syntax),
         source_attributes,
+        exposes_unqualified_members,
     };
     let default_member_attrs = default_member_attributes(module_syntax);
     let mut ctx = ScanCtx {

@@ -763,6 +763,59 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
 }
 
 #[test]
+fn unrelated_class_property_does_not_shadow_vba_left_intrinsic() {
+    let control = ModuleUnit {
+        module_name: "ControlLike".into(),
+        module_kind: ModuleKind::Class,
+        attributes: ModuleAttributes::named("ControlLike"),
+        source: "Public Property Get Left() As Single\r\nEnd Property\r\n".into(),
+    };
+    let m = manifest(
+        "Proj",
+        vec![module("Main", "Sub Run()\r\nEnd Sub\r\n"), control],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let ctx = ResolutionContext::at(env.module_scope("Main").expect("Main scope"));
+    let binding = env.resolve(&ctx, "Left").expect("Left resolves");
+    assert!(matches!(
+        binding.route,
+        DispatchRoute::ExternMember {
+            ref unit,
+            ref owner,
+            ref member,
+            has_receiver: false,
+            ..
+        } if unit == "VBA" && owner == "Strings" && member == "Left"
+    ));
+
+    let receiver = VarTypeRef::Object("ControlLike".into());
+    assert!(matches!(
+        env.resolve_member(&receiver, "Left", None),
+        Some(b) if matches!(b.route, DispatchRoute::ProjectMember { .. })
+    ));
+}
+
+#[test]
+fn public_standard_module_member_still_shadows_vba_intrinsic() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module("Main", "Sub Run()\r\nEnd Sub\r\n"),
+            module(
+                "Helpers",
+                "Public Function Left() As String\r\nEnd Function\r\n",
+            ),
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let ctx = ResolutionContext::at(env.module_scope("Main").expect("Main scope"));
+    assert!(matches!(
+        env.resolve(&ctx, "Left"),
+        Some(b) if matches!(b.route, DispatchRoute::ProjectMember { .. })
+    ));
+}
+
+#[test]
 fn environment_extracts_declare_statements() {
     let src = "Declare PtrSafe Function GetTickCount Lib \"kernel32\" () As Long\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

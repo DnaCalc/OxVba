@@ -384,6 +384,19 @@ fn vba_module_qualified_intrinsic_requires_matching_module_owner() {
 }
 
 #[test]
+fn vba_left_intrinsic_is_not_shadowed_by_unrelated_class_property() {
+    let main = "Sub Main()\n    Dim r As Long\n    r = Len(Left(\"hello\", 2)) + Len(Left$(\"world\", 3))\nEnd Sub\n";
+    let control = "Public Property Get Left() As Single\n    Left = 99\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("ControlLike", ModuleKind::Class, control),
+        ]),
+        Some(5.0)
+    );
+}
+
+#[test]
 fn local_value_named_vba_shadows_library_namespace_qualifier() {
     let src = main_sub("    Dim VBA As Long\n    Dim r As Long\n    r = VBA.Len(\"abc\")\n");
     assert!(

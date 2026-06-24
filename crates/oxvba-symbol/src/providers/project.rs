@@ -50,7 +50,7 @@ impl ProjectProvider {
                     .entry(member.name_folded.clone())
                     .or_default()
                     .push(entry);
-                if is_public_member(member.kind) {
+                if scan.exposes_unqualified_members && is_public_member(member.kind) {
                     provider
                         .public
                         .entry(member.name_folded.clone())
