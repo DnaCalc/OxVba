@@ -966,6 +966,17 @@ mod tests {
     }
 
     #[test]
+    fn typed_accessor_raise_event_bracketed_name() {
+        let src = "Sub T()\n    RaiseEvent [Exit]\nEnd Sub\n";
+        let p = crate::parser::parse(src);
+        let re = find_kind(p.syntax(), SyntaxKind::RaiseEventStmt).expect("RaiseEventStmt");
+        assert_eq!(
+            re.raise_event_name_token().expect("event name").text,
+            "[Exit]"
+        );
+    }
+
+    #[test]
     fn typed_accessor_property_decl() {
         let src = "Public Property Get Value() As Long\n    Value = mValue\nEnd Property\n";
         let p = crate::parser::parse(src);

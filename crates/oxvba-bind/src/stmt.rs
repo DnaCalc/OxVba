@@ -424,10 +424,10 @@ impl<'a> ProcLower<'a> {
     /// `RaiseEvent E(args)` inside a class — the source is the current instance
     /// (`Me`); `event` is the event's index within its declaring class.
     fn bind_raise_event(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        let name = node
+        let name_token = node
             .raise_event_name_token()
-            .ok_or_else(|| BindError::Malformed("RaiseEvent without an event name".into()))?
-            .text;
+            .ok_or_else(|| BindError::Malformed("RaiseEvent without an event name".into()))?;
+        let name = normalize_identifier_token(name_token.text);
         let source = self
             .me_value()
             .ok_or_else(|| BindError::Malformed("RaiseEvent outside a class module".into()))?;
@@ -1426,6 +1426,12 @@ impl<'a> ProcLower<'a> {
     }
 
     // ── Small helpers ───────────────────────────────────────
+}
+
+fn normalize_identifier_token(text: &str) -> &str {
+    text.strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(text)
 }
 
 /// The VBA `VarType` discriminant for a target type, so `Get` knows the fixed

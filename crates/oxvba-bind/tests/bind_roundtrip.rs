@@ -1598,6 +1598,23 @@ fn raise_event_byval_param_does_not_write_back() {
     );
 }
 
+#[test]
+fn raise_event_accepts_bracketed_reserved_event_name() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim k As Sink\n    Dim s As Source\n    Set s = New Source\n    Set k = New Sink\n    Set k.Watched = s\n    s.Fire\n    r = k.Got\nEnd Sub\n";
+    let sink = "Public WithEvents Watched As Source\nPublic Got As Long\n\n\
+                Private Sub Watched_Exit()\n    Got = 42\nEnd Sub\n";
+    let source = "Public Event [Exit]()\n\n\
+                  Public Sub Fire()\n    RaiseEvent [Exit]\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Sink", ModuleKind::Class, sink),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        Some(42.0)
+    );
+}
+
 // ── Class-module UDT fields: per-instance default record-init ────────────────
 
 #[test]

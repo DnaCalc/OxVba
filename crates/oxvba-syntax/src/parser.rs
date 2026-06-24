@@ -1456,7 +1456,10 @@ impl<'a> Parser<'a> {
 
         self.expect(SyntaxKind::KwEvent);
         self.eat_whitespace();
-        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+        if self.at(SyntaxKind::Ident)
+            || self.at(SyntaxKind::BracketedIdent)
+            || self.current().is_keyword()
+        {
             self.bump(); // event name
         }
         self.eat_whitespace();
@@ -2350,7 +2353,10 @@ impl<'a> Parser<'a> {
         self.eat_trivia();
         self.bump(); // RaiseEvent
         self.eat_whitespace();
-        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+        if self.at(SyntaxKind::Ident)
+            || self.at(SyntaxKind::BracketedIdent)
+            || self.current().is_keyword()
+        {
             self.bump();
             if self.at(SyntaxKind::TypeSuffix) {
                 self.bump();
@@ -3011,6 +3017,10 @@ mod tests {
     #[test]
     fn structures_event_decl() {
         let p = parse_ok("Public Event Changed(ByVal n As Long)\n");
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::EventDecl));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ParamList));
+
+        let p = parse_ok("Public Event [Exit]()\n");
         assert!(has_node_kind(&p.syntax(), SyntaxKind::EventDecl));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ParamList));
     }
