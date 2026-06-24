@@ -16,6 +16,10 @@ members = [
     "crates/oxvba-vm2",
     "crates/oxvba-symbol",
     "crates/oxvba-bind",
+    "crates/oxvba-oxir",
+    "crates/oxvba-eval",
+    "crates/oxvba-vm3",
+    "crates/oxvba-differential",
 ]
 resolver = "2"
 
@@ -60,6 +64,10 @@ oxvba-lib = { path = "crates/oxvba-lib" }
 oxvba-vm2 = { path = "crates/oxvba-vm2" }
 oxvba-symbol = { path = "crates/oxvba-symbol" }
 oxvba-bind = { path = "crates/oxvba-bind" }
+oxvba-oxir = { path = "crates/oxvba-oxir" }
+oxvba-eval = { path = "crates/oxvba-eval" }
+oxvba-vm3 = { path = "crates/oxvba-vm3" }
+oxvba-differential = { path = "crates/oxvba-differential" }
 rkyv = "0.8"
 quick-xml = "0.37"
 thiserror = "2"

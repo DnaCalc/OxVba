@@ -1,0 +1,15 @@
+[package]
+name = "oxvba-eval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The OxVBA semantic kernel: value-core op meanings over a ValueOps abstraction, shared by vm2/vm3/JIT."
+
+[dependencies]
+oxvba-runtime.workspace = true
+oxvba-bundle.workspace = true
+
+[lints]
+workspace = true

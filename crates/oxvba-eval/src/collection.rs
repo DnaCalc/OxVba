@@ -16,7 +16,7 @@ use oxvba_runtime::Variant;
 /// Selects an existing element (for `Item`/`Remove`) or an insertion anchor (for
 /// `Add before`/`after`): a 1-based index, or a case-insensitive string key
 /// (stored folded).
-pub(crate) enum Selector {
+pub enum Selector {
     Index(i32),
     Key(String),
 }
@@ -24,7 +24,7 @@ pub(crate) enum Selector {
 /// A collection operation failure, mapped to a VBA run-time error number at the
 /// dispatch site.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum CollectionError {
+pub enum CollectionError {
     /// Index out of range / key not found → error 9.
     NotFound,
     /// `Add` with a key already present → error 457.
@@ -35,7 +35,7 @@ pub(crate) enum CollectionError {
 
 /// A VBA `Collection`'s ordered contents. Indices are 1-based at the VBA surface.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CollectionData {
+pub struct CollectionData {
     entries: Vec<Entry>,
 }
 
@@ -48,18 +48,18 @@ struct Entry {
 
 impl CollectionData {
     /// `Collection.Count`.
-    pub(crate) fn count(&self) -> i32 {
+    pub fn count(&self) -> i32 {
         self.entries.len() as i32
     }
 
     /// The values in insertion order — the `For Each` enumeration.
-    pub(crate) fn values(&self) -> Vec<Variant> {
+    pub fn values(&self) -> Vec<Variant> {
         self.entries.iter().map(|e| e.value.clone()).collect()
     }
 
     /// `Collection.Add item, [key], [before], [after]`. `key` is pre-folded. At
     /// most one of `before`/`after` may be given.
-    pub(crate) fn add(
+    pub fn add(
         &mut self,
         value: Variant,
         key: Option<String>,
@@ -84,13 +84,13 @@ impl CollectionData {
     }
 
     /// `Collection.Item(indexOrKey)`.
-    pub(crate) fn item(&self, sel: &Selector) -> Result<Variant, CollectionError> {
+    pub fn item(&self, sel: &Selector) -> Result<Variant, CollectionError> {
         let i = self.resolve_index(sel)?;
         Ok(self.entries[i].value.clone())
     }
 
     /// `Collection.Remove indexOrKey`.
-    pub(crate) fn remove(&mut self, sel: &Selector) -> Result<(), CollectionError> {
+    pub fn remove(&mut self, sel: &Selector) -> Result<(), CollectionError> {
         let i = self.resolve_index(sel)?;
         self.entries.remove(i);
         Ok(())

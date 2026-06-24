@@ -1,0 +1,15 @@
+[package]
+name = "oxvba-differential"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Differential oracle harness: runs a program under two executors and compares the six fidelity axes."
+
+[dependencies]
+oxvba-host.workspace = true
+oxvba-runtime.workspace = true
+
+[lints]
+workspace = true

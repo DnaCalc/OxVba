@@ -1,0 +1,14 @@
+[package]
+name = "oxvba-oxir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "OxIR: the typed, backend-neutral mid-level IR (typed basic-block CFG) for OxVBA."
+
+[dependencies]
+serde.workspace = true
+
+[lints]
+workspace = true

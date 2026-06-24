@@ -1,0 +1,13 @@
+[package]
+name = "oxvba-vm3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "vm3: the typed-CFG interpreter of OxIR — the IR's executable specification and the JIT's differential oracle."
+
+[dependencies]
+
+[lints]
+workspace = true

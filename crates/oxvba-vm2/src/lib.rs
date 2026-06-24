@@ -22,11 +22,11 @@
 //!   calls). `Resume`/`Resume Next` are statement-granular via
 //!   `bundle.statement_starts`.
 //!
-//! Arithmetic/comparison/coercion are primitive (see [`arith`]); they stay
-//! opcodes rather than library calls because `Variant` boxing dominates.
+//! Arithmetic/comparison/coercion are primitive (see [`oxvba_eval::arith`], the
+//! shared value-core kernel); they stay opcodes rather than library calls because
+//! `Variant` boxing dominates.
 
-mod arith;
-mod collection;
+use oxvba_eval::arith;
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -37,7 +37,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use collection::{CollectionData, CollectionError, Selector};
+use oxvba_eval::collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
     ArrayElementType, Bundle, CallArg, ClassDescriptor, ClassMethod, ComMemberSelector,
     DeclarePtrWriteback, ExportTarget, NativeBody, NativeCallee, NativeImplId, NativeMethodId,
@@ -70,7 +70,7 @@ use oxvba_runtime::{
 /// allocation reads as a true project instance, not a template/compat object).
 const INSTANCE_ID_BASE: i32 = 0x1000_0000;
 
-use arith::CmpOp;
+use oxvba_eval::arith::CmpOp;
 
 /// VBA `Missing` (an omitted optional argument): vbError `&H80020004`.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
