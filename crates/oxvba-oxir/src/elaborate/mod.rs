@@ -11,7 +11,11 @@
 //! Landing incrementally:
 //! - [`types`] — the `VarTypeRef → OxTy` lowering (object/UDT names resolved through a
 //!   [`NameResolver`]).
+//! - [`lower`] — the CFG-building spine ([`elaborate`]): the scalar / control-flow /
+//!   `VbaProc`-call core, with explicit [`ElaborateError::Unimplemented`] for the rest.
 
+pub mod lower;
 pub mod types;
 
+pub use lower::{ElaborateError, elaborate};
 pub use types::{NameResolver, ResolvedTypeName, lower_var_type};
