@@ -2,44 +2,11 @@
 //! the binder how a given callable's *syntax* works (ordinary call, statement
 //! form, the quirky intrinsics, etc.).
 
-/// A VBA scalar/declared builtin type. Self-contained (not the runtime's
-/// `VarType`, which carries COM/array encodings irrelevant to resolution).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuiltinType {
-    Boolean,
-    Byte,
-    Integer,
-    Long,
-    LongLong,
-    LongPtr,
-    Single,
-    Double,
-    Currency,
-    Date,
-    String,
-}
-
-/// A resolved type reference. `Object(name)` is the object-reference discriminator
-/// the binder uses to pick early vs late COM dispatch. A known project class name
-/// binds early; bare `Object` and foreign/COM object names bind late.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VarTypeRef {
-    Builtin(BuiltinType),
-    /// A typed object/class/coclass receiver, by (folded) type name.
-    Object(String),
-    /// A user-defined `Type` (UDT) value, by (folded) type name. A value aggregate
-    /// (copied by value, fields accessed by index) — distinct from `Object` (a
-    /// reference). Produced by the binder when an `Object`-named type resolves to a
-    /// declared `Type`.
-    Udt(String),
-    /// Untyped `Variant` — forces late binding for member access.
-    Variant,
-    Array(Box<VarTypeRef>),
-    /// A fixed-length string `String * N` (length in characters). Behaves like
-    /// `String` in the type lattice, but assignment pads/truncates to `N` and file
-    /// records use exactly `N` ANSI bytes with no length prefix.
-    FixedString(u32),
-}
+// The static type lattice (`VarTypeRef`/`BuiltinType`) is defined once, in
+// `oxvba-bundle` (the lowest crate the symbol model, the binder, and the typed IR
+// all share), and re-exported here so the symbol/binder code keeps its established
+// `signature::VarTypeRef` paths. See `oxvba_bundle::vartype`.
+pub use oxvba_bundle::{BuiltinType, VarTypeRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PassingMode {
