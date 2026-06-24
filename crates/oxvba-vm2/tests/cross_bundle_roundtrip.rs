@@ -39,11 +39,13 @@ fn lib_program() -> CoreProgram {
         params: vec![
             CoreParam {
                 name: "a".into(),
+                ty: oxvba_bundle::VarTypeRef::Variant,
                 by_ref: false,
                 variadic: false,
             },
             CoreParam {
                 name: "b".into(),
+                ty: oxvba_bundle::VarTypeRef::Variant,
                 by_ref: false,
                 variadic: false,
             },
@@ -51,6 +53,7 @@ fn lib_program() -> CoreProgram {
         // params occupy slots 0,1; the synthetic return local is slot 2.
         locals: vec![CoreLocal {
             name: "Add".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
             array_element: None,
         }],
         return_local: Some(LocalId(2)),
@@ -100,6 +103,7 @@ fn app_program() -> CoreProgram {
     CoreProgram {
         globals: vec![CoreGlobal {
             name: "result".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
             array_element: None,
         }],
         procs: vec![main],
@@ -182,6 +186,7 @@ fn error_app_program() -> CoreProgram {
     CoreProgram {
         globals: vec![CoreGlobal {
             name: "result".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
             array_element: None,
         }],
         procs: vec![main],

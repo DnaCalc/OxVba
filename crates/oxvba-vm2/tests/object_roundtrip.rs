@@ -58,6 +58,7 @@ fn bin(op: CoreBinOp, lhs: CoreValue, rhs: CoreValue) -> CoreValue {
 fn param(name: &str) -> CoreParam {
     CoreParam {
         name: name.into(),
+        ty: oxvba_bundle::VarTypeRef::Variant,
         by_ref: false,
         variadic: false,
     }
@@ -65,6 +66,7 @@ fn param(name: &str) -> CoreParam {
 fn local(name: &str) -> CoreLocal {
     CoreLocal {
         name: name.into(),
+        ty: oxvba_bundle::VarTypeRef::Variant,
         array_element: None,
     }
 }
@@ -152,6 +154,7 @@ fn program(
         globals: (0..globals)
             .map(|i| CoreGlobal {
                 name: format!("g{i}"),
+                ty: oxvba_bundle::VarTypeRef::Variant,
                 array_element: None,
             })
             .collect(),

@@ -27,6 +27,7 @@ use oxvba_runtime::safe_array::{
 fn local(name: &str) -> CoreLocal {
     CoreLocal {
         name: name.into(),
+        ty: oxvba_bundle::VarTypeRef::Variant,
         array_element: None,
     }
 }
@@ -283,6 +284,7 @@ fn call_proc_by_ref_mutates_caller() {
         kind: ProcedureKind::Sub,
         params: vec![CoreParam {
             name: "n".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
             by_ref: true,
             variadic: false,
         }],

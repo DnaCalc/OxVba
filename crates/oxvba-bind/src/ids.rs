@@ -135,6 +135,7 @@ impl IdAllocator {
                         };
                         alloc.globals.push(CoreGlobal {
                             name: alloc_name(env, sym.name),
+                            ty: declared_var_type(&sym.imp),
                             array_element,
                         });
                         alloc.global_of.insert(sym_id, gid);
@@ -325,7 +326,13 @@ impl IdAllocator {
             .map(|ty| normalize_declared_type(env, ty))
             .unwrap_or(VarTypeRef::Variant);
         let is_class_member = class_name.is_some();
-        let (params, locals, return_local, local_of, me_local) = build_frame(
+        let Frame {
+            params,
+            locals,
+            return_local,
+            local_of,
+            me_local,
+        } = build_frame(
             env,
             signature.as_ref(),
             proc_scope,
@@ -351,6 +358,7 @@ impl IdAllocator {
             };
             self.globals.push(CoreGlobal {
                 name: format!("{logical}#{}", alloc_name(env, sym.name)),
+                ty: declared_var_type(&sym.imp),
                 array_element,
             });
             self.global_of.insert(sym_id, gid);
@@ -404,6 +412,28 @@ fn member_kind_of(kind: ProcedureKind) -> ProjectMemberKind {
 }
 
 #[allow(clippy::type_complexity)]
+/// The declared static type carried by a symbol's implementation — recorded on the
+/// Core IR binding so the OxIR elaboration pass can recover it. `Variant` when the
+/// symbol has no declared type (an implicit / untyped variable).
+fn declared_var_type(imp: &SymbolImpl) -> VarTypeRef {
+    match imp {
+        SymbolImpl::DeclaredType(t) => t.clone(),
+        _ => VarTypeRef::Variant,
+    }
+}
+
+/// The frame layout [`build_frame`] computes for one procedure.
+struct Frame {
+    params: Vec<CoreParam>,
+    locals: Vec<CoreLocal>,
+    /// The synthetic function/property-get return local, if any.
+    return_local: Option<LocalId>,
+    /// Maps each parameter/local symbol to its frame slot.
+    local_of: HashMap<SymbolId, LocalId>,
+    /// The `Me` receiver slot (slot 0) for a class member.
+    me_local: Option<LocalId>,
+}
+
 fn build_frame(
     env: &ResolutionEnvironment,
     signature: Option<&Signature>,
@@ -411,13 +441,7 @@ fn build_frame(
     kind: ProcedureKind,
     logical: &str,
     is_class_member: bool,
-) -> (
-    Vec<CoreParam>,
-    Vec<CoreLocal>,
-    Option<LocalId>,
-    HashMap<SymbolId, LocalId>,
-    Option<LocalId>,
-) {
+) -> Frame {
     let symbols = &env.symbols;
     let scope_syms = symbols.symbols_in_scope(proc_scope).unwrap_or_default();
     let mut params = Vec::new();
@@ -430,6 +454,9 @@ fn build_frame(
     let me_local = if is_class_member {
         params.push(CoreParam {
             name: "Me".into(),
+            // The receiver is the enclosing class instance; precise `Object(class)`
+            // typing of `Me` is deferred to the object-elaboration sub-section.
+            ty: VarTypeRef::Variant,
             by_ref: false,
             variadic: false,
         });
@@ -454,6 +481,9 @@ fn build_frame(
                     .unwrap_or(true);
             params.push(CoreParam {
                 name: alloc_name(env, sym.name),
+                ty: sig_param
+                    .map(|p| p.ty.clone())
+                    .unwrap_or(VarTypeRef::Variant),
                 by_ref,
                 variadic,
             });
@@ -479,6 +509,7 @@ fn build_frame(
             };
             locals.push(CoreLocal {
                 name: alloc_name(env, sym.name),
+                ty: declared_var_type(&sym.imp),
                 array_element,
             });
             local_of.insert(sym_id, LocalId(next));
@@ -491,6 +522,9 @@ fn build_frame(
         let id = LocalId(next);
         locals.push(CoreLocal {
             name: logical.to_string(),
+            ty: signature
+                .and_then(|s| s.return_type.clone())
+                .unwrap_or(VarTypeRef::Variant),
             array_element: None,
         });
         Some(id)
@@ -498,7 +532,13 @@ fn build_frame(
         None
     };
 
-    (params, locals, return_local, local_of, me_local)
+    Frame {
+        params,
+        locals,
+        return_local,
+        local_of,
+        me_local,
+    }
 }
 
 fn proc_signature(

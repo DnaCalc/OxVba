@@ -18,7 +18,7 @@ use crate::native::NativeImplId;
 use crate::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, ComClassExport, EventRoute,
     ExternalCallDescriptor, NumericCoerceTarget, NumericMode, ProcedureKind, ProjectMemberKind,
-    StringCompareMode,
+    StringCompareMode, VarTypeRef,
 };
 
 // ── Resolved logical ids ──────────────────────────────────────────────────────
@@ -73,7 +73,13 @@ pub struct CoreProgram {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreGlobal {
     pub name: String,
+    /// The declared static type (the binder's resolved `VarTypeRef`, recovered by the
+    /// OxIR elaboration pass). `Variant` when undeclared. Object/UDT cases carry the
+    /// folded type *name*; elaboration resolves the name to a typed identity.
+    pub ty: VarTypeRef,
     /// `Some` for a module-level array (informational; element type for `ReDim`).
+    /// Overlaps with [`Self::ty`] for arrays — it is the legacy `linearize`/`ReDim`
+    /// element contract and will be unified into `ty` when `linearize` is retired.
     pub array_element: Option<ArrayElementType>,
 }
 
@@ -93,6 +99,8 @@ pub struct CoreProc {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreParam {
     pub name: String,
+    /// The declared static type of the parameter (see [`CoreGlobal::ty`]).
+    pub ty: VarTypeRef,
     /// Callee-side declaration (diagnostics only; the caller decides aliasing).
     pub by_ref: bool,
     /// A trailing `ParamArray` parameter: the caller boxes all remaining
@@ -103,6 +111,9 @@ pub struct CoreParam {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreLocal {
     pub name: String,
+    /// The declared static type of the local (see [`CoreGlobal::ty`]). For a
+    /// function/property-get return local, this is the procedure's return type.
+    pub ty: VarTypeRef,
     pub array_element: Option<ArrayElementType>,
 }
 

@@ -22,6 +22,7 @@ fn single(local_count: usize, body: Vec<CoreStmt>) -> CoreProgram {
         locals: (0..local_count)
             .map(|i| CoreLocal {
                 name: format!("v{i}"),
+                ty: oxvba_bundle::VarTypeRef::Variant,
                 array_element: None,
             })
             .collect(),
