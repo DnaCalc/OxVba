@@ -226,7 +226,7 @@ pub enum CoerceTarget {
     ImplicitVariant(VarType),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PtrKind {
     Str,
     Var,
@@ -264,7 +264,7 @@ pub struct PtrWriteback {
     pub kind: PtrWritebackKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ErrField {
     Number,
     Description,
@@ -274,7 +274,7 @@ pub enum ErrField {
     LastDllError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BoundWhich {
     Lower,
     Upper,

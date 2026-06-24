@@ -2,11 +2,16 @@
 //!
 //! It checks CFG well-formedness — block-id consistency, in-range terminator /
 //! fault-target / label targets, a fault landing pad for every block that contains a
-//! fallible instruction, valid entry/return/param shape, and in-range
-//! func/import/class references. Operand-level local/global/temp bounds checking is a
-//! planned addition (it needs an operand walk over every instruction); this verifier
-//! establishes the graph-integrity invariants the interpreter and backend rely on.
+//! fallible instruction, valid entry/return/param shape, in-range func/import/class
+//! references, and that every `ComCallEarly`'s [`crate::com::ComMethodRef`] resolves
+//! (interface in range, a COM — not project — interface, member in range).
+//! Operand-level local/global/temp bounds checking, and full `OxTy`-reference checking
+//! (e.g. that an `ObjClass::ComIface(IfaceId)` indexes the interface table), are a
+//! planned addition (they need an operand/type walk over every instruction and local);
+//! this verifier establishes the graph-integrity invariants the interpreter and
+//! backend rely on.
 
+use crate::com::{ComInterface, ComMethodRef};
 use crate::inst::{ErrorHandler, OxInst, terminator_successors};
 use crate::program::{OxFunc, OxProgram};
 
@@ -85,6 +90,33 @@ pub enum VerifyError {
         target: usize,
         blocks: usize,
     },
+    /// A `ComCallEarly` names an interface-table entry that does not exist.
+    BadComIfaceRef {
+        func: usize,
+        block: usize,
+        inst: usize,
+        iface: usize,
+        interfaces: usize,
+    },
+    /// A `ComCallEarly` names a *project* `Implements` interface — an early-bound COM
+    /// call requires a COM interface (project interface members lower to typed proc
+    /// dispatch, not `ComCallEarly`).
+    ComCallEarlyOnProjectIface {
+        func: usize,
+        block: usize,
+        inst: usize,
+        iface: usize,
+    },
+    /// A `ComCallEarly` names a member index past the end of its COM interface's
+    /// member list.
+    BadComMemberRef {
+        func: usize,
+        block: usize,
+        inst: usize,
+        iface: usize,
+        member: usize,
+        members: usize,
+    },
 }
 
 impl std::fmt::Display for VerifyError {
@@ -133,6 +165,18 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "func {func} block {block} inst {inst}: On Error label {target} out of range ({blocks} blocks)"
             ),
+            VerifyError::BadComIfaceRef { func, block, inst, iface, interfaces } => write!(
+                f,
+                "func {func} block {block} inst {inst}: ComCallEarly interface {iface} out of range ({interfaces} com_interfaces)"
+            ),
+            VerifyError::ComCallEarlyOnProjectIface { func, block, inst, iface } => write!(
+                f,
+                "func {func} block {block} inst {inst}: ComCallEarly targets project interface {iface} (needs a COM interface)"
+            ),
+            VerifyError::BadComMemberRef { func, block, inst, iface, member, members } => write!(
+                f,
+                "func {func} block {block} inst {inst}: ComCallEarly member {member} out of range ({members} members of com_interface {iface})"
+            ),
         }
     }
 }
@@ -152,12 +196,54 @@ pub fn verify_program(program: &OxProgram) -> Result<(), Vec<VerifyError>> {
     }
 }
 
+/// Check a `ComCallEarly`'s [`ComMethodRef`] resolves: the interface index is in
+/// range, the entry is a COM (not project) interface, and the member index is in range.
+fn check_com_call_early(
+    fi: usize,
+    bi: usize,
+    ii: usize,
+    method: ComMethodRef,
+    com_interfaces: &[ComInterface],
+    errors: &mut Vec<VerifyError>,
+) {
+    let Some(iface) = com_interfaces.get(method.iface.0) else {
+        errors.push(VerifyError::BadComIfaceRef {
+            func: fi,
+            block: bi,
+            inst: ii,
+            iface: method.iface.0,
+            interfaces: com_interfaces.len(),
+        });
+        return;
+    };
+    let Some(members) = iface.com_members() else {
+        errors.push(VerifyError::ComCallEarlyOnProjectIface {
+            func: fi,
+            block: bi,
+            inst: ii,
+            iface: method.iface.0,
+        });
+        return;
+    };
+    if method.member >= members.len() {
+        errors.push(VerifyError::BadComMemberRef {
+            func: fi,
+            block: bi,
+            inst: ii,
+            iface: method.iface.0,
+            member: method.member,
+            members: members.len(),
+        });
+    }
+}
+
 fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<VerifyError>) {
     let blocks = func.blocks.len();
     let locals = func.locals.len();
     let funcs = program.funcs.len();
     let imports = program.imports.len();
     let classes = program.classes.len();
+    let com_interfaces = program.com_interfaces.as_slice();
 
     if func.entry.0 >= blocks {
         errors.push(VerifyError::BadEntry {
@@ -219,7 +305,9 @@ fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<V
                     inst: ii,
                 });
             }
-            verify_inst_refs(fi, bi, ii, inst, funcs, imports, classes, blocks, errors);
+            verify_inst_refs(
+                fi, bi, ii, inst, funcs, imports, classes, com_interfaces, blocks, errors,
+            );
         }
     }
 }
@@ -233,6 +321,7 @@ fn verify_inst_refs(
     funcs: usize,
     imports: usize,
     classes: usize,
+    com_interfaces: &[ComInterface],
     blocks: usize,
     errors: &mut Vec<VerifyError>,
 ) {
@@ -276,6 +365,9 @@ fn verify_inst_refs(
                 target: target.0,
                 blocks,
             })
+        }
+        OxInst::ComCallEarly { method, .. } => {
+            check_com_call_early(fi, bi, ii, *method, com_interfaces, errors);
         }
         _ => {}
     }

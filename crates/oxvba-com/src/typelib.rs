@@ -46,7 +46,7 @@ pub struct TypeLibMetadataBlob {
     pub coclass_names: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeLibInterfaceMetadata {
     pub name: String,
     pub iid: Option<ComInterfaceIid>,
@@ -62,7 +62,7 @@ pub struct TypeLibInterfaceMetadata {
 /// vtable dispatch site can `QueryInterface` the live object for that exact
 /// interface and call the slot on the returned (real-vtable) pointer — uniformly
 /// in-process and out-of-process — instead of vtable-calling the raw `IDispatch`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ComInterfaceIid {
     pub data1: u32,
     pub data2: u16,
@@ -99,7 +99,7 @@ impl ComInterfaceIid {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TypeLibParamType {
     Variant,
     Long,
@@ -133,7 +133,7 @@ pub enum TypeLibParamType {
     ByRefRecord,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeLibRecordInfo {
     pub libid: ComInterfaceIid,
     pub major: u16,
@@ -143,21 +143,21 @@ pub struct TypeLibRecordInfo {
     pub layout: Option<TypeLibRecordLayout>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeLibRecordLayout {
     pub size: u32,
     pub fields: Vec<TypeLibRecordField>,
     pub has_unknown_fields: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeLibRecordField {
     pub name: String,
     pub offset: u32,
     pub kind: TypeLibRecordFieldKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TypeLibRecordFieldKind {
     I16,
     I32,
@@ -181,7 +181,7 @@ pub enum TypeLibRecordFieldKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TypeLibWireType {
     Automation(TypeLibParamType),
     InterfacePointer {
@@ -440,7 +440,7 @@ impl TypeLibParamType {
 /// a form that is plainly `Send + Sync + Eq` so it can ride on `ComMemberSpec`
 /// inside the shared `Arc<Mutex<WindowsComClientState>>` (a full `ComValue` could
 /// carry a `!Send` `ObjectRef`/`SafeArray`, which a constant default never is).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ComDefaultValue {
     Empty,
     Null,
@@ -471,7 +471,7 @@ pub enum ComDefaultValue {
 /// [`OptionalVariant`](OptionalParamDefault::OptionalVariant); a [`Required`] or
 /// an [`OptionalNoDefault`] in the missing tail falls the whole call back to the
 /// IDispatch path (which can drop trailing optionals natively).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OptionalParamDefault {
     /// A required parameter (no `PARAMFLAG_FOPT`/`FHASDEFAULT`, and not inside the
     /// FUNCDESC trailing-optional run). Cannot be omitted from a vtable call.
@@ -548,7 +548,7 @@ impl ComDefaultValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeLibMemberMetadata {
     pub name: String,
     pub token: i32,
@@ -610,7 +610,7 @@ pub struct TypeLibMemberMetadata {
     pub vtable_slot_bound: Option<u16>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TypeLibMemberInvokeKind {
     PropertyGet,
     Method,
@@ -623,7 +623,7 @@ pub enum TypeLibMemberInvokeKind {
 /// (`TKIND_DISPATCH`) has NO vtable slot; only a real custom **interface**
 /// (`TKIND_INTERFACE`, reached by crossing the FDUAL partner) carries a callable
 /// vtable. The vtable gate admits a slot ONLY when the source is `Interface`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SourceTypeKind {
     /// `TKIND_INTERFACE` — a real vtable interface; slot is callable.
     Interface,

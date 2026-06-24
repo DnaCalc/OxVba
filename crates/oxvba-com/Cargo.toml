@@ -13,6 +13,7 @@ fixture-typelibs = []
 [dependencies]
 oxvba-diagnostics.workspace = true
 oxvba-runtime.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]

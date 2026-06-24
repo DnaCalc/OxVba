@@ -10,6 +10,7 @@ description = "OxIR: the typed, backend-neutral mid-level IR (typed basic-block 
 [dependencies]
 serde.workspace = true
 oxvba-bundle.workspace = true
+oxvba-com.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

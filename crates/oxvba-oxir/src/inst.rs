@@ -7,9 +7,10 @@
 //! error (the explicit-fault-edge model that replaces the interpreter's implicit
 //! per-op fault check and lowers cleanly to a branch on a returned status).
 //!
-//! COM dispatch is deliberately **absent** from this first cut: it is a first-class,
-//! *typed* instruction added with the COM interface + method-descriptor tables, not
-//! a `CallNative` variant (which is exactly the type-erasure this IR exists to undo).
+//! COM dispatch is a first-class, *typed* pair of instructions
+//! ([`OxInst::ComCallEarly`] / [`OxInst::ComCallLate`]) driven by the typed COM
+//! interface + method-descriptor tables ([`crate::com`]) — **not** a `CallNative`
+//! variant (which would be exactly the type-erasure this IR exists to undo).
 //!
 //! Also not yet modelled (added when a consumer needs them): host-injected object
 //! handles (`isa::Op::LoadProjectObjectRef`), `VariantChanged`, and the peephole
@@ -22,6 +23,9 @@ use oxvba_bundle::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, NumericMode, StringCompareMode,
 };
 
+use oxvba_com::TypeLibMemberInvokeKind;
+
+use crate::com::ComMethodRef;
 use crate::ids::{BlockId, FuncId, ImportId};
 use crate::ty::{ClassId, OxTy};
 use crate::value::{
@@ -174,6 +178,34 @@ pub enum OxInst {
         object: OxOperand,
         name: OxOperand,
         calltype: OxOperand,
+        args: Vec<OxCallArg>,
+    },
+    /// **Early-bound, descriptor-typed COM call.** `method` names the typed member
+    /// descriptor (an `oxvba_com::TypeLibMemberMetadata`, resolved via
+    /// [`crate::program::OxProgram::com_method`]); `recv` is the typed interface
+    /// receiver (an `Object(ComIface(_))`); `args` are typed per the descriptor's
+    /// parameters (interface pointers, scalars, BSTR, SAFEARRAY / record per each
+    /// param's wire shape). The descriptor's invoke-kind selects method/propget/
+    /// propput/propputref, and the hidden `[lcid]` and omitted-optional trailing
+    /// arguments are **synthesized from the descriptor** at lowering/runtime — they
+    /// are *not* present in `args`. Fallible: on `hr < 0` the block's `fault_target`
+    /// receives control with `Err` populated from the rich HRESULT/EXCEPINFO mapping
+    /// (not the flatten-to-5 default — the must-fix carried into M3).
+    ComCallEarly {
+        dst: Option<OxPlace>,
+        method: ComMethodRef,
+        recv: OxOperand,
+        args: Vec<OxCallArg>,
+    },
+    /// **Late-bound, by-name COM call** — the *only* dynamic COM path: a genuinely
+    /// `Object`/`Variant` receiver dispatched by member `name` with Variant `args`
+    /// (correct VBA late-binding semantics, not erasure). `invoke_kind` selects
+    /// method / property-get / -put / -putref. Fallible like [`OxInst::ComCallEarly`].
+    ComCallLate {
+        dst: Option<OxPlace>,
+        recv: OxOperand,
+        name: String,
+        invoke_kind: TypeLibMemberInvokeKind,
         args: Vec<OxCallArg>,
     },
 

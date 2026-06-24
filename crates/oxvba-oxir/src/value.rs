@@ -144,8 +144,10 @@ pub enum OxNativeCallee {
     },
 }
 
-/// A resolved `Declare` pointer-argument write-back (mirrors
-/// `oxvba_bundle::isa::DeclarePtrWriteback`, but the target is an [`OxPlace`]).
+/// A resolved `Declare` pointer-argument write-back. The typed analogue of
+/// `oxvba_bundle::isa::DeclarePtrWriteback`: same concept, but the target is a typed
+/// [`OxPlace`] rather than the erased flat slot index (genuinely different data, not a
+/// serde-driven copy). The `kind` projection is reused from `coreir`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeclarePtrWriteback {
     pub arg_index: usize,
@@ -153,54 +155,11 @@ pub struct DeclarePtrWriteback {
     pub kind: PtrWritebackKind,
 }
 
-// ── Small leaf enums (OxIR-local copies) ──────────────────────────────────────
+// ── Small leaf enums — reused from `oxvba_bundle::coreir` (the one truth) ──────
 //
-// These mirror `oxvba_bundle::coreir::{BoundWhich, PtrKind, ErrField,
-// PtrWritebackKind}`, but the coreir versions are in-memory-only (no `serde`). OxIR
-// must serialize to the `.oxb` package, so it carries its own serde-deriving copies
-// — which also keeps OxIR self-contained as the canonical artifact.
-
-/// Which bound of an array dimension `LBound`/`UBound` reports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum BoundWhich {
-    Lower,
-    Upper,
-}
-
-/// The pointer-helper flavour of a [`crate::inst::OxInst::Ptr`] (`VarPtr`/`StrPtr`/
-/// `ObjPtr` and the Variant projections).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum PtrKind {
-    Str,
-    Var,
-    VarString,
-    VarVariant,
-    Obj,
-}
-
-/// A field of the `Err` object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ErrField {
-    Number,
-    Description,
-    Source,
-    /// `Err.LastDllError` — the Win32 last-error after the most recent `Declare` call.
-    LastDllError,
-}
-
-/// The payload a `Declare` pointer-argument write-back reads back after the call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum PtrWritebackKind {
-    String,
-    ByteArray,
-    Boolean,
-    Byte,
-    Integer,
-    Long,
-    LongLong,
-    LongPtr,
-    Single,
-    Double,
-    Currency,
-    Date,
-}
+// `BoundWhich` (`LBound`/`UBound`), `PtrKind` (`VarPtr`/`StrPtr`/…), `ErrField`
+// (`Err.Number`/…) and `PtrWritebackKind` (a `Declare` pointer write-back's read-back
+// projection) are defined once in `coreir` and reused here verbatim — OxIR does not
+// re-model them. They carry `serde` (added on the canonical definitions), so they
+// serialize into the `.oxb` package directly.
+pub use oxvba_bundle::coreir::{BoundWhich, ErrField, PtrKind, PtrWritebackKind};

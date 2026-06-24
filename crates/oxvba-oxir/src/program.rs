@@ -2,9 +2,9 @@
 //! whole compilation unit ([`OxProgram`]).
 //!
 //! Cross-bundle, event, declare, and COM-export metadata are reused verbatim from
-//! `oxvba_bundle` — these are stable, name-keyed contracts that OxIR does not need
-//! to re-model. (The *typed COM interface + method-descriptor tables* are the one
-//! piece OxIR adds; they land with the COM instructions in the next sub-section.)
+//! `oxvba_bundle`/`oxvba_com` — these are stable contracts OxIR does not re-model. The
+//! *typed COM interface table* ([`crate::com`]) is the one organizing structure OxIR
+//! adds, carried here as [`OxProgram::com_interfaces`].
 
 use serde::{Deserialize, Serialize};
 
@@ -13,9 +13,12 @@ use oxvba_bundle::{
     ProjectMemberKind,
 };
 
+use oxvba_com::TypeLibMemberMetadata;
+
+use crate::com::{ComInterface, ComMethodRef};
 use crate::ids::{BlockId, FuncId, LocalId};
 use crate::inst::OxBlock;
-use crate::ty::OxTy;
+use crate::ty::{IfaceId, OxTy};
 
 /// Parameter-specific facts for a [`OxLocal`] that is a procedure parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +110,14 @@ pub struct OxProgram {
     pub external_calls: Vec<ExternalCallDescriptor>,
     /// COM-server export descriptors (hosting metadata).
     pub com_class_exports: Vec<ComClassExport>,
+    /// Typed COM interface table, indexed by [`crate::ty::IfaceId`]: one entry per
+    /// referenced/served COM interface (the canonical `oxvba_com::TypeLibInterfaceMetadata`
+    /// grouping, with its full typed member descriptors) and per project `Implements`
+    /// interface a typed object value can name. Persisted in `.oxb` so vm3/JIT make
+    /// typed COM calls with no typelib re-resolution. An early-bound call
+    /// ([`crate::inst::OxInst::ComCallEarly`]) names a member here via
+    /// [`crate::com::ComMethodRef`]; resolve it with [`OxProgram::com_method`].
+    pub com_interfaces: Vec<ComInterface>,
     /// Public members exported for cross-bundle references.
     pub exports: Vec<BundleExport>,
     /// Cross-bundle references this unit makes, indexed by [`crate::ids::ImportId`].
@@ -117,5 +128,19 @@ impl OxProgram {
     /// An empty program.
     pub fn empty() -> Self {
         Self::default()
+    }
+
+    /// The interface-table entry named by an [`IfaceId`], if in range.
+    pub fn com_interface(&self, id: IfaceId) -> Option<&ComInterface> {
+        self.com_interfaces.get(id.0)
+    }
+
+    /// Resolve a [`ComMethodRef`] to its typed member descriptor. Returns `None` if
+    /// the interface index is out of range, the entry is a project (non-COM)
+    /// interface, or the member index is out of range.
+    pub fn com_method(&self, method: ComMethodRef) -> Option<&TypeLibMemberMetadata> {
+        self.com_interface(method.iface)?
+            .com_members()?
+            .get(method.member)
     }
 }
