@@ -19,11 +19,12 @@
 //! - [`program`] — functions, classes, and the whole compilation unit
 //!   ([`OxProgram`]).
 //! - [`verify`] — a structural verifier.
-//!
-//! Still to land (next sub-section): the `Core IR → OxIR` elaboration pass that
-//! populates these types from the binder's resolved tree.
+//! - [`elaborate`] — the `Core IR → OxIR` elaboration pass that produces these typed
+//!   structures from the binder's resolved tree (landing incrementally, starting with
+//!   the `VarTypeRef → OxTy` type lowering).
 
 pub mod com;
+pub mod elaborate;
 pub mod ids;
 pub mod inst;
 pub mod program;
@@ -32,6 +33,7 @@ pub mod value;
 pub mod verify;
 
 pub use com::{ComInterface, ComMethodRef, ProjectIfaceMethod, ProjectInterface};
+pub use elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
 pub use ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 pub use inst::{
     ErrorHandler, OxBlock, OxInst, OxTerminator, terminator_operand, terminator_successors,
