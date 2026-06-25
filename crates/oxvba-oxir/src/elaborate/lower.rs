@@ -7,31 +7,41 @@
 //!
 //! # Coverage (landing incrementally)
 //!
-//! The spine covers the scalar / control-flow / `VbaProc`-call core. Constructs not yet
-//! handled return [`ElaborateError::Unimplemented`] (never a silent mis-lowering): the
-//! error-handling state machine (`On Error`/`Resume`/`GoSub`), arrays, records, events,
-//! object construction, COM dispatch, and the remaining call kinds. Each is added in a
-//! later reviewed step.
+//! Covered: the scalar / control-flow / `VbaProc`-call core **and the full error /
+//! control model** — `On Error` (`Resume Next` / `GoTo h` / `GoTo 0`),
+//! `Resume`/`Resume Next`/`Resume <label>`, `Err.Raise`/`Error <n>`, `GoSub`/`Return`,
+//! `GoTo`/labels. Constructs not yet handled return [`ElaborateError::Unimplemented`]
+//! (never a silent mis-lowering): arrays, records, `With`, `For Each`, events, object
+//! construction, COM dispatch, and the remaining call kinds. Each is added in a later
+//! reviewed step.
 //!
-//! # Fault model (spine)
+//! # Fault model (per-statement landing pads)
 //!
-//! Every block faults to a single per-proc landing block whose terminator is `Return`
-//! (a fault propagates as an early return — correct for a procedure with no active
-//! handler). The richer per-statement landing pads + `error_mode` dispatch that
-//! `On Error`/`Resume` need, and the normal-return vs fault-return distinction, are the
-//! dedicated error-model step (risk R-Resume). Box/Unbox insertion at typed↔Variant
-//! boundaries is likewise deferred to the typed-execution work; the spine produces a
-//! structurally valid, typed CFG (the M1 gate is round-trip + verifier, not execution).
+//! Each VBA statement is lowered to its own start block (so it is a block-precise
+//! `Resume` re-entry target) plus a **landing pad** block; the statement's fallible
+//! instructions transfer to that pad via `fault_target`. The pad is an
+//! [`OxTerminator::FaultDispatch`] `{ resume, resume_next }` that records the resume
+//! target and dispatches on the runtime error mode (propagate / `Resume Next` / active
+//! handler). `On Error GoTo <label>` sets the runtime handler via
+//! [`OxInst::SetErrorHandler`]; `<label>` blocks are pre-assigned so forward `GoTo`s
+//! resolve. Statements with no fallible instruction carry no fault edge (their pad is
+//! then an unreachable block — collapsing those is a noted later optimization; the M1
+//! gate is round-trip + verifier, not execution). Box/Unbox insertion at typed↔Variant
+//! boundaries, the fault-status-carrying return, and the `Class_Terminate` drain are
+//! deferred to the typed-execution (vm3) work.
+
+use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
     self, CoreArg, CoreBinOp, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp, CoreValue,
+    ErrorOp, LabelId as CoreLabelId,
 };
 use oxvba_bundle::NumericMode;
 
 use crate::com::ComInterface;
 use crate::elaborate::{NameResolver, lower_var_type};
 use crate::ids::{BlockId, FuncId, GlobalId, LocalId, TempId};
-use crate::inst::{OxBlock, OxInst, OxTerminator};
+use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
 use crate::program::{OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
 use crate::ty::OxTy;
 use crate::value::{ArithOp, CmpOp, LogicalOp, OxArg, OxConst, OxOperand, OxPlace};
@@ -125,6 +135,8 @@ fn elaborate_proc(proc: &CoreProc, resolver: &impl NameResolver) -> Result<OxFun
     // The spine recovers all binding types up front (the `locals` above, via the
     // resolver); the lowerer itself needs no resolver until object/COM construction.
     let mut lo = Lowerer::new(locals, proc.params.len());
+    // Pre-assign a block to every source label so forward references resolve.
+    lo.assign_labels(&proc.body);
     lo.lower_block(&proc.body)?;
     let func = lo.finish_proc(proc)?;
     Ok(func)
@@ -144,28 +156,40 @@ struct Lowerer {
     /// The block currently being built.
     cur: BlockId,
     instrs: Vec<OxInst>,
-    /// The shared landing / exit block (`Return`); the fault target of every other
-    /// block and the destination of `Exit Sub`/normal fall-through.
-    exit: BlockId,
+    /// The current statement's landing pad — the fault target for that statement's
+    /// fallible instructions. Set per statement by [`Self::lower_block`]; a
+    /// control-flow statement saves/restores it around its sub-bodies so its own
+    /// condition/setup faults to *its* pad while body statements fault to theirs.
+    cur_fault: BlockId,
+    /// The single normal-return convergence block (`Return`): the target of `Exit Sub`
+    /// and of fall-through past the body.
+    epilogue: BlockId,
     locals: Vec<OxLocal>,
     param_count: usize,
     next_temp: usize,
     loops: Vec<LoopCtx>,
+    /// Pre-assigned block per source label, so forward `GoTo` / `On Error GoTo` /
+    /// `Resume <label>` / `GoSub` references resolve.
+    labels: HashMap<CoreLabelId, BlockId>,
 }
 
 impl Lowerer {
     fn new(locals: Vec<OxLocal>, param_count: usize) -> Self {
-        // Entry = block 0, exit = block 1; both reserved up front.
+        // Entry = block 0, epilogue = block 1; both reserved up front.
         let blocks = vec![None, None];
         Self {
             blocks,
             cur: BlockId(0),
             instrs: Vec::new(),
-            exit: BlockId(1),
+            // Until the first statement sets its pad, faults would land on the
+            // epilogue; the prologue emits no fallible instruction, so this is unused.
+            cur_fault: BlockId(1),
+            epilogue: BlockId(1),
             locals,
             param_count,
             next_temp: 0,
             loops: Vec::new(),
+            labels: HashMap::new(),
         }
     }
 
@@ -187,28 +211,104 @@ impl Lowerer {
         self.instrs.push(inst);
     }
 
-    /// Finalize the current block with `term` (faulting to the shared landing block),
-    /// then continue building in `next`.
+    /// Finalize the current block with `term`, then continue building in `next`. A
+    /// fault edge to the current statement's landing pad is attached only when the
+    /// block actually contains a fallible instruction (so non-faulting blocks carry no
+    /// spurious fault edge, and their pad — if unused — is a dead block).
     fn finish_to(&mut self, term: OxTerminator, next: BlockId) {
-        let block = OxBlock {
-            id: self.cur,
-            instrs: std::mem::take(&mut self.instrs),
-            fault_target: Some(self.exit),
-            terminator: term,
-        };
+        let instrs = std::mem::take(&mut self.instrs);
+        let fault_target = instrs
+            .iter()
+            .any(|i| i.is_fallible())
+            .then_some(self.cur_fault);
         debug_assert!(self.blocks[self.cur.0].is_none(), "block finalized twice");
-        self.blocks[self.cur.0] = Some(block);
+        self.blocks[self.cur.0] = Some(OxBlock {
+            id: self.cur,
+            instrs,
+            fault_target,
+            terminator: term,
+        });
         self.cur = next;
     }
 
+    /// Fill a statement's landing pad: a [`OxTerminator::FaultDispatch`] seeded with the
+    /// statement's own start (`resume`) and the following statement's start
+    /// (`resume_next`).
+    fn build_pad(&mut self, pad: BlockId, resume: BlockId, resume_next: BlockId) {
+        debug_assert!(self.blocks[pad.0].is_none(), "pad finalized twice");
+        self.blocks[pad.0] = Some(OxBlock {
+            id: pad,
+            instrs: Vec::new(),
+            fault_target: None,
+            terminator: OxTerminator::FaultDispatch {
+                resume,
+                resume_next,
+            },
+        });
+    }
+
+    /// Pre-assign a block to every source label reachable in `body` (recursively), so
+    /// forward references resolve. Runs before lowering.
+    fn assign_labels(&mut self, body: &[CoreStmt]) {
+        for stmt in body {
+            match stmt {
+                CoreStmt::Label(id) => {
+                    if !self.labels.contains_key(id) {
+                        let b = self.reserve();
+                        self.labels.insert(*id, b);
+                    }
+                }
+                CoreStmt::If { arms, else_body } => {
+                    for arm in arms {
+                        self.assign_labels(&arm.body);
+                    }
+                    self.assign_labels(else_body);
+                }
+                CoreStmt::DoLoop { body, .. }
+                | CoreStmt::ForRange { body, .. }
+                | CoreStmt::ForEach { body, .. }
+                | CoreStmt::With { body, .. } => self.assign_labels(body),
+                CoreStmt::Select {
+                    cases, case_else, ..
+                } => {
+                    for c in cases {
+                        self.assign_labels(&c.body);
+                    }
+                    self.assign_labels(case_else);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn label_block(&self, id: &CoreLabelId) -> Result<BlockId> {
+        self.labels
+            .get(id)
+            .copied()
+            .ok_or_else(|| ElaborateError::Malformed(format!("reference to undefined label {id:?}")))
+    }
+
+    /// The start block of `stmt`: a labelled statement starts at its pre-assigned label
+    /// block (so `GoTo` reaches it); any other statement gets a fresh block.
+    fn stmt_start_block(&mut self, stmt: &CoreStmt) -> BlockId {
+        match stmt {
+            CoreStmt::Label(id) => match self.labels.get(id) {
+                Some(&b) => b,
+                None => self.reserve(),
+            },
+            _ => self.reserve(),
+        }
+    }
+
     fn finish_proc(mut self, proc: &CoreProc) -> Result<OxFunc> {
-        // The body falls through to the shared exit block.
-        let exit = self.exit;
-        self.finish_to(OxTerminator::Return, exit);
-        // Build the shared landing / exit block: a bare Return (no fallible instrs, so
-        // no fault target). The drain + fault-status distinction is the M2 work.
-        self.blocks[exit.0] = Some(OxBlock {
-            id: exit,
+        // The body's final continuation falls through to the epilogue.
+        let epilogue = self.epilogue;
+        self.finish_to(OxTerminator::Jump(epilogue), epilogue);
+        // Build the epilogue: a bare Return (the `Class_Terminate` drain + the
+        // fault-status-carrying return are the vm3 work).
+        debug_assert!(self.blocks[epilogue.0].is_none());
+        self.blocks[epilogue.0] = Some(OxBlock {
+            id: epilogue,
             instrs: Vec::new(),
             fault_target: None,
             terminator: OxTerminator::Return,
@@ -233,64 +333,158 @@ impl Lowerer {
 
     // ── Statements ───────────────────────────────────────────────────────────
 
-    fn lower_block(&mut self, body: &[CoreStmt]) -> Result<()> {
-        for (i, stmt) in body.iter().enumerate() {
+    /// Lower a statement list. Each statement gets its own start block (a block-precise
+    /// `Resume` target) and landing pad; statements chain into the next's start. After
+    /// the call, `cur` is the continuation block following the last statement.
+    fn lower_block(&mut self, stmts: &[CoreStmt]) -> Result<()> {
+        if stmts.is_empty() {
+            return Ok(());
+        }
+        // Enter the first statement's start block.
+        let first = self.stmt_start_block(&stmts[0]);
+        self.finish_to(OxTerminator::Jump(first), first);
+        for (i, stmt) in stmts.iter().enumerate() {
+            let s_start = self.cur;
+            let pad = self.reserve();
+            let s_next = match stmts.get(i + 1) {
+                Some(next) => self.stmt_start_block(next),
+                None => self.reserve(),
+            };
+            self.cur_fault = pad;
             self.emit(OxInst::StmtBoundary { stmt: i as u32 });
-            self.lower_stmt(stmt)?;
+            self.lower_stmt(stmt, s_next)?;
+            self.build_pad(pad, s_start, s_next);
         }
         Ok(())
     }
 
-    fn lower_stmt(&mut self, stmt: &CoreStmt) -> Result<()> {
+    /// Lower one statement so that control ends at `s_next` (the following statement's
+    /// start block, or the enclosing continuation).
+    fn lower_stmt(&mut self, stmt: &CoreStmt, s_next: BlockId) -> Result<()> {
         match stmt {
             CoreStmt::Assign { place, value, .. } => {
                 let (src, _ty) = self.lower_value(value)?;
                 let dst = self.lower_place_store(place)?;
                 self.emit(OxInst::Assign { dst, value: src });
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
             CoreStmt::Eval(value) => {
                 // Evaluate for effect; the result (if any) is discarded.
                 let _ = self.lower_value(value)?;
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
-            CoreStmt::If { arms, else_body } => self.lower_if(arms, else_body),
+            CoreStmt::If { arms, else_body } => self.lower_if(arms, else_body, s_next),
             CoreStmt::DoLoop {
                 condition,
                 until,
                 post_check,
                 body,
-            } => self.lower_do_loop(condition, *until, *post_check, body),
+            } => self.lower_do_loop(condition, *until, *post_check, body, s_next),
             CoreStmt::ForRange {
                 var,
                 start,
                 end,
                 step,
                 body,
-            } => self.lower_for_range(var, start, end, step.as_ref(), body),
+            } => self.lower_for_range(var, start, end, step.as_ref(), body, s_next),
             CoreStmt::Select {
                 selector,
                 cases,
                 case_else,
-            } => self.lower_select(selector, cases, case_else),
-            CoreStmt::Exit(kind) => self.lower_exit(*kind),
+            } => self.lower_select(selector, cases, case_else, s_next),
+            CoreStmt::Exit(kind) => {
+                let target = self.exit_target(*kind)?;
+                self.finish_to(OxTerminator::Jump(target), s_next);
+                Ok(())
+            }
+            CoreStmt::Label(_) => {
+                // The label's start block IS this statement's start (resolved by
+                // `stmt_start_block`); it simply falls through to the next statement.
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                Ok(())
+            }
+            CoreStmt::Goto(id) => {
+                let target = self.label_block(id)?;
+                self.finish_to(OxTerminator::Jump(target), s_next);
+                Ok(())
+            }
+            CoreStmt::GoSub(id) => {
+                let target = self.label_block(id)?;
+                // `Return` from the subroutine resumes at the statement after this GoSub.
+                self.finish_to(OxTerminator::GoSub { target, ret: s_next }, s_next);
+                Ok(())
+            }
+            CoreStmt::GoSubReturn => {
+                self.finish_to(OxTerminator::GoSubReturn, s_next);
+                Ok(())
+            }
+            CoreStmt::Error(op) => self.lower_error(op, s_next),
             // Deferred to later reviewed steps.
-            CoreStmt::ForEach { .. } => unimplemented("For Each"),
-            CoreStmt::With { .. } => unimplemented("With"),
-            CoreStmt::Label(_) => unimplemented("line label"),
-            CoreStmt::Goto(_) => unimplemented("GoTo"),
-            CoreStmt::GoSub(_) => unimplemented("GoSub"),
-            CoreStmt::GoSubReturn => unimplemented("GoSub Return"),
-            CoreStmt::Error(_) => unimplemented("On Error / Resume / Err.Raise"),
-            CoreStmt::ReDim { .. } => unimplemented("ReDim"),
-            CoreStmt::Erase { .. } => unimplemented("Erase"),
-            CoreStmt::RaiseEvent { .. } => unimplemented("RaiseEvent"),
+            CoreStmt::ForEach { .. } => Err(unimpl("For Each")),
+            CoreStmt::With { .. } => Err(unimpl("With")),
+            CoreStmt::ReDim { .. } => Err(unimpl("ReDim")),
+            CoreStmt::Erase { .. } => Err(unimpl("Erase")),
+            CoreStmt::RaiseEvent { .. } => Err(unimpl("RaiseEvent")),
         }
     }
 
-    fn lower_if(&mut self, arms: &[coreir::CoreIfArm], else_body: &[CoreStmt]) -> Result<()> {
-        let end = self.reserve();
+    fn lower_error(&mut self, op: &ErrorOp, s_next: BlockId) -> Result<()> {
+        match op {
+            ErrorOp::OnErrorResumeNext => {
+                self.emit(OxInst::SetErrorHandler(ErrorHandler::ResumeNext));
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+            }
+            ErrorOp::OnErrorGoto0 => {
+                self.emit(OxInst::SetErrorHandler(ErrorHandler::Goto0));
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+            }
+            ErrorOp::OnErrorGotoLabel(id) => {
+                let h = self.label_block(id)?;
+                self.emit(OxInst::SetErrorHandler(ErrorHandler::GotoLabel(h)));
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+            }
+            ErrorOp::ClearErr => {
+                self.emit(OxInst::ClearErr);
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+            }
+            ErrorOp::ResumeNext => self.finish_to(OxTerminator::ResumeNext, s_next),
+            ErrorOp::Resume => self.finish_to(OxTerminator::Resume, s_next),
+            ErrorOp::ResumeLabel(id) => {
+                let b = self.label_block(id)?;
+                self.finish_to(OxTerminator::ResumeLabel(b), s_next);
+            }
+            ErrorOp::Raise { code } => self.finish_to(OxTerminator::Raise { code: *code }, s_next),
+            ErrorOp::RaiseValue { code } => {
+                let (op, _) = self.lower_value(code)?;
+                self.finish_to(OxTerminator::RaiseValue(op), s_next);
+            }
+        }
+        Ok(())
+    }
+
+    /// The break target of an `Exit` statement: the epilogue for `Exit Sub`/`Function`,
+    /// else the enclosing loop's break block.
+    fn exit_target(&self, kind: coreir::ExitKind) -> Result<BlockId> {
+        match kind {
+            coreir::ExitKind::Proc => Ok(self.epilogue),
+            coreir::ExitKind::For => self.loop_break(true),
+            coreir::ExitKind::Do => self.loop_break(false),
+        }
+    }
+
+    fn lower_if(
+        &mut self,
+        arms: &[coreir::CoreIfArm],
+        else_body: &[CoreStmt],
+        end: BlockId,
+    ) -> Result<()> {
+        // Every condition (`If`/`ElseIf`) belongs to the If statement, so it faults to
+        // the If's pad; the arm bodies are separate statements with their own pads.
+        let if_pad = self.cur_fault;
         for arm in arms {
+            self.cur_fault = if_pad;
             let (cond, _) = self.lower_value(&arm.condition)?;
             let then_blk = self.reserve();
             let next_blk = self.reserve();
@@ -305,7 +499,7 @@ impl Lowerer {
             self.lower_block(&arm.body)?;
             self.finish_to(OxTerminator::Jump(end), next_blk);
         }
-        // `cur` is now the final `next_blk` (the `Else` position).
+        // `cur` is the final `next_blk` (the `Else` position).
         self.lower_block(else_body)?;
         self.finish_to(OxTerminator::Jump(end), end);
         Ok(())
@@ -317,11 +511,11 @@ impl Lowerer {
         until: bool,
         post_check: bool,
         body: &[CoreStmt],
+        after: BlockId,
     ) -> Result<()> {
-        let head = self.reserve();
+        // The loop's condition belongs to the loop statement (faults to its pad).
+        let loop_pad = self.cur_fault;
         let body_blk = self.reserve();
-        let after = self.reserve();
-        self.finish_to(OxTerminator::Jump(head), head);
 
         if post_check {
             // `Do … Loop While/Until`: run the body, then test.
@@ -329,17 +523,21 @@ impl Lowerer {
             self.loops.push(LoopCtx { is_for: false, brk: after });
             self.lower_block(body)?;
             self.loops.pop();
+            self.cur_fault = loop_pad;
             let cond = self.lower_loop_condition(condition, until)?;
             self.finish_to(
                 OxTerminator::Branch {
                     cond,
-                    then_blk: head,
+                    then_blk: body_blk,
                     else_blk: after,
                 },
                 after,
             );
         } else {
             // `Do While/Until … Loop`: test at the top.
+            let head = self.reserve();
+            self.finish_to(OxTerminator::Jump(head), head);
+            self.cur_fault = loop_pad;
             let cond = self.lower_loop_condition(condition, until)?;
             self.finish_to(
                 OxTerminator::Branch {
@@ -379,7 +577,12 @@ impl Lowerer {
         end: &CoreValue,
         step: Option<&CoreValue>,
         body: &[CoreStmt],
+        after: BlockId,
     ) -> Result<()> {
+        // The For header (bounds, step, counter test and increment) belongs to the For
+        // statement, so all of it faults to the For's pad; the body statements have
+        // their own pads. `cur_fault` is already the For's pad on entry.
+        let for_pad = self.cur_fault;
         let var_place = self.lower_place_store(var)?;
         let var_op = self.place_as_operand(var)?;
 
@@ -422,7 +625,6 @@ impl Lowerer {
         let test = self.reserve();
         let body_blk = self.reserve();
         let step_blk = self.reserve();
-        let after = self.reserve();
 
         self.finish_to(OxTerminator::Jump(head), head);
         // head: branch on step sign to the matching comparison.
@@ -469,7 +671,9 @@ impl Lowerer {
         self.lower_block(body)?;
         self.loops.pop();
         self.finish_to(OxTerminator::Jump(step_blk), step_blk);
-        // step: counter = counter + step (widening — typed overflow is allowed here)
+        // step: counter = counter + step (widening — typed overflow is allowed here).
+        // Belongs to the For statement, so restore its pad after the body.
+        self.cur_fault = for_pad;
         self.emit(OxInst::Arith {
             dst: var_place,
             op: ArithOp::Add,
@@ -486,7 +690,11 @@ impl Lowerer {
         selector: &CoreValue,
         cases: &[coreir::CoreCaseBlock],
         case_else: &[CoreStmt],
+        end: BlockId,
     ) -> Result<()> {
+        // The selector and every case's clause comparisons belong to the Select
+        // statement (fault to its pad); the case bodies have their own pads.
+        let select_pad = self.cur_fault;
         let (sel, _) = self.lower_value(selector)?;
         // Evaluate the selector once into a temp so each case can compare against it.
         let sel_t = self.new_temp();
@@ -496,8 +704,8 @@ impl Lowerer {
         });
         let sel_op = OxOperand::temp(sel_t);
 
-        let end = self.reserve();
         for block in cases {
+            self.cur_fault = select_pad;
             let matched = self.lower_case_match(&sel_op, &block.clauses)?;
             let body_blk = self.reserve();
             let next_blk = self.reserve();
@@ -512,6 +720,7 @@ impl Lowerer {
             self.lower_block(&block.body)?;
             self.finish_to(OxTerminator::Jump(end), next_blk);
         }
+        self.cur_fault = select_pad;
         self.lower_block(case_else)?;
         self.finish_to(OxTerminator::Jump(end), end);
         Ok(())
@@ -607,19 +816,6 @@ impl Lowerer {
                 Ok(OxOperand::temp(t))
             }
         }
-    }
-
-    fn lower_exit(&mut self, kind: coreir::ExitKind) -> Result<()> {
-        let target = match kind {
-            coreir::ExitKind::Proc => self.exit,
-            coreir::ExitKind::For => self.loop_break(true)?,
-            coreir::ExitKind::Do => self.loop_break(false)?,
-        };
-        // Subsequent statements in this block are unreachable; continue building in a
-        // fresh (dead) block so the CFG stays well-formed.
-        let dead = self.reserve();
-        self.finish_to(OxTerminator::Jump(target), dead);
-        Ok(())
     }
 
     /// The break target for `Exit For`/`Exit Do`: the nearest loop of the matching
@@ -884,10 +1080,6 @@ impl Lowerer {
 
 // ── Free helpers ──────────────────────────────────────────────────────────────
 
-fn unimplemented(what: &'static str) -> Result<()> {
-    Err(unimpl(what))
-}
-
 fn unimpl(what: &'static str) -> ElaborateError {
     ElaborateError::Unimplemented { what }
 }
@@ -1141,17 +1333,98 @@ mod tests {
 
     #[test]
     fn deferred_constructs_are_explicit_unimplemented() {
-        // On Error is deferred to the error-model step — it must fail explicitly,
-        // never silently mis-lower.
+        // `With` is deferred to the object step — it must fail explicitly, never
+        // silently mis-lower.
         let prog = program(sub(
             "Main",
             Vec::new(),
-            vec![CoreStmt::Error(ErrorOp::OnErrorResumeNext)],
+            vec![CoreStmt::With {
+                id: 0,
+                receiver: CoreValue::Const(CoreConst::Nothing),
+                body: Vec::new(),
+            }],
         ));
-        let err = elaborate(&prog, &UntypedResolver).expect_err("On Error must be deferred");
+        let err = elaborate(&prog, &UntypedResolver).expect_err("With must be deferred");
         assert!(
-            matches!(err, ElaborateError::Unimplemented { .. }),
-            "expected Unimplemented, got {err:?}"
+            matches!(err, ElaborateError::Unimplemented { what: "With" }),
+            "expected Unimplemented(With), got {err:?}"
         );
+    }
+
+    /// `On Error GoTo H : x = 1/0 : Exit Sub : H: Resume Next` exercises the full
+    /// error model — `SetErrorHandler`, a faulting statement's `FaultDispatch` pad, a
+    /// label block, `Exit Sub`, and a `Resume Next` terminator.
+    #[test]
+    fn error_handling_elaborates_and_verifies() {
+        let n = CorePlace::Local(CoreLocalId(0));
+        let div = CoreValue::Binary {
+            op: CoreBinOp::Div,
+            lhs: Box::new(CoreValue::Const(CoreConst::I32(1))),
+            rhs: Box::new(CoreValue::Const(CoreConst::I32(0))),
+            mode: StringCompareMode::Binary,
+            num: NumericMode::Widening,
+        };
+        let body = vec![
+            CoreStmt::Error(ErrorOp::OnErrorGotoLabel(coreir::LabelId(0))),
+            assign(n.clone(), div),
+            CoreStmt::Exit(coreir::ExitKind::Proc),
+            CoreStmt::Label(coreir::LabelId(0)),
+            CoreStmt::Error(ErrorOp::ResumeNext),
+        ];
+        let prog = program(sub("Main", vec![long_local("n")], body));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()), "error-handling program must verify");
+
+        // The handler-dispatch pad + Resume terminator are present.
+        let f = &oxp.funcs[0];
+        let has_fault_dispatch = f
+            .blocks
+            .iter()
+            .any(|b| matches!(b.terminator, OxTerminator::FaultDispatch { .. }));
+        let has_resume_next = f
+            .blocks
+            .iter()
+            .any(|b| matches!(b.terminator, OxTerminator::ResumeNext));
+        let has_set_handler = f.blocks.iter().any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, OxInst::SetErrorHandler(ErrorHandler::GotoLabel(_))))
+        });
+        assert!(has_fault_dispatch, "expected a FaultDispatch landing pad");
+        assert!(has_resume_next, "expected a Resume Next terminator");
+        assert!(has_set_handler, "expected On Error GoTo to set the handler");
+    }
+
+    /// `GoTo`/labels and `GoSub`/`Return` lower to the corresponding terminators.
+    #[test]
+    fn goto_and_gosub_elaborate_and_verify() {
+        let body = vec![
+            CoreStmt::GoSub(coreir::LabelId(0)),
+            CoreStmt::Goto(coreir::LabelId(1)),
+            CoreStmt::Label(coreir::LabelId(0)),
+            CoreStmt::GoSubReturn,
+            CoreStmt::Label(coreir::LabelId(1)),
+        ];
+        let prog = program(sub("Main", Vec::new(), body));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+
+        let f = &oxp.funcs[0];
+        assert!(
+            f.blocks
+                .iter()
+                .any(|b| matches!(b.terminator, OxTerminator::GoSub { .. })),
+            "expected a GoSub terminator"
+        );
+        assert!(
+            f.blocks
+                .iter()
+                .any(|b| matches!(b.terminator, OxTerminator::GoSubReturn)),
+            "expected a GoSubReturn terminator"
+        );
+        // Round-trips with the new terminators.
+        let json = serde_json::to_string(&oxp).expect("serialize");
+        let back: OxProgram = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(oxp, back);
     }
 }

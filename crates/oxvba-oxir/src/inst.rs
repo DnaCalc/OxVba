@@ -435,9 +435,28 @@ pub enum OxTerminator {
     Return,
     /// End top-level execution.
     Halt,
-    /// `Resume` — re-enter the faulting statement (runtime-resolved target).
+    /// The **landing pad** of a faulting statement: a block whose `fault_target`
+    /// edges from that statement's fallible instructions all converge here. Control
+    /// arrives after the runtime has populated `Err`. The pad records the resume
+    /// target `(resume, resume_next)` and dispatches on the active error mode:
+    /// - no active handler → propagate the error as an early return;
+    /// - `On Error Resume Next` → continue at `resume_next`;
+    /// - `On Error GoTo h` → transfer to the (runtime-held) handler block `h`.
+    ///
+    /// `resume` is the faulting statement's own start block (the seed a later
+    /// `Resume` jumps to); `resume_next` is the following statement's start block (the
+    /// seed for `Resume Next`, and the direct target when the mode is `Resume Next`).
+    /// The handler block is not a static operand — it lives in the runtime error-mode
+    /// cell set by [`OxInst::SetErrorHandler`].
+    FaultDispatch {
+        resume: BlockId,
+        resume_next: BlockId,
+    },
+    /// `Resume` — re-enter the faulting statement (jumps to the resume target's
+    /// `resume` block, captured by the [`OxTerminator::FaultDispatch`] that fired).
     Resume,
-    /// `Resume Next` — continue past the faulting statement (runtime-resolved).
+    /// `Resume Next` — continue past the faulting statement (the resume target's
+    /// `resume_next` block).
     ResumeNext,
     /// `Resume <label>`.
     ResumeLabel(BlockId),
@@ -480,7 +499,10 @@ impl OxBlock {
 
 /// The successor blocks named by a terminator (for CFG traversal / verification).
 /// Note: this does **not** include `fault_target` (a block property) nor the
-/// runtime-resolved `Resume`/`GoSubReturn` targets.
+/// runtime-resolved `Resume`/`GoSubReturn` targets. For
+/// [`OxTerminator::FaultDispatch`] both `resume` and `resume_next` are reported (both
+/// are blocks the fault/resume machinery can transfer to); the *runtime-held* handler
+/// block is dynamic and therefore not a static successor (like `Resume`'s target).
 pub fn terminator_successors(t: &OxTerminator) -> Vec<BlockId> {
     match t {
         OxTerminator::Jump(b) | OxTerminator::ResumeLabel(b) => vec![*b],
@@ -488,6 +510,10 @@ pub fn terminator_successors(t: &OxTerminator) -> Vec<BlockId> {
             then_blk, else_blk, ..
         } => vec![*then_blk, *else_blk],
         OxTerminator::GoSub { target, ret } => vec![*target, *ret],
+        OxTerminator::FaultDispatch {
+            resume,
+            resume_next,
+        } => vec![*resume, *resume_next],
         OxTerminator::Return
         | OxTerminator::Halt
         | OxTerminator::Resume
