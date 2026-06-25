@@ -11,19 +11,22 @@
 //! model (`On Error` `Resume Next`/`GoTo h`/`GoTo 0`, `Resume`/`Resume Next`/`Resume
 //! <label>`, `Err.Raise`/`Error <n>`, `GoSub`/`Return`, `GoTo`/labels), `With`,
 //! `For Each`, arrays (literal/`LBound`/`UBound`/`ReDim`/`Erase`/element access), UDT
-//! records, the pointer helpers / `Err` fields / `AddressOf`, and every call kind
-//! except COM (`VbaProc`, base-library/`Declare` native calls, cross-bundle
-//! `ExternProc`, `CallByName`).
+//! records, the pointer helpers / `Err` fields / `AddressOf`, and **every call kind**
+//! (`VbaProc`, base-library/`Declare` native calls, cross-bundle `ExternProc`,
+//! `CallByName`, and both COM paths — see below).
 //!
-//! The **object surface** too: `New`/predeclared (extern) instances, object field
-//! get/set, `WithEvents` sink get/set, `RaiseEvent`, and `TypeOf … Is`. The project
-//! class table is projected from the Core IR, and a declared project-class type name
-//! resolves a local to a typed `Object(Class(_))`.
+//! The **object surface**: `New`/predeclared (extern) instances, object field get/set,
+//! `WithEvents` sink get/set, `RaiseEvent`, and `TypeOf … Is`. The project class table
+//! is projected from the Core IR, and a declared project-class type name resolves a
+//! local to a typed `Object(Class(_))`.
 //!
-//! Deferred to the COM-call de-erasure step — these return
-//! [`ElaborateError::Unimplemented`] (never a silent mis-lowering): early-bound
-//! ([`coreir::CoreCallee::EarlyCom`]) and late-bound
-//! ([`coreir::CoreCallee::LateDispatch`]) COM dispatch.
+//! **Typed COM**: an early-bound call ([`coreir::CoreCallee::EarlyCom`]) interns its
+//! resolved member descriptor into the typed interface table ([`OxProgram::com_interfaces`])
+//! and lowers to a descriptor-keyed [`OxInst::ComCallEarly`]; a late-bound call
+//! ([`coreir::CoreCallee::LateDispatch`]) lowers to the dynamic by-name
+//! [`OxInst::ComCallLate`]. (Precise typed-COM *receiver* identity — typing a
+//! `Dim r As Excel.Range` local as `Object(ComIface(_))` rather than `Untyped` — is a
+//! later refinement; each call already carries its own typed descriptor.)
 //!
 //! # Fault model (per-statement landing pads)
 //!
@@ -46,14 +49,16 @@ use oxvba_bundle::coreir::{
     self, CoreArg, CoreBinOp, CoreClass, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp,
     CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
 };
-use oxvba_bundle::{AssignmentIntent, AssignmentTargetKind, NumericMode};
+use oxvba_bundle::{AssignmentIntent, AssignmentTargetKind, NumericMode, ProjectMemberKind};
 
-use crate::com::ComInterface;
+use oxvba_com::{TypeLibInterfaceMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata};
+
+use crate::com::{ComInterface, ComMethodRef};
 use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
 use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
 use crate::program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
-use crate::ty::{ArrayShape, ClassId, ObjClass, OxTy};
+use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy};
 use crate::value::{
     ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxConst, OxNativeCallee,
     OxOperand, OxPlace,
@@ -99,9 +104,14 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         })
         .collect();
 
+    // The typed COM interface table is built as early-bound calls are lowered: each
+    // call's resolved member is interned into it, and the call names the member by a
+    // stable `ComMethodRef`.
+    let mut com = ComInterner::default();
+
     let mut funcs = Vec::with_capacity(program.procs.len());
     for proc in &program.procs {
-        funcs.push(elaborate_proc(proc, &resolver)?);
+        funcs.push(elaborate_proc(proc, &resolver, &mut com)?);
     }
 
     let classes = program.classes.iter().map(lower_class).collect();
@@ -110,8 +120,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         funcs,
         globals,
         classes,
-        // The typed COM interface table is populated by the COM-call de-erasure step.
-        com_interfaces: Vec::<ComInterface>::new(),
+        com_interfaces: com.interfaces,
         entry: program.entry.map(|p| FuncId(p.0)),
         global_initializer: program.global_initializer.map(|p| FuncId(p.0)),
         unit_name: program.unit_name.clone(),
@@ -177,7 +186,73 @@ impl NameResolver for ProgramResolver {
     }
 }
 
-fn elaborate_proc(proc: &CoreProc, resolver: &impl NameResolver) -> Result<OxFunc> {
+/// Builds the program's typed COM interface table ([`OxProgram::com_interfaces`]) as
+/// early-bound calls are lowered. Every call's resolved member descriptor is interned —
+/// deduplicated within its declared receiver interface — so the table holds each used
+/// member exactly once and the call site names it by a stable [`ComMethodRef`].
+/// Interfaces are grouped by the declared receiver type name (case-insensitively, e.g.
+/// `Excel.Range`); a member is identified within its interface by its dispid + accessor,
+/// so a get and a put that share a dispid are distinct entries. (Grouping by the
+/// per-member `interface_iid` and reconciling alias names is a later refinement; the
+/// per-member IID is preserved on each descriptor regardless.)
+#[derive(Default)]
+struct ComInterner {
+    interfaces: Vec<ComInterface>,
+    iface_of: HashMap<String, usize>,
+    method_of: HashMap<(String, i32, TypeLibMemberInvokeKind), ComMethodRef>,
+}
+
+impl ComInterner {
+    fn intern(&mut self, interface_name: &str, member: &TypeLibMemberMetadata) -> ComMethodRef {
+        let folded = interface_name.to_ascii_lowercase();
+        let key = (folded.clone(), member.token, member.invoke_kind);
+        if let Some(&existing) = self.method_of.get(&key) {
+            return existing;
+        }
+        let iface = *self.iface_of.entry(folded).or_insert_with(|| {
+            let idx = self.interfaces.len();
+            self.interfaces
+                .push(ComInterface::Com(TypeLibInterfaceMetadata {
+                    name: interface_name.to_string(),
+                    iid: member.interface_iid,
+                    members: Vec::new(),
+                }));
+            idx
+        });
+        let member_pos = match &mut self.interfaces[iface] {
+            ComInterface::Com(meta) => {
+                let pos = meta.members.len();
+                meta.members.push(member.clone());
+                pos
+            }
+            // The interner only ever creates `Com` entries.
+            ComInterface::Project(_) => unreachable!("interner builds only COM interfaces"),
+        };
+        let mref = ComMethodRef {
+            iface: IfaceId(iface),
+            member: member_pos,
+        };
+        self.method_of.insert(key, mref);
+        mref
+    }
+}
+
+/// Map a call-site member kind to the COM invoke kind (the inverse of the binder's
+/// `member_kind_from_invoke`); `None` (an unkinded call) is a `Method`.
+fn invoke_kind_from_member_kind(kind: Option<ProjectMemberKind>) -> TypeLibMemberInvokeKind {
+    match kind {
+        Some(ProjectMemberKind::PropertyGet) => TypeLibMemberInvokeKind::PropertyGet,
+        Some(ProjectMemberKind::PropertyLet) => TypeLibMemberInvokeKind::PropertyPut,
+        Some(ProjectMemberKind::PropertySet) => TypeLibMemberInvokeKind::PropertyPutRef,
+        Some(ProjectMemberKind::Method) | None => TypeLibMemberInvokeKind::Method,
+    }
+}
+
+fn elaborate_proc(
+    proc: &CoreProc,
+    resolver: &impl NameResolver,
+    com: &mut ComInterner,
+) -> Result<OxFunc> {
     // The unified local index space is params first, then locals (the binder's
     // `LocalId` convention), so OxFunc.locals mirrors it 1:1.
     let mut locals: Vec<OxLocal> = Vec::with_capacity(proc.params.len() + proc.locals.len());
@@ -201,9 +276,9 @@ fn elaborate_proc(proc: &CoreProc, resolver: &impl NameResolver) -> Result<OxFun
         });
     }
 
-    // The spine recovers all binding types up front (the `locals` above, via the
-    // resolver); the lowerer itself needs no resolver until object/COM construction.
-    let mut lo = Lowerer::new(locals, proc.params.len());
+    // The binding types are recovered up front (the `locals` above, via the resolver);
+    // the lowerer carries the COM interner so early-bound calls intern their members.
+    let mut lo = Lowerer::new(locals, proc.params.len(), com);
     // Pre-assign a block to every source label so forward references resolve.
     lo.assign_labels(&proc.body)?;
     lo.lower_block(&proc.body)?;
@@ -218,7 +293,7 @@ struct LoopCtx {
     brk: BlockId,
 }
 
-struct Lowerer {
+struct Lowerer<'a> {
     /// Blocks indexed by [`BlockId`]; `None` = reserved but not yet finalized. Every
     /// reserved id is filled exactly once, so the final vector has `id == position`.
     blocks: Vec<Option<OxBlock>>,
@@ -243,10 +318,13 @@ struct Lowerer {
     /// The temp holding each in-scope `With` receiver (by the binder's `With` id), so
     /// `WithTemp(id)` references read it.
     with_temps: HashMap<usize, TempId>,
+    /// The program-level typed-COM interface-table builder (shared across procs); an
+    /// early-bound call interns its resolved member here and names it by a `ComMethodRef`.
+    com: &'a mut ComInterner,
 }
 
-impl Lowerer {
-    fn new(locals: Vec<OxLocal>, param_count: usize) -> Self {
+impl<'a> Lowerer<'a> {
+    fn new(locals: Vec<OxLocal>, param_count: usize, com: &'a mut ComInterner) -> Self {
         // Entry = block 0, epilogue = block 1; both reserved up front.
         let blocks = vec![None, None];
         Self {
@@ -263,6 +341,7 @@ impl Lowerer {
             loops: Vec::new(),
             labels: HashMap::new(),
             with_temps: HashMap::new(),
+            com,
         }
     }
 
@@ -1432,11 +1511,52 @@ impl Lowerer {
                     args,
                 });
             }
-            // The typed COM dispatch path is the object/COM de-erasure step.
-            coreir::CoreCallee::EarlyCom { .. } => return Err(unimpl("early-bound COM call")),
-            coreir::CoreCallee::LateDispatch { .. } => return Err(unimpl("late-bound COM call")),
+            // Early-bound, descriptor-typed COM dispatch: intern the resolved member
+            // into the typed interface table and name it by a stable `ComMethodRef`.
+            coreir::CoreCallee::EarlyCom {
+                kind,
+                interface_name,
+                member,
+                ..
+            } => {
+                let (recv, args) = self.lower_com_receiver_and_args(args)?;
+                let method = self.com.intern(interface_name, member);
+                self.emit(OxInst::ComCallEarly {
+                    dst,
+                    method,
+                    invoke_kind: invoke_kind_from_member_kind(*kind),
+                    recv,
+                    args,
+                });
+            }
+            // Late-bound, by-name COM dispatch (the one dynamic COM path) — Variant args.
+            coreir::CoreCallee::LateDispatch { name, kind } => {
+                let (recv, args) = self.lower_com_receiver_and_args(args)?;
+                self.emit(OxInst::ComCallLate {
+                    dst,
+                    recv,
+                    name: name.clone(),
+                    invoke_kind: invoke_kind_from_member_kind(*kind),
+                    args,
+                });
+            }
         }
         Ok(())
+    }
+
+    /// Split a COM call's argument list into its receiver (`args[0]`, the typed
+    /// interface pointer) and the lowered method arguments (`args[1..]`). The binder
+    /// always emits the receiver as the first argument of an `EarlyCom`/`LateDispatch`.
+    fn lower_com_receiver_and_args(
+        &mut self,
+        args: &[CoreArg],
+    ) -> Result<(OxOperand, Vec<OxCallArg>)> {
+        let (recv_arg, rest) = args.split_first().ok_or_else(|| {
+            ElaborateError::Malformed("COM dispatch requires a receiver argument".into())
+        })?;
+        let recv = self.lower_arg_value(recv_arg)?;
+        let method_args = self.lower_call_args(rest)?;
+        Ok((recv, method_args))
     }
 
     /// Lower arguments for a compiled VBA / cross-bundle procedure call (`OxArg`).
@@ -1764,6 +1884,44 @@ mod tests {
         }
     }
 
+    /// A minimal typed COM member descriptor for the early-bound elaboration tests.
+    fn com_member(name: &str, token: i32, invoke_kind: TypeLibMemberInvokeKind) -> TypeLibMemberMetadata {
+        TypeLibMemberMetadata {
+            name: name.into(),
+            token,
+            vtable_slot: Some(7),
+            requires_argument: false,
+            invoke_kind,
+            parameter_names: Vec::new(),
+            parameter_optional: Vec::new(),
+            parameter_optional_defaults: Vec::new(),
+            is_default_member: false,
+            parameter_types: Vec::new(),
+            parameter_wire_types: Vec::new(),
+            parameter_iids: Vec::new(),
+            return_type: None,
+            return_wire_type: None,
+            callconv_is_stdcall: true,
+            is_dual: true,
+            interface_iid: None,
+            source_typekind: None,
+            vtable_slot_bound: Some(16),
+        }
+    }
+
+    /// All `ComMethodRef`s named by `ComCallEarly` instructions in the program.
+    fn com_call_early_methods(oxp: &OxProgram) -> Vec<ComMethodRef> {
+        oxp.funcs
+            .iter()
+            .flat_map(|f| &f.blocks)
+            .flat_map(|b| &b.instrs)
+            .filter_map(|i| match i {
+                OxInst::ComCallEarly { method, .. } => Some(*method),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn assign(place: CorePlace, value: CoreValue) -> CoreStmt {
         CoreStmt::Assign {
             place,
@@ -1893,26 +2051,104 @@ mod tests {
     }
 
     #[test]
-    fn com_calls_are_explicit_unimplemented() {
-        // The COM *calls* (early/late-bound dispatch) are the next de-erasure step;
-        // until then they must fail explicitly, never silently mis-lower. (Late-bound
-        // is the simplest to construct; early-bound carries a full typed descriptor.)
+    fn late_bound_com_call_lowers_to_com_call_late() {
+        // An untyped receiver `o.DoThing` (a `Property Let` write) lowers to a dynamic
+        // by-name `ComCallLate`, its invoke kind recovered from the call-site kind.
         let prog = program(sub(
             "Main",
             vec![variant_local("o")],
             vec![CoreStmt::Eval(CoreValue::Call {
                 callee: CoreCallee::LateDispatch {
                     name: "DoThing".to_string(),
-                    kind: Some(ProjectMemberKind::Method),
+                    kind: Some(ProjectMemberKind::PropertyLet),
                 },
                 args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(CoreLocalId(0))))],
             })],
         ));
-        let err = elaborate(&prog).expect_err("late-bound COM must be deferred");
-        assert!(
-            matches!(err, ElaborateError::Unimplemented { what: "late-bound COM call" }),
-            "expected Unimplemented(late-bound COM call), got {err:?}"
-        );
+        let oxp = elaborate(&prog).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        // No typed interface table is built for a purely late-bound program.
+        assert!(oxp.com_interfaces.is_empty());
+        let late = oxp.funcs[0]
+            .blocks
+            .iter()
+            .flat_map(|b| &b.instrs)
+            .find_map(|i| match i {
+                OxInst::ComCallLate {
+                    name, invoke_kind, ..
+                } => Some((name.clone(), *invoke_kind)),
+                _ => None,
+            })
+            .expect("a ComCallLate");
+        assert_eq!(late.0, "DoThing");
+        assert_eq!(late.1, TypeLibMemberInvokeKind::PropertyPut);
+    }
+
+    #[test]
+    fn early_bound_com_call_lowers_typed_and_builds_the_interface_table() {
+        // `Dim r As Excel.Range : x = r.Value` (read) and `r.Value = x` (write): two
+        // early-bound dispatches whose resolved members (get + put share a dispid) are
+        // interned as distinct entries of one interface; repeated reads reuse one entry.
+        let getter = com_member("Value", 6, TypeLibMemberInvokeKind::PropertyGet);
+        let setter = com_member("Value", 6, TypeLibMemberInvokeKind::PropertyPut);
+        let r = || CorePlace::Local(CoreLocalId(0)); // Dim r As Excel.Range
+        let x = || CorePlace::Local(CoreLocalId(1)); // Dim x
+        let read = |g: &TypeLibMemberMetadata| CoreValue::Call {
+            callee: CoreCallee::EarlyCom {
+                name: "Value".into(),
+                kind: Some(ProjectMemberKind::PropertyGet),
+                interface_name: "Excel.Range".into(),
+                member: Box::new(g.clone()),
+            },
+            args: vec![CoreArg::ByVal(CoreValue::Load(r()))],
+        };
+        let write = CoreValue::Call {
+            callee: CoreCallee::EarlyCom {
+                name: "Value".into(),
+                kind: Some(ProjectMemberKind::PropertyLet),
+                interface_name: "Excel.Range".into(),
+                member: Box::new(setter),
+            },
+            args: vec![
+                CoreArg::ByVal(CoreValue::Load(r())),
+                CoreArg::ByVal(CoreValue::Load(x())),
+            ],
+        };
+        let body = vec![
+            assign(x(), read(&getter)),         // x = r.Value
+            assign(x(), read(&getter)),         // x = r.Value (again — reuses the entry)
+            CoreStmt::Eval(write),              // r.Value = x
+        ];
+        let locals = vec![
+            CoreLocal {
+                name: "r".into(),
+                ty: VarTypeRef::Object("Excel.Range".into()),
+                array_element: None,
+            },
+            variant_local("x"),
+        ];
+        let oxp = elaborate(&program(sub("Main", locals, body))).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        // One interface (`Excel.Range`) holding the two distinct accessors of dispid 6.
+        assert_eq!(oxp.com_interfaces.len(), 1);
+        assert_eq!(oxp.com_interfaces[0].name(), "Excel.Range");
+        assert_eq!(oxp.com_interfaces[0].com_members().unwrap().len(), 2);
+        // Three early-bound calls; the two reads share one ComMethodRef, the write differs.
+        let methods = com_call_early_methods(&oxp);
+        assert_eq!(methods.len(), 3);
+        assert_eq!(methods[0], methods[1], "repeated reads reuse one descriptor");
+        assert_ne!(methods[0], methods[2], "get and put are distinct descriptors");
+        // Each ComMethodRef resolves to its typed descriptor.
+        let get_desc = oxp.com_method(methods[0]).expect("get descriptor");
+        assert_eq!(get_desc.invoke_kind, TypeLibMemberInvokeKind::PropertyGet);
+        let put_desc = oxp.com_method(methods[2]).expect("put descriptor");
+        assert_eq!(put_desc.invoke_kind, TypeLibMemberInvokeKind::PropertyPut);
+        assert_eq!(get_desc.token, 6);
+        assert_eq!(put_desc.token, 6);
+        // The whole typed-COM program round-trips structurally through JSON.
+        let json = serde_json::to_string(&oxp).expect("serialize");
+        let back: OxProgram = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(oxp, back, "typed-COM OxProgram must round-trip");
     }
 
     #[test]

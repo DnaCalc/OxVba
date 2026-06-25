@@ -226,6 +226,7 @@ mod tests {
                         iface: IfaceId(0),
                         member: 0,
                     },
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                     recv: OxOperand::local(recv),
                     args: vec![],
                 },
@@ -300,6 +301,7 @@ mod tests {
                 iface: IfaceId(9),
                 member: 0,
             },
+            invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             recv: OxOperand::local(LocalId(0)),
             args: vec![],
         };
@@ -320,6 +322,7 @@ mod tests {
                 iface: IfaceId(0),
                 member: 99,
             },
+            invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             recv: OxOperand::local(LocalId(0)),
             args: vec![],
         };

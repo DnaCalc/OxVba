@@ -182,18 +182,26 @@ pub enum OxInst {
     },
     /// **Early-bound, descriptor-typed COM call.** `method` names the typed member
     /// descriptor (an `oxvba_com::TypeLibMemberMetadata`, resolved via
-    /// [`crate::program::OxProgram::com_method`]); `recv` is the typed interface
-    /// receiver (an `Object(ComIface(_))`); `args` are typed per the descriptor's
-    /// parameters (interface pointers, scalars, BSTR, SAFEARRAY / record per each
-    /// param's wire shape). The descriptor's invoke-kind selects method/propget/
-    /// propput/propputref, and the hidden `[lcid]` and omitted-optional trailing
-    /// arguments are **synthesized from the descriptor** at lowering/runtime — they
-    /// are *not* present in `args`. Fallible: on `hr < 0` the block's `fault_target`
-    /// receives control with `Err` populated from the rich HRESULT/EXCEPINFO mapping
-    /// (not the flatten-to-5 default — the must-fix carried into M3).
+    /// [`crate::program::OxProgram::com_method`]); `recv` is the interface receiver;
+    /// `args` are typed per the descriptor's parameters (interface pointers, scalars,
+    /// BSTR, SAFEARRAY / record per each param's wire shape). The hidden `[lcid]` and
+    /// omitted-optional trailing arguments are **synthesized from the descriptor** at
+    /// lowering/runtime — they are *not* present in `args`. Fallible: on `hr < 0` the
+    /// block's `fault_target` receives control with `Err` populated from the rich
+    /// HRESULT/EXCEPINFO mapping (not the flatten-to-5 default — the must-fix in M3).
+    ///
+    /// `invoke_kind` is the **call-site** accessor (a value read coerces to
+    /// `PropertyGet`, a `Property Let`/`Set` to `PropertyPut`/`PropertyPutRef`). It
+    /// equals the descriptor's own invoke-kind in the common case; the two diverge only
+    /// for a member whose dispid is shared across get/put/putref where the binder
+    /// resolved one variant in a context that wants another (a default-member read).
+    /// It carries exactly the `kind_hint` the legacy Op path used, so vm3/JIT reproduce
+    /// vm2's accessor selection — the descriptor gives the typed signature, this gives
+    /// the syntactic accessor.
     ComCallEarly {
         dst: Option<OxPlace>,
         method: ComMethodRef,
+        invoke_kind: TypeLibMemberInvokeKind,
         recv: OxOperand,
         args: Vec<OxCallArg>,
     },

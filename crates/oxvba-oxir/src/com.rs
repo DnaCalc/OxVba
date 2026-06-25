@@ -8,9 +8,13 @@
 //! kind, return type/wire, and optional/`[lcid]` synthesis rules;
 //! `oxvba_com::TypeLibInterfaceMetadata` groups those members under an interface name +
 //! IID. **OxIR reuses those types verbatim** (they carry `serde`, added on the canonical
-//! definitions) — it does not mirror them. The legacy pipeline discards ~95% of this at
-//! `CoreCallee::EarlyCom { dispid, name, kind }` and types a `Dim r As Excel.Range` as
-//! the bare string `"Excel.Range"`; OxIR's fix is to stop discarding it.
+//! definitions) — it does not mirror them. The legacy pipeline discarded ~95% of this,
+//! keeping only a `(dispid, name)` selector and re-resolving the live object at run
+//! time; the Core IR now carries the descriptor on `CoreCallee::EarlyCom` and the
+//! elaboration interns it here, so an early-bound call is fully typed with no typelib
+//! re-resolution. (The typed *receiver* identity — typing a `Dim r As Excel.Range` local
+//! as [`crate::ty::ObjClass::ComIface`] rather than `Untyped` — is a later refinement;
+//! each call already names its own typed descriptor.)
 //!
 //! The only structure OxIR **adds** is the [`crate::ty::IfaceId`]-indexed table
 //! ([`ComInterface`]) — which has no upstream equivalent because it unifies referenced/
