@@ -326,13 +326,15 @@ fn verify_inst_refs(
     errors: &mut Vec<VerifyError>,
 ) {
     match inst {
-        OxInst::CallProc { proc, .. } if proc.0 >= funcs => errors.push(VerifyError::BadProcRef {
-            func: fi,
-            block: bi,
-            inst: ii,
-            proc: proc.0,
-            funcs,
-        }),
+        OxInst::CallProc { proc, .. } | OxInst::LoadProcRef { proc, .. } if proc.0 >= funcs => {
+            errors.push(VerifyError::BadProcRef {
+                func: fi,
+                block: bi,
+                inst: ii,
+                proc: proc.0,
+                funcs,
+            })
+        }
         OxInst::CallExtern { import, .. }
         | OxInst::NewExtern { import, .. }
         | OxInst::PredeclaredExtern { import, .. }

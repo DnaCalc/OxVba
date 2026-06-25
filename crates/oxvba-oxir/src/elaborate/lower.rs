@@ -41,7 +41,7 @@ use oxvba_bundle::coreir::{
     self, CoreArg, CoreBinOp, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp, CoreValue,
     ErrField, ErrorOp, LabelId as CoreLabelId,
 };
-use oxvba_bundle::NumericMode;
+use oxvba_bundle::{AssignmentIntent, AssignmentTargetKind, NumericMode};
 
 use crate::com::ComInterface;
 use crate::elaborate::{NameResolver, lower_var_type};
@@ -144,7 +144,7 @@ fn elaborate_proc(proc: &CoreProc, resolver: &impl NameResolver) -> Result<OxFun
     // resolver); the lowerer itself needs no resolver until object/COM construction.
     let mut lo = Lowerer::new(locals, proc.params.len());
     // Pre-assign a block to every source label so forward references resolve.
-    lo.assign_labels(&proc.body);
+    lo.assign_labels(&proc.body)?;
     lo.lower_block(&proc.body)?;
     let func = lo.finish_proc(proc)?;
     Ok(func)
@@ -259,38 +259,44 @@ impl Lowerer {
         });
     }
 
-    /// Pre-assign a block to every source label reachable in `body` (recursively), so
-    /// forward references resolve. Runs before lowering.
-    fn assign_labels(&mut self, body: &[CoreStmt]) {
+    /// Pre-assign a block to every source label *defined* in `body` (recursively), so
+    /// forward references resolve. Runs before lowering. A label defined twice is
+    /// malformed (a VBA compile error), so it is rejected here rather than silently
+    /// overwriting a block during lowering.
+    fn assign_labels(&mut self, body: &[CoreStmt]) -> Result<()> {
         for stmt in body {
             match stmt {
                 CoreStmt::Label(id) => {
-                    if !self.labels.contains_key(id) {
-                        let b = self.reserve();
-                        self.labels.insert(*id, b);
+                    if self.labels.contains_key(id) {
+                        return Err(ElaborateError::Malformed(format!(
+                            "label {id:?} defined more than once"
+                        )));
                     }
+                    let b = self.reserve();
+                    self.labels.insert(*id, b);
                 }
                 CoreStmt::If { arms, else_body } => {
                     for arm in arms {
-                        self.assign_labels(&arm.body);
+                        self.assign_labels(&arm.body)?;
                     }
-                    self.assign_labels(else_body);
+                    self.assign_labels(else_body)?;
                 }
                 CoreStmt::DoLoop { body, .. }
                 | CoreStmt::ForRange { body, .. }
                 | CoreStmt::ForEach { body, .. }
-                | CoreStmt::With { body, .. } => self.assign_labels(body),
+                | CoreStmt::With { body, .. } => self.assign_labels(body)?,
                 CoreStmt::Select {
                     cases, case_else, ..
                 } => {
                     for c in cases {
-                        self.assign_labels(&c.body);
+                        self.assign_labels(&c.body)?;
                     }
-                    self.assign_labels(case_else);
+                    self.assign_labels(case_else)?;
                 }
                 _ => {}
             }
         }
+        Ok(())
     }
 
     fn label_block(&self, id: &CoreLabelId) -> Result<BlockId> {
@@ -374,15 +380,43 @@ impl Lowerer {
     /// start block, or the enclosing continuation).
     fn lower_stmt(&mut self, stmt: &CoreStmt, s_next: BlockId) -> Result<()> {
         match stmt {
-            CoreStmt::Assign { place, value, .. } => {
+            CoreStmt::Assign {
+                place,
+                value,
+                intent,
+                target_kind,
+                target_name,
+                target_type_name,
+            } => {
                 let (src, _ty) = self.lower_value(value)?;
+                // A `Set` or object-typed assignment carries a run-time legality check
+                // (e.g. error 424 "Object required"), matching the linearize lowering.
+                if *intent == AssignmentIntent::Set
+                    || *target_kind == AssignmentTargetKind::Object
+                {
+                    self.emit(OxInst::ValidateAssignment {
+                        src: src.clone(),
+                        intent: *intent,
+                        target_kind: *target_kind,
+                        target_name: target_name.clone(),
+                        target_type_name: target_type_name.clone(),
+                    });
+                }
                 self.store_to_place(place, src)?;
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
             CoreStmt::Eval(value) => {
-                // Evaluate for effect; the result (if any) is discarded.
-                let _ = self.lower_value(value)?;
+                // Evaluate for effect; the result (if any) is discarded. A call in
+                // statement position is lowered with no result destination.
+                match value {
+                    CoreValue::Call { callee, args } => {
+                        self.lower_call_into(None, callee, args)?;
+                    }
+                    other => {
+                        let _ = self.lower_value(other)?;
+                    }
+                }
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
@@ -1059,14 +1093,24 @@ impl Lowerer {
                 },
                 numeric_result_type(num),
             ),
-            // `Not` is bitwise on integers — it preserves the operand's type.
-            CoreUnOp::Not => (
-                OxInst::Not {
-                    dst: OxPlace::Temp(t),
-                    src,
-                },
-                src_ty,
-            ),
+            // `Not` is logical on a Boolean (→ Boolean) and bitwise otherwise: a
+            // non-integer operand is coerced to an integer, so the result is `Long`
+            // (matching the binder), never the operand's own type — and `Variant` stays
+            // `Variant` (a `Not Null` is `Null`).
+            CoreUnOp::Not => {
+                let ty = match src_ty {
+                    OxTy::Bool => OxTy::Bool,
+                    OxTy::Variant => OxTy::Variant,
+                    _ => OxTy::Long,
+                };
+                (
+                    OxInst::Not {
+                        dst: OxPlace::Temp(t),
+                        src,
+                    },
+                    ty,
+                )
+            }
         };
         self.emit(inst);
         Ok((OxOperand::temp(t), ty))
@@ -1182,29 +1226,43 @@ impl Lowerer {
         Ok((OxOperand::temp(t), ty))
     }
 
-    fn lower_call(&mut self, callee: &coreir::CoreCallee, args: &[CoreArg]) -> Result<(OxOperand, OxTy)> {
+    /// Lower a call as an expression: emit it with a fresh result temp and return that
+    /// temp. The result type is recovered when the callee tables are typed;
+    /// conservatively `Variant` for now.
+    fn lower_call(
+        &mut self,
+        callee: &coreir::CoreCallee,
+        args: &[CoreArg],
+    ) -> Result<(OxOperand, OxTy)> {
+        let t = self.new_temp();
+        self.lower_call_into(Some(OxPlace::Temp(t)), callee, args)?;
+        Ok((OxOperand::temp(t), OxTy::Variant))
+    }
+
+    /// Emit a call writing its result to `dst` (`None` in statement position, so a
+    /// `Sub` / discarded result allocates no temp).
+    fn lower_call_into(
+        &mut self,
+        dst: Option<OxPlace>,
+        callee: &coreir::CoreCallee,
+        args: &[CoreArg],
+    ) -> Result<()> {
         match callee {
             coreir::CoreCallee::VbaProc { proc } => {
-                let oargs = self.lower_proc_args(args)?;
-                let dst_t = self.new_temp();
+                let args = self.lower_proc_args(args)?;
                 self.emit(OxInst::CallProc {
-                    dst: Some(OxPlace::Temp(dst_t)),
+                    dst,
                     proc: FuncId(proc.0),
-                    args: oargs,
+                    args,
                 });
-                // The proc's return type is recovered when the callee table is typed;
-                // conservatively Variant for now.
-                Ok((OxOperand::temp(dst_t), OxTy::Variant))
             }
             coreir::CoreCallee::Native(id) => {
                 let args = self.lower_call_args(args)?;
-                let dst_t = self.new_temp();
                 self.emit(OxInst::CallNative {
-                    dst: Some(OxPlace::Temp(dst_t)),
+                    dst,
                     callee: OxNativeCallee::Builtin(*id),
                     args,
                 });
-                Ok((OxOperand::temp(dst_t), OxTy::Variant))
             }
             coreir::CoreCallee::Declare {
                 descriptor_id,
@@ -1219,26 +1277,22 @@ impl Lowerer {
                         kind: wb.kind,
                     });
                 }
-                let dst_t = self.new_temp();
                 self.emit(OxInst::CallNative {
-                    dst: Some(OxPlace::Temp(dst_t)),
+                    dst,
                     callee: OxNativeCallee::Declare {
                         descriptor_id: *descriptor_id,
                         ptr_writebacks: writebacks,
                     },
                     args,
                 });
-                Ok((OxOperand::temp(dst_t), OxTy::Variant))
             }
             coreir::CoreCallee::ExternProc { import } => {
                 let args = self.lower_proc_args(args)?;
-                let dst_t = self.new_temp();
                 self.emit(OxInst::CallExtern {
-                    dst: Some(OxPlace::Temp(dst_t)),
+                    dst,
                     import: ImportId(*import),
                     args,
                 });
-                Ok((OxOperand::temp(dst_t), OxTy::Variant))
             }
             coreir::CoreCallee::DynamicByName => {
                 // args = [object, name, calltype, forwarded args…].
@@ -1251,20 +1305,19 @@ impl Lowerer {
                 let name = self.lower_arg_value(name)?;
                 let calltype = self.lower_arg_value(calltype)?;
                 let args = self.lower_call_args(rest)?;
-                let dst_t = self.new_temp();
                 self.emit(OxInst::CallByName {
-                    dst: Some(OxPlace::Temp(dst_t)),
+                    dst,
                     object,
                     name,
                     calltype,
                     args,
                 });
-                Ok((OxOperand::temp(dst_t), OxTy::Variant))
             }
             // The typed COM dispatch path is the object/COM de-erasure step.
-            coreir::CoreCallee::EarlyCom { .. } => Err(unimpl("early-bound COM call")),
-            coreir::CoreCallee::LateDispatch { .. } => Err(unimpl("late-bound COM call")),
+            coreir::CoreCallee::EarlyCom { .. } => return Err(unimpl("early-bound COM call")),
+            coreir::CoreCallee::LateDispatch { .. } => return Err(unimpl("late-bound COM call")),
         }
+        Ok(())
     }
 
     /// Lower arguments for a compiled VBA / cross-bundle procedure call (`OxArg`).
@@ -1321,7 +1374,14 @@ impl Lowerer {
     fn lower_place_load(&mut self, place: &coreir::CorePlace) -> Result<(OxOperand, OxTy)> {
         match place {
             coreir::CorePlace::Local(l) => {
-                let ty = self.locals[l.0].ty.clone();
+                let ty = self
+                    .locals
+                    .get(l.0)
+                    .ok_or_else(|| {
+                        ElaborateError::Malformed(format!("local index {} out of range", l.0))
+                    })?
+                    .ty
+                    .clone();
                 Ok((OxOperand::local(LocalId(l.0)), ty))
             }
             coreir::CorePlace::Global(g) => {
@@ -1523,7 +1583,7 @@ fn logical_op(op: CoreBinOp) -> Option<LogicalOp> {
 mod tests {
     use super::*;
     use crate::elaborate::ResolvedTypeName;
-    use crate::verify::verify_program;
+    use crate::verify::{VerifyError, verify_program};
     use oxvba_bundle::coreir::{
         BoundWhich, CoreBound, CoreCallee, CoreIfArm, CoreLocal, CorePlace, ErrField, ErrorOp,
         LocalId as CoreLocalId, PtrKind, ProcId as CoreProcId,
@@ -1979,5 +2039,106 @@ mod tests {
         assert!(has(|i| matches!(i, OxInst::Ptr { .. })), "expected Ptr");
         assert!(has(|i| matches!(i, OxInst::ErrFieldGet { .. })), "expected ErrFieldGet");
         assert!(has(|i| matches!(i, OxInst::LoadProcRef { .. })), "expected LoadProcRef");
+    }
+
+    // ── Review-fix regressions ───────────────────────────────────────────────
+
+    /// A `Set` / object-typed assignment emits the `ValidateAssignment` legality check.
+    #[test]
+    fn set_assignment_emits_validate() {
+        let prog = program(sub(
+            "Main",
+            vec![variant_local("x")],
+            vec![CoreStmt::Assign {
+                place: CorePlace::Local(CoreLocalId(0)),
+                value: CoreValue::Const(CoreConst::Nothing),
+                intent: AssignmentIntent::Set,
+                target_kind: AssignmentTargetKind::Object,
+                target_name: "x".to_string(),
+                target_type_name: "Object".to_string(),
+            }],
+        ));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        assert!(
+            oxp.funcs[0]
+                .blocks
+                .iter()
+                .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
+            "Set assignment must emit ValidateAssignment"
+        );
+    }
+
+    /// A call in statement position is lowered with no result destination.
+    #[test]
+    fn statement_call_has_no_result_dst() {
+        let prog = program(sub(
+            "Main",
+            Vec::new(),
+            vec![CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::VbaProc {
+                    proc: CoreProcId(0),
+                },
+                args: Vec::new(),
+            })],
+        ));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert!(
+            oxp.funcs[0]
+                .blocks
+                .iter()
+                .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::CallProc { dst: None, .. }))),
+            "a statement call must have no result destination"
+        );
+    }
+
+    /// A duplicate label definition is rejected (not a debug-assert / silent overwrite).
+    #[test]
+    fn duplicate_label_is_rejected() {
+        let prog = program(sub(
+            "Main",
+            Vec::new(),
+            vec![
+                CoreStmt::Label(coreir::LabelId(0)),
+                CoreStmt::Label(coreir::LabelId(0)),
+            ],
+        ));
+        let err = elaborate(&prog, &UntypedResolver).expect_err("duplicate label");
+        assert!(matches!(err, ElaborateError::Malformed(_)), "got {err:?}");
+    }
+
+    /// Reading an out-of-range local is a clean error, not a panic.
+    #[test]
+    fn out_of_range_local_read_is_rejected() {
+        let prog = program(sub(
+            "Main",
+            vec![variant_local("x")],
+            vec![assign(
+                CorePlace::Local(CoreLocalId(0)),
+                CoreValue::Load(CorePlace::Local(CoreLocalId(99))),
+            )],
+        ));
+        let err = elaborate(&prog, &UntypedResolver).expect_err("out-of-range local");
+        assert!(matches!(err, ElaborateError::Malformed(_)), "got {err:?}");
+    }
+
+    /// The verifier range-checks an `AddressOf` (`LoadProcRef`) proc index.
+    #[test]
+    fn verifier_catches_out_of_range_addressof() {
+        let prog = program(sub(
+            "Main",
+            vec![variant_local("f")],
+            vec![assign(
+                CorePlace::Local(CoreLocalId(0)),
+                CoreValue::AddressOf(CoreProcId(99)),
+            )],
+        ));
+        // Elaboration does not range-check proc ids; the verifier does.
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let errs = verify_program(&oxp).expect_err("dangling AddressOf proc");
+        assert!(
+            errs.iter().any(|e| matches!(e, VerifyError::BadProcRef { proc: 99, .. })),
+            "expected BadProcRef, got {errs:?}"
+        );
     }
 }
