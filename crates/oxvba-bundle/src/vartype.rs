@@ -42,6 +42,13 @@ pub enum VarTypeRef {
     /// Untyped `Variant` — forces late binding for member access.
     Variant,
     Array(Box<VarTypeRef>),
+    /// A fixed-size array field inside a UDT, carrying its element type and total
+    /// element count. This is distinct from `Array` because UDT fixed arrays are
+    /// inline record payload, not a SAFEARRAY slot.
+    FixedArray {
+        element: Box<VarTypeRef>,
+        len: usize,
+    },
     /// A fixed-length string `String * N` (length in characters). Behaves like
     /// `String` in the type lattice, but assignment pads/truncates to `N` and file
     /// records use exactly `N` ANSI bytes with no length prefix.

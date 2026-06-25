@@ -20,6 +20,10 @@ pub fn array_element_of(elem: &VarTypeRef) -> ArrayElementType {
     match elem {
         VarTypeRef::Builtin(b) => builtin_element(*b),
         VarTypeRef::FixedString(_) => ArrayElementType::String,
+        VarTypeRef::FixedArray { element, len } => ArrayElementType::FixedArray {
+            element: Box::new(array_element_of(element)),
+            len: *len,
+        },
         VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Variant | VarTypeRef::Array(_) => {
             ArrayElementType::Variant
         }
@@ -46,6 +50,7 @@ fn builtin_element(b: BuiltinType) -> ArrayElementType {
 pub fn array_element(ty: &VarTypeRef) -> Option<ArrayElementType> {
     match ty {
         VarTypeRef::Array(inner) => Some(array_element_of(inner)),
+        VarTypeRef::FixedArray { element, .. } => Some(array_element_of(element)),
         _ => None,
     }
 }
@@ -60,6 +65,7 @@ pub fn assignment_target_kind(ty: &VarTypeRef) -> AssignmentTargetKind {
         VarTypeRef::Builtin(_)
         | VarTypeRef::Udt(_)
         | VarTypeRef::Array(_)
+        | VarTypeRef::FixedArray { .. }
         | VarTypeRef::FixedString(_) => AssignmentTargetKind::Scalar,
     }
 }
@@ -71,6 +77,7 @@ pub fn type_name(ty: &VarTypeRef) -> String {
         VarTypeRef::Object(name) | VarTypeRef::Udt(name) => name.clone(),
         VarTypeRef::Variant => "Variant".into(),
         VarTypeRef::Array(inner) => format!("{}()", type_name(inner)),
+        VarTypeRef::FixedArray { element, len } => format!("{}({len})", type_name(element)),
         VarTypeRef::FixedString(_) => "String".into(),
     }
 }

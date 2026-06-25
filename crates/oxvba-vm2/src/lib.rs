@@ -37,7 +37,6 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use oxvba_eval::collection::{CollectionData, CollectionError, Selector};
 use oxvba_bundle::{
     ArrayElementType, Bundle, CallArg, ClassDescriptor, ClassMethod, ComMemberSelector,
     DeclarePtrWriteback, ExportTarget, NativeBody, NativeCallee, NativeImplId, NativeMethodId,
@@ -48,6 +47,7 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicValue,
 };
 use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
+use oxvba_eval::collection::{CollectionData, CollectionError, Selector};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::{LibContext, LibError};
@@ -3344,6 +3344,7 @@ fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
     match element_type {
         ArrayElementType::Variant => VT_VARIANT_VALUE,
         ArrayElementType::Record(_) => VT_RECORD_VALUE,
+        ArrayElementType::FixedArray { .. } => VT_VARIANT_VALUE,
         ArrayElementType::Integer => VT_I2_VALUE,
         ArrayElementType::Long => VT_I4_VALUE,
         ArrayElementType::LongPtr => {
@@ -3397,6 +3398,7 @@ fn default_array_element(element_type: &ArrayElementType) -> Variant {
                 .expect("default VBA record allocation should succeed");
             Variant::from_vba_record(record)
         }
+        ArrayElementType::FixedArray { .. } => Variant::empty(),
     }
 }
 
@@ -3427,6 +3429,10 @@ fn vba_record_field_kind(element_type: &ArrayElementType) -> Result<VbaRecordFie
         ArrayElementType::Record(fields) => {
             VbaRecordFieldKind::Record(vba_record_layout_for_fields(fields)?)
         }
+        ArrayElementType::FixedArray { element, len } => VbaRecordFieldKind::FixedArray {
+            element: Box::new(vba_record_field_kind(element)?),
+            len: *len,
+        },
     };
     Ok(kind)
 }

@@ -56,9 +56,11 @@ such as `VT_I2`, `VT_I4`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_BSTR`, and
 `VT_BOOL`; only declared `Variant` arrays should use `VT_VARIANT` by default.
 
 The current implementation now preserves typed storage for VM `ReDim` scalar
-arrays. UDT/record array elements still use a runtime record value carrier and
-remain an in-progress exact-layout lane until record descriptors and element
-payloads are made COM-compatible.
+arrays. Scalar UDT values and UDT SAFEARRAY elements use descriptor-backed
+`VbaRecord` payloads with native field offsets for scalar fields, nested records,
+and fixed arrays whose bounds are available as literal metadata. Record export to
+foreign COM record descriptors and broader record addressability remain
+in-progress exact-layout lanes.
 
 ### IUnknown
 
@@ -110,5 +112,14 @@ replacement on the slot-owned ArrayVariant instead of descriptor rebuild through
 - `cargo test -p oxvba-runtime safe_array_variant_element_reads --lib`
 
 Remaining exact-layout work includes UDT/record SAFEARRAY element storage,
-expanded pointer-helper addressability tests, and COM/HAL call paths that still
-clone through `variant_elements()` for non-temporary places.
+expanded pointer-helper addressability tests, named-constant fixed-array bounds
+in early record metadata, and COM/HAL call paths that still clone through
+`variant_elements()` for non-temporary places.
+
+The 2026-06-25 native record `ByRef As Any` slice adds descriptor-backed
+copy-in/copy-out for `Variant::Record` values whose fields are plain native ABI
+storage: numeric primitives, Booleans, nested records, and fixed arrays of those
+shapes. The HAL no longer carries a GUID-shaped SAFEARRAY special case; real
+`ole32!IIDFromString` succeeds through the same record buffer path as a general
+nested UDT `RtlMoveMemory` probe. Records containing owning `String` or `Variant`
+fields still decline at admission for this native pointer lane.

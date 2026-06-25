@@ -22,6 +22,15 @@ fn run(source: &str) -> Vec<Variant> {
         .expect("native declare probe should execute on the VM backend")
 }
 
+fn run_err(source: &str) -> String {
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    match engine.execute_source_with_variant_snapshot_clean(source) {
+        Ok(snapshot) => panic!("native declare probe should have failed, got {snapshot:?}"),
+        Err(err) => format!("{err:?}"),
+    }
+}
+
 fn any_double_near(snapshot: &[Variant], expected: f64) -> bool {
     snapshot
         .iter()
@@ -306,6 +315,101 @@ fn riff_exact_iidfromstring_writes_guid_udt_through_as_any() {
     assert!(
         snapshot.iter().any(|v| v.as_i32() == Some(0x106)),
         "expected checksum over GUID fields to include native writeback bytes: {snapshot:?}"
+    );
+}
+
+#[test]
+fn byref_as_any_copies_general_nested_udt_records() {
+    let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
+         Private Const MEM_RESERVE As Long = &H2000\n\
+         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const PAGE_READWRITE As Long = &H4\n\
+         Private Type Inner\n\
+         Flag As Boolean\n\
+         Value As Long\n\
+         End Type\n\
+         Private Type Packet\n\
+         Tag As Integer\n\
+         Inner As Inner\n\
+         Tail(0 To 3) As Byte\n\
+         End Type\n\
+         Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr\n\
+         Private Declare PtrSafe Function VirtualFree Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal dwFreeType As Long) As Long\n\
+         Private Declare PtrSafe Sub RtlMoveMemoryRaw Lib \"kernel32\" Alias \"RtlMoveMemory\" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Private Declare PtrSafe Sub RtlMoveMemoryAny Lib \"kernel32\" Alias \"RtlMoveMemory\" (ByRef Destination As Any, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Public CopiedTag As Long\n\
+         Public CopiedFlag As Boolean\n\
+         Public CopiedValue As Long\n\
+         Public CopiedTail0 As Long\n\
+         Public CopiedTail3 As Long\n\
+         Sub Main()\n\
+         Dim dst As Packet\n\
+         Dim mem As LongPtr\n\
+         Dim tag As Integer\n\
+         Dim flag As Boolean\n\
+         Dim value As Long\n\
+         Dim tail0 As Byte\n\
+         Dim tail3 As Byte\n\
+         Dim freed As Long\n\
+         mem = VirtualAlloc(0, 32, MEM_COMMIT Or MEM_RESERVE, PAGE_READWRITE)\n\
+         If mem = 0 Then Err.Raise 720, \"NativeUdt\", \"VirtualAlloc returned null\"\n\
+         tag = 1234\n\
+         flag = True\n\
+         value = &H11223344\n\
+         tail0 = &HAB\n\
+         tail3 = &HCD\n\
+         RtlMoveMemoryRaw ByVal mem, VarPtr(tag), 2\n\
+         RtlMoveMemoryRaw ByVal (mem + 4), VarPtr(flag), 2\n\
+         RtlMoveMemoryRaw ByVal (mem + 8), VarPtr(value), 4\n\
+         RtlMoveMemoryRaw ByVal (mem + 12), VarPtr(tail0), 1\n\
+         RtlMoveMemoryRaw ByVal (mem + 15), VarPtr(tail3), 1\n\
+         RtlMoveMemoryAny dst, ByVal mem, 16\n\
+         CopiedTag = dst.Tag\n\
+         CopiedFlag = dst.Inner.Flag\n\
+         CopiedValue = dst.Inner.Value\n\
+         CopiedTail0 = dst.Tail(0)\n\
+         CopiedTail3 = dst.Tail(3)\n\
+         freed = VirtualFree(mem, 0, MEM_RELEASE)\n\
+         If freed = 0 Then Err.Raise 721, \"NativeUdt\", \"VirtualFree failed\"\n\
+         End Sub");
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(1234)),
+        "expected RtlMoveMemory to copy the outer Integer field through UDT As Any: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_bool() == Some(true)),
+        "expected RtlMoveMemory to copy the nested Boolean field through UDT As Any: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0x11223344)),
+        "expected RtlMoveMemory to copy the nested Long field through UDT As Any: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0xAB)),
+        "expected RtlMoveMemory to copy fixed-array byte 0 through UDT As Any: {snapshot:?}"
+    );
+    assert!(
+        snapshot.iter().any(|v| v.as_i32() == Some(0xCD)),
+        "expected RtlMoveMemory to copy fixed-array byte 3 through UDT As Any: {snapshot:?}"
+    );
+}
+
+#[test]
+fn byref_as_any_declines_udt_records_with_owning_fields() {
+    let error = run_err(
+        "Private Type Packet\n\
+         Text As String\n\
+         End Type\n\
+         Private Declare PtrSafe Sub RtlMoveMemoryAny Lib \"kernel32\" Alias \"RtlMoveMemory\" (ByRef Destination As Any, ByVal Source As LongPtr, ByVal Length As LongPtr)\n\
+         Sub Main()\n\
+         Dim dst As Packet\n\
+         RtlMoveMemoryAny dst, 0, 0\n\
+         End Sub",
+    );
+    assert!(
+        error.contains("native ByRef As Any record marshaling is not supported")
+            && error.contains("String fields"),
+        "expected deterministic ByRef As Any decline for String-containing UDT, got {error}"
     );
 }
 

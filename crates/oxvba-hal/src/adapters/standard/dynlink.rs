@@ -3,8 +3,9 @@ use crate::{
     model::{CapabilityId, HalProfileId},
     traits::{DynLinkDescriptorView, DynamicLinkHal},
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, Variant, safe_array::SafeArray};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, Variant, VbaRecord, VbaRecordLayout};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::StandardHostServices;
 
@@ -671,7 +672,10 @@ enum NativeByRefStorage {
         buffer: Vec<u8>,
         cell: Box<*mut u8>,
     },
-    GuidRecordBytes(Box<[u8; 16]>),
+    VbaRecordCell {
+        layout: Arc<VbaRecordLayout>,
+        words: Vec<u64>,
+    },
     VariantCell(Box<windows_sys::Win32::System::Variant::VARIANT>),
 }
 
@@ -748,7 +752,9 @@ impl NativeByRefStorage {
             Self::AnsiStringCell { cell, .. } => {
                 FfiArg::Pointer((&mut **cell as *mut *mut u8).cast::<c_void>())
             }
-            Self::GuidRecordBytes(bytes) => FfiArg::Pointer(bytes.as_mut_ptr().cast::<c_void>()),
+            Self::VbaRecordCell { words, .. } => {
+                FfiArg::Pointer(words.as_mut_ptr().cast::<c_void>())
+            }
             Self::VariantCell(cell) => FfiArg::Pointer(
                 (&mut **cell as *mut windows_sys::Win32::System::Variant::VARIANT).cast::<c_void>(),
             ),
@@ -780,7 +786,9 @@ impl NativeByRefStorage {
                     variant_from_ansi_c_str((*(*cell)).cast_const())
                 }
             }
-            Self::GuidRecordBytes(bytes) => guid_record_variant_from_bytes(bytes.as_ref()),
+            Self::VbaRecordCell { layout, words } => Variant::from_vba_record(unsafe {
+                VbaRecord::clone_from_native_words(words, layout.clone())?
+            }),
             Self::VariantCell(cell) => unsafe {
                 oxvba_com::variant_to_variant_value(
                     cell,
@@ -852,7 +860,7 @@ fn any_byref_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage,
                 .or_else(|| value.as_i64().map(|value| value as f64))
                 .unwrap_or_else(|| variant_f64(value)),
         ))),
-        oxvba_runtime::VarType::ArrayVariant => guid_record_storage_from_variant(value),
+        oxvba_runtime::VarType::Record => vba_record_storage_from_variant(value),
         other => Err(format!(
             "native ByRef As Any marshaling for value type `{other:?}` is not yet supported"
         )),
@@ -878,63 +886,20 @@ fn variant_cell_storage_from_variant(value: &Variant) -> Result<NativeByRefStora
 }
 
 #[cfg(target_os = "windows")]
-fn guid_record_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage, String> {
-    let record = value.as_safearray().ok_or_else(|| {
-        "native ByRef As Any currently supports GUID-shaped UDT records only".to_string()
+fn vba_record_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage, String> {
+    let record = value.as_vba_record().ok_or_else(|| {
+        "native ByRef As Any record marshaling requires a native VBA record value".to_string()
     })?;
-    let fields = record.variant_elements().unwrap_or_default();
-    if fields.len() != 4 {
-        return Err(format!(
-            "native ByRef As Any record layout with {} fields is not yet supported",
-            fields.len()
-        ));
-    }
-    let data4 = fields
-        .get(3)
-        .and_then(Variant::as_safearray)
-        .and_then(|array| array.variant_elements())
-        .ok_or_else(|| {
-            "native ByRef As Any GUID-shaped record requires byte array field 4".to_string()
+    let layout = record.layout().clone();
+    layout
+        .validate_byref_as_any_native_abi()
+        .map_err(|reason| {
+            format!("native ByRef As Any record marshaling is not supported: {reason}")
         })?;
-    if data4.len() != 8 {
-        return Err(format!(
-            "native ByRef As Any GUID-shaped record requires 8 byte tail elements, got {}",
-            data4.len()
-        ));
-    }
-
-    let mut bytes = [0u8; 16];
-    let data1 = fields.first().map(variant_i32).unwrap_or(0);
-    let data2 = fields.get(1).map(variant_i32).unwrap_or(0) as i16;
-    let data3 = fields.get(2).map(variant_i32).unwrap_or(0) as i16;
-    bytes[0..4].copy_from_slice(&data1.to_le_bytes());
-    bytes[4..6].copy_from_slice(&data2.to_le_bytes());
-    bytes[6..8].copy_from_slice(&data3.to_le_bytes());
-    for (i, value) in data4.iter().enumerate() {
-        bytes[8 + i] = value
-            .as_u8()
-            .or_else(|| value.as_i32().and_then(|n| u8::try_from(n).ok()))
-            .unwrap_or(0);
-    }
-    Ok(NativeByRefStorage::GuidRecordBytes(Box::new(bytes)))
-}
-
-#[cfg(target_os = "windows")]
-fn guid_record_variant_from_bytes(bytes: &[u8; 16]) -> Variant {
-    let data1 = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    let data2 = i16::from_le_bytes([bytes[4], bytes[5]]);
-    let data3 = i16::from_le_bytes([bytes[6], bytes[7]]);
-    let data4 = bytes[8..16]
-        .iter()
-        .copied()
-        .map(Variant::from_u8)
-        .collect::<Vec<_>>();
-    Variant::from_safearray(SafeArray::from_variants(vec![
-        Variant::from_i32(data1),
-        Variant::from_i16(data2),
-        Variant::from_i16(data3),
-        Variant::from_safearray(SafeArray::from_variants(data4)),
-    ]))
+    Ok(NativeByRefStorage::VbaRecordCell {
+        words: record.clone_into_native_words()?,
+        layout,
+    })
 }
 
 #[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]

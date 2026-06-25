@@ -1872,6 +1872,7 @@ impl<'a> ProcLower<'a> {
                     let indices = self.bind_positional_values(a)?;
                     let elem_ty = match field_ty {
                         VarTypeRef::Array(inner) => self.g.resolve_udt_type(*inner),
+                        VarTypeRef::FixedArray { element, .. } => self.g.resolve_udt_type(*element),
                         _ => VarTypeRef::Variant,
                     };
                     let place = CorePlace::Index {

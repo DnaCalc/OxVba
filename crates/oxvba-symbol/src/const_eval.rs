@@ -373,7 +373,10 @@ pub(crate) fn coerce_const_to_declared_type(
                 .then_some(CoreConst::Currency(scaled as i64))
         }
         VarTypeRef::Builtin(BuiltinType::Date) => const_to_date_bits(&value).map(CoreConst::Date),
-        VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Array(_) => None,
+        VarTypeRef::Object(_)
+        | VarTypeRef::Udt(_)
+        | VarTypeRef::Array(_)
+        | VarTypeRef::FixedArray { .. } => None,
     }
 }
 

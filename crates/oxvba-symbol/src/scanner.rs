@@ -1304,7 +1304,7 @@ fn collect_udt_fields_in(
                 // refinement: an array field (`Words() As OcrWord`) must type as
                 // `Array(OcrWord)`, not the scalar element type, so member access
                 // through an index step (`o.Words(i).Text`) resolves the element UDT.
-                let ty = declared_var_type(f);
+                let ty = declared_udt_field_type(f);
                 Some((field, ty))
             })
             .collect();
@@ -1313,6 +1313,45 @@ fn collect_udt_fields_in(
     for child in node.child_nodes() {
         collect_udt_fields_in(child, out);
     }
+}
+
+fn declared_udt_field_type(field: SyntaxNode<'_>) -> VarTypeRef {
+    let ty = declared_var_type(field);
+    let Some(len) = field.array_bounds().and_then(fixed_array_len_from_bounds) else {
+        return ty;
+    };
+    match ty {
+        VarTypeRef::Array(element) => VarTypeRef::FixedArray { element, len },
+        other => other,
+    }
+}
+
+fn fixed_array_len_from_bounds(bounds: SyntaxNode<'_>) -> Option<usize> {
+    let mut len = 1usize;
+    let mut saw_bound = false;
+    for bound in bounds.children_of(SyntaxKind::Bound) {
+        saw_bound = true;
+        let exprs = bound.expr_children();
+        let (lower, upper) = match exprs.as_slice() {
+            [upper] => (0, literal_i32(*upper)?),
+            [lower, upper] => (literal_i32(*lower)?, literal_i32(*upper)?),
+            _ => return None,
+        };
+        let dim_len = upper.checked_sub(lower)?.checked_add(1)?;
+        if dim_len <= 0 {
+            return None;
+        }
+        len = len.checked_mul(dim_len as usize)?;
+    }
+    saw_bound.then_some(len)
+}
+
+fn literal_i32(expr: SyntaxNode<'_>) -> Option<i32> {
+    let token = expr.first_significant_token()?;
+    if token.kind == SyntaxKind::IntLiteral {
+        return token.text.trim().parse::<i32>().ok();
+    }
+    None
 }
 
 /// Trim a leading `New` keyword from a `TypeRef`'s text (`As New Foo` ⇒ `Foo`).
@@ -1375,7 +1414,10 @@ fn declare_param_type(ty: &VarTypeRef) -> DeclareParamType {
             DeclareParamType::String
         }
         VarTypeRef::Variant => DeclareParamType::Variant,
-        VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Array(_) => DeclareParamType::Any,
+        VarTypeRef::Object(_)
+        | VarTypeRef::Udt(_)
+        | VarTypeRef::Array(_)
+        | VarTypeRef::FixedArray { .. } => DeclareParamType::Any,
     }
 }
 

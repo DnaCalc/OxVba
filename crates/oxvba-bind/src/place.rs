@@ -48,6 +48,7 @@ impl<'a> ProcLower<'a> {
                 // base (e.g. a default-member index) stays Variant.
                 let elem_ty = match base_ty {
                     VarTypeRef::Array(inner) => self.g.resolve_udt_type(*inner),
+                    VarTypeRef::FixedArray { element, .. } => self.g.resolve_udt_type(*element),
                     _ => VarTypeRef::Variant,
                 };
                 Ok((place, elem_ty))

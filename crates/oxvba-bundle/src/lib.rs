@@ -20,9 +20,9 @@ pub mod vartype;
 pub mod vba_library;
 
 pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
-pub use vartype::{BuiltinType, VarTypeRef};
 pub use linearize::{LinearizeError, linearize};
 pub use native::{LibraryModule, NativeBody, NativeImplId, NativeMethodId};
+pub use vartype::{BuiltinType, VarTypeRef};
 pub use vba_library::vba_library_bundle;
 
 pub use coreir::{
@@ -100,6 +100,11 @@ pub enum ArrayElementType {
     /// A UDT-record element: the per-field element layout (one entry per record
     /// field, in field order).
     Record(Vec<ArrayElementType>),
+    /// A fixed-size inline array field inside a UDT record.
+    FixedArray {
+        element: Box<ArrayElementType>,
+        len: usize,
+    },
 }
 
 /// Assignment intent on a `ValidateAssignment` (Let vs Set vs implicit).

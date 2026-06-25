@@ -1,4 +1,8 @@
-use crate::{Variant, VariantCore, bstr::BStr};
+use crate::{
+    Variant, VariantCore,
+    bstr::BStr,
+    safe_array::{SafeArray, SafeArrayBound},
+};
 use core::{ptr, slice};
 use std::sync::Arc;
 
@@ -103,6 +107,25 @@ impl VbaRecordLayout {
     pub fn align(&self) -> usize {
         self.align
     }
+
+    pub fn validate_byref_as_any_native_abi(&self) -> Result<(), String> {
+        for field in self.fields() {
+            let name = field
+                .name
+                .as_deref()
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("@{}", field.offset));
+            field
+                .kind
+                .validate_byref_as_any_native_abi(&name)
+                .map_err(|reason| {
+                    format!(
+                        "record field `{name}` is not supported for native ByRef As Any: {reason}"
+                    )
+                })?;
+        }
+        Ok(())
+    }
 }
 
 impl VbaRecordFieldKind {
@@ -145,6 +168,41 @@ impl VbaRecordFieldKind {
             }
         };
         Ok(shape)
+    }
+
+    fn validate_byref_as_any_native_abi(&self, path: &str) -> Result<(), String> {
+        match self {
+            Self::Integer
+            | Self::Long
+            | Self::LongLong
+            | Self::LongPtr
+            | Self::Byte
+            | Self::Single
+            | Self::Double
+            | Self::Currency
+            | Self::Date
+            | Self::Boolean => Ok(()),
+            Self::Record(layout) => {
+                for field in layout.fields() {
+                    let child = field
+                        .name
+                        .as_deref()
+                        .map(|name| format!("{path}.{name}"))
+                        .unwrap_or_else(|| format!("{path}.@{}", field.offset));
+                    field.kind.validate_byref_as_any_native_abi(&child)?;
+                }
+                Ok(())
+            }
+            Self::FixedArray { element, .. } => {
+                element.validate_byref_as_any_native_abi(&format!("{path}[]"))
+            }
+            Self::String => {
+                Err("String fields carry owned BSTR pointers, not plain native bytes".into())
+            }
+            Self::Variant => {
+                Err("Variant fields carry nested VARIANT state, not plain native bytes".into())
+            }
+        }
     }
 }
 
@@ -251,6 +309,32 @@ impl VbaRecord {
         for field in layout.fields() {
             unsafe { drop_field_at(ptr.add(field.offset), &field.kind) };
         }
+    }
+
+    pub fn clone_into_native_words(&self) -> Result<Vec<u64>, String> {
+        self.layout().validate_byref_as_any_native_abi()?;
+        let mut words = vec![0; self.layout().size().div_ceil(core::mem::size_of::<u64>())];
+        // SAFETY: `Vec<u64>` gives native word alignment, the buffer length covers
+        // the descriptor size, and eligibility excludes owning fields that would
+        // need non-trivial initialization/cleanup during plain native staging.
+        unsafe { self.clone_into_raw(words.as_mut_ptr().cast())? };
+        Ok(words)
+    }
+
+    pub unsafe fn clone_from_native_words(
+        words: &[u64],
+        layout: Arc<VbaRecordLayout>,
+    ) -> Result<Self, String> {
+        layout.validate_byref_as_any_native_abi()?;
+        let required_words = layout.size().div_ceil(core::mem::size_of::<u64>());
+        if words.len() < required_words {
+            return Err(format!(
+                "native record buffer has {} words but layout requires {}",
+                words.len(),
+                required_words
+            ));
+        }
+        unsafe { Self::clone_from_raw(words.as_ptr().cast(), layout) }
     }
 }
 
@@ -424,8 +508,22 @@ unsafe fn read_field_variant_at(
         VbaRecordFieldKind::Record(layout) => {
             Variant::from_vba_record(unsafe { clone_record_from_ptr(ptr, layout.clone())? })
         }
-        VbaRecordFieldKind::FixedArray { .. } => {
-            return Err("fixed-array record field cannot be read as a scalar Variant".into());
+        VbaRecordFieldKind::FixedArray { element, len } => {
+            let (element_size, element_align) = element.storage_shape()?;
+            let stride = align_to(element_size, element_align);
+            let mut values = Vec::with_capacity(*len);
+            for i in 0..*len {
+                values.push(unsafe { read_field_variant_at(ptr.add(i * stride), element)? });
+            }
+            Variant::from_safearray(SafeArray::from_variants_nd(
+                vec![SafeArrayBound {
+                    lower: 0,
+                    count: u32::try_from(*len).map_err(
+                        |_| "fixed-array record field length exceeds SAFEARRAY capacity",
+                    )?,
+                }],
+                values,
+            ))
         }
     };
     Ok(value)
@@ -475,18 +573,28 @@ unsafe fn write_field_variant_at(
         VbaRecordFieldKind::Byte => {
             let value = value
                 .as_u8()
+                .or_else(|| value.as_i32().and_then(|value| u8::try_from(value).ok()))
+                .or_else(|| value.as_i16().and_then(|value| u8::try_from(value).ok()))
                 .ok_or_else(|| "Byte record field requires Byte value".to_string())?;
             unsafe { ptr.cast::<u8>().write(value) };
         }
         VbaRecordFieldKind::Single => {
             let value = value
                 .as_f32()
+                .or_else(|| value.as_f64().map(|value| value as f32))
+                .or_else(|| value.as_i32().map(|value| value as f32))
+                .or_else(|| value.as_i16().map(|value| value as f32))
+                .or_else(|| value.as_u8().map(|value| value as f32))
                 .ok_or_else(|| "Single record field requires Single value".to_string())?;
             unsafe { ptr.cast::<f32>().write(value) };
         }
         VbaRecordFieldKind::Double => {
             let value = value
                 .as_f64()
+                .or_else(|| value.as_f32().map(f64::from))
+                .or_else(|| value.as_i32().map(f64::from))
+                .or_else(|| value.as_i16().map(f64::from))
+                .or_else(|| value.as_u8().map(f64::from))
                 .ok_or_else(|| "Double record field requires Double value".to_string())?;
             unsafe { ptr.cast::<f64>().write(value) };
         }
@@ -529,8 +637,25 @@ unsafe fn write_field_variant_at(
                 clone_record_into_ptr(source.data_ptr(), ptr, layout)?;
             }
         }
-        VbaRecordFieldKind::FixedArray { .. } => {
-            return Err("fixed-array record field cannot be assigned as a scalar Variant".into());
+        VbaRecordFieldKind::FixedArray { element, len } => {
+            let Some(array) = value.as_safearray() else {
+                return Err("fixed-array record field assignment requires an array value".into());
+            };
+            let values = array.variant_elements().ok_or_else(|| {
+                "fixed-array record field assignment requires materialized array elements"
+                    .to_string()
+            })?;
+            if values.len() != *len {
+                return Err(format!(
+                    "fixed-array record field assignment requires {len} elements, got {}",
+                    values.len()
+                ));
+            }
+            let (element_size, element_align) = element.storage_shape()?;
+            let stride = align_to(element_size, element_align);
+            for (i, value) in values.iter().enumerate() {
+                unsafe { write_field_variant_at(ptr.add(i * stride), element, value)? };
+            }
         }
     }
     Ok(())
@@ -629,6 +754,53 @@ mod tests {
     }
 
     #[test]
+    fn byref_as_any_native_abi_admits_nested_fixed_array_records() {
+        let inner = Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("Flag", Kind::Boolean),
+                Field::named("Value", Kind::Long),
+            ])
+            .expect("inner"),
+        );
+        let layout = VbaRecordLayout::new(vec![
+            Field::named("Tag", Kind::Integer),
+            Field::named("Inner", Kind::Record(inner)),
+            Field::named(
+                "Bytes",
+                Kind::FixedArray {
+                    element: Box::new(Kind::Byte),
+                    len: 4,
+                },
+            ),
+            Field::named("Total", Kind::Currency),
+        ])
+        .expect("layout");
+
+        layout
+            .validate_byref_as_any_native_abi()
+            .expect("plain native fields should be eligible for ByRef As Any");
+    }
+
+    #[test]
+    fn byref_as_any_native_abi_rejects_owning_record_fields() {
+        let with_string =
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::String)]).expect("layout");
+        let string_error = with_string
+            .validate_byref_as_any_native_abi()
+            .expect_err("String record fields are not plain native bytes");
+        assert!(string_error.contains("Text"));
+        assert!(string_error.contains("String fields"));
+
+        let with_variant =
+            VbaRecordLayout::new(vec![Field::named("Value", Kind::Variant)]).expect("layout");
+        let variant_error = with_variant
+            .validate_byref_as_any_native_abi()
+            .expect_err("Variant record fields are not plain native bytes");
+        assert!(variant_error.contains("Value"));
+        assert!(variant_error.contains("Variant fields"));
+    }
+
+    #[test]
     fn pointer_and_variant_fields_use_runtime_carrier_shapes() {
         let layout = VbaRecordLayout::new(vec![
             Field::named("B", Kind::Byte),
@@ -684,6 +856,38 @@ mod tests {
             Some(1234)
         );
         assert_eq!(record.field_bytes(1).expect("bytes"), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn fixed_array_record_field_projects_to_array_and_writes_back_inline_storage() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named(
+                "Bytes",
+                Kind::FixedArray {
+                    element: Box::new(Kind::Byte),
+                    len: 4,
+                },
+            )])
+            .expect("layout"),
+        );
+        let mut record = VbaRecord::new_default(layout).expect("record");
+
+        let mut array = record
+            .read_field_variant(0)
+            .expect("fixed array projection")
+            .as_safearray()
+            .expect("array projection");
+        array
+            .set_variant_element(1, &Variant::from_u8(0xAB))
+            .expect("set array element");
+        array
+            .set_variant_element(3, &Variant::from_u8(0xCD))
+            .expect("set array element");
+        record
+            .write_field_variant(0, &Variant::from_safearray(array))
+            .expect("write fixed array projection back");
+
+        assert_eq!(record.field_bytes(0).expect("bytes"), &[0, 0xAB, 0, 0xCD]);
     }
 
     #[test]

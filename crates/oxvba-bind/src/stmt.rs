@@ -1486,7 +1486,10 @@ fn default_value_for_type(
             | BuiltinType::Date,
         ) => types::coerce_store(CoreValue::Const(CoreConst::I32(0)), ty),
         VarTypeRef::Object(_) => CoreValue::Const(CoreConst::Nothing),
-        VarTypeRef::Variant | VarTypeRef::Array(_) | VarTypeRef::Udt(_) => return None,
+        VarTypeRef::Variant
+        | VarTypeRef::Array(_)
+        | VarTypeRef::FixedArray { .. }
+        | VarTypeRef::Udt(_) => return None,
     };
     let intent = if matches!(ty, VarTypeRef::Object(_)) {
         AssignmentIntent::Set
