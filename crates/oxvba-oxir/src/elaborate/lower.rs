@@ -43,7 +43,7 @@ use crate::elaborate::{NameResolver, lower_var_type};
 use crate::ids::{BlockId, FuncId, GlobalId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
 use crate::program::{OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
-use crate::ty::OxTy;
+use crate::ty::{ArrayShape, OxTy};
 use crate::value::{ArithOp, CmpOp, LogicalOp, OxArg, OxConst, OxOperand, OxPlace};
 
 /// A failure to elaborate Core IR into OxIR.
@@ -364,8 +364,7 @@ impl Lowerer {
         match stmt {
             CoreStmt::Assign { place, value, .. } => {
                 let (src, _ty) = self.lower_value(value)?;
-                let dst = self.lower_place_store(place)?;
-                self.emit(OxInst::Assign { dst, value: src });
+                self.store_to_place(place, src)?;
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
@@ -421,11 +420,44 @@ impl Lowerer {
                 Ok(())
             }
             CoreStmt::Error(op) => self.lower_error(op, s_next),
+            CoreStmt::ReDim {
+                array,
+                bounds,
+                element_type,
+                preserve,
+            } => {
+                let dst = self.simple_place(array)?;
+                let mut upper_bounds = Vec::with_capacity(bounds.len());
+                let mut lower_bounds = Vec::with_capacity(bounds.len());
+                for b in bounds {
+                    upper_bounds.push(self.lower_value(&b.upper)?.0);
+                    lower_bounds.push(b.lower);
+                }
+                self.emit(OxInst::ArrayRedim {
+                    dst,
+                    upper_bounds,
+                    lower_bounds,
+                    element: element_type.clone(),
+                    preserve: *preserve,
+                });
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                Ok(())
+            }
+            CoreStmt::Erase {
+                array,
+                element_type,
+            } => {
+                let arr = self.simple_place(array)?;
+                self.emit(OxInst::ArrayErase {
+                    array: arr,
+                    element: element_type.clone(),
+                });
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                Ok(())
+            }
             // Deferred to later reviewed steps.
             CoreStmt::ForEach { .. } => Err(unimpl("For Each")),
             CoreStmt::With { .. } => Err(unimpl("With")),
-            CoreStmt::ReDim { .. } => Err(unimpl("ReDim")),
-            CoreStmt::Erase { .. } => Err(unimpl("Erase")),
             CoreStmt::RaiseEvent { .. } => Err(unimpl("RaiseEvent")),
         }
     }
@@ -583,7 +615,7 @@ impl Lowerer {
         // statement, so all of it faults to the For's pad; the body statements have
         // their own pads. `cur_fault` is already the For's pad on entry.
         let for_pad = self.cur_fault;
-        let var_place = self.lower_place_store(var)?;
+        let var_place = self.simple_place(var)?;
         let var_op = self.place_as_operand(var)?;
 
         // counter = start
@@ -850,12 +882,54 @@ impl Lowerer {
             // Deferred to later reviewed steps.
             CoreValue::WithTemp(_) => Err(unimpl("With receiver temp")),
             CoreValue::New(_) | CoreValue::NewExtern { .. } => Err(unimpl("New <class>")),
-            CoreValue::NewRecord { .. } => Err(unimpl("UDT record value")),
             CoreValue::TypeOfIs { .. } => Err(unimpl("TypeOf … Is")),
             CoreValue::Ptr { .. } => Err(unimpl("VarPtr/StrPtr/ObjPtr")),
             CoreValue::ErrField(_) => Err(unimpl("Err.Number/.Description/…")),
-            CoreValue::ArrayLiteral(_) => Err(unimpl("array literal")),
-            CoreValue::Bound { .. } => Err(unimpl("LBound/UBound")),
+            CoreValue::ArrayLiteral(values) => {
+                let mut ops = Vec::with_capacity(values.len());
+                for v in values {
+                    ops.push(self.lower_value(v)?.0);
+                }
+                let t = self.new_temp();
+                self.emit(OxInst::ArrayLiteral {
+                    dst: OxPlace::Temp(t),
+                    values: ops,
+                });
+                // `Array(…)` yields a dynamic 0-based Variant array.
+                Ok((
+                    OxOperand::temp(t),
+                    OxTy::Array(Box::new(OxTy::Variant), ArrayShape::Dynamic),
+                ))
+            }
+            CoreValue::Bound {
+                which,
+                array,
+                dimension,
+            } => {
+                let arr = self.lower_place_load(array)?.0;
+                let dim = match dimension {
+                    Some(d) => Some(self.lower_value(d)?.0),
+                    None => None,
+                };
+                let t = self.new_temp();
+                self.emit(OxInst::Bound {
+                    dst: OxPlace::Temp(t),
+                    which: *which,
+                    array: arr,
+                    dimension: dim,
+                });
+                Ok((OxOperand::temp(t), OxTy::Long))
+            }
+            CoreValue::NewRecord { fields } => {
+                let t = self.new_temp();
+                self.emit(OxInst::NewRecord {
+                    dst: OxPlace::Temp(t),
+                    fields: fields.clone(),
+                });
+                // A UDT record value; precise `Record(layout)` typing needs the record
+                // layout table (a later step), so it is conservatively `Variant` here.
+                Ok((OxOperand::temp(t), OxTy::Variant))
+            }
             CoreValue::AddressOf(_) => Err(unimpl("AddressOf")),
             CoreValue::Predeclared { .. } | CoreValue::PredeclaredExtern { .. } => {
                 Err(unimpl("predeclared (VB_PredeclaredId) instance"))
@@ -1036,7 +1110,9 @@ impl Lowerer {
 
     // ── Places ───────────────────────────────────────────────────────────────
 
-    /// Read a place into an operand, returning `(operand, type)`.
+    /// Read a place into an operand, returning `(operand, type)`. Array-element and
+    /// UDT-field reads recurse on their base (so nested reads like `m(j)(i)` and
+    /// `p.q.x` work), then index/project it.
     fn lower_place_load(&mut self, place: &coreir::CorePlace) -> Result<(OxOperand, OxTy)> {
         match place {
             coreir::CorePlace::Local(l) => {
@@ -1049,16 +1125,79 @@ impl Lowerer {
                 // into the lowerer is a noted refinement).
                 Ok((OxOperand::Use(OxPlace::Global(GlobalId(g.0))), OxTy::Variant))
             }
+            coreir::CorePlace::Index { array, indices } => {
+                let (arr, arr_ty) = self.lower_place_load(array)?;
+                let indices = self.lower_indices(indices)?;
+                // Recover the element type from the array's static type when known.
+                let elem_ty = match arr_ty {
+                    OxTy::Array(elem, _) => *elem,
+                    _ => OxTy::Variant,
+                };
+                let t = self.new_temp();
+                self.emit(OxInst::ArrayGet {
+                    dst: OxPlace::Temp(t),
+                    array: arr,
+                    indices,
+                });
+                Ok((OxOperand::temp(t), elem_ty))
+            }
+            coreir::CorePlace::RecordField { base, index } => {
+                let rec = self.lower_place_load(base)?.0;
+                let t = self.new_temp();
+                self.emit(OxInst::RecordGet {
+                    dst: OxPlace::Temp(t),
+                    record: rec,
+                    index: *index,
+                });
+                // Field typing needs the record layout table (a later step).
+                Ok((OxOperand::temp(t), OxTy::Variant))
+            }
             coreir::CorePlace::Field { .. } => Err(unimpl("object field access")),
-            coreir::CorePlace::Index { .. } => Err(unimpl("array element access")),
-            coreir::CorePlace::RecordField { .. } => Err(unimpl("UDT field access")),
             coreir::CorePlace::WithEvents { .. } => Err(unimpl("WithEvents sink access")),
         }
     }
 
-    /// The destination place for a store (only simple variable places in the spine).
-    fn lower_place_store(&mut self, place: &coreir::CorePlace) -> Result<OxPlace> {
-        self.simple_place(place)
+    /// Store `value` into `place`. Simple variables become an `Assign`; array elements
+    /// and UDT fields become a dedicated `ArraySet`/`RecordSet` whose base is a simple
+    /// variable place (one-level; a nested mutable base — e.g. `m(j)(i) =` or `obj.arr(i) =`
+    /// — is a noted later refinement).
+    fn store_to_place(&mut self, place: &coreir::CorePlace, value: OxOperand) -> Result<()> {
+        match place {
+            coreir::CorePlace::Local(_) | coreir::CorePlace::Global(_) => {
+                let dst = self.simple_place(place)?;
+                self.emit(OxInst::Assign { dst, value });
+            }
+            coreir::CorePlace::Index { array, indices } => {
+                let arr = self.simple_place(array)?;
+                let indices = self.lower_indices(indices)?;
+                self.emit(OxInst::ArraySet {
+                    array: arr,
+                    indices,
+                    value,
+                });
+            }
+            coreir::CorePlace::RecordField { base, index } => {
+                let rec = self.simple_place(base)?;
+                self.emit(OxInst::RecordSet {
+                    record: rec,
+                    index: *index,
+                    value,
+                });
+            }
+            coreir::CorePlace::Field { .. } => return Err(unimpl("object field assignment")),
+            coreir::CorePlace::WithEvents { .. } => {
+                return Err(unimpl("WithEvents sink assignment"));
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_indices(&mut self, indices: &[CoreValue]) -> Result<Vec<OxOperand>> {
+        let mut out = Vec::with_capacity(indices.len());
+        for i in indices {
+            out.push(self.lower_value(i)?.0);
+        }
+        Ok(out)
     }
 
     /// A simple (directly addressable) place: a local or a global.
@@ -1181,11 +1320,11 @@ mod tests {
     use crate::elaborate::ResolvedTypeName;
     use crate::verify::verify_program;
     use oxvba_bundle::coreir::{
-        CoreIfArm, CoreLocal, CorePlace, ErrorOp, LocalId as CoreLocalId,
+        BoundWhich, CoreBound, CoreIfArm, CoreLocal, CorePlace, ErrorOp, LocalId as CoreLocalId,
     };
     use oxvba_bundle::{
-        AssignmentIntent, AssignmentTargetKind, BuiltinType, NumericCoerceTarget, ProcedureKind,
-        StringCompareMode, VarTypeRef,
+        ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, NumericCoerceTarget,
+        ProcedureKind, StringCompareMode, VarTypeRef,
     };
 
     struct UntypedResolver;
@@ -1426,5 +1565,105 @@ mod tests {
         let json = serde_json::to_string(&oxp).expect("serialize");
         let back: OxProgram = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(oxp, back);
+    }
+
+    /// `ReDim a(1 To 10) : a(1) = 5 : x = a(1) : x = UBound(a) : Erase a` exercises the
+    /// array op set (ReDim / ArraySet / ArrayGet / Bound / Erase), with the element
+    /// type recovered from the array's declared type.
+    #[test]
+    fn arrays_elaborate_and_verify() {
+        let a = || CorePlace::Local(CoreLocalId(0));
+        let x = CorePlace::Local(CoreLocalId(1));
+        let idx1 = || vec![CoreValue::Const(CoreConst::I32(1))];
+        let body = vec![
+            CoreStmt::ReDim {
+                array: a(),
+                bounds: vec![CoreBound {
+                    upper: CoreValue::Const(CoreConst::I32(10)),
+                    lower: 1,
+                }],
+                element_type: ArrayElementType::Long,
+                preserve: false,
+            },
+            assign(
+                CorePlace::Index {
+                    array: Box::new(a()),
+                    indices: idx1(),
+                },
+                CoreValue::Const(CoreConst::I32(5)),
+            ),
+            assign(
+                x.clone(),
+                CoreValue::Load(CorePlace::Index {
+                    array: Box::new(a()),
+                    indices: idx1(),
+                }),
+            ),
+            assign(
+                x.clone(),
+                CoreValue::Bound {
+                    which: BoundWhich::Upper,
+                    array: Box::new(a()),
+                    dimension: None,
+                },
+            ),
+            CoreStmt::Erase {
+                array: a(),
+                element_type: ArrayElementType::Long,
+            },
+        ];
+        let locals = vec![
+            CoreLocal {
+                name: "a".to_string(),
+                ty: VarTypeRef::Array(Box::new(VarTypeRef::Builtin(BuiltinType::Long))),
+                array_element: Some(ArrayElementType::Long),
+            },
+            long_local("x"),
+        ];
+        let prog = program(sub("Main", locals, body));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+
+        let f = &oxp.funcs[0];
+        let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
+        assert!(has(|i| matches!(i, OxInst::ArrayRedim { .. })), "expected ArrayRedim");
+        assert!(has(|i| matches!(i, OxInst::ArraySet { .. })), "expected ArraySet");
+        assert!(has(|i| matches!(i, OxInst::ArrayGet { .. })), "expected ArrayGet");
+        assert!(has(|i| matches!(i, OxInst::Bound { .. })), "expected Bound");
+        assert!(has(|i| matches!(i, OxInst::ArrayErase { .. })), "expected ArrayErase");
+        // The declared element type is recovered: `a` is an Array(Long).
+        assert_eq!(
+            f.locals[0].ty,
+            OxTy::Array(Box::new(OxTy::Long), ArrayShape::Dynamic)
+        );
+    }
+
+    /// `p.x = 1 : y = p.x` over a UDT value exercises RecordSet / RecordGet.
+    #[test]
+    fn records_elaborate_and_verify() {
+        let p_x = || CorePlace::RecordField {
+            base: Box::new(CorePlace::Local(CoreLocalId(0))),
+            index: 0,
+        };
+        let body = vec![
+            assign(p_x(), CoreValue::Const(CoreConst::I32(1))),
+            assign(CorePlace::Local(CoreLocalId(1)), CoreValue::Load(p_x())),
+        ];
+        let locals = vec![
+            CoreLocal {
+                name: "p".to_string(),
+                ty: VarTypeRef::Udt("mytype".to_string()),
+                array_element: None,
+            },
+            long_local("y"),
+        ];
+        let prog = program(sub("Main", locals, body));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+
+        let f = &oxp.funcs[0];
+        let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
+        assert!(has(|i| matches!(i, OxInst::RecordSet { .. })), "expected RecordSet");
+        assert!(has(|i| matches!(i, OxInst::RecordGet { .. })), "expected RecordGet");
     }
 }
