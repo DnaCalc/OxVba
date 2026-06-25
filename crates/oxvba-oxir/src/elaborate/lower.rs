@@ -5,15 +5,20 @@
 //! each binding's [`OxTy`] from the type the binder recorded on the Core IR
 //! ([`crate::elaborate::lower_var_type`]), and marks statement boundaries.
 //!
-//! # Coverage (landing incrementally)
+//! # Coverage
 //!
-//! Covered: the scalar / control-flow / `VbaProc`-call core **and the full error /
-//! control model** — `On Error` (`Resume Next` / `GoTo h` / `GoTo 0`),
-//! `Resume`/`Resume Next`/`Resume <label>`, `Err.Raise`/`Error <n>`, `GoSub`/`Return`,
-//! `GoTo`/labels. Constructs not yet handled return [`ElaborateError::Unimplemented`]
-//! (never a silent mis-lowering): arrays, records, `With`, `For Each`, events, object
-//! construction, COM dispatch, and the remaining call kinds. Each is added in a later
-//! reviewed step.
+//! The whole **procedural core**: scalars, all control flow, the full error/control
+//! model (`On Error` `Resume Next`/`GoTo h`/`GoTo 0`, `Resume`/`Resume Next`/`Resume
+//! <label>`, `Err.Raise`/`Error <n>`, `GoSub`/`Return`, `GoTo`/labels), `With`,
+//! `For Each`, arrays (literal/`LBound`/`UBound`/`ReDim`/`Erase`/element access), UDT
+//! records, the pointer helpers / `Err` fields / `AddressOf`, and every call kind
+//! except COM (`VbaProc`, base-library/`Declare` native calls, cross-bundle
+//! `ExternProc`, `CallByName`).
+//!
+//! Deferred to the object/COM de-erasure step — these return
+//! [`ElaborateError::Unimplemented`] (never a silent mis-lowering): object construction
+//! (`New`/predeclared instances), object field / `WithEvents` access, `RaiseEvent`,
+//! `TypeOf … Is`, and early/late-bound COM dispatch.
 //!
 //! # Fault model (per-statement landing pads)
 //!
@@ -34,17 +39,20 @@ use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
     self, CoreArg, CoreBinOp, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp, CoreValue,
-    ErrorOp, LabelId as CoreLabelId,
+    ErrField, ErrorOp, LabelId as CoreLabelId,
 };
 use oxvba_bundle::NumericMode;
 
 use crate::com::ComInterface;
 use crate::elaborate::{NameResolver, lower_var_type};
-use crate::ids::{BlockId, FuncId, GlobalId, LocalId, TempId};
+use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
 use crate::program::{OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
 use crate::ty::{ArrayShape, OxTy};
-use crate::value::{ArithOp, CmpOp, LogicalOp, OxArg, OxConst, OxOperand, OxPlace};
+use crate::value::{
+    ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxConst, OxNativeCallee,
+    OxOperand, OxPlace,
+};
 
 /// A failure to elaborate Core IR into OxIR.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,6 +179,9 @@ struct Lowerer {
     /// Pre-assigned block per source label, so forward `GoTo` / `On Error GoTo` /
     /// `Resume <label>` / `GoSub` references resolve.
     labels: HashMap<CoreLabelId, BlockId>,
+    /// The temp holding each in-scope `With` receiver (by the binder's `With` id), so
+    /// `WithTemp(id)` references read it.
+    with_temps: HashMap<usize, TempId>,
 }
 
 impl Lowerer {
@@ -190,6 +201,7 @@ impl Lowerer {
             next_temp: 0,
             loops: Vec::new(),
             labels: HashMap::new(),
+            with_temps: HashMap::new(),
         }
     }
 
@@ -455,9 +467,73 @@ impl Lowerer {
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
-            // Deferred to later reviewed steps.
-            CoreStmt::ForEach { .. } => Err(unimpl("For Each")),
-            CoreStmt::With { .. } => Err(unimpl("With")),
+            CoreStmt::With {
+                id,
+                receiver,
+                body,
+            } => {
+                // Evaluate the receiver once into a temp the body's `WithTemp(id)` reads.
+                let (recv, _) = self.lower_value(receiver)?;
+                let t = self.new_temp();
+                self.emit(OxInst::Assign {
+                    dst: OxPlace::Temp(t),
+                    value: recv,
+                });
+                let prev = self.with_temps.insert(*id, t);
+                self.lower_block(body)?;
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                // Restore any shadowed outer `With` binding.
+                match prev {
+                    Some(p) => {
+                        self.with_temps.insert(*id, p);
+                    }
+                    None => {
+                        self.with_temps.remove(id);
+                    }
+                }
+                Ok(())
+            }
+            CoreStmt::ForEach { item, source, body } => {
+                let for_pad = self.cur_fault;
+                let (src, _) = self.lower_value(source)?;
+                let iter = self.new_temp();
+                self.emit(OxInst::ForEachInit {
+                    iter: OxPlace::Temp(iter),
+                    source: src,
+                });
+                let head = self.reserve();
+                let body_blk = self.reserve();
+                self.finish_to(OxTerminator::Jump(head), head);
+                // head: advance the iterator, branch on whether a value was produced.
+                self.cur_fault = for_pad;
+                let item_t = self.new_temp();
+                let has_t = self.new_temp();
+                self.emit(OxInst::ForEachNext {
+                    iter: OxPlace::Temp(iter),
+                    item: OxPlace::Temp(item_t),
+                    has_value: OxPlace::Temp(has_t),
+                });
+                self.finish_to(
+                    OxTerminator::Branch {
+                        cond: OxOperand::temp(has_t),
+                        then_blk: body_blk,
+                        else_blk: s_next,
+                    },
+                    body_blk,
+                );
+                // body: bind the current item, then run the loop body.
+                self.cur_fault = for_pad;
+                self.store_to_place(item, OxOperand::temp(item_t))?;
+                self.loops.push(LoopCtx {
+                    is_for: true,
+                    brk: s_next,
+                });
+                self.lower_block(body)?;
+                self.loops.pop();
+                self.finish_to(OxTerminator::Jump(head), s_next);
+                Ok(())
+            }
+            // Deferred to the object/COM step.
             CoreStmt::RaiseEvent { .. } => Err(unimpl("RaiseEvent")),
         }
     }
@@ -879,12 +955,47 @@ impl Lowerer {
             } => self.lower_binary(*op, lhs, rhs, *mode, *num),
             CoreValue::Coerce { value, to } => self.lower_coerce(value, to),
             CoreValue::Call { callee, args } => self.lower_call(callee, args),
-            // Deferred to later reviewed steps.
-            CoreValue::WithTemp(_) => Err(unimpl("With receiver temp")),
+            CoreValue::WithTemp(id) => {
+                let t = self.with_temps.get(id).copied().ok_or_else(|| {
+                    ElaborateError::Malformed(format!("unbound With receiver temp {id}"))
+                })?;
+                // The receiver's static type is the object step's concern; Variant here.
+                Ok((OxOperand::temp(t), OxTy::Variant))
+            }
+            CoreValue::Ptr { kind, value } => {
+                let (src, _) = self.lower_value(value)?;
+                let t = self.new_temp();
+                self.emit(OxInst::Ptr {
+                    dst: OxPlace::Temp(t),
+                    kind: *kind,
+                    src,
+                });
+                // VarPtr/StrPtr/ObjPtr yield a pointer-width integer.
+                Ok((OxOperand::temp(t), OxTy::LongPtr))
+            }
+            CoreValue::ErrField(field) => {
+                let t = self.new_temp();
+                self.emit(OxInst::ErrFieldGet {
+                    dst: OxPlace::Temp(t),
+                    field: *field,
+                });
+                let ty = match field {
+                    ErrField::Number | ErrField::LastDllError => OxTy::Long,
+                    ErrField::Description | ErrField::Source => OxTy::Str,
+                };
+                Ok((OxOperand::temp(t), ty))
+            }
+            CoreValue::AddressOf(proc) => {
+                let t = self.new_temp();
+                self.emit(OxInst::LoadProcRef {
+                    dst: OxPlace::Temp(t),
+                    proc: FuncId(proc.0),
+                });
+                Ok((OxOperand::temp(t), OxTy::ProcRef))
+            }
+            // Object construction / typed-object tests are the object/COM step.
             CoreValue::New(_) | CoreValue::NewExtern { .. } => Err(unimpl("New <class>")),
             CoreValue::TypeOfIs { .. } => Err(unimpl("TypeOf … Is")),
-            CoreValue::Ptr { .. } => Err(unimpl("VarPtr/StrPtr/ObjPtr")),
-            CoreValue::ErrField(_) => Err(unimpl("Err.Number/.Description/…")),
             CoreValue::ArrayLiteral(values) => {
                 let mut ops = Vec::with_capacity(values.len());
                 for v in values {
@@ -930,7 +1041,6 @@ impl Lowerer {
                 // layout table (a later step), so it is conservatively `Variant` here.
                 Ok((OxOperand::temp(t), OxTy::Variant))
             }
-            CoreValue::AddressOf(_) => Err(unimpl("AddressOf")),
             CoreValue::Predeclared { .. } | CoreValue::PredeclaredExtern { .. } => {
                 Err(unimpl("predeclared (VB_PredeclaredId) instance"))
             }
@@ -1086,15 +1196,78 @@ impl Lowerer {
                 // conservatively Variant for now.
                 Ok((OxOperand::temp(dst_t), OxTy::Variant))
             }
-            coreir::CoreCallee::Native(_) => Err(unimpl("base-library / builtin call")),
-            coreir::CoreCallee::Declare { .. } => Err(unimpl("Declare Lib call")),
+            coreir::CoreCallee::Native(id) => {
+                let args = self.lower_call_args(args)?;
+                let dst_t = self.new_temp();
+                self.emit(OxInst::CallNative {
+                    dst: Some(OxPlace::Temp(dst_t)),
+                    callee: OxNativeCallee::Builtin(*id),
+                    args,
+                });
+                Ok((OxOperand::temp(dst_t), OxTy::Variant))
+            }
+            coreir::CoreCallee::Declare {
+                descriptor_id,
+                ptr_writebacks,
+            } => {
+                let args = self.lower_call_args(args)?;
+                let mut writebacks = Vec::with_capacity(ptr_writebacks.len());
+                for wb in ptr_writebacks {
+                    writebacks.push(DeclarePtrWriteback {
+                        arg_index: wb.arg_index,
+                        target: self.simple_place(&wb.target)?,
+                        kind: wb.kind,
+                    });
+                }
+                let dst_t = self.new_temp();
+                self.emit(OxInst::CallNative {
+                    dst: Some(OxPlace::Temp(dst_t)),
+                    callee: OxNativeCallee::Declare {
+                        descriptor_id: *descriptor_id,
+                        ptr_writebacks: writebacks,
+                    },
+                    args,
+                });
+                Ok((OxOperand::temp(dst_t), OxTy::Variant))
+            }
+            coreir::CoreCallee::ExternProc { import } => {
+                let args = self.lower_proc_args(args)?;
+                let dst_t = self.new_temp();
+                self.emit(OxInst::CallExtern {
+                    dst: Some(OxPlace::Temp(dst_t)),
+                    import: ImportId(*import),
+                    args,
+                });
+                Ok((OxOperand::temp(dst_t), OxTy::Variant))
+            }
+            coreir::CoreCallee::DynamicByName => {
+                // args = [object, name, calltype, forwarded args…].
+                let [obj, name, calltype, rest @ ..] = args else {
+                    return Err(ElaborateError::Malformed(
+                        "CallByName needs object, name, and calltype operands".into(),
+                    ));
+                };
+                let object = self.lower_arg_value(obj)?;
+                let name = self.lower_arg_value(name)?;
+                let calltype = self.lower_arg_value(calltype)?;
+                let args = self.lower_call_args(rest)?;
+                let dst_t = self.new_temp();
+                self.emit(OxInst::CallByName {
+                    dst: Some(OxPlace::Temp(dst_t)),
+                    object,
+                    name,
+                    calltype,
+                    args,
+                });
+                Ok((OxOperand::temp(dst_t), OxTy::Variant))
+            }
+            // The typed COM dispatch path is the object/COM de-erasure step.
             coreir::CoreCallee::EarlyCom { .. } => Err(unimpl("early-bound COM call")),
             coreir::CoreCallee::LateDispatch { .. } => Err(unimpl("late-bound COM call")),
-            coreir::CoreCallee::DynamicByName => Err(unimpl("CallByName")),
-            coreir::CoreCallee::ExternProc { .. } => Err(unimpl("cross-bundle call")),
         }
     }
 
+    /// Lower arguments for a compiled VBA / cross-bundle procedure call (`OxArg`).
     fn lower_proc_args(&mut self, args: &[CoreArg]) -> Result<Vec<OxArg>> {
         let mut out = Vec::with_capacity(args.len());
         for arg in args {
@@ -1102,10 +1275,42 @@ impl Lowerer {
                 CoreArg::ByVal(v) => OxArg::ByVal(self.lower_value(v)?.0),
                 CoreArg::ByRef(place) => OxArg::ByRef(self.simple_place(place)?),
                 CoreArg::Omitted => OxArg::Omitted,
-                CoreArg::Named { .. } => return Err(unimpl("named argument")),
+                // A named argument to a project proc lowers to a positional value (the
+                // binder has already resolved the position).
+                CoreArg::Named { value, .. } => OxArg::ByVal(self.lower_value(value)?.0),
             });
         }
         Ok(out)
+    }
+
+    /// Lower arguments for a native / late-bound call (`OxCallArg`, which keeps named
+    /// arguments and ByRef copy-out distinct).
+    fn lower_call_args(&mut self, args: &[CoreArg]) -> Result<Vec<OxCallArg>> {
+        let mut out = Vec::with_capacity(args.len());
+        for arg in args {
+            out.push(match arg {
+                CoreArg::ByVal(v) => OxCallArg::Operand(self.lower_value(v)?.0),
+                CoreArg::ByRef(place) => OxCallArg::ByRef(self.simple_place(place)?),
+                CoreArg::Omitted => OxCallArg::Omitted,
+                CoreArg::Named { name, value } => OxCallArg::Named {
+                    name: name.clone(),
+                    value: self.lower_value(value)?.0,
+                },
+            });
+        }
+        Ok(out)
+    }
+
+    /// Lower a call argument that must be a plain value operand (the object/name/
+    /// calltype operands of `CallByName`).
+    fn lower_arg_value(&mut self, arg: &CoreArg) -> Result<OxOperand> {
+        match arg {
+            CoreArg::ByVal(v) => Ok(self.lower_value(v)?.0),
+            CoreArg::ByRef(place) => Ok(self.lower_place_load(place)?.0),
+            CoreArg::Omitted | CoreArg::Named { .. } => Err(ElaborateError::Malformed(
+                "expected a positional value operand".into(),
+            )),
+        }
     }
 
     // ── Places ───────────────────────────────────────────────────────────────
@@ -1320,11 +1525,12 @@ mod tests {
     use crate::elaborate::ResolvedTypeName;
     use crate::verify::verify_program;
     use oxvba_bundle::coreir::{
-        BoundWhich, CoreBound, CoreIfArm, CoreLocal, CorePlace, ErrorOp, LocalId as CoreLocalId,
+        BoundWhich, CoreBound, CoreCallee, CoreIfArm, CoreLocal, CorePlace, ErrField, ErrorOp,
+        LocalId as CoreLocalId, PtrKind, ProcId as CoreProcId,
     };
     use oxvba_bundle::{
-        ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, NumericCoerceTarget,
-        ProcedureKind, StringCompareMode, VarTypeRef,
+        ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId,
+        NumericCoerceTarget, ProcedureKind, StringCompareMode, VarTypeRef,
     };
 
     struct UntypedResolver;
@@ -1338,6 +1544,14 @@ mod tests {
         CoreLocal {
             name: name.to_string(),
             ty: VarTypeRef::Builtin(BuiltinType::Long),
+            array_element: None,
+        }
+    }
+
+    fn variant_local(name: &str) -> CoreLocal {
+        CoreLocal {
+            name: name.to_string(),
+            ty: VarTypeRef::Variant,
             array_element: None,
         }
     }
@@ -1472,21 +1686,21 @@ mod tests {
 
     #[test]
     fn deferred_constructs_are_explicit_unimplemented() {
-        // `With` is deferred to the object step — it must fail explicitly, never
-        // silently mis-lower.
+        // `RaiseEvent` is deferred to the object/COM step — it must fail explicitly,
+        // never silently mis-lower.
         let prog = program(sub(
             "Main",
             Vec::new(),
-            vec![CoreStmt::With {
-                id: 0,
-                receiver: CoreValue::Const(CoreConst::Nothing),
-                body: Vec::new(),
+            vec![CoreStmt::RaiseEvent {
+                source: CoreValue::Const(CoreConst::Nothing),
+                event: 0,
+                args: Vec::new(),
             }],
         ));
-        let err = elaborate(&prog, &UntypedResolver).expect_err("With must be deferred");
+        let err = elaborate(&prog, &UntypedResolver).expect_err("RaiseEvent must be deferred");
         assert!(
-            matches!(err, ElaborateError::Unimplemented { what: "With" }),
-            "expected Unimplemented(With), got {err:?}"
+            matches!(err, ElaborateError::Unimplemented { what: "RaiseEvent" }),
+            "expected Unimplemented(RaiseEvent), got {err:?}"
         );
     }
 
@@ -1665,5 +1879,105 @@ mod tests {
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
         assert!(has(|i| matches!(i, OxInst::RecordSet { .. })), "expected RecordSet");
         assert!(has(|i| matches!(i, OxInst::RecordGet { .. })), "expected RecordGet");
+    }
+
+    /// A base-library call lowers to `CallNative { Builtin }`.
+    #[test]
+    fn native_call_elaborates() {
+        let call = CoreValue::Call {
+            callee: CoreCallee::Native(NativeImplId::ALL[0]),
+            args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::I32(1)))],
+        };
+        let prog = program(sub(
+            "Main",
+            vec![long_local("x")],
+            vec![assign(CorePlace::Local(CoreLocalId(0)), call)],
+        ));
+        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        assert!(
+            oxp.funcs[0]
+                .blocks
+                .iter()
+                .any(|b| b.instrs.iter().any(|i| matches!(
+                    i,
+                    OxInst::CallNative {
+                        callee: OxNativeCallee::Builtin(_),
+                        ..
+                    }
+                ))),
+            "expected a CallNative(Builtin)"
+        );
+    }
+
+    /// `With p : x = .<recv> : End With` and `For Each item In coll : x = item : Next`
+    /// exercise the With-receiver temp and the For-Each iterator protocol.
+    #[test]
+    fn with_and_foreach_elaborate() {
+        let x = || CorePlace::Local(CoreLocalId(0));
+        let body = vec![
+            CoreStmt::With {
+                id: 0,
+                receiver: CoreValue::Load(CorePlace::Local(CoreLocalId(1))),
+                // A direct reference to the With receiver temp.
+                body: vec![assign(x(), CoreValue::WithTemp(0))],
+            },
+            CoreStmt::ForEach {
+                item: CorePlace::Local(CoreLocalId(3)),
+                source: CoreValue::Load(CorePlace::Local(CoreLocalId(2))),
+                body: vec![assign(
+                    x(),
+                    CoreValue::Load(CorePlace::Local(CoreLocalId(3))),
+                )],
+            },
+        ];
+        let locals = vec![
+            long_local("x"),
+            variant_local("p"),
+            variant_local("coll"),
+            variant_local("item"),
+        ];
+        let oxp = elaborate(&program(sub("Main", locals, body)), &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        let f = &oxp.funcs[0];
+        let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
+        assert!(has(|i| matches!(i, OxInst::ForEachInit { .. })), "expected ForEachInit");
+        assert!(has(|i| matches!(i, OxInst::ForEachNext { .. })), "expected ForEachNext");
+    }
+
+    /// `p = VarPtr(x) : n = Err.Number : f = AddressOf Main` lower to Ptr / ErrFieldGet
+    /// / LoadProcRef.
+    #[test]
+    fn pointers_errfields_addressof_elaborate() {
+        let body = vec![
+            assign(
+                CorePlace::Local(CoreLocalId(0)),
+                CoreValue::Ptr {
+                    kind: PtrKind::Var,
+                    value: Box::new(CoreValue::Load(CorePlace::Local(CoreLocalId(1)))),
+                },
+            ),
+            assign(
+                CorePlace::Local(CoreLocalId(2)),
+                CoreValue::ErrField(ErrField::Number),
+            ),
+            assign(
+                CorePlace::Local(CoreLocalId(3)),
+                CoreValue::AddressOf(CoreProcId(0)),
+            ),
+        ];
+        let locals = vec![
+            long_local("p"),
+            long_local("x"),
+            long_local("n"),
+            variant_local("f"),
+        ];
+        let oxp = elaborate(&program(sub("Main", locals, body)), &UntypedResolver).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        let f = &oxp.funcs[0];
+        let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
+        assert!(has(|i| matches!(i, OxInst::Ptr { .. })), "expected Ptr");
+        assert!(has(|i| matches!(i, OxInst::ErrFieldGet { .. })), "expected ErrFieldGet");
+        assert!(has(|i| matches!(i, OxInst::LoadProcRef { .. })), "expected LoadProcRef");
     }
 }
