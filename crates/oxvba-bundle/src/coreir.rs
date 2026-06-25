@@ -6,12 +6,17 @@
 //! structured control flow; the bundle is a flat slot machine.
 //!
 //! Invariant: the Core IR carries **no symbol references**. Names are already
-//! resolved — callees are a `NativeImplId` / a [`ProcId`] / a COM dispid / a
-//! `Declare` descriptor id; coercion targets use the bundle's enums and
-//! `oxvba_runtime::VarType`; variables are logical [`LocalId`]/[`GlobalId`]s
-//! that `linearize` assigns to slots. That is what keeps `oxvba-bundle`
-//! dependency-light (it never needs the symbol model or the front-end).
+//! resolved — callees are a `NativeImplId` / a [`ProcId`] / a typed COM member
+//! descriptor / a `Declare` descriptor id; coercion targets use the bundle's enums
+//! and `oxvba_runtime::VarType`; variables are logical [`LocalId`]/[`GlobalId`]s
+//! that `linearize` assigns to slots. `oxvba-bundle` therefore never needs the
+//! symbol model or the front-end. It does depend on `oxvba-com` for the **canonical
+//! typed COM member descriptor** ([`oxvba_com::TypeLibMemberMetadata`]) that
+//! [`CoreCallee::EarlyCom`] carries: that descriptor is the one source of truth for a
+//! COM call's typed signature, reused verbatim (never mirrored) so the OxIR
+//! elaboration projects a fully typed early-bound call with no typelib re-resolution.
 
+use oxvba_com::TypeLibMemberMetadata;
 use oxvba_runtime::variant::VarType;
 
 use crate::native::NativeImplId;
@@ -387,10 +392,35 @@ pub enum CoreCallee {
     /// A base-library / `Declare` / host primitive native body.
     Native(NativeImplId),
     /// Early-bound COM dispatch (typed receiver). The receiver is `args[0]`.
+    ///
+    /// Carries the **full canonical typed member signature** ([`member`]) — the
+    /// per-parameter semantic types + ABI wire shapes + IIDs, the `QueryInterface`
+    /// target, the x64 vtable slot (+ bound), dual/dispinterface kind, return
+    /// type/wire, and optional/`[lcid]` rules — so the OxIR elaboration projects a
+    /// fully typed early-bound call (and persists it) with no typelib re-resolution.
+    /// This is the de-erasure: the legacy pipeline kept only a `(dispid, name)`
+    /// selector and re-resolved the live object at run time.
+    ///
+    /// [`name`] and [`kind`] are the **call-site** selector name and dispatch
+    /// accessor, which are *not* always the member's own (a value read of a
+    /// get/put-sharing property coerces `kind` to `PropertyGet`; a default-member
+    /// access selects by the receiver label), so they are carried distinctly from
+    /// `member`. `dispid` is **not** stored — it is `member.token`.
+    ///
+    /// [`member`]: CoreCallee::EarlyCom::member
+    /// [`name`]: CoreCallee::EarlyCom::name
+    /// [`kind`]: CoreCallee::EarlyCom::kind
     EarlyCom {
-        dispid: i32,
+        /// Call-site selector name (the syntactic member, or a default-member
+        /// receiver label) — the `linearize` selector name and the late-resolution key.
         name: String,
+        /// Call-site dispatch accessor (read context coerces to `PropertyGet`, etc.).
         kind: Option<ProjectMemberKind>,
+        /// The declared receiver COM type (e.g. `"Excel.Range"`) — the elaboration's
+        /// typed-interface-table grouping key.
+        interface_name: String,
+        /// The full canonical typed member descriptor (boxed to keep `CoreCallee` small).
+        member: Box<TypeLibMemberMetadata>,
     },
     /// Late-bound COM dispatch (`Object`/`Variant` receiver, by name).
     LateDispatch {

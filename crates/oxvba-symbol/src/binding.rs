@@ -4,7 +4,9 @@
 
 use oxvba_bundle::coreir::CoreConst;
 use oxvba_bundle::{NativeImplId, ProjectMemberKind};
-use oxvba_com::{TypeLibEventDispatchPath, TypeLibMemberInvokeKind, TypeLibParamType};
+use oxvba_com::{
+    TypeLibEventDispatchPath, TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibParamType,
+};
 
 use crate::model::{PredeclaredObjectId, SymbolId};
 use crate::structural::StructuralIntrinsic;
@@ -87,8 +89,15 @@ pub enum DispatchRoute {
     /// A `Declare Lib` external call → `CoreCallee::Declare { descriptor_id }`.
     Declare { descriptor_id: u32 },
     /// A COM member, fully typed. The binder picks early vs late by the receiver's
-    /// static type: typed coclass → `EarlyCom { dispid }`; `Object`/`Variant` →
+    /// static type: typed coclass → `EarlyCom`; `Object`/`Variant` →
     /// `LateDispatch { name }`. Carrying both makes one route serve both.
+    ///
+    /// The broken-out `dispid`/`member_name`/`member_kind`/`vtable_slot`/
+    /// `invoke_kind`/`is_default_member`/`param_by_ref` are convenience projections
+    /// of `member` that the binder's call-shaping logic reads heavily (e.g. coercing
+    /// a value read to `PropertyGet`); they are derivable from `member` and exist for
+    /// ergonomics on the legacy call-binding paths. `member` itself is the canonical
+    /// typed descriptor the de-erased `CoreCallee::EarlyCom` carries into OxIR.
     ComMember {
         member_name: String,
         dispid: i32,
@@ -99,6 +108,11 @@ pub enum DispatchRoute {
         /// Per-parameter by-ref (`[out]`/`[in,out]`) directions from the typelib;
         /// the binder emits `CoreArg::ByRef` for these so writes propagate back.
         param_by_ref: Vec<bool>,
+        /// The declared receiver COM type (e.g. `"Excel.Range"`) — carried so the
+        /// de-erased early-bound call records its typed-interface grouping key.
+        interface_name: String,
+        /// The full canonical typed member descriptor (boxed to keep the route small).
+        member: Box<TypeLibMemberMetadata>,
     },
     /// A COM source-interface event (for `WithEvents` / `RaiseEvent` wiring).
     ComEvent {
@@ -166,3 +180,4 @@ pub fn member_kind_from_invoke(invoke: TypeLibMemberInvokeKind) -> ProjectMember
         TypeLibMemberInvokeKind::PropertyPutRef => ProjectMemberKind::PropertySet,
     }
 }
+

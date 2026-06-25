@@ -9,6 +9,7 @@ description = "Clean, slim execution target: primitive instruction set + native-
 
 [dependencies]
 oxvba-runtime.workspace = true
+oxvba-com.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 [lints]

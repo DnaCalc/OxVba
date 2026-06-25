@@ -1838,7 +1838,7 @@ fn typed_com_receiver_member_call_lowers_to_early_com() {
     assert!(
         callees
             .iter()
-            .any(|c| matches!(c, CoreCallee::EarlyCom { dispid: 104, .. })),
+            .any(|c| matches!(c, CoreCallee::EarlyCom { member, .. } if member.token == 104)),
         "expected an EarlyCom on Ping's dispid (104), got: {callees:?}"
     );
     assert!(
@@ -2064,10 +2064,10 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
             .filter(|c| matches!(
                 c,
                 CoreCallee::EarlyCom {
-                    dispid: 0,
                     kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    member,
                     ..
-                }
+                } if member.token == 0
             ))
             .count(),
         1,
@@ -2079,10 +2079,10 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
             .filter(|c| matches!(
                 c,
                 CoreCallee::EarlyCom {
-                    dispid: 0,
                     kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    member,
                     ..
-                }
+                } if member.token == 0
             ))
             .count(),
         1,
@@ -2116,10 +2116,10 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
             .filter(|c| matches!(
                 c,
                 CoreCallee::EarlyCom {
-                    dispid: 0,
                     kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    member,
                     ..
-                }
+                } if member.token == 0
             ))
             .count(),
         1,
@@ -2131,10 +2131,10 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
             .filter(|c| matches!(
                 c,
                 CoreCallee::EarlyCom {
-                    dispid: 0,
                     kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    member,
                     ..
-                }
+                } if member.token == 0
             ))
             .count(),
         1,
@@ -2166,10 +2166,10 @@ fn host_injected_root_object_member_lowers_through_com_metadata() {
         callees.iter().any(|c| matches!(
             c,
             CoreCallee::EarlyCom {
-                dispid: 0,
                 kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                member,
                 ..
-            }
+            } if member.token == 0
         )),
         "host root member should bind against host-injected typelib metadata: {callees:?}"
     );
@@ -2199,10 +2199,10 @@ fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
         callees.iter().any(|c| matches!(
             c,
             CoreCallee::EarlyCom {
-                dispid: 10,
                 kind: Some(oxvba_bundle::ProjectMemberKind::Method),
+                member,
                 ..
-            }
+            } if member.token == 10
         )),
         "Application.Run should bind through the host-injected Excel metadata: {callees:?}"
     );
@@ -2210,10 +2210,10 @@ fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
         callees.iter().any(|c| matches!(
             c,
             CoreCallee::EarlyCom {
-                dispid: 11,
                 kind: Some(oxvba_bundle::ProjectMemberKind::Method),
+                member,
                 ..
-            }
+            } if member.token == 11
         )),
         "Application.OnTime should bind through the host-injected Excel metadata: {callees:?}"
     );

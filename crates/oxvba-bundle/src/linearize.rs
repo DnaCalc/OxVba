@@ -847,13 +847,18 @@ impl<'p> Linearizer<'p> {
                 });
                 self.emit_arg_writebacks(writebacks)?;
             }
-            CoreCallee::EarlyCom { dispid, name, kind } => {
+            CoreCallee::EarlyCom {
+                name, kind, member, ..
+            } => {
+                // The legacy Op path keeps only the `(dispid, name)` selector + the
+                // call-site `kind`; the dispid is `member.token` (the de-erased typed
+                // descriptor lives in the bundle's typed COM tables, not the Op).
                 let (args, writebacks) = self.build_call_args(args)?;
                 self.emit(Op::CallNative {
                     dst,
                     callee: NativeCallee::ComDispatch {
                         selector: ComMemberSelector::DispatchIdNamed {
-                            id: *dispid,
+                            id: member.token,
                             name: name.clone(),
                         },
                         early_bound: true,

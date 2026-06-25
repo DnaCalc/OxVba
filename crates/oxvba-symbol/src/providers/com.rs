@@ -134,7 +134,7 @@ impl Provider for ComTypeLibProvider {
             member.name.eq_ignore_ascii_case(name)
                 && want.is_none_or(|kind| member_kind_from_invoke(member.invoke_kind) == kind)
         }) {
-            return Some(com_member_binding(member));
+            return Some(com_member_binding(member, type_name));
         }
 
         if let Some(event) = self
@@ -170,7 +170,7 @@ impl Provider for ComTypeLibProvider {
             .members
             .iter()
             .find(|member| member.is_default_member)
-            .map(com_member_binding)
+            .map(|member| com_member_binding(member, type_name))
     }
 
     fn resolve_coclass(&self, name: &str) -> Option<String> {
@@ -224,7 +224,7 @@ impl Provider for ComTypeLibProvider {
     }
 }
 
-fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata) -> Binding {
+fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata, type_name: &str) -> Binding {
     Binding {
         symbol: None,
         is_default: member.is_default_member,
@@ -240,6 +240,10 @@ fn com_member_binding(member: &oxvba_com::TypeLibMemberMetadata) -> Binding {
                 .iter()
                 .map(|t| t.is_by_ref())
                 .collect(),
+            // The declared receiver COM type — the de-erased early-bound call's
+            // typed-interface grouping key — and the full canonical descriptor.
+            interface_name: type_name.to_string(),
+            member: Box::new(member.clone()),
         },
     }
 }

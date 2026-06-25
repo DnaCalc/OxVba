@@ -9,7 +9,7 @@ use oxvba_bundle::coreir::{
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
-use oxvba_com::TypeLibParamType;
+use oxvba_com::{TypeLibMemberMetadata, TypeLibParamType};
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{
     PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
@@ -988,17 +988,23 @@ impl<'a> ProcLower<'a> {
             Some(Binding {
                 route:
                     DispatchRoute::ComMember {
-                        dispid,
                         param_by_ref,
+                        interface_name,
+                        member: com_member,
                         ..
                     },
                 ..
             }) => {
                 let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
                 args.push(CoreArg::ByVal(rhs.clone()));
-                Ok(Some(vec![CoreStmt::Eval(
-                    self.early_com_call(dispid, member, kind, recv.value, args),
-                )]))
+                Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
+                    member,
+                    kind,
+                    &interface_name,
+                    &com_member,
+                    recv.value,
+                    args,
+                ))]))
             }
             // A cross-project coclass property: late dispatch by name, index args
             // coerced to the published param types, then the value.
@@ -1064,17 +1070,19 @@ impl<'a> ProcLower<'a> {
                     .resolve_member(receiver_ty, member_name, Some(kind))
                     .unwrap_or_else(|| default_binding.clone());
                 if let DispatchRoute::ComMember {
-                    dispid,
                     param_by_ref,
+                    interface_name,
+                    member: com_member,
                     ..
                 } = writer.route
                 {
                     let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
                     args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
-                        dispid,
                         member_name,
                         kind,
+                        &interface_name,
+                        &com_member,
                         recv,
                         args,
                     ))]))
@@ -1156,8 +1164,9 @@ impl<'a> ProcLower<'a> {
                 )))
             }
             DispatchRoute::ComMember {
-                dispid,
                 member_kind,
+                interface_name,
+                member: com_member,
                 ..
             } => {
                 let kind = match member_kind {
@@ -1165,7 +1174,14 @@ impl<'a> ProcLower<'a> {
                     _ => ProjectMemberKind::PropertyGet,
                 };
                 Ok(Some(value_bound(
-                    self.early_com_call(*dispid, receiver_label, kind, receiver_value, Vec::new()),
+                    self.early_com_call(
+                        receiver_label,
+                        kind,
+                        interface_name,
+                        com_member,
+                        receiver_value,
+                        Vec::new(),
+                    ),
                     VarTypeRef::Variant,
                 )))
             }
@@ -1229,17 +1245,19 @@ impl<'a> ProcLower<'a> {
                     )
                     .unwrap_or_else(|| default_binding.clone());
                 if let DispatchRoute::ComMember {
-                    dispid,
                     param_by_ref,
+                    interface_name,
+                    member: com_member,
                     ..
                 } = writer.route
                 {
                     let mut args = self.bind_args_byref(None, &param_by_ref)?;
                     args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
-                        dispid,
                         member_name,
                         ProjectMemberKind::PropertyLet,
+                        &interface_name,
+                        &com_member,
                         recv,
                         args,
                     ))]))
@@ -1750,8 +1768,9 @@ impl<'a> ProcLower<'a> {
                     ))
                 }
                 DispatchRoute::ComMember {
-                    dispid,
                     member_kind,
+                    interface_name,
+                    member: com_member,
                     ..
                 } => {
                     // A bare member read is a Property Get (or a parameterless
@@ -1763,7 +1782,14 @@ impl<'a> ProcLower<'a> {
                         _ => ProjectMemberKind::PropertyGet,
                     };
                     Ok(value_bound(
-                        self.early_com_call(*dispid, member, member_kind, recv.value, Vec::new()),
+                        self.early_com_call(
+                            member,
+                            member_kind,
+                            interface_name,
+                            com_member,
+                            recv.value,
+                            Vec::new(),
+                        ),
                         VarTypeRef::Variant,
                     ))
                 }
@@ -1907,12 +1933,12 @@ impl<'a> ProcLower<'a> {
                     })
                 }
                 DispatchRoute::ComMember {
-                    dispid,
                     member_kind,
                     param_by_ref,
+                    interface_name,
+                    member: com_member,
                     ..
                 } => {
-                    let dispid = *dispid;
                     // A member call in VALUE context is a read: a property is fetched
                     // through Property Get, never Let/Set. A get/put/putref-sharing
                     // member (e.g. a dictionary's `Item`) can resolve to its Let/Set
@@ -1926,7 +1952,14 @@ impl<'a> ProcLower<'a> {
                     let by_ref = param_by_ref.clone();
                     let method_args = self.bind_args_byref(arglist, &by_ref)?;
                     Ok(value_bound(
-                        self.early_com_call(dispid, member, member_kind, recv.value, method_args),
+                        self.early_com_call(
+                            member,
+                            member_kind,
+                            interface_name,
+                            com_member,
+                            recv.value,
+                            method_args,
+                        ),
                         VarTypeRef::Variant,
                     ))
                 }
@@ -2051,12 +2084,19 @@ impl<'a> ProcLower<'a> {
         }
     }
 
-    /// Build an early-bound COM dispatch (`recv.member` by dispid), receiver arg0.
+    /// Build an early-bound COM dispatch (`recv.member`), receiver arg0. `name`/`kind`
+    /// are the **call-site** selector name + dispatch accessor (a value read coerces
+    /// `kind` to `PropertyGet`; a default-member access passes the receiver label as
+    /// `name`); `interface_name` is the declared receiver COM type; `member` is the
+    /// full canonical typed descriptor the de-erased `EarlyCom` carries into OxIR (the
+    /// dispid is `member.token`). Cloned once here so the ~8 call sites can pass the
+    /// route's field by reference regardless of whether the route is owned or borrowed.
     pub(crate) fn early_com_call(
         &self,
-        dispid: i32,
         name: &str,
         kind: ProjectMemberKind,
+        interface_name: &str,
+        member: &TypeLibMemberMetadata,
         recv: CoreValue,
         mut method_args: Vec<CoreArg>,
     ) -> CoreValue {
@@ -2064,9 +2104,10 @@ impl<'a> ProcLower<'a> {
         args.append(&mut method_args);
         CoreValue::Call {
             callee: CoreCallee::EarlyCom {
-                dispid,
                 name: name.to_string(),
                 kind: Some(kind),
+                interface_name: interface_name.to_string(),
+                member: Box::new(member.clone()),
             },
             args,
         }

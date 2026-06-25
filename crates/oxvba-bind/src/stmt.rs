@@ -321,13 +321,19 @@ impl<'a> ProcLower<'a> {
                     // as the single value argument). `kind` (Let → PropertyLet, Set →
                     // PropertySet) selects PROPERTYPUT vs PROPERTYPUTREF at the HAL.
                     Some(Binding {
-                        route: DispatchRoute::ComMember { dispid, .. },
+                        route:
+                            DispatchRoute::ComMember {
+                                interface_name,
+                                member: com_member,
+                                ..
+                            },
                         ..
                     }) => {
                         let call = self.early_com_call(
-                            dispid,
                             member,
                             kind,
+                            &interface_name,
+                            &com_member,
                             recv.value,
                             vec![CoreArg::ByVal(rhs.clone())],
                         );

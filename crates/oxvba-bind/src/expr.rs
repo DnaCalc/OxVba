@@ -374,13 +374,13 @@ impl<'a> ProcLower<'a> {
                         ));
                     }
                     DispatchRoute::ComMember {
-                        dispid,
                         member_name,
                         member_kind,
                         param_by_ref,
+                        interface_name,
+                        member: com_member,
                         ..
                     } => {
-                        let dispid = *dispid;
                         // `obj(i)` is a value-context read: dispatch the default member as a
                         // Property Get (or Method), never its Let/Set variant (a default
                         // member that shares its dispid across get/put/putref can resolve to
@@ -393,7 +393,14 @@ impl<'a> ProcLower<'a> {
                         let recv = CoreValue::Load(self.place_by_name(tok.text)?);
                         let args = self.bind_args_byref(node.index_arg_list(), &by_ref)?;
                         return Ok(value_bound(
-                            self.early_com_call(dispid, member_name, member_kind, recv, args),
+                            self.early_com_call(
+                                member_name,
+                                member_kind,
+                                interface_name,
+                                com_member,
+                                recv,
+                                args,
+                            ),
                             VarTypeRef::Variant,
                         ));
                     }
