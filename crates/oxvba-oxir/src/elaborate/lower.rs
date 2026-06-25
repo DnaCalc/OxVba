@@ -15,10 +15,15 @@
 //! except COM (`VbaProc`, base-library/`Declare` native calls, cross-bundle
 //! `ExternProc`, `CallByName`).
 //!
-//! Deferred to the object/COM de-erasure step — these return
-//! [`ElaborateError::Unimplemented`] (never a silent mis-lowering): object construction
-//! (`New`/predeclared instances), object field / `WithEvents` access, `RaiseEvent`,
-//! `TypeOf … Is`, and early/late-bound COM dispatch.
+//! The **object surface** too: `New`/predeclared (extern) instances, object field
+//! get/set, `WithEvents` sink get/set, `RaiseEvent`, and `TypeOf … Is`. The project
+//! class table is projected from the Core IR, and a declared project-class type name
+//! resolves a local to a typed `Object(Class(_))`.
+//!
+//! Deferred to the COM-call de-erasure step — these return
+//! [`ElaborateError::Unimplemented`] (never a silent mis-lowering): early-bound
+//! ([`coreir::CoreCallee::EarlyCom`]) and late-bound
+//! ([`coreir::CoreCallee::LateDispatch`]) COM dispatch.
 //!
 //! # Fault model (per-statement landing pads)
 //!
@@ -38,17 +43,17 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
-    self, CoreArg, CoreBinOp, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp, CoreValue,
-    ErrField, ErrorOp, LabelId as CoreLabelId,
+    self, CoreArg, CoreBinOp, CoreClass, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp,
+    CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
 };
 use oxvba_bundle::{AssignmentIntent, AssignmentTargetKind, NumericMode};
 
 use crate::com::ComInterface;
-use crate::elaborate::{NameResolver, lower_var_type};
+use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
 use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
-use crate::program::{OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
-use crate::ty::{ArrayShape, OxTy};
+use crate::program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
+use crate::ty::{ArrayShape, ClassId, ObjClass, OxTy};
 use crate::value::{
     ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxConst, OxNativeCallee,
     OxOperand, OxPlace,
@@ -79,30 +84,33 @@ impl std::error::Error for ElaborateError {}
 
 type Result<T> = std::result::Result<T, ElaborateError>;
 
-/// Elaborate a whole compilation unit. `resolver` classifies declared type names
-/// (object / UDT) into the typed identities OxIR carries; for the procedural spine
-/// (no object-typed locals) any resolver is acceptable.
-pub fn elaborate(program: &CoreProgram, resolver: &impl NameResolver) -> Result<OxProgram> {
+/// Elaborate a whole compilation unit. The resolver that classifies declared type
+/// names into typed identities is built from the program itself (its project-class
+/// table), so callers supply only the program.
+pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
+    let resolver = ProgramResolver::new(program);
+
     let globals = program
         .globals
         .iter()
         .map(|g| OxGlobal {
             name: g.name.clone(),
-            ty: lower_var_type(&g.ty, resolver),
+            ty: lower_var_type(&g.ty, &resolver),
         })
         .collect();
 
     let mut funcs = Vec::with_capacity(program.procs.len());
     for proc in &program.procs {
-        funcs.push(elaborate_proc(proc, resolver)?);
+        funcs.push(elaborate_proc(proc, &resolver)?);
     }
+
+    let classes = program.classes.iter().map(lower_class).collect();
 
     Ok(OxProgram {
         funcs,
         globals,
-        // Project classes + the typed COM interface table are populated by the
-        // object/COM de-erasure step.
-        classes: Vec::new(),
+        classes,
+        // The typed COM interface table is populated by the COM-call de-erasure step.
         com_interfaces: Vec::<ComInterface>::new(),
         entry: program.entry.map(|p| FuncId(p.0)),
         global_initializer: program.global_initializer.map(|p| FuncId(p.0)),
@@ -114,6 +122,59 @@ pub fn elaborate(program: &CoreProgram, resolver: &impl NameResolver) -> Result<
         exports: program.exports.clone(),
         imports: program.imports.clone(),
     })
+}
+
+/// Lower a Core IR project class to its OxIR form (the index is its [`ClassId`]; the
+/// lifecycle hooks and late-bound member table map across 1:1).
+fn lower_class(c: &CoreClass) -> OxClass {
+    OxClass {
+        name: c.name.clone(),
+        initialize: c.initialize.map(|p| FuncId(p.0)),
+        terminate: c.terminate.map(|p| FuncId(p.0)),
+        methods: c
+            .methods
+            .iter()
+            .map(|m| OxClassMethod {
+                name: m.name.clone(),
+                kind: m.kind,
+                proc: FuncId(m.proc.0),
+                is_default_member: m.is_default_member,
+            })
+            .collect(),
+        implements: c.implements.clone(),
+    }
+}
+
+/// A [`NameResolver`] built from a [`CoreProgram`]: a declared type name that matches a
+/// project class (case-insensitively, by full name) is a typed `Class` instance;
+/// everything else — referenced COM coclasses, UDT records, `Enum`s — is the
+/// conservative [`ResolvedTypeName::Untyped`]. Precise COM-interface, record-layout and
+/// enum typing are later de-erasure steps (a cross-project-qualified class name like
+/// `Lib.Widget` is correctly *not* a class of this unit and stays untyped here, dispatched
+/// through the cross-bundle import path).
+struct ProgramResolver {
+    classes: HashMap<String, ClassId>,
+}
+
+impl ProgramResolver {
+    fn new(program: &CoreProgram) -> Self {
+        let classes = program
+            .classes
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.name.to_ascii_lowercase(), ClassId(i)))
+            .collect();
+        Self { classes }
+    }
+}
+
+impl NameResolver for ProgramResolver {
+    fn resolve_type_name(&self, name: &str) -> ResolvedTypeName {
+        match self.classes.get(&name.to_ascii_lowercase()) {
+            Some(&id) => ResolvedTypeName::Class(id),
+            None => ResolvedTypeName::Untyped,
+        }
+    }
 }
 
 fn elaborate_proc(proc: &CoreProc, resolver: &impl NameResolver) -> Result<OxFunc> {
@@ -567,8 +628,21 @@ impl Lowerer {
                 self.finish_to(OxTerminator::Jump(head), s_next);
                 Ok(())
             }
-            // Deferred to the object/COM step.
-            CoreStmt::RaiseEvent { .. } => Err(unimpl("RaiseEvent")),
+            CoreStmt::RaiseEvent {
+                source,
+                event,
+                args,
+            } => {
+                let (src, _) = self.lower_value(source)?;
+                let event_args = self.lower_proc_args(args)?;
+                self.emit(OxInst::RaiseEvent {
+                    source: src,
+                    event: *event,
+                    args: event_args,
+                });
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                Ok(())
+            }
         }
     }
 
@@ -1027,9 +1101,39 @@ impl Lowerer {
                 });
                 Ok((OxOperand::temp(t), OxTy::ProcRef))
             }
-            // Object construction / typed-object tests are the object/COM step.
-            CoreValue::New(_) | CoreValue::NewExtern { .. } => Err(unimpl("New <class>")),
-            CoreValue::TypeOfIs { .. } => Err(unimpl("TypeOf … Is")),
+            // `New <Class>` — a fresh instance of a project class; its value is a typed
+            // object reference (the binder's `New`s on the active project carry a
+            // resolved `ClassId`). `Class_Initialize` runs at construction (fallible).
+            CoreValue::New(class) => {
+                let t = self.new_temp();
+                let class = ClassId(class.0);
+                self.emit(OxInst::NewObject {
+                    dst: OxPlace::Temp(t),
+                    class,
+                });
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Class(class))))
+            }
+            // `New <referenced class>` — an instance of a class in another bundle. Its
+            // class table is unavailable here, so the receiver is an untyped reference
+            // (dispatched late / cross-bundle).
+            CoreValue::NewExtern { import } => {
+                let t = self.new_temp();
+                self.emit(OxInst::NewExtern {
+                    dst: OxPlace::Temp(t),
+                    import: ImportId(*import),
+                });
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+            }
+            CoreValue::TypeOfIs { object, type_name } => {
+                let (obj, _) = self.lower_value(object)?;
+                let t = self.new_temp();
+                self.emit(OxInst::TypeOfIs {
+                    dst: OxPlace::Temp(t),
+                    object: obj,
+                    type_name: type_name.clone(),
+                });
+                Ok((OxOperand::temp(t), OxTy::Bool))
+            }
             CoreValue::ArrayLiteral(values) => {
                 let mut ops = Vec::with_capacity(values.len());
                 for v in values {
@@ -1075,8 +1179,23 @@ impl Lowerer {
                 // layout table (a later step), so it is conservatively `Variant` here.
                 Ok((OxOperand::temp(t), OxTy::Variant))
             }
-            CoreValue::Predeclared { .. } | CoreValue::PredeclaredExtern { .. } => {
-                Err(unimpl("predeclared (VB_PredeclaredId) instance"))
+            // A `VB_PredeclaredId` class → its lazily-created global singleton instance.
+            CoreValue::Predeclared { class } => {
+                let t = self.new_temp();
+                let class = ClassId(class.0);
+                self.emit(OxInst::Predeclared {
+                    dst: OxPlace::Temp(t),
+                    class,
+                });
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Class(class))))
+            }
+            CoreValue::PredeclaredExtern { import } => {
+                let t = self.new_temp();
+                self.emit(OxInst::PredeclaredExtern {
+                    dst: OxPlace::Temp(t),
+                    import: ImportId(*import),
+                });
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
             }
         }
     }
@@ -1417,8 +1536,29 @@ impl Lowerer {
                 // Field typing needs the record layout table (a later step).
                 Ok((OxOperand::temp(t), OxTy::Variant))
             }
-            coreir::CorePlace::Field { .. } => Err(unimpl("object field access")),
-            coreir::CorePlace::WithEvents { .. } => Err(unimpl("WithEvents sink access")),
+            coreir::CorePlace::Field { object, field } => {
+                let obj = self.lower_value(object)?.0;
+                let t = self.new_temp();
+                self.emit(OxInst::FieldGet {
+                    dst: OxPlace::Temp(t),
+                    object: obj,
+                    field: *field,
+                });
+                // A field's static type needs the class field-type table (a later
+                // step); conservatively `Variant` (a COM property accessor is dynamic).
+                Ok((OxOperand::temp(t), OxTy::Variant))
+            }
+            coreir::CorePlace::WithEvents { owner, binding } => {
+                let own = self.lower_value(owner)?.0;
+                let t = self.new_temp();
+                self.emit(OxInst::WithEventsGet {
+                    dst: OxPlace::Temp(t),
+                    owner: own,
+                    binding: *binding,
+                });
+                // The sink holds an object reference.
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+            }
         }
     }
 
@@ -1449,9 +1589,25 @@ impl Lowerer {
                     value,
                 });
             }
-            coreir::CorePlace::Field { .. } => return Err(unimpl("object field assignment")),
-            coreir::CorePlace::WithEvents { .. } => {
-                return Err(unimpl("WithEvents sink assignment"));
+            coreir::CorePlace::Field { object, field } => {
+                let obj = self.lower_value(object)?.0;
+                self.emit(OxInst::FieldSet {
+                    object: obj,
+                    field: *field,
+                    value,
+                });
+            }
+            coreir::CorePlace::WithEvents { owner, binding } => {
+                let own = self.lower_value(owner)?.0;
+                // The sink store yields the previously-bound sink (released by the
+                // assignment); a fresh temp receives it.
+                let dst = self.new_temp();
+                self.emit(OxInst::WithEventsSet {
+                    dst: OxPlace::Temp(dst),
+                    owner: own,
+                    binding: *binding,
+                    value,
+                });
             }
         }
         Ok(())
@@ -1582,23 +1738,15 @@ fn logical_op(op: CoreBinOp) -> Option<LogicalOp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::elaborate::ResolvedTypeName;
     use crate::verify::{VerifyError, verify_program};
     use oxvba_bundle::coreir::{
-        BoundWhich, CoreBound, CoreCallee, CoreIfArm, CoreLocal, CorePlace, ErrField, ErrorOp,
-        LocalId as CoreLocalId, PtrKind, ProcId as CoreProcId,
+        BoundWhich, CoreBound, CoreCallee, CoreClassMethod, CoreIfArm, CoreLocal, CorePlace,
+        ErrField, ErrorOp, LocalId as CoreLocalId, PtrKind, ProcId as CoreProcId,
     };
     use oxvba_bundle::{
         ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId,
-        NumericCoerceTarget, ProcedureKind, StringCompareMode, VarTypeRef,
+        NumericCoerceTarget, ProcedureKind, ProjectMemberKind, StringCompareMode, VarTypeRef,
     };
-
-    struct UntypedResolver;
-    impl NameResolver for UntypedResolver {
-        fn resolve_type_name(&self, _: &str) -> ResolvedTypeName {
-            ResolvedTypeName::Untyped
-        }
-    }
 
     fn long_local(name: &str) -> CoreLocal {
         CoreLocal {
@@ -1696,7 +1844,7 @@ mod tests {
     #[test]
     fn scalar_proc_elaborates_verifies_and_round_trips() {
         let prog = program(scalar_proc());
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()), "elaborated program must verify");
 
         let json = serde_json::to_string(&oxp).expect("serialize");
@@ -1740,28 +1888,113 @@ mod tests {
             case_else: Vec::new(),
         };
         let prog = program(sub("Main", vec![long_local("n")], vec![do_loop, select]));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
     }
 
     #[test]
-    fn deferred_constructs_are_explicit_unimplemented() {
-        // `RaiseEvent` is deferred to the object/COM step — it must fail explicitly,
-        // never silently mis-lower.
+    fn com_calls_are_explicit_unimplemented() {
+        // The COM *calls* (early/late-bound dispatch) are the next de-erasure step;
+        // until then they must fail explicitly, never silently mis-lower. (Late-bound
+        // is the simplest to construct; early-bound carries a full typed descriptor.)
         let prog = program(sub(
             "Main",
-            Vec::new(),
-            vec![CoreStmt::RaiseEvent {
-                source: CoreValue::Const(CoreConst::Nothing),
-                event: 0,
-                args: Vec::new(),
-            }],
+            vec![variant_local("o")],
+            vec![CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::LateDispatch {
+                    name: "DoThing".to_string(),
+                    kind: Some(ProjectMemberKind::Method),
+                },
+                args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(CoreLocalId(0))))],
+            })],
         ));
-        let err = elaborate(&prog, &UntypedResolver).expect_err("RaiseEvent must be deferred");
+        let err = elaborate(&prog).expect_err("late-bound COM must be deferred");
         assert!(
-            matches!(err, ElaborateError::Unimplemented { what: "RaiseEvent" }),
-            "expected Unimplemented(RaiseEvent), got {err:?}"
+            matches!(err, ElaborateError::Unimplemented { what: "late-bound COM call" }),
+            "expected Unimplemented(late-bound COM call), got {err:?}"
         );
+    }
+
+    #[test]
+    fn object_constructs_elaborate_and_verify() {
+        // One project class `Widget`, exercising `New`, a predeclared singleton,
+        // object field get/set, `TypeOf … Is`, `WithEvents` sink get/set, and
+        // `RaiseEvent` — the object surface of the de-erasure.
+        let w = || CorePlace::Local(CoreLocalId(0)); // Dim w As Widget
+        let r = || CorePlace::Local(CoreLocalId(1)); // Dim r
+        let b = CorePlace::Local(CoreLocalId(2)); // Dim b As Boolean
+        let field = |f: i32| CorePlace::Field {
+            object: Box::new(CoreValue::Load(w())),
+            field: f,
+        };
+        let sink = || CorePlace::WithEvents {
+            owner: Box::new(CoreValue::Load(w())),
+            binding: 0,
+        };
+        let body = vec![
+            assign(w(), CoreValue::New(coreir::ClassId(0))), // Set w = New Widget
+            assign(r(), CoreValue::Load(field(5))),          // r = w.Value (field get)
+            assign(field(5), CoreValue::Load(r())),          // w.Value = r (field set)
+            assign(
+                b.clone(),
+                CoreValue::TypeOfIs {
+                    object: Box::new(CoreValue::Load(w())),
+                    type_name: "Widget".to_string(),
+                },
+            ),
+            assign(w(), CoreValue::Predeclared { class: coreir::ClassId(0) }),
+            assign(sink(), CoreValue::Load(w())),  // Set w.Sink = w (WithEvents set)
+            assign(r(), CoreValue::Load(sink())),  // r = w.Sink (WithEvents get)
+            CoreStmt::RaiseEvent {
+                source: CoreValue::Load(w()),
+                event: 3,
+                args: Vec::new(),
+            },
+        ];
+        let locals = vec![
+            CoreLocal {
+                name: "w".into(),
+                ty: VarTypeRef::Object("Widget".into()),
+                array_element: None,
+            },
+            variant_local("r"),
+            CoreLocal {
+                name: "b".into(),
+                ty: VarTypeRef::Builtin(BuiltinType::Boolean),
+                array_element: None,
+            },
+        ];
+        let prog = CoreProgram {
+            procs: vec![sub("Main", locals, body)],
+            classes: vec![CoreClass {
+                name: "Widget".into(),
+                initialize: None,
+                terminate: None,
+                methods: vec![CoreClassMethod {
+                    name: "Value".into(),
+                    kind: ProjectMemberKind::PropertyGet,
+                    proc: CoreProcId(0),
+                    is_default_member: false,
+                }],
+                implements: Vec::new(),
+            }],
+            unit_name: "T".into(),
+            ..Default::default()
+        };
+        let oxp = elaborate(&prog).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        // The class table is projected, and `w`'s declared type resolves to that class.
+        assert_eq!(oxp.classes.len(), 1);
+        assert_eq!(oxp.classes[0].name, "Widget");
+        assert_eq!(oxp.classes[0].methods.len(), 1);
+        assert_eq!(
+            oxp.funcs[0].locals[0].ty,
+            OxTy::Object(ObjClass::Class(ClassId(0)))
+        );
+        // Round-trips structurally through JSON.
+        let json = serde_json::to_string(&oxp).expect("serialize");
+        let back: OxProgram = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(oxp, back, "object-construct OxProgram must round-trip");
     }
 
     /// `On Error GoTo H : x = 1/0 : Exit Sub : H: Resume Next` exercises the full
@@ -1785,7 +2018,7 @@ mod tests {
             CoreStmt::Error(ErrorOp::ResumeNext),
         ];
         let prog = program(sub("Main", vec![long_local("n")], body));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()), "error-handling program must verify");
 
         // The handler-dispatch pad + Resume terminator are present.
@@ -1819,7 +2052,7 @@ mod tests {
             CoreStmt::Label(coreir::LabelId(1)),
         ];
         let prog = program(sub("Main", Vec::new(), body));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
 
         let f = &oxp.funcs[0];
@@ -1895,7 +2128,7 @@ mod tests {
             long_local("x"),
         ];
         let prog = program(sub("Main", locals, body));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
 
         let f = &oxp.funcs[0];
@@ -1932,7 +2165,7 @@ mod tests {
             long_local("y"),
         ];
         let prog = program(sub("Main", locals, body));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
 
         let f = &oxp.funcs[0];
@@ -1953,7 +2186,7 @@ mod tests {
             vec![long_local("x")],
             vec![assign(CorePlace::Local(CoreLocalId(0)), call)],
         ));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
         assert!(
             oxp.funcs[0]
@@ -1997,7 +2230,7 @@ mod tests {
             variant_local("coll"),
             variant_local("item"),
         ];
-        let oxp = elaborate(&program(sub("Main", locals, body)), &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&program(sub("Main", locals, body))).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
         let f = &oxp.funcs[0];
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
@@ -2032,7 +2265,7 @@ mod tests {
             long_local("n"),
             variant_local("f"),
         ];
-        let oxp = elaborate(&program(sub("Main", locals, body)), &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&program(sub("Main", locals, body))).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
         let f = &oxp.funcs[0];
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
@@ -2058,7 +2291,7 @@ mod tests {
                 target_type_name: "Object".to_string(),
             }],
         ));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
         assert!(
             oxp.funcs[0]
@@ -2082,7 +2315,7 @@ mod tests {
                 args: Vec::new(),
             })],
         ));
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         assert!(
             oxp.funcs[0]
                 .blocks
@@ -2103,7 +2336,7 @@ mod tests {
                 CoreStmt::Label(coreir::LabelId(0)),
             ],
         ));
-        let err = elaborate(&prog, &UntypedResolver).expect_err("duplicate label");
+        let err = elaborate(&prog).expect_err("duplicate label");
         assert!(matches!(err, ElaborateError::Malformed(_)), "got {err:?}");
     }
 
@@ -2118,7 +2351,7 @@ mod tests {
                 CoreValue::Load(CorePlace::Local(CoreLocalId(99))),
             )],
         ));
-        let err = elaborate(&prog, &UntypedResolver).expect_err("out-of-range local");
+        let err = elaborate(&prog).expect_err("out-of-range local");
         assert!(matches!(err, ElaborateError::Malformed(_)), "got {err:?}");
     }
 
@@ -2134,7 +2367,7 @@ mod tests {
             )],
         ));
         // Elaboration does not range-check proc ids; the verifier does.
-        let oxp = elaborate(&prog, &UntypedResolver).expect("elaborate");
+        let oxp = elaborate(&prog).expect("elaborate");
         let errs = verify_program(&oxp).expect_err("dangling AddressOf proc");
         assert!(
             errs.iter().any(|e| matches!(e, VerifyError::BadProcRef { proc: 99, .. })),
