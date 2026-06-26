@@ -767,6 +767,34 @@ fn positional_after_named_argument_is_bind_error() {
 }
 
 #[test]
+fn duplicate_label_in_one_procedure_is_bind_error() {
+    // Two `done:` labels in one `Sub` — a VBA compile error ("Duplicate declaration
+    // in current scope"). The binder must reject it (vm2 used to run it leniently).
+    let src = "Sub Main()\n    Dim x As Long\ndone:\n    x = 1\ndone:\n    x = 2\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("DuplicateLabel") && err.contains("done"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn same_label_name_in_different_procedures_binds() {
+    // Label scope is per-procedure, so the same name in two procedures is legal.
+    let src = "Sub A()\ndone:\nEnd Sub\n\nSub B()\ndone:\nEnd Sub\n";
+    bind(src);
+}
+
+#[test]
+fn label_referenced_many_times_but_defined_once_binds() {
+    // A label may be *referenced* any number of times (here by `On Error GoTo` and
+    // `GoTo`); only a second *definition* is an error. Guards against counting a
+    // reference as a definition.
+    let src = "Sub Main()\n    Dim x As Long\n    On Error GoTo handler\n    GoTo handler\nhandler:\n    x = 1\nEnd Sub\n";
+    bind(src);
+}
+
+#[test]
 fn keyword_named_proc_does_not_desync_frames() {
     // `Function Name()` has a keyword name (no plain Ident), but the scanner still
     // gives it a scope. The binder must agree on the proc set so `Compute`'s body

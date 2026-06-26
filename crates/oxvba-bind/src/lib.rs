@@ -18,7 +18,7 @@ mod types;
 pub use error::BindError;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::{CorePlace, CoreProc, CoreProgram, CoreValue, LabelId, LocalId, ProcId};
 use oxvba_bundle::{
@@ -540,6 +540,12 @@ struct ProcLower<'a> {
     /// Label name → its allocated id (allocated on first reference).
     labels: HashMap<String, LabelId>,
     label_order: Vec<String>,
+    /// Labels actually *defined* (via a `LabelStmt`), as opposed to merely
+    /// referenced (`GoTo`/`GoSub`/`On Error GoTo`/`Resume`). Used to reject a
+    /// label defined more than once within the procedure — a VBA compile error
+    /// ("Duplicate declaration in current scope"). Label scope is per-procedure,
+    /// so this set is fresh per [`ProcLower`].
+    defined_labels: HashSet<LabelId>,
 }
 
 /// The result of binding an expression: its value, inferred type, and (when it

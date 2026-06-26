@@ -50,7 +50,17 @@ impl<'a> ProcLower<'a> {
                     .first_significant_token()
                     .ok_or_else(|| BindError::Malformed("label".into()))?
                     .text;
-                Ok(vec![CoreStmt::Label(self.label_id(name))])
+                let id = self.label_id(name);
+                // A label may be *referenced* any number of times, but defining it
+                // twice in one procedure is a VBA compile error ("Duplicate
+                // declaration in current scope"). Reject it here so vm2 and vm3 agree
+                // (vm3's elaboration also rejects the duplicate `LabelId`).
+                if !self.defined_labels.insert(id) {
+                    return Err(BindError::DuplicateLabel {
+                        name: name.to_string(),
+                    });
+                }
+                Ok(vec![CoreStmt::Label(id)])
             }
             OnErrorStmt => self.bind_on_error(node),
             ResumeStmt => self.bind_resume(node),

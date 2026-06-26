@@ -356,15 +356,13 @@ mod tests {
 
     /// Programs where vm2 (the current oracle) itself deviates from Office VBA 7.1, so a
     /// vm2-vs-vm3 difference is expected and is NOT a vm3 bug. Keyed by file name.
-    const KNOWN_VM2_DIVERGENCES: &[&str] = &[
-        // Two labels `marker:` in one `Sub` — a compile error in Office ("Duplicate
-        // declaration in current scope"). vm2 leniently *runs* it (x = 1); vm3's
-        // elaboration correctly rejects the duplicate label. The real fix is for the
-        // binder to reject a duplicate label at compile time (then both agree on
-        // "error"); until then vm3's stricter behaviour is closer to correct, so this
-        // program is excluded from the gate rather than forcing vm3 bug-compatible.
-        "duplicate_label_error.bas",
-    ];
+    ///
+    /// Currently empty: `duplicate_label_error.bas` used to live here (vm2 leniently ran
+    /// a procedure with two identical labels while vm3's elaboration rejected it), but the
+    /// binder now rejects a duplicate label at compile time, so vm2 and vm3 agree on
+    /// "compile error" and the program matches through the gate. New entries belong here
+    /// only when vm2 is the side that diverges from Office.
+    const KNOWN_VM2_DIVERGENCES: &[&str] = &[];
 
     /// Recursively collect `*.bas` files under `dir`.
     fn bas_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {

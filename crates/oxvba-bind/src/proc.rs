@@ -1,7 +1,7 @@
 //! Binding one procedure: stand up the per-proc `ProcLower` over the proc's
 //! frame skeleton and walk its body block into `CoreStmt`s.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::CoreStmt;
 use oxvba_symbol::manifest::ModuleKind;
@@ -22,6 +22,7 @@ impl<'a> Lower<'a> {
             next_with_temp: 0,
             labels: HashMap::new(),
             label_order: Vec::new(),
+            defined_labels: HashSet::new(),
         }
     }
 

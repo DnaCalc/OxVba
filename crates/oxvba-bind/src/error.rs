@@ -18,6 +18,11 @@ pub enum BindError {
     /// An assignment target/intent is invalid (e.g. `Set` on a scalar).
     #[error("invalid assignment: {0}")]
     InvalidAssignment(String),
+    /// A line label is defined more than once within a single procedure — a VBA
+    /// compile error ("Duplicate declaration in current scope"). Label scope is
+    /// per-procedure, so the same name in a different procedure is fine.
+    #[error("duplicate label `{name}` in current scope")]
+    DuplicateLabel { name: String },
     /// The CST shape was not what the construct requires.
     #[error("malformed construct: {0}")]
     Malformed(String),
@@ -50,6 +55,12 @@ impl BindError {
                 format!("invalid assignment: {message}"),
             )
             .with_help("Check whether the target is assignable and whether Set/Let semantics match the value."),
+            BindError::DuplicateLabel { name } => Diagnostic::error(
+                "BIND-E-DUPLICATE-LABEL",
+                DiagnosticPhase::Bind,
+                format!("duplicate label `{name}` in current scope"),
+            )
+            .with_help("A line label must be unique within a procedure; rename or remove the duplicate."),
             BindError::Malformed(message) => Diagnostic::error(
                 "BIND-E-MALFORMED-CONSTRUCT",
                 DiagnosticPhase::Bind,
