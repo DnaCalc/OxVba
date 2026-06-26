@@ -15,18 +15,25 @@
 //!
 //! # Status (M2 bring-up)
 //!
-//! This first cut runs the **scalar / string / Boolean value core + control flow**:
+//! This cut runs the **scalar / string / Boolean value core + control flow + calls**:
 //! `Assign`, all arithmetic (`Arith`/`Div`/`Pow`/`Neg`), `Concat`, `Compare`,
-//! `Logical`/`Not`, `Coerce`, and the `Jump`/`Branch`/`Return` terminators, plus the
-//! statement-boundary marker. The value semantics go through the shared
-//! [`oxvba_eval::arith`] kernel — the *same* functions vm2 calls — so a successful
-//! run is vm2-identical by construction.
+//! `Logical`/`Not`, `Coerce`, the `Jump`/`Branch`/`Return` terminators and the
+//! statement-boundary marker, plus (M2-b) compiled procedure calls (`CallProc`) with
+//! **true ByRef aliasing** and base-library built-ins (`CallNative` → the shared
+//! `oxvba_lib::invoke`). The value semantics go through the shared [`oxvba_eval::arith`]
+//! kernel — the *same* functions vm2 calls — so a successful run is vm2-identical by
+//! construction.
+//!
+//! Dispatch is an explicit **block-threaded loop over a heap frame stack** (no native
+//! recursion), so a `CallProc` pushes a callee and the loop continues with it, `Return`
+//! pops back, and deep recursion is bounded by the frame ceiling (error 28) rather than
+//! overflowing the host stack — the iterative model vm2 uses.
 //!
 //! The frame holds its values as `Variant`s (the shareable slot layout the JIT
 //! side-exits into); the **typed unboxed lanes** + per-site type profiler are the M6
-//! speculation tier, an addition over this layout rather than a retrofit. Procedure
-//! calls, builtins, the full error/`Resume` model, objects, COM, arrays, and records
-//! return [`Vm3Error::Unimplemented`] for now (M2-b/M2-c/M3) — never a silent
+//! speculation tier, an addition over this layout rather than a retrofit. The full
+//! error/`Resume` model (M2-c), and objects, COM, arrays, records, `Declare`, and
+//! cross-bundle calls (M3) return [`Vm3Error::Unimplemented`] for now — never a silent
 //! mis-execution.
 
 use std::collections::HashMap;
@@ -34,9 +41,16 @@ use std::collections::HashMap;
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
-use oxvba_oxir::value::{ArithOp, CmpOp, LogicalOp, OxCoerceTarget, OxConst, OxOperand, OxPlace};
-use oxvba_oxir::{FuncId, OxBlock, OxInst, OxProgram, OxTerminator};
+use oxvba_oxir::value::{
+    ArithOp, CmpOp, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxNativeCallee, OxOperand,
+    OxPlace,
+};
+use oxvba_oxir::{BlockId, FuncId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator};
 use oxvba_runtime::Variant;
+
+/// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
+/// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
+const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
 
 /// A run-time fault carrying its VBA error code (the value `Err.Number` takes).
 #[derive(Debug, Clone)]
@@ -47,6 +61,13 @@ pub struct Fault {
 
 impl Fault {
     fn from_arith(e: ArithError) -> Self {
+        Self {
+            code: e.code,
+            message: e.message,
+        }
+    }
+    /// A built-in library error already carries its VBA error code structurally.
+    fn from_lib(e: oxvba_lib::LibError) -> Self {
         Self {
             code: e.code,
             message: e.message,
@@ -89,13 +110,43 @@ enum ErrorMode {
     Goto(usize),
 }
 
-/// One procedure activation: its value slots. ByRef aliasing + the caller-return
-/// continuation are added with `CallProc` (M2-b).
+/// A resolved runtime storage location on the frame stack — what an [`OxPlace`]
+/// denotes once ByRef aliasing is applied. `Local`/`Temp` name a specific frame by
+/// index so a callee's ByRef parameter can point at one of its caller's cells (which
+/// always outlives it, since callers sit below callees and pop later).
+#[derive(Debug, Clone, Copy)]
+enum Loc {
+    Global(usize),
+    Local(usize, usize),
+    Temp(usize, usize),
+}
+
+/// One procedure activation: its dispatch position, value slots, ByRef aliasing, and
+/// the linkage back to its caller. The activation stack holds these so dispatch is an
+/// explicit loop (no native recursion → deep VBA recursion is bounded by the frame
+/// ceiling, error 28, not a host stack overflow — and matches vm2's iterative model).
 struct Frame {
+    /// The function this frame is executing.
+    func: FuncId,
+    /// The current block and the index of the *next* instruction within it.
+    block: BlockId,
+    ip: usize,
     /// Frame locals (parameters first, then declared locals), indexed by `LocalId`.
     locals: Vec<Variant>,
     /// Single-assignment temporaries, indexed by `TempId` (sparse — written before read).
     temps: HashMap<usize, Variant>,
+    /// ByRef parameters: a parameter's frame-local index → the caller location it
+    /// aliases, resolved to its ultimate backing at call time (so aliases never chain).
+    /// Writes through such a parameter hit the backing live — vm2's true aliasing.
+    aliases: HashMap<usize, Loc>,
+    /// Where this call's return value is written (resolved in the caller at call time);
+    /// `None` for a statement call or the entry/initializer frame.
+    dst: Option<Loc>,
+    /// The local holding this function's result (`None` for a `Sub`).
+    return_local: Option<LocalId>,
+    /// The caller's error mode, restored when this frame returns (each callee starts
+    /// with no handler).
+    saved_error_mode: ErrorMode,
 }
 
 /// The `Err` object's observable state.
@@ -109,13 +160,12 @@ struct ErrState {
 /// The vm3 interpreter over a typed OxIR program.
 pub struct Vm3<'h> {
     program: &'h OxProgram,
-    #[allow(dead_code)] // used by builtins / HAL from M2-b.
     host: &'h dyn HostServices,
-    #[allow(dead_code)]
     lib: LibContext,
     globals: Vec<Variant>,
-    /// `Main`'s final frame (the entry frame never pops), kept for the result snapshot.
-    entry_frame: Option<Frame>,
+    /// The activation stack. `frames[0]` is the entry (`Main`) frame and is never
+    /// popped — it backs the result snapshot; deeper frames are `CallProc` callees.
+    frames: Vec<Frame>,
     error_mode: ErrorMode,
     err: ErrState,
     /// The fault currently being routed (set when a fallible op transfers to a pad).
@@ -132,7 +182,7 @@ impl<'h> Vm3<'h> {
             host,
             lib: LibContext::default(),
             globals: vec![Variant::empty(); program.globals.len()],
-            entry_frame: None,
+            frames: Vec::new(),
             error_mode: ErrorMode::None,
             err: ErrState::default(),
             pending_fault: None,
@@ -140,8 +190,11 @@ impl<'h> Vm3<'h> {
 
         if let Some(init) = program.global_initializer {
             let frame = vm.new_frame(init);
+            vm.frames.push(frame);
+            let r = vm.run_loop(0);
             // The initializer writes module globals; its own frame is discarded.
-            vm.run_frame(init, frame)?;
+            vm.frames.pop();
+            r?;
         }
         // Isolate this run from any prior run on the shared thread-local termination
         // queue, before the entry runs — matching vm2's per-run reset (object-lifecycle
@@ -149,8 +202,9 @@ impl<'h> Vm3<'h> {
         oxvba_runtime::reset_pending_terminations();
         if let Some(entry) = program.entry {
             let frame = vm.new_frame(entry);
-            let finished = vm.run_frame(entry, frame)?;
-            vm.entry_frame = Some(finished);
+            vm.frames.push(frame);
+            // The entry frame is never popped — it stays as `frames[0]` for the snapshot.
+            vm.run_loop(0)?;
         }
         Ok(vm)
     }
@@ -163,7 +217,7 @@ impl<'h> Vm3<'h> {
             self.globals.get(i).cloned()
         } else {
             let rel = i - global_count;
-            self.entry_frame.as_ref()?.locals.get(rel).cloned()
+            self.frames.first()?.locals.get(rel).cloned()
         }
     }
 
@@ -181,47 +235,52 @@ impl<'h> Vm3<'h> {
     fn new_frame(&self, func: FuncId) -> Frame {
         let f = &self.program.funcs[func.0];
         Frame {
+            func,
+            block: f.entry,
+            ip: 0,
             locals: vec![Variant::empty(); f.locals.len()],
             temps: HashMap::new(),
+            aliases: HashMap::new(),
+            dst: None,
+            return_local: f.return_local,
+            saved_error_mode: ErrorMode::None,
         }
     }
 
-    /// Execute a function's CFG in `frame` until it returns, then hand the frame back.
-    fn run_frame(&mut self, func: FuncId, mut frame: Frame) -> Result<Frame, Vm3Error> {
+    /// The block-threaded dispatch loop: run the top frame until the frame at depth
+    /// `base` returns. A `CallProc` pushes a callee and the loop simply continues with
+    /// it; `Return` pops back to the caller. There is no native recursion, so deep VBA
+    /// recursion is bounded by the frame ceiling (error 28), never a host stack
+    /// overflow — and the model mirrors vm2's iterative dispatch.
+    fn run_loop(&mut self, base: usize) -> Result<(), Vm3Error> {
         // `program` is a `'h` reference, independent of the `&mut self` exec borrows.
         let program = self.program;
-        let f = &program.funcs[func.0];
-        let mut cur = f.entry;
-        loop {
-            let block: &OxBlock = f
+        while self.frames.len() > base {
+            let top = self.frames.len() - 1;
+            let (func, block, ip) = {
+                let fr = &self.frames[top];
+                (fr.func, fr.block, fr.ip)
+            };
+            let blk: &OxBlock = program.funcs[func.0]
                 .blocks
-                .get(cur.0)
-                .ok_or_else(|| Vm3Error::Malformed(format!("block {} out of range", cur.0)))?;
+                .get(block.0)
+                .ok_or_else(|| Vm3Error::Malformed(format!("block {} out of range", block.0)))?;
 
-            // Straight-line body; a fallible op transfers to the block's fault pad.
-            let mut faulted = None;
-            for inst in &block.instrs {
-                if let Err(e) = self.exec(inst, &mut frame) {
+            if ip < blk.instrs.len() {
+                // Advance past this instruction first, so a `CallProc` it performs
+                // resumes the caller at the *next* instruction when the callee returns.
+                self.frames[top].ip = ip + 1;
+                if let Err(e) = self.exec(&blk.instrs[ip]) {
                     match e {
-                        Vm3Error::Fault(fault) => {
-                            faulted = Some(fault);
-                            break;
-                        }
+                        Vm3Error::Fault(fault) => self.route_fault(fault)?,
                         other => return Err(other),
                     }
                 }
-            }
-            if let Some(fault) = faulted {
-                let pad = block.fault_target.ok_or_else(|| {
-                    Vm3Error::Malformed("fallible instruction in a block with no fault_target".into())
-                })?;
-                self.raise(fault);
-                cur = pad;
                 continue;
             }
 
-            match &block.terminator {
-                OxTerminator::Jump(b) => cur = *b,
+            match &blk.terminator {
+                OxTerminator::Jump(b) => self.goto(top, *b),
                 OxTerminator::Branch {
                     cond,
                     then_blk,
@@ -231,34 +290,109 @@ impl<'h> Vm3<'h> {
                     // before *every* conditional Branch (a statically-Bool operand is not
                     // a guaranteed runtime Boolean — an unassigned `Dim b As Boolean` is
                     // Empty, `Not b` of an Empty Bool is a Long, a Variant compare is
-                    // Null), so the terminator is a pure control transfer and any
-                    // truthiness fault already routed through the pad at the `Truthy`.
-                    let v = self.operand(cond, &frame)?;
+                    // Null), so the terminator is a pure transfer and any truthiness fault
+                    // already routed through the pad at the `Truthy`.
+                    let v = self.operand(cond)?;
                     let taken = v.as_bool().ok_or_else(|| {
                         Vm3Error::Malformed("Branch condition is not a pre-computed Boolean".into())
                     })?;
-                    cur = if taken { *then_blk } else { *else_blk };
+                    self.goto(top, if taken { *then_blk } else { *else_blk });
                 }
-                OxTerminator::Return | OxTerminator::Halt => return Ok(frame),
-                OxTerminator::FaultDispatch { .. } => match self.error_mode {
-                    // No active handler ⇒ propagate the fault as an early return.
-                    ErrorMode::None => {
-                        let fault = self
-                            .pending_fault
-                            .take()
-                            .unwrap_or_else(|| Fault { code: 0, message: String::new() });
-                        return Err(Vm3Error::Fault(fault));
+                OxTerminator::Return => {
+                    if self.frames.len() == base + 1 {
+                        // The base frame returned — leave it on the stack (the entry frame
+                        // backs the result snapshot) and end this run.
+                        break;
                     }
-                    // `On Error Resume Next` / `GoTo` routing is M2-c.
-                    _ => return Err(Vm3Error::Unimplemented { what: "On Error Resume/GoTo routing" }),
+                    self.do_return()?;
+                }
+                // VBA `End`: stop the *entire* program immediately at any call depth — no
+                // return to the caller, no finalization. Unwind to the base frame (which
+                // stays on the stack to back the snapshot) and end the run.
+                OxTerminator::Halt => {
+                    self.frames.truncate(base + 1);
+                    break;
+                }
+                // The landing pad. With no active handler, propagate the fault to the
+                // caller (or, at the base, out of the run). `Resume`/`GoTo` routing is M2-c.
+                OxTerminator::FaultDispatch { .. } => match self.error_mode {
+                    ErrorMode::None => {
+                        // A pad is only ever entered via `route_fault` (which always
+                        // `raise`s), so a missing fault here is a structural invariant
+                        // violation, not a silent code-0 fault.
+                        let fault = self.pending_fault.take().ok_or_else(|| {
+                            Vm3Error::Malformed("FaultDispatch reached with no pending fault".into())
+                        })?;
+                        self.propagate_fault(fault, base)?;
+                    }
+                    _ => {
+                        return Err(Vm3Error::Unimplemented {
+                            what: "On Error Resume/GoTo routing",
+                        });
+                    }
                 },
                 OxTerminator::Unreachable => {
                     return Err(Vm3Error::Malformed("reached an Unreachable terminator".into()));
                 }
                 // Resume / Raise / GoSub are the error-model + subroutine work (M2-c).
-                _ => return Err(Vm3Error::Unimplemented { what: "terminator (Resume/Raise/GoSub)" }),
+                _ => {
+                    return Err(Vm3Error::Unimplemented {
+                        what: "terminator (Resume/Raise/GoSub)",
+                    });
+                }
             }
         }
+        Ok(())
+    }
+
+    /// Jump frame `top` to the start of `block`.
+    fn goto(&mut self, top: usize, block: BlockId) {
+        let fr = &mut self.frames[top];
+        fr.block = block;
+        fr.ip = 0;
+    }
+
+    /// Route an in-flight fault to the current frame's block fault pad (intra-frame);
+    /// the pad's `FaultDispatch` then consults the error mode.
+    fn route_fault(&mut self, fault: Fault) -> Result<(), Vm3Error> {
+        let top = self.frames.len() - 1;
+        let (func, block) = (self.frames[top].func, self.frames[top].block);
+        let pad = self.program.funcs[func.0].blocks[block.0]
+            .fault_target
+            .ok_or_else(|| {
+                Vm3Error::Malformed(
+                    "fallible instruction in a block with no fault_target".into(),
+                )
+            })?;
+        self.raise(fault);
+        self.goto(top, pad);
+        Ok(())
+    }
+
+    /// Propagate an unhandled fault out of the current frame: pop it (restoring the
+    /// caller's error mode) and re-route at the caller's call site, or — at the base
+    /// frame — surface it as the run's result.
+    fn propagate_fault(&mut self, fault: Fault, base: usize) -> Result<(), Vm3Error> {
+        if self.frames.len() <= base + 1 {
+            return Err(Vm3Error::Fault(fault));
+        }
+        let callee = self.frames.pop().expect("frame to unwind");
+        self.error_mode = callee.saved_error_mode;
+        // The caller's `CallProc` faulted: route to *its* block's fault pad.
+        self.route_fault(fault)
+    }
+
+    /// Pop a returning callee: restore the caller's error mode and copy out the
+    /// function's return value (true aliasing already propagated ByRef writes live).
+    fn do_return(&mut self) -> Result<(), Vm3Error> {
+        let callee = self.frames.pop().expect("returning frame");
+        self.error_mode = callee.saved_error_mode;
+        if let (Some(loc), Some(rl)) = (callee.dst, callee.return_local)
+            && let Some(v) = callee.locals.get(rl.0).cloned()
+        {
+            self.write_loc(loc, v)?;
+        }
+        Ok(())
     }
 
     /// Populate `Err` and stash the in-flight fault for the landing pad.
@@ -268,12 +402,12 @@ impl<'h> Vm3<'h> {
         self.pending_fault = Some(fault);
     }
 
-    /// Execute one straight-line instruction.
-    fn exec(&mut self, inst: &OxInst, frame: &mut Frame) -> Result<(), Vm3Error> {
+    /// Execute one straight-line instruction against the top frame.
+    fn exec(&mut self, inst: &OxInst) -> Result<(), Vm3Error> {
         match inst {
             OxInst::Assign { dst, value } => {
-                let v = self.operand(value, frame)?;
-                self.store(dst, v, frame)?;
+                let v = self.operand(value)?;
+                self.store(dst, v)?;
             }
             OxInst::Arith {
                 dst,
@@ -282,8 +416,8 @@ impl<'h> Vm3<'h> {
                 rhs,
                 mode,
             } => {
-                let l = self.operand(lhs, frame)?;
-                let r = self.operand(rhs, frame)?;
+                let l = self.operand(lhs)?;
+                let r = self.operand(rhs)?;
                 let out = match op {
                     ArithOp::Add => arith::add(&l, &r, *mode),
                     ArithOp::Sub => arith::sub(&l, &r, *mode),
@@ -291,26 +425,26 @@ impl<'h> Vm3<'h> {
                     ArithOp::IntDiv => arith::int_div(&l, &r, *mode),
                     ArithOp::Mod => arith::modulo(&l, &r, *mode),
                 };
-                self.store_arith(dst, out, frame)?;
+                self.store_arith(dst, out)?;
             }
             OxInst::Div { dst, lhs, rhs } => {
-                let l = self.operand(lhs, frame)?;
-                let r = self.operand(rhs, frame)?;
-                self.store_arith(dst, arith::div(&l, &r), frame)?;
+                let l = self.operand(lhs)?;
+                let r = self.operand(rhs)?;
+                self.store_arith(dst, arith::div(&l, &r))?;
             }
             OxInst::Pow { dst, lhs, rhs } => {
-                let l = self.operand(lhs, frame)?;
-                let r = self.operand(rhs, frame)?;
-                self.store_arith(dst, arith::pow(&l, &r), frame)?;
+                let l = self.operand(lhs)?;
+                let r = self.operand(rhs)?;
+                self.store_arith(dst, arith::pow(&l, &r))?;
             }
             OxInst::Neg { dst, src, mode } => {
-                let v = self.operand(src, frame)?;
-                self.store_arith(dst, arith::neg(&v, *mode), frame)?;
+                let v = self.operand(src)?;
+                self.store_arith(dst, arith::neg(&v, *mode))?;
             }
             OxInst::Concat { dst, lhs, rhs } => {
-                let l = self.operand(lhs, frame)?;
-                let r = self.operand(rhs, frame)?;
-                self.store_arith(dst, arith::concat(&l, &r), frame)?;
+                let l = self.operand(lhs)?;
+                let r = self.operand(rhs)?;
+                self.store_arith(dst, arith::concat(&l, &r))?;
             }
             OxInst::Compare {
                 dst,
@@ -319,9 +453,9 @@ impl<'h> Vm3<'h> {
                 rhs,
                 mode,
             } => {
-                let l = self.operand(lhs, frame)?;
-                let r = self.operand(rhs, frame)?;
-                self.store_arith(dst, arith::compare(&l, &r, *mode, cmp_op(*op)), frame)?;
+                let l = self.operand(lhs)?;
+                let r = self.operand(rhs)?;
+                self.store_arith(dst, arith::compare(&l, &r, *mode, cmp_op(*op)))?;
             }
             OxInst::Logical {
                 dst,
@@ -329,8 +463,8 @@ impl<'h> Vm3<'h> {
                 lhs,
                 rhs,
             } => {
-                let l = self.operand(lhs, frame)?;
-                let r = self.operand(rhs, frame)?;
+                let l = self.operand(lhs)?;
+                let r = self.operand(rhs)?;
                 let out = match op {
                     LogicalOp::And => arith::and(&l, &r),
                     LogicalOp::Or => arith::or(&l, &r),
@@ -338,22 +472,22 @@ impl<'h> Vm3<'h> {
                     LogicalOp::Eqv => arith::eqv(&l, &r),
                     LogicalOp::Imp => arith::imp(&l, &r),
                 };
-                self.store_arith(dst, out, frame)?;
+                self.store_arith(dst, out)?;
             }
             OxInst::Not { dst, src } => {
-                let v = self.operand(src, frame)?;
-                self.store_arith(dst, arith::not(&v), frame)?;
+                let v = self.operand(src)?;
+                self.store_arith(dst, arith::not(&v))?;
             }
             // Reduce a condition to a Boolean by VBA truthiness (the elaboration emits
             // this before a conditional `Branch`); the `is_truthy` rule + error code are
             // exactly what vm2's `JumpIfZero` uses.
             OxInst::Truthy { dst, src } => {
-                let v = self.operand(src, frame)?;
+                let v = self.operand(src)?;
                 let out = arith::is_truthy(&v).map(Variant::from_bool);
-                self.store_arith(dst, out, frame)?;
+                self.store_arith(dst, out)?;
             }
             OxInst::Coerce { dst, src, target } => {
-                let v = self.operand(src, frame)?;
+                let v = self.operand(src)?;
                 let out = match target {
                     OxCoerceTarget::Numeric(t) => arith::coerce_numeric(&v, *t),
                     OxCoerceTarget::Str => arith::coerce_string(&v),
@@ -361,16 +495,124 @@ impl<'h> Vm3<'h> {
                     // A widen-to-Variant carries no value change.
                     OxCoerceTarget::ImplicitVariant => Ok(v),
                 };
-                self.store_arith(dst, out, frame)?;
+                self.store_arith(dst, out)?;
             }
+            // A compiled VBA procedure call (intra-unit). Cross-bundle `CallExtern` and
+            // the `AddressOf`-reference `CallProcRef` are M3.
+            OxInst::CallProc { dst, proc, args } => self.call_proc(*dst, *proc, args)?,
+            // A base-library built-in funnels through the single shared `oxvba_lib::invoke`
+            // (the identical bridge vm2 uses); `Declare Lib` marshalling is M3.
+            OxInst::CallNative { dst, callee, args } => match callee {
+                OxNativeCallee::Builtin(id) => {
+                    let argv = self.native_args(args)?;
+                    let result = oxvba_lib::invoke(*id, &argv, self.host, &mut self.lib)
+                        .map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))?;
+                    if let Some(dst) = dst {
+                        self.store(dst, result)?;
+                    }
+                }
+                OxNativeCallee::Declare { .. } => {
+                    return Err(Vm3Error::Unimplemented { what: "Declare Lib call" });
+                }
+            },
             // Statement boundaries drive Resume granularity + finalization timing; with
             // no objects in scope yet the drain is a no-op.
             OxInst::StmtBoundary { .. } => {}
             OxInst::ClearErr => self.err = ErrState::default(),
 
-            // Everything else is a later milestone (calls/builtins M2-b; error setters
-            // M2-c; objects/COM/arrays/records M3) — explicit, never a silent no-op.
+            // Everything else is a later milestone (cross-bundle calls / objects / COM /
+            // arrays / records M3; error setters M2-c) — explicit, never a silent no-op.
             other => return Err(Vm3Error::Unimplemented { what: inst_kind(other) }),
+        }
+        Ok(())
+    }
+
+    /// Call a compiled VBA procedure: evaluate the arguments in the *caller* and push a
+    /// callee frame (ByVal copies the value in; ByRef true-aliases the caller's backing
+    /// location so writes propagate live; an omitted optional gets the `MISSING_ARG`
+    /// sentinel), then hand control to the dispatch loop. The return value is copied out
+    /// when the frame returns (see `do_return`). Mirrors vm2's `call_proc`.
+    fn call_proc(
+        &mut self,
+        dst: Option<OxPlace>,
+        proc: FuncId,
+        args: &[OxArg],
+    ) -> Result<(), Vm3Error> {
+        let program = self.program;
+        let callee = program
+            .funcs
+            .get(proc.0)
+            .ok_or_else(|| Vm3Error::Malformed(format!("call to unknown proc {}", proc.0)))?;
+        // Resolve the destination + ByRef backings in the caller, before pushing.
+        let dst_loc = dst.map(|p| self.resolve(&p));
+        let mut locals = vec![Variant::empty(); callee.locals.len()];
+        let mut aliases = HashMap::new();
+        for (i, arg) in args.iter().enumerate() {
+            match arg {
+                OxArg::ByVal(op) => {
+                    let v = self.operand(op)?;
+                    if let Some(slot) = locals.get_mut(i) {
+                        *slot = v;
+                    }
+                }
+                OxArg::ByRef(place) => {
+                    aliases.insert(i, self.resolve(place));
+                }
+                OxArg::Omitted => {
+                    if let Some(slot) = locals.get_mut(i) {
+                        *slot = Variant::from_error_code(MISSING_ARG);
+                    }
+                }
+            }
+        }
+        let return_local = callee.return_local;
+        let entry = callee.entry;
+
+        self.guard_call_depth()?;
+        // Push the callee and hand control to it; each procedure starts with no active
+        // handler, and the caller's mode is restored from the frame when it returns. The
+        // dispatch loop runs the callee and `do_return`/`propagate_fault` pops it — there
+        // is no native recursion here, so the call depth is heap-bounded.
+        self.frames.push(Frame {
+            func: proc,
+            block: entry,
+            ip: 0,
+            locals,
+            temps: HashMap::new(),
+            aliases,
+            dst: dst_loc,
+            return_local,
+            saved_error_mode: self.error_mode,
+        });
+        self.error_mode = ErrorMode::None;
+        Ok(())
+    }
+
+    /// Marshal a native built-in's arguments to plain values — a built-in reads the
+    /// *value* of a ByRef argument (matching vm2's `native_args`), and an omitted one is
+    /// `Empty`.
+    fn native_args(&self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
+        args.iter()
+            .map(|a| match a {
+                OxCallArg::Operand(op) => self.operand(op),
+                OxCallArg::ByRef(place) => self.read(place),
+                OxCallArg::Omitted => Ok(Variant::empty()),
+                OxCallArg::Named { value, .. } => self.operand(value),
+                OxCallArg::Const(n) => Ok(Variant::from_i32(*n)),
+            })
+            .collect()
+    }
+
+    /// Bound runaway recursion at vm2's frame ceiling, raising error 28 ("Out of stack
+    /// space") as a fault, not a panic. The dispatch loop holds frames on the heap (no
+    /// native recursion), so the same ceiling vm2 uses is reachable without overflow.
+    fn guard_call_depth(&self) -> Result<(), Vm3Error> {
+        const MAX_FRAMES: usize = 50_000;
+        if self.frames.len() >= MAX_FRAMES {
+            return Err(Vm3Error::Fault(Fault {
+                code: 28,
+                message: "Out of stack space".into(),
+            }));
         }
         Ok(())
     }
@@ -380,59 +622,92 @@ impl<'h> Vm3<'h> {
         &mut self,
         dst: &OxPlace,
         out: Result<Variant, ArithError>,
-        frame: &mut Frame,
     ) -> Result<(), Vm3Error> {
         let v = out.map_err(|e| Vm3Error::Fault(Fault::from_arith(e)))?;
-        self.store(dst, v, frame)
+        self.store(dst, v)
     }
 
-    /// Write a value to a place. Local/Global are dense, program-sized tables, so an
-    /// out-of-range index is a structural defect (`Malformed`), never a silent drop —
-    /// upholding the crate's "never a silent mis-execution" contract; `Temp` is a sparse
-    /// SSA map (write-before-read), so insertion always succeeds.
-    fn store(&mut self, place: &OxPlace, v: Variant, frame: &mut Frame) -> Result<(), Vm3Error> {
+    /// Resolve an [`OxPlace`] against the top frame to a concrete frame-stack [`Loc`],
+    /// following a ByRef parameter's alias to its caller-side backing.
+    fn resolve(&self, place: &OxPlace) -> Loc {
+        let top = self.frames.len() - 1;
         match place {
-            OxPlace::Local(l) => {
-                *frame
-                    .locals
-                    .get_mut(l.0)
-                    .ok_or_else(|| Vm3Error::Malformed(format!("local {} out of range", l.0)))? = v;
-            }
-            OxPlace::Global(g) => {
+            OxPlace::Global(g) => Loc::Global(g.0),
+            OxPlace::Local(l) => self.frames[top]
+                .aliases
+                .get(&l.0)
+                .copied()
+                .unwrap_or(Loc::Local(top, l.0)),
+            OxPlace::Temp(t) => Loc::Temp(top, t.0),
+        }
+    }
+
+    /// Read a resolved location. Local/Global are dense, program-sized tables, so an
+    /// out-of-range index is a structural defect (`Malformed`), never a silent default;
+    /// `Temp` absence is the SSA write-before-read contract (sparse map → `Empty`).
+    fn read_loc(&self, loc: Loc) -> Result<Variant, Vm3Error> {
+        match loc {
+            Loc::Global(g) => self
+                .globals
+                .get(g)
+                .cloned()
+                .ok_or_else(|| Vm3Error::Malformed(format!("global {g} out of range"))),
+            Loc::Local(fi, li) => self
+                .frames
+                .get(fi)
+                .and_then(|f| f.locals.get(li))
+                .cloned()
+                .ok_or_else(|| Vm3Error::Malformed(format!("local [{fi}][{li}] out of range"))),
+            Loc::Temp(fi, ti) => Ok(self
+                .frames
+                .get(fi)
+                .and_then(|f| f.temps.get(&ti))
+                .cloned()
+                .unwrap_or_else(Variant::empty)),
+        }
+    }
+
+    /// Write a resolved location (same dense/sparse contract as [`Self::read_loc`]).
+    fn write_loc(&mut self, loc: Loc, v: Variant) -> Result<(), Vm3Error> {
+        match loc {
+            Loc::Global(g) => {
                 *self
                     .globals
-                    .get_mut(g.0)
-                    .ok_or_else(|| Vm3Error::Malformed(format!("global {} out of range", g.0)))? =
+                    .get_mut(g)
+                    .ok_or_else(|| Vm3Error::Malformed(format!("global {g} out of range")))? = v;
+            }
+            Loc::Local(fi, li) => {
+                *self
+                    .frames
+                    .get_mut(fi)
+                    .and_then(|f| f.locals.get_mut(li))
+                    .ok_or_else(|| Vm3Error::Malformed(format!("local [{fi}][{li}] out of range")))? =
                     v;
             }
-            OxPlace::Temp(t) => {
-                frame.temps.insert(t.0, v);
+            Loc::Temp(fi, ti) => {
+                if let Some(f) = self.frames.get_mut(fi) {
+                    f.temps.insert(ti, v);
+                } else {
+                    return Err(Vm3Error::Malformed(format!("temp frame {fi} out of range")));
+                }
             }
         }
         Ok(())
     }
 
-    fn operand(&self, op: &OxOperand, frame: &Frame) -> Result<Variant, Vm3Error> {
-        match op {
-            OxOperand::Const(c) => Ok(const_variant(c)),
-            OxOperand::Use(p) => self.read(p, frame),
-        }
+    fn store(&mut self, place: &OxPlace, v: Variant) -> Result<(), Vm3Error> {
+        let loc = self.resolve(place);
+        self.write_loc(loc, v)
     }
 
-    fn read(&self, place: &OxPlace, frame: &Frame) -> Result<Variant, Vm3Error> {
-        match place {
-            OxPlace::Local(l) => frame
-                .locals
-                .get(l.0)
-                .cloned()
-                .ok_or_else(|| Vm3Error::Malformed(format!("local {} out of range", l.0))),
-            OxPlace::Global(g) => self
-                .globals
-                .get(g.0)
-                .cloned()
-                .ok_or_else(|| Vm3Error::Malformed(format!("global {} out of range", g.0))),
-            // Temp absence is the SSA write-before-read contract (sparse map); Empty is fine.
-            OxPlace::Temp(t) => Ok(frame.temps.get(&t.0).cloned().unwrap_or_else(Variant::empty)),
+    fn read(&self, place: &OxPlace) -> Result<Variant, Vm3Error> {
+        self.read_loc(self.resolve(place))
+    }
+
+    fn operand(&self, op: &OxOperand) -> Result<Variant, Vm3Error> {
+        match op {
+            OxOperand::Const(c) => Ok(const_variant(c)),
+            OxOperand::Use(p) => self.read(p),
         }
     }
 }
@@ -515,12 +790,12 @@ fn inst_kind(inst: &OxInst) -> &'static str {
 mod tests {
     use super::*;
     use oxvba_bundle::coreir::{
-        CoreBinOp, CoreConst, CoreGlobal, CoreLocal, CorePlace, CoreProc, CoreProgram, CoreStmt,
-        CoreValue, LocalId as CoreLocalId,
+        CoreArg, CoreBinOp, CoreCallee, CoreConst, CoreGlobal, CoreLocal, CoreParam, CorePlace,
+        CoreProc, CoreProgram, CoreStmt, CoreValue, LocalId as CoreLocalId, ProcId,
     };
     use oxvba_bundle::{
-        AssignmentIntent, AssignmentTargetKind, BuiltinType, NumericCoerceTarget, NumericMode,
-        ProcedureKind, StringCompareMode, VarTypeRef,
+        AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId, NumericCoerceTarget,
+        NumericMode, ProcedureKind, StringCompareMode, VarTypeRef,
     };
     use oxvba_hal::HostPolicy;
     use oxvba_hal::adapters::null::NullHostServices;
@@ -566,9 +841,58 @@ mod tests {
                 return_local: None,
                 body,
             }],
-            entry: Some(oxvba_bundle::coreir::ProcId(0)),
+            entry: Some(ProcId(0)),
             unit_name: "T".into(),
             ..Default::default()
+        }
+    }
+
+    /// A multi-proc program whose `procs[0]` is the entry (`Main`).
+    fn procs_program(procs: Vec<CoreProc>) -> CoreProgram {
+        CoreProgram {
+            procs,
+            entry: Some(ProcId(0)),
+            unit_name: "T".into(),
+            ..Default::default()
+        }
+    }
+
+    fn proc(
+        name: &str,
+        kind: ProcedureKind,
+        params: Vec<CoreParam>,
+        locals: Vec<CoreLocal>,
+        return_local: Option<CoreLocalId>,
+        body: Vec<CoreStmt>,
+    ) -> CoreProc {
+        CoreProc { name: name.into(), kind, params, locals, return_local, body }
+    }
+
+    fn long_param(name: &str) -> CoreParam {
+        CoreParam {
+            name: name.into(),
+            ty: VarTypeRef::Builtin(BuiltinType::Long),
+            by_ref: true,
+            variadic: false,
+        }
+    }
+
+    /// `CorePlace::Local(i)`.
+    fn lc(i: usize) -> CorePlace {
+        CorePlace::Local(CoreLocalId(i))
+    }
+    /// `CoreValue::Load(Local(i))`.
+    fn load(i: usize) -> CoreValue {
+        CoreValue::Load(lc(i))
+    }
+    /// A `Checked(Long)` addition (the regime the binder picks for `Long` operands).
+    fn long_add(l: CoreValue, r: CoreValue) -> CoreValue {
+        CoreValue::Binary {
+            op: CoreBinOp::Add,
+            lhs: Box::new(l),
+            rhs: Box::new(r),
+            mode: StringCompareMode::Binary,
+            num: NumericMode::Checked(NumericCoerceTarget::Long),
         }
     }
 
@@ -818,5 +1142,156 @@ mod tests {
         );
         let vm = run_core(&prog);
         assert_eq!(vm.slot(1).and_then(|v| v.as_i32()), Some(6));
+    }
+
+    #[test]
+    fn call_proc_returns_a_function_value() {
+        // Function Add(a As Long, b As Long) As Long : Add = a + b
+        // Sub Main() : n = Add(10, 5)   ->  n = 15
+        let add = proc(
+            "Add",
+            ProcedureKind::Function,
+            vec![long_param("a"), long_param("b")], // LocalId 0, 1
+            vec![local("Add", VarTypeRef::Builtin(BuiltinType::Long))], // the return local, LocalId 2
+            Some(CoreLocalId(2)),
+            vec![assign(lc(2), long_add(load(0), load(1)))],
+        );
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))], // LocalId 0
+            None,
+            vec![assign(
+                lc(0),
+                CoreValue::Call {
+                    callee: CoreCallee::VbaProc { proc: ProcId(1) },
+                    args: vec![
+                        CoreArg::ByVal(CoreValue::Const(CoreConst::I32(10))),
+                        CoreArg::ByVal(CoreValue::Const(CoreConst::I32(5))),
+                    ],
+                },
+            )],
+        );
+        let prog = procs_program(vec![main, add]);
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(15));
+    }
+
+    #[test]
+    fn call_proc_byref_mutates_the_caller() {
+        // Sub Bump(ByRef x As Long) : x = x + 1
+        // Sub Main() : v = 41 : Bump(v)   ->  v = 42 (true aliasing through the frame stack)
+        let bump = proc(
+            "Bump",
+            ProcedureKind::Sub,
+            vec![long_param("x")], // LocalId 0
+            Vec::new(),
+            None,
+            vec![assign(lc(0), long_add(load(0), CoreValue::Const(CoreConst::I32(1))))],
+        );
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("v", VarTypeRef::Builtin(BuiltinType::Long))], // LocalId 0
+            None,
+            vec![
+                assign(lc(0), CoreValue::Const(CoreConst::I32(41))),
+                CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::VbaProc { proc: ProcId(1) },
+                    args: vec![CoreArg::ByRef(lc(0))],
+                }),
+            ],
+        );
+        let prog = procs_program(vec![main, bump]);
+        let vm = run_core(&prog);
+        assert_eq!(
+            vm.slot(0).and_then(|v| v.as_i32()),
+            Some(42),
+            "a ByRef write must propagate to the caller's backing slot"
+        );
+    }
+
+    #[test]
+    fn call_proc_byval_does_not_mutate_the_caller() {
+        // The same Bump, but Main passes `v` ByVal -> the callee mutates a copy, v stays 41.
+        let bump = proc(
+            "Bump",
+            ProcedureKind::Sub,
+            vec![long_param("x")],
+            Vec::new(),
+            None,
+            vec![assign(lc(0), long_add(load(0), CoreValue::Const(CoreConst::I32(1))))],
+        );
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("v", VarTypeRef::Builtin(BuiltinType::Long))],
+            None,
+            vec![
+                assign(lc(0), CoreValue::Const(CoreConst::I32(41))),
+                CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::VbaProc { proc: ProcId(1) },
+                    args: vec![CoreArg::ByVal(load(0))],
+                }),
+            ],
+        );
+        let prog = procs_program(vec![main, bump]);
+        let vm = run_core(&prog);
+        assert_eq!(
+            vm.slot(0).and_then(|v| v.as_i32()),
+            Some(41),
+            "a ByVal copy must NOT propagate back to the caller"
+        );
+    }
+
+    #[test]
+    fn call_native_builtin_invokes_the_shared_library() {
+        // Sub Main() : n = Len("abc")   ->  n = 3 (through the shared `oxvba_lib::invoke`).
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
+            None,
+            vec![assign(
+                lc(0),
+                CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::Len),
+                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str("abc".into())))],
+                },
+            )],
+        );
+        let prog = procs_program(vec![main]);
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(3));
+    }
+
+    #[test]
+    fn recursion_is_bounded_not_a_stack_overflow() {
+        // Sub Spin() : Spin()  — unbounded self-recursion must surface as VBA error 28
+        // ("Out of stack space"), not a native stack overflow / panic.
+        let spin = proc(
+            "Spin",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            vec![CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::VbaProc { proc: ProcId(0) },
+                args: Vec::new(),
+            })],
+        );
+        let oxp: &'static OxProgram =
+            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&procs_program(vec![spin])).expect("elaborate")));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        match Vm3::run(oxp, host) {
+            Err(Vm3Error::Fault(f)) => assert_eq!(f.code, 28, "deep recursion is error 28"),
+            Err(other) => panic!("expected an Out-of-stack fault, got error: {other}"),
+            Ok(_) => panic!("expected an Out-of-stack fault, but the run completed"),
+        }
     }
 }
