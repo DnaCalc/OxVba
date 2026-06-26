@@ -227,10 +227,12 @@ impl<'h> Vm3<'h> {
                     then_blk,
                     else_blk,
                 } => {
-                    // `cond` is a pre-computed Boolean (the elaboration emits a `Truthy`
-                    // before any non-Boolean condition), so the terminator is a pure
-                    // control transfer — a truthiness fault would have already routed
-                    // through the block's pad at the `Truthy` instruction, not here.
+                    // `cond` is a pre-computed Boolean: the elaboration emits a `Truthy`
+                    // before *every* conditional Branch (a statically-Bool operand is not
+                    // a guaranteed runtime Boolean — an unassigned `Dim b As Boolean` is
+                    // Empty, `Not b` of an Empty Bool is a Long, a Variant compare is
+                    // Null), so the terminator is a pure control transfer and any
+                    // truthiness fault already routed through the pad at the `Truthy`.
                     let v = self.operand(cond, &frame)?;
                     let taken = v.as_bool().ok_or_else(|| {
                         Vm3Error::Malformed("Branch condition is not a pre-computed Boolean".into())
@@ -714,5 +716,107 @@ mod tests {
         };
         let vm = run_core(&prog);
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+    }
+
+    #[test]
+    fn unassigned_boolean_condition_is_false_not_an_error() {
+        // `Dim b As Boolean : If b Then n = 5 Else n = 9` — b is unassigned, so Empty at
+        // runtime (not a Boolean tag). vm2's is_truthy(Empty) = False, so the Else branch
+        // (n = 9); vm3 must match, not error on the non-Boolean tag. (Regression guard:
+        // before the Truthy-always fix this returned Malformed.)
+        use oxvba_bundle::coreir::CoreIfArm;
+        let b = || CorePlace::Local(CoreLocalId(0)); // Dim b As Boolean (unassigned)
+        let n = || CorePlace::Local(CoreLocalId(1)); // Dim n As Long
+        let prog = main_proc(
+            vec![
+                local("b", VarTypeRef::Builtin(BuiltinType::Boolean)),
+                local("n", VarTypeRef::Builtin(BuiltinType::Long)),
+            ],
+            vec![CoreStmt::If {
+                arms: vec![CoreIfArm {
+                    condition: CoreValue::Load(b()),
+                    body: vec![assign(n(), CoreValue::Const(CoreConst::I32(5)))],
+                }],
+                else_body: vec![assign(n(), CoreValue::Const(CoreConst::I32(9)))],
+            }],
+        );
+        let vm = run_core(&prog);
+        assert_eq!(
+            vm.slot(1).and_then(|v| v.as_i32()),
+            Some(9),
+            "unassigned Boolean is False -> Else branch, not an error"
+        );
+    }
+
+    #[test]
+    fn select_case_runs_including_a_null_selector() {
+        // A Select matching a case, and one whose selector is Null (no case matches ->
+        // Case Else) — the Null selector must fall through, not error (vm2 parity).
+        use oxvba_bundle::coreir::{CaseClause, CoreCaseBlock};
+        let run_select = |sel: CoreValue, sel_ty: VarTypeRef| -> Option<i32> {
+            let s = || CorePlace::Local(CoreLocalId(0));
+            let x = || CorePlace::Local(CoreLocalId(1));
+            let prog = main_proc(
+                vec![local("s", sel_ty), local("x", VarTypeRef::Builtin(BuiltinType::Long))],
+                vec![
+                    assign(s(), sel),
+                    CoreStmt::Select {
+                        selector: CoreValue::Load(s()),
+                        cases: vec![CoreCaseBlock {
+                            clauses: vec![CaseClause::Value(CoreValue::Const(CoreConst::I32(1)))],
+                            body: vec![assign(x(), CoreValue::Const(CoreConst::I32(5)))],
+                        }],
+                        case_else: vec![assign(x(), CoreValue::Const(CoreConst::I32(9)))],
+                    },
+                ],
+            );
+            run_core(&prog).slot(1).and_then(|v| v.as_i32())
+        };
+        // Selector 1 matches `Case 1` -> x = 5.
+        assert_eq!(
+            run_select(CoreValue::Const(CoreConst::I32(1)), VarTypeRef::Builtin(BuiltinType::Long)),
+            Some(5)
+        );
+        // A Null selector matches nothing (is_truthy(Null) = False) -> Case Else, x = 9.
+        assert_eq!(
+            run_select(CoreValue::Const(CoreConst::Null), VarTypeRef::Variant),
+            Some(9),
+            "a Null Select selector falls through to Case Else, not an error"
+        );
+    }
+
+    #[test]
+    fn for_loop_accumulates() {
+        // `For i = 1 To 3 : s = s + i : Next` -> s = 6 (exercises the For counter-test
+        // Branch + its Truthy coercion end-to-end).
+        let i = || CorePlace::Local(CoreLocalId(0));
+        let s = || CorePlace::Local(CoreLocalId(1));
+        let prog = main_proc(
+            vec![
+                local("i", VarTypeRef::Builtin(BuiltinType::Long)),
+                local("s", VarTypeRef::Builtin(BuiltinType::Long)),
+            ],
+            vec![
+                assign(s(), CoreValue::Const(CoreConst::I32(0))),
+                CoreStmt::ForRange {
+                    var: i(),
+                    start: CoreValue::Const(CoreConst::I32(1)),
+                    end: CoreValue::Const(CoreConst::I32(3)),
+                    step: None,
+                    body: vec![assign(
+                        s(),
+                        CoreValue::Binary {
+                            op: CoreBinOp::Add,
+                            lhs: Box::new(CoreValue::Load(s())),
+                            rhs: Box::new(CoreValue::Load(i())),
+                            mode: StringCompareMode::Binary,
+                            num: NumericMode::Widening,
+                        },
+                    )],
+                },
+            ],
+        );
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(1).and_then(|v| v.as_i32()), Some(6));
     }
 }

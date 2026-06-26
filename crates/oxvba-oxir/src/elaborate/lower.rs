@@ -784,14 +784,18 @@ impl<'a> Lowerer<'a> {
     }
 
     /// Reduce a conditional operand to a **pre-computed Boolean** for a
-    /// [`OxTerminator::Branch`] (its documented invariant). If the value is already
-    /// statically `Bool` it is used as-is; otherwise a fallible [`OxInst::Truthy`] is
-    /// emitted into a fresh temp, so a non-coercible condition (`If "abc" Then`) faults
-    /// through the enclosing statement's pad — *not* out of the pure terminator.
-    fn truthy_cond(&mut self, cond: OxOperand, already_bool: bool) -> OxOperand {
-        if already_bool {
-            return cond;
-        }
+    /// [`OxTerminator::Branch`] (its documented invariant) by emitting a fallible
+    /// [`OxInst::Truthy`] (the `is_truthy` rule a conditional uses).
+    ///
+    /// This is emitted **unconditionally** — a statically-`Bool` operand is *not*
+    /// guaranteed to be a runtime Boolean-tagged value, so the static type cannot be
+    /// trusted: an unassigned `Dim b As Boolean` reads as `Empty`, `Not b` of an Empty
+    /// `Boolean` is a `Long`, and a `Variant` comparison / `CBool(Null)` is `Null` — all
+    /// of which the strict `Branch.as_bool` would otherwise reject. `Truthy` normalizes
+    /// every case to a real Boolean (or, for a non-coercible `If "abc"`, faults through
+    /// the enclosing statement's pad — *not* out of the pure terminator). The redundant
+    /// `Truthy` on an already-Boolean comparison result is idempotent and cheap.
+    fn truthy_cond(&mut self, cond: OxOperand) -> OxOperand {
         let t = self.new_temp();
         self.emit(OxInst::Truthy {
             dst: OxPlace::Temp(t),
@@ -811,8 +815,8 @@ impl<'a> Lowerer<'a> {
         let if_pad = self.cur_fault;
         for arm in arms {
             self.cur_fault = if_pad;
-            let (cond, cond_ty) = self.lower_value(&arm.condition)?;
-            let cond = self.truthy_cond(cond, cond_ty == OxTy::Bool);
+            let (cond, _) = self.lower_value(&arm.condition)?;
+            let cond = self.truthy_cond(cond);
             let then_blk = self.reserve();
             let next_blk = self.reserve();
             self.finish_to(
@@ -888,18 +892,18 @@ impl<'a> Lowerer<'a> {
     /// truthiness coercion, so vm3's branch-taken value is `is_truthy(<continuation>)` —
     /// matching vm2's `JumpIfZero` truthiness on the same continuation operand.
     fn lower_loop_condition(&mut self, condition: &CoreValue, until: bool) -> Result<OxOperand> {
-        let (cond, cond_ty) = self.lower_value(condition)?;
-        if until {
+        let (cond, _) = self.lower_value(condition)?;
+        let cond = if until {
             let t = self.new_temp();
             self.emit(OxInst::Not {
                 dst: OxPlace::Temp(t),
                 src: cond,
             });
-            // The `Not` result's type is not tracked, so coerce unconditionally.
-            Ok(self.truthy_cond(OxOperand::temp(t), false))
+            OxOperand::temp(t)
         } else {
-            Ok(self.truthy_cond(cond, cond_ty == OxTy::Bool))
-        }
+            cond
+        };
+        Ok(self.truthy_cond(cond))
     }
 
     fn lower_for_range(
@@ -959,10 +963,12 @@ impl<'a> Lowerer<'a> {
         let step_blk = self.reserve();
 
         self.finish_to(OxTerminator::Jump(head), head);
-        // head: branch on step sign to the matching comparison.
+        // head: branch on step sign to the matching comparison. The compare can be Null
+        // (a `Step <Null>`), so coerce to a Boolean for the Branch invariant.
+        let nonneg_b = self.truthy_cond(OxOperand::temp(nonneg));
         self.finish_to(
             OxTerminator::Branch {
-                cond: OxOperand::temp(nonneg),
+                cond: nonneg_b,
                 then_blk: asc,
                 else_blk: desc,
             },
@@ -987,10 +993,13 @@ impl<'a> Lowerer<'a> {
             mode: oxvba_bundle::StringCompareMode::Binary,
         });
         self.finish_to(OxTerminator::Jump(test), test);
-        // test: continue into the body or exit.
+        // test: continue into the body or exit. The counter compare can be Null (a Null
+        // For bound), so coerce to a Boolean for the Branch invariant (matches vm2's
+        // is_truthy loop-exit).
+        let cond_b = self.truthy_cond(OxOperand::temp(cond_t));
         self.finish_to(
             OxTerminator::Branch {
-                cond: OxOperand::temp(cond_t),
+                cond: cond_b,
                 then_blk: body_blk,
                 else_blk: after,
             },
@@ -1039,6 +1048,10 @@ impl<'a> Lowerer<'a> {
         for block in cases {
             self.cur_fault = select_pad;
             let matched = self.lower_case_match(&sel_op, &block.clauses)?;
+            // The case-match is a Compare/Logical result that can be Null (a Null
+            // selector), so coerce to a Boolean for the Branch invariant (a Null match
+            // is then falsy, falling through to the next case / Case Else like vm2).
+            let matched = self.truthy_cond(matched);
             let body_blk = self.reserve();
             let next_blk = self.reserve();
             self.finish_to(
@@ -2088,11 +2101,11 @@ mod tests {
     }
 
     #[test]
-    fn if_condition_gets_a_truthy_coercion_only_when_non_boolean() {
-        // The Branch invariant: a conditional's `cond` must be a pre-computed Boolean. A
-        // non-Boolean `If` condition gets a fallible `Truthy` coercion (so a faulting
-        // truthiness routes through the statement's pad, not the pure terminator); a
-        // Boolean condition (a comparison of non-Variant operands) does not.
+    fn every_conditional_gets_a_truthy_coercion() {
+        // The Branch invariant: a conditional's `cond` must be a pre-computed Boolean,
+        // and it is enforced UNCONDITIONALLY — a statically-Bool operand is not a
+        // guaranteed runtime Boolean (an unassigned `Dim b As Boolean` is Empty, etc.),
+        // so a `Truthy` is emitted before every conditional Branch, even a comparison.
         let n = || CorePlace::Local(CoreLocalId(0));
         let if_with = |cond| CoreStmt::If {
             arms: vec![CoreIfArm {
@@ -2111,10 +2124,13 @@ mod tests {
                 .flat_map(|b| &b.instrs)
                 .any(|i| matches!(i, OxInst::Truthy { .. }))
         };
+        // A bare non-Boolean literal condition.
         assert!(
             has_truthy(if_with(CoreValue::Const(CoreConst::I32(1)))),
             "a non-Boolean If condition must get a Truthy coercion"
         );
+        // A comparison condition (statically Bool, but can be a Null Variant at runtime)
+        // is coerced too.
         let cmp = CoreValue::Binary {
             op: CoreBinOp::Gt,
             lhs: Box::new(CoreValue::Load(n())),
@@ -2123,8 +2139,8 @@ mod tests {
             num: NumericMode::Widening,
         };
         assert!(
-            !has_truthy(if_with(cmp)),
-            "a Boolean comparison condition needs no Truthy"
+            has_truthy(if_with(cmp)),
+            "a comparison condition is still coerced (its static Bool type is not a runtime guarantee)"
         );
     }
 
