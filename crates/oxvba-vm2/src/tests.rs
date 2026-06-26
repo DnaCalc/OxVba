@@ -1055,6 +1055,94 @@ fn raise_event_dispatches_to_withevents_handler() {
 }
 
 #[test]
+fn raise_event_dispatches_to_two_distinct_bindings_on_one_event() {
+    // Two sink classes subscribe to the SAME source for the SAME event id (7), each
+    // through a DISTINCT binding token (100, 101) routed to its own handler. A single
+    // `RaiseEvent 7` must reach BOTH handlers. This is the runtime-table analog of the
+    // two-sink-classes bug, independent of the binder: it pins that `event_routes`
+    // holds two handlers for one event under distinct bindings and that `RaiseEvent`
+    // iterates every matching subscription. (With a SHARED binding it would instead
+    // trip the `LoadedBundle::load` dedup invariant — the bug the binder fix prevents.)
+    //
+    // global_count = 2, so flat slot s<2 is global s; otherwise local (s-2). Handler
+    // frames see globals at slots 0,1 then Me at slot 2 and the arg at slot 3.
+    let mut b = bundle_full(
+        vec![
+            Op::NewObject { dst: 2, class: 0 }, // 0  snkA  (local 0)
+            Op::NewObject { dst: 3, class: 1 }, // 1  snkB  (local 1)
+            Op::NewObject { dst: 4, class: 2 }, // 2  src   (local 2)
+            Op::LoadI32 {
+                slot: 5,
+                value: 100,
+            }, // 3  bindingA (local 3)
+            Op::LoadI32 {
+                slot: 6,
+                value: 101,
+            }, // 4  bindingB (local 4)
+            Op::WithEventsSet {
+                dst: 7,
+                owner: 2,
+                binding: 5,
+                value: 4,
+            }, // 5  snkA.x = src @100
+            Op::WithEventsSet {
+                dst: 8,
+                owner: 3,
+                binding: 6,
+                value: 4,
+            }, // 6  snkB.y = src @101
+            Op::LoadI32 { slot: 9, value: 42 }, // 7  event arg (local 7)
+            Op::RaiseEvent {
+                source: 4,
+                event: 7,
+                args: vec![ProcArg::ByVal(9)],
+            }, // 8
+            Op::Halt,                           // 9
+            Op::Copy { dst: 0, src: 3 },        // 10 handlerA: global 0 = arg
+            Op::Return,                         // 11
+            Op::Copy { dst: 1, src: 3 },        // 12 handlerB: global 1 = arg
+            Op::Return,                         // 13
+        ],
+        2, // global_count (global 0 = flagA, global 1 = flagB)
+        8, // entry locals: snkA, snkB, src, bA, bB, tmpA, tmpB, arg
+        Vec::new(),
+        vec![
+            proc("xA_Fired", 10, 2, 2, None), // handler 0 (Me, arg)
+            proc("xB_Fired", 12, 2, 2, None), // handler 1 (Me, arg)
+        ],
+        vec![
+            class("SnkA", None, None),
+            class("SnkB", None, None),
+            class("Src", None, None),
+        ],
+    );
+    b.event_routes = vec![
+        EventRoute {
+            binding: 100,
+            event: 7,
+            handler: 0,
+        },
+        EventRoute {
+            binding: 101,
+            event: 7,
+            handler: 1,
+        },
+    ];
+    let h = host();
+    let vm = run(&b, &h).unwrap();
+    assert_eq!(
+        vm.slot(0).unwrap().as_i32(),
+        Some(42),
+        "binding 100 routed to handler A"
+    );
+    assert_eq!(
+        vm.slot(1).unwrap().as_i32(),
+        Some(42),
+        "binding 101 routed to handler B"
+    );
+}
+
+#[test]
 fn late_bound_method_dispatch() {
     // r = obj.Inc(41) where the receiver is dispatched late by name → 42.
     let mut b = bundle(

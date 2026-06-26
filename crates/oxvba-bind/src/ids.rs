@@ -107,9 +107,21 @@ impl IdAllocator {
 
         // 1) Module-level members. Standard modules contribute globals; class
         //    modules contribute per-instance field / binding / event tokens.
+        //
+        // Field tokens are per class (they index that instance's own sparse field
+        // map). WithEvents *binding* tokens are bundle-GLOBAL, because the binding
+        // token is half of the bundle-wide `event_routes[(binding, event)]` dispatch
+        // key: if two sink classes each declared a WithEvents handler for the same
+        // source event, a per-class binding token would collide on `(binding, event)`
+        // and one handler would shadow the other (the dispatch dedup invariant in
+        // `LoadedBundle::load` would fire). A bundle-global counter keeps every
+        // WithEvents field's routes distinct. Binding tokens never index per-instance
+        // storage (a WithEvents field's bound source lives in the VM's `withevents`
+        // map, keyed by owner+binding), so they need no per-class numbering.
+        let mut next_withevents_binding = 0i32;
         for module in env.modules() {
             let is_class = class_name_for(manifest, module.module_name).is_some();
-            let mut member_token = 0i32; // field + WithEvents binding tokens (per class)
+            let mut member_token = 0i32; // per-class field tokens (instance storage index)
             let mut event_index = 0i32;
             for sym_id in symbols.symbols_in_scope(module.module_scope)? {
                 let sym = symbols.symbol(sym_id).expect("symbol in scope");
@@ -119,8 +131,10 @@ impl IdAllocator {
                         member_token += 1;
                     }
                     SymbolKind::WithEventsField if is_class => {
-                        alloc.withevents_binding_of.insert(sym_id, member_token);
-                        member_token += 1;
+                        alloc
+                            .withevents_binding_of
+                            .insert(sym_id, next_withevents_binding);
+                        next_withevents_binding += 1;
                     }
                     SymbolKind::Event => {
                         alloc.event_index_of.insert(sym_id, event_index);

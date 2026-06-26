@@ -1576,6 +1576,68 @@ fn withevents_raise_event_routes_to_handler() {
 }
 
 #[test]
+fn two_sink_classes_same_source_event_route_independently() {
+    // Two DISTINCT sink classes each `WithEvents Watched As Source` with their own
+    // `Watched_Fired` handler. A single `RaiseEvent Fired` on the shared source must
+    // dispatch to BOTH handlers independently. Regression: the binder used to draw a
+    // WithEvents field's binding token from a PER-CLASS counter, so both sink fields
+    // got token 1 and the bundle's `event_routes[(binding, event)]` collided — vm2
+    // panicked at `LoadedBundle::load` (the dedup invariant). A bundle-global binding
+    // counter gives each field a distinct token, so both routes coexist.
+    //
+    // The handlers write DIFFERENT values (v vs v+1) so the asserted result proves
+    // each route reached its OWN handler, not that one shadowed the other.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim a As SinkA\n    Dim b As SinkB\n    Dim s As Source\n    \
+                Set s = New Source\n    Set a = New SinkA\n    Set b = New SinkB\n    \
+                Set a.Watched = s\n    Set b.Watched = s\n    s.Fire\n    \
+                r = a.Got * 1000 + b.Got\nEnd Sub\n";
+    let sink_a = "Public WithEvents Watched As Source\nPublic Got As Long\n\n\
+                  Private Sub Watched_Fired(ByVal v As Long)\n    Got = v\nEnd Sub\n";
+    let sink_b = "Public WithEvents Watched As Source\nPublic Got As Long\n\n\
+                  Private Sub Watched_Fired(ByVal v As Long)\n    Got = v + 1\nEnd Sub\n";
+    let source = "Public Event Fired(ByVal v As Long)\n\n\
+                  Public Sub Fire()\n    RaiseEvent Fired(99)\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("SinkA", ModuleKind::Class, sink_a),
+            ("SinkB", ModuleKind::Class, sink_b),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        // a.Got = 99, b.Got = 100  ⇒  99 * 1000 + 100
+        Some(99_100.0),
+        "both sink classes must route the shared event to their own handler",
+    );
+}
+
+#[test]
+fn same_sink_class_twice_each_instance_dispatches() {
+    // Two INSTANCES of ONE sink class, both subscribed to the same source. They share
+    // a single binding token (and handler proc) — correctly, since the token names a
+    // (sink class, field), not an instance — yet each must dispatch with its own `Me`.
+    // The owner identity in the subscription key disambiguates them. Guards the
+    // per-instance half of the invariant the bundle-global token change relies on.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim a As Sink\n    Dim b As Sink\n    Dim s As Source\n    \
+                Set s = New Source\n    Set a = New Sink\n    Set b = New Sink\n    \
+                Set a.Watched = s\n    Set b.Watched = s\n    s.Fire\n    \
+                r = a.Got + b.Got\nEnd Sub\n";
+    let sink = "Public WithEvents Watched As Source\nPublic Got As Long\n\n\
+                Private Sub Watched_Fired(ByVal v As Long)\n    Got = v\nEnd Sub\n";
+    let source = "Public Event Fired(ByVal v As Long)\n\n\
+                  Public Sub Fire()\n    RaiseEvent Fired(99)\nEnd Sub\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Sink", ModuleKind::Class, sink),
+            ("Source", ModuleKind::Class, source),
+        ]),
+        // Both instances' handlers fire with their own Me: a.Got = 99, b.Got = 99.
+        Some(198.0),
+        "both instances of one sink class must dispatch independently",
+    );
+}
+
+#[test]
 fn raise_event_byref_param_writes_back_to_raiser() {
     // VBA event parameters default to ByRef, and RaiseEvent is synchronous, so a
     // handler that assigns to a ByRef parameter mutates the raiser's variable
