@@ -50,6 +50,11 @@ pub fn lower_var_type(ty: &VarTypeRef, r: &impl NameResolver) -> OxTy {
             // declaration's bounds, recovered later from the binding's array metadata.
             OxTy::Array(Box::new(lower_var_type(elem, r)), ArrayShape::Dynamic)
         }
+        // A UDT fixed-array field is **inline record payload**, not a SAFEARRAY, so it
+        // is *not* `OxTy::Array` (a `*mut SAFEARRAY`). Conservatively `Variant` for now —
+        // consistent with the (also-deferred) record-layout typing; a precise
+        // inline-fixed-array `OxTy` rides with that record-layout work.
+        VarTypeRef::FixedArray { .. } => OxTy::Variant,
         // Name-driven (tag-agnostic): an `Object(name)` may denote a class, a COM or
         // project interface, a UDT, or an Enum — `Udt(name)` is the already-normalized
         // form of the same.
@@ -176,5 +181,17 @@ mod tests {
                 ArrayShape::Dynamic
             )
         );
+    }
+
+    #[test]
+    fn udt_fixed_array_field_is_conservatively_variant() {
+        // A UDT inline fixed-array field is record payload, not a SAFEARRAY, so it is
+        // *not* `OxTy::Array`; conservatively `Variant` until record-layout typing lands.
+        let r = resolver();
+        let ty = VarTypeRef::FixedArray {
+            element: Box::new(VarTypeRef::Builtin(BuiltinType::Long)),
+            len: 4,
+        };
+        assert_eq!(lower_var_type(&ty, &r), OxTy::Variant);
     }
 }
