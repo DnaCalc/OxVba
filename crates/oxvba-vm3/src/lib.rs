@@ -38,6 +38,7 @@
 
 use std::collections::HashMap;
 
+use oxvba_bundle::NativeImplId;
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
@@ -505,8 +506,7 @@ impl<'h> Vm3<'h> {
             OxInst::CallNative { dst, callee, args } => match callee {
                 OxNativeCallee::Builtin(id) => {
                     let argv = self.native_args(args)?;
-                    let result = oxvba_lib::invoke(*id, &argv, self.host, &mut self.lib)
-                        .map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))?;
+                    let result = self.invoke_native_lib(*id, &argv)?;
                     if let Some(dst) = dst {
                         self.store(dst, result)?;
                     }
@@ -586,6 +586,33 @@ impl<'h> Vm3<'h> {
         });
         self.error_mode = ErrorMode::None;
         Ok(())
+    }
+
+    /// Invoke a base-library built-in. Most builtins are the pure shared
+    /// `oxvba_lib::invoke`, but a few are host/bundle-aware and the pure body would
+    /// return a generically-wrong value: `TypeName` of an object yields the literal
+    /// `"Object"` from the pure body, so resolve the real class/COM name here (exactly
+    /// as vm2's `invoke_native_lib`), where the host COM facet is in reach — never let
+    /// the generic `"Object"` leak as a silently-wrong result.
+    fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Vm3Error> {
+        if id == NativeImplId::TypeName
+            && let Some(object) = argv.first().and_then(|a| a.as_object_ref())
+        {
+            if object.is_project_instance() {
+                // A project instance's class name comes from the bundle class table,
+                // which lands with the M3 object model; until then a project instance
+                // cannot exist (`New` is Unimplemented), so this is unreachable — be
+                // honest rather than leak the generic "Object" if it ever is reached.
+                return Err(Vm3Error::Unimplemented {
+                    what: "TypeName of a project instance",
+                });
+            }
+            if let Some(name) = self.host.com().object_type_name(object).ok().flatten() {
+                return Ok(Variant::from_string(name));
+            }
+            // The host could not name it: fall through to the pure body (as vm2 does).
+        }
+        oxvba_lib::invoke(id, argv, self.host, &mut self.lib).map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))
     }
 
     /// Marshal a native built-in's arguments to plain values — a built-in reads the
@@ -1267,6 +1294,34 @@ mod tests {
         let prog = procs_program(vec![main]);
         let vm = run_core(&prog);
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(3));
+    }
+
+    #[test]
+    fn call_native_typename_routes_through_the_veneer() {
+        // Sub Main() : n = TypeName("hi")  ->  "String". Proves CallNative now goes
+        // through the `invoke_native_lib` veneer (which only intercepts an *object*
+        // argument, mirroring vm2): a non-object argument skips the interception and the
+        // pure library body still answers correctly.
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("n", VarTypeRef::Variant)],
+            None,
+            vec![assign(
+                lc(0),
+                CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::TypeName),
+                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str("hi".into())))],
+                },
+            )],
+        );
+        let prog = procs_program(vec![main]);
+        let vm = run_core(&prog);
+        let s = oxvba_runtime::variant_to_vba_string(&vm.slot(0).expect("n"))
+            .map(|b| b.as_str())
+            .unwrap_or_default();
+        assert_eq!(s, "String");
     }
 
     #[test]
