@@ -121,7 +121,21 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         globals,
         classes,
         com_interfaces: com.interfaces,
-        entry: program.entry.map(|p| FuncId(p.0)),
+        // Resolve the entry the same way `linearize`'s `select_entry` does, so vm3/JIT
+        // run the same proc vm2 runs (and expose the same entry frame): the recorded
+        // entry, else a case-insensitive `Main`, else the first proc (`None` only for a
+        // proc-less unit). Keeps `OxProgram.entry` the single source of truth.
+        entry: program
+            .entry
+            .map(|p| FuncId(p.0))
+            .or_else(|| {
+                program
+                    .procs
+                    .iter()
+                    .position(|p| p.name.eq_ignore_ascii_case("main"))
+                    .map(FuncId)
+            })
+            .or_else(|| (!program.procs.is_empty()).then_some(FuncId(0))),
         global_initializer: program.global_initializer.map(|p| FuncId(p.0)),
         unit_name: program.unit_name.clone(),
         // Stable, name-keyed metadata is reused verbatim.
@@ -769,6 +783,23 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Reduce a conditional operand to a **pre-computed Boolean** for a
+    /// [`OxTerminator::Branch`] (its documented invariant). If the value is already
+    /// statically `Bool` it is used as-is; otherwise a fallible [`OxInst::Truthy`] is
+    /// emitted into a fresh temp, so a non-coercible condition (`If "abc" Then`) faults
+    /// through the enclosing statement's pad — *not* out of the pure terminator.
+    fn truthy_cond(&mut self, cond: OxOperand, already_bool: bool) -> OxOperand {
+        if already_bool {
+            return cond;
+        }
+        let t = self.new_temp();
+        self.emit(OxInst::Truthy {
+            dst: OxPlace::Temp(t),
+            src: cond,
+        });
+        OxOperand::temp(t)
+    }
+
     fn lower_if(
         &mut self,
         arms: &[coreir::CoreIfArm],
@@ -780,7 +811,8 @@ impl<'a> Lowerer<'a> {
         let if_pad = self.cur_fault;
         for arm in arms {
             self.cur_fault = if_pad;
-            let (cond, _) = self.lower_value(&arm.condition)?;
+            let (cond, cond_ty) = self.lower_value(&arm.condition)?;
+            let cond = self.truthy_cond(cond, cond_ty == OxTy::Bool);
             let then_blk = self.reserve();
             let next_blk = self.reserve();
             self.finish_to(
@@ -850,18 +882,23 @@ impl<'a> Lowerer<'a> {
         Ok(())
     }
 
-    /// Lower a loop continuation condition, negating it for `Until`.
+    /// Lower a loop continuation condition, negating it for `Until`, and reduce it to a
+    /// pre-computed Boolean for the loop's `Branch` (see [`Self::truthy_cond`]). The
+    /// `Not` (for `Until`) mirrors the legacy lowering and is applied before the
+    /// truthiness coercion, so vm3's branch-taken value is `is_truthy(<continuation>)` —
+    /// matching vm2's `JumpIfZero` truthiness on the same continuation operand.
     fn lower_loop_condition(&mut self, condition: &CoreValue, until: bool) -> Result<OxOperand> {
-        let (cond, _) = self.lower_value(condition)?;
+        let (cond, cond_ty) = self.lower_value(condition)?;
         if until {
             let t = self.new_temp();
             self.emit(OxInst::Not {
                 dst: OxPlace::Temp(t),
                 src: cond,
             });
-            Ok(OxOperand::temp(t))
+            // The `Not` result's type is not tracked, so coerce unconditionally.
+            Ok(self.truthy_cond(OxOperand::temp(t), false))
         } else {
-            Ok(cond)
+            Ok(self.truthy_cond(cond, cond_ty == OxTy::Bool))
         }
     }
 
@@ -2048,6 +2085,47 @@ mod tests {
         let prog = program(sub("Main", vec![long_local("n")], vec![do_loop, select]));
         let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
+    }
+
+    #[test]
+    fn if_condition_gets_a_truthy_coercion_only_when_non_boolean() {
+        // The Branch invariant: a conditional's `cond` must be a pre-computed Boolean. A
+        // non-Boolean `If` condition gets a fallible `Truthy` coercion (so a faulting
+        // truthiness routes through the statement's pad, not the pure terminator); a
+        // Boolean condition (a comparison of non-Variant operands) does not.
+        let n = || CorePlace::Local(CoreLocalId(0));
+        let if_with = |cond| CoreStmt::If {
+            arms: vec![CoreIfArm {
+                condition: cond,
+                body: vec![assign(n(), CoreValue::Const(CoreConst::I32(5)))],
+            }],
+            else_body: Vec::new(),
+        };
+        let has_truthy = |stmt| {
+            let oxp = elaborate(&program(sub("Main", vec![long_local("n")], vec![stmt])))
+                .expect("elaborate");
+            assert_eq!(verify_program(&oxp), Ok(()));
+            oxp.funcs[0]
+                .blocks
+                .iter()
+                .flat_map(|b| &b.instrs)
+                .any(|i| matches!(i, OxInst::Truthy { .. }))
+        };
+        assert!(
+            has_truthy(if_with(CoreValue::Const(CoreConst::I32(1)))),
+            "a non-Boolean If condition must get a Truthy coercion"
+        );
+        let cmp = CoreValue::Binary {
+            op: CoreBinOp::Gt,
+            lhs: Box::new(CoreValue::Load(n())),
+            rhs: Box::new(CoreValue::Const(CoreConst::I32(0))),
+            mode: StringCompareMode::Binary,
+            num: NumericMode::Widening,
+        };
+        assert!(
+            !has_truthy(if_with(cmp)),
+            "a Boolean comparison condition needs no Truthy"
+        );
     }
 
     #[test]

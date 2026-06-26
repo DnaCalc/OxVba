@@ -143,6 +143,10 @@ impl<'h> Vm3<'h> {
             // The initializer writes module globals; its own frame is discarded.
             vm.run_frame(init, frame)?;
         }
+        // Isolate this run from any prior run on the shared thread-local termination
+        // queue, before the entry runs — matching vm2's per-run reset (object-lifecycle
+        // drains land in M3, but the isolation is run-lifecycle plumbing).
+        oxvba_runtime::reset_pending_terminations();
         if let Some(entry) = program.entry {
             let frame = vm.new_frame(entry);
             let finished = vm.run_frame(entry, frame)?;
@@ -223,8 +227,14 @@ impl<'h> Vm3<'h> {
                     then_blk,
                     else_blk,
                 } => {
-                    let v = self.operand(cond, &frame);
-                    let taken = arith::is_truthy(&v).map_err(|e| Vm3Error::Fault(Fault::from_arith(e)))?;
+                    // `cond` is a pre-computed Boolean (the elaboration emits a `Truthy`
+                    // before any non-Boolean condition), so the terminator is a pure
+                    // control transfer — a truthiness fault would have already routed
+                    // through the block's pad at the `Truthy` instruction, not here.
+                    let v = self.operand(cond, &frame)?;
+                    let taken = v.as_bool().ok_or_else(|| {
+                        Vm3Error::Malformed("Branch condition is not a pre-computed Boolean".into())
+                    })?;
                     cur = if taken { *then_blk } else { *else_blk };
                 }
                 OxTerminator::Return | OxTerminator::Halt => return Ok(frame),
@@ -260,8 +270,8 @@ impl<'h> Vm3<'h> {
     fn exec(&mut self, inst: &OxInst, frame: &mut Frame) -> Result<(), Vm3Error> {
         match inst {
             OxInst::Assign { dst, value } => {
-                let v = self.operand(value, frame);
-                self.store(dst, v, frame);
+                let v = self.operand(value, frame)?;
+                self.store(dst, v, frame)?;
             }
             OxInst::Arith {
                 dst,
@@ -270,8 +280,8 @@ impl<'h> Vm3<'h> {
                 rhs,
                 mode,
             } => {
-                let l = self.operand(lhs, frame);
-                let r = self.operand(rhs, frame);
+                let l = self.operand(lhs, frame)?;
+                let r = self.operand(rhs, frame)?;
                 let out = match op {
                     ArithOp::Add => arith::add(&l, &r, *mode),
                     ArithOp::Sub => arith::sub(&l, &r, *mode),
@@ -282,22 +292,22 @@ impl<'h> Vm3<'h> {
                 self.store_arith(dst, out, frame)?;
             }
             OxInst::Div { dst, lhs, rhs } => {
-                let l = self.operand(lhs, frame);
-                let r = self.operand(rhs, frame);
+                let l = self.operand(lhs, frame)?;
+                let r = self.operand(rhs, frame)?;
                 self.store_arith(dst, arith::div(&l, &r), frame)?;
             }
             OxInst::Pow { dst, lhs, rhs } => {
-                let l = self.operand(lhs, frame);
-                let r = self.operand(rhs, frame);
+                let l = self.operand(lhs, frame)?;
+                let r = self.operand(rhs, frame)?;
                 self.store_arith(dst, arith::pow(&l, &r), frame)?;
             }
             OxInst::Neg { dst, src, mode } => {
-                let v = self.operand(src, frame);
+                let v = self.operand(src, frame)?;
                 self.store_arith(dst, arith::neg(&v, *mode), frame)?;
             }
             OxInst::Concat { dst, lhs, rhs } => {
-                let l = self.operand(lhs, frame);
-                let r = self.operand(rhs, frame);
+                let l = self.operand(lhs, frame)?;
+                let r = self.operand(rhs, frame)?;
                 self.store_arith(dst, arith::concat(&l, &r), frame)?;
             }
             OxInst::Compare {
@@ -307,8 +317,8 @@ impl<'h> Vm3<'h> {
                 rhs,
                 mode,
             } => {
-                let l = self.operand(lhs, frame);
-                let r = self.operand(rhs, frame);
+                let l = self.operand(lhs, frame)?;
+                let r = self.operand(rhs, frame)?;
                 self.store_arith(dst, arith::compare(&l, &r, *mode, cmp_op(*op)), frame)?;
             }
             OxInst::Logical {
@@ -317,8 +327,8 @@ impl<'h> Vm3<'h> {
                 lhs,
                 rhs,
             } => {
-                let l = self.operand(lhs, frame);
-                let r = self.operand(rhs, frame);
+                let l = self.operand(lhs, frame)?;
+                let r = self.operand(rhs, frame)?;
                 let out = match op {
                     LogicalOp::And => arith::and(&l, &r),
                     LogicalOp::Or => arith::or(&l, &r),
@@ -329,11 +339,19 @@ impl<'h> Vm3<'h> {
                 self.store_arith(dst, out, frame)?;
             }
             OxInst::Not { dst, src } => {
-                let v = self.operand(src, frame);
+                let v = self.operand(src, frame)?;
                 self.store_arith(dst, arith::not(&v), frame)?;
             }
+            // Reduce a condition to a Boolean by VBA truthiness (the elaboration emits
+            // this before a conditional `Branch`); the `is_truthy` rule + error code are
+            // exactly what vm2's `JumpIfZero` uses.
+            OxInst::Truthy { dst, src } => {
+                let v = self.operand(src, frame)?;
+                let out = arith::is_truthy(&v).map(Variant::from_bool);
+                self.store_arith(dst, out, frame)?;
+            }
             OxInst::Coerce { dst, src, target } => {
-                let v = self.operand(src, frame);
+                let v = self.operand(src, frame)?;
                 let out = match target {
                     OxCoerceTarget::Numeric(t) => arith::coerce_numeric(&v, *t),
                     OxCoerceTarget::Str => arith::coerce_string(&v),
@@ -363,40 +381,56 @@ impl<'h> Vm3<'h> {
         frame: &mut Frame,
     ) -> Result<(), Vm3Error> {
         let v = out.map_err(|e| Vm3Error::Fault(Fault::from_arith(e)))?;
-        self.store(dst, v, frame);
-        Ok(())
+        self.store(dst, v, frame)
     }
 
-    fn store(&mut self, place: &OxPlace, v: Variant, frame: &mut Frame) {
+    /// Write a value to a place. Local/Global are dense, program-sized tables, so an
+    /// out-of-range index is a structural defect (`Malformed`), never a silent drop —
+    /// upholding the crate's "never a silent mis-execution" contract; `Temp` is a sparse
+    /// SSA map (write-before-read), so insertion always succeeds.
+    fn store(&mut self, place: &OxPlace, v: Variant, frame: &mut Frame) -> Result<(), Vm3Error> {
         match place {
             OxPlace::Local(l) => {
-                if let Some(slot) = frame.locals.get_mut(l.0) {
-                    *slot = v;
-                }
+                *frame
+                    .locals
+                    .get_mut(l.0)
+                    .ok_or_else(|| Vm3Error::Malformed(format!("local {} out of range", l.0)))? = v;
             }
             OxPlace::Global(g) => {
-                if let Some(slot) = self.globals.get_mut(g.0) {
-                    *slot = v;
-                }
+                *self
+                    .globals
+                    .get_mut(g.0)
+                    .ok_or_else(|| Vm3Error::Malformed(format!("global {} out of range", g.0)))? =
+                    v;
             }
             OxPlace::Temp(t) => {
                 frame.temps.insert(t.0, v);
             }
         }
+        Ok(())
     }
 
-    fn operand(&self, op: &OxOperand, frame: &Frame) -> Variant {
+    fn operand(&self, op: &OxOperand, frame: &Frame) -> Result<Variant, Vm3Error> {
         match op {
-            OxOperand::Const(c) => const_variant(c),
+            OxOperand::Const(c) => Ok(const_variant(c)),
             OxOperand::Use(p) => self.read(p, frame),
         }
     }
 
-    fn read(&self, place: &OxPlace, frame: &Frame) -> Variant {
+    fn read(&self, place: &OxPlace, frame: &Frame) -> Result<Variant, Vm3Error> {
         match place {
-            OxPlace::Local(l) => frame.locals.get(l.0).cloned().unwrap_or_else(Variant::empty),
-            OxPlace::Global(g) => self.globals.get(g.0).cloned().unwrap_or_else(Variant::empty),
-            OxPlace::Temp(t) => frame.temps.get(&t.0).cloned().unwrap_or_else(Variant::empty),
+            OxPlace::Local(l) => frame
+                .locals
+                .get(l.0)
+                .cloned()
+                .ok_or_else(|| Vm3Error::Malformed(format!("local {} out of range", l.0))),
+            OxPlace::Global(g) => self
+                .globals
+                .get(g.0)
+                .cloned()
+                .ok_or_else(|| Vm3Error::Malformed(format!("global {} out of range", g.0))),
+            // Temp absence is the SSA write-before-read contract (sparse map); Empty is fine.
+            OxPlace::Temp(t) => Ok(frame.temps.get(&t.0).cloned().unwrap_or_else(Variant::empty)),
         }
     }
 }
@@ -630,5 +664,55 @@ mod tests {
         let vm = run_core(&prog);
         // Slot 0 is the global (globals lead), and there are no Main locals after it.
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(7));
+    }
+
+    #[test]
+    fn if_else_control_flow_executes() {
+        // `If <c> Then n = 5 Else n = 9` — a non-Boolean condition flows through the
+        // elaboration's Truthy coercion and the Branch terminator.
+        use oxvba_bundle::coreir::CoreIfArm;
+        let run_if = |cond: i32| -> Option<i32> {
+            let n = || CorePlace::Local(CoreLocalId(0));
+            let prog = main_proc(
+                vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
+                vec![CoreStmt::If {
+                    arms: vec![CoreIfArm {
+                        condition: CoreValue::Const(CoreConst::I32(cond)),
+                        body: vec![assign(n(), CoreValue::Const(CoreConst::I32(5)))],
+                    }],
+                    else_body: vec![assign(n(), CoreValue::Const(CoreConst::I32(9)))],
+                }],
+            );
+            run_core(&prog).slot(0).and_then(|v| v.as_i32())
+        };
+        assert_eq!(run_if(1), Some(5), "a truthy condition takes the Then branch");
+        assert_eq!(run_if(0), Some(9), "a falsy condition takes the Else branch");
+    }
+
+    #[test]
+    fn entry_falls_back_to_the_first_proc_when_no_main() {
+        // No `Sub Main` (CoreProgram.entry == None): vm3 must still run the only proc,
+        // matching vm2's select_entry fallback (else nothing runs and `g` stays Empty).
+        let g = CorePlace::Global(oxvba_bundle::coreir::GlobalId(0));
+        let prog = CoreProgram {
+            procs: vec![CoreProc {
+                name: "Helper".into(), // deliberately not "Main"
+                kind: ProcedureKind::Sub,
+                params: Vec::new(),
+                locals: Vec::new(),
+                return_local: None,
+                body: vec![assign(g, CoreValue::Const(CoreConst::I32(42)))],
+            }],
+            globals: vec![CoreGlobal {
+                name: "g".into(),
+                ty: VarTypeRef::Builtin(BuiltinType::Long),
+                array_element: None,
+            }],
+            entry: None,
+            unit_name: "T".into(),
+            ..Default::default()
+        };
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
     }
 }

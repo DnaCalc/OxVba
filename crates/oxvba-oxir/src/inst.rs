@@ -73,6 +73,15 @@ pub enum OxInst {
         src: OxOperand,
         target: OxCoerceTarget,
     },
+    /// `dst := truthy(src)` — reduce an operand to a Boolean by VBA truthiness (the
+    /// `is_truthy` rule a conditional uses: non-zero numeric → `True`, `""`/0 → `False`).
+    /// Fallible (type mismatch 13 on a non-coercible operand, e.g. `If "abc" Then`). The
+    /// elaboration emits this before a conditional [`OxTerminator::Branch`] whenever the
+    /// condition is not already Boolean, so the branch condition is a **pre-computed
+    /// Boolean** (the documented `Branch` invariant) and the truthiness fault routes
+    /// through the block's normal fault pad like any other fallible instruction — keeping
+    /// the terminator a pure control transfer.
+    Truthy { dst: OxPlace, src: OxOperand },
     /// `Let`/`Set` legality check (diagnostic metadata; fallible).
     ValidateAssignment {
         src: OxOperand,
