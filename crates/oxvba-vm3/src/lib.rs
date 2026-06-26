@@ -591,9 +591,16 @@ impl<'h> Vm3<'h> {
     /// Invoke a base-library built-in. Most builtins are the pure shared
     /// `oxvba_lib::invoke`, but a few are host/bundle-aware and the pure body would
     /// return a generically-wrong value: `TypeName` of an object yields the literal
-    /// `"Object"` from the pure body, so resolve the real class/COM name here (exactly
-    /// as vm2's `invoke_native_lib`), where the host COM facet is in reach — never let
-    /// the generic `"Object"` leak as a silently-wrong result.
+    /// `"Object"` from the pure body, so resolve the real class/COM name here, where the
+    /// host COM facet is in reach — never let the generic `"Object"` leak as a
+    /// silently-wrong result.
+    ///
+    /// **This method is the intended `builtin_invoke` boundary of the future
+    /// `RuntimeImports` ABI** (plan: M4). The Cranelift JIT does not re-implement builtins
+    /// or this object-name special-case — it lowers `CallNative` to a `builtin_invoke`
+    /// `extern "C"` shim that recovers `&mut Vm3` from its `ctx` and calls *this* method,
+    /// so the interpreter and compiled code share one implementation and cannot drift.
+    /// Keep its shape `(ctx, id, &[Variant]) -> Result<Variant, _>` ABI-friendly.
     fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Vm3Error> {
         if id == NativeImplId::TypeName
             && let Some(object) = argv.first().and_then(|a| a.as_object_ref())
