@@ -29,7 +29,7 @@
 //! is sound via the **vm2-vs-vm2 no-op gate**, which protects the M0 kernel
 //! extraction.
 
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, Vm3Snapshot};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, variant_to_vba_string};
 
@@ -114,12 +114,15 @@ pub fn canon(v: &Variant) -> Canon {
     }
 }
 
-/// Which execution backend to run a program under. Only [`Executor::Vm2`] is wired
-/// today; `Vm3` and `Jit` land in M2/M4.
+/// Which execution backend to run a program under. `Jit` lands in M4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Executor {
     /// The legacy `Op`-bundle interpreter — the golden oracle until vm3 parity.
     Vm2,
+    /// The typed-OxIR interpreter under construction (M2). It runs the subset it
+    /// implements; an out-of-scope construct yields [`RunOutcome::unsupported`] (the
+    /// corpus comparison skips it rather than scoring a divergence).
+    Vm3,
 }
 
 /// The observable outcome of one run, for differential comparison.
@@ -129,6 +132,11 @@ pub struct RunOutcome {
     /// followed by the entry `Sub Main` locals — or the rendered phase diagnostic if
     /// the run did not produce a snapshot (a coarse stand-in for axis 2 until M3).
     pub result: Result<Vec<Canon>, String>,
+    /// Set when the executor cannot run this program because it uses a construct it does
+    /// not yet implement (vm3 during M2). Such a program is SKIPPED by the corpus
+    /// comparison — out of the executor's current scope, not a divergence. The complete
+    /// oracle (vm2) never sets this.
+    pub unsupported: Option<String>,
 }
 
 /// Run `source` under `executor` and capture its observable outcome.
@@ -140,7 +148,24 @@ pub fn run(executor: Executor, source: &str) -> RunOutcome {
                 .execute_source_with_variant_snapshot_clean(source)
                 .map(|vals| vals.iter().map(canon).collect())
                 .map_err(|d| format!("{d:?}"));
-            RunOutcome { result }
+            RunOutcome { result, unsupported: None }
+        }
+        Executor::Vm3 => {
+            let engine = Engine::new(HostConfig { enable_jit: false });
+            match engine.execute_source_with_variant_snapshot_vm3(source) {
+                Vm3Snapshot::Ran(vals) => RunOutcome {
+                    result: Ok(vals.iter().map(canon).collect()),
+                    unsupported: None,
+                },
+                Vm3Snapshot::Unsupported(what) => RunOutcome {
+                    result: Ok(Vec::new()),
+                    unsupported: Some(what),
+                },
+                Vm3Snapshot::Failed(msg) => RunOutcome {
+                    result: Err(msg),
+                    unsupported: None,
+                },
+            }
         }
     }
 }
@@ -198,6 +223,47 @@ fn render_outcome(r: &Result<Vec<Canon>, String>) -> String {
     }
 }
 
+/// The corpus-level verdict comparing the oracle (vm2) against an under-construction
+/// executor (vm3) on one program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CorpusVerdict {
+    /// The candidate does not yet implement a construct the program uses (the string
+    /// names it) — out of the candidate's current scope, not a divergence.
+    Skipped(String),
+    /// Behaviourally equivalent on the captured axes: both produced the same snapshot,
+    /// or — coarsely — both errored (cross-executor error-code comparison is the M2-c
+    /// `Err` axis).
+    Match,
+    /// A real divergence: differing snapshots, or one ran while the other errored.
+    Mismatch(Vec<Difference>),
+}
+
+/// Classify one program for the vm2-vs-candidate corpus gate. `oracle` is the complete
+/// reference (vm2); `candidate` is the executor under test (vm3). A candidate that
+/// cannot run the program (`unsupported`) is SKIPPED, not failed. Two successful runs
+/// are compared by snapshot; two failed runs match coarsely (both errored) until the
+/// `Err` axis matures (M2-c); a success-vs-failure split is a divergence to investigate.
+pub fn compare_corpus(oracle: &RunOutcome, candidate: &RunOutcome) -> CorpusVerdict {
+    if let Some(reason) = &candidate.unsupported {
+        return CorpusVerdict::Skipped(reason.clone());
+    }
+    match (&oracle.result, &candidate.result) {
+        (Ok(_), Ok(_)) => {
+            let d = diff(oracle, candidate);
+            if d.is_empty() {
+                CorpusVerdict::Match
+            } else {
+                CorpusVerdict::Mismatch(d)
+            }
+        }
+        (Err(_), Err(_)) => CorpusVerdict::Match,
+        (a, b) => CorpusVerdict::Mismatch(vec![Difference::Outcome {
+            left: render_outcome(a),
+            right: render_outcome(b),
+        }]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +306,145 @@ mod tests {
         let nan_a = canon(&Variant::from_f64(f64::NAN));
         let nan_b = canon(&Variant::from_f64(f64::from_bits(0x7FF8_0000_0000_0001)));
         assert_eq!(nan_a, nan_b);
+    }
+
+    // ── M2-d: vm3-vs-vm2 differential gate ──────────────────────────────────────
+
+    /// vm3 must match vm2 on an in-scope program. A skip here means the program is
+    /// unexpectedly out of scope (these probes are all within the M2 subset).
+    fn assert_vm2_vm3_match(source: &str) {
+        let vm2 = run(Executor::Vm2, source);
+        let vm3 = run(Executor::Vm3, source);
+        match compare_corpus(&vm2, &vm3) {
+            CorpusVerdict::Match => {}
+            CorpusVerdict::Skipped(what) => {
+                panic!("expected vm3 to run this in-scope program, but it skipped ({what}):\n{source}")
+            }
+            CorpusVerdict::Mismatch(d) => panic!("vm2-vs-vm3 divergence {d:?}\n{source}"),
+        }
+    }
+
+    #[test]
+    fn vm3_matches_vm2_on_arithmetic() {
+        assert_vm2_vm3_match("Sub Main()\n  Dim n As Long\n  n = (10 + 5) * 2\nEnd Sub\n");
+    }
+
+    #[test]
+    fn vm3_matches_vm2_on_strings() {
+        assert_vm2_vm3_match("Sub Main()\n  Dim s As String\n  s = \"ab\" & \"cd\"\nEnd Sub\n");
+    }
+
+    #[test]
+    fn vm3_matches_vm2_on_control_flow_and_calls() {
+        assert_vm2_vm3_match(
+            "Sub Main()\n  Dim n As Long\n  n = Doubler(7)\nEnd Sub\n\
+             Function Doubler(ByVal x As Long) As Long\n  Doubler = x * 2\nEnd Function\n",
+        );
+    }
+
+    #[test]
+    fn vm3_matches_vm2_on_a_for_loop() {
+        assert_vm2_vm3_match(
+            "Sub Main()\n  Dim n As Long\n  Dim i As Long\n  For i = 1 To 5\n    n = n + i\n  Next i\nEnd Sub\n",
+        );
+    }
+
+    // NB: most VBA built-ins (`Len`, `UCase`, …) lower to a cross-bundle `CallExtern`
+    // into the "VBA library" bundle, NOT `CallNative` — so they are SKIPPED by vm3 today
+    // (cross-bundle dispatch is M3). vm3's `CallNative` builtin path is exercised by the
+    // vm3 unit tests; a corpus-level builtin probe lands once `CallExtern` does.
+
+    /// Programs where vm2 (the current oracle) itself deviates from Office VBA 7.1, so a
+    /// vm2-vs-vm3 difference is expected and is NOT a vm3 bug. Keyed by file name.
+    const KNOWN_VM2_DIVERGENCES: &[&str] = &[
+        // Two labels `marker:` in one `Sub` — a compile error in Office ("Duplicate
+        // declaration in current scope"). vm2 leniently *runs* it (x = 1); vm3's
+        // elaboration correctly rejects the duplicate label. The real fix is for the
+        // binder to reject a duplicate label at compile time (then both agree on
+        // "error"); until then vm3's stricter behaviour is closer to correct, so this
+        // program is excluded from the gate rather than forcing vm3 bug-compatible.
+        "duplicate_label_error.bas",
+    ];
+
+    /// Recursively collect `*.bas` files under `dir`.
+    fn bas_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|e| e == "bas") {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// The M2-d gate: for every corpus program vm3 can run (no `Unimplemented`), its
+    /// snapshot must match vm2. Programs vm3 doesn't yet implement are skipped; programs
+    /// both backends error on match coarsely. As vm3 implements more, `skipped` shrinks
+    /// and `ran` grows — with `mismatches` staying empty.
+    #[test]
+    fn vm3_matches_vm2_across_the_corpus_subset() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut ran = 0usize;
+        let mut skipped = 0usize;
+        let mut both_errored = 0usize;
+        let mut known_divergence = 0usize;
+        let mut mismatches: Vec<(String, Vec<Difference>)> = Vec::new();
+        // What the skipped programs need, so the coverage gap is visible (keyed by the
+        // first unimplemented construct each program hit) — this is the M2-c/M3 worklist.
+        let mut skip_reasons: std::collections::BTreeMap<String, usize> = Default::default();
+        for dir in ["conformance", "examples"] {
+            for path in bas_files(&root.join(dir)) {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if KNOWN_VM2_DIVERGENCES.contains(&name) {
+                    known_divergence += 1;
+                    continue;
+                }
+                let Ok(source) = std::fs::read_to_string(&path) else { continue };
+                if source.trim().is_empty() {
+                    continue;
+                }
+                let vm2 = run(Executor::Vm2, &source);
+                let vm3 = run(Executor::Vm3, &source);
+                match compare_corpus(&vm2, &vm3) {
+                    CorpusVerdict::Skipped(reason) => {
+                        skipped += 1;
+                        *skip_reasons.entry(reason).or_default() += 1;
+                    }
+                    CorpusVerdict::Match => {
+                        if vm2.result.is_ok() {
+                            ran += 1;
+                        } else {
+                            both_errored += 1;
+                        }
+                    }
+                    CorpusVerdict::Mismatch(d) => mismatches.push((path.display().to_string(), d)),
+                }
+            }
+        }
+        eprintln!(
+            "vm3-vs-vm2 corpus: ran+matched={ran}, skipped(unsupported)={skipped}, both-errored={both_errored}, known-vm2-divergence={known_divergence}, mismatches={}",
+            mismatches.len()
+        );
+        let mut by_count: Vec<_> = skip_reasons.iter().collect();
+        by_count.sort_by(|a, b| b.1.cmp(a.1));
+        for (reason, count) in by_count {
+            eprintln!("  skip[{count:>3}] {reason}");
+        }
+        for (path, d) in mismatches.iter().take(25) {
+            eprintln!("  MISMATCH {path}\n    {d:?}");
+        }
+        assert!(
+            mismatches.is_empty(),
+            "{} vm3-vs-vm2 divergences across the corpus (see stderr)",
+            mismatches.len()
+        );
+        assert!(ran > 0, "expected some in-scope corpus programs to run on vm3");
     }
 }

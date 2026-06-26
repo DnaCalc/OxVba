@@ -14,7 +14,9 @@ oxvba-hal.workspace = true
 oxvba-symbol.workspace = true
 oxvba-bind.workspace = true
 oxvba-bundle.workspace = true
+oxvba-oxir.workspace = true
 oxvba-vm2.workspace = true
+oxvba-vm3.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -37,6 +37,23 @@ pub enum DiagnosticPhase {
     Runtime,
 }
 
+/// The outcome of a vm3 run for the differential harness: a result snapshot, an
+/// out-of-scope construct to skip, or a genuine failure. The skip/fail split lets the
+/// harness gate vm3-vs-vm2 on the subset vm3 currently runs, growing automatically as
+/// vm3 implements more (an `Unsupported` program becomes `Ran` once its construct lands).
+#[derive(Debug, Clone)]
+pub enum Vm3Snapshot {
+    /// The run completed: the module globals followed by the entry `Main` frame's locals.
+    Ran(Vec<Variant>),
+    /// vm3 does not yet implement a construct the program uses (an elaboration- or
+    /// execution-time `Unimplemented`) — SKIP it (out of vm3's current scope, not a
+    /// divergence). The string names the construct.
+    Unsupported(String),
+    /// A genuine failure: a bind error, an elaboration `Malformed`, an uncaught run-time
+    /// fault, or a vm3 `Malformed` defect.
+    Failed(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhaseDiagnostic {
     phase: DiagnosticPhase,
@@ -595,6 +612,71 @@ impl Engine {
             .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
             .collect();
         Ok(values)
+    }
+
+    /// Run a single VBA **source** module on the **vm3** path (`oxvba_bind` →
+    /// `oxvba_oxir::elaborate` → `oxvba_vm3`), snapshotting the module globals followed
+    /// by the entry `Sub Main` frame's locals — the *exact* index space
+    /// [`Self::execute_source_with_variant_snapshot_clean`] (vm2) exposes, so the two are
+    /// directly comparable in the differential harness. Distinguishes a vm3 *out-of-scope*
+    /// construct (an elaboration- or execution-time `Unimplemented`) from a genuine
+    /// failure, so the harness can skip an unimplemented program rather than score it as a
+    /// divergence.
+    pub fn execute_source_with_variant_snapshot_vm3(&self, source: &str) -> Vm3Snapshot {
+        use oxvba_symbol::manifest as sym;
+        let manifest = sym::SymbolProjectManifest {
+            project_name: "Main".to_string(),
+            project_kind: sym::ProjectKind::Source,
+            modules: vec![sym::ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: sym::ModuleKind::Procedural,
+                attributes: sym::ModuleAttributes::named("Main"),
+                source: source.to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        self.execute_manifest_with_variant_snapshot_vm3(&manifest)
+    }
+
+    /// The manifest-level vm3 entry (see
+    /// [`Self::execute_source_with_variant_snapshot_vm3`]).
+    pub fn execute_manifest_with_variant_snapshot_vm3(
+        &self,
+        manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
+    ) -> Vm3Snapshot {
+        let program = match oxvba_bind::bind_program(manifest, &*self.typelib_resolver) {
+            Ok(p) => p,
+            Err(e) => return Vm3Snapshot::Failed(format!("bind: {e:?}")),
+        };
+        let oxp = match oxvba_oxir::elaborate::elaborate(&program) {
+            Ok(o) => o,
+            Err(oxvba_oxir::elaborate::ElaborateError::Unimplemented { what }) => {
+                return Vm3Snapshot::Unsupported(format!("elaborate: {what}"));
+            }
+            Err(e) => return Vm3Snapshot::Failed(format!("elaborate: {e}")),
+        };
+        let vm = match oxvba_vm3::Vm3::run(&oxp, &*self.host_services) {
+            Ok(v) => v,
+            Err(oxvba_vm3::Vm3Error::Unimplemented { what }) => {
+                return Vm3Snapshot::Unsupported(format!("vm3: {what}"));
+            }
+            Err(e) => return Vm3Snapshot::Failed(format!("vm3: {e}")),
+        };
+        // The same snapshot shape vm2 exposes: module globals (vm3's global table is 1:1
+        // with the Core IR globals, exactly as the linearized bundle's) followed by the
+        // entry `Main` frame's locals.
+        let local_count = program
+            .entry
+            .and_then(|entry| program.procs.get(entry.0))
+            .map(|main| main.locals.len())
+            .unwrap_or(0);
+        let count = oxp.globals.len() + local_count;
+        let values = (0..count)
+            .map(|slot| vm.slot(slot).unwrap_or_else(Variant::empty))
+            .collect();
+        Vm3Snapshot::Ran(values)
     }
 }
 
