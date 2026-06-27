@@ -383,9 +383,12 @@ impl<'a> Lowerer<'a> {
     /// spurious fault edge, and their pad — if unused — is a dead block).
     fn finish_to(&mut self, term: OxTerminator, next: BlockId) {
         let instrs = std::mem::take(&mut self.instrs);
-        let fault_target = instrs
-            .iter()
-            .any(|i| i.is_fallible())
+        // A block needs a fault pad if it can raise: either a fallible instruction OR a
+        // fallible terminator (`Raise`/`RaiseValue`). Without the terminator clause, a
+        // bare `Err.Raise`/`Error n` statement (whose block holds only `StmtBoundary` and
+        // the raise terminator) would carry no `fault_target`, so `On Error` could not
+        // catch it.
+        let fault_target = (instrs.iter().any(|i| i.is_fallible()) || term.is_fallible())
             .then_some(self.cur_fault);
         debug_assert!(self.blocks[self.cur.0].is_none(), "block finalized twice");
         self.blocks[self.cur.0] = Some(OxBlock {
@@ -2369,6 +2372,31 @@ mod tests {
         assert!(has_fault_dispatch, "expected a FaultDispatch landing pad");
         assert!(has_resume_next, "expected a Resume Next terminator");
         assert!(has_set_handler, "expected On Error GoTo to set the handler");
+    }
+
+    /// A block ending in a `Raise` terminator must carry a `fault_target` (the statement
+    /// pad) so `On Error` can catch `Err.Raise`/`Error n` — `finish_to` previously set
+    /// `fault_target` only for fallible *instructions*, leaving a bare raise statement's
+    /// block with none (so a raised error could not reach the handler).
+    #[test]
+    fn raise_terminator_block_gets_a_fault_target() {
+        let body = vec![
+            CoreStmt::Error(ErrorOp::OnErrorGotoLabel(coreir::LabelId(0))),
+            CoreStmt::Error(ErrorOp::Raise { code: 5 }),
+            CoreStmt::Label(coreir::LabelId(0)),
+            CoreStmt::Error(ErrorOp::ResumeNext),
+        ];
+        let oxp = elaborate(&program(sub("Main", Vec::new(), body))).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()), "raise program must verify");
+        let raise_block = oxp.funcs[0]
+            .blocks
+            .iter()
+            .find(|b| matches!(b.terminator, OxTerminator::Raise { .. }))
+            .expect("a Raise terminator block");
+        assert!(
+            raise_block.fault_target.is_some(),
+            "a Raise terminator's block must carry a fault_target (the statement pad)"
+        );
     }
 
     /// `GoTo`/labels and `GoSub`/`Return` lower to the corresponding terminators.

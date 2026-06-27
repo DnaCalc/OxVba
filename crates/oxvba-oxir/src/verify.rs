@@ -46,6 +46,12 @@ pub enum VerifyError {
         block: usize,
         inst: usize,
     },
+    /// A block ends in a fallible terminator (`Raise`/`RaiseValue`) but has no
+    /// `fault_target`, so a raised error could not reach the statement's handler.
+    MissingFaultTargetForTerminator {
+        func: usize,
+        block: usize,
+    },
     /// `param_count` exceeds the number of locals.
     BadParamCount {
         func: usize,
@@ -140,6 +146,10 @@ impl std::fmt::Display for VerifyError {
             VerifyError::MissingFaultTarget { func, block, inst } => write!(
                 f,
                 "func {func} block {block}: instruction {inst} is fallible but the block has no fault_target"
+            ),
+            VerifyError::MissingFaultTargetForTerminator { func, block } => write!(
+                f,
+                "func {func} block {block}: terminator is fallible (Raise) but the block has no fault_target"
             ),
             VerifyError::BadParamCount { func, param_count, locals } => write!(
                 f,
@@ -308,6 +318,11 @@ fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<V
             verify_inst_refs(
                 fi, bi, ii, inst, funcs, imports, classes, com_interfaces, blocks, errors,
             );
+        }
+        // A fallible terminator (`Raise`/`RaiseValue`) likewise needs a fault pad so the
+        // raised error can reach the enclosing statement's `On Error` handler.
+        if block.terminator.is_fallible() && block.fault_target.is_none() {
+            errors.push(VerifyError::MissingFaultTargetForTerminator { func: fi, block: bi });
         }
     }
 }

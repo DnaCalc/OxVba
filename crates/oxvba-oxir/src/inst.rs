@@ -489,6 +489,18 @@ pub enum OxTerminator {
     Unreachable,
 }
 
+impl OxTerminator {
+    /// Whether ending a block with this terminator can raise a VBA run-time error and
+    /// must therefore route through the enclosing statement's fault pad. Only the raise
+    /// terminators are fallible: `Branch` is a pure transfer (its condition is a
+    /// pre-computed operand), and `Resume`/`GoSub`/`Jump`/`Return`/… are control moves.
+    /// A block whose terminator is fallible needs a `fault_target` (the pad), exactly as
+    /// a block with a fallible instruction does — so `On Error` can catch `Err.Raise`.
+    pub fn is_fallible(&self) -> bool {
+        matches!(self, OxTerminator::Raise { .. } | OxTerminator::RaiseValue(_))
+    }
+}
+
 /// One basic block: a list of straight-line instructions, an optional fault landing
 /// pad for the fallible ones, and a single control terminator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
