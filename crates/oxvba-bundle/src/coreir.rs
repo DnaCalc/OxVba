@@ -492,6 +492,10 @@ pub enum ExitKind {
 pub enum ErrorOp {
     OnErrorResumeNext,
     OnErrorGoto0,
+    /// `On Error GoTo -1` — clears the active-error latch (so the current handler can
+    /// re-catch) and resets `Err`, but KEEPS the current handler policy (unlike
+    /// `GoTo 0`, which disables it).
+    OnErrorGotoMinus1,
     OnErrorGotoLabel(LabelId),
     ResumeNext,
     Resume,

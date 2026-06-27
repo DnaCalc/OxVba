@@ -675,11 +675,15 @@ impl<'h> Vm3<'h> {
             // latch is cleared only by `Resume`/`Exit`, not here.)
             OxInst::SetErrorHandler(handler) => {
                 self.err = ErrState::default();
-                self.error_mode = match handler {
-                    ErrorHandler::ResumeNext => ErrorMode::ResumeNext,
-                    ErrorHandler::Goto0 => ErrorMode::None,
-                    ErrorHandler::GotoLabel(b) => ErrorMode::Goto(*b),
-                };
+                match handler {
+                    // `On Error GoTo -1` clears the active-error latch (so the current
+                    // handler can re-catch) but KEEPS the handler policy — unlike the
+                    // others, it does not set `error_mode` (R13; oracle `oe_goto_minus1`).
+                    ErrorHandler::GotoMinus1 => self.active_error = None,
+                    ErrorHandler::ResumeNext => self.error_mode = ErrorMode::ResumeNext,
+                    ErrorHandler::Goto0 => self.error_mode = ErrorMode::None,
+                    ErrorHandler::GotoLabel(b) => self.error_mode = ErrorMode::Goto(*b),
+                }
             }
             // Read an `Err` property.
             OxInst::ErrFieldGet { dst, field } => {

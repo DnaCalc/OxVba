@@ -694,6 +694,12 @@ impl<'a> ProcLower<'a> {
             return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorResumeNext)]);
         }
         if let Some(lref) = node.label_ref() {
+            // `-1` lexes as two tokens (Minus + IntLiteral); normalize the label text so
+            // `On Error GoTo -1` is recognized regardless of intervening whitespace.
+            let normalized: String = lref.text().split_whitespace().collect();
+            if normalized == "-1" {
+                return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGotoMinus1)]);
+            }
             let name = lref.first_significant_token().map(|t| t.text).unwrap_or("");
             if name == "0" {
                 return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGoto0)]);

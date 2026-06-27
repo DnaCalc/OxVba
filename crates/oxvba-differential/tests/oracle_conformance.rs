@@ -23,16 +23,11 @@ use oxvba_differential::Executor;
 ///    today (`Malformed("On Error form")`) — a front-end gap tracked for a later
 ///    control-flow wave, not the error model.
 ///  - `For Each` over `Array()`: typed arrays are M3; vm3 reports `Unsupported("array op")`.
-///  - `On Error GoTo -1`: the *parser* rejects the `-1` line (`SYN-E-PARSE`,
-///    "unexpected statement") in BOTH vm2 and vm3, so this is a front-end (syntax) gap,
-///    not an error-model one. Its oracle behaviour is also a deep `On Error GoTo -1`
-///    quirk documented in the findings; tracked for the parser/control-flow wave.
 const KNOWN_VM3_GAPS: &[&str] = &[
     "PROBE_cf_on_n_goto",
     "PROBE_cf_on_n_goto_zero",
     "PROBE_cf_on_n_gosub",
     "PROBE_cf_for_each_array",
-    "PROBE_oe_goto_minus1",
 ];
 
 fn render(obs: &OracleObservation) -> String {

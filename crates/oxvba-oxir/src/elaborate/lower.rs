@@ -752,6 +752,10 @@ impl<'a> Lowerer<'a> {
                 self.emit(OxInst::SetErrorHandler(ErrorHandler::Goto0));
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
             }
+            ErrorOp::OnErrorGotoMinus1 => {
+                self.emit(OxInst::SetErrorHandler(ErrorHandler::GotoMinus1));
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+            }
             ErrorOp::OnErrorGotoLabel(id) => {
                 let h = self.label_block(id)?;
                 self.emit(OxInst::SetErrorHandler(ErrorHandler::GotoLabel(h)));

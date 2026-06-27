@@ -40,6 +40,10 @@ pub enum ErrorHandler {
     ResumeNext,
     /// `On Error GoTo 0` — clear the handler.
     Goto0,
+    /// `On Error GoTo -1` — clear the active-error latch and reset `Err`, but KEEP the
+    /// current handler policy (so a re-armed handler can re-catch). Distinct from
+    /// `Goto0`, which disables the handler.
+    GotoMinus1,
     /// `On Error GoTo <label>` — the handler block.
     GotoLabel(BlockId),
 }

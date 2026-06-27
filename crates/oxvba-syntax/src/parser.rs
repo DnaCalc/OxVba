@@ -1559,10 +1559,18 @@ impl<'a> Parser<'a> {
 
     // ── Shared structured sub-nodes ─────────────────────────
 
-    /// A label *reference* (`GoTo X` / `On Error GoTo 0` / `Resume Label`).
+    /// A label *reference* (`GoTo X` / `On Error GoTo 0` / `On Error GoTo -1` /
+    /// `Resume Label`). `-1` is the sole valid negative target (it clears the active
+    /// error for `On Error GoTo -1`); it lexes as a `Minus` followed by an `IntLiteral`.
     fn parse_label_ref(&mut self) {
         self.eat_whitespace();
-        if self.at(SyntaxKind::Ident)
+        if self.at(SyntaxKind::Minus) {
+            self.start_node(SyntaxKind::LabelRef);
+            self.bump(); // -
+            self.eat_whitespace();
+            self.eat(SyntaxKind::IntLiteral);
+            self.finish_node();
+        } else if self.at(SyntaxKind::Ident)
             || self.at(SyntaxKind::BracketedIdent)
             || self.at(SyntaxKind::IntLiteral)
         {

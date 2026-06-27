@@ -1222,6 +1222,13 @@ impl<'p> Linearizer<'p> {
                 ErrorOp::OnErrorGoto0 => {
                     self.emit(Op::SetOnErrorGoto0);
                 }
+                // vm2 has no active-error latch, so it cannot model the GoTo -1 / GoTo 0
+                // distinction (GoTo -1 should keep the handler + clear only the latch).
+                // Approximate with Goto0 — a documented vm2 non-compliance; vm3 models it
+                // faithfully (see ErrorHandler::GotoMinus1).
+                ErrorOp::OnErrorGotoMinus1 => {
+                    self.emit(Op::SetOnErrorGoto0);
+                }
                 ErrorOp::OnErrorGotoLabel(label) => {
                     let at = self.emit(Op::SetOnErrorGotoLabel { target_pc: 0 });
                     self.pending_label_patches.push((at, *label));
