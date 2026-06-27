@@ -26,13 +26,13 @@ use oxvba_bundle::{
     ExternalCallDescriptor, ProcedureKind,
 };
 use oxvba_runtime::DynLinkSymbol;
-use oxvba_symbol::binding::Binding;
+use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
 use oxvba_symbol::model::{
     ScopeId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
 };
 use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
-use oxvba_symbol::signature::VarTypeRef;
+use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 use oxvba_symbol::surface::{MemberOrigin, SurfaceType, SurfaceTypeKind};
 use oxvba_symbol::{TypeLibResolver, build_resolution_environment};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
@@ -560,6 +560,23 @@ struct Bound {
     place: Option<CorePlace>,
 }
 
+/// The builtin type a VBA type-declaration character denotes (`$`→String, `%`→
+/// Integer, …). Used to tell a genuine type-suffixed variable/function reference
+/// (which the suffix matches) from a `$`-variant library intrinsic shadowed by an
+/// unrelated same-named member. Returns `None` for an unrecognized suffix.
+fn type_decl_builtin(suffix: &str) -> Option<BuiltinType> {
+    Some(match suffix {
+        "%" => BuiltinType::Integer,
+        "&" => BuiltinType::Long,
+        "^" => BuiltinType::LongLong,
+        "!" => BuiltinType::Single,
+        "#" => BuiltinType::Double,
+        "@" => BuiltinType::Currency,
+        "$" => BuiltinType::String,
+        _ => return None,
+    })
+}
+
 impl<'a> ProcLower<'a> {
     // ── Resolution helpers ──────────────────────────────────
 
@@ -567,6 +584,55 @@ impl<'a> ProcLower<'a> {
         self.g
             .env
             .resolve(&ResolutionContext::at(self.info.proc_scope), name)
+    }
+
+    /// Resolve a bare identifier that may carry a type-declaration suffix (`Left$`,
+    /// `count%`). VBA treats the `$`/`%`/… variant of a library intrinsic (`Left$`,
+    /// `Str$`, …) as an identifier *distinct* from the bare name: a type-declaration
+    /// character denotes a variable/function/property only when that referent's type
+    /// matches the character, so a `Left As Single` property can never be `Left$`. So
+    /// when a
+    /// suffix is present and the bare-name resolution would otherwise bind to a
+    /// referent whose type is incompatible with the suffix — e.g. a control's
+    /// `Left As Single` property (including the implicit-`Me` `Left` inside the very
+    /// class that owns it) shadowing the `Left$` string intrinsic — fall through to
+    /// the same-suffixed library intrinsic. The scope chain holds no symbol folded
+    /// *with* a suffix, so re-resolving the suffixed name reaches the VBA library
+    /// provider's `$`-variant entry (`name_to_intrinsic("Left$")`); if there is no
+    /// such intrinsic it is an ordinary suffixed variable read and the bare
+    /// resolution stands.
+    fn resolve_suffixed(&self, node: SyntaxNode<'_>, name: &str) -> Option<Binding> {
+        let bare = self.resolve(name);
+        let Some(suffix) = node.type_suffix_token() else {
+            return bare;
+        };
+        let Some(suffix_ty) = type_decl_builtin(suffix.text) else {
+            return bare;
+        };
+        if let Some(binding) = &bare
+            && self.suffix_matches_referent(binding, suffix_ty)
+        {
+            return bare;
+        }
+        self.resolve(&format!("{name}{}", suffix.text)).or(bare)
+    }
+
+    /// Does `binding`'s referent legitimately carry a type-declaration suffix
+    /// denoting `suffix_ty`? A same-typed variable/const read, or a function /
+    /// property whose value type matches, can; anything else (a mismatched
+    /// property/method, or a library intrinsic) cannot — the suffix then denotes the
+    /// library intrinsic instead.
+    fn suffix_matches_referent(&self, binding: &Binding, suffix_ty: BuiltinType) -> bool {
+        let want = VarTypeRef::Builtin(suffix_ty);
+        match &binding.route {
+            DispatchRoute::Value => binding
+                .symbol
+                .is_some_and(|sym| self.symbol_type(sym) == want),
+            DispatchRoute::ProjectMember { kind } => {
+                self.member_return_type(binding.symbol, *kind) == want
+            }
+            _ => false,
+        }
     }
 
     /// Member resolution against a typed receiver (`recv.name`).

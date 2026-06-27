@@ -121,7 +121,7 @@ impl<'a> ProcLower<'a> {
                 place: Some(place),
             });
         }
-        let binding = match self.resolve(name) {
+        let binding = match self.resolve_suffixed(node, name) {
             Some(b) => b,
             None => {
                 // An unresolved bare name may still be a `VB_PredeclaredId` class
@@ -327,7 +327,7 @@ impl<'a> ProcLower<'a> {
         // indexing the result pseudo-variable, so `f(i)` is always a call).
         if base.kind() == SyntaxKind::IdentExpr
             && let Some(tok) = base.ident_name_token()
-            && let Some(binding) = self.resolve(tok.text)
+            && let Some(binding) = self.resolve_suffixed(base, tok.text)
             && !matches!(binding.route, DispatchRoute::Value)
         {
             return self.bind_call_route(tok.text, &binding, node.index_arg_list());

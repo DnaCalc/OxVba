@@ -2128,7 +2128,11 @@ impl<'a> ProcLower<'a> {
 
     /// The declared return type of a project member (for inference); `Variant`
     /// when unknown.
-    fn member_return_type(&self, sym: Option<SymbolId>, kind: ProjectMemberKind) -> VarTypeRef {
+    pub(crate) fn member_return_type(
+        &self,
+        sym: Option<SymbolId>,
+        kind: ProjectMemberKind,
+    ) -> VarTypeRef {
         let ty = sym
             .and_then(|s| self.proc_signature_for(s, kind))
             .and_then(|s| s.return_type)

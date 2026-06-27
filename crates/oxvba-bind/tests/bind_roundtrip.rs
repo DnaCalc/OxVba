@@ -397,6 +397,34 @@ fn vba_left_intrinsic_is_not_shadowed_by_unrelated_class_property() {
 }
 
 #[test]
+fn left_dollar_intrinsic_is_not_shadowed_by_own_class_left_property() {
+    // The same class that owns a `Left As Single` property (every MSForms control)
+    // calls the bare `Left$` string intrinsic in one of its own methods. The `$`
+    // type-declaration character makes `Left$` a distinct identifier from the
+    // suffix-less `Left` property, so it must route to `VBA.Strings.Left` (here
+    // `Len(Left$("hello", 2))` = 2), not to the implicit-`Me` property (whose
+    // Single value would coerce to a 1-char string → 1, or fault).
+    let main = "Sub Main()\n    Dim r As Long\n    Dim f As FormLike\n    \
+                Set f = New FormLike\n    r = f.Lead()\nEnd Sub\n";
+    let form = "Public Property Get Left() As Single\n    Left = 0\nEnd Property\n\n\
+                Public Function Lead() As Long\n    Lead = Len(Left$(\"hello\", 2))\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "FormLike", form), Some(2.0));
+}
+
+#[test]
+fn left_intrinsic_without_suffix_is_shadowed_by_own_class_left_property() {
+    // Without a type-declaration character, an unqualified `Left` inside the class
+    // that owns a `Left` property is the (implicit-`Me`) property — VBA scoping puts
+    // the class member ahead of the library intrinsic. Reading it yields the
+    // property's value (7), confirming the suffix is what distinguishes the two.
+    let main = "Sub Main()\n    Dim r As Long\n    Dim f As FormLike\n    \
+                Set f = New FormLike\n    r = f.Lead()\nEnd Sub\n";
+    let form = "Public Property Get Left() As Long\n    Left = 7\nEnd Property\n\n\
+                Public Function Lead() As Long\n    Lead = Left\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "FormLike", form), Some(7.0));
+}
+
+#[test]
 fn local_value_named_vba_shadows_library_namespace_qualifier() {
     let src = main_sub("    Dim VBA As Long\n    Dim r As Long\n    r = VBA.Len(\"abc\")\n");
     assert!(
