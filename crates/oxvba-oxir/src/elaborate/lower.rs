@@ -1549,7 +1549,25 @@ impl<'a> Lowerer<'a> {
                 self.emit(OxInst::CompareObjectIs { dst, lhs: l, rhs: r });
                 OxTy::Bool
             }
-            CoreBinOp::Like => return Err(unimpl("Like")),
+            CoreBinOp::Like => {
+                // vm2 routes `a Like b` to the bespoke native `Like` builtin with a trailing
+                // compare-mode flag (Text=1, Binary=0); mirror that so vm3 runs it through
+                // the same `oxvba_lib` body as every other native builtin.
+                let mode_flag = match mode {
+                    oxvba_bundle::StringCompareMode::Text => 1,
+                    oxvba_bundle::StringCompareMode::Binary => 0,
+                };
+                self.emit(OxInst::CallNative {
+                    dst: Some(dst),
+                    callee: OxNativeCallee::Builtin(oxvba_bundle::NativeImplId::Like),
+                    args: vec![
+                        OxCallArg::Operand(l),
+                        OxCallArg::Operand(r),
+                        OxCallArg::Const(mode_flag),
+                    ],
+                });
+                OxTy::Variant
+            }
         };
         Ok((OxOperand::temp(t), ty))
     }

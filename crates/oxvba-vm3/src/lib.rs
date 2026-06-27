@@ -39,8 +39,8 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::{
-    ArrayElementType, NativeImplId, default_array_element, redim_safearray_from_elements,
-    vba_record_layout_for_fields,
+    ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, default_array_element,
+    redim_safearray_from_elements, vba_record_layout_for_fields,
 };
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
@@ -53,6 +53,7 @@ use oxvba_oxir::{
     BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
+use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, VbaRecord};
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
@@ -759,6 +760,21 @@ impl<'h> Vm3<'h> {
             // its `Resume` seeds from `FaultDispatch`, so this is a no-op for M2-c.
             OxInst::StmtBoundary { .. } => {}
 
+            // `Let`/`Set` legality check (M3-4).
+            OxInst::ValidateAssignment {
+                src,
+                intent,
+                target_kind,
+                target_name,
+                target_type_name,
+            } => self.validate_assignment(
+                src,
+                *intent,
+                *target_kind,
+                target_name,
+                target_type_name,
+            )?,
+
             // ── Arrays / For Each (M3-2) ─────────────────────────────────────────────
             OxInst::ArrayLiteral { dst, values } => {
                 let elems = values
@@ -1239,6 +1255,41 @@ impl<'h> Vm3<'h> {
         Ok(())
     }
 
+    /// `Let`/`Set` legality check (mirrors vm2). `Set` requires an object source (else
+    /// "Object required" 424); `Let` into an `Object` target requires `Set` when the source
+    /// is an object (91) and an object source otherwise (424). The strict `Set` *type* check
+    /// (error 13 — a project-instance source must be the target's declared class/interface)
+    /// needs the project class tables and lands with the object model (M3-5); until a project
+    /// instance can exist, every Set-of-object is a COM/`Nothing` value, which vm2 also
+    /// passes — so falling through to `Ok` here is behaviorally exact.
+    fn validate_assignment(
+        &self,
+        src: &OxOperand,
+        intent: AssignmentIntent,
+        target_kind: AssignmentTargetKind,
+        target_name: &str,
+        _target_type_name: &str,
+    ) -> Result<(), Vm3Error> {
+        use AssignmentIntent as Intent;
+        use AssignmentTargetKind as Kind;
+        let value = self.operand(src)?;
+        let is_object = matches!(value.vtype(), VarType::Object) || is_nothing(&value);
+        match intent {
+            Intent::Set if !is_object => Err(Vm3Error::Fault(Fault::new(
+                424,
+                format!("Object required: {target_name}"),
+            ))),
+            Intent::Let if target_kind == Kind::Object && is_object => Err(Vm3Error::Fault(
+                Fault::new(91, format!("Object variable requires Set: {target_name}")),
+            )),
+            Intent::Let if target_kind == Kind::Object => Err(Vm3Error::Fault(Fault::new(
+                424,
+                format!("Object required: {target_name}"),
+            ))),
+            _ => Ok(()),
+        }
+    }
+
     /// Invoke a base-library built-in. Most builtins are the pure shared
     /// `oxvba_lib::invoke`, but a few are host/bundle-aware and the pure body would
     /// return a generically-wrong value: `TypeName` of an object yields the literal
@@ -1432,6 +1483,16 @@ fn cmp_op(op: CmpOp) -> arith::CmpOp {
 /// Wrap an `arith` coercion error as a routed vm3 fault (it carries its own VBA code).
 fn arith_fault(e: ArithError) -> Vm3Error {
     Vm3Error::Fault(Fault::from_arith(e))
+}
+
+/// VBA `Nothing`/empty test (mirrors vm2): a null object reference, `Empty`/`Null`, or a
+/// numeric zero (the literal-0-as-Nothing representation). Used by `Let`/`Set` validation.
+fn is_nothing(value: &Variant) -> bool {
+    match value.vtype() {
+        VarType::Object => value.as_object_ref().map(|o| o.raw()).unwrap_or(0) == 0,
+        VarType::Empty | VarType::Null => true,
+        _ => value.as_i32() == Some(0),
+    }
 }
 
 fn const_variant(c: &OxConst) -> Variant {

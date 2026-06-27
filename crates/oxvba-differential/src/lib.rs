@@ -453,6 +453,22 @@ mod tests {
         );
     }
 
+    /// Regression for task_842916b0: a `Double` `/` result stored into a `Long` local must
+    /// narrow (coerce-on-store with banker's rounding), not keep the `Double`. `10 / 4 = 2.5`
+    /// → `Long` 2 (round half to even). vm3 must match vm2 (and the oracle).
+    #[test]
+    fn vm3_coerces_div_result_to_a_long_local() {
+        let src = "Sub Main()\n  Dim n As Long\n  n = 10 / 4\nEnd Sub\n";
+        let vm2 = run(Executor::Vm2, src);
+        let vm3 = run(Executor::Vm3, src);
+        eprintln!("coerce-on-store: vm2={:?} vm3={:?}", vm2.result, vm3.result);
+        assert_eq!(
+            diff(&vm2, &vm3),
+            Vec::new(),
+            "vm3 must narrow a Double / result to its Long local like vm2"
+        );
+    }
+
     #[test]
     fn vm3_matches_vm2_on_a_for_loop() {
         assert_vm2_vm3_match(
