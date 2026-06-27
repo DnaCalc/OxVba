@@ -53,11 +53,16 @@ use oxvba_runtime::Variant;
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
 
-/// A run-time fault carrying its VBA error code (the value `Err.Number` takes).
+/// A run-time fault carrying the `Err` state it populates: the VBA error code
+/// (`Err.Number`), the message (`Err.Description`), and an optional explicit
+/// `Err.Source`. `source: None` means "use the raise-time default" — the project name —
+/// which is what every in-project fault (system or `Err.Raise` with the argument
+/// omitted) takes (see [`Vm3::raise`]); `Some` is an explicit `Err.Raise … Source`.
 #[derive(Debug, Clone)]
 pub struct Fault {
     pub code: i32,
     pub message: String,
+    pub source: Option<String>,
 }
 
 impl Fault {
@@ -65,6 +70,7 @@ impl Fault {
         Self {
             code: e.code,
             message: e.message,
+            source: None,
         }
     }
     /// A built-in library error already carries its VBA error code structurally.
@@ -72,6 +78,7 @@ impl Fault {
         Self {
             code: e.code,
             message: e.message,
+            source: None,
         }
     }
 }
@@ -406,22 +413,33 @@ impl<'h> Vm3<'h> {
                     }
                     None => self.raise_runtime_error(20)?,
                 },
-                // `Err.Raise` / `Error n`: raise the error and route through the statement
-                // pad so an active `On Error` can catch it (R11, single-arg in M2-c-1).
-                OxTerminator::Raise { code } => {
-                    self.route_fault(Fault {
-                        code: *code,
-                        message: default_error_message(*code),
-                    })?;
-                }
-                OxTerminator::RaiseValue(op) => {
-                    let v = self.operand(op)?;
-                    match arith::coerce_numeric(&v, oxvba_bundle::NumericCoerceTarget::Long) {
+                // `Err.Raise Number[, Source][, Description]` / `Error n`: build the `Err`
+                // state from the number plus any explicit Source/Description, then route
+                // through the statement pad so an active `On Error` can catch it (R11). An
+                // omitted Source falls back to the project name, an omitted Description to
+                // the standard message for the number (matching the oracle, which RESETS —
+                // does not inherit — the omitted fields).
+                OxTerminator::Raise {
+                    number,
+                    source,
+                    description,
+                } => {
+                    let num_v = self.operand(number)?;
+                    match arith::coerce_numeric(&num_v, oxvba_bundle::NumericCoerceTarget::Long) {
                         Ok(code_v) => {
                             let code = code_v.as_i32().unwrap_or(0);
+                            let message = match description {
+                                Some(op) => self.operand_string(op)?,
+                                None => default_error_message(code),
+                            };
+                            let source = match source {
+                                Some(op) => Some(self.operand_string(op)?),
+                                None => None,
+                            };
                             self.route_fault(Fault {
                                 code,
-                                message: default_error_message(code),
+                                message,
+                                source,
                             })?;
                         }
                         // A non-numeric raise code is itself a coercion fault (e.g. 13).
@@ -497,14 +515,28 @@ impl<'h> Vm3<'h> {
         Ok(())
     }
 
-    /// Populate `Err` from a raised fault and stash it for the landing pad. Like vm2's
-    /// `set_err`, a system/raised fault sets Number + Description and clears Source to
-    /// `""` (a richer `Err.Raise` Source/Description ride in with M2-c-2).
+    /// Populate `Err` from a raised fault and stash it for the landing pad. Number and
+    /// Description come from the fault; `Err.Source` is the fault's explicit source if it
+    /// carries one (`Err.Raise … Source`), else the **project name** — the VBA default
+    /// for any error generated within the project, matching the Excel/VBA 7.1 oracle
+    /// (`Err.Source = "VBAProject"`; see `docs/VBA_ERROR_MODEL_ORACLE_FINDINGS.md`).
     fn raise(&mut self, fault: Fault) {
         self.err.number = fault.code;
         self.err.description = fault.message.clone();
-        self.err.source = String::new();
+        self.err.source = fault
+            .source
+            .clone()
+            .unwrap_or_else(|| self.program.unit_name.clone());
         self.pending_fault = Some(fault);
+    }
+
+    /// Evaluate an operand and coerce it to its VBA string form — used for an explicit
+    /// `Err.Raise` Source/Description argument.
+    fn operand_string(&mut self, op: &OxOperand) -> Result<String, Vm3Error> {
+        let v = self.operand(op)?;
+        Ok(oxvba_runtime::variant_to_vba_string(&v)
+            .map(|b| b.as_str())
+            .unwrap_or_default())
     }
 
     /// Raise a vm3-internal run-time error (a code with its default message) by routing
@@ -514,6 +546,7 @@ impl<'h> Vm3<'h> {
         self.route_fault(Fault {
             code,
             message: default_error_message(code),
+            source: None,
         })
     }
 
@@ -786,6 +819,7 @@ impl<'h> Vm3<'h> {
             return Err(Vm3Error::Fault(Fault {
                 code: 28,
                 message: "Out of stack space".into(),
+                source: None,
             }));
         }
         Ok(())
@@ -1577,7 +1611,11 @@ mod tests {
             None,
             vec![
                 CoreStmt::Error(ErrorOp::OnErrorGotoLabel(LabelId(0))),
-                CoreStmt::Error(ErrorOp::Raise { code: 5 }),
+                CoreStmt::Error(ErrorOp::Raise {
+                    number: CoreValue::Const(CoreConst::I32(5)),
+                    source: None,
+                    description: None,
+                }),
                 CoreStmt::Exit(ExitKind::Proc),
                 CoreStmt::Label(LabelId(0)),
                 assign(lc(0), CoreValue::ErrField(ErrField::Number)),

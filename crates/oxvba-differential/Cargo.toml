@@ -10,6 +10,8 @@ description = "Differential oracle harness: runs a program under two executors a
 [dependencies]
 oxvba-host.workspace = true
 oxvba-runtime.workspace = true
+oxvba-symbol.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

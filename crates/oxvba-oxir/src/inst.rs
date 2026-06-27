@@ -477,10 +477,15 @@ pub enum OxTerminator {
     ResumeNext,
     /// `Resume <label>`.
     ResumeLabel(BlockId),
-    /// `Err.Raise` / `Error <n>` with a literal code.
-    Raise { code: i32 },
-    /// `Err.Raise` with a runtime code operand.
-    RaiseValue(OxOperand),
+    /// `Err.Raise Number[, Source][, Description]` / `Error <n>`. `number` is the error
+    /// code operand (a `Const` when statically known); `source`/`description` are the
+    /// optional explicit fields — a missing one falls back to the project name /
+    /// the standard message for the number at raise time.
+    Raise {
+        number: OxOperand,
+        source: Option<OxOperand>,
+        description: Option<OxOperand>,
+    },
     /// `GoSub <label>` — push a return point and branch.
     GoSub { target: BlockId, ret: BlockId },
     /// `Return` from the most recent `GoSub`.
@@ -495,7 +500,7 @@ impl OxTerminator {
     /// can catch it). `Branch` is a pure transfer (its condition is a pre-computed
     /// operand) and `Jump`/`Return`/`GoSub`/`FaultDispatch`/… are control moves; the
     /// fallible terminators are the raises plus the resume/return forms that can fail:
-    /// - `Raise`/`RaiseValue` — `Err.Raise` / `Error n`;
+    /// - `Raise` — `Err.Raise` / `Error n`;
     /// - `Resume`/`ResumeNext`/`ResumeLabel` — error 20 ("Resume without error") when
     ///   there is no active error (MS-VBAL §5.4.4.2);
     /// - `GoSubReturn` — error 3 ("Return without GoSub") on an empty resumption list
@@ -504,7 +509,6 @@ impl OxTerminator {
         matches!(
             self,
             OxTerminator::Raise { .. }
-                | OxTerminator::RaiseValue(_)
                 | OxTerminator::Resume
                 | OxTerminator::ResumeNext
                 | OxTerminator::ResumeLabel(_)
@@ -560,17 +564,27 @@ pub fn terminator_successors(t: &OxTerminator) -> Vec<BlockId> {
         | OxTerminator::Resume
         | OxTerminator::ResumeNext
         | OxTerminator::Raise { .. }
-        | OxTerminator::RaiseValue(_)
         | OxTerminator::GoSubReturn
         | OxTerminator::Unreachable => Vec::new(),
     }
 }
 
-/// The local, if any, that this terminator references as an operand (for use checks).
-pub fn terminator_operand(t: &OxTerminator) -> Option<&OxOperand> {
+/// The operands this terminator reads (for use/liveness checks). `Branch` reads its
+/// condition; `Raise` reads its number plus any explicit Source/Description operands;
+/// every other terminator is a pure control transfer.
+pub fn terminator_operands(t: &OxTerminator) -> Vec<&OxOperand> {
     match t {
-        OxTerminator::Branch { cond, .. } => Some(cond),
-        OxTerminator::RaiseValue(v) => Some(v),
-        _ => None,
+        OxTerminator::Branch { cond, .. } => vec![cond],
+        OxTerminator::Raise {
+            number,
+            source,
+            description,
+        } => {
+            let mut ops = vec![number];
+            ops.extend(source.iter());
+            ops.extend(description.iter());
+            ops
+        }
+        _ => Vec::new(),
     }
 }

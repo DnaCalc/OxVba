@@ -584,7 +584,11 @@ fn on_error_resume_next_records_err_number() {
         1,
         vec![
             CoreStmt::Error(ErrorOp::OnErrorResumeNext),
-            CoreStmt::Error(ErrorOp::Raise { code: 11 }),
+            CoreStmt::Error(ErrorOp::Raise {
+                number: CoreValue::Const(CoreConst::I32(11)),
+                source: None,
+                description: None,
+            }),
             set(0, CoreValue::ErrField(ErrField::Number)),
         ],
     );

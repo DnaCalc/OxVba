@@ -497,8 +497,18 @@ pub enum ErrorOp {
     Resume,
     ResumeLabel(LabelId),
     ClearErr,
-    Raise { code: i32 },
-    RaiseValue { code: CoreValue },
+    /// `Err.Raise Number[, Source][, Description]` and the legacy `Error Number`.
+    /// `number` is folded to a `Const(I32)` when statically known, so vm2's linearizer
+    /// keeps its immediate `RaiseError` path; otherwise it is a runtime operand.
+    /// `source`/`description` are the optional explicit fields; a missing one falls back
+    /// to the project name (`Source`) or the standard message for the number
+    /// (`Description`) at raise time. (HelpFile/HelpContext are accepted by the binder
+    /// but not modelled — no `Err` read path surfaces them yet.)
+    Raise {
+        number: CoreValue,
+        source: Option<Box<CoreValue>>,
+        description: Option<Box<CoreValue>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

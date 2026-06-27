@@ -29,6 +29,8 @@
 //! is sound via the **vm2-vs-vm2 no-op gate**, which protects the M0 kernel
 //! extraction.
 
+pub mod oracle;
+
 use oxvba_host::{Engine, HostConfig, Vm3Snapshot};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, variant_to_vba_string};
@@ -167,6 +169,51 @@ pub fn run(executor: Executor, source: &str) -> RunOutcome {
                 },
             }
         }
+    }
+}
+
+/// Run `source` under `executor` as a single-module project named `project_name`,
+/// capturing the same observable as [`run`]. The project name becomes the program's
+/// `unit_name`, which is what `Err.Source` defaults to — so the oracle corpus runs under
+/// `"VBAProject"` (Excel's default VBProject name) to mirror the captured oracle exactly.
+pub fn run_with_project(executor: Executor, source: &str, project_name: &str) -> RunOutcome {
+    use oxvba_symbol::manifest as sym;
+    let manifest = sym::SymbolProjectManifest {
+        project_name: project_name.to_string(),
+        project_kind: sym::ProjectKind::Source,
+        modules: vec![sym::ModuleUnit {
+            module_name: "Main".to_string(),
+            module_kind: sym::ModuleKind::Procedural,
+            attributes: sym::ModuleAttributes::named("Main"),
+            source: source.to_string(),
+        }],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    match executor {
+        Executor::Vm2 => {
+            let result = engine
+                .execute_manifest_with_variant_snapshot(&manifest)
+                .map(|vals| vals.iter().map(canon).collect())
+                .map_err(|d| format!("{d:?}"));
+            RunOutcome { result, unsupported: None }
+        }
+        Executor::Vm3 => match engine.execute_manifest_with_variant_snapshot_vm3(&manifest) {
+            Vm3Snapshot::Ran(vals) => RunOutcome {
+                result: Ok(vals.iter().map(canon).collect()),
+                unsupported: None,
+            },
+            Vm3Snapshot::Unsupported(what) => RunOutcome {
+                result: Ok(Vec::new()),
+                unsupported: Some(what),
+            },
+            Vm3Snapshot::Failed(msg) => RunOutcome {
+                result: Err(msg),
+                unsupported: None,
+            },
+        },
     }
 }
 

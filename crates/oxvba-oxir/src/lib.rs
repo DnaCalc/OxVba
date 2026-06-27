@@ -36,7 +36,7 @@ pub use com::{ComInterface, ComMethodRef, ProjectIfaceMethod, ProjectInterface};
 pub use elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
 pub use ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 pub use inst::{
-    ErrorHandler, OxBlock, OxInst, OxTerminator, terminator_operand, terminator_successors,
+    ErrorHandler, OxBlock, OxInst, OxTerminator, terminator_operands, terminator_successors,
 };
 pub use program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
 pub use ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy, RecordLayoutId};

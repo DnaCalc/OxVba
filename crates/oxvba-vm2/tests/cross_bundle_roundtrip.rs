@@ -137,7 +137,11 @@ fn boom_lib_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
-        body: vec![CoreStmt::Error(ErrorOp::Raise { code: 5 })],
+        body: vec![CoreStmt::Error(ErrorOp::Raise {
+            number: CoreValue::Const(CoreConst::I32(5)),
+            source: None,
+            description: None,
+        })],
     };
     CoreProgram {
         procs: vec![boom],

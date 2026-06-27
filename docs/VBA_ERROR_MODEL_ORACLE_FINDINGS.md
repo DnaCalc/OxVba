@@ -158,6 +158,15 @@ should flag these as expected vm2 divergences:
 | `Err.Source` when omitted | **`"VBAProject"`** (project name) | `""` |
 | `Err.Description` when omitted | derived from the number | `default_error_message` table (partial) |
 | Re-raise inside an active handler | **propagates to the caller** | risks re-entering the same handler (route_fault keeps `Goto` armed) |
+| `Resume` with no active error (`resume_without_error`) | **error 20** (terminates) | **infinite-loops** (the conformance gate times it out) |
+| Normal `End Sub` after a caught raise (`end_sub_err_persists`) | `Err` persists (5) | **infinite-loops** (times out) |
+| `Err.Raise n,Source,Desc` description fallback | `"Application-defined…"` only when truly omitted | wrong default text |
+
+> The two **vm2 infinite-loops** were found by the vm3 oracle-conformance gate (§8): vm2
+> spins where the oracle terminates. vm3 handles both correctly (`errnum=20`; `Err`
+> persists). This is the conformance harness doing exactly its job — surfacing vm2
+> non-compliance — and a concrete case where **vm3 is already more correct than the
+> transitional oracle**.
 
 ---
 
@@ -199,3 +208,48 @@ object** (`Number`/`Description`/`Source`/…).
    is honored; `Exit For`/`GoTo` out leave the counter at its current value. `On n GoTo`
    is 1-based (0 / out-of-range falls through). `Select Case` takes the first matching
    case.
+
+---
+
+## 8. vm3 oracle-conformance gate (the runnable corpus)
+
+The probes above are turned into a **runnable conformance corpus** for the OxVBA
+executors by `oxvba-differential`
+([`crates/oxvba-differential/src/oracle.rs`](../crates/oxvba-differential/src/oracle.rs),
+test [`tests/oracle_conformance.rs`](../crates/oxvba-differential/tests/oracle_conformance.rs)).
+For each `PROBE_*` it builds a self-contained program — the probe, the transitive set of
+private helpers it calls, and a `Sub Main` that stores the probe's return in snapshot
+slot 0 — and runs it under **vm3** and **vm2**, comparing the observable string to the
+captured oracle value. The corpus runs under a project named **`"VBAProject"`** so a
+probe that reads `Err.Source` matches the oracle exactly. The single hard gate:
+**vm3 matches the oracle on every case outside a documented out-of-scope allowlist**; the
+test reuses for the future JIT by swapping the `Executor`.
+
+**Result (current):** vm3 is **oracle-compliant on all 41 in-scope probes**; vm2 diverges
+on 16 (the §4/§5 list, reported but never failed). Out-of-scope allowlist (front-end /
+M3 gaps, *not* error-model issues):
+
+| Probe | Gap | Status |
+|---|---|---|
+| `cf_on_n_goto`, `cf_on_n_goto_zero`, `cf_on_n_gosub` | binder rejects `On <expr> GoTo/GoSub` (computed branch) | front-end wave |
+| `oe_goto_minus1` | **parser** rejects the `On Error GoTo -1` line (`SYN-E-PARSE`) — fails in vm2 *and* vm3 | parser wave |
+| `cf_for_each_array` | `For Each` over `Array()` (typed arrays) | M3 |
+
+### M2-c-2 — rich `Err.Raise` + `Err.Source` default (implemented for vm3)
+
+To reach 100% on the error corpus, vm3 gained the rich-raise model the oracle requires:
+
+- **The Core IR / OxIR raise op carries the full call.** `ErrorOp::Raise`/`OxTerminator::Raise`
+  unify the old `Raise{code}`+`RaiseValue` into `{ number, source?, description? }`
+  (number folded to a constant when static, so vm2's linearizer keeps its immediate
+  `RaiseError` path). `Err.Raise Number, [Source], [Description]` is resolved positionally
+  or by name in the binder (HelpFile/HelpContext are accepted but not yet modelled — no
+  `Err` read path surfaces them).
+- **vm3 honors the explicit fields and defaults the rest:** Number from the operand,
+  Description = the explicit argument else the standard message for the number, and
+  **`Err.Source` = the explicit argument else the project name** (the `Fault` now carries
+  an optional `source`; `Vm3::raise` falls back to `program.unit_name`). This is the VBA
+  default for any error generated within the project (system *or* `Err.Raise`), matching
+  the oracle's `"VBAProject"`.
+- **vm2 is deliberately left as-is** — it carries only the error number, so its
+  Source/Description gap shows up as a documented §5 divergence, not a fix.

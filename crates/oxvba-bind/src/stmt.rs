@@ -1607,21 +1607,54 @@ impl<'a> ProcLower<'a> {
     }
 
     fn err_raise_arg(&mut self, arglist: Option<SyntaxNode<'_>>) -> Result<ErrorOp, BindError> {
+        // `Err.Raise Number, [Source], [Description], [HelpFile], [HelpContext]` —
+        // resolve each argument positionally or by name. HelpFile/HelpContext are
+        // accepted but not modelled (no `Err` read path surfaces them yet).
+        const PARAMS: [&str; 5] = ["number", "source", "description", "helpfile", "helpcontext"];
         let arglist = arglist.ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
-        let first = arglist
-            .arg_items()
-            .into_iter()
-            .next()
-            .ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
-        let expr = match first {
-            ArgItem::Positional(e, _) => e,
-            ArgItem::Named { name, value, .. } if fold_identifier(name.text) == "number" => value,
-            _ => return Err(BindError::Malformed("Err.Raise number".into())),
+        let mut slots: [Option<SyntaxNode<'_>>; 5] = Default::default();
+        let mut pos = 0usize;
+        for item in arglist.arg_items() {
+            match item {
+                ArgItem::Positional(e, _) => {
+                    let idx = pos;
+                    pos += 1;
+                    if idx >= PARAMS.len() {
+                        return Err(BindError::Malformed("Err.Raise: too many arguments".into()));
+                    }
+                    slots[idx] = Some(e);
+                }
+                ArgItem::Named { name, value, .. } => {
+                    let folded = fold_identifier(name.text);
+                    let idx = PARAMS.iter().position(|p| *p == folded).ok_or_else(|| {
+                        BindError::Malformed(format!("Err.Raise: unknown argument `{}`", name.text))
+                    })?;
+                    slots[idx] = Some(value);
+                }
+                // `Err.Raise 5, , "desc"` — an omitted positional still advances the slot.
+                ArgItem::Omitted => {
+                    pos += 1;
+                }
+            }
+        }
+        let number_node = slots[0].ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
+        let number_val = self.bind_expr(number_node)?.value;
+        // Fold a static number into a constant so vm2's linearizer keeps its immediate
+        // `RaiseError` path; a dynamic number stays an operand.
+        let number = match self.fold_const_i32(&number_val) {
+            Some(code) => CoreValue::Const(CoreConst::I32(code)),
+            None => number_val,
         };
-        let value = self.bind_expr(expr)?.value;
-        Ok(match self.fold_const_i32(&value) {
-            Some(code) => ErrorOp::Raise { code },
-            None => ErrorOp::RaiseValue { code: value },
+        let source = slots[1]
+            .map(|n| self.bind_expr(n).map(|b| Box::new(b.value)))
+            .transpose()?;
+        let description = slots[2]
+            .map(|n| self.bind_expr(n).map(|b| Box::new(b.value)))
+            .transpose()?;
+        Ok(ErrorOp::Raise {
+            number,
+            source,
+            description,
         })
     }
 }

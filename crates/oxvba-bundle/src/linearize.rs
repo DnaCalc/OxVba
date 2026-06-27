@@ -1239,13 +1239,18 @@ impl<'p> Linearizer<'p> {
                 ErrorOp::ClearErr => {
                     self.emit(Op::ClearErr);
                 }
-                ErrorOp::Raise { code } => {
-                    self.emit(Op::RaiseError { code: *code });
-                }
-                ErrorOp::RaiseValue { code } => {
-                    let slot = self.lower_value(code)?;
-                    self.emit(Op::RaiseErrorFromSlot { slot });
-                }
+                // vm2 carries only the error number (its Source/Description gap is a
+                // documented vm2 non-compliance — vm3 honours the rich fields). A static
+                // number keeps the immediate path; a runtime number lowers to a slot.
+                ErrorOp::Raise { number, .. } => match number {
+                    CoreValue::Const(CoreConst::I32(code)) => {
+                        self.emit(Op::RaiseError { code: *code });
+                    }
+                    other => {
+                        let slot = self.lower_value(other)?;
+                        self.emit(Op::RaiseErrorFromSlot { slot });
+                    }
+                },
             },
             CoreStmt::ReDim {
                 array,

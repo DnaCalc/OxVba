@@ -767,10 +767,30 @@ impl<'a> Lowerer<'a> {
                 let b = self.label_block(id)?;
                 self.finish_to(OxTerminator::ResumeLabel(b), s_next);
             }
-            ErrorOp::Raise { code } => self.finish_to(OxTerminator::Raise { code: *code }, s_next),
-            ErrorOp::RaiseValue { code } => {
-                let (op, _) = self.lower_value(code)?;
-                self.finish_to(OxTerminator::RaiseValue(op), s_next);
+            ErrorOp::Raise {
+                number,
+                source,
+                description,
+            } => {
+                // Evaluate Number, then Source, then Description (left-to-right), then
+                // raise through the statement fault pad.
+                let (num_op, _) = self.lower_value(number)?;
+                let src_op = match source {
+                    Some(s) => Some(self.lower_value(s)?.0),
+                    None => None,
+                };
+                let desc_op = match description {
+                    Some(d) => Some(self.lower_value(d)?.0),
+                    None => None,
+                };
+                self.finish_to(
+                    OxTerminator::Raise {
+                        number: num_op,
+                        source: src_op,
+                        description: desc_op,
+                    },
+                    s_next,
+                );
             }
         }
         Ok(())
@@ -2382,7 +2402,11 @@ mod tests {
     fn raise_terminator_block_gets_a_fault_target() {
         let body = vec![
             CoreStmt::Error(ErrorOp::OnErrorGotoLabel(coreir::LabelId(0))),
-            CoreStmt::Error(ErrorOp::Raise { code: 5 }),
+            CoreStmt::Error(ErrorOp::Raise {
+                number: coreir::CoreValue::Const(coreir::CoreConst::I32(5)),
+                source: None,
+                description: None,
+            }),
             CoreStmt::Label(coreir::LabelId(0)),
             CoreStmt::Error(ErrorOp::ResumeNext),
         ];
