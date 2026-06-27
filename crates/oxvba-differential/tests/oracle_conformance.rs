@@ -19,8 +19,10 @@ use oxvba_differential::Executor;
 /// Probes whose vm3 result is a KNOWN, documented gap — NOT an error-model regression.
 /// Each entry names the missing capability and the wave that closes it.
 ///
-///  - `For Each` over `Array()`: typed arrays are M3; vm3 reports `Unsupported("array op")`.
-const KNOWN_VM3_GAPS: &[&str] = &["PROBE_cf_for_each_array"];
+/// Empty as of M3-2: the last gap (`PROBE_cf_for_each_array`, `For Each` over `Array()`) closed
+/// when vm3 gained array ops + `For Each` over arrays. vm3 is now 100% oracle-compliant across
+/// the full probe corpus.
+const KNOWN_VM3_GAPS: &[&str] = &[];
 
 fn render(obs: &OracleObservation) -> String {
     match obs {

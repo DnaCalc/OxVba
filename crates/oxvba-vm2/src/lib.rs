@@ -32,15 +32,13 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use oxvba_bundle::{
-    ArrayElementType, Bundle, CallArg, ClassDescriptor, ClassMethod, ComMemberSelector,
-    DeclarePtrWriteback, ExportTarget, NativeBody, NativeCallee, NativeImplId, NativeMethodId,
-    NumericMode, Op, ProcArg, ProjectMemberKind, PtrWritebackKind,
+    Bundle, CallArg, ClassDescriptor, ClassMethod, ComMemberSelector, DeclarePtrWriteback,
+    ExportTarget, NativeBody, NativeCallee, NativeImplId, NativeMethodId, NumericMode, Op, ProcArg,
+    ProjectMemberKind, PtrWritebackKind, default_array_element, redim_safearray_from_elements,
+    vba_record_layout_for_fields,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -55,15 +53,9 @@ use oxvba_runtime::object_ref::{
     ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
     RuntimeInterfaceDescriptor,
 };
-use oxvba_runtime::safe_array::{
-    SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
-    VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_RECORD_VALUE, VT_UI1_VALUE,
-    VT_VARIANT_VALUE,
-};
+use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{
-    Variant, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec, VbaRecordLayout, pointer_helpers,
-};
+use oxvba_runtime::{Variant, VbaRecord, pointer_helpers};
 
 /// Project-instance ids start above any class route key (a class's `route_key`
 /// is its index, so this keeps `compat_identity != route_key`, i.e. every
@@ -3346,123 +3338,6 @@ native_timer_callback!(native_timer_callback_31, 31);
 
 // ── Free helpers ──────────────────────────────────────────────────────────────
 
-fn redim_safearray_from_elements(
-    bounds: Vec<SafeArrayBound>,
-    element_type: &ArrayElementType,
-    elems: Vec<Variant>,
-) -> Result<SafeArray, String> {
-    if let ArrayElementType::Record(fields) = element_type {
-        let layout = vba_record_layout_for_fields(fields)?;
-        let records = elems
-            .into_iter()
-            .map(|value| {
-                value
-                    .as_vba_record()
-                    .ok_or_else(|| "UDT array element default was not a VBA record".to_string())
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        return SafeArray::from_vba_records_nd(bounds, layout, records);
-    }
-    SafeArray::from_typed_variants_nd(bounds, safearray_vartype_for_element(element_type), elems)
-}
-
-fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
-    match element_type {
-        ArrayElementType::Variant => VT_VARIANT_VALUE,
-        ArrayElementType::Record(_) => VT_RECORD_VALUE,
-        ArrayElementType::FixedArray { .. } => VT_VARIANT_VALUE,
-        ArrayElementType::Integer => VT_I2_VALUE,
-        ArrayElementType::Long => VT_I4_VALUE,
-        ArrayElementType::LongPtr => {
-            if core::mem::size_of::<usize>() == 8 {
-                VT_I8_VALUE
-            } else {
-                VT_I4_VALUE
-            }
-        }
-        ArrayElementType::LongLong => VT_I8_VALUE,
-        ArrayElementType::Byte => VT_UI1_VALUE,
-        ArrayElementType::Single => VT_R4_VALUE,
-        ArrayElementType::Double => VT_R8_VALUE,
-        ArrayElementType::Currency => VT_CY_VALUE,
-        ArrayElementType::Date => VT_DATE_VALUE,
-        ArrayElementType::String => VT_BSTR_VALUE,
-        ArrayElementType::Boolean => VT_BOOL_VALUE,
-    }
-}
-
-/// The default value for a freshly-`ReDim`-ed array element. A UDT-record element
-/// is a native VBA record with descriptor-backed field offsets, built recursively
-/// so nested scalar-UDT subfields are themselves default records — mirroring the
-/// binder's `emit_udt_record_init` so `Lines(i).Words(j).Rect.X` reads back.
-/// Scalar defaults are typed zero values so typed SAFEARRAY storage can encode
-/// them directly instead of relying on a boundary-time Variant projection.
-fn default_array_element(element_type: &ArrayElementType) -> Variant {
-    match element_type {
-        ArrayElementType::Variant => Variant::empty(),
-        ArrayElementType::Integer => Variant::from_i16(0),
-        ArrayElementType::Long => Variant::from_i32(0),
-        ArrayElementType::LongPtr => {
-            if core::mem::size_of::<usize>() == 8 {
-                Variant::from_i64(0)
-            } else {
-                Variant::from_i32(0)
-            }
-        }
-        ArrayElementType::LongLong => Variant::from_i64(0),
-        ArrayElementType::Byte => Variant::from_u8(0),
-        ArrayElementType::Single => Variant::from_f32(0.0),
-        ArrayElementType::Double => Variant::from_f64(0.0),
-        ArrayElementType::Currency => Variant::from_currency_scaled_i64(0),
-        ArrayElementType::Date => Variant::from_date_f64(0.0),
-        ArrayElementType::String => Variant::from_string(""),
-        ArrayElementType::Boolean => Variant::from_bool(false),
-        ArrayElementType::Record(fields) => {
-            let layout = vba_record_layout_for_fields(fields)
-                .expect("bundle UDT array element layout should map to VBA record layout");
-            let record = VbaRecord::new_default(layout)
-                .expect("default VBA record allocation should succeed");
-            Variant::from_vba_record(record)
-        }
-        ArrayElementType::FixedArray { .. } => Variant::empty(),
-    }
-}
-
-fn vba_record_layout_for_fields(
-    fields: &[ArrayElementType],
-) -> Result<Arc<VbaRecordLayout>, String> {
-    let specs = fields
-        .iter()
-        .map(|field| Ok(VbaRecordFieldSpec::anonymous(vba_record_field_kind(field)?)))
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(Arc::new(VbaRecordLayout::new(specs)?))
-}
-
-fn vba_record_field_kind(element_type: &ArrayElementType) -> Result<VbaRecordFieldKind, String> {
-    let kind = match element_type {
-        ArrayElementType::Variant => VbaRecordFieldKind::Variant,
-        ArrayElementType::Integer => VbaRecordFieldKind::Integer,
-        ArrayElementType::Long => VbaRecordFieldKind::Long,
-        ArrayElementType::LongLong => VbaRecordFieldKind::LongLong,
-        ArrayElementType::LongPtr => VbaRecordFieldKind::LongPtr,
-        ArrayElementType::Byte => VbaRecordFieldKind::Byte,
-        ArrayElementType::Single => VbaRecordFieldKind::Single,
-        ArrayElementType::Double => VbaRecordFieldKind::Double,
-        ArrayElementType::Currency => VbaRecordFieldKind::Currency,
-        ArrayElementType::Date => VbaRecordFieldKind::Date,
-        ArrayElementType::String => VbaRecordFieldKind::String,
-        ArrayElementType::Boolean => VbaRecordFieldKind::Boolean,
-        ArrayElementType::Record(fields) => {
-            VbaRecordFieldKind::Record(vba_record_layout_for_fields(fields)?)
-        }
-        ArrayElementType::FixedArray { element, len } => VbaRecordFieldKind::FixedArray {
-            element: Box::new(vba_record_field_kind(element)?),
-            len: *len,
-        },
-    };
-    Ok(kind)
-}
-
 fn member_kind_to_dynamic(kind: ProjectMemberKind) -> DynamicCallKind {
     match kind {
         ProjectMemberKind::Method => DynamicCallKind::Method,
@@ -3542,14 +3417,13 @@ fn variant_to_error_code(value: &Variant) -> Result<i32, Fault> {
     if let Some(code) = value.as_i64() {
         return i32::try_from(code).map_err(|_| Fault::new(13, "Type mismatch"));
     }
-    if let Some(code) = value.as_f64() {
-        if code.is_finite()
-            && code.fract() == 0.0
-            && code >= i32::MIN as f64
-            && code <= i32::MAX as f64
-        {
-            return Ok(code as i32);
-        }
+    if let Some(code) = value.as_f64()
+        && code.is_finite()
+        && code.fract() == 0.0
+        && code >= i32::MIN as f64
+        && code <= i32::MAX as f64
+    {
+        return Ok(code as i32);
     }
     Err(Fault::new(13, "Type mismatch"))
 }

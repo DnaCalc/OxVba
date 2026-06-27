@@ -38,18 +38,21 @@
 
 use std::collections::HashMap;
 
-use oxvba_bundle::NativeImplId;
+use oxvba_bundle::{
+    ArrayElementType, NativeImplId, default_array_element, redim_safearray_from_elements,
+};
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
 use oxvba_oxir::value::{
-    ArithOp, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxNativeCallee,
-    OxOperand, OxPlace,
+    ArithOp, BoundWhich, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
+    OxNativeCallee, OxOperand, OxPlace,
 };
 use oxvba_oxir::{
     BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
 };
 use oxvba_runtime::Variant;
+use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
@@ -68,6 +71,16 @@ pub struct Fault {
 }
 
 impl Fault {
+    /// A fault with an explicit VBA error code and message (no explicit `Err.Source`, so it
+    /// takes the raise-time default — the project name). Used by the array/record ops, which
+    /// raise specific codes (subscript out of range 9, type mismatch 13, out of memory 7).
+    fn new(code: i32, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            source: None,
+        }
+    }
     fn from_arith(e: ArithError) -> Self {
         Self {
             code: e.code,
@@ -143,11 +156,19 @@ struct ResumePoint {
 /// denotes once ByRef aliasing is applied. `Local`/`Temp` name a specific frame by
 /// index so a callee's ByRef parameter can point at one of its caller's cells (which
 /// always outlives it, since callers sit below callees and pop later).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Loc {
     Global(usize),
     Local(usize, usize),
     Temp(usize, usize),
+}
+
+/// `For Each` iterator state: the snapshot of source elements (taken at loop entry,
+/// matching vm2) and the current position. Keyed in [`Vm3::for_each`] by the loop
+/// variable's resolved [`Loc`], so concurrent/reentrant loops never alias.
+struct ForEachState {
+    elements: Vec<Variant>,
+    position: usize,
 }
 
 /// One procedure activation: its dispatch position, value slots, ByRef aliasing, and
@@ -213,6 +234,10 @@ pub struct Vm3<'h> {
     last_dll_error: i32,
     /// The fault currently being routed (set when a fallible op transfers to a pad).
     pending_fault: Option<Fault>,
+    /// `For Each` iterator state, keyed by the loop variable's resolved [`Loc`] (so
+    /// reentrant/nested loops that reuse a slot number never alias) — mirrors vm2's
+    /// `for_each` map.
+    for_each: HashMap<Loc, ForEachState>,
 }
 
 impl<'h> Vm3<'h> {
@@ -231,6 +256,7 @@ impl<'h> Vm3<'h> {
             err: ErrState::default(),
             last_dll_error: 0,
             pending_fault: None,
+            for_each: HashMap::new(),
         };
 
         if let Some(init) = program.global_initializer {
@@ -732,6 +758,150 @@ impl<'h> Vm3<'h> {
             // its `Resume` seeds from `FaultDispatch`, so this is a no-op for M2-c.
             OxInst::StmtBoundary { .. } => {}
 
+            // ── Arrays / For Each (M3-2) ─────────────────────────────────────────────
+            OxInst::ArrayLiteral { dst, values } => {
+                let elems = values
+                    .iter()
+                    .map(|v| self.operand(v))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.store(dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
+            }
+            OxInst::ArrayAppend { dst, array, item } => {
+                let mut elems = match self.operand(array)?.as_safearray() {
+                    Some(arr) => arr.variant_elements().unwrap_or_default(),
+                    None => Vec::new(),
+                };
+                elems.push(self.operand(item)?);
+                self.store(dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
+            }
+            OxInst::ArrayRedim {
+                dst,
+                upper_bounds,
+                lower_bounds,
+                element,
+                preserve,
+            } => self.array_redim(dst, upper_bounds, lower_bounds, element, *preserve)?,
+            OxInst::ArrayGet {
+                dst,
+                array,
+                indices,
+            } => {
+                // `x(i…)` where `x` is a bare `Variant`/`As Object` resolves at run time: an
+                // OBJECT receiver makes the parentheses a default-member (`Item`, dispid 0)
+                // call — the late-bound leg, which lands with COM late dispatch (M3-8).
+                let recv = self.operand(array)?;
+                if recv.as_safearray().is_none() && recv.as_object_ref().is_some() {
+                    return Err(Vm3Error::Unimplemented {
+                        what: "array-index default-member call on an object",
+                    });
+                }
+                let arr = self.array_of(array)?;
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+                let flat = self.flat_index(indices, &bounds)?;
+                if flat >= arr.len() {
+                    return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+                }
+                let value = arr
+                    .variant_element(flat)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                self.store(dst, value)?;
+            }
+            OxInst::ArraySet {
+                array,
+                indices,
+                value,
+            } => {
+                let recv = self.read(array)?;
+                if recv.as_safearray().is_none() && recv.as_object_ref().is_some() {
+                    return Err(Vm3Error::Unimplemented {
+                        what: "array-index default-member assignment on an object",
+                    });
+                }
+                let arr = recv
+                    .as_safearray()
+                    .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "expected an array")))?;
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+                let flat = self.flat_index(indices, &bounds)?;
+                if flat >= arr.len() {
+                    return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+                }
+                let v = self.operand(value)?;
+                // Mutate the array's element, then write the (alias-resolved) place back so a
+                // ByRef-aliased array sees the change — equivalent to vm2's in-place
+                // `read_place_mut(...).set_safearray_element(...)`.
+                let mut arr_v = recv;
+                arr_v
+                    .set_safearray_element(flat, &v)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                self.store(array, arr_v)?;
+            }
+            OxInst::ArrayErase { array, .. } => {
+                // vm2 lowers `Erase` to "set the array variable to Empty"; match that.
+                // (Faithful dynamic-deallocate vs fixed-array-reset semantics need a live
+                // oracle probe — a deferred refinement.)
+                self.store(array, Variant::empty())?;
+            }
+            OxInst::Bound {
+                dst,
+                which,
+                array,
+                dimension,
+            } => {
+                let arr = self.array_of(array)?;
+                let bounds = arr
+                    .bounds()
+                    .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+                let bound = &bounds[self.array_bound_index(dimension.as_ref(), &bounds)?];
+                let value = match which {
+                    BoundWhich::Lower => bound.lower,
+                    BoundWhich::Upper => bound.lower + bound.count as i32 - 1,
+                };
+                self.store(dst, Variant::from_i32(value))?;
+            }
+            OxInst::ForEachInit { iter, source } => {
+                let src = self.operand(source)?;
+                // Snapshot the source's elements at loop entry (matching vm2). An array
+                // enumerates its elements; a `Collection`/COM object needs the object model
+                // (M3-5/M3-8); anything else is an empty iteration.
+                let elements = if let Some(arr) = src.as_safearray() {
+                    arr.variant_elements().unwrap_or_default()
+                } else if src.as_object_ref().is_some() {
+                    return Err(Vm3Error::Unimplemented {
+                        what: "For Each over an object (Collection / COM enumerator)",
+                    });
+                } else {
+                    Vec::new()
+                };
+                let key = self.resolve(iter);
+                self.for_each
+                    .insert(key, ForEachState { elements, position: 0 });
+            }
+            OxInst::ForEachNext {
+                iter,
+                item,
+                has_value,
+            } => {
+                let key = self.resolve(iter);
+                let next = self.for_each.get_mut(&key).and_then(|state| {
+                    let value = state.elements.get(state.position).cloned();
+                    if value.is_some() {
+                        state.position += 1;
+                    }
+                    value
+                });
+                match next {
+                    Some(value) => {
+                        self.store(item, value)?;
+                        self.store(has_value, Variant::from_bool(true))?;
+                    }
+                    None => self.store(has_value, Variant::from_bool(false))?,
+                }
+            }
+
             // Everything else is a later milestone (cross-bundle calls / objects / COM /
             // arrays / records M3) — explicit, never a silent no-op.
             other => return Err(Vm3Error::Unimplemented { what: inst_kind(other) }),
@@ -885,6 +1055,137 @@ impl<'h> Vm3<'h> {
                 OxArg::Omitted => Ok(Variant::empty()),
             })
             .collect()
+    }
+
+    /// Build SAFEARRAY bounds from `ReDim` upper-bound operands + static lower bounds, with
+    /// vm2's overflow guards: `upper < lower` → subscript out of range (9); a dimension above
+    /// `u32::MAX` elements → out of memory (7), so a garbage bound raises a VBA error instead
+    /// of attempting an unbounded host allocation that would abort the process.
+    fn build_bounds(
+        &self,
+        upper_bounds: &[OxOperand],
+        lower_bounds: &[i32],
+    ) -> Result<Vec<SafeArrayBound>, Vm3Error> {
+        let mut bounds = Vec::with_capacity(upper_bounds.len());
+        for (i, upper_op) in upper_bounds.iter().enumerate() {
+            let lower = lower_bounds.get(i).copied().unwrap_or(0);
+            let upper_v = self.operand(upper_op)?;
+            let upper = arith::int(&upper_v).map_err(arith_fault)? as i32;
+            if upper < lower {
+                return Err(Vm3Error::Fault(Fault::new(
+                    9,
+                    "array upper bound below lower bound",
+                )));
+            }
+            let span = i64::from(upper) - i64::from(lower) + 1;
+            if span > i64::from(u32::MAX) {
+                return Err(Vm3Error::Fault(Fault::new(
+                    7,
+                    format!("array dimension too large ({span} elements)"),
+                )));
+            }
+            bounds.push(SafeArrayBound {
+                count: span as u32,
+                lower,
+            });
+        }
+        Ok(bounds)
+    }
+
+    /// Flat element index from VBA (absolute) subscript operands, C-order (first dimension
+    /// outermost), bounds-checked → subscript out of range (9).
+    fn flat_index(
+        &self,
+        indices: &[OxOperand],
+        bounds: &[SafeArrayBound],
+    ) -> Result<usize, Vm3Error> {
+        if indices.len() != bounds.len() {
+            return Err(Vm3Error::Fault(Fault::new(
+                9,
+                "wrong number of array subscripts",
+            )));
+        }
+        let mut flat = 0usize;
+        for (i, index_op) in indices.iter().enumerate() {
+            let index_v = self.operand(index_op)?;
+            let raw = arith::int(&index_v).map_err(arith_fault)? as i32;
+            let bound = &bounds[i];
+            let offset = i64::from(raw) - i64::from(bound.lower);
+            if offset < 0 || offset >= i64::from(bound.count) {
+                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+            }
+            flat = flat * bound.count as usize + offset as usize;
+        }
+        Ok(flat)
+    }
+
+    /// The array (SAFEARRAY) value of an operand, else type mismatch (13).
+    fn array_of(&self, op: &OxOperand) -> Result<SafeArray, Vm3Error> {
+        self.operand(op)?
+            .as_safearray()
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "expected an array")))
+    }
+
+    /// The 0-based dimension index for `LBound`/`UBound` from an optional dimension operand
+    /// (default dimension 1), validated against the array's rank → subscript out of range (9).
+    fn array_bound_index(
+        &self,
+        dimension: Option<&OxOperand>,
+        bounds: &[SafeArrayBound],
+    ) -> Result<usize, Vm3Error> {
+        let dim = match dimension {
+            Some(op) => {
+                let v = self.operand(op)?;
+                arith::int(&v).map_err(arith_fault)?
+            }
+            None => 1,
+        };
+        if dim < 1 {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let index = (dim - 1) as usize;
+        if index >= bounds.len() {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        Ok(index)
+    }
+
+    /// `ReDim [Preserve]`: build the new SAFEARRAY shaped by `upper_bounds`/`lower_bounds`,
+    /// seeding each element with the declared element type's typed default — except, when
+    /// `preserve`, keeping each still-in-range existing element (so a UDT array's populated
+    /// records survive and only the grown tail is freshly default-seeded). The element storage
+    /// matches the declared element type (typed scalars / native records, not normalized to
+    /// VT_VARIANT).
+    fn array_redim(
+        &mut self,
+        dst: &OxPlace,
+        upper_bounds: &[OxOperand],
+        lower_bounds: &[i32],
+        element: &ArrayElementType,
+        preserve: bool,
+    ) -> Result<(), Vm3Error> {
+        let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
+        let count: usize = bounds.iter().map(|b| b.count as usize).product();
+        let elems: Vec<Variant> = if preserve {
+            let old = self
+                .read(dst)?
+                .as_safearray()
+                .and_then(|a| a.variant_elements())
+                .unwrap_or_default();
+            (0..count)
+                .map(|i| {
+                    old.get(i)
+                        .cloned()
+                        .unwrap_or_else(|| default_array_element(element))
+                })
+                .collect()
+        } else {
+            (0..count).map(|_| default_array_element(element)).collect()
+        };
+        let array = redim_safearray_from_elements(bounds, element, elems)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        self.store(dst, Variant::from_safearray(array))?;
+        Ok(())
     }
 
     /// Invoke a base-library built-in. Most builtins are the pure shared
@@ -1075,6 +1376,11 @@ fn cmp_op(op: CmpOp) -> arith::CmpOp {
         CmpOp::Gt => arith::CmpOp::Gt,
         CmpOp::Ge => arith::CmpOp::Ge,
     }
+}
+
+/// Wrap an `arith` coercion error as a routed vm3 fault (it carries its own VBA code).
+fn arith_fault(e: ArithError) -> Vm3Error {
+    Vm3Error::Fault(Fault::from_arith(e))
 }
 
 fn const_variant(c: &OxConst) -> Variant {
