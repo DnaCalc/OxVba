@@ -40,6 +40,7 @@ use std::collections::HashMap;
 
 use oxvba_bundle::{
     ArrayElementType, NativeImplId, default_array_element, redim_safearray_from_elements,
+    vba_record_layout_for_fields,
 };
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
@@ -51,8 +52,8 @@ use oxvba_oxir::value::{
 use oxvba_oxir::{
     BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
 };
-use oxvba_runtime::Variant;
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
+use oxvba_runtime::{Variant, VbaRecord};
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
@@ -900,6 +901,56 @@ impl<'h> Vm3<'h> {
                     }
                     None => self.store(has_value, Variant::from_bool(false))?,
                 }
+            }
+
+            // ── Records / UDT (M3-3) — value aggregates with native VBA layout ────────
+            OxInst::NewRecord { dst, fields } => {
+                let layout = vba_record_layout_for_fields(fields)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                let record =
+                    VbaRecord::new_default(layout).map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                self.store(dst, Variant::from_vba_record(record))?;
+            }
+            OxInst::RecordGet { dst, record, index } => {
+                let source = self.operand(record)?;
+                // Native VBA records read by field index; a legacy SAFEARRAY-backed record
+                // bag (old/hand-built internal values) reads its element, bounds-checked.
+                let value = if let Some(rec) = source.as_safearray() {
+                    if *index >= rec.len() {
+                        return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
+                    }
+                    rec.variant_element(*index)
+                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+                } else {
+                    source
+                        .read_record_field_variant(*index)
+                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+                };
+                self.store(dst, value)?;
+            }
+            OxInst::RecordSet {
+                record,
+                index,
+                value,
+            } => {
+                let v = self.operand(value)?;
+                // Read the (alias-resolved) record, write the field, store it back — value
+                // semantics: the record's data is owned, so a ByRef-aliased record's backing
+                // receives the write (equivalent to vm2's in-place `read_place_mut`).
+                let mut target = self.read(record)?;
+                if let Some(rec) = target.as_safearray() {
+                    if *index >= rec.len() {
+                        return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
+                    }
+                    target
+                        .set_safearray_element(*index, &v)
+                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                } else {
+                    target
+                        .write_record_field_variant(*index, &v)
+                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                }
+                self.store(record, target)?;
             }
 
             // Everything else is a later milestone (cross-bundle calls / objects / COM /
