@@ -351,3 +351,30 @@ Function PROBE_err_raise_inherit_after_system() As String
     Err.Raise 6                        ' omit -> inherits the system error's un-cleared Err
     PROBE_err_raise_inherit_after_system = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
 End Function
+
+' ===================== G. legacy `Error <n>` statement =====================
+' MS-VBAL §2841 says `Error <n>` is "as if Err.Raise(number)", but the ORACLE shows it
+' does NOT do §9071 inheritance — it sets FRESH fields (like a system error), unlike
+' Err.Raise. So `Error <n>` is a non-inheriting raise.
+
+Function PROBE_error_statement() As String
+    On Error GoTo H
+    Error 5
+    PROBE_error_statement = "no-fault"
+    Exit Function
+H:
+    PROBE_error_statement = "handler;errnum=" & Err.Number & ";desc=" & Err.Description
+End Function
+
+Function PROBE_error_statement_inherit() As String
+    On Error Resume Next
+    Err.Raise 5, "Src1", "Desc1"       ' Err = {5, Src1, Desc1}
+    Error 6                            ' Error stmt does NOT inherit -> fresh defaults
+    PROBE_error_statement_inherit = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
+
+Function PROBE_error_statement_clean() As String
+    On Error Resume Next
+    Error 11                           ' from clean Err -> derived description
+    PROBE_error_statement_clean = "n=" & Err.Number & ";src=[" & Err.Source & "];desc=" & Err.Description
+End Function

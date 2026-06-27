@@ -85,6 +85,9 @@ for reproducibility (the harness now handles all of them automatically):
 | `err_source_system` | `n=11;src=[VBAProject]` | A **system** error (`1/0`) sets `Err.Source` to the **project name**, not `""`. |
 | `err_system_after_raise` | `n=11;src=VBAProject;desc=Division by zero` | A system error sets **fresh** fields — it does **not** inherit an un-cleared `Err`. |
 | `err_raise_inherit_after_system` | `n=6;src=VBAProject;desc=Division by zero` | `Err.Raise` inherits from **any** un-cleared `Err` (here the prior system error's `Desc`). |
+| `error_statement` | `handler;errnum=5;desc=Invalid procedure call or argument` | `Error 5` raises a catchable error 5 (derived description) — like `Err.Raise 5`. |
+| `error_statement_inherit` | `n=6;src=VBAProject;desc=Overflow` | **`Error 6` does NOT inherit** the un-cleared `Err` (fresh defaults) — unlike `Err.Raise 6`. See §4. |
+| `error_statement_clean` | `n=11;src=[VBAProject];desc=Division by zero` | `Error 11` from a clean `Err` → project-name Source + derived Description. |
 
 > **§9071 resolved (oracle-confirmed, agrees with spec).** The original
 > `err_raise_omitted_inherit` was inconclusive — its `On Error GoTo H` between the two
@@ -150,7 +153,17 @@ commonly-cited VBA documentation**. vm3 follows the **oracle**.
   `On Error Resume Next` *skips* a faulting statement, `Err` **remains set** (the whole
   point — you test `Err.Number` after). vm3 must implement this asymmetry.
 
-(Both are subtle enough that they are easy to get wrong; they are the headline reasons
+- **The legacy `Error <n>` statement does NOT inherit an un-cleared `Err`** — it sets
+  fresh fields, unlike `Err.Raise n`. MS-VBAL §2841 says `Error <n>` behaves "as if the
+  Err.Raise method were invoked with … number", which would imply §9071 inheritance. The
+  oracle disagrees: `Err.Raise 5,"Src1","Desc1"` then `Error 6` yields
+  `n=6;src=VBAProject;desc=Overflow` (fresh), whereas the same setup with `Err.Raise 6`
+  yields `n=6;src=Src1;desc=Desc1` (inherited). So **`Error <n>` is a *non-inheriting*
+  raise** (effectively clear-then-raise). → vm3 models `Err.Raise` and `Error <n>` with
+  the same `Raise` op carrying an `inherit` flag (true for `Err.Raise`, false for
+  `Error <n>`).
+
+(These are subtle enough that they are easy to get wrong; they are the headline reasons
 this oracle pass exists.)
 
 ---

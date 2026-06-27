@@ -175,6 +175,7 @@ pub enum SyntaxKind {
     CallStmt,
     LabelStmt,
     OnErrorStmt,
+    ErrorStmt, // the legacy `Error <n>` statement
     ResumeStmt,
     ReDimStmt,
     EraseStmt,

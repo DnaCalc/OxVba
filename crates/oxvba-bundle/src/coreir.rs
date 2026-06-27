@@ -508,10 +508,17 @@ pub enum ErrorOp {
     /// to the project name (`Source`) or the standard message for the number
     /// (`Description`) at raise time. (HelpFile/HelpContext are accepted by the binder
     /// but not modelled — no `Err` read path surfaces them yet.)
+    ///
+    /// `inherit` selects the omitted-argument semantics. `true` for `Err.Raise`: an
+    /// omitted Source/Description inherits the un-cleared `Err` field (MS-VBAL §9071).
+    /// `false` for the legacy `Error <n>` statement: omitted fields ALWAYS take their
+    /// defaults (project name / derived message) — `Error <n>` does NOT inherit, an
+    /// oracle-confirmed divergence from §2841's "as if Err.Raise(number)".
     Raise {
         number: CoreValue,
         source: Option<Box<CoreValue>>,
         description: Option<Box<CoreValue>>,
+        inherit: bool,
     },
 }
 

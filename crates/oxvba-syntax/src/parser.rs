@@ -1696,6 +1696,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwLet => self.parse_let_stmt(),
             SyntaxKind::KwCall => self.parse_call_stmt(),
             SyntaxKind::KwOn => self.parse_on_error_stmt(),
+            SyntaxKind::KwError => self.parse_error_stmt(),
             SyntaxKind::KwResume => self.parse_resume_stmt(),
             SyntaxKind::KwErase => self.parse_erase_stmt(),
             SyntaxKind::KwExit => self.parse_exit_stmt(),
@@ -2224,6 +2225,20 @@ impl<'a> Parser<'a> {
             self.bump();
             self.parse_label_ref(); // a label, or `0`
         }
+        self.finish_node();
+    }
+
+    /// The legacy `Error <number>` statement (MS-VBAL §5.4.4.3) — raises the given
+    /// run-time error. The number is a full expression.
+    fn parse_error_stmt(&mut self) {
+        self.start_node(SyntaxKind::ErrorStmt);
+        self.eat_trivia();
+        self.bump(); // Error
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_expr();
+        }
+        self.eat_to_statement_end();
         self.finish_node();
     }
 

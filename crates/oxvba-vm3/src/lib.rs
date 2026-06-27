@@ -428,12 +428,16 @@ impl<'h> Vm3<'h> {
                     number,
                     source,
                     description,
+                    inherit,
                 } => {
                     let num_v = self.operand(number)?;
                     match arith::coerce_numeric(&num_v, oxvba_bundle::NumericCoerceTarget::Long) {
                         Ok(code_v) => {
                             let code = code_v.as_i32().unwrap_or(0);
-                            let inherit = self.err.number != 0;
+                            // §9071 inherit applies only to `Err.Raise` (inherit=true);
+                            // the legacy `Error <n>` statement (inherit=false) never
+                            // inherits — oracle-confirmed. Inherit needs an un-cleared Err.
+                            let inherit = *inherit && self.err.number != 0;
                             let message = match description {
                                 Some(op) => self.operand_string(op)?,
                                 None if inherit => self.err.description.clone(),
@@ -1627,6 +1631,7 @@ mod tests {
                     number: CoreValue::Const(CoreConst::I32(5)),
                     source: None,
                     description: None,
+                    inherit: true,
                 }),
                 CoreStmt::Exit(ExitKind::Proc),
                 CoreStmt::Label(LabelId(0)),

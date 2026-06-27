@@ -485,10 +485,16 @@ pub enum OxTerminator {
     /// code operand (a `Const` when statically known); `source`/`description` are the
     /// optional explicit fields — a missing one falls back to the project name /
     /// the standard message for the number at raise time.
+    ///
+    /// `inherit` selects omitted-argument semantics: `true` (`Err.Raise`) inherits the
+    /// un-cleared `Err` field per MS-VBAL §9071; `false` (the legacy `Error <n>`
+    /// statement) always takes the defaults (oracle-confirmed — `Error <n>` does not
+    /// inherit).
     Raise {
         number: OxOperand,
         source: Option<OxOperand>,
         description: Option<OxOperand>,
+        inherit: bool,
     },
     /// `GoSub <label>` — push a return point and branch.
     GoSub { target: BlockId, ret: BlockId },
@@ -583,6 +589,7 @@ pub fn terminator_operands(t: &OxTerminator) -> Vec<&OxOperand> {
             number,
             source,
             description,
+            ..
         } => {
             let mut ops = vec![number];
             ops.extend(source.iter());

@@ -775,6 +775,7 @@ impl<'a> Lowerer<'a> {
                 number,
                 source,
                 description,
+                inherit,
             } => {
                 // Evaluate Number, then Source, then Description (left-to-right), then
                 // raise through the statement fault pad.
@@ -792,6 +793,7 @@ impl<'a> Lowerer<'a> {
                         number: num_op,
                         source: src_op,
                         description: desc_op,
+                        inherit: *inherit,
                     },
                     s_next,
                 );
@@ -2410,6 +2412,7 @@ mod tests {
                 number: coreir::CoreValue::Const(coreir::CoreConst::I32(5)),
                 source: None,
                 description: None,
+                inherit: true,
             }),
             CoreStmt::Label(coreir::LabelId(0)),
             CoreStmt::Error(ErrorOp::ResumeNext),

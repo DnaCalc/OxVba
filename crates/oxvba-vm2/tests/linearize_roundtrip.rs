@@ -588,6 +588,7 @@ fn on_error_resume_next_records_err_number() {
                 number: CoreValue::Const(CoreConst::I32(11)),
                 source: None,
                 description: None,
+                inherit: true,
             }),
             set(0, CoreValue::ErrField(ErrField::Number)),
         ],

@@ -63,6 +63,7 @@ impl<'a> ProcLower<'a> {
                 Ok(vec![CoreStmt::Label(id)])
             }
             OnErrorStmt => self.bind_on_error(node),
+            ErrorStmt => self.bind_error_stmt(node),
             ResumeStmt => self.bind_resume(node),
             ReDimStmt => self.bind_redim(node),
             EraseStmt => self.bind_erase(node),
@@ -1661,7 +1662,27 @@ impl<'a> ProcLower<'a> {
             number,
             source,
             description,
+            inherit: true,
         })
+    }
+
+    /// The legacy `Error <number>` statement (MS-VBAL §5.4.4.3). It raises the given
+    /// run-time error, reusing the `Err.Raise` machinery — but with `inherit: false`:
+    /// `Error <n>` does NOT inherit an un-cleared `Err` (oracle-confirmed), so omitted
+    /// Source/Description always take their defaults.
+    fn bind_error_stmt(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let value = self
+            .bind_required(node.first_expr_child(), "Error statement number")?;
+        let number = match self.fold_const_i32(&value) {
+            Some(code) => CoreValue::Const(CoreConst::I32(code)),
+            None => value,
+        };
+        Ok(vec![CoreStmt::Error(ErrorOp::Raise {
+            number,
+            source: None,
+            description: None,
+            inherit: false,
+        })])
     }
 }
 

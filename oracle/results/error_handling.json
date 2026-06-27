@@ -28,5 +28,8 @@
   "PROBE_err_raise_inherit_after_clear": "n=6;src=VBAProject;desc=Overflow",
   "PROBE_err_source_system": "n=11;src=[VBAProject]",
   "PROBE_err_system_after_raise": "n=11;src=VBAProject;desc=Division by zero",
-  "PROBE_err_raise_inherit_after_system": "n=6;src=VBAProject;desc=Division by zero"
+  "PROBE_err_raise_inherit_after_system": "n=6;src=VBAProject;desc=Division by zero",
+  "PROBE_error_statement": "handler;errnum=5;desc=Invalid procedure call or argument",
+  "PROBE_error_statement_inherit": "n=6;src=VBAProject;desc=Overflow",
+  "PROBE_error_statement_clean": "n=11;src=[VBAProject];desc=Division by zero"
 }
