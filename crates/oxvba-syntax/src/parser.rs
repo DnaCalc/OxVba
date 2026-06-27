@@ -1695,7 +1695,10 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwSet => self.parse_set_stmt(),
             SyntaxKind::KwLet => self.parse_let_stmt(),
             SyntaxKind::KwCall => self.parse_call_stmt(),
-            SyntaxKind::KwOn => self.parse_on_error_stmt(),
+            SyntaxKind::KwOn if self.peek_next_non_trivia_is(SyntaxKind::KwError) => {
+                self.parse_on_error_stmt()
+            }
+            SyntaxKind::KwOn => self.parse_on_computed_stmt(),
             SyntaxKind::KwError => self.parse_error_stmt(),
             SyntaxKind::KwResume => self.parse_resume_stmt(),
             SyntaxKind::KwErase => self.parse_erase_stmt(),
@@ -2237,6 +2240,34 @@ impl<'a> Parser<'a> {
         self.eat_whitespace();
         if self.is_expr_start() {
             self.parse_expr();
+        }
+        self.eat_to_statement_end();
+        self.finish_node();
+    }
+
+    /// `On <expr> GoTo L1, L2, …` / `On <expr> GoSub S1, S2, …` — the computed branch
+    /// (1-based; `0`/out-of-range falls through). Distinguished from `On Error …` by the
+    /// caller (which checks for a following `Error` keyword).
+    fn parse_on_computed_stmt(&mut self) {
+        self.start_node(SyntaxKind::OnComputedStmt);
+        self.eat_trivia();
+        self.bump(); // On
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_expr(); // the selector (stops at GoTo / GoSub)
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwGoTo) || self.at(SyntaxKind::KwGoSub) {
+            self.bump();
+        }
+        self.eat_whitespace();
+        loop {
+            self.parse_label_ref();
+            self.eat_whitespace();
+            if !self.eat(SyntaxKind::Comma) {
+                break;
+            }
+            self.eat_whitespace();
         }
         self.eat_to_statement_end();
         self.finish_node();

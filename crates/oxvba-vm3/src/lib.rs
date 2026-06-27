@@ -129,6 +129,12 @@ enum ErrorMode {
 struct ResumePoint {
     resume: BlockId,
     resume_next: BlockId,
+    /// The handler policy active when the error was caught. A `Goto` catch demotes
+    /// `error_mode` to `None` (single-shot *while in the handler*, so a re-raise there
+    /// propagates); `Resume`/`Resume Next`/`Resume <label>` then RE-ARM this handler on
+    /// the way out, so a fault after the resume is caught again (standard VBA — the
+    /// demotion is only for the duration of the handler).
+    handler: ErrorMode,
 }
 
 /// A resolved runtime storage location on the frame stack — what an [`OxPlace`]
@@ -358,6 +364,9 @@ impl<'h> Vm3<'h> {
                     let rp = ResumePoint {
                         resume: *resume,
                         resume_next: *resume_next,
+                        // Captured before the Goto arm demotes `error_mode`, so a later
+                        // `Resume*` re-arms the handler that was active at the catch.
+                        handler: self.error_mode,
                     };
                     match self.error_mode {
                         // Default: no enabled handler ⇒ propagate to the caller (or, at the
@@ -391,10 +400,13 @@ impl<'h> Vm3<'h> {
                     }
                 }
                 // The three `Resume` forms (R6/R7/R8): with no active error, raise error 20
-                // ("Resume without error"); otherwise reset `Err`, clear the latch, transfer.
+                // ("Resume without error"); otherwise reset `Err`, clear the latch, RE-ARM
+                // the handler that caught the error (so a fault after the resume is caught
+                // again), and transfer.
                 OxTerminator::Resume => match self.active_error.take() {
                     Some(rp) => {
                         self.err = ErrState::default();
+                        self.error_mode = rp.handler;
                         self.goto(top, rp.resume);
                     }
                     None => self.raise_runtime_error(20)?,
@@ -402,13 +414,15 @@ impl<'h> Vm3<'h> {
                 OxTerminator::ResumeNext => match self.active_error.take() {
                     Some(rp) => {
                         self.err = ErrState::default();
+                        self.error_mode = rp.handler;
                         self.goto(top, rp.resume_next);
                     }
                     None => self.raise_runtime_error(20)?,
                 },
                 OxTerminator::ResumeLabel(b) => match self.active_error.take() {
-                    Some(_) => {
+                    Some(rp) => {
                         self.err = ErrState::default();
+                        self.error_mode = rp.handler;
                         self.goto(top, *b);
                     }
                     None => self.raise_runtime_error(20)?,

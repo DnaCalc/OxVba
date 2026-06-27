@@ -217,6 +217,29 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
     }
 }
 
+/// Run `source` under `executor` (as project `project_name`) on a worker thread with a
+/// wall-clock timeout; returns `None` if it does not finish in `dur`.
+///
+/// This guards the differential gates against an executor — in practice **vm2**, whose
+/// error model has documented infinite loops (`Resume` without an active error, etc.) —
+/// spinning on a program that terminates under correct semantics. vm3 must never time
+/// out on an in-scope program (that would be a vm3 bug, which the gate treats as a
+/// failure, not a skip). A timed-out worker is left to exit on its own.
+pub fn run_with_timeout(
+    executor: Executor,
+    source: &str,
+    project_name: &str,
+    dur: std::time::Duration,
+) -> Option<RunOutcome> {
+    let src = source.to_string();
+    let proj = project_name.to_string();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(run_with_project(executor, &src, &proj));
+    });
+    rx.recv_timeout(dur).ok()
+}
+
 /// A single observable difference between two runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Difference {
@@ -440,10 +463,13 @@ mod tests {
         let mut skipped = 0usize;
         let mut both_errored = 0usize;
         let mut known_divergence = 0usize;
+        let mut vm2_hangs = 0usize;
         let mut mismatches: Vec<(String, Vec<Difference>)> = Vec::new();
+        let mut vm3_hangs: Vec<String> = Vec::new();
         // What the skipped programs need, so the coverage gap is visible (keyed by the
         // first unimplemented construct each program hit) — this is the M2-c/M3 worklist.
         let mut skip_reasons: std::collections::BTreeMap<String, usize> = Default::default();
+        let budget = std::time::Duration::from_secs(8);
         for dir in ["conformance", "examples"] {
             for path in bas_files(&root.join(dir)) {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -455,8 +481,25 @@ mod tests {
                 if source.trim().is_empty() {
                     continue;
                 }
-                let vm2 = run(Executor::Vm2, &source);
-                let vm3 = run(Executor::Vm3, &source);
+                // Run both with a timeout: vm2's error model has documented infinite
+                // loops (e.g. `Resume` with no active error) that some error-handling
+                // programs now reach. A vm2 hang is a vm2 non-compliance — skip it. A vm3
+                // hang is a vm3 bug — fail.
+                let (vm2, vm3) = (
+                    run_with_timeout(Executor::Vm2, &source, "Main", budget),
+                    run_with_timeout(Executor::Vm3, &source, "Main", budget),
+                );
+                let (vm2, vm3) = match (vm2, vm3) {
+                    (_, None) => {
+                        vm3_hangs.push(path.display().to_string());
+                        continue;
+                    }
+                    (None, Some(_)) => {
+                        vm2_hangs += 1;
+                        continue;
+                    }
+                    (Some(a), Some(b)) => (a, b),
+                };
                 match compare_corpus(&vm2, &vm3) {
                     CorpusVerdict::Skipped(reason) => {
                         skipped += 1;
@@ -474,7 +517,7 @@ mod tests {
             }
         }
         eprintln!(
-            "vm3-vs-vm2 corpus: ran+matched={ran}, skipped(unsupported)={skipped}, both-errored={both_errored}, known-vm2-divergence={known_divergence}, mismatches={}",
+            "vm3-vs-vm2 corpus: ran+matched={ran}, skipped(unsupported)={skipped}, both-errored={both_errored}, known-vm2-divergence={known_divergence}, vm2-hangs(skipped)={vm2_hangs}, mismatches={}",
             mismatches.len()
         );
         let mut by_count: Vec<_> = skip_reasons.iter().collect();
@@ -485,6 +528,13 @@ mod tests {
         for (path, d) in mismatches.iter().take(25) {
             eprintln!("  MISMATCH {path}\n    {d:?}");
         }
+        // vm3 timing out on any corpus program is a vm3 bug (an infinite loop), not a
+        // tolerable vm2-style divergence — fail loudly.
+        assert!(
+            vm3_hangs.is_empty(),
+            "vm3 timed out (infinite loop?) on {} corpus program(s): {vm3_hangs:?}",
+            vm3_hangs.len()
+        );
         assert!(
             mismatches.is_empty(),
             "{} vm3-vs-vm2 divergences across the corpus (see stderr)",

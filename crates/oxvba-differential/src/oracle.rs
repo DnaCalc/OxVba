@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::{Canon, Executor, run_with_project};
+use crate::{Canon, Executor, run_with_timeout};
 
 /// The project name the oracle corpus runs under — Excel's default VBProject name, so a
 /// probe that reads `Err.Source` (which defaults to the project name) matches the
@@ -136,14 +136,14 @@ pub fn all_oracle_cases() -> Vec<OracleCase> {
 /// A timed-out worker is left to exit on its own (it cannot corrupt this thread — vm3's
 /// state, including the termination queue, is thread-local).
 pub fn run_oracle_case(executor: Executor, case: &OracleCase) -> OracleObservation {
-    let src = case.source.clone();
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(run_with_project(executor, &src, ORACLE_PROJECT));
-    });
-    let out = match rx.recv_timeout(std::time::Duration::from_secs(3)) {
-        Ok(o) => o,
-        Err(_) => return OracleObservation::Timeout,
+    let out = match run_with_timeout(
+        executor,
+        &case.source,
+        ORACLE_PROJECT,
+        std::time::Duration::from_secs(3),
+    ) {
+        Some(o) => o,
+        None => return OracleObservation::Timeout,
     };
     if let Some(u) = out.unsupported {
         return OracleObservation::Unsupported(u);

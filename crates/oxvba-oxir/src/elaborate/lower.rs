@@ -60,8 +60,8 @@ use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
 use crate::program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
 use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy};
 use crate::value::{
-    ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxConst, OxNativeCallee,
-    OxOperand, OxPlace,
+    ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
+    OxNativeCallee, OxOperand, OxPlace,
 };
 
 /// A failure to elaborate Core IR into OxIR.
@@ -618,6 +618,11 @@ impl<'a> Lowerer<'a> {
                 self.finish_to(OxTerminator::GoSub { target, ret: s_next }, s_next);
                 Ok(())
             }
+            CoreStmt::ComputedGoto {
+                selector,
+                targets,
+                is_gosub,
+            } => self.lower_computed_goto(selector, targets, *is_gosub, s_next),
             CoreStmt::GoSubReturn => {
                 self.finish_to(OxTerminator::GoSubReturn, s_next);
                 Ok(())
@@ -1096,6 +1101,78 @@ impl<'a> Lowerer<'a> {
         }
         self.cur_fault = select_pad;
         self.lower_block(case_else)?;
+        self.finish_to(OxTerminator::Jump(end), end);
+        Ok(())
+    }
+
+    /// `On <selector> GoTo/GoSub L1, L2, …` — a 1-based computed branch lowered to a
+    /// chain of equality `Branch`es (the Select-Case shape; no new terminator). The
+    /// selector is evaluated once (coerced to `Long`, as VBA rounds it); `targets[k-1]`
+    /// is taken when `selector == k`; `0`/out-of-range falls through to `end`. For
+    /// `GoSub`, a taken target returns to `end` (the statement after `On … GoSub`).
+    fn lower_computed_goto(
+        &mut self,
+        selector: &CoreValue,
+        targets: &[CoreLabelId],
+        is_gosub: bool,
+        end: BlockId,
+    ) -> Result<()> {
+        let pad = self.cur_fault;
+        let (sel_raw, _) = self.lower_value(selector)?;
+        // Evaluate once into a temp, coerced to Long (VBA rounds the selector; a
+        // non-numeric selector faults to this statement's pad — error 13).
+        let sel_t = self.new_temp();
+        self.emit(OxInst::Coerce {
+            dst: OxPlace::Temp(sel_t),
+            src: sel_raw,
+            target: OxCoerceTarget::Numeric(oxvba_bundle::NumericCoerceTarget::Long),
+        });
+        let sel_op = OxOperand::temp(sel_t);
+
+        for (i, label) in targets.iter().enumerate() {
+            self.cur_fault = pad;
+            let k = (i + 1) as i32;
+            let cmp_t = self.new_temp();
+            self.emit(OxInst::Compare {
+                dst: OxPlace::Temp(cmp_t),
+                op: CmpOp::Eq,
+                lhs: sel_op.clone(),
+                rhs: OxOperand::Const(OxConst::I32(k)),
+                mode: oxvba_bundle::StringCompareMode::Binary,
+            });
+            let matched = self.truthy_cond(OxOperand::temp(cmp_t));
+            let target_block = self.label_block(label)?;
+            let next_blk = self.reserve();
+            if is_gosub {
+                let gosub_blk = self.reserve();
+                self.finish_to(
+                    OxTerminator::Branch {
+                        cond: matched,
+                        then_blk: gosub_blk,
+                        else_blk: next_blk,
+                    },
+                    gosub_blk,
+                );
+                // A taken `GoSub` returns to the statement after `On … GoSub`.
+                self.finish_to(
+                    OxTerminator::GoSub {
+                        target: target_block,
+                        ret: end,
+                    },
+                    next_blk,
+                );
+            } else {
+                self.finish_to(
+                    OxTerminator::Branch {
+                        cond: matched,
+                        then_blk: target_block,
+                        else_blk: next_blk,
+                    },
+                    next_blk,
+                );
+            }
+        }
+        // No target matched (0 / out-of-range) — fall through to the next statement.
         self.finish_to(OxTerminator::Jump(end), end);
         Ok(())
     }

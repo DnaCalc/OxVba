@@ -21,12 +21,16 @@ use crate::{
 pub enum LinearizeError {
     /// The Core IR violated an invariant a resolved program should uphold.
     Malformed(String),
+    /// A Core IR construct the (transitional) vm2 `Op` machine does not implement — an
+    /// honest gap, never a silent mis-lowering. vm3 carries these constructs faithfully.
+    Unsupported(String),
 }
 
 impl std::fmt::Display for LinearizeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LinearizeError::Malformed(m) => write!(f, "malformed Core IR: {m}"),
+            LinearizeError::Unsupported(m) => write!(f, "unsupported by vm2: {m}"),
         }
     }
 }
@@ -1209,6 +1213,15 @@ impl<'p> Linearizer<'p> {
                 let at = self.emit(Op::Jump { target_pc: 0 });
                 self.pending_label_patches.push((at, *label));
                 self.gosub_return_pcs.push(self.here());
+            }
+            // Computed `On <expr> GoTo/GoSub` is a vm3/JIT feature: vm2's flat `Op`
+            // machine has no computed multi-target branch (and its GoSub is the
+            // single-slot D7 form), so this is an honest vm2 gap rather than a silent
+            // mis-lowering. vm3 lowers it to a branch chain in elaboration.
+            CoreStmt::ComputedGoto { .. } => {
+                return Err(LinearizeError::Unsupported(
+                    "On <expr> GoTo/GoSub (computed branch)".into(),
+                ));
             }
             CoreStmt::GoSubReturn => {
                 let _ = self.gosub_slot();

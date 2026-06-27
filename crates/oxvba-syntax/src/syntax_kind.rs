@@ -175,7 +175,8 @@ pub enum SyntaxKind {
     CallStmt,
     LabelStmt,
     OnErrorStmt,
-    ErrorStmt, // the legacy `Error <n>` statement
+    OnComputedStmt, // `On <expr> GoTo/GoSub L1, L2, ...` (computed branch)
+    ErrorStmt,      // the legacy `Error <n>` statement
     ResumeStmt,
     ReDimStmt,
     EraseStmt,

@@ -222,8 +222,10 @@ object** (`Number`/`Description`/`Source`/…).
    → continue at the next statement; `Goto(L)` → jump to `L`. On a `Goto` catch the
    policy demotes so a re-raise in the handler propagates to the caller (not re-enter).
 3. `Resume` re-runs the faulting statement; `Resume Next` continues after it; `Resume L`
-   jumps to `L`. **All three clear the `Err` object and the active-error latch.** With no
-   active error → **error 20**.
+   jumps to `L`. **All three clear the `Err` object and the active-error latch, and
+   RE-ARM the handler that caught the error** (the `Goto`-catch demotion is only for the
+   duration of the handler, so a fault after the resume is caught again). With no active
+   error → **error 20**.
 4. `Err.Raise` honors all supplied args. **For an omitted Source/Description, MS-VBAL
    §9071 inheritance applies**: if `Err` is un-cleared (`Number != 0`) the omitted field
    **inherits the current `Err` value** (per-field, regardless of the prior error's
@@ -255,15 +257,22 @@ probe that reads `Err.Source` matches the oracle exactly. The single hard gate:
 **vm3 matches the oracle on every case outside a documented out-of-scope allowlist**; the
 test reuses for the future JIT by swapping the `Executor`.
 
-**Result (current):** vm3 is **oracle-compliant on all 41 in-scope probes**; vm2 diverges
-on 16 (the §4/§5 list, reported but never failed). Out-of-scope allowlist (front-end /
-M3 gaps, *not* error-model issues):
+**Result (current):** vm3 is **oracle-compliant on all 55 in-scope probes**; vm2 diverges
+on 19 (the §4/§5 list, reported but never failed). The remaining M2 front-end beads —
+`On Error GoTo -1` (M2-c-4), the legacy `Error <n>` statement (M2-c-3), and computed
+`On <expr> GoTo/GoSub` — are now implemented and un-allowlisted. The lone remaining
+out-of-scope gap is M3:
 
 | Probe | Gap | Status |
 |---|---|---|
-| `cf_on_n_goto`, `cf_on_n_goto_zero`, `cf_on_n_gosub` | binder rejects `On <expr> GoTo/GoSub` (computed branch) | front-end wave |
-| `oe_goto_minus1` | **parser** rejects the `On Error GoTo -1` line (`SYN-E-PARSE`) — fails in vm2 *and* vm3 | parser wave |
 | `cf_for_each_array` | `For Each` over `Array()` (typed arrays) | M3 |
+
+Closed since the first pass: `oe_goto_minus1` (M2-c-4 — `On Error GoTo -1` parser +
+clear-active-error latch), `cf_on_n_goto`/`cf_on_n_goto_zero`/`cf_on_n_gosub` (computed
+branch — parser `OnComputedStmt` + a `CoreStmt::ComputedGoto` lowered to a Branch chain
+in elaboration), and the `error_statement*` probes (M2-c-3). vm2 declines the computed
+branch (an honest `LinearizeError::Unsupported`) and approximates `On Error GoTo -1` as
+`GoTo 0` — both documented vm2 non-compliances, not fixes.
 
 ### M2-c-2 — rich `Err.Raise` + `Err.Source` default (implemented for vm3)
 

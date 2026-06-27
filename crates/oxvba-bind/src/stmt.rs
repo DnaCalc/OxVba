@@ -63,6 +63,7 @@ impl<'a> ProcLower<'a> {
                 Ok(vec![CoreStmt::Label(id)])
             }
             OnErrorStmt => self.bind_on_error(node),
+            OnComputedStmt => self.bind_on_computed(node),
             ErrorStmt => self.bind_error_stmt(node),
             ResumeStmt => self.bind_resume(node),
             ReDimStmt => self.bind_redim(node),
@@ -713,6 +714,35 @@ impl<'a> ProcLower<'a> {
             return Ok(vec![CoreStmt::Error(ErrorOp::OnErrorGoto0)]);
         }
         Err(BindError::Malformed("On Error form".into()))
+    }
+
+    /// `On <selector> GoTo L1, L2, …` / `On <selector> GoSub S1, S2, …` — the computed
+    /// branch. The selector is 1-based; `is_gosub` is taken from the `GoSub` keyword.
+    fn bind_on_computed(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let is_gosub = node
+            .child_tokens()
+            .iter()
+            .any(|t| t.kind == SyntaxKind::KwGoSub);
+        let selector = self.bind_required(node.first_expr_child(), "On <expr> selector")?;
+        let targets: Vec<oxvba_bundle::coreir::LabelId> = node
+            .child_nodes()
+            .iter()
+            .filter(|n| n.kind() == SyntaxKind::LabelRef)
+            .map(|lref| {
+                let name = lref.first_significant_token().map(|t| t.text).unwrap_or("");
+                self.label_id(name)
+            })
+            .collect();
+        if targets.is_empty() {
+            return Err(BindError::Malformed(
+                "On <expr> GoTo/GoSub needs at least one label".into(),
+            ));
+        }
+        Ok(vec![CoreStmt::ComputedGoto {
+            selector,
+            targets,
+            is_gosub,
+        }])
     }
 
     fn bind_resume(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {

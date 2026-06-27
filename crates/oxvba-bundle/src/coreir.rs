@@ -586,6 +586,15 @@ pub enum CoreStmt {
     GoSub(LabelId),
     /// `Return` from the most recent `GoSub`.
     GoSubReturn,
+    /// `On <selector> GoTo L1, L2, …` / `On <selector> GoSub S1, S2, …` — the computed
+    /// branch. `selector` is 1-based: `targets[selector - 1]` is taken; `0` or a value
+    /// past the end falls through to the next statement. `is_gosub` distinguishes the
+    /// `GoSub` form (each taken target returns to the statement after this one).
+    ComputedGoto {
+        selector: CoreValue,
+        targets: Vec<LabelId>,
+        is_gosub: bool,
+    },
     Error(ErrorOp),
     /// `ReDim`/`ReDim Preserve`.
     ReDim {

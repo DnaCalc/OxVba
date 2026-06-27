@@ -19,16 +19,8 @@ use oxvba_differential::Executor;
 /// Probes whose vm3 result is a KNOWN, documented gap — NOT an error-model regression.
 /// Each entry names the missing capability and the wave that closes it.
 ///
-///  - `On n GoTo` / `On n GoSub` (computed branch): the binder rejects `On <expr> GoTo`
-///    today (`Malformed("On Error form")`) — a front-end gap tracked for a later
-///    control-flow wave, not the error model.
 ///  - `For Each` over `Array()`: typed arrays are M3; vm3 reports `Unsupported("array op")`.
-const KNOWN_VM3_GAPS: &[&str] = &[
-    "PROBE_cf_on_n_goto",
-    "PROBE_cf_on_n_goto_zero",
-    "PROBE_cf_on_n_gosub",
-    "PROBE_cf_for_each_array",
-];
+const KNOWN_VM3_GAPS: &[&str] = &["PROBE_cf_for_each_array"];
 
 fn render(obs: &OracleObservation) -> String {
     match obs {
