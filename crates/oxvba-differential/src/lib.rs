@@ -461,9 +461,10 @@ mod tests {
     }
 
     // NB: most VBA built-ins (`Len`, `UCase`, …) lower to a cross-bundle `CallExtern`
-    // into the "VBA library" bundle, NOT `CallNative` — so they are SKIPPED by vm3 today
-    // (cross-bundle dispatch is M3). vm3's `CallNative` builtin path is exercised by the
-    // vm3 unit tests; a corpus-level builtin probe lands once `CallExtern` does.
+    // into the "VBA library" bundle, NOT `CallNative`. As of M3-1 vm3 resolves those against
+    // the synthetic `VBA` library bundle and runs them through the same `invoke_native_lib`
+    // bridge as `CallNative { Builtin }`, so builtin-using programs now run+match across the
+    // corpus-subset gate below (the `CallExtern` skip bucket is gone).
 
     /// Programs where vm2 (the transitional differential reference) itself deviates from the
     /// live Office VBA 7.1 oracle, so a vm2-vs-vm3 difference is EXPECTED and is NOT a vm3 bug

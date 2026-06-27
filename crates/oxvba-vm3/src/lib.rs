@@ -46,7 +46,9 @@ use oxvba_oxir::value::{
     ArithOp, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxNativeCallee,
     OxOperand, OxPlace,
 };
-use oxvba_oxir::{BlockId, ErrorHandler, FuncId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator};
+use oxvba_oxir::{
+    BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
+};
 use oxvba_runtime::Variant;
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
@@ -676,9 +678,15 @@ impl<'h> Vm3<'h> {
                 };
                 self.store_arith(dst, out)?;
             }
-            // A compiled VBA procedure call (intra-unit). Cross-bundle `CallExtern` and
-            // the `AddressOf`-reference `CallProcRef` are M3.
+            // A compiled VBA procedure call (intra-unit). The `AddressOf`-reference
+            // `CallProcRef` is M3-7.
             OxInst::CallProc { dst, proc, args } => self.call_proc(*dst, *proc, args)?,
+            // A cross-bundle call. vm3 links only the synthetic `VBA` library bundle today,
+            // so this resolves to a native library function (`Strings.Left`, `Math.Abs`, …)
+            // run through the same `invoke_native_lib` bridge as `CallNative { Builtin }`. A
+            // reference to another VBA *project* needs a multi-`OxProgram` linker (deferred —
+            // surfaced as an explicit `Unimplemented`, never a silent skip).
+            OxInst::CallExtern { dst, import, args } => self.call_extern(*dst, *import, args)?,
             // A base-library built-in funnels through the single shared `oxvba_lib::invoke`
             // (the identical bridge vm2 uses); `Declare Lib` marshalling is M3.
             OxInst::CallNative { dst, callee, args } => match callee {
@@ -794,6 +802,89 @@ impl<'h> Vm3<'h> {
         self.error_mode = ErrorMode::None;
         self.active_error = None;
         Ok(())
+    }
+
+    /// A cross-bundle call (`OxInst::CallExtern`). Resolve `import` to a native library
+    /// function and run it through the same `invoke_native_lib` bridge a `CallNative`
+    /// builtin uses — no frame is pushed (a `NativeBody::Library` body has no VM frame; its
+    /// arguments are positional ByVal values), mirroring vm2's `call_extern` short-circuit
+    /// and keeping a library function bit-identical however it is routed.
+    fn call_extern(
+        &mut self,
+        dst: Option<OxPlace>,
+        import: ImportId,
+        args: &[OxArg],
+    ) -> Result<(), Vm3Error> {
+        let id = self.resolve_library_import(import)?;
+        let argv = self.extern_args(args)?;
+        let result = self.invoke_native_lib(id, &argv)?;
+        if let Some(dst) = dst {
+            self.store(&dst, result)?;
+        }
+        Ok(())
+    }
+
+    /// Resolve a cross-bundle `import` to the native library function it names.
+    ///
+    /// vm3 links only the synthetic `VBA` library bundle (`oxvba_bundle::vba_library_bundle`)
+    /// today — the home of every built-in function (`Strings.Left`, `Math.Abs`, the
+    /// `DateTime`/`Conversion`/`Information`/`FileSystem` members, …), which the binder lowers
+    /// to a `CallExtern` rather than a `CallNative`. A reference to another VBA *project*
+    /// needs a multi-`OxProgram` linker, which is deferred — reported as an explicit
+    /// `Unimplemented`, never silently mis-run. (Built-in object *methods*
+    /// — `Collection.Add`/… , `NativeBody::Method` — never arrive here; they are reached by
+    /// member dispatch on a `Collection` instance, which lands with the object model.)
+    fn resolve_library_import(&self, import: ImportId) -> Result<NativeImplId, Vm3Error> {
+        let imp = self
+            .program
+            .imports
+            .get(import.0)
+            .ok_or_else(|| Vm3Error::Malformed(format!("CallExtern names unknown import {}", import.0)))?;
+        if !imp.unit.eq_ignore_ascii_case("VBA") {
+            return Err(Vm3Error::Unimplemented {
+                what: "cross-project OxProgram link",
+            });
+        }
+        let lib = oxvba_bundle::vba_library_bundle();
+        let export = lib
+            .exports
+            .iter()
+            .find(|e| e.token.matches(&imp.token))
+            .ok_or_else(|| {
+                Vm3Error::Malformed(format!(
+                    "the VBA library bundle has no export matching import {}",
+                    import.0
+                ))
+            })?;
+        let oxvba_bundle::ExportTarget::Proc(proc) = export.target else {
+            return Err(Vm3Error::Malformed(
+                "a VBA library import resolved to a non-procedure export".into(),
+            ));
+        };
+        match lib.procedures.get(proc).and_then(|p| p.native) {
+            Some(oxvba_bundle::NativeBody::Library(id)) => Ok(id),
+            Some(oxvba_bundle::NativeBody::Method(_)) => Err(Vm3Error::Malformed(
+                "a native object method is not callable via CallExtern".into(),
+            )),
+            // A VBA-bodied library proc would need the multi-OxProgram linker; the synthetic
+            // VBA bundle has only native bodies, so this is unreachable today.
+            None => Err(Vm3Error::Unimplemented {
+                what: "cross-project OxProgram link",
+            }),
+        }
+    }
+
+    /// Marshal a cross-bundle library call's arguments to plain values: a native library
+    /// body reads positional values (a ByRef argument by its *value*), and an omitted
+    /// optional is `Empty` — matching vm2's `extern_native_args`.
+    fn extern_args(&self, args: &[OxArg]) -> Result<Vec<Variant>, Vm3Error> {
+        args.iter()
+            .map(|a| match a {
+                OxArg::ByVal(op) => self.operand(op),
+                OxArg::ByRef(place) => self.read(place),
+                OxArg::Omitted => Ok(Variant::empty()),
+            })
+            .collect()
     }
 
     /// Invoke a base-library built-in. Most builtins are the pure shared
