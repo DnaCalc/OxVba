@@ -1,0 +1,4 @@
+# Per-run scratch output of run_oracle.ps1 (default OutFile). The canonical, committed
+# results are results/error_handling.json and results/controlflow.json.
+results/oracle_results.json
+.vbawarnings_original
