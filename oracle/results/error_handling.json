@@ -21,5 +21,12 @@
   "PROBE_resume_next_after_prop": "before;handler;after;errnum=0",
   "PROBE_nested_onerror_restore": "caller-caught;errnum=42",
   "PROBE_exit_sub_clears_err": "after_call_errnum=5",
-  "PROBE_end_sub_err_persists": "after_call_errnum=5"
+  "PROBE_end_sub_err_persists": "after_call_errnum=5",
+  "PROBE_err_raise_inherit_noreset": "n=6;src=Src1;desc=Desc1",
+  "PROBE_err_raise_inherit_partial_src": "n=6;src=Src2;desc=Desc1",
+  "PROBE_err_raise_inherit_same_num": "n=5;src=Src1;desc=Desc1",
+  "PROBE_err_raise_inherit_after_clear": "n=6;src=VBAProject;desc=Overflow",
+  "PROBE_err_source_system": "n=11;src=[VBAProject]",
+  "PROBE_err_system_after_raise": "n=11;src=VBAProject;desc=Division by zero",
+  "PROBE_err_raise_inherit_after_system": "n=6;src=VBAProject;desc=Division by zero"
 }

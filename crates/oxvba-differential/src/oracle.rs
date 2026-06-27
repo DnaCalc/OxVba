@@ -179,8 +179,12 @@ fn split_procedures(bas: &str) -> Vec<Procedure> {
             let start = i;
             let mut j = i + 1;
             while j < lines.len() {
-                let t = lines[j].trim();
-                if t.eq_ignore_ascii_case("End Function") || t.eq_ignore_ascii_case("End Sub") {
+                // Strip any trailing comment (`End Sub  ' note`) before matching — these
+                // lines have no string literals, so splitting on the first `'` is safe.
+                let code = lines[j].split('\'').next().unwrap_or("").trim();
+                if code.eq_ignore_ascii_case("End Function")
+                    || code.eq_ignore_ascii_case("End Sub")
+                {
                     break;
                 }
                 j += 1;

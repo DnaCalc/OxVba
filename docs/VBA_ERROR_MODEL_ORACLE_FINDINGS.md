@@ -78,13 +78,25 @@ for reproducibility (the harness now handles all of them automatically):
 | `nested_onerror_restore` | `caller-caught;errnum=42` | A callee's `On Error` does **not** leak; the caller's handler is **restored on return**. |
 | `exit_sub_clears_err` | `after_call_errnum=5` | **`Exit Sub` does NOT clear the `Err` object** (5 persists). See §4 — likely spec deviation. |
 | `end_sub_err_persists` | `after_call_errnum=5` | Normal `End Sub` does not clear `Err` either (5 persists). |
+| `err_raise_inherit_noreset` | `n=6;src=Src1;desc=Desc1` | **§9071: omitted Source+Description INHERIT the un-cleared `Err`** (no intervening reset). |
+| `err_raise_inherit_partial_src` | `n=6;src=Src2;desc=Desc1` | Per-field: a supplied Source wins; the omitted Description still **inherits** `Desc1`. |
+| `err_raise_inherit_same_num` | `n=5;src=Src1;desc=Desc1` | Same number, omit both → inherit (not re-derive). |
+| `err_raise_inherit_after_clear` | `n=6;src=VBAProject;desc=Overflow` | After `Err.Clear` (`Number=0`), omitted args fall to **defaults** (project name + derived). |
+| `err_source_system` | `n=11;src=[VBAProject]` | A **system** error (`1/0`) sets `Err.Source` to the **project name**, not `""`. |
+| `err_system_after_raise` | `n=11;src=VBAProject;desc=Division by zero` | A system error sets **fresh** fields — it does **not** inherit an un-cleared `Err`. |
+| `err_raise_inherit_after_system` | `n=6;src=VBAProject;desc=Division by zero` | `Err.Raise` inherits from **any** un-cleared `Err` (here the prior system error's `Desc`). |
 
-> Note on `err_raise_omitted_inherit`: the probe placed `On Error Resume Next` between
-> the two raises, which **resets `Err`** (per `oe_resume_next_resets_err`), so the second
-> `Err.Raise 6` had nothing to inherit and fell to defaults (`src=VBAProject`,
-> `desc=Overflow`-derived). The MS-VBAL §6.1.3.2.1.2 "omitted args reuse un-cleared `Err`
-> fields" rule needs a probe **without** an intervening `On Error`/`Resume`/`Clear` —
-> a TODO refinement.
+> **§9071 resolved (oracle-confirmed, agrees with spec).** The original
+> `err_raise_omitted_inherit` was inconclusive — its `On Error GoTo H` between the two
+> raises **resets `Err`**, so the second raise fell to defaults. The §F probes isolate
+> the rule with a single top-level `On Error Resume Next` (its implicit skip does NOT
+> clear `Err`): an omitted `Err.Raise` argument **inherits the current `Err` field
+> when `Err` is un-cleared (`Number != 0`)**, per-field, regardless of whether that
+> `Err` came from a prior `Err.Raise` or a system fault; when `Err` is cleared it falls
+> to defaults (Source = project name, Description = derived-from-Number). **System errors
+> never inherit** — they always set fresh fields. vm3 implements exactly this (the
+> inherit fallback lives in the `Err.Raise`/`Raise` terminator; the system-fault path
+> builds fresh fields).
 
 ---
 
@@ -199,8 +211,13 @@ object** (`Number`/`Description`/`Source`/…).
 3. `Resume` re-runs the faulting statement; `Resume Next` continues after it; `Resume L`
    jumps to `L`. **All three clear the `Err` object and the active-error latch.** With no
    active error → **error 20**.
-4. `Err.Raise` honors all supplied args; omitted Source → project name; omitted
-   Description → derived from Number. `Err.Clear` zeroes `Err`.
+4. `Err.Raise` honors all supplied args. **For an omitted Source/Description, MS-VBAL
+   §9071 inheritance applies**: if `Err` is un-cleared (`Number != 0`) the omitted field
+   **inherits the current `Err` value** (per-field, regardless of the prior error's
+   origin); if `Err` is cleared, omitted Source → project name and omitted Description →
+   derived from Number ("Application-defined or object-defined error" if unmapped). A
+   **system** error (not `Err.Raise`) always sets fresh fields — Number, derived
+   Description, Source = project name — and never inherits. `Err.Clear` zeroes `Err`.
 5. `Err` is **not** auto-cleared by `Exit Sub`/`Exit Function`, by a normal procedure
    end, by a non-faulting statement, or by the *implicit* skip of `On Error Resume Next`.
 6. Control flow: `For` counter ends at `last+step`; a zero-iteration `For` leaves the
@@ -245,11 +262,12 @@ To reach 100% on the error corpus, vm3 gained the rich-raise model the oracle re
   `RaiseError` path). `Err.Raise Number, [Source], [Description]` is resolved positionally
   or by name in the binder (HelpFile/HelpContext are accepted but not yet modelled — no
   `Err` read path surfaces them).
-- **vm3 honors the explicit fields and defaults the rest:** Number from the operand,
-  Description = the explicit argument else the standard message for the number, and
-  **`Err.Source` = the explicit argument else the project name** (the `Fault` now carries
-  an optional `source`; `Vm3::raise` falls back to `program.unit_name`). This is the VBA
-  default for any error generated within the project (system *or* `Err.Raise`), matching
-  the oracle's `"VBAProject"`.
+- **vm3 honors the explicit fields, inherits or defaults the rest** (§9071, oracle-
+  confirmed): an explicit argument wins; an omitted one **inherits the un-cleared `Err`
+  field** (`Err.Number != 0`) else falls to the default (Source = project name via
+  `program.unit_name`; Description = the standard message for the number). The `Fault`
+  carries an optional `source`; `Vm3::raise` applies the project-name fallback. System
+  faults (the `from_arith`/`route_fault` path) always build fresh fields — they never
+  inherit — matching the oracle.
 - **vm2 is deliberately left as-is** — it carries only the error number, so its
   Source/Description gap shows up as a documented §5 divergence, not a fix.

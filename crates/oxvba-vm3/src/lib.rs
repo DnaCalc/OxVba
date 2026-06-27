@@ -415,10 +415,15 @@ impl<'h> Vm3<'h> {
                 },
                 // `Err.Raise Number[, Source][, Description]` / `Error n`: build the `Err`
                 // state from the number plus any explicit Source/Description, then route
-                // through the statement pad so an active `On Error` can catch it (R11). An
-                // omitted Source falls back to the project name, an omitted Description to
-                // the standard message for the number (matching the oracle, which RESETS —
-                // does not inherit — the omitted fields).
+                // through the statement pad so an active `On Error` can catch it (R11).
+                //
+                // MS-VBAL §9071 (oracle-confirmed): an omitted argument INHERITS the
+                // current `Err` field **when `Err` is un-cleared** (`Err.Number != 0`,
+                // regardless of whether that error came from a prior `Err.Raise` or a
+                // system fault); when `Err` is cleared, an omitted Source falls back to
+                // the project name and an omitted Description to the standard message for
+                // the number. This is per-field. (System faults never inherit — that path
+                // is `from_arith`/`route_fault`, which always builds fresh fields.)
                 OxTerminator::Raise {
                     number,
                     source,
@@ -428,13 +433,16 @@ impl<'h> Vm3<'h> {
                     match arith::coerce_numeric(&num_v, oxvba_bundle::NumericCoerceTarget::Long) {
                         Ok(code_v) => {
                             let code = code_v.as_i32().unwrap_or(0);
+                            let inherit = self.err.number != 0;
                             let message = match description {
                                 Some(op) => self.operand_string(op)?,
+                                None if inherit => self.err.description.clone(),
                                 None => default_error_message(code),
                             };
                             let source = match source {
                                 Some(op) => Some(self.operand_string(op)?),
-                                None => None,
+                                None if inherit => Some(self.err.source.clone()),
+                                None => None, // -> project name in `raise`
                             };
                             self.route_fault(Fault {
                                 code,

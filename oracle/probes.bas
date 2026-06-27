@@ -294,3 +294,60 @@ Private Sub Sub_RaiseThenEnd()
     On Error Resume Next
     Err.Raise 5
 End Sub                              ' normal end (no Exit) -> does it clear Err?
+
+' ===================== F. Err.Raise §9071 omitted-arg inheritance =====================
+' MS-VBAL §6.1.3.2.1.2/§9071: an omitted Source/Description on Err.Raise INHERITS the
+' un-cleared Err field (oracle-confirmed). Isolation vs `err_raise_omitted_inherit`
+' above: NO intervening On Error between the two raises (an On Error statement resets
+' Err). A single top-level On Error Resume Next catches both; its implicit skip does NOT
+' clear Err, so the second raise sees the first's un-cleared fields.
+
+Function PROBE_err_raise_inherit_noreset() As String
+    On Error Resume Next
+    Err.Raise 5, "Src1", "Desc1"      ' Err = {5, Src1, Desc1}
+    Err.Raise 6                        ' omit Source+Description; Err un-cleared -> inherit
+    PROBE_err_raise_inherit_noreset = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
+
+Function PROBE_err_raise_inherit_partial_src() As String
+    On Error Resume Next
+    Err.Raise 5, "Src1", "Desc1"
+    Err.Raise 6, "Src2"                ' new Source, omit Description -> Description inherits
+    PROBE_err_raise_inherit_partial_src = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
+
+Function PROBE_err_raise_inherit_same_num() As String
+    On Error Resume Next
+    Err.Raise 5, "Src1", "Desc1"
+    Err.Raise 5                        ' same number, omit both -> inherit
+    PROBE_err_raise_inherit_same_num = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
+
+Function PROBE_err_raise_inherit_after_clear() As String
+    On Error Resume Next
+    Err.Raise 5, "Src1", "Desc1"
+    Err.Clear                          ' Err cleared -> omitted args fall to defaults
+    Err.Raise 6
+    PROBE_err_raise_inherit_after_clear = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
+
+Function PROBE_err_source_system() As String
+    On Error Resume Next
+    Dim x As Long
+    x = 1 / 0                          ' system error: Err.Source = project name (not "")
+    PROBE_err_source_system = "n=" & Err.Number & ";src=[" & Err.Source & "]"
+End Function
+
+Function PROBE_err_system_after_raise() As String
+    On Error Resume Next
+    Err.Raise 5, "Src1", "Desc1"       ' Err = {5, Src1, Desc1}
+    Dim x As Long: x = 1 / 0           ' system error sets FRESH fields (no §9071 inherit)
+    PROBE_err_system_after_raise = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
+
+Function PROBE_err_raise_inherit_after_system() As String
+    On Error Resume Next
+    Dim x As Long: x = 1 / 0           ' Err = {11, <project>, "Division by zero"}
+    Err.Raise 6                        ' omit -> inherits the system error's un-cleared Err
+    PROBE_err_raise_inherit_after_system = "n=" & Err.Number & ";src=" & Err.Source & ";desc=" & Err.Description
+End Function
