@@ -299,19 +299,26 @@ struct LoadedBundle<'h> {
 
 impl<'h> LoadedBundle<'h> {
     fn load(bundle: &'h Bundle) -> Self {
-        // INVARIANT: build_event_routes (binder) dedups so each (binding, event) maps to
-        // exactly ONE handler — VBA permits a single `<field>_<Event>` handler per
-        // field+event. The subscribe path consults the full route Vec (one binding has many
-        // events); this map is only the dispatch-time (binding, event) -> handler lookup. A
-        // collision would mean the binder dedup invariant broke, so flag it in debug builds
-        // rather than silently keeping the last writer.
+        // INVARIANT: each (binding, event) maps to exactly ONE handler. This holds because
+        // the binder gives every `WithEvents` field a *bundle-unique* binding token (a
+        // bundle-global counter in `oxvba-bind` ids.rs), so two distinct sink fields never
+        // share a binding — and VBA permits a single `<field>_<Event>` handler per
+        // field+event. (`build_event_routes` additionally collapses exact-duplicate routes
+        // from COM shared-dispid events; that dedup does NOT separate two different sink
+        // fields — bundle-unique tokens do.) The subscribe path consults the full route Vec
+        // (one binding has many events); this map is only the dispatch-time
+        // (binding, event) -> handler lookup. If two DIFFERENT handlers ever land on one
+        // key, suspect a binding-token allocation regression (e.g. a per-class counter
+        // reintroduced), so flag it in debug builds rather than silently keeping the last
+        // writer.
         let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
         for route in &bundle.event_routes {
             let prev = event_routes.insert((route.binding, route.event), route.handler);
             debug_assert!(
                 prev.is_none() || prev == Some(route.handler),
                 "bundle event_routes: (binding={}, event={}) bound to two different handlers \
-                 ({prev:?} then {}) — build_event_routes dedup invariant violated",
+                 ({prev:?} then {}) — two sink fields share a binding token; binding-token \
+                 allocation must keep them bundle-unique (see oxvba-bind ids.rs)",
                 route.binding,
                 route.event,
                 route.handler
