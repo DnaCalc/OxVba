@@ -52,6 +52,10 @@ use oxvba_oxir::value::{
 use oxvba_oxir::{
     BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
 };
+use oxvba_runtime::object_ref::{
+    ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
+    RuntimeInterfaceDescriptor,
+};
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, VbaRecord};
@@ -59,6 +63,11 @@ use oxvba_runtime::{Variant, VbaRecord};
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
+
+/// Project-instance ids start above any class route key (a class's route key is its index),
+/// so `compat_identity != route_key` — every allocation reads as a true project instance, not
+/// a template/compat object. Mirrors vm2's `INSTANCE_ID_BASE`.
+const INSTANCE_ID_BASE: i32 = 0x1000_0000;
 
 /// A run-time fault carrying the `Err` state it populates: the VBA error code
 /// (`Err.Number`), the message (`Err.Description`), and an optional explicit
@@ -240,6 +249,18 @@ pub struct Vm3<'h> {
     /// reentrant/nested loops that reuse a slot number never alias) — mirrors vm2's
     /// `for_each` map.
     for_each: HashMap<Loc, ForEachState>,
+    /// Monotonic project-instance id counter (starts at [`INSTANCE_ID_BASE`]).
+    next_instance_id: i32,
+    /// Re-entrancy guard for [`Vm3::maybe_drain`] (a `Class_Terminate` can itself drop the
+    /// last reference to another object — the guard keeps the drain a single fixpoint loop).
+    draining: bool,
+    /// Per-class leaked `&'static` runtime descriptors (1:1 with `program.classes`), built
+    /// once in [`Vm3::run`] — `ObjectRef::from_project_instance` requires a `'static`
+    /// descriptor, exactly as vm2's `LoadedBundle` leaks them.
+    class_descriptors: Vec<&'static RuntimeClassDescriptor>,
+    /// `VB_PredeclaredId` singleton cache, keyed by class index (allocate-once + run
+    /// `Class_Initialize` once), mirroring vm2's per-bundle `predeclared_singletons`.
+    predeclared_singletons: HashMap<usize, Variant>,
 }
 
 impl<'h> Vm3<'h> {
@@ -247,6 +268,20 @@ impl<'h> Vm3<'h> {
     /// with [`Vm3::slot`]). Mirrors vm2: the global initializer runs first, then `Main`
     /// in an entry frame that is never popped.
     pub fn run(program: &'h OxProgram, host: &'h dyn HostServices) -> Result<Self, Vm3Error> {
+        // One leaked `&'static` runtime descriptor per project class (its name + the universal
+        // IUnknown interface) — the shape `ObjectRef::from_project_instance` requires, exactly
+        // as vm2's `LoadedBundle::load` leaks them. The leak is per-run and bounded by the
+        // class count (matching vm2); a future arena can reclaim it.
+        let class_descriptors: Vec<&'static RuntimeClassDescriptor> = program
+            .classes
+            .iter()
+            .map(|class| {
+                let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
+                let interfaces: &'static [RuntimeInterfaceDescriptor] =
+                    Box::leak(Box::new([RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR]));
+                &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
+            })
+            .collect();
         let mut vm = Vm3 {
             program,
             host,
@@ -259,6 +294,10 @@ impl<'h> Vm3<'h> {
             last_dll_error: 0,
             pending_fault: None,
             for_each: HashMap::new(),
+            next_instance_id: INSTANCE_ID_BASE,
+            draining: false,
+            class_descriptors,
+            predeclared_singletons: HashMap::new(),
         };
 
         if let Some(init) = program.global_initializer {
@@ -277,7 +316,14 @@ impl<'h> Vm3<'h> {
             let frame = vm.new_frame(entry);
             vm.frames.push(frame);
             // The entry frame is never popped — it stays as `frames[0]` for the snapshot.
-            vm.run_loop(0)?;
+            let r = vm.run_loop(0);
+            // Run any `Class_Terminate`s parked while the run unwound — including objects an
+            // uncaught fault released as it propagated out of called procs (vm2 drains on the
+            // fault path; without this a Terminate would be lost on an error exit). On a clean
+            // finish this is a no-op (statement boundaries already drained; the entry frame's
+            // own locals stay live, un-terminated, exactly as vm2 leaves them).
+            vm.maybe_drain();
+            r?;
         }
         Ok(vm)
     }
@@ -573,6 +619,10 @@ impl<'h> Vm3<'h> {
         {
             self.write_loc(loc, v)?;
         }
+        // Proc epilogue: drop the callee frame (releasing the objects its locals held) and then
+        // run any parked `Class_Terminate`s — vm2's epilogue drain timing.
+        drop(callee);
+        self.maybe_drain();
         Ok(())
     }
 
@@ -756,9 +806,10 @@ impl<'h> Vm3<'h> {
             }
             // `Err.Clear` → reset the `Err` object.
             OxInst::ClearErr => self.err = ErrState::default(),
-            // Statement boundaries drive finalization timing (M3); the error model takes
-            // its `Resume` seeds from `FaultDispatch`, so this is a no-op for M2-c.
-            OxInst::StmtBoundary { .. } => {}
+            // A statement boundary drives finalization timing: run any parked
+            // `Class_Terminate`s released by the previous statement (the error model takes its
+            // `Resume` seeds from `FaultDispatch`, not from here).
+            OxInst::StmtBoundary { .. } => self.maybe_drain(),
 
             // `Let`/`Set` legality check (M3-4).
             OxInst::ValidateAssignment {
@@ -967,6 +1018,48 @@ impl<'h> Vm3<'h> {
                         .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 }
                 self.store(record, target)?;
+            }
+
+            // ── Objects / lifecycle / type identity (M3-5) ───────────────────────────
+            OxInst::NewObject { dst, class } => {
+                let object = self.new_project_instance(class.0)?;
+                self.store(dst, object)?;
+            }
+            OxInst::Predeclared { dst, class } => {
+                let object = self.predeclared_instance(class.0)?;
+                self.store(dst, object)?;
+            }
+            OxInst::FieldGet { dst, object, field } => {
+                let recv = self.operand(object)?;
+                let instance = variant_to_object(&recv)?;
+                // A missing field reads as `Empty` (vm2 parity — field storage is sparse).
+                let value = instance
+                    .project_field_get(*field)
+                    .unwrap_or_else(Variant::empty);
+                self.store(dst, value)?;
+            }
+            OxInst::FieldSet {
+                object,
+                field,
+                value,
+            } => {
+                let v = self.operand(value)?;
+                let recv = self.operand(object)?;
+                let instance = variant_to_object(&recv)?;
+                instance.project_field_set(*field, v);
+            }
+            OxInst::CompareObjectIs { dst, lhs, rhs } => {
+                let a = object_identity(&self.operand(lhs)?);
+                let b = object_identity(&self.operand(rhs)?);
+                self.store(dst, Variant::from_bool(a == b))?;
+            }
+            OxInst::TypeOfIs {
+                dst,
+                object,
+                type_name,
+            } => {
+                let matches = self.type_of_is(object, type_name)?;
+                self.store(dst, Variant::from_bool(matches))?;
             }
 
             // Everything else is a later milestone (cross-bundle calls / objects / COM /
@@ -1290,6 +1383,181 @@ impl<'h> Vm3<'h> {
         }
     }
 
+    /// Allocate a fresh project-class instance (`New <Class>`): a refcounted IUnknown with a
+    /// unique identity, then run its `Class_Initialize` (if any). Mirrors vm2's `Op::NewObject`
+    /// (bundle id is always 0 — vm3 runs one program). The instance's `has_terminate` flag is
+    /// what later parks it for `Class_Terminate` when its last reference drops.
+    fn new_project_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
+        let descriptor = *self
+            .class_descriptors
+            .get(class_idx)
+            .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
+        let program = self.program;
+        let class = program
+            .classes
+            .get(class_idx)
+            .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
+        let has_terminate = class.terminate.is_some();
+        let initialize = class.initialize;
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+        let object =
+            ObjectRef::from_project_instance(instance_id, class_idx as i32, 0, has_terminate, descriptor);
+        let value = Variant::from_object_ref(object.clone());
+        if let Some(init) = initialize {
+            self.run_proc_with_me(init, Variant::from_object_ref(object), false)?;
+        }
+        Ok(value)
+    }
+
+    /// A `VB_PredeclaredId` auto-instance (`Class1.Foo` with no explicit `New`): allocate the
+    /// singleton + run `Class_Initialize` on first access, then reuse the cached instance.
+    /// Mirrors vm2's `predeclared_instance`.
+    fn predeclared_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
+        if let Some(existing) = self.predeclared_singletons.get(&class_idx) {
+            return Ok(existing.clone());
+        }
+        let descriptor = *self
+            .class_descriptors
+            .get(class_idx)
+            .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
+        let program = self.program;
+        let class = program
+            .classes
+            .get(class_idx)
+            .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
+        let has_terminate = class.terminate.is_some();
+        let initialize = class.initialize;
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+        let object =
+            ObjectRef::from_project_instance(instance_id, class_idx as i32, 0, has_terminate, descriptor);
+        let value = Variant::from_object_ref(object);
+        self.predeclared_singletons.insert(class_idx, value.clone());
+        if let Some(init) = initialize {
+            self.run_proc_with_me(init, value.clone(), false)?;
+        }
+        Ok(value)
+    }
+
+    /// Run a procedure to completion **synchronously** with `me` as its hidden first local —
+    /// the lifecycle/event entry point (`Class_Initialize`/`Class_Terminate`/event handlers).
+    ///
+    /// vm3's dispatch is an explicit loop, so this pushes the callee frame and drives a NESTED
+    /// `run_loop(base)` that returns when this frame returns. `run_loop` breaks at
+    /// `frames.len() == base + 1` on a normal `Return` *without* popping, and leaves the
+    /// faulting frame in place on an uncaught fault — so afterwards we restore the caller's
+    /// error state (saved on the frame we pushed) and truncate back to `base` either way.
+    /// `suppress` (used for `Class_Terminate`) swallows a raised VBA fault; a structural
+    /// `Malformed` always propagates.
+    fn run_proc_with_me(
+        &mut self,
+        proc: FuncId,
+        me: Variant,
+        suppress: bool,
+    ) -> Result<(), Vm3Error> {
+        self.guard_call_depth()?;
+        let base = self.frames.len();
+        let mut frame = self.new_frame(proc);
+        if let Some(slot) = frame.locals.get_mut(0) {
+            *slot = me;
+        }
+        frame.saved_error_mode = self.error_mode;
+        frame.saved_active_error = self.active_error;
+        self.frames.push(frame);
+        self.error_mode = ErrorMode::None;
+        self.active_error = None;
+        let result = self.run_loop(base);
+        if let Some(fr) = self.frames.get(base) {
+            self.error_mode = fr.saved_error_mode;
+            self.active_error = fr.saved_active_error;
+        }
+        self.frames.truncate(base);
+        // Truncating released the lifecycle frame's object locals (and any an uncaught fault
+        // left parked as it unwound) — run their `Class_Terminate`s now, the nested-epilogue /
+        // fault-path drain that mirrors vm2 (re-entrant drains fold via the `draining` guard).
+        self.maybe_drain();
+        match result {
+            Err(Vm3Error::Fault(_)) if suppress => Ok(()),
+            other => other,
+        }
+    }
+
+    /// Run any parked `Class_Terminate`s to a fixpoint. `Release` (an object's last reference
+    /// dropping — a frame pop or a slot overwrite) parks a `has_terminate` instance on the
+    /// shared `oxvba_runtime` termination queue; this dequeues and runs each `Class_Terminate`
+    /// (with errors suppressed), pinned to statement boundaries / proc epilogue — exactly
+    /// vm2's `maybe_drain`. The `draining` guard makes a re-entrant release (a Terminate that
+    /// drops another object) fold into the same loop rather than nest.
+    fn maybe_drain(&mut self) {
+        if self.draining {
+            return;
+        }
+        self.draining = true;
+        while oxvba_runtime::has_pending_terminations() {
+            for (instance_id, _bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
+                let terminate = self
+                    .program
+                    .classes
+                    .get(route_key as usize)
+                    .and_then(|c| c.terminate);
+                if let (Some(proc), Some(object)) = (
+                    terminate,
+                    oxvba_runtime::retained_parked_termination_object(instance_id),
+                ) {
+                    // A fault in `Class_Terminate` is swallowed (suppress); a `Malformed`
+                    // defect would still surface — drop it here to match vm2's `let _ = …`.
+                    let _ = self.run_proc_with_me(proc, Variant::from_object_ref(object), true);
+                }
+                oxvba_runtime::finish_pending_termination(instance_id);
+                // WithEvents subscription teardown for the terminated instance lands with the
+                // event model (M3-6).
+            }
+        }
+        self.draining = false;
+    }
+
+    /// `TypeOf <object> Is <Type>`: for a project instance, match the bare type name against
+    /// the instance's class name or any `Implements`ed interface; for a foreign/COM object,
+    /// delegate to the host (unreachable until `CreateObject` lands in M3-8, but mirrors vm2).
+    fn type_of_is(&self, object: &OxOperand, type_name: &str) -> Result<bool, Vm3Error> {
+        let v = self.operand(object)?;
+        let obj = variant_to_object(&v)?;
+        let bare = type_name.rsplit('.').next().unwrap_or(type_name);
+        if obj.is_project_instance() {
+            return Ok(self
+                .program
+                .classes
+                .get(obj.route_key() as usize)
+                .is_some_and(|class| {
+                    class.name.eq_ignore_ascii_case(bare)
+                        || class
+                            .implements
+                            .iter()
+                            .any(|i| i.eq_ignore_ascii_case(bare))
+                }));
+        }
+        if let Ok(Some(name)) = self.host.com().object_type_name(obj.clone())
+            && (name.eq_ignore_ascii_case(type_name) || name.eq_ignore_ascii_case(bare))
+        {
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// The class name of a project instance (else the host's COM name) — the
+    /// `TypeName`-of-object resolution mirroring vm2's `object_type_name`.
+    fn object_type_name(&self, object: &ObjectRef) -> Option<String> {
+        if object.is_project_instance() {
+            return self
+                .program
+                .classes
+                .get(object.route_key() as usize)
+                .map(|c| c.name.clone());
+        }
+        self.host.com().object_type_name(object.clone()).ok().flatten()
+    }
+
     /// Invoke a base-library built-in. Most builtins are the pure shared
     /// `oxvba_lib::invoke`, but a few are host/bundle-aware and the pure body would
     /// return a generically-wrong value: `TypeName` of an object yields the literal
@@ -1306,20 +1574,12 @@ impl<'h> Vm3<'h> {
     fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Vm3Error> {
         if id == NativeImplId::TypeName
             && let Some(object) = argv.first().and_then(|a| a.as_object_ref())
+            && let Some(name) = self.object_type_name(&object)
         {
-            if object.is_project_instance() {
-                // A project instance's class name comes from the bundle class table,
-                // which lands with the M3 object model; until then a project instance
-                // cannot exist (`New` is Unimplemented), so this is unreachable — be
-                // honest rather than leak the generic "Object" if it ever is reached.
-                return Err(Vm3Error::Unimplemented {
-                    what: "TypeName of a project instance",
-                });
-            }
-            if let Some(name) = self.host.com().object_type_name(object).ok().flatten() {
-                return Ok(Variant::from_string(name));
-            }
-            // The host could not name it: fall through to the pure body (as vm2 does).
+            // A project instance resolves its class name from the program's class table; a COM
+            // object is named by the host. Only if neither names it do we fall through to the
+            // pure body (which yields the generic "Object"), exactly as vm2 does.
+            return Ok(Variant::from_string(name));
         }
         oxvba_lib::invoke(id, argv, self.host, &mut self.lib).map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))
     }
@@ -1493,6 +1753,39 @@ fn is_nothing(value: &Variant) -> bool {
         VarType::Empty | VarType::Null => true,
         _ => value.as_i32() == Some(0),
     }
+}
+
+/// The raw identity (an `i32`) of an object value, or 0 for a non-object/`Nothing` — the basis
+/// of the `Is` operator (`CompareObjectIs`). Mirrors vm2's `object_identity`.
+fn object_identity(value: &Variant) -> i32 {
+    value.as_object_ref().map(|o| o.raw()).unwrap_or(0)
+}
+
+/// Coerce a value to an object reference (mirrors vm2's `variant_to_object`): an unset object
+/// reference (`Object`/`Empty`/`Null` with no instance) is "Object variable not set" (91),
+/// distinct from a non-object value (424); a bare integer is a legacy compat-identity handle.
+fn variant_to_object(value: &Variant) -> Result<ObjectRef, Vm3Error> {
+    if let Some(object) = value.as_object_ref() {
+        return Ok(object);
+    }
+    if matches!(
+        value.vtype(),
+        VarType::Object | VarType::Empty | VarType::Null
+    ) {
+        return Err(Vm3Error::Fault(Fault::new(
+            91,
+            "Object variable or With block variable not set",
+        )));
+    }
+    if let Some(raw) = value.as_i32() {
+        return Ok(ObjectRef::from_compat_identity(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(ObjectRef::from_compat_identity)
+            .map_err(|_| Vm3Error::Fault(Fault::new(13, "object handle exceeds i32 range")));
+    }
+    Err(Vm3Error::Fault(Fault::new(424, "Object required")))
 }
 
 fn const_variant(c: &OxConst) -> Variant {

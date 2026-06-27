@@ -213,6 +213,41 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
     RunOutcome::from_snapshot(outcome)
 }
 
+/// Run a multi-module project under `executor` (e.g. a procedural `Main` plus a class module),
+/// capturing the same observable as [`run_with_project`]. Needed to exercise project classes
+/// (`New`/`Class_Initialize`/`Class_Terminate`/`Implements`), which a single `.bas` standard
+/// module cannot declare. Module order matters for the snapshot: name helper modules so they
+/// sort after `Main`.
+pub fn run_modules(
+    executor: Executor,
+    modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)],
+    project_name: &str,
+) -> RunOutcome {
+    use oxvba_symbol::manifest as sym;
+    let manifest = sym::SymbolProjectManifest {
+        project_name: project_name.to_string(),
+        project_kind: sym::ProjectKind::Source,
+        modules: modules
+            .iter()
+            .map(|(name, kind, src)| sym::ModuleUnit {
+                module_name: name.to_string(),
+                module_kind: *kind,
+                attributes: sym::ModuleAttributes::named(*name),
+                source: src.to_string(),
+            })
+            .collect(),
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let outcome = match executor {
+        Executor::Vm2 => engine.execute_manifest_snapshot_with_err(&manifest),
+        Executor::Vm3 => engine.execute_manifest_snapshot_with_err_vm3(&manifest),
+    };
+    RunOutcome::from_snapshot(outcome)
+}
+
 /// Run `source` under `executor` (as project `project_name`) on a worker thread with a
 /// wall-clock timeout; returns `None` if it does not finish in `dur`.
 ///
@@ -474,6 +509,130 @@ mod tests {
         assert_vm2_vm3_match(
             "Sub Main()\n  Dim n As Long\n  Dim i As Long\n  For i = 1 To 5\n    n = n + i\n  Next i\nEnd Sub\n",
         );
+    }
+
+    // ── M3-5: object model + lifecycle micro-corpus ─────────────────────────────
+    // The conformance corpus is all `.bas` (standard modules), which cannot declare a
+    // project class — so these multi-module (class-bearing) programs are the differential
+    // coverage for New / Class_Initialize / Class_Terminate timing / `Is` / `TypeOf`.
+
+    fn assert_obj_match(modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)]) {
+        let vm2 = run_modules(Executor::Vm2, modules, "VBAProject");
+        let vm3 = run_modules(Executor::Vm3, modules, "VBAProject");
+        match compare_corpus(&vm2, &vm3) {
+            CorpusVerdict::Match => {}
+            CorpusVerdict::Skipped(what) => {
+                panic!("vm3 unexpectedly skipped an in-scope object program ({what})")
+            }
+            CorpusVerdict::Mismatch(d) => {
+                panic!("vm2-vs-vm3 object divergence {d:?}\nvm2={:?}\nvm3={:?}", vm2.result, vm3.result)
+            }
+        }
+    }
+
+    #[test]
+    fn vm3_new_runs_class_initialize() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gResult As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Private Sub Class_Initialize()\n  gResult = 42\nEnd Sub\n",
+            ),
+        ]);
+    }
+
+    /// `Set w = Nothing` must run `Class_Terminate` at the right boundary (before the next
+    /// statement's effect), so the residual globals show the terminate ran first.
+    #[test]
+    fn vm3_set_nothing_runs_class_terminate() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gTerm As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  Set w = Nothing\n  gTerm = gTerm + 100\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Private Sub Class_Terminate()\n  gTerm = gTerm + 1\nEnd Sub\n",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn vm3_object_identity_is() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gDiff As Boolean\nPublic gSame As Boolean\nSub Main()\n  Dim a As Widget\n  Dim b As Widget\n  Set a = New Widget\n  Set b = New Widget\n  gDiff = (a Is b)\n  Set b = a\n  gSame = (a Is b)\nEnd Sub\n",
+            ),
+            ("Widget", Class, "' a minimal class\n"),
+        ]);
+    }
+
+    #[test]
+    fn vm3_typeof_is() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gIsWidget As Boolean\nPublic gIsGadget As Boolean\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  gIsWidget = (TypeOf w Is Widget)\n  gIsGadget = (TypeOf w Is Gadget)\nEnd Sub\n",
+            ),
+            ("Widget", Class, "' widget\n"),
+            ("Gadget", Class, "' gadget\n"),
+        ]);
+    }
+
+    /// An object created in a called proc that faults: the object parks as the fault unwinds
+    /// out of the proc, and (the error caught by `On Error Resume Next`) its `Class_Terminate`
+    /// runs before `Main` continues — so the post-resume read sees the terminate's effect.
+    /// Cross-proc lifecycle coverage the happy-path tests miss (M3-5 review).
+    #[test]
+    fn vm3_cross_proc_object_terminates_on_caught_fault() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gTerm As Long\nPublic gAfter As Long\nSub Main()\n  On Error Resume Next\n  Foo\n  gAfter = gTerm\nEnd Sub\nSub Foo()\n  Dim w As Widget\n  Set w = New Widget\n  Err.Raise 5\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Private Sub Class_Terminate()\n  gTerm = gTerm + 1\nEnd Sub\n",
+            ),
+        ]);
+    }
+
+    /// The fully-uncaught counterpart (regression for the H1 fault-path-drain fix): an object
+    /// is created in a called proc that dies with an uncaught error. The run ends Raised (the
+    /// terminate effect isn't snapshot-observable), but vm3 must match vm2's outcome — guarding
+    /// against a crash/divergence as the stack unwinds and the parked terminate drains.
+    #[test]
+    fn vm3_uncaught_fault_with_object_matches_vm2() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gTerm As Long\nSub Main()\n  Foo\nEnd Sub\nSub Foo()\n  Dim w As Widget\n  Set w = New Widget\n  Err.Raise 5\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Private Sub Class_Terminate()\n  gTerm = gTerm + 1\nEnd Sub\n",
+            ),
+        ]);
     }
 
     // NB: most VBA built-ins (`Len`, `UCase`, …) lower to a cross-bundle `CallExtern`
