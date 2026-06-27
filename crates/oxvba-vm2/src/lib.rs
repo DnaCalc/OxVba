@@ -555,6 +555,25 @@ impl<'h> Vm<'h> {
         self.read_place(place).ok()
     }
 
+    /// The final `Err` object's number, and `LastDllError`, for the differential error
+    /// axis. Valid after `run()` whether it completed or surfaced an uncaught error — the
+    /// `Err` object retains the last raise (vm2 keeps the VM alive across `run`). `source`
+    /// and `description` are exposed too, but the transitional vm2-vs-vm3 gate compares only
+    /// the number / raised-state / `LastDllError` (vm3 deliberately carries richer
+    /// Source/Description than vm2, which are validated against the live oracle instead).
+    pub fn err_number(&self) -> i32 {
+        self.err.number
+    }
+    pub fn err_source(&self) -> &str {
+        &self.err.source
+    }
+    pub fn err_description(&self) -> &str {
+        &self.err.description
+    }
+    pub fn last_dll_error(&self) -> i32 {
+        self.last_dll_error
+    }
+
     /// Allocate a project-class instance in a linked bundle without running the
     /// package entry point. This is the activation primitive used by wrapper
     /// hosts such as an in-process COM class factory.

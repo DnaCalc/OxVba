@@ -31,7 +31,7 @@
 
 pub mod oracle;
 
-use oxvba_host::{Engine, HostConfig, Vm3Snapshot};
+use oxvba_host::{Engine, FinalErr, HostConfig, SnapshotOutcome};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, variant_to_vba_string};
 
@@ -131,45 +131,59 @@ pub enum Executor {
 #[derive(Debug, Clone)]
 pub struct RunOutcome {
     /// Axis 1 (return values): the canonical snapshot of the entry project's globals
-    /// followed by the entry `Sub Main` locals — or the rendered phase diagnostic if
-    /// the run did not produce a snapshot (a coarse stand-in for axis 2 until M3).
+    /// followed by the entry `Sub Main` locals on a completed run; `Err(msg)` if the run did
+    /// not complete — an uncaught VBA error (see `raised`) or a pre-execution defect.
     pub result: Result<Vec<Canon>, String>,
+    /// Axis 2 (error state): the final `Err` object (number / source / description /
+    /// `LastDllError`). Populated whenever the program reached execution (a completed run's
+    /// residual `Err`, or an uncaught raised error); [`FinalErr::default`] otherwise
+    /// (unsupported skip or pre-execution defect).
+    pub err: FinalErr,
+    /// True when `result` is `Err` because an uncaught *VBA* run-time error propagated, as
+    /// opposed to a compile/defect failure. Lets the gate compare a raised error's number
+    /// instead of coarsely matching any-error-with-any-error.
+    pub raised: bool,
     /// Set when the executor cannot run this program because it uses a construct it does
-    /// not yet implement (vm3 during M2). Such a program is SKIPPED by the corpus
+    /// not yet implement (vm3 during M2/M3). Such a program is SKIPPED by the corpus
     /// comparison — out of the executor's current scope, not a divergence. The complete
     /// oracle (vm2) never sets this.
     pub unsupported: Option<String>,
 }
 
-/// Run `source` under `executor` and capture its observable outcome.
-pub fn run(executor: Executor, source: &str) -> RunOutcome {
-    match executor {
-        Executor::Vm2 => {
-            let engine = Engine::new(HostConfig { enable_jit: false });
-            let result = engine
-                .execute_source_with_variant_snapshot_clean(source)
-                .map(|vals| vals.iter().map(canon).collect())
-                .map_err(|d| format!("{d:?}"));
-            RunOutcome { result, unsupported: None }
-        }
-        Executor::Vm3 => {
-            let engine = Engine::new(HostConfig { enable_jit: false });
-            match engine.execute_source_with_variant_snapshot_vm3(source) {
-                Vm3Snapshot::Ran(vals) => RunOutcome {
-                    result: Ok(vals.iter().map(canon).collect()),
-                    unsupported: None,
-                },
-                Vm3Snapshot::Unsupported(what) => RunOutcome {
-                    result: Ok(Vec::new()),
-                    unsupported: Some(what),
-                },
-                Vm3Snapshot::Failed(msg) => RunOutcome {
-                    result: Err(msg),
-                    unsupported: None,
-                },
-            }
+impl RunOutcome {
+    fn from_snapshot(outcome: SnapshotOutcome) -> Self {
+        match outcome {
+            SnapshotOutcome::Completed { values, err } => RunOutcome {
+                result: Ok(values.iter().map(canon).collect()),
+                err,
+                raised: false,
+                unsupported: None,
+            },
+            SnapshotOutcome::Raised { err } => RunOutcome {
+                result: Err(format!("VBA error {}", err.number)),
+                err,
+                raised: true,
+                unsupported: None,
+            },
+            SnapshotOutcome::Unsupported(what) => RunOutcome {
+                result: Ok(Vec::new()),
+                err: FinalErr::default(),
+                raised: false,
+                unsupported: Some(what),
+            },
+            SnapshotOutcome::Failed(msg) => RunOutcome {
+                result: Err(msg),
+                err: FinalErr::default(),
+                raised: false,
+                unsupported: None,
+            },
         }
     }
+}
+
+/// Run `source` under `executor` and capture its observable outcome (as project `"Main"`).
+pub fn run(executor: Executor, source: &str) -> RunOutcome {
+    run_with_project(executor, source, "Main")
 }
 
 /// Run `source` under `executor` as a single-module project named `project_name`,
@@ -192,29 +206,11 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
         conditional_constants: std::collections::BTreeMap::new(),
     };
     let engine = Engine::new(HostConfig { enable_jit: false });
-    match executor {
-        Executor::Vm2 => {
-            let result = engine
-                .execute_manifest_with_variant_snapshot(&manifest)
-                .map(|vals| vals.iter().map(canon).collect())
-                .map_err(|d| format!("{d:?}"));
-            RunOutcome { result, unsupported: None }
-        }
-        Executor::Vm3 => match engine.execute_manifest_with_variant_snapshot_vm3(&manifest) {
-            Vm3Snapshot::Ran(vals) => RunOutcome {
-                result: Ok(vals.iter().map(canon).collect()),
-                unsupported: None,
-            },
-            Vm3Snapshot::Unsupported(what) => RunOutcome {
-                result: Ok(Vec::new()),
-                unsupported: Some(what),
-            },
-            Vm3Snapshot::Failed(msg) => RunOutcome {
-                result: Err(msg),
-                unsupported: None,
-            },
-        },
-    }
+    let outcome = match executor {
+        Executor::Vm2 => engine.execute_manifest_snapshot_with_err(&manifest),
+        Executor::Vm3 => engine.execute_manifest_snapshot_with_err_vm3(&manifest),
+    };
+    RunOutcome::from_snapshot(outcome)
 }
 
 /// Run `source` under `executor` (as project `project_name`) on a worker thread with a
@@ -243,24 +239,79 @@ pub fn run_with_timeout(
 /// A single observable difference between two runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Difference {
-    /// The runs disagree on success vs failure (or produced different diagnostics).
+    /// The runs disagree on completion shape (completed vs raised vs defect).
     Outcome { left: String, right: String },
     /// The snapshots have different lengths.
     SnapshotLen { left: usize, right: usize },
-    /// Slot `index` of the snapshot differs.
+    /// Slot `index` of the snapshot differs (axis 1).
     Slot {
         index: usize,
         left: Canon,
         right: Canon,
     },
+    /// Axis 2: the final `Err.Number` differs (a residual `Err` after completion, or the
+    /// number of an uncaught raised error). This is the cross-executor error-code comparison
+    /// the coarse "both-errored ⇒ match" stand-in used to hide.
+    ErrNumber { left: i32, right: i32 },
+    /// Axis 2: `Err.LastDllError` differs.
+    LastDllError { left: i32, right: i32 },
 }
 
-/// Compare two run outcomes, returning every observable difference (empty ⇒
-/// behaviourally equivalent on the axes captured so far).
+/// The comparable completion shape of a run, derived from [`RunOutcome`]. (`unsupported`
+/// runs are filtered before comparison.) Carries the data each shape contributes to the
+/// comparison: a completed run contributes its snapshot + residual `Err`; a raised run its
+/// `Err`; a defect only its (coarse) message.
+enum Shape<'a> {
+    Completed(&'a [Canon], &'a FinalErr),
+    Raised(&'a FinalErr),
+    Defect,
+}
+
+fn shape(o: &RunOutcome) -> Shape<'_> {
+    match (&o.result, o.raised) {
+        (Ok(values), _) => Shape::Completed(values, &o.err),
+        (Err(_), true) => Shape::Raised(&o.err),
+        (Err(_), false) => Shape::Defect,
+    }
+}
+
+fn shape_label(s: &Shape<'_>) -> String {
+    match s {
+        Shape::Completed(..) => "completed".to_string(),
+        Shape::Raised(e) => format!("raised error {}", e.number),
+        Shape::Defect => "defect".to_string(),
+    }
+}
+
+/// Axis 2 comparison of two final `Err` objects. Deliberately compares **only**
+/// `Err.Number` and `LastDllError` — *not* `Source`/`Description`. The transitional gate is
+/// vm2-vs-vm3, and vm3 carries richer, oracle-accurate `Source`/`Description` than vm2 (which
+/// is "number-only"), so comparing those two fields here would flag vm3's *improvements* as
+/// divergences. `Source`/`Description` are validated against the live Excel/VBA oracle by the
+/// conformance probes ([`oracle`]) instead.
+fn diff_err(left: &FinalErr, right: &FinalErr, diffs: &mut Vec<Difference>) {
+    if left.number != right.number {
+        diffs.push(Difference::ErrNumber {
+            left: left.number,
+            right: right.number,
+        });
+    }
+    if left.last_dll_error != right.last_dll_error {
+        diffs.push(Difference::LastDllError {
+            left: left.last_dll_error,
+            right: right.last_dll_error,
+        });
+    }
+}
+
+/// Compare two run outcomes, returning every observable difference (empty ⇒ behaviourally
+/// equivalent on the axes captured so far: axis 1 return values + axis 2 `Err.Number`/
+/// `LastDllError`).
 pub fn diff(left: &RunOutcome, right: &RunOutcome) -> Vec<Difference> {
-    match (&left.result, &right.result) {
-        (Ok(a), Ok(b)) => {
-            let mut diffs = Vec::new();
+    let mut diffs = Vec::new();
+    match (shape(left), shape(right)) {
+        (Shape::Completed(a, ea), Shape::Completed(b, eb)) => {
+            // Axis 1: the return-value snapshot.
             if a.len() != b.len() {
                 diffs.push(Difference::SnapshotLen {
                     left: a.len(),
@@ -276,21 +327,21 @@ pub fn diff(left: &RunOutcome, right: &RunOutcome) -> Vec<Difference> {
                     });
                 }
             }
-            diffs
+            // Axis 2: the residual `Err` object after a clean completion.
+            diff_err(ea, eb, &mut diffs);
         }
-        (Err(a), Err(b)) if a == b => Vec::new(),
-        (a, b) => vec![Difference::Outcome {
-            left: render_outcome(a),
-            right: render_outcome(b),
-        }],
+        // Both raised an uncaught VBA error — axis 2 compares the number (no longer the
+        // coarse any-error-matches-any-error).
+        (Shape::Raised(ea), Shape::Raised(eb)) => diff_err(ea, eb, &mut diffs),
+        // Both are pre-execution defects (compile errors / `Malformed`) — coarse match.
+        (Shape::Defect, Shape::Defect) => {}
+        // Mismatched shapes (e.g. one completed, the other raised) — a real divergence.
+        (l, r) => diffs.push(Difference::Outcome {
+            left: shape_label(&l),
+            right: shape_label(&r),
+        }),
     }
-}
-
-fn render_outcome(r: &Result<Vec<Canon>, String>) -> String {
-    match r {
-        Ok(_) => "ok".to_string(),
-        Err(e) => format!("error: {e}"),
-    }
+    diffs
 }
 
 /// The corpus-level verdict comparing the oracle (vm2) against an under-construction
@@ -300,37 +351,27 @@ pub enum CorpusVerdict {
     /// The candidate does not yet implement a construct the program uses (the string
     /// names it) — out of the candidate's current scope, not a divergence.
     Skipped(String),
-    /// Behaviourally equivalent on the captured axes: both produced the same snapshot,
-    /// or — coarsely — both errored (cross-executor error-code comparison is the M2-c
-    /// `Err` axis).
+    /// Behaviourally equivalent on the captured axes (return values + `Err.Number`/
+    /// `LastDllError`), or both pre-execution defects.
     Match,
-    /// A real divergence: differing snapshots, or one ran while the other errored.
+    /// A real divergence: differing snapshots, differing `Err.Number`, or mismatched
+    /// completion shapes (one ran while the other raised).
     Mismatch(Vec<Difference>),
 }
 
 /// Classify one program for the vm2-vs-candidate corpus gate. `oracle` is the complete
-/// reference (vm2); `candidate` is the executor under test (vm3). A candidate that
-/// cannot run the program (`unsupported`) is SKIPPED, not failed. Two successful runs
-/// are compared by snapshot; two failed runs match coarsely (both errored) until the
-/// `Err` axis matures (M2-c); a success-vs-failure split is a divergence to investigate.
+/// reference (vm2); `candidate` is the executor under test (vm3). A candidate that cannot run
+/// the program (`unsupported`) is SKIPPED, not failed. Everything else is compared on the
+/// captured axes via [`diff`].
 pub fn compare_corpus(oracle: &RunOutcome, candidate: &RunOutcome) -> CorpusVerdict {
     if let Some(reason) = &candidate.unsupported {
         return CorpusVerdict::Skipped(reason.clone());
     }
-    match (&oracle.result, &candidate.result) {
-        (Ok(_), Ok(_)) => {
-            let d = diff(oracle, candidate);
-            if d.is_empty() {
-                CorpusVerdict::Match
-            } else {
-                CorpusVerdict::Mismatch(d)
-            }
-        }
-        (Err(_), Err(_)) => CorpusVerdict::Match,
-        (a, b) => CorpusVerdict::Mismatch(vec![Difference::Outcome {
-            left: render_outcome(a),
-            right: render_outcome(b),
-        }]),
+    let d = diff(oracle, candidate);
+    if d.is_empty() {
+        CorpusVerdict::Match
+    } else {
+        CorpusVerdict::Mismatch(d)
     }
 }
 
@@ -424,15 +465,34 @@ mod tests {
     // (cross-bundle dispatch is M3). vm3's `CallNative` builtin path is exercised by the
     // vm3 unit tests; a corpus-level builtin probe lands once `CallExtern` does.
 
-    /// Programs where vm2 (the current oracle) itself deviates from Office VBA 7.1, so a
-    /// vm2-vs-vm3 difference is expected and is NOT a vm3 bug. Keyed by file name.
+    /// Programs where vm2 (the transitional differential reference) itself deviates from the
+    /// live Office VBA 7.1 oracle, so a vm2-vs-vm3 difference is EXPECTED and is NOT a vm3 bug
+    /// — vm3 is the more-correct side (validated against the oracle). Keyed by file name. An
+    /// allowlisted file still has every *other* difference compared; only the specific
+    /// documented divergence signature is tolerated (see [`is_tolerated_vm2_divergence`]).
     ///
-    /// Currently empty: `duplicate_label_error.bas` used to live here (vm2 leniently ran
-    /// a procedure with two identical labels while vm3's elaboration rejected it), but the
-    /// binder now rejects a duplicate label at compile time, so vm2 and vm3 agree on
-    /// "compile error" and the program matches through the gate. New entries belong here
-    /// only when vm2 is the side that diverges from Office.
-    const KNOWN_VM2_DIVERGENCES: &[&str] = &[];
+    /// These three fire an error, run the handler, then `Resume`/`Resume Next`/`Resume
+    /// <label>` and complete. The live oracle clears `Err` on `Resume` (probes
+    /// `resume_clears_err` → `0`, `resume_label` → `0`), which vm3 does; vm2 leaves the
+    /// handled error's number stale in `Err` (its documented "no `Err` reset on `Resume`"
+    /// gap), so vm2 reports a non-zero residual `Err.Number` where vm3 correctly reports 0.
+    const KNOWN_VM2_DIVERGENCES: &[&str] = &[
+        "resume_label_basic.bas",
+        "on_error_goto_label_resume.bas",
+        "error_goto_label_resume_next.bas",
+    ];
+
+    /// Whether every difference for an allowlisted file is the tolerated vm2 residual-`Err`
+    /// staleness signature: vm2 (the `left`/oracle-reference side) left a non-zero
+    /// `Err.Number` after a `Resume`, while vm3 (the `right`/candidate side) correctly reset
+    /// it to 0. Any other difference (a real snapshot or completion-shape divergence) is NOT
+    /// tolerated — so an allowlist entry can never mask a genuine vm3 regression.
+    fn is_tolerated_vm2_divergence(diffs: &[Difference]) -> bool {
+        !diffs.is_empty()
+            && diffs
+                .iter()
+                .all(|d| matches!(d, Difference::ErrNumber { right: 0, .. }))
+    }
 
     /// Recursively collect `*.bas` files under `dir`.
     fn bas_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -473,10 +533,6 @@ mod tests {
         for dir in ["conformance", "examples"] {
             for path in bas_files(&root.join(dir)) {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if KNOWN_VM2_DIVERGENCES.contains(&name) {
-                    known_divergence += 1;
-                    continue;
-                }
                 let Ok(source) = std::fs::read_to_string(&path) else { continue };
                 if source.trim().is_empty() {
                     continue;
@@ -512,7 +568,13 @@ mod tests {
                             both_errored += 1;
                         }
                     }
-                    CorpusVerdict::Mismatch(d) => mismatches.push((path.display().to_string(), d)),
+                    CorpusVerdict::Mismatch(d) => {
+                        if KNOWN_VM2_DIVERGENCES.contains(&name) && is_tolerated_vm2_divergence(&d) {
+                            known_divergence += 1;
+                        } else {
+                            mismatches.push((path.display().to_string(), d));
+                        }
+                    }
                 }
             }
         }

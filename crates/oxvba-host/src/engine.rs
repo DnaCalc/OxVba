@@ -54,6 +54,38 @@ pub enum Vm3Snapshot {
     Failed(String),
 }
 
+/// The final `Err` object of a run — the data the differential harness compares for the
+/// error-state axis. Captured from the live VM, so it reflects the residual `Err` of a clean
+/// completion (e.g. an error swallowed by `On Error Resume Next`) as well as an uncaught
+/// raised error.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FinalErr {
+    pub number: i32,
+    pub source: String,
+    pub description: String,
+    pub last_dll_error: i32,
+}
+
+/// A run's observable outcome with its final `Err` object attached (axes 1 + 2), for the
+/// differential harness. The snapshot-only methods remain for other callers. Distinguishes an
+/// uncaught *VBA* error ([`SnapshotOutcome::Raised`]) from a compile/defect
+/// ([`SnapshotOutcome::Failed`]) — a distinction the coarse `Result<_, _>` snapshot path
+/// cannot make but the error axis needs.
+#[derive(Debug, Clone)]
+pub enum SnapshotOutcome {
+    /// The run completed: `values` is the result snapshot, `err` the residual `Err` object.
+    Completed { values: Vec<Variant>, err: FinalErr },
+    /// An uncaught VBA run-time error propagated out; `err` carries its number/source/
+    /// description.
+    Raised { err: FinalErr },
+    /// (vm3 only) vm3 does not yet implement a construct the program uses — SKIP it (out of
+    /// scope, not a divergence).
+    Unsupported(String),
+    /// A genuine pre-execution defect (bind / linearize / elaborate / `Malformed`) — not a
+    /// VBA run-time error.
+    Failed(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhaseDiagnostic {
     phase: DiagnosticPhase,
@@ -677,6 +709,108 @@ impl Engine {
             .map(|slot| vm.slot(slot).unwrap_or_else(Variant::empty))
             .collect();
         Vm3Snapshot::Ran(values)
+    }
+
+    /// Like [`Self::execute_manifest_with_variant_snapshot`] (vm2), but also surfaces the
+    /// final `Err` object and distinguishes an uncaught VBA error from a compile defect —
+    /// the observable the differential error-state axis needs. vm2 keeps the VM alive across
+    /// `run()`, so the residual `Err` is readable on both the completed and raised paths.
+    pub fn execute_manifest_snapshot_with_err(
+        &self,
+        manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
+    ) -> SnapshotOutcome {
+        if self.config.enable_jit {
+            return SnapshotOutcome::Failed(JIT_NOT_IMPLEMENTED_MESSAGE.to_string());
+        }
+        let program = match oxvba_bind::bind_program(manifest, &*self.typelib_resolver) {
+            Ok(p) => p,
+            Err(e) => return SnapshotOutcome::Failed(format!("bind: {}", e.to_diagnostic().message)),
+        };
+        let bundle = match oxvba_bundle::linearize(&program) {
+            Ok(b) => b,
+            Err(e) => return SnapshotOutcome::Failed(format!("linearize: {e}")),
+        };
+        let mut vm = match oxvba_vm2::Vm::link(&[&bundle], &*self.host_services) {
+            Ok(v) => v,
+            Err(e) => return SnapshotOutcome::Failed(format!("link: {}", e.to_diagnostic().message)),
+        };
+        let run = vm.run();
+        let err = FinalErr {
+            number: vm.err_number(),
+            source: vm.err_source().to_string(),
+            description: vm.err_description().to_string(),
+            last_dll_error: vm.last_dll_error(),
+        };
+        match run {
+            Ok(()) => {
+                let local_count = program
+                    .entry
+                    .and_then(|entry| program.procs.get(entry.0))
+                    .map(|main| main.locals.len())
+                    .unwrap_or(0);
+                let count = bundle.global_count + local_count;
+                let values = (0..count)
+                    .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
+                    .collect();
+                SnapshotOutcome::Completed { values, err }
+            }
+            Err(_) => SnapshotOutcome::Raised { err },
+        }
+    }
+
+    /// Like [`Self::execute_manifest_with_variant_snapshot_vm3`], but also surfaces the final
+    /// `Err` object and distinguishes an uncaught VBA error from a vm3 defect — the observable
+    /// the differential error-state axis needs. On the uncaught path vm3 returns the `Fault`
+    /// (not the VM), so the residual `Err` is reconstructed from it, defaulting an omitted
+    /// `Source` to the project `unit_name` (the VBA default), matching what vm3's own `Err`
+    /// object would hold.
+    pub fn execute_manifest_snapshot_with_err_vm3(
+        &self,
+        manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
+    ) -> SnapshotOutcome {
+        let program = match oxvba_bind::bind_program(manifest, &*self.typelib_resolver) {
+            Ok(p) => p,
+            Err(e) => return SnapshotOutcome::Failed(format!("bind: {e:?}")),
+        };
+        let oxp = match oxvba_oxir::elaborate::elaborate(&program) {
+            Ok(o) => o,
+            Err(oxvba_oxir::elaborate::ElaborateError::Unimplemented { what }) => {
+                return SnapshotOutcome::Unsupported(format!("elaborate: {what}"));
+            }
+            Err(e) => return SnapshotOutcome::Failed(format!("elaborate: {e}")),
+        };
+        match oxvba_vm3::Vm3::run(&oxp, &*self.host_services) {
+            Ok(vm) => {
+                let err = FinalErr {
+                    number: vm.err_number(),
+                    source: vm.err_source().to_string(),
+                    description: vm.err_description().to_string(),
+                    last_dll_error: vm.last_dll_error(),
+                };
+                let local_count = program
+                    .entry
+                    .and_then(|entry| program.procs.get(entry.0))
+                    .map(|main| main.locals.len())
+                    .unwrap_or(0);
+                let count = oxp.globals.len() + local_count;
+                let values = (0..count)
+                    .map(|slot| vm.slot(slot).unwrap_or_else(Variant::empty))
+                    .collect();
+                SnapshotOutcome::Completed { values, err }
+            }
+            Err(oxvba_vm3::Vm3Error::Unimplemented { what }) => {
+                SnapshotOutcome::Unsupported(format!("vm3: {what}"))
+            }
+            Err(oxvba_vm3::Vm3Error::Fault(fault)) => SnapshotOutcome::Raised {
+                err: FinalErr {
+                    number: fault.code,
+                    source: fault.source.unwrap_or_else(|| oxp.unit_name.clone()),
+                    description: fault.message,
+                    last_dll_error: 0,
+                },
+            },
+            Err(oxvba_vm3::Vm3Error::Malformed(m)) => SnapshotOutcome::Failed(format!("vm3: {m}")),
+        }
     }
 }
 

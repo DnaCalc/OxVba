@@ -274,6 +274,11 @@ impl<'h> Vm3<'h> {
     pub fn err_source(&self) -> &str {
         &self.err.source
     }
+    /// `Err.LastDllError` — the OS last-error captured after the most recent `Declare Lib`
+    /// call (M3-7); `0` until a Declare runs.
+    pub fn last_dll_error(&self) -> i32 {
+        self.last_dll_error
+    }
 
     fn new_frame(&self, func: FuncId) -> Frame {
         let f = &self.program.funcs[func.0];

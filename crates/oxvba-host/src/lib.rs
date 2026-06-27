@@ -4,8 +4,8 @@ pub mod engine;
 pub mod runner;
 
 pub use engine::{
-    DiagnosticPhase, Engine, HostConfig, HostProfileProvider, PhaseDiagnostic,
-    ProjectRuntimeSession, Vm3Snapshot,
+    DiagnosticPhase, Engine, FinalErr, HostConfig, HostProfileProvider, PhaseDiagnostic,
+    ProjectRuntimeSession, SnapshotOutcome, Vm3Snapshot,
 };
 pub use runner::{
     PolicyOverrides, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
