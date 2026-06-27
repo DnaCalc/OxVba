@@ -635,6 +635,49 @@ mod tests {
         ]);
     }
 
+    /// A late-bound method call on a typed project instance returns its function result and
+    /// passes its ByVal arg (M3-6 project method dispatch via `ComCallLate`).
+    #[test]
+    fn vm3_project_method_call_returns_result() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gResult As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  gResult = w.Twice(21)\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Public Function Twice(ByVal n As Long) As Long\n  Twice = n * 2\nEnd Function\n",
+            ),
+        ]);
+    }
+
+    /// End-to-end project events: a sink wires a source via `WithEvents`, the source
+    /// `RaiseEvent`s, and the sink's handler fires with the event arg (M3-6).
+    #[test]
+    fn vm3_project_event_fires_handler() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        assert_obj_match(&[
+            (
+                "Main",
+                Procedural,
+                "Public gResult As Long\nSub Main()\n  Dim src As Source\n  Set src = New Source\n  Dim snk As Sink\n  Set snk = New Sink\n  snk.Wire src\n  src.Go\nEnd Sub\n",
+            ),
+            (
+                "Source",
+                Class,
+                "Public Event Fired(ByVal n As Long)\nPublic Sub Go()\n  RaiseEvent Fired(7)\nEnd Sub\n",
+            ),
+            (
+                "Sink",
+                Class,
+                "Private WithEvents s As Source\nPublic Sub Wire(ByVal src As Source)\n  Set s = src\nEnd Sub\nPrivate Sub s_Fired(ByVal n As Long)\n  gResult = n\nEnd Sub\n",
+            ),
+        ]);
+    }
+
     // NB: most VBA built-ins (`Len`, `UCase`, …) lower to a cross-bundle `CallExtern`
     // into the "VBA library" bundle, NOT `CallNative`. As of M3-1 vm3 resolves those against
     // the synthetic `VBA` library bundle and runs them through the same `invoke_native_lib`

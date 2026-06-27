@@ -39,9 +39,10 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::{
-    ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, default_array_element,
-    redim_safearray_from_elements, vba_record_layout_for_fields,
+    ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, ProjectMemberKind,
+    default_array_element, redim_safearray_from_elements, vba_record_layout_for_fields,
 };
+use oxvba_com::TypeLibMemberInvokeKind;
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
@@ -182,6 +183,14 @@ struct ForEachState {
     position: usize,
 }
 
+/// A `WithEvents` binding: the sink instance that declared `WithEvents` (`owner`, the `me`
+/// a fired handler runs against) and the event-source object it currently holds (`source`).
+/// Keyed in [`Vm3::withevents`] by `withevents_key(owner, binding-token)`.
+struct EventBinding {
+    owner: Variant,
+    source: Variant,
+}
+
 /// One procedure activation: its dispatch position, value slots, ByRef aliasing, and
 /// the linkage back to its caller. The activation stack holds these so dispatch is an
 /// explicit loop (no native recursion → deep VBA recursion is bounded by the frame
@@ -261,6 +270,14 @@ pub struct Vm3<'h> {
     /// `VB_PredeclaredId` singleton cache, keyed by class index (allocate-once + run
     /// `Class_Initialize` once), mirroring vm2's per-bundle `predeclared_singletons`.
     predeclared_singletons: HashMap<usize, Variant>,
+    /// Live `WithEvents` bindings, keyed by `withevents_key(owner, binding-token)`.
+    withevents: HashMap<i64, EventBinding>,
+    /// `(binding-token, event-id) → handler proc index`, built once from
+    /// `program.event_routes`, for `RaiseEvent` dispatch (mirrors vm2's `event_routes`).
+    event_routes: HashMap<(i32, i32), usize>,
+    /// `For Each obj In <WithEvents owners>` iterator stack (the `WithEventsFirstOwner`/
+    /// `NextOwner` cursor) — a stack so nested owner-iterations never alias.
+    withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
 }
 
 impl<'h> Vm3<'h> {
@@ -282,6 +299,12 @@ impl<'h> Vm3<'h> {
                 &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
             })
             .collect();
+        // `(binding-token, event-id) → handler proc` for RaiseEvent dispatch (reused verbatim
+        // from the bundle's event routes, like vm2's `LoadedBundle`).
+        let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
+        for route in &program.event_routes {
+            event_routes.insert((route.binding, route.event), route.handler);
+        }
         let mut vm = Vm3 {
             program,
             host,
@@ -298,6 +321,9 @@ impl<'h> Vm3<'h> {
             draining: false,
             class_descriptors,
             predeclared_singletons: HashMap::new(),
+            withevents: HashMap::new(),
+            event_routes,
+            withevents_iters: Vec::new(),
         };
 
         if let Some(init) = program.global_initializer {
@@ -1062,6 +1088,159 @@ impl<'h> Vm3<'h> {
                 self.store(dst, Variant::from_bool(matches))?;
             }
 
+            // ── Events / WithEvents (M3-6) ───────────────────────────────────────────
+            OxInst::WithEventsGet {
+                dst,
+                owner,
+                binding,
+            } => {
+                let owner_value = self.operand(owner)?;
+                let owner_ref = variant_to_object(&owner_value)?;
+                let key = withevents_key(&owner_ref, *binding as i64);
+                let value = self
+                    .withevents
+                    .get(&key)
+                    .map(|b| b.source.clone())
+                    .unwrap_or_else(|| Variant::from_i32(0));
+                self.store(dst, value)?;
+            }
+            OxInst::WithEventsSet {
+                dst,
+                owner,
+                binding,
+                value,
+            } => {
+                let owner_value = self.operand(owner)?;
+                let owner_ref = variant_to_object(&owner_value)?;
+                let key = withevents_key(&owner_ref, *binding as i64);
+                let v = self.operand(value)?;
+                if is_nothing(&v) {
+                    self.withevents.remove(&key);
+                } else {
+                    // A COM/foreign event source is wired through the host's connection
+                    // points — that lands with COM (M3-8); no COM object can exist in vm3
+                    // yet, so this is unreachable today, surfaced honestly rather than
+                    // silently dropping the subscription. A project source dispatches
+                    // internally via `RaiseEvent` (no host subscription).
+                    if let Some(source) = v.as_object_ref()
+                        && !source.is_project_instance()
+                    {
+                        return Err(Vm3Error::Unimplemented {
+                            what: "WithEvents on a COM/foreign object",
+                        });
+                    }
+                    self.withevents.insert(
+                        key,
+                        EventBinding {
+                            owner: owner_value,
+                            source: v.clone(),
+                        },
+                    );
+                }
+                self.store(dst, v)?;
+            }
+            OxInst::WithEventsClearOwner { dst, owner } => {
+                let owner_ref = variant_to_object(&self.operand(owner)?)?;
+                let owner_raw = owner_ref.raw();
+                self.withevents
+                    .retain(|key, _| withevents_owner(*key).raw() != owner_raw);
+                self.store(dst, Variant::from_i32(0))?;
+            }
+            OxInst::WithEventsFirstOwner {
+                dst,
+                source,
+                binding,
+            } => {
+                let source = self.operand(source)?;
+                let mut owners: Vec<ObjectRef> = Vec::new();
+                if !is_nothing(&source) {
+                    for (key, binding_data) in &self.withevents {
+                        if withevents_binding(*key) == (*binding as i64 & 0xFFFF_FFFF)
+                            && object_identity(&binding_data.source) == object_identity(&source)
+                            && let Some(owner) = binding_data.owner.as_object_ref()
+                        {
+                            owners.push(owner);
+                        }
+                    }
+                }
+                owners.sort_unstable_by_key(ObjectRef::raw);
+                match owners.first().cloned() {
+                    Some(first) => {
+                        self.withevents_iters.push((owners, 1));
+                        self.store(dst, Variant::from_object_ref(first))?;
+                    }
+                    None => self.store(dst, Variant::from_i32(0))?,
+                }
+            }
+            OxInst::WithEventsNextOwner { dst } => {
+                let next = self.withevents_iters.last_mut().and_then(|(owners, pos)| {
+                    let value = owners.get(*pos).cloned();
+                    if value.is_some() {
+                        *pos += 1;
+                    }
+                    value
+                });
+                match next {
+                    Some(owner) => self.store(dst, Variant::from_object_ref(owner))?,
+                    None => {
+                        self.withevents_iters.pop();
+                        self.store(dst, Variant::from_i32(0))?;
+                    }
+                }
+            }
+            OxInst::RaiseEvent {
+                source,
+                event,
+                args,
+            } => {
+                let source_object = variant_to_object(&self.operand(source)?)?;
+                let source_id = source_object.raw();
+                let event_id = *event;
+                // Collect subscribers whose binding holds this source and routes this event,
+                // then run each handler in sink-identity order (vm2's order) with the sink as
+                // `me` and the event args; an unhandled error propagates to the raiser.
+                let mut targets: Vec<(i32, Variant, usize)> = Vec::new();
+                for (key, binding) in &self.withevents {
+                    if object_identity(&binding.source) != source_id {
+                        continue;
+                    }
+                    let token = withevents_binding(*key) as i32;
+                    if let Some(&handler) = self.event_routes.get(&(token, event_id)) {
+                        let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
+                        targets.push((sink_id, binding.owner.clone(), handler));
+                    }
+                }
+                targets.sort_by_key(|(sink_id, ..)| *sink_id);
+                for (_, sink, handler) in targets {
+                    self.run_proc_with_me(FuncId(handler), sink, args, false)?;
+                }
+            }
+
+            // ── Late-bound member dispatch (M3-6: project instances; COM = M3-8) ──────
+            OxInst::ComCallLate {
+                dst,
+                recv,
+                name,
+                invoke_kind,
+                args,
+            } => {
+                let recv_v = self.operand(recv)?;
+                let recv_obj = variant_to_object(&recv_v)?;
+                if recv_obj.is_project_instance() {
+                    let ret =
+                        self.dispatch_project_method(recv_obj, recv_v, name, *invoke_kind, args)?;
+                    if let Some(dst) = dst {
+                        self.store(dst, ret)?;
+                    }
+                } else {
+                    // A genuine `Object`/`Variant` (COM/foreign) receiver dispatches through
+                    // the host — late-bound COM lands in M3-8 (and needs a live host).
+                    return Err(Vm3Error::Unimplemented {
+                        what: "late-bound COM dispatch",
+                    });
+                }
+            }
+
             // Everything else is a later milestone (cross-bundle calls / objects / COM /
             // arrays / records M3) — explicit, never a silent no-op.
             other => return Err(Vm3Error::Unimplemented { what: inst_kind(other) }),
@@ -1405,7 +1584,7 @@ impl<'h> Vm3<'h> {
             ObjectRef::from_project_instance(instance_id, class_idx as i32, 0, has_terminate, descriptor);
         let value = Variant::from_object_ref(object.clone());
         if let Some(init) = initialize {
-            self.run_proc_with_me(init, Variant::from_object_ref(object), false)?;
+            self.run_proc_with_me(init, Variant::from_object_ref(object), &[], false)?;
         }
         Ok(value)
     }
@@ -1435,7 +1614,7 @@ impl<'h> Vm3<'h> {
         let value = Variant::from_object_ref(object);
         self.predeclared_singletons.insert(class_idx, value.clone());
         if let Some(init) = initialize {
-            self.run_proc_with_me(init, value.clone(), false)?;
+            self.run_proc_with_me(init, value.clone(), &[], false)?;
         }
         Ok(value)
     }
@@ -1454,13 +1633,36 @@ impl<'h> Vm3<'h> {
         &mut self,
         proc: FuncId,
         me: Variant,
+        args: &[OxArg],
         suppress: bool,
-    ) -> Result<(), Vm3Error> {
+    ) -> Result<Variant, Vm3Error> {
         self.guard_call_depth()?;
         let base = self.frames.len();
         let mut frame = self.new_frame(proc);
         if let Some(slot) = frame.locals.get_mut(0) {
             *slot = me;
+        }
+        // Event-handler args follow `me` at locals 1.. (vm2's `run_proc_core` layout),
+        // resolved against the CALLER (the still-current top frame) before the push.
+        for (i, arg) in args.iter().enumerate() {
+            let li = i + 1;
+            match arg {
+                OxArg::ByVal(op) => {
+                    let v = self.operand(op)?;
+                    if let Some(slot) = frame.locals.get_mut(li) {
+                        *slot = v;
+                    }
+                }
+                OxArg::ByRef(place) => {
+                    let loc = self.resolve(place);
+                    frame.aliases.insert(li, loc);
+                }
+                OxArg::Omitted => {
+                    if let Some(slot) = frame.locals.get_mut(li) {
+                        *slot = Variant::from_error_code(MISSING_ARG);
+                    }
+                }
+            }
         }
         frame.saved_error_mode = self.error_mode;
         frame.saved_active_error = self.active_error;
@@ -1468,6 +1670,13 @@ impl<'h> Vm3<'h> {
         self.error_mode = ErrorMode::None;
         self.active_error = None;
         let result = self.run_loop(base);
+        // The function result is the pushed frame's return local (the nested `run_loop` broke
+        // at the frame's `Return` without copying it out). Capture it before unwinding.
+        let ret = self
+            .frames
+            .get(base)
+            .and_then(|fr| fr.return_local.and_then(|rl| fr.locals.get(rl.0).cloned()))
+            .unwrap_or_else(Variant::empty);
         if let Some(fr) = self.frames.get(base) {
             self.error_mode = fr.saved_error_mode;
             self.active_error = fr.saved_active_error;
@@ -1478,8 +1687,9 @@ impl<'h> Vm3<'h> {
         // fault-path drain that mirrors vm2 (re-entrant drains fold via the `draining` guard).
         self.maybe_drain();
         match result {
-            Err(Vm3Error::Fault(_)) if suppress => Ok(()),
-            other => other,
+            Ok(()) => Ok(ret),
+            Err(Vm3Error::Fault(_)) if suppress => Ok(Variant::empty()),
+            Err(e) => Err(e),
         }
     }
 
@@ -1507,11 +1717,13 @@ impl<'h> Vm3<'h> {
                 ) {
                     // A fault in `Class_Terminate` is swallowed (suppress); a `Malformed`
                     // defect would still surface — drop it here to match vm2's `let _ = …`.
-                    let _ = self.run_proc_with_me(proc, Variant::from_object_ref(object), true);
+                    let _ = self.run_proc_with_me(proc, Variant::from_object_ref(object), &[], true);
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
-                // WithEvents subscription teardown for the terminated instance lands with the
-                // event model (M3-6).
+                // Drop any `WithEvents` bindings the terminated instance owned (it can no
+                // longer sink events) — mirrors vm2's teardown in `maybe_drain`.
+                self.withevents
+                    .retain(|key, _| withevents_owner(*key).raw() != instance_id);
             }
         }
         self.draining = false;
@@ -1556,6 +1768,65 @@ impl<'h> Vm3<'h> {
                 .map(|c| c.name.clone());
         }
         self.host.com().object_type_name(object.clone()).ok().flatten()
+    }
+
+    /// Late-bound dispatch on a project instance: resolve the class member by name + accessor
+    /// kind (with vm2's get↔method fallback) to its proc, then run it with `me` + the args and
+    /// return the function result. Mirrors vm2's `dispatch_project_method` Name path
+    /// (`ComCallLate` always names a member; the default-member/`obj(i)` path is M3-2/M3-8). A
+    /// missing member is "Object doesn't support this member" (438).
+    fn dispatch_project_method(
+        &mut self,
+        object: ObjectRef,
+        me: Variant,
+        name: &str,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: &[OxCallArg],
+    ) -> Result<Variant, Vm3Error> {
+        let kind = project_member_kind(invoke_kind);
+        let class_idx = object.route_key() as usize;
+        let program = self.program;
+        let class = program.classes.get(class_idx).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+        })?;
+        let exact = class
+            .methods
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(name) && m.kind == kind);
+        // A `PropertyGet` call with no args also resolves a same-named `Method`, and a
+        // `Method` call resolves a same-named `PropertyGet` (vm2's accessor fallback).
+        let member = exact.or_else(|| {
+            if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
+                class
+                    .methods
+                    .iter()
+                    .find(|m| m.name.eq_ignore_ascii_case(name) && m.kind == ProjectMemberKind::Method)
+            } else if kind == ProjectMemberKind::Method {
+                class.methods.iter().find(|m| {
+                    m.name.eq_ignore_ascii_case(name) && m.kind == ProjectMemberKind::PropertyGet
+                })
+            } else {
+                None
+            }
+        });
+        let proc = member
+            .map(|m| m.proc)
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'"))))?;
+        // ByRef args alias the caller's place (write-back); ByVal/Named copy in. A `Const` arg
+        // only arises for library built-ins, never a project method.
+        let proc_args: Vec<OxArg> = args
+            .iter()
+            .map(|a| match a {
+                OxCallArg::ByRef(place) => Ok(OxArg::ByRef(*place)),
+                OxCallArg::Operand(op) => Ok(OxArg::ByVal(op.clone())),
+                OxCallArg::Named { value, .. } => Ok(OxArg::ByVal(value.clone())),
+                OxCallArg::Omitted => Ok(OxArg::Omitted),
+                OxCallArg::Const(_) => Err(Vm3Error::Malformed(
+                    "a Const argument in a project method call".into(),
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.run_proc_with_me(proc, me, &proc_args, false)
     }
 
     /// Invoke a base-library built-in. Most builtins are the pure shared
@@ -1759,6 +2030,31 @@ fn is_nothing(value: &Variant) -> bool {
 /// of the `Is` operator (`CompareObjectIs`). Mirrors vm2's `object_identity`.
 fn object_identity(value: &Variant) -> i32 {
     value.as_object_ref().map(|o| o.raw()).unwrap_or(0)
+}
+
+/// The `withevents` map key: the sink owner's identity in the high 32 bits, the binding token
+/// in the low 32 (mirrors vm2). One sink can hold several `WithEvents` sources, one per token.
+fn withevents_key(owner: &ObjectRef, binding: i64) -> i64 {
+    (i64::from(owner.raw()) << 32) | (binding & 0xFFFF_FFFF)
+}
+/// The sink owner recovered from a `withevents` key.
+fn withevents_owner(key: i64) -> ObjectRef {
+    ObjectRef::from_compat_identity((key >> 32) as i32)
+}
+/// The binding token recovered from a `withevents` key.
+fn withevents_binding(key: i64) -> i64 {
+    key & 0xFFFF_FFFF
+}
+
+/// The project accessor kind a late-bound call's COM invoke-kind selects (the inverse of the
+/// elaboration's `invoke_kind_from_member_kind`).
+fn project_member_kind(k: TypeLibMemberInvokeKind) -> ProjectMemberKind {
+    match k {
+        TypeLibMemberInvokeKind::PropertyGet => ProjectMemberKind::PropertyGet,
+        TypeLibMemberInvokeKind::PropertyPut => ProjectMemberKind::PropertyLet,
+        TypeLibMemberInvokeKind::PropertyPutRef => ProjectMemberKind::PropertySet,
+        TypeLibMemberInvokeKind::Method => ProjectMemberKind::Method,
+    }
 }
 
 /// Coerce a value to an object reference (mirrors vm2's `variant_to_object`): an unset object
