@@ -43,10 +43,10 @@ use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
 use oxvba_oxir::value::{
-    ArithOp, CmpOp, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxNativeCallee, OxOperand,
-    OxPlace,
+    ArithOp, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxNativeCallee,
+    OxOperand, OxPlace,
 };
-use oxvba_oxir::{BlockId, FuncId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator};
+use oxvba_oxir::{BlockId, ErrorHandler, FuncId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator};
 use oxvba_runtime::Variant;
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
@@ -101,14 +101,27 @@ impl std::fmt::Display for Vm3Error {
 
 impl std::error::Error for Vm3Error {}
 
-/// The active `On Error` handler state.
+/// The active `On Error` **handler policy** of a procedure activation (MS-VBAL §5.4.4).
+/// This is the spec's policy only — the orthogonal "active error" liveness is the
+/// separate [`Vm3::active_error`] latch (vm2 conflates the two, the root of several
+/// divergences; see `docs/OXIR_VM3_ERROR_MODEL.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ErrorMode {
+    /// Default: an unhandled fault propagates to the caller.
     None,
-    #[allow(dead_code)] // wired by `SetErrorHandler`; consumed in M2-c.
+    /// `On Error Resume Next`.
     ResumeNext,
-    #[allow(dead_code)]
-    Goto(usize),
+    /// `On Error GoTo <label>` — the handler block.
+    Goto(BlockId),
+}
+
+/// The seeds a `Resume`/`Resume Next` uses, captured from the firing `FaultDispatch`:
+/// `resume` is the faulting statement's start block, `resume_next` the next statement's.
+/// Holding `Some` is exactly the spec's "active error" liveness for the activation.
+#[derive(Debug, Clone, Copy)]
+struct ResumePoint {
+    resume: BlockId,
+    resume_next: BlockId,
 }
 
 /// A resolved runtime storage location on the frame stack — what an [`OxPlace`]
@@ -148,6 +161,13 @@ struct Frame {
     /// The caller's error mode, restored when this frame returns (each callee starts
     /// with no handler).
     saved_error_mode: ErrorMode,
+    /// The caller's active-error latch, restored on return (each callee starts with no
+    /// active error). Keeping it per-activation is what makes a propagated `Resume`
+    /// re-run the *caller's* call-site statement.
+    saved_active_error: Option<ResumePoint>,
+    /// The `GoSub` Resumption List — a per-activation LIFO stack of return blocks
+    /// (MS-VBAL §5.4.2.14). `GoSub` pushes its `ret`; `Return` pops the most recent.
+    gosub_stack: Vec<BlockId>,
 }
 
 /// The `Err` object's observable state.
@@ -167,8 +187,15 @@ pub struct Vm3<'h> {
     /// The activation stack. `frames[0]` is the entry (`Main`) frame and is never
     /// popped — it backs the result snapshot; deeper frames are `CallProc` callees.
     frames: Vec<Frame>,
+    /// The current activation's `On Error` handler policy (saved/restored per frame).
     error_mode: ErrorMode,
+    /// The current activation's "active error" latch (the spec's per-activation fault
+    /// state): `Some` while an error is being handled, carrying the `Resume` seeds.
+    /// Gates `Resume` legality (empty ⇒ error 20) and is cleared by `Resume*`/`Exit *`.
+    active_error: Option<ResumePoint>,
     err: ErrState,
+    /// `Err.LastDllError` — refreshed after a `Declare Lib` call (M3); `0` until then.
+    last_dll_error: i32,
     /// The fault currently being routed (set when a fallible op transfers to a pad).
     pending_fault: Option<Fault>,
 }
@@ -185,7 +212,9 @@ impl<'h> Vm3<'h> {
             globals: vec![Variant::empty(); program.globals.len()],
             frames: Vec::new(),
             error_mode: ErrorMode::None,
+            active_error: None,
             err: ErrState::default(),
+            last_dll_error: 0,
             pending_fault: None,
         };
 
@@ -245,6 +274,8 @@ impl<'h> Vm3<'h> {
             dst: None,
             return_local: f.return_local,
             saved_error_mode: ErrorMode::None,
+            saved_active_error: None,
+            gosub_stack: Vec::new(),
         }
     }
 
@@ -314,32 +345,100 @@ impl<'h> Vm3<'h> {
                     self.frames.truncate(base + 1);
                     break;
                 }
-                // The landing pad. With no active handler, propagate the fault to the
-                // caller (or, at the base, out of the run). `Resume`/`GoTo` routing is M2-c.
-                OxTerminator::FaultDispatch { .. } => match self.error_mode {
-                    ErrorMode::None => {
-                        // A pad is only ever entered via `route_fault` (which always
-                        // `raise`s), so a missing fault here is a structural invariant
-                        // violation, not a silent code-0 fault.
-                        let fault = self.pending_fault.take().ok_or_else(|| {
-                            Vm3Error::Malformed("FaultDispatch reached with no pending fault".into())
-                        })?;
-                        self.propagate_fault(fault, base)?;
+                // The landing pad: dispatch the in-flight fault on the activation's
+                // handler policy (MS-VBAL §5.4.4; doc rules R4/R9).
+                OxTerminator::FaultDispatch { resume, resume_next } => {
+                    let rp = ResumePoint {
+                        resume: *resume,
+                        resume_next: *resume_next,
+                    };
+                    match self.error_mode {
+                        // Default: no enabled handler ⇒ propagate to the caller (or, at the
+                        // base, out of the run). A pad is only entered via `route_fault`
+                        // (which always `raise`s), so a missing fault is a structural defect.
+                        ErrorMode::None => {
+                            let fault = self.pending_fault.take().ok_or_else(|| {
+                                Vm3Error::Malformed(
+                                    "FaultDispatch reached with no pending fault".into(),
+                                )
+                            })?;
+                            self.propagate_fault(fault, base)?;
+                        }
+                        // Caught by `On Error Resume Next`: latch the active error, consume
+                        // the fault, continue past the faulting statement.
+                        ErrorMode::ResumeNext => {
+                            self.pending_fault = None;
+                            self.active_error = Some(rp);
+                            self.goto(top, *resume_next);
+                        }
+                        // Caught by `On Error GoTo h`: the handler is single-shot — demote
+                        // the policy to Default before entering it (so a re-raise inside the
+                        // handler propagates to the caller, not back into the same handler),
+                        // latch the active error, transfer to the handler block.
+                        ErrorMode::Goto(handler) => {
+                            self.pending_fault = None;
+                            self.error_mode = ErrorMode::None;
+                            self.active_error = Some(rp);
+                            self.goto(top, handler);
+                        }
                     }
-                    _ => {
-                        return Err(Vm3Error::Unimplemented {
-                            what: "On Error Resume/GoTo routing",
-                        });
+                }
+                // The three `Resume` forms (R6/R7/R8): with no active error, raise error 20
+                // ("Resume without error"); otherwise reset `Err`, clear the latch, transfer.
+                OxTerminator::Resume => match self.active_error.take() {
+                    Some(rp) => {
+                        self.err = ErrState::default();
+                        self.goto(top, rp.resume);
                     }
+                    None => self.raise_runtime_error(20)?,
+                },
+                OxTerminator::ResumeNext => match self.active_error.take() {
+                    Some(rp) => {
+                        self.err = ErrState::default();
+                        self.goto(top, rp.resume_next);
+                    }
+                    None => self.raise_runtime_error(20)?,
+                },
+                OxTerminator::ResumeLabel(b) => match self.active_error.take() {
+                    Some(_) => {
+                        self.err = ErrState::default();
+                        self.goto(top, *b);
+                    }
+                    None => self.raise_runtime_error(20)?,
+                },
+                // `Err.Raise` / `Error n`: raise the error and route through the statement
+                // pad so an active `On Error` can catch it (R11, single-arg in M2-c-1).
+                OxTerminator::Raise { code } => {
+                    self.route_fault(Fault {
+                        code: *code,
+                        message: default_error_message(*code),
+                    })?;
+                }
+                OxTerminator::RaiseValue(op) => {
+                    let v = self.operand(op)?;
+                    match arith::coerce_numeric(&v, oxvba_bundle::NumericCoerceTarget::Long) {
+                        Ok(code_v) => {
+                            let code = code_v.as_i32().unwrap_or(0);
+                            self.route_fault(Fault {
+                                code,
+                                message: default_error_message(code),
+                            })?;
+                        }
+                        // A non-numeric raise code is itself a coercion fault (e.g. 13).
+                        Err(e) => self.route_fault(Fault::from_arith(e))?,
+                    }
+                }
+                // GoSub / Return: a per-activation LIFO resumption list (R12).
+                OxTerminator::GoSub { target, ret } => {
+                    self.frames[top].gosub_stack.push(*ret);
+                    self.goto(top, *target);
+                }
+                OxTerminator::GoSubReturn => match self.frames[top].gosub_stack.pop() {
+                    Some(ret) => self.goto(top, ret),
+                    None => self.raise_runtime_error(3)?, // Return without GoSub
                 },
                 OxTerminator::Unreachable => {
                     return Err(Vm3Error::Malformed("reached an Unreachable terminator".into()));
-                }
-                // Resume / Raise / GoSub are the error-model + subroutine work (M2-c).
-                _ => {
-                    return Err(Vm3Error::Unimplemented {
-                        what: "terminator (Resume/Raise/GoSub)",
-                    });
                 }
             }
         }
@@ -379,6 +478,7 @@ impl<'h> Vm3<'h> {
         }
         let callee = self.frames.pop().expect("frame to unwind");
         self.error_mode = callee.saved_error_mode;
+        self.active_error = callee.saved_active_error;
         // The caller's `CallProc` faulted: route to *its* block's fault pad.
         self.route_fault(fault)
     }
@@ -388,6 +488,7 @@ impl<'h> Vm3<'h> {
     fn do_return(&mut self) -> Result<(), Vm3Error> {
         let callee = self.frames.pop().expect("returning frame");
         self.error_mode = callee.saved_error_mode;
+        self.active_error = callee.saved_active_error;
         if let (Some(loc), Some(rl)) = (callee.dst, callee.return_local)
             && let Some(v) = callee.locals.get(rl.0).cloned()
         {
@@ -396,11 +497,24 @@ impl<'h> Vm3<'h> {
         Ok(())
     }
 
-    /// Populate `Err` and stash the in-flight fault for the landing pad.
+    /// Populate `Err` from a raised fault and stash it for the landing pad. Like vm2's
+    /// `set_err`, a system/raised fault sets Number + Description and clears Source to
+    /// `""` (a richer `Err.Raise` Source/Description ride in with M2-c-2).
     fn raise(&mut self, fault: Fault) {
         self.err.number = fault.code;
         self.err.description = fault.message.clone();
+        self.err.source = String::new();
         self.pending_fault = Some(fault);
+    }
+
+    /// Raise a vm3-internal run-time error (a code with its default message) by routing
+    /// it through the current statement's fault pad — so an active `On Error` can catch
+    /// it (used for error 20 "Resume without error" and error 3 "Return without GoSub").
+    fn raise_runtime_error(&mut self, code: i32) -> Result<(), Vm3Error> {
+        self.route_fault(Fault {
+            code,
+            message: default_error_message(code),
+        })
     }
 
     /// Execute one straight-line instruction against the top frame.
@@ -515,13 +629,35 @@ impl<'h> Vm3<'h> {
                     return Err(Vm3Error::Unimplemented { what: "Declare Lib call" });
                 }
             },
-            // Statement boundaries drive Resume granularity + finalization timing; with
-            // no objects in scope yet the drain is a no-op.
-            OxInst::StmtBoundary { .. } => {}
+            // `On Error` sets the activation's handler policy and — per MS-VBAL §5.4.4.1
+            // (doc rule R5) — unconditionally resets the `Err` object. (The active-error
+            // latch is cleared only by `Resume`/`Exit`, not here.)
+            OxInst::SetErrorHandler(handler) => {
+                self.err = ErrState::default();
+                self.error_mode = match handler {
+                    ErrorHandler::ResumeNext => ErrorMode::ResumeNext,
+                    ErrorHandler::Goto0 => ErrorMode::None,
+                    ErrorHandler::GotoLabel(b) => ErrorMode::Goto(*b),
+                };
+            }
+            // Read an `Err` property.
+            OxInst::ErrFieldGet { dst, field } => {
+                let v = match field {
+                    ErrField::Number => Variant::from_i32(self.err.number),
+                    ErrField::Description => Variant::from_string(self.err.description.clone()),
+                    ErrField::Source => Variant::from_string(self.err.source.clone()),
+                    ErrField::LastDllError => Variant::from_i32(self.last_dll_error),
+                };
+                self.store(dst, v)?;
+            }
+            // `Err.Clear` → reset the `Err` object.
             OxInst::ClearErr => self.err = ErrState::default(),
+            // Statement boundaries drive finalization timing (M3); the error model takes
+            // its `Resume` seeds from `FaultDispatch`, so this is a no-op for M2-c.
+            OxInst::StmtBoundary { .. } => {}
 
             // Everything else is a later milestone (cross-bundle calls / objects / COM /
-            // arrays / records M3; error setters M2-c) — explicit, never a silent no-op.
+            // arrays / records M3) — explicit, never a silent no-op.
             other => return Err(Vm3Error::Unimplemented { what: inst_kind(other) }),
         }
         Ok(())
@@ -583,8 +719,12 @@ impl<'h> Vm3<'h> {
             dst: dst_loc,
             return_local,
             saved_error_mode: self.error_mode,
+            saved_active_error: self.active_error,
+            gosub_stack: Vec::new(),
         });
+        // Each procedure starts with no handler and no active error (restored on return).
         self.error_mode = ErrorMode::None;
+        self.active_error = None;
         Ok(())
     }
 
@@ -746,6 +886,26 @@ impl<'h> Vm3<'h> {
     }
 }
 
+/// The default VBA message for a run-time error code — used as `Err.Description` for a
+/// raised error whose Description is not otherwise supplied (mirrors vm2's table; a
+/// richer mapping rides with M2-c-2). Unmapped codes get the application-defined text.
+fn default_error_message(code: i32) -> String {
+    match code {
+        3 => "Return without GoSub",
+        5 => "Invalid procedure call or argument",
+        6 => "Overflow",
+        9 => "Subscript out of range",
+        11 => "Division by zero",
+        13 => "Type mismatch",
+        20 => "Resume without error",
+        28 => "Out of stack space",
+        91 => "Object variable or With block variable not set",
+        424 => "Object required",
+        _ => "Application-defined or object-defined error",
+    }
+    .to_string()
+}
+
 fn cmp_op(op: CmpOp) -> arith::CmpOp {
     match op {
         CmpOp::Eq => arith::CmpOp::Eq,
@@ -825,7 +985,8 @@ mod tests {
     use super::*;
     use oxvba_bundle::coreir::{
         CoreArg, CoreBinOp, CoreCallee, CoreConst, CoreGlobal, CoreLocal, CoreParam, CorePlace,
-        CoreProc, CoreProgram, CoreStmt, CoreValue, LocalId as CoreLocalId, ProcId,
+        CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp, ExitKind, LabelId,
+        LocalId as CoreLocalId, ProcId,
     };
     use oxvba_bundle::{
         AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId, NumericCoerceTarget,
@@ -1355,5 +1516,193 @@ mod tests {
             Err(other) => panic!("expected an Out-of-stack fault, got error: {other}"),
             Ok(_) => panic!("expected an Out-of-stack fault, but the run completed"),
         }
+    }
+
+    // ── M2-c: error / Resume / Err / GoSub model ────────────────────────────────
+
+    /// Run a single-proc program and expect it to end with an uncaught fault of `code`.
+    fn run_expecting_fault(prog: &CoreProgram, code: i32) {
+        let oxp: &'static OxProgram =
+            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(prog).expect("elaborate")));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        match Vm3::run(oxp, host) {
+            Err(Vm3Error::Fault(f)) => assert_eq!(f.code, code, "expected uncaught error {code}"),
+            Err(other) => panic!("expected uncaught error {code}, got error: {other}"),
+            Ok(_) => panic!("expected uncaught error {code}, but the run completed"),
+        }
+    }
+
+    /// `1 / 0` — a division-by-zero (error 11) expression.
+    fn div_by_zero() -> CoreValue {
+        CoreValue::Binary {
+            op: CoreBinOp::Div,
+            lhs: Box::new(CoreValue::Const(CoreConst::I32(1))),
+            rhs: Box::new(CoreValue::Const(CoreConst::I32(0))),
+            mode: StringCompareMode::Binary,
+            num: NumericMode::Widening,
+        }
+    }
+
+    #[test]
+    fn on_error_resume_next_continues_and_reads_err() {
+        // On Error Resume Next : n = 1/0 : n = Err.Number  ->  n = 11 (Resume Next skips
+        // past the faulting statement; Err carries the division-by-zero code).
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
+            None,
+            vec![
+                CoreStmt::Error(ErrorOp::OnErrorResumeNext),
+                assign(lc(0), div_by_zero()),
+                assign(lc(0), CoreValue::ErrField(ErrField::Number)),
+            ],
+        );
+        let prog = procs_program(vec![main]);
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(11));
+    }
+
+    #[test]
+    fn err_raise_is_caught_by_on_error_goto() {
+        // On Error GoTo H : Err.Raise 5 : Exit Sub : H: n = Err.Number  ->  n = 5
+        // (proves Err.Raise routes through the statement pad so On Error catches it).
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
+            None,
+            vec![
+                CoreStmt::Error(ErrorOp::OnErrorGotoLabel(LabelId(0))),
+                CoreStmt::Error(ErrorOp::Raise { code: 5 }),
+                CoreStmt::Exit(ExitKind::Proc),
+                CoreStmt::Label(LabelId(0)),
+                assign(lc(0), CoreValue::ErrField(ErrField::Number)),
+            ],
+        );
+        let prog = procs_program(vec![main]);
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(5));
+    }
+
+    #[test]
+    fn resume_re_runs_the_faulting_statement() {
+        // On Error GoTo H : k = k+1 : m = 1/(k-1) [faults when k=1] : n = 42 : Exit Sub
+        // H: k = k+1 : Resume   ->  the division statement re-runs with k=2 (1/1 ok), so
+        // control reaches `n = 42`. `Resume` re-enters the *faulting* statement, and the
+        // handler's k-bump prevents an infinite re-fault. (`n` is a clean Long literal so
+        // the assertion is unaffected by the Double division result, which lands in `m`.)
+        let k = || lc(2);
+        let div = CoreValue::Binary {
+            op: CoreBinOp::Div,
+            lhs: Box::new(CoreValue::Const(CoreConst::I32(1))),
+            rhs: Box::new(CoreValue::Binary {
+                op: CoreBinOp::Sub,
+                lhs: Box::new(load(2)),
+                rhs: Box::new(CoreValue::Const(CoreConst::I32(1))),
+                mode: StringCompareMode::Binary,
+                num: NumericMode::Widening,
+            }),
+            mode: StringCompareMode::Binary,
+            num: NumericMode::Widening,
+        };
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![
+                local("n", VarTypeRef::Builtin(BuiltinType::Long)), // 0
+                local("m", VarTypeRef::Variant),                    // 1
+                local("k", VarTypeRef::Builtin(BuiltinType::Long)), // 2
+            ],
+            None,
+            vec![
+                CoreStmt::Error(ErrorOp::OnErrorGotoLabel(LabelId(0))),
+                assign(k(), long_add(load(2), CoreValue::Const(CoreConst::I32(1)))),
+                assign(lc(1), div), // faulting statement: 1/(k-1)
+                assign(lc(0), CoreValue::Const(CoreConst::I32(42))),
+                CoreStmt::Exit(ExitKind::Proc),
+                CoreStmt::Label(LabelId(0)),
+                assign(k(), long_add(load(2), CoreValue::Const(CoreConst::I32(1)))),
+                CoreStmt::Error(ErrorOp::Resume),
+            ],
+        );
+        let prog = procs_program(vec![main]);
+        let vm = run_core(&prog);
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+    }
+
+    #[test]
+    fn resume_without_active_error_raises_20() {
+        // Resume Next with no active error -> runtime error 20 (Resume without error).
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            vec![CoreStmt::Error(ErrorOp::ResumeNext)],
+        );
+        run_expecting_fault(&procs_program(vec![main]), 20);
+    }
+
+    #[test]
+    fn return_without_gosub_raises_3() {
+        // A bare Return (no GoSub on the stack) -> runtime error 3 (Return without GoSub).
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            vec![CoreStmt::GoSubReturn],
+        );
+        run_expecting_fault(&procs_program(vec![main]), 3);
+    }
+
+    #[test]
+    fn gosub_resumption_list_is_lifo() {
+        // GoSub A : Exit Sub : A: GoSub B : s = s & "A" : Return : B: s = s & "B" : Return
+        // -> s = "BA": B's Return pops the inner ret, A's Return pops the outer (LIFO).
+        let s = || lc(0);
+        let cat = |suffix: &str| {
+            assign(
+                s(),
+                CoreValue::Binary {
+                    op: CoreBinOp::Concat,
+                    lhs: Box::new(load(0)),
+                    rhs: Box::new(CoreValue::Const(CoreConst::Str(suffix.into()))),
+                    mode: StringCompareMode::Binary,
+                    num: NumericMode::Widening,
+                },
+            )
+        };
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![local("s", VarTypeRef::Builtin(BuiltinType::String))],
+            None,
+            vec![
+                CoreStmt::GoSub(LabelId(0)),
+                CoreStmt::Exit(ExitKind::Proc),
+                CoreStmt::Label(LabelId(0)), // A
+                CoreStmt::GoSub(LabelId(1)),
+                cat("A"),
+                CoreStmt::GoSubReturn,
+                CoreStmt::Label(LabelId(1)), // B
+                cat("B"),
+                CoreStmt::GoSubReturn,
+            ],
+        );
+        let prog = procs_program(vec![main]);
+        let vm = run_core(&prog);
+        let s = oxvba_runtime::variant_to_vba_string(&vm.slot(0).expect("s"))
+            .map(|b| b.as_str())
+            .unwrap_or_default();
+        assert_eq!(s, "BA");
     }
 }

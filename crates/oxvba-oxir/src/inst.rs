@@ -491,13 +491,25 @@ pub enum OxTerminator {
 
 impl OxTerminator {
     /// Whether ending a block with this terminator can raise a VBA run-time error and
-    /// must therefore route through the enclosing statement's fault pad. Only the raise
-    /// terminators are fallible: `Branch` is a pure transfer (its condition is a
-    /// pre-computed operand), and `Resume`/`GoSub`/`Jump`/`Return`/… are control moves.
-    /// A block whose terminator is fallible needs a `fault_target` (the pad), exactly as
-    /// a block with a fallible instruction does — so `On Error` can catch `Err.Raise`.
+    /// must therefore route through the enclosing statement's fault pad (so `On Error`
+    /// can catch it). `Branch` is a pure transfer (its condition is a pre-computed
+    /// operand) and `Jump`/`Return`/`GoSub`/`FaultDispatch`/… are control moves; the
+    /// fallible terminators are the raises plus the resume/return forms that can fail:
+    /// - `Raise`/`RaiseValue` — `Err.Raise` / `Error n`;
+    /// - `Resume`/`ResumeNext`/`ResumeLabel` — error 20 ("Resume without error") when
+    ///   there is no active error (MS-VBAL §5.4.4.2);
+    /// - `GoSubReturn` — error 3 ("Return without GoSub") on an empty resumption list
+    ///   (MS-VBAL §5.4.2.15).
     pub fn is_fallible(&self) -> bool {
-        matches!(self, OxTerminator::Raise { .. } | OxTerminator::RaiseValue(_))
+        matches!(
+            self,
+            OxTerminator::Raise { .. }
+                | OxTerminator::RaiseValue(_)
+                | OxTerminator::Resume
+                | OxTerminator::ResumeNext
+                | OxTerminator::ResumeLabel(_)
+                | OxTerminator::GoSubReturn
+        )
     }
 }
 
