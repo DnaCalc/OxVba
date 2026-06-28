@@ -45,7 +45,7 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicValue,
 };
 use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
-use oxvba_eval::collection::{CollectionData, CollectionError, Selector};
+use oxvba_eval::collection::{dispatch_collection, CollectionError, CollectionMethod};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::{LibContext, LibError};
@@ -383,11 +383,6 @@ pub struct Vm<'h> {
     /// Re-entrancy guard so a `Class_Terminate` drain doesn't recursively drain;
     /// cascades are handled by the drain loop instead.
     draining: bool,
-    /// Built-in `VBA.Collection` instance contents, keyed by the instance's
-    /// `compat_identity`. Created lazily on first `Add`; never pruned (an entry
-    /// outlives its object until VM drop — bounded by `New Collection` count, and
-    /// consistent with the object-cycle-leak stance). See `collection.rs`.
-    collections: HashMap<i32, CollectionData>,
     /// Optional host/wrapper event publication hook for project `RaiseEvent`.
     project_event_sink: Option<Box<ProjectEventSink<'h>>>,
 }
@@ -530,7 +525,6 @@ impl<'h> Vm<'h> {
             captured_return: None,
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
-            collections: HashMap::new(),
             project_event_sink: None,
         })
     }
@@ -1485,53 +1479,31 @@ impl<'h> Vm<'h> {
         result.map(|_| captured)
     }
 
-    /// Invoke a native-bodied library method (a built-in object's member). `me` is
-    /// the receiver object; `args` are the positional arguments in declaration
-    /// order (omitted optionals arrive as the `MISSING_ARG` sentinel). The built-in
-    /// object's mutable state is reached via the receiver's `compat_identity`.
-    /// Errors map to VBA run-time error numbers (9 = bad index/key, 13 = type
-    /// mismatch). This is the native counterpart of pushing a bytecode frame.
+    /// Invoke a native-bodied built-in object method (e.g. `Collection.Add`). `me` is the
+    /// receiver object; `args` are the positional arguments in declaration order (omitted
+    /// optionals arrive as the `MISSING_ARG` sentinel). The keyed state rides the receiver's
+    /// object box (`native_state`) and the keyed logic is the shared
+    /// `oxvba_eval::collection::dispatch_collection` — one implementation for vm2/vm3/JIT.
+    /// Errors map to VBA run-time error numbers via `collection_fault` (9 / 457 / 5 / 449).
     fn run_native_method(
         &mut self,
         id: NativeMethodId,
         me: Variant,
         args: Vec<Variant>,
     ) -> Result<Variant, Fault> {
-        let id_key = variant_to_object(&me)?.compat_identity();
-        match id {
-            NativeMethodId::CollectionCount => Ok(Variant::from_i32(
-                self.collections
-                    .get(&id_key)
-                    .map_or(0, CollectionData::count),
-            )),
-            NativeMethodId::CollectionAdd => {
-                let value = args.first().cloned().unwrap_or_else(Variant::empty);
-                let key = optional_key(args.get(1));
-                let before = optional_selector(args.get(2));
-                let after = optional_selector(args.get(3));
-                self.collections
-                    .entry(id_key)
-                    .or_default()
-                    .add(value, key, before, after)
-                    .map_err(collection_fault)?;
-                Ok(Variant::empty())
-            }
-            NativeMethodId::CollectionItem => {
-                let sel = required_selector(args.first())?;
-                self.collections
-                    .get(&id_key)
-                    .map_or(Err(CollectionError::NotFound), |c| c.item(&sel))
-                    .map_err(collection_fault)
-            }
-            NativeMethodId::CollectionRemove => {
-                let sel = required_selector(args.first())?;
-                self.collections
-                    .get_mut(&id_key)
-                    .map_or(Err(CollectionError::NotFound), |c| c.remove(&sel))
-                    .map_err(collection_fault)?;
-                Ok(Variant::empty())
-            }
-        }
+        let method = match id {
+            NativeMethodId::CollectionAdd => CollectionMethod::Add,
+            NativeMethodId::CollectionItem => CollectionMethod::Item,
+            NativeMethodId::CollectionCount => CollectionMethod::Count,
+            NativeMethodId::CollectionRemove => CollectionMethod::Remove,
+        };
+        // `with_native_collection` lazily creates an empty CollectionData on first use,
+        // matching the old per-instance lazy `entry().or_default()`.
+        let object = variant_to_object(&me)?;
+        object
+            .with_native_collection(|data| dispatch_collection(method, data, &args))
+            .ok_or_else(|| Fault::new(424, "Object required"))?
+            .map_err(collection_fault)
     }
 
     /// Drain inbound host (COM) events: poll the host for delivered callbacks and
@@ -2707,19 +2679,18 @@ impl<'h> Vm<'h> {
                 // otherwise the source is an array (SafeArray). The snapshot is taken
                 // at loop entry, matching the existing array behaviour.
                 let elements = if let Some(obj) = source.as_object_ref() {
-                    if let Some(collection) = self.collections.get(&obj.compat_identity()) {
-                        // A VBA built-in `Collection` (or a project instance backed by
-                        // the in-VM store) enumerates its values in insertion order.
-                        collection.values()
+                    if let Some(values) = obj.native_collection_snapshot() {
+                        // A VBA built-in `Collection` enumerates its values in insertion
+                        // order (snapshot at loop entry; the object box owns the state).
+                        values
                     } else if obj.is_project_instance() {
-                        // A project instance with no Collection backing has nothing to
-                        // enumerate; preserve the existing empty-iteration behaviour.
+                        // A project instance (or an empty Collection with no items yet) has
+                        // nothing to enumerate; preserve the empty-iteration behaviour.
                         Vec::new()
                     } else {
                         // A foreign COM collection: snapshot its elements through the
-                        // host's IEnumVARIANT bridge (BUG 3). A host that cannot
-                        // enumerate (no COM transport, or the object exposes no
-                        // enumerator) yields an empty iteration, as before.
+                        // host's IEnumVARIANT bridge. A host that cannot enumerate (no COM
+                        // transport, or no enumerator) yields an empty iteration, as before.
                         self.host.com().enumerate_object(obj).unwrap_or_default()
                     }
                 } else if let Some(arr) = source.as_safearray() {
@@ -3429,49 +3400,6 @@ fn variant_to_error_code(value: &Variant) -> Result<i32, Fault> {
 }
 
 /// True for the omitted-optional-argument sentinel placed by `resolve_proc_args`.
-fn is_missing_arg(v: &Variant) -> bool {
-    v.as_error_code() == Some(MISSING_ARG)
-}
-
-/// A `Collection`/`Item`/`Remove`/`Add before|after` selector from a Variant: a
-/// string argument is a (folded) key, anything else a 1-based index (numeric
-/// coercion is lenient; a non-numeric, non-string value yields index 0, i.e. out
-/// of range → error 9).
-fn variant_selector(v: &Variant) -> Selector {
-    if let Some(s) = v.as_bstr() {
-        Selector::Key(s.as_str().to_ascii_lowercase())
-    } else {
-        let index = v
-            .as_i32()
-            .or_else(|| v.as_i64().map(|n| n as i32))
-            .or_else(|| v.as_f64().map(|n| n.round() as i32))
-            .unwrap_or(0);
-        Selector::Index(index)
-    }
-}
-
-/// The folded string key from an `Add` key argument, or `None` if omitted.
-fn optional_key(arg: Option<&Variant>) -> Option<String> {
-    let v = arg?;
-    (!is_missing_arg(v))
-        .then(|| v.as_bstr().map(|s| s.as_str().to_ascii_lowercase()))
-        .flatten()
-}
-
-/// A `Selector` from an optional `before`/`after` argument, or `None` if omitted.
-fn optional_selector(arg: Option<&Variant>) -> Option<Selector> {
-    let v = arg?;
-    (!is_missing_arg(v)).then(|| variant_selector(v))
-}
-
-/// A required `Item`/`Remove` selector. Omitted ⇒ error 449.
-fn required_selector(arg: Option<&Variant>) -> Result<Selector, Fault> {
-    match arg {
-        Some(v) if !is_missing_arg(v) => Ok(variant_selector(v)),
-        _ => Err(Fault::new(449, "Argument not optional")),
-    }
-}
-
 /// Map a collection data-model error onto its VBA run-time error number.
 fn collection_fault(err: CollectionError) -> Fault {
     match err {

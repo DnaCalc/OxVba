@@ -998,6 +998,28 @@ impl ObjectRef {
         }
     }
 
+    /// A snapshot of this instance's native `Collection` values in insertion order, or `None`
+    /// if it has no native collection — a foreign COM object, or a compat object that never had
+    /// one (a project instance, or a `Collection` with no items added yet). Unlike
+    /// [`Self::with_native_collection`] this does NOT lazily create a collection, so it is safe
+    /// to probe any object (e.g. `For Each`) without planting empty state on project instances.
+    pub fn native_collection_snapshot(&self) -> Option<Vec<Variant>> {
+        if !self.is_compat_object() {
+            return None;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: guarded by `is_compat_object()` (vtbl identity), so `owner` is the live
+        // `CompatObjectBase` kept alive by this `ObjectRef`'s retained reference; the borrow is
+        // single-threaded (`ObjectRef` is neither `Send` nor `Sync`).
+        unsafe {
+            (*owner)
+                .native_state
+                .borrow()
+                .as_ref()
+                .map(|c| c.values())
+        }
+    }
+
     pub fn query_interface_descriptor(
         &self,
         iid: RuntimeInterfaceId,
