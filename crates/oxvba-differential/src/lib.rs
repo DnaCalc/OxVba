@@ -701,6 +701,21 @@ mod tests {
         "error_goto_label_resume_next.bas",
     ];
 
+    /// Corpus programs vm3 deliberately does NOT yet run — an explicitly justified,
+    /// **out-of-scope** deferral (NOT an in-scope coverage gap), so the M3-10 handoff gate's
+    /// "in-scope skip == 0" invariant excludes them. Each entry is a documented residual with
+    /// a filed follow-up (see the `project_oxir_m3_progress` memory's M3-10 residual list):
+    ///
+    /// - `object_identity_is_same_and_different.bas` — `Dim a As New Collection`. The built-in
+    ///   `Collection` is a library-bundle native-backed object; instantiating it in vm3 needs
+    ///   the cross-bundle native-object mechanism vm3's deliberately single-`OxProgram` object
+    ///   model defers (it is the subject of its own approved builtins-as-library program, where
+    ///   `Collection` is phase P1). vm3 surfaces an honest `Unimplemented`, never a wrong value.
+    ///
+    /// The stale-allowlist guard below asserts every entry is STILL actually skip-deferred, so
+    /// when `Collection` lands this list must shrink (the entry can no longer be justified).
+    const KNOWN_VM3_DEFERRED_SKIPS: &[&str] = &["object_identity_is_same_and_different.bas"];
+
     /// Whether every difference for an allowlisted file is the tolerated vm2 residual-`Err`
     /// staleness signature: vm2 (the `left`/oracle-reference side) left a non-zero
     /// `Err.Number` after a `Resume`, while vm3 (the `right`/candidate side) correctly reset
@@ -740,6 +755,8 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut ran = 0usize;
         let mut skipped = 0usize;
+        let mut deferred_skips = 0usize;
+        let mut deferred_seen: std::collections::BTreeSet<String> = Default::default();
         let mut both_errored = 0usize;
         let mut known_divergence = 0usize;
         let mut vm2_hangs = 0usize;
@@ -777,8 +794,14 @@ mod tests {
                 };
                 match compare_corpus(&vm2, &vm3) {
                     CorpusVerdict::Skipped(reason) => {
-                        skipped += 1;
-                        *skip_reasons.entry(reason).or_default() += 1;
+                        if KNOWN_VM3_DEFERRED_SKIPS.contains(&name) {
+                            // An explicitly justified, out-of-scope deferral — not an in-scope gap.
+                            deferred_skips += 1;
+                            deferred_seen.insert(name.to_string());
+                        } else {
+                            skipped += 1;
+                            *skip_reasons.entry(reason).or_default() += 1;
+                        }
                     }
                     CorpusVerdict::Match => {
                         if vm2.result.is_ok() {
@@ -798,7 +821,7 @@ mod tests {
             }
         }
         eprintln!(
-            "vm3-vs-vm2 corpus: ran+matched={ran}, skipped(unsupported)={skipped}, both-errored={both_errored}, known-vm2-divergence={known_divergence}, vm2-hangs(skipped)={vm2_hangs}, mismatches={}",
+            "vm3-vs-vm2 corpus: ran+matched={ran}, in-scope-skipped={skipped}, deferred-skips(out-of-scope)={deferred_skips}, both-errored={both_errored}, known-vm2-divergence={known_divergence}, vm2-hangs(skipped)={vm2_hangs}, mismatches={}",
             mismatches.len()
         );
         let mut by_count: Vec<_> = skip_reasons.iter().collect();
@@ -822,5 +845,30 @@ mod tests {
             mismatches.len()
         );
         assert!(ran > 0, "expected some in-scope corpus programs to run on vm3");
+
+        // ── M3-10 oracle-handoff invariant ───────────────────────────────────────────
+        // Every in-scope corpus program runs on vm3: the only tolerated skips are the
+        // explicitly justified, out-of-scope deferrals in `KNOWN_VM3_DEFERRED_SKIPS`. Once
+        // this holds (with mismatches == 0 and oracle conformance 100%), vm3 IS the oracle —
+        // M4's JIT differentials against vm3, never a moving target.
+        assert_eq!(
+            skipped, 0,
+            "M3-10 handoff invariant broken: {skipped} in-scope corpus program(s) are still \
+             unsupported by vm3 (see the skip histogram on stderr). Implement them or, if a \
+             program is a justified out-of-scope deferral, add it to KNOWN_VM3_DEFERRED_SKIPS \
+             with a documented reason + filed follow-up."
+        );
+        // Stale-allowlist guard: every deferred entry must STILL be skip-deferred. If one no
+        // longer is (the feature landed), this fails so the entry is removed and the carve-out
+        // can never silently mask later coverage.
+        let stale: Vec<&str> = KNOWN_VM3_DEFERRED_SKIPS
+            .iter()
+            .copied()
+            .filter(|name| !deferred_seen.contains(*name))
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "stale KNOWN_VM3_DEFERRED_SKIPS entries (no longer skip-deferred — remove them): {stale:?}"
+        );
     }
 }
