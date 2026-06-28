@@ -307,10 +307,22 @@ impl<'h> Vm3<'h> {
     /// with [`Vm3::slot`]). Mirrors vm2: the global initializer runs first, then `Main`
     /// in an entry frame that is never popped.
     pub fn run(program: &'h OxProgram, host: &'h dyn HostServices) -> Result<Self, Vm3Error> {
+        let mut vm = Self::activate(program, host)?;
+        vm.run_entry()?;
+        Ok(vm)
+    }
+
+    /// Build the VM and run the module-global initializer, but do NOT run the entry (`Main`).
+    /// This is the front half of [`Vm3::run`], split out so a long-lived host session can
+    /// activate a program once and then issue many member invokes against it. The per-run
+    /// setup — the leaked `&'static` class descriptors, the event-route table, the global
+    /// initializer, and the shared termination-queue reset — happens here exactly ONCE, so a
+    /// session never re-leaks descriptors or double-drains across invokes.
+    pub fn activate(program: &'h OxProgram, host: &'h dyn HostServices) -> Result<Self, Vm3Error> {
         // One leaked `&'static` runtime descriptor per project class (its name + the universal
         // IUnknown interface) — the shape `ObjectRef::from_project_instance` requires, exactly
-        // as vm2's `LoadedBundle::load` leaks them. The leak is per-run and bounded by the
-        // class count (matching vm2); a future arena can reclaim it.
+        // as vm2's `LoadedBundle::load` leaks them. The leak is per-activation and bounded by
+        // the class count (matching vm2); a future arena can reclaim it.
         let class_descriptors: Vec<&'static RuntimeClassDescriptor> = program
             .classes
             .iter()
@@ -356,24 +368,31 @@ impl<'h> Vm3<'h> {
             vm.frames.pop();
             r?;
         }
-        // Isolate this run from any prior run on the shared thread-local termination
-        // queue, before the entry runs — matching vm2's per-run reset (object-lifecycle
-        // drains land in M3, but the isolation is run-lifecycle plumbing).
+        // Isolate this activation from any prior run on the shared thread-local termination
+        // queue, before any entry/invoke runs — matching vm2's per-run reset.
         oxvba_runtime::reset_pending_terminations();
-        if let Some(entry) = program.entry {
-            let frame = vm.new_frame(entry);
-            vm.frames.push(frame);
+        Ok(vm)
+    }
+
+    /// Run the program entry (`Sub Main`) in an entry frame that is never popped — it stays as
+    /// `frames[0]` for the result snapshot — then drain any parked `Class_Terminate`s. A no-op
+    /// when the program has no entry. The back half of [`Vm3::run`], split out so a session can
+    /// `activate()` without running `Main`.
+    pub fn run_entry(&mut self) -> Result<(), Vm3Error> {
+        if let Some(entry) = self.program.entry {
+            let frame = self.new_frame(entry);
+            self.frames.push(frame);
             // The entry frame is never popped — it stays as `frames[0]` for the snapshot.
-            let r = vm.run_loop(0);
+            let r = self.run_loop(0);
             // Run any `Class_Terminate`s parked while the run unwound — including objects an
             // uncaught fault released as it propagated out of called procs (vm2 drains on the
             // fault path; without this a Terminate would be lost on an error exit). On a clean
             // finish this is a no-op (statement boundaries already drained; the entry frame's
             // own locals stay live, un-terminated, exactly as vm2 leaves them).
-            vm.maybe_drain();
+            self.maybe_drain();
             r?;
         }
-        Ok(vm)
+        Ok(())
     }
 
     /// The result snapshot slot `i`: module globals occupy `[0, globals.len())`; higher
@@ -1820,6 +1839,63 @@ impl<'h> Vm3<'h> {
         }
     }
 
+    /// Like [`Vm3::run_proc_with_me`] but seeds the arguments as already-evaluated **values**
+    /// (a host-supplied `Vec<Variant>`) directly into `locals[1..]`, rather than resolving
+    /// `OxArg` operands against a caller frame. Required for the host session API: an
+    /// `OxArg::ByVal` carries only a scalar `OxConst`, so an object / array / arbitrary-Variant
+    /// argument coming from the host cannot be expressed as an operand — it must be injected by
+    /// value. `me` goes to local 0; all args are by-value (the host owns any ByRef itself).
+    /// Returns the proc's result; with `suppress`, a `Fault` is swallowed to `Empty` (used by
+    /// lifecycle/event callbacks). Wired by W3 (Collection dispatch), W5 (events) and W7
+    /// (the host create/invoke session API).
+    #[allow(dead_code)] // callers land in W3/W5/W7 of the vm3-completion worksets
+    fn run_proc_with_values(
+        &mut self,
+        proc: FuncId,
+        me: Variant,
+        args: Vec<Variant>,
+        suppress: bool,
+    ) -> Result<Variant, Vm3Error> {
+        self.guard_call_depth()?;
+        let base = self.frames.len();
+        let mut frame = self.new_frame(proc);
+        if let Some(slot) = frame.locals.get_mut(0) {
+            *slot = me;
+        }
+        // Host args follow `me` at locals 1.. as direct values — no caller-operand resolution,
+        // no ByRef aliasing (the host marshals by value).
+        for (i, v) in args.into_iter().enumerate() {
+            if let Some(slot) = frame.locals.get_mut(i + 1) {
+                *slot = v;
+            }
+        }
+        frame.saved_error_mode = self.error_mode;
+        frame.saved_active_error = self.active_error;
+        self.frames.push(frame);
+        self.error_mode = ErrorMode::None;
+        self.active_error = None;
+        let result = self.run_loop(base);
+        // Capture the result from the pushed frame's return local before unwinding (the nested
+        // `run_loop` broke at the frame's `Return` without copying it out) — same as
+        // `run_proc_with_me`.
+        let ret = self
+            .frames
+            .get(base)
+            .and_then(|fr| fr.return_local.and_then(|rl| fr.locals.get(rl.0).cloned()))
+            .unwrap_or_else(Variant::empty);
+        if let Some(fr) = self.frames.get(base) {
+            self.error_mode = fr.saved_error_mode;
+            self.active_error = fr.saved_active_error;
+        }
+        self.frames.truncate(base);
+        self.maybe_drain();
+        match result {
+            Ok(()) => Ok(ret),
+            Err(Vm3Error::Fault(_)) if suppress => Ok(Variant::empty()),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Run any parked `Class_Terminate`s to a fixpoint. `Release` (an object's last reference
     /// dropping — a frame pop or a slot overwrite) parks a `has_terminate` instance on the
     /// shared `oxvba_runtime` termination queue; this dequeues and runs each `Class_Terminate`
@@ -2927,6 +3003,54 @@ mod tests {
         let prog = procs_program(vec![main, add]);
         let vm = run_core(&prog);
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(15));
+    }
+
+    #[test]
+    fn run_proc_with_values_seeds_host_value_args_across_repeated_invokes() {
+        // W0: a host session activates a program ONCE (no Main run), then invokes a function
+        // directly with already-evaluated Variant args (the path object/array args need, since
+        // an OxArg::ByVal carries only a scalar OxConst). Invoking twice against the one
+        // activation proves the session lifecycle: activate() is separate from run_entry(), so
+        // the descriptor-leak + termination-reset happen once, not per invoke.
+        // run_proc_with_values mirrors run_proc_with_me's frame layout: local 0 is the
+        // receiver `me` (as for a class method / event handler), and the value args land at
+        // locals 1.. — so the callable is shaped like a method whose first slot is `me`.
+        let add = proc(
+            "Add",
+            ProcedureKind::Function,
+            vec![long_param("me"), long_param("a"), long_param("b")], // LocalId 0=me, 1=a, 2=b
+            vec![local("Add", VarTypeRef::Builtin(BuiltinType::Long))], // return local, LocalId 3
+            Some(CoreLocalId(3)),
+            vec![assign(lc(3), long_add(load(1), load(2)))],
+        );
+        // Main is a no-op entry (procs_program requires procs[0] to be the entry); we never run it.
+        let main = proc("Main", ProcedureKind::Sub, Vec::new(), Vec::new(), None, Vec::new());
+        let prog = procs_program(vec![main, add]);
+        let oxp: &'static OxProgram =
+            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate")));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let mut vm = Vm3::activate(oxp, host).expect("activate"); // NOT run() — Main never executes
+
+        let first = vm
+            .run_proc_with_values(
+                FuncId(1),
+                Variant::empty(),
+                vec![Variant::from_i32(20), Variant::from_i32(22)],
+                false,
+            )
+            .expect("invoke Add #1");
+        assert_eq!(first.as_i32(), Some(42), "value-seeded args reach the proc and return their sum");
+
+        let second = vm
+            .run_proc_with_values(
+                FuncId(1),
+                Variant::empty(),
+                vec![Variant::from_i32(1), Variant::from_i32(2)],
+                false,
+            )
+            .expect("invoke Add #2");
+        assert_eq!(second.as_i32(), Some(3), "a second invoke against the same activation works");
     }
 
     #[test]
