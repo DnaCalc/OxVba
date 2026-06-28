@@ -36,6 +36,7 @@
 //! cross-bundle calls (M3) return [`Vm3Error::Unimplemented`] for now — never a silent
 //! mis-execution.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use oxvba_bundle::{
@@ -45,10 +46,11 @@ use oxvba_bundle::{
 use oxvba_com::TypeLibMemberInvokeKind;
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
+use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::LibContext;
 use oxvba_oxir::value::{
     ArithOp, BoundWhich, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
-    OxNativeCallee, OxOperand, OxPlace,
+    OxNativeCallee, OxOperand, OxPlace, PtrKind, PtrWritebackKind,
 };
 use oxvba_oxir::{
     BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
@@ -59,7 +61,7 @@ use oxvba_runtime::object_ref::{
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{Variant, VbaRecord};
+use oxvba_runtime::{Variant, VbaRecord, pointer_helpers};
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
@@ -100,10 +102,27 @@ impl Fault {
             source: None,
         }
     }
+    /// A bare untyped runtime-helper message (e.g. a pointer-registry failure) — VBA
+    /// type mismatch (13), matching vm2's `Fault::from_string`.
+    fn from_string(message: String) -> Self {
+        Self::new(13, message)
+    }
     /// A built-in library error already carries its VBA error code structurally.
     fn from_lib(e: oxvba_lib::LibError) -> Self {
         Self {
             code: e.code,
+            message: e.message,
+            source: None,
+        }
+    }
+    /// A HAL fault (a `Declare Lib` native call, and — from M3-8 — a COM dispatch) carries
+    /// the real VBA `Err.Number` it recovered from the underlying HRESULT/`EXCEPINFO` in
+    /// `host_error_code`; absent one, fall back to VBA error 5 ("invalid procedure call or
+    /// argument"). This threads the rich number through — never flattening every host fault
+    /// to 5 — exactly as vm2's `Fault::from_hal`.
+    fn from_hal(e: oxvba_hal::HalError) -> Self {
+        Self {
+            code: e.host_error_code.unwrap_or(5),
             message: e.message,
             source: None,
         }
@@ -801,10 +820,37 @@ impl<'h> Vm3<'h> {
                         self.store(dst, result)?;
                     }
                 }
-                OxNativeCallee::Declare { .. } => {
-                    return Err(Vm3Error::Unimplemented { what: "Declare Lib call" });
+                // A `Declare Lib` external call marshals through the host's dynamic-link HAL —
+                // the identical `invoke_descriptor_variants` contract vm2 drives — capturing
+                // `Err.LastDllError` and applying ByRef + pointer-helper write-backs (M3-7).
+                OxNativeCallee::Declare {
+                    descriptor_id,
+                    ptr_writebacks,
+                } => {
+                    let result = self.declare_call(*descriptor_id, args, ptr_writebacks)?;
+                    if let Some(dst) = dst {
+                        self.store(dst, result)?;
+                    }
                 }
             },
+            // `AddressOf <proc>` materializes a procedure reference value (a `ProcRef`
+            // Variant carrying the proc index); it is later invoked through `CallProcRef`
+            // or marshaled to a native callback slot by a `Declare` (M3-7).
+            OxInst::LoadProcRef { dst, proc } => {
+                self.store(dst, Variant::from_proc_ref(proc.0))?;
+            }
+            // Call through a runtime-resolved procedure reference (the `AddressOf` value):
+            // resolve the index, validate it, then dispatch through the standard call
+            // machinery (ByRef aliasing, frame push, return copy-out — identical to `CallProc`).
+            OxInst::CallProcRef { dst, target, args } => {
+                let proc = self
+                    .operand(target)?
+                    .as_proc_ref()
+                    .filter(|&p| p < self.program.funcs.len())
+                    .ok_or_else(|| Vm3Error::Fault(Fault::new(490, "invalid procedure reference")))?;
+                let dst = dst.as_ref().copied();
+                self.call_proc(dst, FuncId(proc), args)?;
+            }
             // `On Error` sets the activation's handler policy and — per MS-VBAL §5.4.4.1
             // (doc rule R5) — unconditionally resets the `Err` object. (The active-error
             // latch is cleared only by `Resume`/`Exit`, not here.)
@@ -832,6 +878,24 @@ impl<'h> Vm3<'h> {
             }
             // `Err.Clear` → reset the `Err` object.
             OxInst::ClearErr => self.err = ErrState::default(),
+
+            // ── Pointer helpers (M3-7) ───────────────────────────────────────────────
+            // `StrPtr`/`VarPtr` pin a cloned cell in the process-global pointer registry and
+            // yield its pointer-width address (an `i64`); the `Declare` call that consumes the
+            // pointer frees the pin afterwards (see `declare_call`). `ObjPtr` returns a live
+            // IUnknown address (no registry cell). Identical to vm2's `Ptr*` ops.
+            OxInst::Ptr { dst, kind, src } => {
+                let v = self.operand(src)?;
+                let pointer = match kind {
+                    PtrKind::Str => pointer_helpers::register_utf16_string(&arith::as_string(&v)),
+                    PtrKind::Var => pointer_helpers::register_variant_pointer(&v),
+                    PtrKind::VarString => pointer_helpers::register_string_variant_pointer(&v),
+                    PtrKind::VarVariant => pointer_helpers::register_variant_var_variant_pointer(&v),
+                    PtrKind::Obj => pointer_helpers::register_object_variant_pointer(&v),
+                }
+                .map_err(|e| Vm3Error::Fault(Fault::from_string(e)))?;
+                self.store(dst, Variant::from_i64(pointer))?;
+            }
             // A statement boundary drives finalization timing: run any parked
             // `Class_Terminate`s released by the previous statement (the error model takes its
             // `Resume` seeds from `FaultDispatch`, not from here).
@@ -1868,6 +1932,170 @@ impl<'h> Vm3<'h> {
                 OxCallArg::Const(n) => Ok(Variant::from_i32(*n)),
             })
             .collect()
+    }
+
+    /// Marshal a `Declare Lib` external call through the host's dynamic-link HAL — the
+    /// identical `invoke_descriptor_variants` contract vm2 drives, so a `Declare` behaves
+    /// the same whichever VM runs it (the differential gate shares one host). Captures
+    /// `Err.LastDllError`, copies ByRef arguments' marshaled-back values to their caller
+    /// slots, and applies the pointer-helper write-backs (`StrPtr(x)`/`VarPtr(x)` over an
+    /// l-value reads the pinned buffer back into the source). Mirrors vm2's `declare_call`.
+    fn declare_call(
+        &mut self,
+        descriptor_id: u32,
+        args: &[OxCallArg],
+        ptr_writebacks: &[oxvba_oxir::value::DeclarePtrWriteback],
+    ) -> Result<Variant, Vm3Error> {
+        // `self.program` is `&'h OxProgram` (a reference independent of the `&mut self`
+        // borrow), so the descriptor borrow does not conflict with the mutable calls below.
+        let program = self.program;
+        let descriptor = program
+            .external_calls
+            .iter()
+            .find(|d| d.descriptor_id == descriptor_id)
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(
+                    5,
+                    format!("unknown Declare descriptor {descriptor_id}"),
+                ))
+            })?;
+        let arg_variants = self.native_args(args)?;
+
+        let param_type_strings: Vec<String> = descriptor
+            .param_types
+            .iter()
+            .map(|pt| format!("{pt:?}"))
+            .collect();
+        let view = DynLinkDescriptorView {
+            descriptor_id: descriptor.descriptor_id,
+            declared_name: &descriptor.declared_name,
+            library: &descriptor.library,
+            alias: &descriptor.alias,
+            ordinal_alias: descriptor.ordinal_alias,
+            symbol: descriptor.symbol,
+            marshal_lane: &descriptor.marshal_lane,
+            calling_convention: &descriptor.calling_convention,
+            selection_policy: &descriptor.selection_policy,
+            param_count: descriptor.param_count,
+            param_types: &param_type_strings,
+            param_by_ref: &descriptor.param_by_ref,
+            return_type: descriptor
+                .return_type
+                .as_ref()
+                .map(|rt| Cow::Owned(format!("{rt:?}"))),
+        };
+
+        // An `AddressOf` proc reference passed by-value to a `LongPtr` (a native-callback
+        // parameter, e.g. a `SetTimer` `TimerProc`) needs a thread-local callback-thunk
+        // table bound to this VM — platform-specific machinery no in-scope corpus program
+        // exercises. Surface it honestly rather than marshaling a proc ref as a bogus
+        // integer; the shared-thunk extraction is a filed follow-up (see the M3-7 notes).
+        for (index, value) in arg_variants.iter().enumerate() {
+            let is_long_ptr = param_type_strings.get(index).map(String::as_str) == Some("LongPtr");
+            if is_long_ptr
+                && !descriptor.param_by_ref.get(index).copied().unwrap_or(false)
+                && value.as_proc_ref().is_some()
+            {
+                return Err(Vm3Error::Unimplemented {
+                    what: "AddressOf proc passed to a Declare callback parameter",
+                });
+            }
+        }
+
+        // The pointer-helper pins this call feeds (the `LongLong`-carried registry addresses
+        // of `StrPtr`/`VarPtr` args). A pin's life ends with the call it feeds — VBA's "the
+        // pointer is valid for the duration of the call" contract — so free them once the
+        // call returns and any write-back has read them back, keeping the registry bounded
+        // across looping `Declare`s.
+        let pin_addrs: Vec<i64> = arg_variants.iter().filter_map(Variant::as_i64).collect();
+        let invoke = self
+            .host
+            .dynlink()
+            .invoke_descriptor_variants(&view, &arg_variants);
+        // VBA refreshes `Err.LastDllError` after every `Declare` call (the OS last-error the
+        // HAL captured immediately after the native call); non-native lanes report 0.
+        self.last_dll_error = self.host.dynlink().last_dll_error();
+        let (ret, wb_values) = match invoke {
+            Ok(pair) => pair,
+            Err(err) => {
+                pointer_helpers::free_pins(&pin_addrs);
+                return Err(Vm3Error::Fault(Fault::from_hal(err)));
+            }
+        };
+        // Copy each ByRef argument's marshaled-back value to its caller slot. The dynlink host
+        // returns `wb_values` aligned to `args`; only `ByRef` args write back (a force-ByVal
+        // `(x)` / non-l-value is lowered to `Operand`, so it is correctly left unchanged).
+        for (i, arg) in args.iter().enumerate() {
+            if let OxCallArg::ByRef(place) = arg
+                && let Some(value) = wb_values.get(i)
+            {
+                self.store(place, value.clone())?;
+            }
+        }
+        // Pointer-helper write-back: a `StrPtr(x)`/`VarPtr(x)` argument over an l-value reads
+        // the pinned buffer (the native call may have mutated it) back into the source
+        // variable. The argument value is the registered pointer; the runtime registry
+        // projects it back to a string / byte-array / scalar Variant.
+        for wb in ptr_writebacks {
+            let pointer = arg_variants
+                .get(wb.arg_index)
+                .and_then(Variant::as_i64)
+                .unwrap_or(0);
+            let value = match wb.kind {
+                PtrWritebackKind::String => {
+                    pointer_helpers::read_back_string_payload_variant(pointer)
+                }
+                PtrWritebackKind::ByteArray => {
+                    pointer_helpers::read_back_byte_array_payload_variant(pointer)
+                }
+                PtrWritebackKind::Boolean => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Boolean,
+                ),
+                PtrWritebackKind::Byte => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Byte,
+                ),
+                PtrWritebackKind::Integer => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Integer,
+                ),
+                PtrWritebackKind::Long => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Long,
+                ),
+                PtrWritebackKind::LongLong => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::LongLong,
+                ),
+                PtrWritebackKind::LongPtr => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::LongPtr,
+                ),
+                PtrWritebackKind::Single => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Single,
+                ),
+                PtrWritebackKind::Double => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Double,
+                ),
+                PtrWritebackKind::Currency => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Currency,
+                ),
+                PtrWritebackKind::Date => pointer_helpers::read_back_scalar_payload_variant(
+                    pointer,
+                    pointer_helpers::ScalarPointerKind::Date,
+                ),
+            }
+            .map_err(|e| Vm3Error::Fault(Fault::from_string(e)))?;
+            self.store(&wb.target, value)?;
+        }
+        // The pins are fully consumed (the call ran and any write-back read them back);
+        // release them so the registry stays bounded across looping `Declare`s.
+        pointer_helpers::free_pins(&pin_addrs);
+        Ok(ret)
     }
 
     /// Bound runaway recursion at vm2's frame ceiling, raising error 28 ("Out of stack
