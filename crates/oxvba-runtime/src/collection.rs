@@ -11,7 +11,7 @@
 //!
 //! This is the data model only; the shared dispatch site
 //! ([`crate::collection`] has none — see `oxvba_eval::collection::dispatch_collection`)
-//! maps [`CollectionError`] onto VBA run-time error numbers (9 / 457 / 5) and builds
+//! maps [`CollectionError`] onto VBA run-time error numbers (9 / 457 / 5 / 449) and builds
 //! [`Selector`]s from the call arguments. Keys are case-insensitive (folded to ASCII
 //! lowercase).
 
@@ -35,6 +35,8 @@ pub enum CollectionError {
     DuplicateKey,
     /// `Add` given both `before` and `after` → error 5.
     BadArgument,
+    /// A required `Item`/`Remove` selector was omitted → error 449.
+    ArgNotOptional,
 }
 
 /// A VBA `Collection`'s ordered contents. Indices are 1-based at the VBA surface.

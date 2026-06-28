@@ -3481,6 +3481,7 @@ fn collection_fault(err: CollectionError) -> Fault {
             "This key is already associated with an element of this collection",
         ),
         CollectionError::BadArgument => Fault::new(5, "Invalid procedure call or argument"),
+        CollectionError::ArgNotOptional => Fault::new(449, "Argument not optional"),
     }
 }
 
