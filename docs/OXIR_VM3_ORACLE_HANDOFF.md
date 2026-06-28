@@ -69,3 +69,18 @@ reached by an in-scope corpus program:
   on the portable adapter vm3 invokes the real member rather than vm2's receiver-label. Kept.
 - vm2's three `Resume`-residual-`Err` staleness files (`KNOWN_VM2_DIVERGENCES`): vm3 correctly
   clears `Err` on `Resume` per the oracle; vm2 leaves a stale number. Kept (vm2 is the wrong side).
+
+## History note — the duplicate `M3-7` commit (do not "clean up")
+
+Two commits on this branch are titled `M3-7`: `b6910373` (the native-FFI test lane) and
+`9ce3c3d7` (which actually carries the **M3-8 late-bound-COM lib.rs work**, swept in early by a
+parallel autonomous-loop committer, plus 4 bonus vm3 unit tests). This is a cosmetic mislabel
+only — `HEAD` is a clean superset of `b6910373` and fully green. **Do not** `git rebase --onto
+b6910373 9ce3c3d7` to "drop the redundant commit": `9ce3c3d7` is the **sole** introducer of
+`dispatch_member_by_name` / `dispatch_com_method` / `invoke_kind_to_dynamic` / the `CallByName`
+arm and the unique positive `call_proc_ref_dispatches_through_address_of` test (proof:
+`git log -S 'fn dispatch_member_by_name' -- crates/oxvba-vm3/src/lib.rs` → only `9ce3c3d7`).
+M3-9 (`fe0cae1c`) edits its `member: &str → DynamicMemberSelector` lines, so the rebase
+hard-conflicts and a force-resolve would re-expose the M3-6 stub and delete the four tests.
+(`b6910373` only ever had the `Unimplemented{"late-bound COM dispatch"}` stub — it never had the
+refactor, so the "9ce3c3d7 reverted my lib.rs" reading is inverted.)
