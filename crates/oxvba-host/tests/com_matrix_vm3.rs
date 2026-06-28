@@ -9,7 +9,9 @@
 //! mix — a dual interface rides the vtable even late-bound under `PreferVtable`, so the oracle
 //! is count-parity between the VMs, not a fixed transport).
 //!
-//! Early-bound (`ComCallEarly`, typed vtable) is M3-9 — those legs are not exercised here.
+//! Early-bound (`ComCallEarly`, typed vtable, M3-9) is exercised by the `vm3_early_*` tests
+//! at the bottom: a typed receiver + typelib reference under `PreferVtable`, differentialed
+//! against vm2's early-bound leg on both value and the `(vtable,idispatch)` transport counts.
 //!
 //! Uses `Scripting.Dictionary`, registered on every Windows install, so these need no Excel/
 //! DAO/typelib. Windows-only; `#[ignore]` (live COM) with an env-skip on an absent component.
@@ -185,4 +187,74 @@ fn vm3_late_dictionary_transport_matches_vm2() {
         "vm3 vs vm2 COM transport-count divergence (vtable,idispatch): vm2={vm2_counts:?} vm3={vm3_counts:?}"
     );
     eprintln!("V4 transport mix (vtable,idispatch): vm2={vm2_counts:?} vm3={vm3_counts:?}");
+}
+
+// ── M3-9: early-bound (ComCallEarly, typed vtable) ───────────────────────────
+
+/// The same value scenario as [`dict_value_src`] but with a TYPED receiver, so the binder
+/// lowers the member calls to early-bound `ComCallEarly` (descriptor-typed dispid dispatch).
+fn dict_value_early_src() -> String {
+    "Public Verdict As Long\n\
+     Sub Main()\n\
+     Dim d As Scripting.Dictionary\n\
+     Set d = CreateObject(\"Scripting.Dictionary\")\n\
+     d.Add \"a\", 10\n\
+     d.Add \"b\", 20\n\
+     If d.Exists(\"a\") And Not d.Exists(\"zzz\") Then\n\
+     Verdict = d.Count * 1000 + d.Item(\"a\") + d.Item(\"b\")\n\
+     Else\n\
+     Verdict = -1\n\
+     End If\n\
+     End Sub\n"
+        .to_string()
+}
+
+#[test]
+#[ignore = "live COM; run explicitly"]
+fn vm3_early_dictionary_value_and_transport_match_vm2() {
+    let src = dict_value_early_src();
+    let (vm2_snap, vm2_counts) = match run_clean_with_references_prefer_vtable(&src, scripting_ref())
+    {
+        Ok(x) => x,
+        Err(e) if is_typelib_absent(&e) => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("vm2 early failed: {e}"),
+    };
+    let (vm3_snap, vm3_counts) =
+        match run_clean_vm3_with_references_prefer_vtable(&src, scripting_ref()) {
+            Ok(x) => x,
+            Err(e) if is_typelib_absent(&e) => {
+                eprintln!("SKIP: {e}");
+                return;
+            }
+            Err(e) => panic!("vm3 early failed: {e}"),
+        };
+    // Value parity + absolute oracle (axis 1).
+    assert_eq!(
+        find_verdict(&vm2_snap),
+        find_verdict(&vm3_snap),
+        "vm3 vs vm2 early-bound Dictionary value divergence"
+    );
+    assert_eq!(
+        find_verdict(&vm3_snap),
+        Some(2030),
+        "early-bound Dictionary verdict {:?} != 2030",
+        find_verdict(&vm3_snap)
+    );
+    // Transport parity (axis 5): vm3's ComCallEarly must drive the host through the IDENTICAL
+    // transport mix vm2's early-bound (EarlyCom → DispatchIdNamed) does.
+    assert_eq!(
+        vm2_counts, vm3_counts,
+        "vm3 vs vm2 early-bound transport-count divergence: vm2={vm2_counts:?} vm3={vm3_counts:?}"
+    );
+    // And the vtable path actually ran (not a silent IDispatch fallback for every member).
+    assert!(
+        vm3_counts.0 > 0,
+        "early-bound PreferVtable must slot-call the vtable at least once (got vtable={}, idispatch={})",
+        vm3_counts.0,
+        vm3_counts.1
+    );
+    eprintln!("early transport (vtable,idispatch): vm2={vm2_counts:?} vm3={vm3_counts:?}");
 }

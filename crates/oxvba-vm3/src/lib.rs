@@ -1283,6 +1283,46 @@ impl<'h> Vm3<'h> {
                 }
             }
 
+            // ── Early-bound, descriptor-typed COM dispatch (M3-9) ────────────────────
+            // The typed descriptor gives the dispid (member token) and the call-site accessor;
+            // vm3 dispatches by `TokenNamed{dispid,name}` through the host's COM facet, and the
+            // host's `PreferVtable` strategy slot-calls the live object's vtable (driven by the
+            // object's own typelib, not by the descriptor's slot) — the identical transport vm2's
+            // early-bound (`EarlyCom`→`DispatchIdNamed`) takes, so value + transport counts match.
+            // A receiver that is a project instance (a typed call through an `Implements`
+            // interface) dispatches internally by the member's name.
+            OxInst::ComCallEarly {
+                dst,
+                method,
+                invoke_kind,
+                recv,
+                args,
+            } => {
+                let recv_v = self.operand(recv)?;
+                let object = variant_to_object(&recv_v)?;
+                let descriptor = self.program.com_method(*method).ok_or_else(|| {
+                    Vm3Error::Malformed(format!("ComCallEarly: unresolved method ref {method:?}"))
+                })?;
+                let dispid = descriptor.token;
+                let member_name = descriptor.name.clone();
+                let ret = if object.is_project_instance() {
+                    self.dispatch_project_method(object, recv_v, &member_name, *invoke_kind, args)?
+                } else {
+                    self.dispatch_com_method(
+                        object,
+                        DynamicMemberSelector::TokenNamed {
+                            token: dispid,
+                            name: member_name,
+                        },
+                        *invoke_kind,
+                        args,
+                    )?
+                };
+                if let Some(dst) = dst {
+                    self.store(dst, ret)?;
+                }
+            }
+
             // ── Late-bound member dispatch (M3-6: project instances; M3-8: COM) ──────
             OxInst::ComCallLate {
                 dst,
@@ -1931,20 +1971,27 @@ impl<'h> Vm3<'h> {
         if object.is_project_instance() {
             self.dispatch_project_method(object, recv_v, name, invoke_kind, args)
         } else {
-            self.dispatch_com_method(object, name, invoke_kind, args)
+            self.dispatch_com_method(
+                object,
+                DynamicMemberSelector::Name(name.to_string()),
+                invoke_kind,
+                args,
+            )
         }
     }
 
-    /// Late-bound COM dispatch on a genuine COM/foreign receiver: build a by-name dynamic
-    /// call request, route it through the host's COM facet (the identical
-    /// `dispatch_invoke_dynamic_variant_with_writebacks` contract vm2 drives), and copy any
+    /// COM dispatch on a genuine COM/foreign receiver: build a dynamic call request (the
+    /// `member` selector is `Name` for late-bound and `TokenNamed{dispid,name}` for
+    /// early-bound), route it through the host's COM facet (the identical
+    /// `dispatch_invoke_dynamic_variant_with_writebacks` contract vm2 drives — the host's
+    /// `PreferVtable` strategy picks the transport, the same way for both VMs), and copy any
     /// `[out]`/`[in,out]` write-back to its ByRef call-site place. A dispatch fault carries
     /// the rich VBA `Err.Number` recovered from the HRESULT/EXCEPINFO (via [`Fault::from_hal`],
     /// never the flatten-to-5 default — the must-fix the milestone calls out).
     fn dispatch_com_method(
         &mut self,
         object: ObjectRef,
-        member: &str,
+        member: DynamicMemberSelector,
         invoke_kind: TypeLibMemberInvokeKind,
         args: &[OxCallArg],
     ) -> Result<Variant, Vm3Error> {
@@ -1964,7 +2011,7 @@ impl<'h> Vm3<'h> {
         }
         let request = DynamicCallRequest {
             object,
-            member: DynamicMemberSelector::Name(member.to_string()),
+            member,
             args: call_args,
             call_kind_hint: Some(invoke_kind_to_dynamic(invoke_kind)),
         };

@@ -170,6 +170,43 @@ pub fn run_clean_vm3_with_counts(source: &str) -> EarlyRun {
     Ok((snapshot, counts))
 }
 
+/// vm3 EARLY-bound (typed receiver + typelib reference) under `PreferVtable`, returning the
+/// snapshot + `(vtable, idispatch)` transport counts — the vm3 counterpart of
+/// [`run_clean_with_references_prefer_vtable`]. vm3 lowers a typed-receiver member call to
+/// `ComCallEarly` (descriptor-typed), dispatches by the descriptor's dispid, and the host's
+/// `PreferVtable` strategy slot-calls the live object's vtable — so the vtable counts must
+/// match vm2's early-bound leg exactly (the M3-9 transport oracle).
+pub fn run_clean_vm3_with_references_prefer_vtable(
+    source: &str,
+    references: Vec<ProjectReference>,
+) -> EarlyRun {
+    let source = with_leg_token(source, LEG_EARLY_VTABLE);
+    let manifest = sym::SymbolProjectManifest {
+        project_name: "Main".to_string(),
+        project_kind: sym::ProjectKind::Source,
+        modules: vec![sym::ModuleUnit {
+            module_name: "Main".to_string(),
+            module_kind: sym::ModuleKind::Procedural,
+            attributes: sym::ModuleAttributes::named("Main"),
+            source,
+        }],
+        references,
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let mut policy = HostPolicy::interactive_dev();
+    policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(policy);
+    let snapshot = match engine.execute_manifest_with_variant_snapshot_vm3(&manifest) {
+        Vm3Snapshot::Ran(values) => values,
+        Vm3Snapshot::Unsupported(what) => return Err(format!("vm3-unsupported: {what}")),
+        Vm3Snapshot::Failed(msg) => return Err(msg),
+    };
+    let counts = engine.host_services().com().com_dispatch_transport_counts();
+    Ok((snapshot, counts))
+}
+
 /// vm2 late-bound + transport counts — the vm2 counterpart of [`run_clean_vm3_with_counts`],
 /// so a category test can prove vm3 and vm2 drive the SAME COM transport mix for a late-bound
 /// scenario (the axis-5 no-silent-divergence oracle).
