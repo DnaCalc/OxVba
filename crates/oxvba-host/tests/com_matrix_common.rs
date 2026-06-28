@@ -38,7 +38,7 @@
 use std::path::PathBuf;
 
 use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, Vm3Snapshot};
 use oxvba_symbol::manifest::{self as sym, ProjectReference};
 
 // Re-exported so category files can name `Variant` in their own local differential
@@ -132,6 +132,54 @@ pub fn run_clean_with_references_prefer_vtable(
         .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))?;
     // The engine retains its host services (and thus the COM bridge) after the
     // run, so the accumulated transport counts are still readable here.
+    let counts = engine.host_services().com().com_dispatch_transport_counts();
+    Ok((snapshot, counts))
+}
+
+/// Run a single-module VBA source on the **vm3** backend under the interactive-dev policy —
+/// the late-bound leg's vm3 counterpart of [`run_clean`]. Maps a vm3 out-of-scope construct
+/// (`Unsupported`, e.g. an early-bound `ComCallEarly` not landed until M3-9) and a genuine
+/// failure (`Failed`) both to `Err`, so a category test can differential vm3's late-bound
+/// dispatch against vm2's.
+pub fn run_clean_vm3(source: &str) -> Result<Vec<Variant>, String> {
+    let source = with_leg_token(source, LEG_LATE);
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    match engine.execute_source_with_variant_snapshot_vm3(&source) {
+        Vm3Snapshot::Ran(values) => Ok(values),
+        Vm3Snapshot::Unsupported(what) => Err(format!("vm3-unsupported: {what}")),
+        Vm3Snapshot::Failed(msg) => Err(msg),
+    }
+}
+
+/// Like [`run_clean_vm3`] but also returns the COM bridge's `(vtable, idispatch)` transport
+/// counts after the run — the vm3 side of the axis-5 transport oracle. (A late-bound call on a
+/// dual interface still rides the vtable under a `PreferVtable` host strategy — the transport
+/// is the host's decision, not the VM's — so the oracle is that vm3's counts MATCH vm2's for
+/// the same scenario, i.e. no silent transport divergence between the two VMs.)
+pub fn run_clean_vm3_with_counts(source: &str) -> EarlyRun {
+    let source = with_leg_token(source, LEG_LATE);
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snapshot = match engine.execute_source_with_variant_snapshot_vm3(&source) {
+        Vm3Snapshot::Ran(values) => values,
+        Vm3Snapshot::Unsupported(what) => return Err(format!("vm3-unsupported: {what}")),
+        Vm3Snapshot::Failed(msg) => return Err(msg),
+    };
+    let counts = engine.host_services().com().com_dispatch_transport_counts();
+    Ok((snapshot, counts))
+}
+
+/// vm2 late-bound + transport counts — the vm2 counterpart of [`run_clean_vm3_with_counts`],
+/// so a category test can prove vm3 and vm2 drive the SAME COM transport mix for a late-bound
+/// scenario (the axis-5 no-silent-divergence oracle).
+pub fn run_clean_with_counts(source: &str) -> EarlyRun {
+    let source = with_leg_token(source, LEG_LATE);
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snapshot = engine
+        .execute_source_with_variant_snapshot_clean(&source)
+        .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))?;
     let counts = engine.host_services().com().com_dispatch_transport_counts();
     Ok((snapshot, counts))
 }
