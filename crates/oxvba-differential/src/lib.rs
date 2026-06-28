@@ -488,6 +488,29 @@ mod tests {
         );
     }
 
+    /// vm3-finish W3: built-in `Collection` end-to-end — `New Collection` + Add (positional,
+    /// keyed, and a before-anchor with an omitted key → MISSING_ARG), Count, Item (by index and
+    /// by key), Remove — must match vm2 on vm3 via the shared keyed dispatch over the object box.
+    /// (Default-member `c(i)` and `For Each` are W4.)
+    #[test]
+    fn vm3_matches_vm2_on_collection_methods() {
+        assert_vm2_vm3_match(
+            "Sub Main()\n\
+             Dim c As New Collection\n\
+             c.Add 10\n\
+             c.Add 20, \"k\"\n\
+             c.Add 30, , 1\n\
+             Dim n As Long\n\
+             n = c.Count\n\
+             Dim a As Variant\n\
+             a = c.Item(1)\n\
+             Dim b As Variant\n\
+             b = c.Item(\"k\")\n\
+             c.Remove 1\n\
+             End Sub\n",
+        );
+    }
+
     /// Regression for task_842916b0: a `Double` `/` result stored into a `Long` local must
     /// narrow (coerce-on-store with banker's rounding), not keep the `Double`. `10 / 4 = 2.5`
     /// → `Long` 2 (round half to even). vm3 must match vm2 (and the oracle).
@@ -702,19 +725,14 @@ mod tests {
     ];
 
     /// Corpus programs vm3 deliberately does NOT yet run — an explicitly justified,
-    /// **out-of-scope** deferral (NOT an in-scope coverage gap), so the M3-10 handoff gate's
-    /// "in-scope skip == 0" invariant excludes them. Each entry is a documented residual with
-    /// a filed follow-up (see the `project_oxir_m3_progress` memory's M3-10 residual list):
+    /// **out-of-scope** deferral (NOT an in-scope coverage gap), so the handoff gate's
+    /// "in-scope skip == 0" invariant excludes them. The stale-allowlist guard below asserts
+    /// every entry is STILL actually skip-deferred, so a feature landing forces this list to shrink.
     ///
-    /// - `object_identity_is_same_and_different.bas` — `Dim a As New Collection`. The built-in
-    ///   `Collection` is a library-bundle native-backed object; instantiating it in vm3 needs
-    ///   the cross-bundle native-object mechanism vm3's deliberately single-`OxProgram` object
-    ///   model defers (it is the subject of its own approved builtins-as-library program, where
-    ///   `Collection` is phase P1). vm3 surfaces an honest `Unimplemented`, never a wrong value.
-    ///
-    /// The stale-allowlist guard below asserts every entry is STILL actually skip-deferred, so
-    /// when `Collection` lands this list must shrink (the entry can no longer be justified).
-    const KNOWN_VM3_DEFERRED_SKIPS: &[&str] = &["object_identity_is_same_and_different.bas"];
+    /// Currently EMPTY: the former entry `object_identity_is_same_and_different.bas`
+    /// (`Dim a As New Collection`) now RUNS on vm3 and matches vm2 — built-in `Collection` is
+    /// implemented (vm3-finish W3: the shared keyed-Collection facility over the object box).
+    const KNOWN_VM3_DEFERRED_SKIPS: &[&str] = &[];
 
     /// Whether every difference for an allowlisted file is the tolerated vm2 residual-`Err`
     /// staleness signature: vm2 (the `left`/oracle-reference side) left a non-zero

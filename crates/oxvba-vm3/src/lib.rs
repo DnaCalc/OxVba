@@ -50,6 +50,7 @@ use oxvba_com::{
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
+use oxvba_eval::collection::{CollectionError, CollectionMethod, dispatch_collection};
 use oxvba_lib::LibContext;
 use oxvba_oxir::value::{
     ArithOp, BoundWhich, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
@@ -69,6 +70,19 @@ use oxvba_runtime::{Variant, VbaRecord, pointer_helpers};
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
 const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
+
+/// The reserved `route_key` stamped on a built-in `Collection` instance (W3). Distinct from
+/// every real project class index (those are small non-negative) so dispatch recognises a
+/// Collection receiver BEFORE the `program.classes` lookup, and distinct from any instance id
+/// so `is_project_instance()` (compat_identity != route_key) still holds.
+const VBA_COLLECTION_ROUTE_KEY: i32 = i32::MIN;
+
+/// The runtime QI descriptor for a built-in `Collection` (name + IUnknown). Fully `'static`,
+/// so `New Collection` needs no per-instance descriptor leak.
+static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
+    name: "Collection",
+    interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
+};
 
 /// Project-instance ids start above any class route key (a class's route key is its index),
 /// so `compat_identity != route_key` — every allocation reads as a true project instance, not
@@ -1137,6 +1151,10 @@ impl<'h> Vm3<'h> {
                 let object = self.new_project_instance(class.0)?;
                 self.store(dst, object)?;
             }
+            OxInst::NewExtern { dst, import } => {
+                let object = self.new_extern_instance(*import)?;
+                self.store(dst, object)?;
+            }
             OxInst::Predeclared { dst, class } => {
                 let object = self.predeclared_instance(class.0)?;
                 self.store(dst, object)?;
@@ -1986,6 +2004,12 @@ impl<'h> Vm3<'h> {
         invoke_kind: TypeLibMemberInvokeKind,
         args: &[OxCallArg],
     ) -> Result<Variant, Vm3Error> {
+        // A built-in `Collection` carries the reserved sentinel route key; its members dispatch
+        // to the shared keyed-Collection logic over the box-owned `CollectionData`, not a
+        // program class (W3). Checked BEFORE the `program.classes` lookup the sentinel can't index.
+        if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return self.dispatch_collection_method(&object, name, args);
+        }
         let kind = project_member_kind(invoke_kind);
         let class_idx = object.route_key() as usize;
         let program = self.program;
@@ -2030,6 +2054,136 @@ impl<'h> Vm3<'h> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         self.run_proc_with_me(proc, me, &proc_args, false)
+    }
+
+    /// Mint a built-in library-class instance for `New <LibClass>` (`OxInst::NewExtern`). Only
+    /// the `VBA.Collection` class is wired today: a native-backed object whose state rides the
+    /// object box (`native_state`), so no `Class_Initialize` runs and a reserved sentinel route
+    /// key marks it for the Collection dispatch leg.
+    fn new_extern_instance(&mut self, import: ImportId) -> Result<Variant, Vm3Error> {
+        let descriptor = self.resolve_extern_class(import)?;
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            VBA_COLLECTION_ROUTE_KEY,
+            0,
+            false,
+            descriptor,
+        );
+        Ok(Variant::from_object_ref(object))
+    }
+
+    /// Resolve a `New <LibClass>` import to its runtime QI descriptor. The `ExportToken::Class`
+    /// analogue of [`Self::resolve_library_import`]. Only `VBA.Collection` is wired today;
+    /// another VBA project needs the multi-`OxProgram` linker (deferred), and any other library
+    /// class is a clean `Unimplemented` — never a silent mis-run.
+    fn resolve_extern_class(
+        &self,
+        import: ImportId,
+    ) -> Result<&'static RuntimeClassDescriptor, Vm3Error> {
+        let imp = self.program.imports.get(import.0).ok_or_else(|| {
+            Vm3Error::Malformed(format!("NewExtern names unknown import {}", import.0))
+        })?;
+        if !imp.unit.eq_ignore_ascii_case("VBA") {
+            return Err(Vm3Error::Unimplemented {
+                what: "cross-project OxProgram link",
+            });
+        }
+        let lib = oxvba_bundle::vba_library_bundle();
+        let export = lib
+            .exports
+            .iter()
+            .find(|e| e.token.matches(&imp.token))
+            .ok_or_else(|| {
+                Vm3Error::Malformed(format!(
+                    "the VBA library bundle has no export matching NewExtern import {}",
+                    import.0
+                ))
+            })?;
+        let oxvba_bundle::ExportTarget::Class(class_idx) = export.target else {
+            return Err(Vm3Error::Malformed(
+                "a VBA library NewExtern resolved to a non-class export".into(),
+            ));
+        };
+        let class = lib.classes.get(class_idx).ok_or_else(|| {
+            Vm3Error::Malformed(format!("VBA library class {class_idx} out of range"))
+        })?;
+        if !class.name.eq_ignore_ascii_case("Collection") {
+            return Err(Vm3Error::Unimplemented {
+                what: "built-in library class other than Collection",
+            });
+        }
+        Ok(&VBA_COLLECTION_DESCRIPTOR)
+    }
+
+    /// Dispatch a member call on a built-in `Collection` receiver to the shared keyed logic
+    /// (`oxvba_eval::collection::dispatch_collection`) over the box-owned `CollectionData`. The
+    /// member name resolves to its `NativeMethodId` via the VBA bundle's Collection class.
+    fn dispatch_collection_method(
+        &mut self,
+        object: &ObjectRef,
+        name: &str,
+        args: &[OxCallArg],
+    ) -> Result<Variant, Vm3Error> {
+        let native = Self::vba_collection_native_method(name).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, format!("Collection doesn't support '{name}'")))
+        })?;
+        let method = match native {
+            oxvba_bundle::NativeMethodId::CollectionAdd => CollectionMethod::Add,
+            oxvba_bundle::NativeMethodId::CollectionItem => CollectionMethod::Item,
+            oxvba_bundle::NativeMethodId::CollectionCount => CollectionMethod::Count,
+            oxvba_bundle::NativeMethodId::CollectionRemove => CollectionMethod::Remove,
+        };
+        let argv = self.collection_args(args)?;
+        object
+            .with_native_collection(|data| dispatch_collection(method, data, &argv))
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
+            .map_err(Self::collection_fault)
+            .map_err(Vm3Error::Fault)
+    }
+
+    /// Marshal a Collection member's call args to by-value `Variant`s (omitted → `MISSING_ARG`,
+    /// the sentinel the shared dispatcher recognises). The built-in Collection never writes
+    /// back, so a ByRef arg is read by value.
+    fn collection_args(&self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
+        args.iter()
+            .map(|a| match a {
+                OxCallArg::Operand(op) => self.operand(op),
+                OxCallArg::ByRef(place) => self.read(place),
+                OxCallArg::Named { value, .. } => self.operand(value),
+                OxCallArg::Omitted => Ok(Variant::from_error_code(MISSING_ARG)),
+                OxCallArg::Const(_) => Err(Vm3Error::Malformed(
+                    "a Const argument in a Collection method call".into(),
+                )),
+            })
+            .collect()
+    }
+
+    /// Resolve a `Collection` member name to its `NativeMethodId` via the VBA library bundle's
+    /// Collection class — the single source of truth for the member set.
+    fn vba_collection_native_method(member: &str) -> Option<oxvba_bundle::NativeMethodId> {
+        let lib = oxvba_bundle::vba_library_bundle();
+        let class = lib.classes.first()?;
+        let m = class.methods.iter().find(|m| m.name.eq_ignore_ascii_case(member))?;
+        match lib.procedures.get(m.proc).and_then(|p| p.native) {
+            Some(oxvba_bundle::NativeBody::Method(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Map a shared `CollectionError` onto its VBA run-time error number (9 / 457 / 5 / 449) —
+    /// the vm3 twin of vm2's `collection_fault`.
+    fn collection_fault(err: CollectionError) -> Fault {
+        match err {
+            CollectionError::NotFound => Fault::new(9, "Subscript out of range"),
+            CollectionError::DuplicateKey => Fault::new(
+                457,
+                "This key is already associated with an element of this collection",
+            ),
+            CollectionError::BadArgument => Fault::new(5, "Invalid procedure call or argument"),
+            CollectionError::ArgNotOptional => Fault::new(449, "Argument not optional"),
+        }
     }
 
     /// Late-bound by-name member dispatch shared by `ComCallLate` and `CallByName`: a
