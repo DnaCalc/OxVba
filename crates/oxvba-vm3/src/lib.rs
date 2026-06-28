@@ -981,26 +981,43 @@ impl<'h> Vm3<'h> {
                 indices,
             } => {
                 // `x(i…)` where `x` is a bare `Variant`/`As Object` resolves at run time: an
-                // OBJECT receiver makes the parentheses a default-member (`Item`, dispid 0)
-                // call — the late-bound leg, which lands with COM late dispatch (M3-8).
+                // OBJECT receiver makes the parentheses a default-member (`Item`, dispid 0) call.
                 let recv = self.operand(array)?;
-                if recv.as_safearray().is_none() && recv.as_object_ref().is_some() {
-                    return Err(Vm3Error::Unimplemented {
-                        what: "array-index default-member call on an object",
-                    });
+                if recv.as_safearray().is_none()
+                    && let Some(obj) = recv.as_object_ref()
+                {
+                    // A built-in `Collection`'s default member is `Item` — route `c(i)` to the
+                    // shared keyed dispatch. Other objects' default members (project class or
+                    // COM late-bound) remain a deferred residual.
+                    if obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
+                        let argv = self.operands_to_values(indices)?;
+                        let value = obj
+                            .with_native_collection(|d| {
+                                dispatch_collection(CollectionMethod::Item, d, &argv)
+                            })
+                            .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
+                            .map_err(Self::collection_fault)
+                            .map_err(Vm3Error::Fault)?;
+                        self.store(dst, value)?;
+                    } else {
+                        return Err(Vm3Error::Unimplemented {
+                            what: "array-index default-member call on an object",
+                        });
+                    }
+                } else {
+                    let arr = self.array_of(array)?;
+                    let bounds = arr
+                        .bounds()
+                        .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+                    let flat = self.flat_index(indices, &bounds)?;
+                    if flat >= arr.len() {
+                        return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+                    }
+                    let value = arr
+                        .variant_element(flat)
+                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                    self.store(dst, value)?;
                 }
-                let arr = self.array_of(array)?;
-                let bounds = arr
-                    .bounds()
-                    .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
-                let flat = self.flat_index(indices, &bounds)?;
-                if flat >= arr.len() {
-                    return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
-                }
-                let value = arr
-                    .variant_element(flat)
-                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-                self.store(dst, value)?;
             }
             OxInst::ArraySet {
                 array,
@@ -1063,10 +1080,19 @@ impl<'h> Vm3<'h> {
                 // (M3-5/M3-8); anything else is an empty iteration.
                 let elements = if let Some(arr) = src.as_safearray() {
                     arr.variant_elements().unwrap_or_default()
-                } else if src.as_object_ref().is_some() {
-                    return Err(Vm3Error::Unimplemented {
-                        what: "For Each over an object (Collection / COM enumerator)",
-                    });
+                } else if let Some(obj) = src.as_object_ref() {
+                    if let Some(values) = obj.native_collection_snapshot() {
+                        // A built-in `Collection` enumerates its values in insertion order.
+                        values
+                    } else if obj.is_project_instance() {
+                        // A project instance (or an empty Collection) has nothing to enumerate.
+                        Vec::new()
+                    } else {
+                        // A foreign COM enumerator (IEnumVARIANT) is W5.
+                        return Err(Vm3Error::Unimplemented {
+                            what: "For Each over a COM enumerator",
+                        });
+                    }
                 } else {
                     Vec::new()
                 };
@@ -2158,6 +2184,12 @@ impl<'h> Vm3<'h> {
                 )),
             })
             .collect()
+    }
+
+    /// Evaluate a list of index operands to by-value `Variant`s (a Collection default-member
+    /// `c(i)` call's indices are plain operands, not `OxCallArg`s).
+    fn operands_to_values(&self, ops: &[OxOperand]) -> Result<Vec<Variant>, Vm3Error> {
+        ops.iter().map(|op| self.operand(op)).collect()
     }
 
     /// Resolve a `Collection` member name to its `NativeMethodId` via the VBA library bundle's

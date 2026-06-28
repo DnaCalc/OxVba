@@ -511,6 +511,28 @@ mod tests {
         );
     }
 
+    /// vm3-finish W4: built-in `Collection` default-member `c(i)` (by index and by key) and
+    /// `For Each` over a Collection must match vm2 on vm3.
+    #[test]
+    fn vm3_matches_vm2_on_collection_default_member_and_for_each() {
+        assert_vm2_vm3_match(
+            "Sub Main()\n\
+             Dim c As New Collection\n\
+             c.Add 10\n\
+             c.Add 20, \"k\"\n\
+             Dim a As Variant\n\
+             a = c(1)\n\
+             Dim b As Variant\n\
+             b = c(\"k\")\n\
+             Dim total As Long\n\
+             Dim v As Variant\n\
+             For Each v In c\n\
+             total = total + v\n\
+             Next v\n\
+             End Sub\n",
+        );
+    }
+
     /// Regression for task_842916b0: a `Double` `/` result stored into a `Long` local must
     /// narrow (coerce-on-store with banker's rounding), not keep the `Double`. `10 / 4 = 2.5`
     /// → `Long` 2 (round half to even). vm3 must match vm2 (and the oracle).
