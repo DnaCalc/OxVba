@@ -43,7 +43,10 @@ use oxvba_bundle::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, ProjectMemberKind,
     default_array_element, redim_safearray_from_elements, vba_record_layout_for_fields,
 };
-use oxvba_com::TypeLibMemberInvokeKind;
+use oxvba_com::{
+    DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue,
+    TypeLibMemberInvokeKind,
+};
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
@@ -1280,7 +1283,7 @@ impl<'h> Vm3<'h> {
                 }
             }
 
-            // ── Late-bound member dispatch (M3-6: project instances; COM = M3-8) ──────
+            // ── Late-bound member dispatch (M3-6: project instances; M3-8: COM) ──────
             OxInst::ComCallLate {
                 dst,
                 recv,
@@ -1289,19 +1292,39 @@ impl<'h> Vm3<'h> {
                 args,
             } => {
                 let recv_v = self.operand(recv)?;
-                let recv_obj = variant_to_object(&recv_v)?;
-                if recv_obj.is_project_instance() {
-                    let ret =
-                        self.dispatch_project_method(recv_obj, recv_v, name, *invoke_kind, args)?;
-                    if let Some(dst) = dst {
-                        self.store(dst, ret)?;
+                let ret = self.dispatch_member_by_name(recv_v, name, *invoke_kind, args)?;
+                if let Some(dst) = dst {
+                    self.store(dst, ret)?;
+                }
+            }
+            // `CallByName(obj, "Member", vbMethod|vbGet|vbLet|vbSet, args…)` — the genuinely
+            // dynamic by-name dispatch. The runtime `calltype` integer selects the accessor;
+            // an out-of-range value raises error 5 (matching vm2).
+            OxInst::CallByName {
+                dst,
+                object,
+                name,
+                calltype,
+                args,
+            } => {
+                let recv_v = self.operand(object)?;
+                let member_name = arith::as_string(&self.operand(name)?);
+                let ct = arith::int(&self.operand(calltype)?).map_err(arith_fault)?;
+                let invoke_kind = match ct {
+                    1 => TypeLibMemberInvokeKind::Method,
+                    2 => TypeLibMemberInvokeKind::PropertyGet,
+                    4 => TypeLibMemberInvokeKind::PropertyPut,
+                    8 => TypeLibMemberInvokeKind::PropertyPutRef,
+                    _ => {
+                        return Err(Vm3Error::Fault(Fault::new(
+                            5,
+                            "CallByName: invalid CallType",
+                        )));
                     }
-                } else {
-                    // A genuine `Object`/`Variant` (COM/foreign) receiver dispatches through
-                    // the host — late-bound COM lands in M3-8 (and needs a live host).
-                    return Err(Vm3Error::Unimplemented {
-                        what: "late-bound COM dispatch",
-                    });
+                };
+                let ret = self.dispatch_member_by_name(recv_v, &member_name, invoke_kind, args)?;
+                if let Some(dst) = dst {
+                    self.store(dst, ret)?;
                 }
             }
 
@@ -1893,6 +1916,76 @@ impl<'h> Vm3<'h> {
         self.run_proc_with_me(proc, me, &proc_args, false)
     }
 
+    /// Late-bound by-name member dispatch shared by `ComCallLate` and `CallByName`: a
+    /// project-instance receiver dispatches internally ([`Self::dispatch_project_method`]);
+    /// a genuine `Object`/`Variant` (COM/foreign) receiver goes to the host's COM facet
+    /// ([`Self::dispatch_com_method`]).
+    fn dispatch_member_by_name(
+        &mut self,
+        recv_v: Variant,
+        name: &str,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: &[OxCallArg],
+    ) -> Result<Variant, Vm3Error> {
+        let object = variant_to_object(&recv_v)?;
+        if object.is_project_instance() {
+            self.dispatch_project_method(object, recv_v, name, invoke_kind, args)
+        } else {
+            self.dispatch_com_method(object, name, invoke_kind, args)
+        }
+    }
+
+    /// Late-bound COM dispatch on a genuine COM/foreign receiver: build a by-name dynamic
+    /// call request, route it through the host's COM facet (the identical
+    /// `dispatch_invoke_dynamic_variant_with_writebacks` contract vm2 drives), and copy any
+    /// `[out]`/`[in,out]` write-back to its ByRef call-site place. A dispatch fault carries
+    /// the rich VBA `Err.Number` recovered from the HRESULT/EXCEPINFO (via [`Fault::from_hal`],
+    /// never the flatten-to-5 default — the must-fix the milestone calls out).
+    fn dispatch_com_method(
+        &mut self,
+        object: ObjectRef,
+        member: &str,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: &[OxCallArg],
+    ) -> Result<Variant, Vm3Error> {
+        let mut call_args = Vec::with_capacity(args.len());
+        for arg in args {
+            let (value, arg_name) = match arg {
+                OxCallArg::Operand(op) => (Some(self.operand(op)?), None),
+                OxCallArg::ByRef(place) => (Some(self.read(place)?), None),
+                OxCallArg::Named { name, value } => (Some(self.operand(value)?), Some(name.clone())),
+                OxCallArg::Omitted => (None, None),
+                OxCallArg::Const(n) => (Some(Variant::from_i32(*n)), None),
+            };
+            call_args.push(DynamicCallArg {
+                value: value.map(DynamicValue::from_variant),
+                name: arg_name,
+            });
+        }
+        let request = DynamicCallRequest {
+            object,
+            member: DynamicMemberSelector::Name(member.to_string()),
+            args: call_args,
+            call_kind_hint: Some(invoke_kind_to_dynamic(invoke_kind)),
+        };
+        let (ret, writebacks) = self
+            .host
+            .com()
+            .dispatch_invoke_dynamic_variant_with_writebacks(&request)
+            .map_err(|e| Vm3Error::Fault(Fault::from_hal(e)))?;
+        // Apply COM `[out]`/`[in,out]` write-backs to the ByRef call-site places; only a
+        // `ByRef` arg (marked from the typelib's param directions) is written back — a
+        // force-ByVal `(x)` / non-l-value is lowered to `Operand` and correctly skipped.
+        for (j, wb) in writebacks.into_iter().enumerate() {
+            if let Some(value) = wb
+                && let Some(OxCallArg::ByRef(place)) = args.get(j)
+            {
+                self.store(place, value)?;
+            }
+        }
+        Ok(ret)
+    }
+
     /// Invoke a base-library built-in. Most builtins are the pure shared
     /// `oxvba_lib::invoke`, but a few are host/bundle-aware and the pure body would
     /// return a generically-wrong value: `TypeName` of an object yields the literal
@@ -2285,6 +2378,18 @@ fn project_member_kind(k: TypeLibMemberInvokeKind) -> ProjectMemberKind {
     }
 }
 
+/// The dynamic COM dispatch kind (the late-bound `IDispatch::Invoke` flag hint) a call-site
+/// accessor selects. Mirrors vm2's `member_kind_to_dynamic` composed with the invoke-kind→
+/// member-kind mapping: `Put`→`Let`, `PutRef`→`Set`.
+fn invoke_kind_to_dynamic(k: TypeLibMemberInvokeKind) -> DynamicCallKind {
+    match k {
+        TypeLibMemberInvokeKind::Method => DynamicCallKind::Method,
+        TypeLibMemberInvokeKind::PropertyGet => DynamicCallKind::PropertyGet,
+        TypeLibMemberInvokeKind::PropertyPut => DynamicCallKind::PropertyLet,
+        TypeLibMemberInvokeKind::PropertyPutRef => DynamicCallKind::PropertySet,
+    }
+}
+
 /// Coerce a value to an object reference (mirrors vm2's `variant_to_object`): an unset object
 /// reference (`Object`/`Empty`/`Null` with no instance) is "Object variable not set" (91),
 /// distinct from a non-object value (424); a bare integer is a legacy compat-identity handle.
@@ -2381,14 +2486,23 @@ mod tests {
     use oxvba_bundle::coreir::{
         CoreArg, CoreBinOp, CoreCallee, CoreConst, CoreGlobal, CoreLocal, CoreParam, CorePlace,
         CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp, ExitKind, LabelId,
-        LocalId as CoreLocalId, ProcId,
+        LocalId as CoreLocalId, ProcId, PtrWriteback,
     };
     use oxvba_bundle::{
-        AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId, NumericCoerceTarget,
-        NumericMode, ProcedureKind, StringCompareMode, VarTypeRef,
+        AssignmentIntent, AssignmentTargetKind, BuiltinType, DeclareParamType, ExternalCallDescriptor,
+        NativeImplId, NumericCoerceTarget, NumericMode, ProcedureKind, StringCompareMode, VarTypeRef,
     };
     use oxvba_hal::HostPolicy;
     use oxvba_hal::adapters::null::NullHostServices;
+    use oxvba_hal::error::HalResult;
+    use oxvba_hal::model::{HalDescriptor, HalProfileId};
+    use oxvba_hal::traits::{
+        ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+    };
+    use oxvba_oxir::program::{OxFunc, OxLocal, OxParamInfo};
+    use oxvba_oxir::ty::OxTy;
+    use oxvba_runtime::DynLinkSymbol;
     use oxvba_runtime::variant::VarType;
 
     /// Bind-free: hand-build a `CoreProgram`, elaborate it to OxIR, run it on vm3, and
@@ -2857,6 +2971,296 @@ mod tests {
         let prog = procs_program(vec![main]);
         let vm = run_core(&prog);
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(3));
+    }
+
+    // ── Native interop (M3-7): Declare Lib + pointer helpers + AddressOf ──────────
+    //
+    // The corpus differential gate exercises the `Declare`/`StrPtr`/`VarPtr` *reachable*
+    // ops end-to-end against the deterministic host (vm3 matches vm2). These unit tests
+    // pin the marshalling under a *controlled* mock dynlink — proving the ByRef write-back
+    // targets the caller slot, `Err.LastDllError` refreshes, and a pointer pin round-trips
+    // — independent of whatever a real OS `Declare` would do.
+
+    /// A host whose dynlink echoes each argument incremented by 100 (a fake native
+    /// "Bump") and reports a fixed `last_dll_error`, to exercise per-call-site `Declare`
+    /// ByRef write-back and the `Err.LastDllError` refresh. Mirrors vm2's test host.
+    struct MockDynlinkHost {
+        inner: NullHostServices,
+        last_dll_error: i32,
+    }
+    impl MockDynlinkHost {
+        fn new(last_dll_error: i32) -> Self {
+            Self {
+                inner: NullHostServices::new(HostPolicy::deterministic_runtime()),
+                last_dll_error,
+            }
+        }
+    }
+    impl HostServices for MockDynlinkHost {
+        fn profile(&self) -> HalProfileId {
+            self.inner.profile()
+        }
+        fn descriptor(&self) -> HalDescriptor {
+            self.inner.descriptor()
+        }
+        fn policy(&self) -> &HostPolicy {
+            self.inner.policy()
+        }
+        fn console(&self) -> &dyn ConsoleHal {
+            self.inner.console()
+        }
+        fn ui(&self) -> &dyn UiInteractionHal {
+            self.inner.ui()
+        }
+        fn events(&self) -> &dyn EventPumpHal {
+            self.inner.events()
+        }
+        fn fs(&self) -> &dyn FileSystemHal {
+            self.inner.fs()
+        }
+        fn process(&self) -> &dyn ProcessEnvHal {
+            self.inner.process()
+        }
+        fn com(&self) -> &dyn ComHal {
+            self.inner.com()
+        }
+        fn time_locale(&self) -> &dyn TimeLocaleHal {
+            self.inner.time_locale()
+        }
+        fn dynlink(&self) -> &dyn DynamicLinkHal {
+            self
+        }
+        fn diag(&self) -> &dyn DiagnosticsHal {
+            self.inner.diag()
+        }
+    }
+    impl DynamicLinkHal for MockDynlinkHost {
+        fn invoke_descriptor_variants(
+            &self,
+            _descriptor: &DynLinkDescriptorView<'_>,
+            args: &[Variant],
+        ) -> HalResult<(Variant, Vec<Variant>)> {
+            let wb = args
+                .iter()
+                .map(|a| {
+                    a.as_i32()
+                        .map(|n| Variant::from_i32(n + 100))
+                        .unwrap_or_else(|| a.clone())
+                })
+                .collect();
+            Ok((Variant::empty(), wb))
+        }
+        fn last_dll_error(&self) -> i32 {
+            self.last_dll_error
+        }
+    }
+
+    /// Elaborate a hand-built `CoreProgram` and run it on vm3 with a chosen host.
+    fn run_core_with_host<'h>(prog: &CoreProgram, host: &'h dyn HostServices) -> Vm3<'h> {
+        let oxp: &'static OxProgram =
+            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(prog).expect("elaborate")));
+        Vm3::run(oxp, host).expect("vm3 run")
+    }
+
+    /// A one-arg `Declare` descriptor (`descriptor_id` 0) whose single parameter is `ty`,
+    /// `ByRef` per `by_ref`. The deterministic mock host ignores most of these fields.
+    fn declare_descriptor(ty: DeclareParamType, by_ref: bool) -> ExternalCallDescriptor {
+        ExternalCallDescriptor {
+            descriptor_id: 0,
+            declared_name: "Bump".into(),
+            library: "t".into(),
+            alias: "Bump".into(),
+            ordinal_alias: false,
+            symbol: DynLinkSymbol::new(0),
+            marshal_lane: "m0-deterministic".into(),
+            calling_convention: "platform-default".into(),
+            selection_policy: "case-insensitive-canonical".into(),
+            param_count: 1,
+            param_types: vec![ty],
+            param_by_ref: vec![by_ref],
+            return_type: None,
+        }
+    }
+
+    #[test]
+    fn declare_byref_writes_back_to_the_call_site_slot() {
+        // Declare Sub Bump Lib "t" (ByRef n As Long); r = 5; Bump r  ->  r = 105 (the mock
+        // dynlink echoes +100). Proves the write-back targets the caller's `ByRef` slot.
+        let mut prog = main_proc(
+            vec![local("r", VarTypeRef::Builtin(BuiltinType::Long))],
+            vec![
+                assign(lc(0), CoreValue::Const(CoreConst::I32(5))),
+                CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::Declare {
+                        descriptor_id: 0,
+                        ptr_writebacks: Vec::new(),
+                    },
+                    args: vec![CoreArg::ByRef(lc(0))],
+                }),
+            ],
+        );
+        prog.external_calls = vec![declare_descriptor(DeclareParamType::Long, true)];
+        let host = MockDynlinkHost::new(0);
+        let vm = run_core_with_host(&prog, &host);
+        assert_eq!(
+            vm.slot(0).and_then(|v| v.as_i32()),
+            Some(105),
+            "a Declare ByRef arg must write the marshaled-back value to the caller slot"
+        );
+    }
+
+    #[test]
+    fn a_declare_refreshes_err_last_dll_error() {
+        // After a Declare call, Err.LastDllError reads the OS last-error the HAL captured.
+        let mut prog = main_proc(
+            vec![local("e", VarTypeRef::Builtin(BuiltinType::Long))],
+            vec![
+                CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::Declare {
+                        descriptor_id: 0,
+                        ptr_writebacks: Vec::new(),
+                    },
+                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::I32(1)))],
+                }),
+                assign(lc(0), CoreValue::ErrField(ErrField::LastDllError)),
+            ],
+        );
+        prog.external_calls = vec![declare_descriptor(DeclareParamType::Long, false)];
+        let host = MockDynlinkHost::new(2026);
+        let vm = run_core_with_host(&prog, &host);
+        assert_eq!(
+            vm.slot(0).and_then(|v| v.as_i32()),
+            Some(2026),
+            "Err.LastDllError must reflect the dynlink HAL's last-error after a Declare"
+        );
+    }
+
+    #[test]
+    fn strptr_pins_and_a_declare_writeback_round_trips_the_string() {
+        // s = "hi"; Declare Sub Poke Lib "t" (ByVal p As LongPtr); Poke StrPtr(s) with a
+        // String pointer-helper write-back into `s`. The mock makes no native mutation, so
+        // the pinned UTF-16 buffer reads back unchanged — proving StrPtr registration + the
+        // pointer read-back path (and that the pin survives until after the write-back).
+        let mut prog = main_proc(
+            vec![local("s", VarTypeRef::Builtin(BuiltinType::String))],
+            vec![
+                assign(lc(0), CoreValue::Const(CoreConst::Str("hi".into()))),
+                CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::Declare {
+                        descriptor_id: 0,
+                        ptr_writebacks: vec![PtrWriteback {
+                            arg_index: 0,
+                            target: lc(0),
+                            kind: PtrWritebackKind::String,
+                        }],
+                    },
+                    args: vec![CoreArg::ByVal(CoreValue::Ptr {
+                        kind: PtrKind::Str,
+                        value: Box::new(load(0)),
+                    })],
+                }),
+            ],
+        );
+        prog.external_calls = vec![declare_descriptor(DeclareParamType::LongPtr, false)];
+        let host = MockDynlinkHost::new(0);
+        let vm = run_core_with_host(&prog, &host);
+        let s = oxvba_runtime::variant_to_vba_string(&vm.slot(0).expect("s"))
+            .map(|b| b.as_str().to_string())
+            .unwrap_or_default();
+        assert_eq!(s, "hi", "the StrPtr pin must read back the source string unchanged");
+    }
+
+    #[test]
+    fn call_proc_ref_dispatches_through_address_of() {
+        // A procedure reference (AddressOf, materialized by LoadProcRef) is called through
+        // CallProcRef: Double(21) = 42 via a runtime-resolved proc index. These ops are
+        // latent in the front-end (no producer yet) but consumed by the JIT, so the program
+        // is built directly in OxIR. Mirrors vm2's `call_proc_ref_dispatches_through_address_of`.
+        fn ox_local(name: &str, ty: OxTy, param: Option<OxParamInfo>) -> OxLocal {
+            OxLocal {
+                name: name.into(),
+                ty,
+                param,
+                escaped: false,
+            }
+        }
+        let main = OxFunc {
+            name: "Main".into(),
+            kind: ProcedureKind::Sub,
+            locals: vec![
+                ox_local("arg", OxTy::Long, None), // Local 0
+                ox_local("f", OxTy::ProcRef, None), // Local 1 (the AddressOf value)
+                ox_local("n", OxTy::Long, None),   // Local 2 (result, snapshot slot 2)
+            ],
+            param_count: 0,
+            return_local: None,
+            blocks: vec![OxBlock {
+                id: BlockId(0),
+                instrs: vec![
+                    OxInst::Assign {
+                        dst: OxPlace::Local(LocalId(0)),
+                        value: OxOperand::Const(OxConst::I32(21)),
+                    },
+                    OxInst::LoadProcRef {
+                        dst: OxPlace::Local(LocalId(1)),
+                        proc: FuncId(1),
+                    },
+                    OxInst::CallProcRef {
+                        dst: Some(OxPlace::Local(LocalId(2))),
+                        target: OxOperand::local(LocalId(1)),
+                        args: vec![OxArg::ByVal(OxOperand::local(LocalId(0)))],
+                    },
+                ],
+                fault_target: None,
+                terminator: OxTerminator::Return,
+            }],
+            entry: BlockId(0),
+        };
+        let double = OxFunc {
+            name: "Double".into(),
+            kind: ProcedureKind::Function,
+            locals: vec![
+                ox_local(
+                    "x",
+                    OxTy::Long,
+                    Some(OxParamInfo {
+                        by_ref: false,
+                        variadic: false,
+                    }),
+                ), // Local 0 (param)
+                ox_local("Double", OxTy::Long, None), // Local 1 (return)
+            ],
+            param_count: 1,
+            return_local: Some(LocalId(1)),
+            blocks: vec![OxBlock {
+                id: BlockId(0),
+                instrs: vec![OxInst::Arith {
+                    dst: OxPlace::Local(LocalId(1)),
+                    op: ArithOp::Add,
+                    lhs: OxOperand::local(LocalId(0)),
+                    rhs: OxOperand::local(LocalId(0)),
+                    mode: NumericMode::Widening,
+                }],
+                fault_target: None,
+                terminator: OxTerminator::Return,
+            }],
+            entry: BlockId(0),
+        };
+        let program = OxProgram {
+            funcs: vec![main, double],
+            entry: Some(FuncId(0)),
+            unit_name: "T".into(),
+            ..Default::default()
+        };
+        let oxp: &'static OxProgram = Box::leak(Box::new(program));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let vm = Vm3::run(oxp, host).expect("vm3 run");
+        assert_eq!(
+            vm.slot(2).and_then(|v| v.as_i32()),
+            Some(42),
+            "CallProcRef must dispatch through the AddressOf proc reference"
+        );
     }
 
     #[test]
