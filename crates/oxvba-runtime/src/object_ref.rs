@@ -541,6 +541,11 @@ struct CompatObjectBase {
     identity: RuntimeObjectIdentity,
     class_descriptor: &'static RuntimeClassDescriptor,
     fields: RefCell<BTreeMap<i32, Variant>>,
+    /// Built-in native-object state carried on the box itself (currently a `VBA.Collection`'s
+    /// contents). Lazily created on first use via [`ObjectRef::with_native_collection`]; freed
+    /// with the box, so there is no VM-side store and no leak. `None` for ordinary project
+    /// instances that hold no native collection.
+    native_state: RefCell<Option<crate::collection::CollectionData>>,
     parked_for_termination: Cell<bool>,
     running_termination: Cell<bool>,
     terminated: Cell<bool>,
@@ -663,6 +668,7 @@ pub fn finish_pending_termination(instance_id: i32) -> bool {
             return false;
         }
         (*owner).fields.borrow_mut().clear();
+        (*owner).native_state.borrow_mut().take();
         drop(Box::from_raw(owner));
         true
     }
@@ -686,6 +692,7 @@ pub fn reset_pending_terminations() {
                     continue;
                 }
                 (*owner).fields.borrow_mut().clear();
+                (*owner).native_state.borrow_mut().take();
                 drop(Box::from_raw(owner));
             }
         }
@@ -748,6 +755,7 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
         // then `Box::from_raw` reclaims the allocation exactly once.
         unsafe {
             (*owner).fields.borrow_mut().clear();
+            (*owner).native_state.borrow_mut().take();
             drop(Box::from_raw(owner));
         }
     }
@@ -844,6 +852,7 @@ impl ObjectRef {
             },
             class_descriptor,
             fields: RefCell::new(BTreeMap::new()),
+            native_state: RefCell::new(None),
             parked_for_termination: Cell::new(false),
             running_termination: Cell::new(false),
             terminated: Cell::new(false),
@@ -961,6 +970,32 @@ impl ObjectRef {
         }
         compat_field_set(compat_owner_from_unknown(self.0.as_ptr()), token, value);
         true
+    }
+
+    /// Run `f` against this instance's built-in native-`Collection` state, lazily creating an
+    /// empty [`crate::collection::CollectionData`] on first use. Returns `None` if this
+    /// `ObjectRef` is not one of our compat boxes (a foreign COM object has no native state).
+    ///
+    /// The state rides the object box's `native_state` slot, so `Set c2 = c1` (which clones the
+    /// `ObjectRef` to the same box) shares one collection — VBA reference semantics — and box
+    /// teardown reclaims it, so there is no VM-side store and no leak. The shared keyed-method
+    /// logic (`oxvba_eval::collection::dispatch_collection`) runs inside `f`.
+    pub fn with_native_collection<R>(
+        &self,
+        f: impl FnOnce(&mut crate::collection::CollectionData) -> R,
+    ) -> Option<R> {
+        if !self.is_compat_object() {
+            return None;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: guarded by `is_compat_object()` (vtbl identity) above, so `owner` is the live
+        // `CompatObjectBase` kept alive by this `ObjectRef`'s retained reference; the `RefCell`
+        // borrow is single-threaded (`ObjectRef` is neither `Send` nor `Sync`).
+        unsafe {
+            let mut guard = (*owner).native_state.borrow_mut();
+            let data = guard.get_or_insert_with(crate::collection::CollectionData::default);
+            Some(f(data))
+        }
     }
 
     pub fn query_interface_descriptor(
@@ -1219,6 +1254,40 @@ mod tests {
         assert_eq!(descriptor.identity.major_version, Some(1));
         assert_eq!(descriptor.identity.minor_version, Some(0));
         assert_eq!(descriptor.identity.lcid, Some(1033));
+    }
+
+    #[test]
+    fn native_collection_state_is_shared_across_clones() {
+        use crate::Variant;
+        // W1-a: a built-in Collection's CollectionData rides the object box's `native_state`
+        // slot, reached via `with_native_collection`. Cloning the ObjectRef (`Set c2 = c1`)
+        // points at the SAME box, so both names share one CollectionData — VBA reference
+        // semantics — and box teardown reclaims it (no VM-side store, no leak).
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "VBA.Collection",
+            interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
+        };
+        let c1 = ObjectRef::from_compat_identity_with_descriptor(404, &TEST_CLASS);
+        c1.with_native_collection(|d| {
+            d.add(Variant::from_i32(10), None, None, None).unwrap();
+            d.add(Variant::from_i32(20), None, None, None).unwrap();
+        })
+        .expect("a compat object has native-collection state");
+        let c2 = c1.clone();
+        let (count, first) = c2
+            .with_native_collection(|d| {
+                (
+                    d.count(),
+                    d.item(&crate::collection::Selector::Index(1))
+                        .ok()
+                        .and_then(|v| v.as_i32()),
+                )
+            })
+            .expect("the clone sees the same box's native state");
+        assert_eq!(count, 2, "both ObjectRef clones share one CollectionData");
+        assert_eq!(first, Some(10));
+        drop(c2);
+        drop(c1); // refcount-0 frees the box and, with it, native_state — no leak
     }
 
     #[test]

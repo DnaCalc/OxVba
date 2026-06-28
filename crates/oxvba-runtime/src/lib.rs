@@ -7,6 +7,7 @@ pub mod bstr;
 pub mod builtins;
 pub mod call_frame;
 pub mod coerce;
+pub mod collection;
 pub mod com_record;
 pub mod date;
 pub mod decimal;
