@@ -688,11 +688,30 @@ impl<'a> Lowerer<'a> {
                 array,
                 element_type,
             } => {
-                let arr = self.simple_place(array)?;
+                // A simple target is erased in place; a COMPOUND target (e.g. a member
+                // array `Erase b.arr`) materializes the base's current array into a temp,
+                // erases that, then writes it back into the nested base — the same
+                // materialize-and-write-back the ReDim arm uses, preserving the
+                // element-type-aware erase for both dynamic and fixed member arrays.
+                let compound = !Self::is_simple_place(array);
+                let arr = if compound {
+                    let cur = self.place_as_operand(array)?;
+                    let t = self.new_temp();
+                    self.emit(OxInst::Assign {
+                        dst: OxPlace::Temp(t),
+                        value: cur,
+                    });
+                    OxPlace::Temp(t)
+                } else {
+                    self.simple_place(array)?
+                };
                 self.emit(OxInst::ArrayErase {
                     array: arr,
                     element: element_type.clone(),
                 });
+                if compound {
+                    self.store_to_place(array, OxOperand::Use(arr))?;
+                }
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }

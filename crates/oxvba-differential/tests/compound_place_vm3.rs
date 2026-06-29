@@ -211,3 +211,36 @@ End Sub
 "#;
     assert_vm3_contains(source, &long(42));
 }
+
+/// 8. **`Erase` of a compound (UDT member) array** — the verbatim ChibiPDF case
+///    (`Erase m_Results.Lines`, a `Lines() As ocrLine` dynamic member array). The OxIR
+///    `Erase` arm previously declined this with `unsupported(compound place)`, so the
+///    ChibiEx class could not elaborate. The fix routes a compound `Erase` through the
+///    same materialize-and-write-back as a compound `ReDim`: read the member array into a
+///    temp, erase it (vm2-faithful: the array becomes `Empty`/deallocated — vm3's
+///    `ArrayErase` matches vm2's "store Empty", element-reset of fixed arrays being a
+///    deferred refinement in BOTH VMs), and write it back.
+///
+///    Strong observable: after `Erase`, a `ReDim Preserve` has nothing to preserve, so the
+///    previously-set `b.arr(2) = 7` reads back as 0 — proving the member array was actually
+///    deallocated, not left intact (a no-op `Erase` would preserve the 7).
+#[test]
+fn erase_compound_member_array_deallocates() {
+    let source = r#"
+Type T2
+    arr() As Long
+End Type
+
+Public result As Long
+
+Sub Main()
+    Dim b As T2
+    ReDim b.arr(1 To 3)
+    b.arr(2) = 7
+    Erase b.arr
+    ReDim Preserve b.arr(1 To 3)
+    result = b.arr(2)
+End Sub
+"#;
+    assert_vm3_contains(source, &long(0));
+}

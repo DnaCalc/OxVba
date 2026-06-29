@@ -106,22 +106,19 @@ fn chibiex_class_parses_without_errors() {
 }
 
 #[test]
-fn chibiex_class_binds() {
+fn chibiex_class_binds_and_elaborates() {
     // A `Main` entry that instantiates the class, plus the verbatim ChibiEx
     // class module. (Predefined cond-comp constants select the Win64/VBA7
     // PtrSafe declare branch, matching the 64-bit runtime target.)
     //
-    // STATUS: binds cleanly through the clean stack. This is a front-end binder
-    // acceptance, NOT a VM run — full execution needs Windows-native WinRT OCR
-    // plus a PDF. The UDT round made it pass: array-aware UDT field types
-    // (`Lines() As ocrLine` ⇒ `Array(ocrLine)`), per-instance class-field
-    // record-init in `Class_Initialize`, and UDT member access through a `With`
-    // receiver (`With m_Results.Lines(i) … .Text`).
-    //
-    // NOTE: this asserts BIND only. The vm3 OxIR elaboration of the verbatim
-    // ChibiEx body declines a nested compound-place case (a documented vm3
-    // residual, covered separately by `oxvba-differential`'s compound_place_vm3
-    // suite), so this corpus test stops at the binder — its actual subject.
+    // STATUS: binds AND elaborates to the vm3 OxIR cleanly through the clean
+    // stack. This is a front-end acceptance (bind + OxIR lowering), NOT a VM
+    // run — full execution needs Windows-native WinRT OCR plus a PDF. The UDT
+    // round made it bind: array-aware UDT field types (`Lines() As ocrLine` ⇒
+    // `Array(ocrLine)`), per-instance class-field record-init in
+    // `Class_Initialize`, and UDT member access through a `With` receiver
+    // (`With m_Results.Lines(i) … .Text`); the compound-place lowering (incl.
+    // `Erase m_Results.Lines` on a UDT member array) makes it elaborate.
     let manifest = SymbolProjectManifest {
         project_name: "ChibiPdf".into(),
         project_kind: ProjectKind::Source,
@@ -145,6 +142,13 @@ fn chibiex_class_binds() {
         conditional_constants: BTreeMap::new(),
     };
 
-    bind_program(&manifest, &NullTypeLibs)
+    let cp = bind_program(&manifest, &NullTypeLibs)
         .unwrap_or_else(|e| panic!("ChibiEx failed to bind: {e:?}"));
+    // ...and elaborates to the vm3 OxIR. The verbatim ChibiEx body exercises
+    // `Erase m_Results.Lines` — Erase of a UDT *member* array — which the OxIR
+    // lowering handles via the same materialize-and-write-back as a compound
+    // `ReDim`. (Full execution still needs Windows-native WinRT OCR plus a PDF;
+    // this is the front-end ceiling.)
+    oxvba_oxir::elaborate::elaborate(&cp)
+        .unwrap_or_else(|e| panic!("ChibiEx failed to elaborate to OxIR: {e:?}"));
 }
