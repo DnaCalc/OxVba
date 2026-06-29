@@ -3233,9 +3233,12 @@ mod tests {
         let path = Variant::from_string(BStr::from(temp_file.to_string_lossy().to_string()));
 
         let write_handle = host.open_variant(path.clone(), rv(1)).expect("open output");
+        // `print_line_variant` now writes its text VERBATIM — the caller (oxvba-lib's
+        // `file_print`/`file_write`) assembles the full record including the `\r\n`
+        // terminator, so the round-trip test supplies it here.
         host.print_line_variant(
             write_handle.clone(),
-            Variant::from_string(BStr::from("world")),
+            Variant::from_string(BStr::from("world\r\n")),
         )
         .expect("print_line");
         host.close_variant(write_handle).expect("close output");

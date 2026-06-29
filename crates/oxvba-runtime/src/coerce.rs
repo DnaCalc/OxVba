@@ -353,6 +353,45 @@ pub fn print_display_text(value: &Variant) -> String {
     }
 }
 
+/// Render a `Variant` as a single `Write #` output field.
+///
+/// `Write #` writes a machine-readable, locale-independent record: strings are
+/// double-quoted (embedded `"` doubled), `Boolean` becomes `#TRUE#`/`#FALSE#`,
+/// `Null` becomes `#NULL#`, an `Empty` field is written as *nothing* (just the
+/// surrounding commas), and an `Error` becomes `#ERROR <code>#`. Numbers reuse
+/// the locale-independent [`print_display_text`] digits (period decimal, no
+/// thousands separators), which also covers `Currency`/`Decimal` exactly.
+///
+/// FIDELITY: `Date` currently renders as its raw serial (via `print_display_text`)
+/// rather than VBA's universal `#yyyy-mm-dd hh:mm:ss#` literal — that is the
+/// separate `date-to-string-emits-serial` gap (it needs date decomposition, which
+/// lives above this crate). The caller joins fields with commas and appends the
+/// record terminator.
+pub fn write_display_text(value: &Variant) -> String {
+    match value.vtype() {
+        VarType::String => {
+            let text = value
+                .as_bstr()
+                .map(|t| t.as_str().to_string())
+                .unwrap_or_default();
+            format!("\"{}\"", text.replace('"', "\"\""))
+        }
+        VarType::Boolean => {
+            if value.as_bool().unwrap_or(false) {
+                "#TRUE#".to_string()
+            } else {
+                "#FALSE#".to_string()
+            }
+        }
+        VarType::Null => "#NULL#".to_string(),
+        VarType::Empty => String::new(),
+        VarType::Error => format!("#ERROR {}#", value.as_error_code().unwrap_or(0)),
+        // Numbers (incl. Currency/Decimal) and the deferred Date-serial case reuse
+        // the canonical locale-independent display rendering.
+        _ => print_display_text(value),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{coerce_to, variant_to_vba_string};

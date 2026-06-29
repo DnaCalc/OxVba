@@ -688,6 +688,122 @@ fn binary_variable_string_reads_current_length() {
     assert_eq!(run_main_local0_string_std(src), Some("hello".to_string()));
 }
 
+/// The args of the (single) `Main`-body `ExternProc` call into `VBA`/`FileSystem.<member>`,
+/// or `None` if there is no such call. Used to assert `Print`/`Write` pass every field.
+fn extern_filesystem_call_args<'p>(
+    program: &'p CoreProgram,
+    member: &str,
+) -> Option<&'p Vec<CoreArg>> {
+    fn matches_member(program: &CoreProgram, import: usize, member: &str) -> bool {
+        program.imports.get(import).is_some_and(|imp| {
+            imp.unit.eq_ignore_ascii_case("VBA")
+                && matches!(
+                    &imp.token,
+                    oxvba_bundle::ExportToken::ModuleFunc { module, member: m, .. }
+                        if module.eq_ignore_ascii_case("FileSystem")
+                            && m.eq_ignore_ascii_case(member)
+                )
+        })
+    }
+    program.procs.iter().flat_map(|p| &p.body).find_map(|s| match s {
+        CoreStmt::Eval(CoreValue::Call {
+            callee: CoreCallee::ExternProc { import },
+            args,
+        }) if matches_member(program, *import, member) => Some(args),
+        _ => None,
+    })
+}
+
+/// Count the `Main`-body assignments whose value is an `ExternProc` call into
+/// `VBA`/`FileSystem.<member>` — i.e. read-into-target statements like
+/// `var = FileInput(handle, 1)` / `var = FileLineInput(handle)`.
+fn extern_filesystem_assign_count(program: &CoreProgram, member: &str) -> usize {
+    fn call_member(program: &CoreProgram, value: &CoreValue, member: &str) -> bool {
+        fn unwrap_import(value: &CoreValue) -> Option<usize> {
+            match value {
+                CoreValue::Call {
+                    callee: CoreCallee::ExternProc { import },
+                    ..
+                } => Some(*import),
+                CoreValue::Coerce { value, .. } => unwrap_import(value),
+                _ => None,
+            }
+        }
+        unwrap_import(value).is_some_and(|import| {
+            program.imports.get(import).is_some_and(|imp| {
+                imp.unit.eq_ignore_ascii_case("VBA")
+                    && matches!(
+                        &imp.token,
+                        oxvba_bundle::ExportToken::ModuleFunc { module, member: m, .. }
+                            if module.eq_ignore_ascii_case("FileSystem")
+                                && m.eq_ignore_ascii_case(member)
+                    )
+            })
+        })
+    }
+    program
+        .procs
+        .iter()
+        .flat_map(|p| &p.body)
+        .filter(|s| matches!(s, CoreStmt::Assign { value, .. } if call_member(program, value, member)))
+        .count()
+}
+
+#[test]
+fn print_hash_binds_every_field_with_a_separator_spec() {
+    // `Print #` previously dropped all but the first field. The dedicated binder must now
+    // emit `[handle, sep-spec, field0, field1, field2]` — a `,`/`;`-aware separator spec
+    // plus EVERY field. `Print #1, a; b, c`: a→`;`, b→`,`, c→none(`n`) ⇒ spec ";,n".
+    let program = bind(
+        "Sub Main()\n    Dim a, b, c\n    Open \"x.txt\" For Output As #1\n    Print #1, a; b, c\nEnd Sub\n",
+    );
+    let args = extern_filesystem_call_args(&program, "Print").expect("a FileSystem.Print call");
+    assert_eq!(args.len(), 5, "handle + sep-spec + 3 fields: {args:?}");
+    match &args[1] {
+        CoreArg::ByVal(CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(spec))) => {
+            assert_eq!(spec, ";,n", "per-field separator spec");
+        }
+        other => panic!("args[1] should be the separator-spec string const, got {other:?}"),
+    }
+}
+
+#[test]
+fn write_hash_binds_every_field() {
+    // `Write #1, x, y` ⇒ `[handle, sep-spec, x, y]` — all fields reach the call.
+    let program = bind(
+        "Sub Main()\n    Dim x, y\n    Open \"x.txt\" For Output As #1\n    Write #1, x, y\nEnd Sub\n",
+    );
+    let args = extern_filesystem_call_args(&program, "Write").expect("a FileSystem.Write call");
+    assert_eq!(args.len(), 4, "handle + sep-spec + 2 fields: {args:?}");
+}
+
+#[test]
+fn input_hash_binds_one_writeback_assignment_per_target() {
+    // `Input #` previously discarded its targets (no write-back). It must now bind ONE
+    // `target = FileInput(handle, 1)` assignment per target.
+    let program = bind(
+        "Sub Main()\n    Dim a, b, c\n    Open \"x.txt\" For Input As #1\n    Input #1, a, b, c\nEnd Sub\n",
+    );
+    assert_eq!(
+        extern_filesystem_assign_count(&program, "Input"),
+        3,
+        "one write-back assignment per Input # target"
+    );
+}
+
+#[test]
+fn line_input_hash_binds_a_writeback_assignment() {
+    // `Line Input #1, s` must bind `s = FileLineInput(handle)` (previously discarded).
+    let program = bind(
+        "Sub Main()\n    Dim s As String\n    Open \"x.txt\" For Input As #1\n    Line Input #1, s\nEnd Sub\n",
+    );
+    assert_eq!(
+        extern_filesystem_assign_count(&program, "LineInput"),
+        1,
+        "Line Input # must write the line back to its target"
+    );
+}
+
 #[test]
 fn addressof_binds_to_proc_ref() {
     let src = "Sub Main()\n    Dim p As Long\n    p = AddressOf Helper\nEnd Sub\n\nSub Helper()\nEnd Sub\n";

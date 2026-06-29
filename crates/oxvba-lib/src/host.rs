@@ -88,13 +88,92 @@ pub fn file_date_time(args: &[Variant], host: &dyn HostServices) -> LibResult<Va
 pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.fs().read_bytes_variant(req(args, 0)?, req(args, 1)?)?)
 }
-pub fn file_write(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+/// `Print #handle, item0 <sep> item1 …`. The binder passes `args[0]` = handle,
+/// `args[1]` = the separator spec (one char per field — the separator that
+/// *follows* that field: `,` print-zone / `;` adjacent / `n` none), and
+/// `args[2..]` = the field values. We assemble the complete record here (so no
+/// field is dropped) and write it verbatim through the file sink.
+pub fn file_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    let handle = req(args, 0)?;
+    let record = assemble_print_record(&separator_spec(args), args.get(2..).unwrap_or(&[]));
     Ok(host
         .fs()
-        .write_bytes_variant(req(args, 0)?, req(args, 1)?)?)
+        .print_line_variant(handle, Variant::from_string(record))?)
 }
-pub fn file_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
-    Ok(host.fs().print_line_variant(req(args, 0)?, req(args, 1)?)?)
+
+/// `Write #handle, item0, item1 …`. Same arg shape as [`file_print`]; `Write #`
+/// always comma-delimits and formats each field machine-readably (strings quoted,
+/// `#TRUE#`/`#FALSE#`/`#NULL#`/`#ERROR n#`), so the source `;`/`,` separators only
+/// decide whether the trailing `\r\n` is suppressed.
+pub fn file_write(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    let handle = req(args, 0)?;
+    let record = assemble_write_record(&separator_spec(args), args.get(2..).unwrap_or(&[]));
+    Ok(host
+        .fs()
+        .print_line_variant(handle, Variant::from_string(record))?)
+}
+
+/// VBA `Print #` print-zone width: a `,` separator advances to the next 14-column
+/// zone boundary.
+const PRINT_ZONE_WIDTH: usize = 14;
+
+/// The per-field separator spec the binder packs into `args[1]` (one char per
+/// field). Empty when there are no fields.
+fn separator_spec(args: &[Variant]) -> String {
+    opt(args, 1)
+        .and_then(|value| value.as_bstr())
+        .map(|spec| spec.as_str().to_string())
+        .unwrap_or_default()
+}
+
+/// Whether a trailing `,`/`;` after the last item suppresses the record's `\r\n`
+/// terminator (so the next `Print`/`Write` continues the same line).
+fn trailing_separator_suppresses_newline(seps: &str) -> bool {
+    matches!(seps.chars().last(), Some(',') | Some(';'))
+}
+
+/// Assemble a `Print #` record: each field rendered with VBA display semantics,
+/// `;` placing the next field adjacently and `,` padding to the next print zone.
+///
+/// FIDELITY: the print column resets to 0 per statement, so cross-statement zone
+/// continuation after a newline-suppressing trailing separator, the leading sign
+/// space on numbers, and `Tab(n)`/`Spc(n)` positioning are the remaining
+/// `print-separators-zones` refinements.
+fn assemble_print_record(seps: &str, fields: &[Variant]) -> String {
+    let seps: Vec<char> = seps.chars().collect();
+    let mut out = String::new();
+    let mut col = 0usize;
+    for (index, field) in fields.iter().enumerate() {
+        let text = oxvba_runtime::print_display_text(field);
+        col += text.chars().count();
+        out.push_str(&text);
+        if let Some(',') = seps.get(index).copied() {
+            let target = ((col / PRINT_ZONE_WIDTH) + 1) * PRINT_ZONE_WIDTH;
+            while col < target {
+                out.push(' ');
+                col += 1;
+            }
+        }
+    }
+    if !matches!(seps.last().copied(), Some(',') | Some(';')) {
+        out.push_str("\r\n");
+    }
+    out
+}
+
+/// Assemble a `Write #` record: comma-delimited machine-readable fields.
+fn assemble_write_record(seps: &str, fields: &[Variant]) -> String {
+    let mut out = String::new();
+    for (index, field) in fields.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&oxvba_runtime::write_display_text(field));
+    }
+    if !trailing_separator_suppresses_newline(seps) {
+        out.push_str("\r\n");
+    }
+    out
 }
 pub fn console_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.console().print_line_variant(print_joined(args))?)
@@ -278,4 +357,64 @@ fn print_joined(args: &[Variant]) -> Variant {
         .collect::<Vec<_>>()
         .join("\t");
     Variant::from_string(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{assemble_print_record, assemble_write_record};
+    use oxvba_runtime::Variant;
+
+    #[test]
+    fn print_record_emits_every_field_adjacent_for_semicolons() {
+        let fields = [
+            Variant::from_string("a"),
+            Variant::from_string("b"),
+            Variant::from_string("c"),
+        ];
+        assert_eq!(assemble_print_record(";;n", &fields), "abc\r\n");
+    }
+
+    #[test]
+    fn print_record_comma_pads_to_next_14_column_zone() {
+        let fields = [Variant::from_string("a"), Variant::from_string("b")];
+        // "a" (1 col) + comma → pad to column 14 (13 spaces) → "b" → terminator.
+        assert_eq!(
+            assemble_print_record(",n", &fields),
+            format!("a{}b\r\n", " ".repeat(13))
+        );
+    }
+
+    #[test]
+    fn print_record_trailing_separator_suppresses_the_newline() {
+        let fields = [Variant::from_string("a")];
+        assert_eq!(assemble_print_record(";", &fields), "a");
+    }
+
+    #[test]
+    fn print_record_with_no_fields_is_a_blank_line() {
+        assert_eq!(assemble_print_record("", &[]), "\r\n");
+    }
+
+    #[test]
+    fn write_record_quotes_strings_and_marks_boolean() {
+        let fields = [
+            Variant::from_string("a"),
+            Variant::from_i32(1),
+            Variant::from_bool(true),
+        ];
+        assert_eq!(assemble_write_record(",,n", &fields), "\"a\",1,#TRUE#\r\n");
+    }
+
+    #[test]
+    fn write_record_doubles_embedded_quotes() {
+        let fields = [Variant::from_string("x\"y")];
+        assert_eq!(assemble_write_record("n", &fields), "\"x\"\"y\"\r\n");
+    }
+
+    #[test]
+    fn write_record_empty_field_is_blank_and_joins_with_commas() {
+        // `Write #` emits nothing for an Empty field (just the delimiting comma).
+        let fields = [Variant::empty(), Variant::from_string("z")];
+        assert_eq!(assemble_write_record(",n", &fields), ",\"z\"\r\n");
+    }
 }

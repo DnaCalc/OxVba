@@ -77,9 +77,9 @@ may remain unexamined.
 
 | # | id | sev/class | eff | gap | fix locus |
 |---|----|-----------|-----|-----|-----------|
-|☐|print-write-only-first-field|Crit/SilentWrong|M|`Print #`/`Write #` emit only the FIRST field|`file_print`/`file_write` consume `args[1..]`; carry separators|
-|☐|input-stmt-no-writeback|Crit/SilentWrong|L|`Input #` never writes parsed fields back to targets|dedicated binder emitting per-target `Assign = FileInput(handle)`|
-|☐|line-input-no-writeback|Crit/SilentWrong|M|`Line Input #` never writes the line back|dedicated binder `strvar = FileLineInput(handle)`|
+|☑|print-write-only-first-field|Crit/SilentWrong|M|`Print #`/`Write #` emit only the FIRST field|dedicated `bind_print_write` packs `[handle, sep-spec, fields…]`; `oxvba-lib` `assemble_print_record`/`assemble_write_record` emit every field + separators + terminator; HAL `print_line_variant` is now a verbatim text sink *(done)*|
+|☑|input-stmt-no-writeback|Crit/SilentWrong|L|`Input #` never writes parsed fields back to targets|`bind_input` emits one `target = FileInput(handle, 1)` assignment per target *(done)*|
+|☑|line-input-no-writeback|Crit/SilentWrong|M|`Line Input #` never writes the line back|`bind_line_input` emits `strvar = FileLineInput(handle)` *(done)*|
 |☑|isdate-always-false|Crit/SilentWrong|S|`IsDate` False for all date strings|route strings through `cdate_from_string`; raw number not a date; validate calendar *(done)*|
 
 ## Tier 2 — High SilentWrong (common correctness bugs)
@@ -109,7 +109,7 @@ may remain unexamined.
 |☐|abs-int-fix-sgn-return-double|High/SilentWrong|M|Abs/Int/Fix/Sgn always Double; Sgn should be Integer; Abs overflow|type-aware math1|
 |☐|seek-function-resets-position|High/SilentWrong|S|`Seek(n)` function resets position to 0|don't mutate when position arg omitted|
 |☐|reset-bare-close-error-5|High/SilentWrong|S|`Reset`/bare `Close` raise spurious Err 5|push literal-0 handle for close-all|
-|☐|print-nonstring-truncates-to-long|High/SilentWrong|S|`Print #` non-strings truncate to Long|route via `print_display_text`|
+|☑|print-nonstring-truncates-to-long|High/SilentWrong|S|`Print #` non-strings truncate to Long|now routed via `print_display_text` in `assemble_print_record` *(done w/ the file-I/O cluster)*|
 |☐|seek-loc-zero-based|High/SilentWrong|M|Seek/Loc 0-based; VBA Seek 1-based, Loc mode-dependent|1-based logical position|
 
 ## Tier 3 — Medium SilentWrong / common BinderReject
@@ -127,7 +127,7 @@ cdec-absent(M) · fixed-string-scalar-init-empty(S)
 
 ## Tier 4 — Medium/Low (less common or larger)
 
-for-start-step-not-coerced(M) · command-absent(S) · print-separators-zones(L) ·
+for-start-step-not-coerced(M) · command-absent(S) · print-separators-zones(L — PARTIAL: `;` adjacency + `,` within-statement 14-col zones + trailing-separator newline suppression done with the file-I/O cluster; REMAINING: cross-statement print-column continuation after a suppressed newline, the leading sign space on numbers, and `Tab(n)`/`Spc(n)`) ·
 input-no-date-null-parse(S) · predeclared-singleton-no-resurrection(M) · datediff-w-day-count(S) ·
 datediff-datepart-ww-ignore-firstday(M) · negative-date-serial-floor(S) · date-range-not-validated(S) ·
 date-string-parser-inconsistent(M) · cstar-null-error-13-not-94(S) · pow-negative-base-fractional-nan(S) ·

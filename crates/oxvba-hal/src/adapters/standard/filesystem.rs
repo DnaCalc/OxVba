@@ -249,32 +249,6 @@ pub(super) fn clamp_u64_to_i32(value: u64) -> i32 {
     value.min(i32::MAX as u64) as i32
 }
 
-fn format_write_field_variant(data: &Variant) -> String {
-    match data.vtype() {
-        VarType::String => {
-            let text = data.as_bstr().unwrap_or_else(BStr::empty);
-            let escaped = text.as_str().replace('"', "\"\"");
-            format!("\"{escaped}\"")
-        }
-        VarType::Boolean => {
-            if data.as_bool().unwrap_or(false) {
-                "#TRUE#".to_string()
-            } else {
-                "#FALSE#".to_string()
-            }
-        }
-        VarType::Empty | VarType::Null => "#NULL#".to_string(),
-        VarType::Integer => data.as_i16().unwrap_or(0).to_string(),
-        VarType::Long => data.as_i32().unwrap_or(0).to_string(),
-        VarType::LongLong => data.as_i64().unwrap_or(0).to_string(),
-        VarType::Byte => data.as_u8().unwrap_or(0).to_string(),
-        VarType::Single => data.as_f32().unwrap_or(0.0).to_string(),
-        VarType::Double => data.as_f64().unwrap_or(0.0).to_string(),
-        VarType::Date => data.as_date_f64().unwrap_or(0.0).to_string(),
-        other => format!("{other:?}"),
-    }
-}
-
 fn parse_input_field(data: &[u8], mut cursor: usize) -> (String, usize) {
     let len = data.len();
     while cursor < len && matches!(data[cursor], b' ' | b'\t') {
@@ -1076,7 +1050,7 @@ impl FileSystemHal for StandardHostServices {
             return Err(self.denied(capability, "write_bytes"));
         }
         let handle_id = self.variant_to_i32(&handle, capability, "write_bytes", "handle")?;
-        let bytes = format!("{}\r\n", format_write_field_variant(&data)).into_bytes();
+        let bytes = format!("{}\r\n", oxvba_runtime::write_display_text(&data)).into_bytes();
         let mut state = self.fs_lock(capability, "write_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
         let pos = entry.position as usize;
@@ -1099,13 +1073,14 @@ impl FileSystemHal for StandardHostServices {
             return Err(self.denied(capability, "print_line"));
         }
         let handle_id = self.variant_to_i32(&handle, capability, "print_line", "handle")?;
-        let text = match data.as_bstr() {
-            Some(text) => format!("{text}\r\n"),
-            None => {
-                let val = self.variant_to_i32(&data, capability, "print_line", "data")?;
-                format!("{val}\r\n")
-            }
-        };
+        // The caller (oxvba-lib `file_print`/`file_write`) assembles the complete VBA
+        // record — per-field formatting, separators, print zones, and the `\r\n`
+        // terminator (when not suppressed by a trailing `;`/`,`) — so this sink writes
+        // the text verbatim at the current position.
+        let text = data
+            .as_bstr()
+            .map(|t| t.as_str().to_string())
+            .unwrap_or_default();
         let bytes = text.as_bytes();
         let mut state = self.fs_lock(capability, "print_line")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "print_line")?;

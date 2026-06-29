@@ -69,8 +69,15 @@ impl<'a> ProcLower<'a> {
             ReDimStmt => self.bind_redim(node),
             EraseStmt => self.bind_erase(node),
             OpenStmt => self.bind_open(node),
-            CloseStmt | PrintStmt | WriteStmt | InputStmt | LineInputStmt | SeekStmt
-            | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
+            CloseStmt | SeekStmt | WidthStmt | NameStmt | LockStmt => self.bind_file_io(node),
+            // `Print #`/`Write #` carry an item list whose `,`/`;` separators are
+            // significant, so they bind through a dedicated path that preserves every
+            // field and its trailing separator.
+            PrintStmt | WriteStmt => self.bind_print_write(node),
+            // `Input #`/`Line Input #` READ into their targets, so each target is an
+            // assignment of a read value (not a discarded ByVal arg).
+            InputStmt => self.bind_input(node),
+            LineInputStmt => self.bind_line_input(node),
             // `Get #n, [rec], var` reads into the target, so it lowers as an
             // assignment of the read value, not a discarded call.
             GetStmt => self.bind_get(node),
@@ -1282,10 +1289,6 @@ impl<'a> ProcLower<'a> {
         let id = match node.kind() {
             SyntaxKind::OpenStmt => NativeImplId::FileOpen,
             SyntaxKind::CloseStmt => NativeImplId::FileClose,
-            SyntaxKind::PrintStmt => NativeImplId::FilePrint,
-            SyntaxKind::WriteStmt => NativeImplId::FileWrite,
-            SyntaxKind::InputStmt => NativeImplId::FileInput,
-            SyntaxKind::LineInputStmt => NativeImplId::FileLineInput,
             SyntaxKind::PutStmt => NativeImplId::FilePut,
             SyntaxKind::SeekStmt => NativeImplId::FileSeek,
             SyntaxKind::WidthStmt => NativeImplId::FileWidth,
@@ -1310,21 +1313,125 @@ impl<'a> ProcLower<'a> {
         {
             args.push(CoreArg::ByVal(self.bind_expr(ch)?.value));
         }
-        // Print/Write data is nested in a PrintItemList of PrintItems, not direct
-        // expr children; descend so the values aren't dropped. Other file
-        // statements (Input/Line Input) carry their lvalue targets directly.
-        if let Some(list) = node.child_node(SyntaxKind::PrintItemList) {
-            for item in list.children_of(SyntaxKind::PrintItem) {
-                if let Some(e) = item.first_expr_child() {
-                    args.push(CoreArg::ByVal(self.bind_expr(e)?.value));
-                }
-            }
-        } else {
-            for e in node.expr_children() {
-                args.push(CoreArg::ByVal(self.bind_expr(e)?.value));
-            }
+        for e in node.expr_children() {
+            args.push(CoreArg::ByVal(self.bind_expr(e)?.value));
         }
         Ok(vec![CoreStmt::Eval(self.vba_library_call(id, args))])
+    }
+
+    /// `Print #n, items…` / `Write #n, items…`. The item list's `,`/`;` separators
+    /// are significant (zones vs. adjacency for `Print`; trailing-separator newline
+    /// suppression for both), so we walk the `PrintItemList` in source order and pack
+    /// a per-field separator spec into `args[1]`: one char per field — the separator
+    /// that *follows* it (`,`, `;`, or `n` for none). `args[0]` is the handle and
+    /// `args[2..]` are the field values. Emitting every field (not just the first)
+    /// closes the `Print #`/`Write #` data-loss gap.
+    fn bind_print_write(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let id = match node.kind() {
+            SyntaxKind::PrintStmt => NativeImplId::FilePrint,
+            SyntaxKind::WriteStmt => NativeImplId::FileWrite,
+            other => return Err(BindError::Unsupported(format!("print/write {other:?}"))),
+        };
+        let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
+            Some(ch) => self.bind_expr(ch)?.value,
+            None => return Err(BindError::Malformed("Print/Write without a file number".into())),
+        };
+        // Default each field's following separator to 'n' (none → terminate the line);
+        // a `,`/`;` token in the list overwrites the preceding field's slot.
+        let mut fields: Vec<CoreValue> = Vec::new();
+        let mut seps: Vec<char> = Vec::new();
+        if let Some(list) = node.child_node(SyntaxKind::PrintItemList) {
+            for element in list.children() {
+                match element {
+                    SyntaxElement::Node(item) if item.kind() == SyntaxKind::PrintItem => {
+                        if let Some(e) = item.first_expr_child() {
+                            fields.push(self.bind_expr(e)?.value);
+                            seps.push('n');
+                        }
+                    }
+                    SyntaxElement::Token(tok) if tok.kind == SyntaxKind::Comma => {
+                        if let Some(last) = seps.last_mut() {
+                            *last = ',';
+                        }
+                    }
+                    SyntaxElement::Token(tok) if tok.kind == SyntaxKind::Semicolon => {
+                        if let Some(last) = seps.last_mut() {
+                            *last = ';';
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut args = vec![
+            CoreArg::ByVal(handle),
+            CoreArg::ByVal(CoreValue::Const(CoreConst::Str(seps.into_iter().collect()))),
+        ];
+        args.extend(fields.into_iter().map(CoreArg::ByVal));
+        Ok(vec![CoreStmt::Eval(self.vba_library_call(id, args))])
+    }
+
+    /// `Input #n, var0, var1, …` reads one delimited field per target, so each target
+    /// is its own `var = FileInput(handle, 1)` assignment (the read value coerced to
+    /// the target type). Reading one field per call advances the file position
+    /// sequentially. Previously the targets were passed as discarded ByVal args, so
+    /// nothing was ever written back.
+    fn bind_input(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
+            Some(ch) => self.bind_expr(ch)?.value,
+            None => return Err(BindError::Malformed("Input # without a file number".into())),
+        };
+        let mut stmts = Vec::new();
+        for target_node in node.expr_children() {
+            let (place, target_ty) = self.bind_place(target_node)?;
+            // Read exactly one field per target.
+            let read = self.vba_library_call(
+                NativeImplId::FileInput,
+                vec![
+                    CoreArg::ByVal(handle.clone()),
+                    CoreArg::ByVal(CoreValue::Const(CoreConst::I32(1))),
+                ],
+            );
+            let value = types::coerce(read, &VarTypeRef::Variant, &target_ty);
+            stmts.push(CoreStmt::Assign {
+                place,
+                value,
+                intent: AssignmentIntent::Let,
+                target_kind: types::assignment_target_kind(&target_ty),
+                target_name: target_node.text().trim().to_string(),
+                target_type_name: types::type_name(&target_ty),
+            });
+        }
+        Ok(stmts)
+    }
+
+    /// `Line Input #n, strvar` reads a whole line into `strvar`, so it lowers as
+    /// `strvar = FileLineInput(handle)` (mirroring `Get`). Previously the target was a
+    /// discarded ByVal arg, so the line was never written back.
+    fn bind_line_input(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
+        let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
+            Some(ch) => self.bind_expr(ch)?.value,
+            None => return Err(BindError::Malformed("Line Input # without a file number".into())),
+        };
+        let target_node = node
+            .expr_children()
+            .into_iter()
+            .next()
+            .ok_or_else(|| BindError::Malformed("Line Input # without a target".into()))?;
+        let (place, target_ty) = self.bind_place(target_node)?;
+        let read = self.vba_library_call(
+            NativeImplId::FileLineInput,
+            vec![CoreArg::ByVal(handle)],
+        );
+        let value = types::coerce(read, &VarTypeRef::Variant, &target_ty);
+        Ok(vec![CoreStmt::Assign {
+            place,
+            value,
+            intent: AssignmentIntent::Let,
+            target_kind: types::assignment_target_kind(&target_ty),
+            target_name: target_node.text().trim().to_string(),
+            target_type_name: types::type_name(&target_ty),
+        }])
     }
 
     /// `Open path For <mode> As #n [Len = reclen]` lowers to

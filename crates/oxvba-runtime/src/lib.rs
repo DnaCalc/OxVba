@@ -23,7 +23,7 @@ pub use call_frame::{
     RuntimeCallError, RuntimeCallFrame, RuntimeCallKind, RuntimeCallResult, RuntimeCallSelector,
     RuntimeCallSource, RuntimeNamedArgument,
 };
-pub use coerce::{print_display_text, variant_to_vba_string};
+pub use coerce::{print_display_text, variant_to_vba_string, write_display_text};
 pub use com_record::{ComRecord, ComRecordCloneFn, ComRecordDestroyFn};
 pub use decimal::Decimal96;
 pub use object_ref::{
