@@ -2031,21 +2031,67 @@ impl<'h> Vm3<'h> {
         preserve: bool,
         fixed: bool,
     ) -> Result<(), Vm3Error> {
+        // A user `ReDim` (lowered with `fixed = false`) of an already-fixed-size array is
+        // illegal in VBA — `Dim a(1 To 3) : ReDim a(...)` is the compile error "Array already
+        // dimensioned". vm3 carries fixed-ness only on the runtime value (the symbol model
+        // can't tell a fixed top-level `Dim` from a dynamic one), so the faithful surfacing is
+        // the runtime analog, error 10 "This array is fixed or temporarily locked". The
+        // fixed-`Dim`/UDT-field allocation itself is `fixed = true` against an uninitialized
+        // slot, so it is never caught here.
+        if !fixed && self.read(dst)?.as_safearray().is_some_and(|a| a.is_fixed_size()) {
+            return Err(Vm3Error::Fault(Fault::new(
+                10,
+                "This array is fixed or temporarily locked",
+            )));
+        }
         let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
-        let count: usize = bounds.iter().map(|b| b.count as usize).product();
+        // Total element count, guarding the cross-dimension product (`build_bounds` already
+        // guards each single dimension's span) → out of memory (7) rather than a usize wrap
+        // that would feed a bogus allocation.
+        let mut count = 1usize;
+        for b in &bounds {
+            count = count.checked_mul(b.count as usize).ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(7, "array too large to allocate"))
+            })?;
+        }
         let elems: Vec<Variant> = if preserve {
-            let old = self
-                .read(dst)?
+            let cur = self.read(dst)?;
+            match cur
                 .as_safearray()
-                .and_then(|a| a.variant_elements())
-                .unwrap_or_default();
-            (0..count)
-                .map(|i| {
-                    old.get(i)
-                        .cloned()
-                        .unwrap_or_else(|| default_array_element(element))
-                })
-                .collect()
+                .and_then(|a| a.bounds().map(|b| (b, a.variant_elements().unwrap_or_default())))
+            {
+                // `ReDim Preserve` over an existing allocation: VBA permits changing ONLY the
+                // last dimension's upper bound. Changing the rank, any earlier dimension, or
+                // the last dimension's lower bound is subscript out of range (9). Surviving
+                // elements are preserved BY COORDINATE (not by flat position), so growing a
+                // rank-2 array keeps `a(i, j)` in place.
+                Some((old_bounds, old_elems)) => {
+                    let rank = bounds.len();
+                    let illegal = old_bounds.len() != rank
+                        || (0..rank.saturating_sub(1)).any(|i| old_bounds[i] != bounds[i])
+                        || match (old_bounds.last(), bounds.last()) {
+                            (Some(o), Some(n)) => o.lower != n.lower,
+                            _ => false,
+                        };
+                    if illegal {
+                        return Err(Vm3Error::Fault(Fault::new(
+                            9,
+                            "ReDim Preserve may only resize the last dimension",
+                        )));
+                    }
+                    let mut out: Vec<Variant> =
+                        (0..count).map(|_| default_array_element(element)).collect();
+                    for (old_flat, value) in old_elems.into_iter().enumerate() {
+                        if let Some(new_flat) = remap_preserve_index(old_flat, &old_bounds, &bounds)
+                        {
+                            out[new_flat] = value;
+                        }
+                    }
+                    out
+                }
+                // `ReDim Preserve` of a not-yet-allocated dynamic array just allocates it.
+                None => (0..count).map(|_| default_array_element(element)).collect(),
+            }
         } else {
             (0..count).map(|_| default_array_element(element)).collect()
         };
@@ -3228,6 +3274,42 @@ fn cmp_op(op: CmpOp) -> arith::CmpOp {
 /// Wrap an `arith` coercion error as a routed vm3 fault (it carries its own VBA code).
 fn arith_fault(e: ArithError) -> Vm3Error {
     Vm3Error::Fault(Fault::from_arith(e))
+}
+
+/// Map an old flat element index to its position in a `ReDim Preserve`'d shape, preserving
+/// the element's absolute n-dimensional coordinate (C-order, first dimension outermost — the
+/// same convention [`Vm3::flat_index`] uses). Returns `None` when the coordinate falls outside
+/// the new bounds (a shrunk dimension drops those elements). Both bound slices have equal rank
+/// (the caller enforces the VBA `ReDim Preserve` rule before calling).
+fn remap_preserve_index(
+    old_flat: usize,
+    old_bounds: &[SafeArrayBound],
+    new_bounds: &[SafeArrayBound],
+) -> Option<usize> {
+    let rank = old_bounds.len();
+    // Decode the C-order flat index into per-dimension offsets (last dimension fastest).
+    let mut offsets = vec![0usize; rank];
+    let mut rem = old_flat;
+    for d in (0..rank).rev() {
+        let c = old_bounds[d].count as usize;
+        if c == 0 {
+            return None;
+        }
+        offsets[d] = rem % c;
+        rem /= c;
+    }
+    // Re-encode the same absolute coordinate against the new bounds.
+    let mut new_flat = 0usize;
+    for d in 0..rank {
+        let new_count = new_bounds[d].count as i64;
+        let abs = i64::from(old_bounds[d].lower) + offsets[d] as i64;
+        let new_off = abs - i64::from(new_bounds[d].lower);
+        if new_off < 0 || new_off >= new_count {
+            return None;
+        }
+        new_flat = new_flat * new_count as usize + new_off as usize;
+    }
+    Some(new_flat)
 }
 
 /// VBA `Nothing`/empty test (mirrors vm2): a null object reference, `Empty`/`Null`, or a

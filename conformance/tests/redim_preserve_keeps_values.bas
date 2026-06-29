@@ -1,6 +1,7 @@
 Sub Main()
-Dim a(1)
+Dim a()
 Dim x
+ReDim a(1)
 a(0) = 7
 ReDim Preserve a(3)
 x = a(0)

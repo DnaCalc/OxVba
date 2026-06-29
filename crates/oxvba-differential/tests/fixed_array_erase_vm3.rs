@@ -59,6 +59,127 @@ fn expect(v: Variant) -> Canon {
     canon(&v)
 }
 
+/// Assert the vm3 run reached execution and raised the given VBA error number.
+fn assert_raises_number(source: &str, number: i32) {
+    let outcome: RunOutcome = run(Executor::Vm3, source);
+    assert!(
+        outcome.unsupported.is_none(),
+        "vm3 declined the program as unsupported: {:?}\nsource:\n{source}",
+        outcome.unsupported
+    );
+    assert!(
+        outcome.result.is_err(),
+        "vm3 unexpectedly completed: {:?}\nsource:\n{source}",
+        outcome.result
+    );
+    assert_eq!(
+        outcome.err.number, number,
+        "vm3 raised error {} (expected {number}); err={:?}\nsource:\n{source}",
+        outcome.err.number, outcome.err
+    );
+}
+
+// ── ReDim of a fixed-size array is rejected (VBA compile error; runtime error 10) ──
+
+/// `ReDim` of a declared fixed-size array is illegal in VBA ("Array already
+/// dimensioned"); vm3 surfaces the runtime analog, error 10. (Previously it
+/// silently re-dimensioned, losing the fixed-ness.)
+#[test]
+fn redim_of_fixed_array_raises_error_10() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim arr(1 To 3) As Long
+    ReDim arr(1 To 5)
+    result = 1
+End Sub
+"#;
+    assert_raises_number(source, 10);
+}
+
+/// `ReDim Preserve` of a fixed-size array is equally illegal.
+#[test]
+fn redim_preserve_of_fixed_array_raises_error_10() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim arr(1 To 3) As Long
+    ReDim Preserve arr(1 To 5)
+    result = 1
+End Sub
+"#;
+    assert_raises_number(source, 10);
+}
+
+/// A genuinely dynamic array re-`ReDim`s freely (the guard must not over-fire).
+#[test]
+fn redim_of_dynamic_array_still_allowed() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim arr() As Long
+    ReDim arr(1 To 3)
+    ReDim arr(1 To 5)
+    arr(5) = 9
+    result = arr(5)
+End Sub
+"#;
+    assert_contains(source, &expect(Variant::from_i32(9)));
+}
+
+// ── ReDim Preserve dimension semantics ──────────────────────────────────────
+
+/// `ReDim Preserve` of a multi-dimensional array preserves elements BY COORDINATE
+/// (not flat position): growing the last dimension keeps `m(i, j)` in place.
+#[test]
+fn redim_preserve_multidim_preserves_by_coordinate() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim m()
+    ReDim m(1 To 2, 1 To 2)
+    m(1, 1) = 11
+    m(1, 2) = 12
+    m(2, 1) = 21
+    m(2, 2) = 22
+    ReDim Preserve m(1 To 2, 1 To 3)
+    result = m(2, 1)
+End Sub
+"#;
+    // Flat-copy would corrupt m(2,1); coordinate-aware copy keeps it 21.
+    assert_contains(source, &expect(Variant::from_i32(21)));
+}
+
+/// `ReDim Preserve` changing a NON-last dimension raises subscript out of range (9).
+#[test]
+fn redim_preserve_non_last_dimension_raises_error_9() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim m()
+    ReDim m(1 To 2, 1 To 2)
+    ReDim Preserve m(1 To 3, 1 To 2)
+    result = 1
+End Sub
+"#;
+    assert_raises_number(source, 9);
+}
+
+/// `ReDim Preserve` changing the rank raises subscript out of range (9).
+#[test]
+fn redim_preserve_rank_change_raises_error_9() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim m()
+    ReDim m(1 To 2, 1 To 2)
+    ReDim Preserve m(1 To 4)
+    result = 1
+End Sub
+"#;
+    assert_raises_number(source, 9);
+}
+
 // ── Top-level fixed arrays: `Erase` resets each element type to its default ──
 
 /// The handover's headline reproduction: `Erase` of a fixed `Long` array resets

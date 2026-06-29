@@ -28,8 +28,8 @@ Status legend: ☐ open · ◐ in progress · ☑ done (commit).
 
 | # | id | sev/class | eff | gap | fix locus |
 |---|----|-----------|-----|-----|-----------|
-|☑|redim-fixed-array-reject|Med/SilentWrong|S|`ReDim` of a fixed array silently re-dimensions instead of erroring|runtime guard in `array_redim` on `is_fixed_size()` → Fault 10|
-|☑|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|drive reset from `SafeArray::element_vartype()` not bind-time element|
+|☑|redim-fixed-array-reject|Med/SilentWrong|S|`ReDim` of a fixed array silently re-dimensions instead of erroring|runtime guard in `array_redim` on `is_fixed_size()` → Fault 10 *(done; 6 corpus progs fixed to valid dynamic arrays)*|
+|☐|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|drive reset from `SafeArray::element_vartype()` not bind-time element|
 |☐|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declines|VM-agnostic `CallbackRegistry` in oxvba-runtime + trampoline pool|
 |☐|getobject-absent|Low/Absent|M|`GetObject` not bindable|mirror CreateObject pipeline; `ComHal::get_object_variant`; Err 429 on miss|
 
@@ -40,16 +40,16 @@ Status legend: ☐ open · ◐ in progress · ☑ done (commit).
 |☐|print-write-only-first-field|Crit/SilentWrong|M|`Print #`/`Write #` emit only the FIRST field|`file_print`/`file_write` consume `args[1..]`; carry separators|
 |☐|input-stmt-no-writeback|Crit/SilentWrong|L|`Input #` never writes parsed fields back to targets|dedicated binder emitting per-target `Assign = FileInput(handle)`|
 |☐|line-input-no-writeback|Crit/SilentWrong|M|`Line Input #` never writes the line back|dedicated binder `strvar = FileLineInput(handle)`|
-|☑|isdate-always-false|Crit/SilentWrong|S|`IsDate` False for all date strings|route through string-date parsers, not `coerce_to(..,Date)`|
+|☐|isdate-always-false|Crit/SilentWrong|S|`IsDate` False for all date strings|route through string-date parsers, not `coerce_to(..,Date)`|
 
 ## Tier 2 — High SilentWrong (common correctness bugs)
 
 | # | id | sev/class | eff | gap | fix locus |
 |---|----|-----------|-----|-----|-----------|
 |☐|date-to-string-emits-serial|High/SilentWrong|M|Date→String emits raw serial, not formatted|General-Date formatter in `variant_to_vba_string`/`print_display_text`|
-|☑|datevalue-cdate-of-date-raises-13|High/SilentWrong|S|`DateValue`/`CDate` of Date/numeric raises 13|vtype dispatch in `date_value`|
-|☐|redim-preserve-multidim-corrupt|High/SilentWrong|M|multi-dim `ReDim Preserve` flat-copies (corrupts)|coordinate-aware copy|
-|☐|redim-preserve-no-dimension-guard|High/SilentWrong|M|`ReDim Preserve` doesn't enforce only-last-dim (no Err 9)|compare new vs old bounds (dep: multidim-corrupt)|
+|☐|datevalue-cdate-of-date-raises-13|High/SilentWrong|S|`DateValue`/`CDate` of Date/numeric raises 13|vtype dispatch in `date_value`|
+|☑|redim-preserve-multidim-corrupt|High/SilentWrong|M|multi-dim `ReDim Preserve` flat-copies (corrupts)|coordinate-aware copy *(done w/ redim bead)*|
+|☑|redim-preserve-no-dimension-guard|High/SilentWrong|M|`ReDim Preserve` doesn't enforce only-last-dim (no Err 9)|compare new vs old bounds *(done w/ redim bead)*|
 |☐|option-base-1-ignored|High/SilentWrong|M|`Option Base 1` ignored (arrays always 0-based)|thread module base into `bind_array_bounds`/Array()|
 |☐|statement-call-paren-not-byval|High/SilentWrong|M|`Foo(x)` statement call doesn't force ByVal|carry paren-arg flag parser→`bind_one_arg`|
 |☐|byref-type-mismatch-accepted|High/SilentWrong|M|`ByRef` type mismatch silently accepted+retypes caller|bind-time reject when ByRef param type ≠ l-value type|
@@ -91,7 +91,7 @@ for-start-step-not-coerced(M) · command-absent(S) · print-separators-zones(L) 
 input-no-date-null-parse(S) · predeclared-singleton-no-resurrection(M) · datediff-w-day-count(S) ·
 datediff-datepart-ww-ignore-firstday(M) · negative-date-serial-floor(S) · date-range-not-validated(S) ·
 date-string-parser-inconsistent(M) · cstar-null-error-13-not-94(S) · pow-negative-base-fractional-nan(S) ·
-redim-multidim-count-overflow(S) · object-default-member-index-get(M) · object-default-member-index-set(M) ·
+~~redim-multidim-count-overflow~~ *(done w/ redim bead — checked_mul → Err 7)* · object-default-member-index-get(M) · object-default-member-index-set(M) ·
 left-right-mid-index-by-char(M) · mid-start-less-than-1-clamped(S) · error-function-unsupported(M) ·
 next-multivariable-unsupported(M) · line-number-labels-no-colon(M) · lset-rset-unrecognized(L) ·
 fixed-string-udt-field-layout(L) · foreach-project-class-no-newenum(L) · paramarray-elements-byval(L) ·

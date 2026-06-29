@@ -1,5 +1,5 @@
 Sub Main()
-Dim a(1)
+Dim a()
 Dim x
 ReDim a(3)
 a(3) = 5
