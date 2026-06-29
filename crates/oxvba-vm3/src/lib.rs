@@ -314,6 +314,12 @@ pub struct Vm3<'h> {
     /// `For Each obj In <WithEvents owners>` iterator stack (the `WithEventsFirstOwner`/
     /// `NextOwner` cursor) — a stack so nested owner-iterations never alias.
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
+    /// Optional host event sink (W7): the COM server registers this to receive every project
+    /// `RaiseEvent` as `(source, event id, args)` for delivery to its connection-point clients.
+    /// `None` (the default) means project events only fan out to internal `WithEvents`
+    /// subscribers. Mirrors vm2's `project_event_sink`.
+    #[allow(clippy::type_complexity)]
+    project_event_sink: Option<Box<dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h>>,
 }
 
 impl<'h> Vm3<'h> {
@@ -419,6 +425,21 @@ impl<'h> Vm3<'h> {
             .map_err(Vm3Error::Fault)
     }
 
+    /// Register a host event sink (W7): every project `RaiseEvent` is delivered to `sink` as
+    /// `(source, event_id, args)` after the internal `WithEvents` fan-out. The COM server uses
+    /// this to forward project events to its connection-point clients.
+    pub fn set_project_event_sink<F>(&mut self, sink: F)
+    where
+        F: FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h,
+    {
+        self.project_event_sink = Some(Box::new(sink));
+    }
+
+    /// Remove the host event sink (W7).
+    pub fn clear_project_event_sink(&mut self) {
+        self.project_event_sink = None;
+    }
+
     /// Build the VM and run the module-global initializer, but do NOT run the entry (`Main`).
     /// This is the front half of [`Vm3::run`], split out so a long-lived host session can
     /// activate a program once and then issue many member invokes against it. The per-run
@@ -465,6 +486,7 @@ impl<'h> Vm3<'h> {
             withevents: HashMap::new(),
             event_routes,
             withevents_iters: Vec::new(),
+            project_event_sink: None,
         };
 
         if let Some(init) = program.global_initializer {
@@ -1436,6 +1458,17 @@ impl<'h> Vm3<'h> {
                 targets.sort_by_key(|(sink_id, ..)| *sink_id);
                 for (_, sink, handler) in targets {
                     self.run_proc_with_me(FuncId(handler), sink, args, false)?;
+                }
+                // After the internal WithEvents fan-out, deliver to the host event sink (W7):
+                // the COM server forwards the event to its connection-point clients. Take the
+                // sink out across the call so it does not alias `&mut self` (a host sink calls
+                // back into the host, not the VM), then restore it.
+                if self.project_event_sink.is_some() {
+                    let values = self.extern_args(args)?;
+                    let mut sink = self.project_event_sink.take().expect("sink present");
+                    let outcome = sink(source_object.clone(), event_id, values);
+                    self.project_event_sink = Some(sink);
+                    outcome.map_err(|msg| Vm3Error::Fault(Fault::new(5, msg)))?;
                 }
             }
 
