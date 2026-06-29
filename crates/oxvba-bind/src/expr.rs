@@ -58,8 +58,16 @@ impl<'a> ProcLower<'a> {
                 let ty = int_literal_type(tok.text, &c);
                 (c, ty)
             }
-            SyntaxKind::HexLiteral => (parse_radix(tok.text, 16)?, builtin(BuiltinType::Long)),
-            SyntaxKind::OctLiteral => (parse_radix(tok.text, 8)?, builtin(BuiltinType::Long)),
+            SyntaxKind::HexLiteral => {
+                let c = parse_radix(tok.text, 16)?;
+                let ty = radix_literal_type(&c);
+                (c, ty)
+            }
+            SyntaxKind::OctLiteral => {
+                let c = parse_radix(tok.text, 8)?;
+                let ty = radix_literal_type(&c);
+                (c, ty)
+            }
             SyntaxKind::FloatLiteral => (
                 CoreConst::F64(parse_float(tok.text)?.to_bits()),
                 builtin(BuiltinType::Double),
@@ -605,18 +613,21 @@ fn int_literal_type(text: &str, c: &CoreConst) -> VarTypeRef {
 }
 
 fn parse_radix(text: &str, radix: u32) -> Result<CoreConst, BindError> {
-    // `&H1F` / `&O17`, optionally with a trailing `&` Long suffix.
-    let body = text
-        .trim_start_matches(['&'])
-        .trim_start_matches(['h', 'H', 'o', 'O'])
-        .trim_end_matches(['&', '%', '^']);
-    let n = i64::from_str_radix(body, radix)
-        .map_err(|_| BindError::Malformed(format!("radix literal `{text}`")))?;
-    Ok(if i32::try_from(n).is_ok() {
-        CoreConst::I32(n as i32)
-    } else {
-        CoreConst::I64(n)
-    })
+    // `&H1F` / `&O17`, with the width-based two's-complement sign rule and an
+    // optional `%`/`&`/`^` type character (MS-VBAL §3.3.2).
+    CoreConst::from_vba_radix(text, radix)
+        .ok_or_else(|| BindError::Malformed(format!("radix literal `{text}`")))
+}
+
+/// The declared type of a hex/oct literal: `LongLong` for a 64-bit-width
+/// literal (carried as `I64`), otherwise `Long`. (Integer-width literals also
+/// surface as `Long` here — refining that to `Integer` is the separate
+/// integer-literal-surfaces-as-long item.)
+fn radix_literal_type(c: &CoreConst) -> VarTypeRef {
+    match c {
+        CoreConst::I64(_) => builtin(BuiltinType::LongLong),
+        _ => builtin(BuiltinType::Long),
+    }
 }
 
 fn parse_float(text: &str) -> Result<f64, BindError> {

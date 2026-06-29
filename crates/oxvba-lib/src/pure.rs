@@ -1577,13 +1577,20 @@ fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
         // Bare `&` followed by octal digits (VBA's terse octal form).
         _ => (8, rest),
     };
-    let digits = digits.strip_suffix('&').unwrap_or(digits);
+    // The width-based two's-complement sign rule applies to `Val`/`CInt`/`CLng`
+    // of a `&H…`/`&O…` *string* exactly as to a literal — `Val("&HFFFF")` is -1
+    // (verified live). Honour an optional `%`/`&`/`^` type character too.
+    let suffix = match digits.as_bytes().last() {
+        Some(&b @ (b'%' | b'&' | b'^')) => Some(b),
+        _ => None,
+    };
+    let digits = digits.trim_end_matches(['&', '%', '^']);
     if digits.is_empty() {
         return None;
     }
-    i64::from_str_radix(digits, radix)
-        .ok()
-        .and_then(|value| value.checked_mul(sign))
+    let magnitude = u64::from_str_radix(digits, radix).ok()?;
+    let width = oxvba_runtime::vba_radix_width(magnitude, suffix)?;
+    oxvba_runtime::vba_radix_signed_value(magnitude, width).checked_mul(sign)
 }
 
 pub fn is_date(args: &[Variant]) -> LibResult<Variant> {

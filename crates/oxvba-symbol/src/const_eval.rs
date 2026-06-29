@@ -701,16 +701,9 @@ fn parse_int(text: &str) -> Option<CoreConst> {
 }
 
 fn parse_radix(text: &str, radix: u32) -> Option<CoreConst> {
-    let body = text
-        .trim_start_matches(['&'])
-        .trim_start_matches(['h', 'H', 'o', 'O'])
-        .trim_end_matches(['&', '%', '^']);
-    let n = i64::from_str_radix(body, radix).ok()?;
-    Some(if i32::try_from(n).is_ok() {
-        CoreConst::I32(n as i32)
-    } else {
-        CoreConst::I64(n)
-    })
+    // Width-based two's-complement sign + optional `%`/`&`/`^` type character,
+    // shared with the binder (MS-VBAL §3.3.2).
+    CoreConst::from_vba_radix(text, radix)
 }
 
 fn parse_float(text: &str) -> Option<f64> {

@@ -196,6 +196,22 @@ pub enum CoreConst {
     Str(String),
 }
 
+impl CoreConst {
+    /// Parse a VBA hex (`&H…`) or octal (`&O…`) integer-literal token into a
+    /// typed constant, applying the width-based two's-complement sign rule
+    /// (MS-VBAL §3.3.2; see [`oxvba_runtime::parse_vba_radix`]). `radix` is 16
+    /// or 8. The carrier is `I32` when the signed value fits a 32-bit Long,
+    /// else `I64` (a LongLong-width literal). Returns `None` on malformed digits
+    /// or a type-character width overflow.
+    pub fn from_vba_radix(text: &str, radix: u32) -> Option<CoreConst> {
+        let value = oxvba_runtime::parse_vba_radix(text, radix)?;
+        Some(match i32::try_from(value) {
+            Ok(v) => CoreConst::I32(v),
+            Err(_) => CoreConst::I64(value),
+        })
+    }
+}
+
 // ── Operators ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

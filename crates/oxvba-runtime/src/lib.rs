@@ -17,6 +17,7 @@ pub mod safe_array;
 pub mod value_types;
 pub mod variant;
 pub mod vba_date;
+pub mod vba_radix;
 pub mod vba_record;
 
 pub use call_frame::{
@@ -48,6 +49,7 @@ pub use vba_date::{
     civil_from_days, days_from_civil, format_general_date, format_write_date, serial_to_hms,
     serial_to_ymd, ymd_to_serial, VBA_EPOCH_DAYS_FROM_UNIX,
 };
+pub use vba_radix::{parse_vba_radix, vba_radix_signed_value, vba_radix_width, VbaRadixWidth};
 pub use vba_record::{
     VbaRecord, VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
 };

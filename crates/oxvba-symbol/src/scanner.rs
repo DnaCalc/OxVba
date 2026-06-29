@@ -1024,20 +1024,25 @@ fn default_value_from_core_const(value: CoreConst) -> Option<DefaultValue> {
 }
 
 fn parse_int_literal(text: &str) -> Option<i64> {
-    let trimmed = text.trim_end_matches(['&', '!', '#', '@', '%']);
-    if let Some(hex) = trimmed
-        .strip_prefix("&H")
-        .or_else(|| trimmed.strip_prefix("&h"))
-    {
-        return i64::from_str_radix(hex, 16).ok();
+    let trimmed = text.trim();
+    // Hex/oct literals carry the width-based two's-complement sign rule, shared
+    // with the binder (MS-VBAL §3.3.2).
+    let radix = match trimmed.as_bytes() {
+        [b'&', b'H' | b'h', ..] => Some(16),
+        [b'&', b'O' | b'o', ..] => Some(8),
+        _ => None,
+    };
+    if let Some(radix) = radix {
+        return match CoreConst::from_vba_radix(trimmed, radix)? {
+            CoreConst::I32(value) => Some(i64::from(value)),
+            CoreConst::I64(value) => Some(value),
+            _ => None,
+        };
     }
-    if let Some(oct) = trimmed
-        .strip_prefix("&O")
-        .or_else(|| trimmed.strip_prefix("&o"))
-    {
-        return i64::from_str_radix(oct, 8).ok();
-    }
-    trimmed.parse().ok()
+    trimmed
+        .trim_end_matches(['&', '!', '#', '@', '%'])
+        .parse()
+        .ok()
 }
 
 fn is_identifier_like(kind: SyntaxKind) -> bool {
