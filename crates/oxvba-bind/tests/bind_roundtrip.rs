@@ -688,6 +688,56 @@ fn binary_variable_string_reads_current_length() {
     assert_eq!(run_main_local0_string_std(src), Some("hello".to_string()));
 }
 
+/// Run a single-module source on the standard (in-memory) host; read `Main`'s first local as
+/// a `Long`.
+fn run_main_local0_i32_std(src: &str) -> Option<i32> {
+    let program = bind(src);
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
+    let host = oxvba_hal::adapters::builder::HostBuilder::new()
+        .profile(oxvba_hal::HalProfileId::Windows)
+        .policy(oxvba_hal::HostPolicy {
+            allow_filesystem_mutation: true,
+            ..oxvba_hal::HostPolicy::default()
+        })
+        .build();
+    let vm = oxvba_vm3::Vm3::run(&oxp, host.as_ref()).expect("run");
+    vm.slot(oxp.globals.len())?.as_i32()
+}
+
+#[test]
+fn bare_close_closes_all_without_error() {
+    // `Close` with no file number closes ALL open files — it must not raise Err 5. Reaching
+    // `ok = 1` (the run did not raise) proves it.
+    let src = "Sub Main()\n\
+        Dim ok As Long\n\
+        Open \"f.dat\" For Output As #1\n    Print #1, \"x\"\n    Close\n\
+        ok = 1\n\
+    End Sub\n";
+    assert_eq!(run_main_local0_i32_std(src), Some(1));
+}
+
+#[test]
+fn reset_closes_all_without_error() {
+    // `Reset` parses as a `Close`-all and must likewise not raise.
+    let src = "Sub Main()\n\
+        Dim ok As Long\n\
+        Open \"f.dat\" For Output As #1\n    Print #1, \"x\"\n    Reset\n\
+        ok = 1\n\
+    End Sub\n";
+    assert_eq!(run_main_local0_i32_std(src), Some(1));
+}
+
+#[test]
+fn seek_function_reads_position_without_resetting() {
+    // The `Seek(filenumber)` FUNCTION returns the current cursor WITHOUT moving it (it used to
+    // reset the position to 0). After writing 5 bytes the cursor is at 5 (0-based).
+    let src = "Sub Main()\n\
+        Dim p As Long\n\
+        Open \"f.dat\" For Binary As #1\n    Put #1, 1, \"hello\"\n    p = Seek(1)\n    Close #1\n\
+    End Sub\n";
+    assert_eq!(run_main_local0_i32_std(src), Some(5));
+}
+
 /// The args of the (single) `Main`-body `ExternProc` call into `VBA`/`FileSystem.<member>`,
 /// or `None` if there is no such call. Used to assert `Print`/`Write` pass every field.
 fn extern_filesystem_call_args<'p>(

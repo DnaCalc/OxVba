@@ -107,8 +107,8 @@ may remain unexamined.
 |☐|integer-literal-surfaces-as-long|High/SilentWrong|M|Integer literals are Long at runtime (VarType/TypeName)|OxConst::I16 carrier|
 |☐|vba-hex-oct-literal-sign|High/SilentWrong|M|`&HFFFFFFFF`=4294967295 not -1 (no width sign)|width-based two's-complement in parse_radix (both copies)|
 |☐|abs-int-fix-sgn-return-double|High/SilentWrong|M|Abs/Int/Fix/Sgn always Double; Sgn should be Integer; Abs overflow|type-aware math1|
-|☐|seek-function-resets-position|High/SilentWrong|S|`Seek(n)` function resets position to 0|don't mutate when position arg omitted|
-|☐|reset-bare-close-error-5|High/SilentWrong|S|`Reset`/bare `Close` raise spurious Err 5|push literal-0 handle for close-all|
+|☑|seek-function-resets-position|High/SilentWrong|S|`Seek(n)` function resets position to 0|`seek_variant`: an omitted (Empty/Null) position READS the cursor (returns `entry.position`) without moving it; only `Seek #n, pos` repositions *(done)*|
+|☑|reset-bare-close-error-5|High/SilentWrong|S|`Reset`/bare `Close` raise spurious Err 5|`bind_file_io` pushes a literal-0 handle for a `FileClose` with no file number (the close-all convention `close_variant` understands) *(done; `Reset` already parses as `CloseStmt`)*|
 |☑|print-nonstring-truncates-to-long|High/SilentWrong|S|`Print #` non-strings truncate to Long|now routed via `print_display_text` in `assemble_print_record` *(done w/ the file-I/O cluster)*|
 |☐|seek-loc-zero-based|High/SilentWrong|M|Seek/Loc 0-based; VBA Seek 1-based, Loc mode-dependent|1-based logical position|
 

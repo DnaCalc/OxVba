@@ -1316,6 +1316,12 @@ impl<'a> ProcLower<'a> {
         for e in node.expr_children() {
             args.push(CoreArg::ByVal(self.bind_expr(e)?.value));
         }
+        // Bare `Close` / `Reset` (no file number) close ALL open files — the handle-0
+        // convention `close_variant` understands. Without this they reached `FileClose`
+        // with no handle and raised a spurious "argument not optional" (Err 5).
+        if id == NativeImplId::FileClose && args.is_empty() {
+            args.push(CoreArg::ByVal(CoreValue::Const(CoreConst::I32(0))));
+        }
         Ok(vec![CoreStmt::Eval(self.vba_library_call(id, args))])
     }
 

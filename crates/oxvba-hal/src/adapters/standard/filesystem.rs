@@ -884,6 +884,14 @@ impl FileSystemHal for StandardHostServices {
             return Err(self.unsupported(capability, "seek"));
         }
         let handle = self.variant_to_i32(&handle, capability, "seek", "handle")?;
+        // The `Seek(filenumber)` FUNCTION form omits the position — it READS the current cursor
+        // without moving it. Only the `Seek #n, pos` STATEMENT (position present) repositions.
+        // (The reported position is 0-based; the 1-based `seek-loc-zero-based` gap is separate.)
+        if matches!(position.vtype(), VarType::Empty | VarType::Null) {
+            let mut state = self.fs_lock(capability, "seek")?;
+            let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
+            return Ok(Variant::from_i32(entry.position));
+        }
         let position = self.variant_to_i32(&position, capability, "seek", "position")?;
         if position < 0 {
             return Err(HalError::adapter_fault(
