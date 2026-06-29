@@ -206,7 +206,10 @@ struct ResumePoint {
 /// always outlives it, since callers sit below callees and pop later).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Loc {
-    Global(usize),
+    /// `(program, slot)`: the program tags the slot so a ByRef alias or a call's result dst
+    /// captured in one program stays bound to that program's globals regardless of the
+    /// executing `cur` (mirrors vm2's `Place::Global(bundle, slot)`).
+    Global(usize, usize),
     Local(usize, usize),
     Temp(usize, usize),
 }
@@ -2686,7 +2689,7 @@ impl<'h> Vm3<'h> {
     fn resolve(&self, place: &OxPlace) -> Loc {
         let top = self.frames.len() - 1;
         match place {
-            OxPlace::Global(g) => Loc::Global(g.0),
+            OxPlace::Global(g) => Loc::Global(self.cur, g.0),
             OxPlace::Local(l) => self.frames[top]
                 .aliases
                 .get(&l.0)
@@ -2701,11 +2704,11 @@ impl<'h> Vm3<'h> {
     /// `Temp` absence is the SSA write-before-read contract (sparse map → `Empty`).
     fn read_loc(&self, loc: Loc) -> Result<Variant, Vm3Error> {
         match loc {
-            Loc::Global(g) => self.programs[self.cur]
+            Loc::Global(p, g) => self.programs[p]
                 .globals
                 .get(g)
                 .cloned()
-                .ok_or_else(|| Vm3Error::Malformed(format!("global {g} out of range"))),
+                .ok_or_else(|| Vm3Error::Malformed(format!("global [{p}][{g}] out of range"))),
             Loc::Local(fi, li) => self
                 .frames
                 .get(fi)
@@ -2724,11 +2727,11 @@ impl<'h> Vm3<'h> {
     /// Write a resolved location (same dense/sparse contract as [`Self::read_loc`]).
     fn write_loc(&mut self, loc: Loc, v: Variant) -> Result<(), Vm3Error> {
         match loc {
-            Loc::Global(g) => {
-                *self.programs[self.cur]
+            Loc::Global(p, g) => {
+                *self.programs[p]
                     .globals
                     .get_mut(g)
-                    .ok_or_else(|| Vm3Error::Malformed(format!("global {g} out of range")))? = v;
+                    .ok_or_else(|| Vm3Error::Malformed(format!("global [{p}][{g}] out of range")))? = v;
             }
             Loc::Local(fi, li) => {
                 *self
