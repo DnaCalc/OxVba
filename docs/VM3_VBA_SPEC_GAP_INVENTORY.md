@@ -94,8 +94,8 @@ may remain unexamined.
 |☐|statement-call-paren-not-byval|High/SilentWrong|M|`Foo(x)` statement call doesn't force ByVal|carry paren-arg flag parser→`bind_one_arg`|
 |☐|byref-type-mismatch-accepted|High/SilentWrong|M|`ByRef` type mismatch silently accepted+retypes caller|bind-time reject when ByRef param type ≠ l-value type|
 |☐|no-call-arity-validation|High/SilentWrong|S|extra args dropped; missing→late wrong error|arity check in `bind_proc_args`|
-|☐|instr-leading-start-by-type|High/SilentWrong|S|`InStr` start detected by TYPE not arity|disambiguate by arg count|
-|☐|instrrev-ignores-start-compare|High/SilentWrong|M|`InStrRev` ignores start, misreads compare|own arg layout|
+|☑|instr-leading-start-by-type|High/SilentWrong|S|`InStr` start detected by TYPE not arity|now arity-based: 2 args=(s1,s2), 3–4 args=(start,s1,s2,[compare]). Fixed 3 corpus progs (`InStr(12345,34)` was err 5, now 3) *(done)*|
+|☑|instrrev-ignores-start-compare|High/SilentWrong|M|`InStrRev` ignores start, misreads compare|dedicated `instr_rev` with `(stringcheck,stringmatch,[start=-1],[compare])` layout: honours `start` (search region) + `compare` at arg 4 *(done)*|
 |☐|split-ignores-limit-compare|High/SilentWrong|S|`Split` ignores limit+compare|implement limit/compare|
 |☐|option-compare-text-ignored-string-fns|High/SilentWrong|M|`Option Compare Text` ignored by InStr/StrComp/Replace/Filter/InStrRev|append synthesized compare-mode const in binder|
 |☐|select-case-ignores-option-compare-text|High/SilentWrong|S|`Select Case` ignores Option Compare Text for strings|add mode to CaseClause, set from compare_mode|

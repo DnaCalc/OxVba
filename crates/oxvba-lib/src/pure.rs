@@ -132,12 +132,16 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
 /// source's `Option Compare`. (`InStrRev`'s own `start` argument awaits the
 /// canonical arg layout.)
 pub fn instr(args: &[Variant], rev: bool) -> LibResult<Variant> {
-    let base = if !rev && args.first().is_some_and(is_numeric_typed) {
-        1
-    } else {
-        0
-    };
-    let start = if base == 1 {
+    if rev {
+        return instr_rev(args);
+    }
+    // `InStr([start], string1, string2, [compare])`. Per VBA `start` is detected by ARITY,
+    // not by type: 2 args = `(string1, string2)`; 3–4 args = `(start, string1, string2,
+    // [compare])` — `compare` is legal only when `start` is present. (The old code treated a
+    // numeric first arg as `start`, mis-binding e.g. `InStr(numericVar, s)`.)
+    let has_start = args.len() >= 3;
+    let base = usize::from(has_start);
+    let start = if has_start {
         as_i32(need(args, 0)?)?
     } else {
         1
@@ -153,30 +157,44 @@ pub fn instr(args: &[Variant], rev: bool) -> LibResult<Variant> {
     if byte_start > hay.len() {
         return Ok(vi32(0));
     }
-    let pos = if rev {
-        hay.rfind(&needle)
-    } else {
-        hay[byte_start..].find(&needle).map(|b| byte_start + b)
-    };
+    let pos = hay[byte_start..].find(&needle).map(|b| byte_start + b);
     Ok(vi32(match pos {
         Some(byte) => hay[..byte].encode_utf16().count() as i32 + 1,
         None => 0,
     }))
 }
 
-fn is_numeric_typed(v: &Variant) -> bool {
-    matches!(
-        v.vtype(),
-        VarType::Integer
-            | VarType::Long
-            | VarType::LongLong
-            | VarType::Single
-            | VarType::Double
-            | VarType::Currency
-            | VarType::Decimal
-            | VarType::Byte
-    )
+/// `InStrRev(stringcheck, stringmatch, [start = -1], [compare])` — the position (1-based, from
+/// the START of the string) of the LAST occurrence of `stringmatch` whose match lies at or
+/// before `start`; `-1` searches from the end. NOTE the arg layout differs from `InStr`:
+/// `start` is the 3rd arg and `compare` the 4th (the old code ignored `start` and misread
+/// arg 2 as the compare mode).
+fn instr_rev(args: &[Variant]) -> LibResult<Variant> {
+    let text = text_compare(args, 3)?;
+    let hay = norm_compare(as_str(need(args, 0)?)?, text);
+    let needle = norm_compare(as_str(need(args, 1)?)?, text);
+    let hay_units = hay.encode_utf16().count();
+    let start = match opt(args, 2) {
+        Some(v) => as_i32(v)?,
+        None => -1,
+    };
+    if start == 0 || start < -1 {
+        return Err(LibError::invalid_call("InStrRev start must be -1 or >= 1"));
+    }
+    // Search the first `start` code units (the match must end at or before `start`).
+    let region_units = if start == -1 {
+        hay_units
+    } else {
+        (start as usize).min(hay_units)
+    };
+    let region_end = utf16_index_to_byte(&hay, region_units);
+    let region = &hay[..region_end];
+    Ok(vi32(match region.rfind(&needle) {
+        Some(byte) => hay[..byte].encode_utf16().count() as i32 + 1,
+        None => 0,
+    }))
 }
+
 
 /// Byte offset of the char at a given UTF-16 code-unit index (VBA string index).
 fn utf16_index_to_byte(s: &str, utf16_index: usize) -> usize {
@@ -1641,13 +1659,52 @@ mod tests {
         );
         // InStrRev finds the last 'o'.
         assert_eq!(instr_(&[vs("hello world"), vs("o")], true), 8);
-        // Text compare (mode 1): case-insensitive.
+        // Text compare: per VBA `compare` requires `start`, so the 4-arg form
+        // `InStr(1, "ABC", "b", 1)` is case-insensitive → 2.
         assert_eq!(
-            instr_(&[vs("ABC"), vs("b"), Variant::from_i32(1)], false),
+            instr_(
+                &[
+                    Variant::from_i32(1),
+                    vs("ABC"),
+                    vs("b"),
+                    Variant::from_i32(1)
+                ],
+                false
+            ),
             2
         );
         // Binary compare (default): no match for differing case.
         assert_eq!(instr_(&[vs("ABC"), vs("b")], false), 0);
+    }
+
+    #[test]
+    fn instr_start_is_arity_not_type() {
+        // 2 args is always `(string1, string2)` — even when `string1` is a numeric string,
+        // it is NOT a leading `start`. `InStr("12", "2")` finds '2' at position 2.
+        assert_eq!(instr_(&[vs("12"), vs("2")], false), 2);
+    }
+
+    #[test]
+    fn instr_rev_honours_start_and_compare() {
+        // Last 'a' overall is at 7; with start=4 the search is limited to "abca" → 4.
+        assert_eq!(instr_(&[vs("abcabca"), vs("a")], true), 7);
+        assert_eq!(
+            instr_(&[vs("abcabca"), vs("a"), Variant::from_i32(4)], true),
+            4
+        );
+        // compare is arg 4 (after start): text compare finds 'B' case-insensitively.
+        assert_eq!(
+            instr_(
+                &[
+                    vs("aBcaBc"),
+                    vs("b"),
+                    Variant::from_i32(-1),
+                    Variant::from_i32(1)
+                ],
+                true
+            ),
+            5
+        );
     }
 
     fn isnum(v: Variant) -> bool {
