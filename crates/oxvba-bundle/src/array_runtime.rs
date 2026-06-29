@@ -24,10 +24,16 @@ use crate::ArrayElementType;
 /// Build a [`SafeArray`] of `elems` shaped by `bounds`, using the SAFEARRAY storage that
 /// matches the declared `element_type`: a UDT element stores native VBA records; every other
 /// element type stores a typed scalar / Variant element.
+///
+/// `fixed` carries the VBA fixed-vs-dynamic distinction onto the descriptor's
+/// `FADF_FIXEDSIZE` bit: a fixed-size declarator (`Dim a(1 To 3)`) and a UDT
+/// fixed-array field build `fixed = true` arrays (whose `Erase` resets elements),
+/// while a user `ReDim` builds `fixed = false` (whose `Erase` deallocates).
 pub fn redim_safearray_from_elements(
     bounds: Vec<SafeArrayBound>,
     element_type: &ArrayElementType,
     elems: Vec<Variant>,
+    fixed: bool,
 ) -> Result<SafeArray, String> {
     if let ArrayElementType::Record(fields) = element_type {
         let layout = vba_record_layout_for_fields(fields)?;
@@ -39,9 +45,12 @@ pub fn redim_safearray_from_elements(
                     .ok_or_else(|| "UDT array element default was not a VBA record".to_string())
             })
             .collect::<Result<Vec<_>, String>>()?;
-        return SafeArray::from_vba_records_nd(bounds, layout, records);
+        return Ok(SafeArray::from_vba_records_nd(bounds, layout, records)?.with_fixed_size(fixed));
     }
-    SafeArray::from_typed_variants_nd(bounds, safearray_vartype_for_element(element_type), elems)
+    Ok(
+        SafeArray::from_typed_variants_nd(bounds, safearray_vartype_for_element(element_type), elems)?
+            .with_fixed_size(fixed),
+    )
 }
 
 /// The SAFEARRAY element vartype (`VT_*`) for a declared array element type.

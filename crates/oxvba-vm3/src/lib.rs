@@ -1225,7 +1225,8 @@ impl<'h> Vm3<'h> {
                 lower_bounds,
                 element,
                 preserve,
-            } => self.array_redim(dst, upper_bounds, lower_bounds, element, *preserve)?,
+                fixed,
+            } => self.array_redim(dst, upper_bounds, lower_bounds, element, *preserve, *fixed)?,
             OxInst::ArrayGet {
                 dst,
                 array,
@@ -1301,11 +1302,34 @@ impl<'h> Vm3<'h> {
                     .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 self.store(array, arr_v)?;
             }
-            OxInst::ArrayErase { array, .. } => {
-                // vm2 lowers `Erase` to "set the array variable to Empty"; match that.
-                // (Faithful dynamic-deallocate vs fixed-array-reset semantics need a live
-                // oracle probe — a deferred refinement.)
-                self.store(array, Variant::empty())?;
+            OxInst::ArrayErase { array, element } => {
+                // VBA `Erase` is reset-vs-deallocate decided by the array's *own* storage
+                // class, carried on the runtime SAFEARRAY's `FADF_FIXEDSIZE` bit (set at
+                // allocation, travelling with copies) — so the dispatch is purely runtime,
+                // exactly like real VBA:
+                //   • fixed-size (`Dim a(1 To 3)`): reinitialize every element to its type
+                //     default and keep the array allocated (reads after `Erase` succeed);
+                //   • dynamic (`Dim a()` + `ReDim`): free the storage (becomes
+                //     uninitialized; `UBound` raises until re-`ReDim`'d).
+                let cur = self.read(array)?;
+                let reset = cur.as_safearray().filter(|a| a.is_fixed_size()).map(|arr| {
+                    // Rebuild a fresh array of the SAME bounds + element type + fixed flag,
+                    // default-initialized — i.e. a `ReDim`-to-current-bounds, which already
+                    // default-inits correctly for every element type (scalars, String → "",
+                    // Variant → Empty, UDT → recursively zeroed record).
+                    let bounds = arr.bounds().unwrap_or_default();
+                    let count = arr.len();
+                    let elems: Vec<Variant> =
+                        (0..count).map(|_| default_array_element(element)).collect();
+                    redim_safearray_from_elements(bounds, element, elems, true)
+                });
+                match reset {
+                    Some(built) => {
+                        let array_value = built.map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                        self.store(array, Variant::from_safearray(array_value))?;
+                    }
+                    None => self.store(array, Variant::empty())?,
+                }
             }
             OxInst::Bound {
                 dst,
@@ -2005,6 +2029,7 @@ impl<'h> Vm3<'h> {
         lower_bounds: &[i32],
         element: &ArrayElementType,
         preserve: bool,
+        fixed: bool,
     ) -> Result<(), Vm3Error> {
         let bounds = self.build_bounds(upper_bounds, lower_bounds)?;
         let count: usize = bounds.iter().map(|b| b.count as usize).product();
@@ -2024,7 +2049,7 @@ impl<'h> Vm3<'h> {
         } else {
             (0..count).map(|_| default_array_element(element)).collect()
         };
-        let array = redim_safearray_from_elements(bounds, element, elems)
+        let array = redim_safearray_from_elements(bounds, element, elems, fixed)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
         self.store(dst, Variant::from_safearray(array))?;
         Ok(())

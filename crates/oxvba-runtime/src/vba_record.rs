@@ -515,15 +515,22 @@ unsafe fn read_field_variant_at(
             for i in 0..*len {
                 values.push(unsafe { read_field_variant_at(ptr.add(i * stride), element)? });
             }
-            Variant::from_safearray(SafeArray::from_variants_nd(
-                vec![SafeArrayBound {
-                    lower: 0,
-                    count: u32::try_from(*len).map_err(
-                        |_| "fixed-array record field length exceeds SAFEARRAY capacity",
-                    )?,
-                }],
-                values,
-            ))
+            // A UDT fixed-array field is inherently fixed-size: surface
+            // `FADF_FIXEDSIZE` so `Erase` of the materialized member array resets
+            // its elements (and is then written back into the inline storage)
+            // rather than deallocating — which the inline field cannot represent.
+            Variant::from_safearray(
+                SafeArray::from_variants_nd(
+                    vec![SafeArrayBound {
+                        lower: 0,
+                        count: u32::try_from(*len).map_err(
+                            |_| "fixed-array record field length exceeds SAFEARRAY capacity",
+                        )?,
+                    }],
+                    values,
+                )
+                .with_fixed_size(true),
+            )
         }
     };
     Ok(value)

@@ -928,6 +928,8 @@ impl<'a> ProcLower<'a> {
             bounds,
             element_type,
             preserve,
+            // A user `ReDim` produces a dynamic (resizable) array.
+            fixed: false,
         })
     }
 
@@ -1065,6 +1067,8 @@ impl<'a> ProcLower<'a> {
                         bounds,
                         element_type,
                         preserve: false,
+                        // A fixed-size `Dim a(1 To 3)` array: `Erase` resets it.
+                        fixed: true,
                     });
                 }
                 continue; // a dynamic `Dim a()` stays unallocated.
@@ -1172,6 +1176,8 @@ impl<'a> ProcLower<'a> {
                             bounds,
                             element_type: self.g.array_element_layout(&inner),
                             preserve: false,
+                            // A UDT fixed-array field (`arr(1 To 3) As Long`): `Erase` resets it.
+                            fixed: true,
                         });
                     }
                 }
@@ -1216,10 +1222,12 @@ impl<'a> ProcLower<'a> {
         let mut out = Vec::new();
         for target in node.expr_children() {
             let (array, ty) = self.bind_place(target)?;
-            let element_type = match &ty {
-                oxvba_symbol::signature::VarTypeRef::Array(inner) => types::array_element_of(inner),
-                _ => oxvba_bundle::ArrayElementType::Variant,
-            };
+            // The element type drives a fixed-array `Erase`'s typed re-default
+            // (e.g. a UDT fixed-array field `arr(1 To 3) As Long`, whose declared
+            // type is `FixedArray { element, len }`, not `Array`). `array_element`
+            // unwraps both array spellings; a non-array target stays Variant.
+            let element_type =
+                types::array_element(&ty).unwrap_or(oxvba_bundle::ArrayElementType::Variant);
             out.push(CoreStmt::Erase {
                 array,
                 element_type,

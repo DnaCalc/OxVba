@@ -199,3 +199,46 @@ note it).
 3. Resolve §3 explicitly (OxVBA limitation vs VBA limitation; runtime-value-flag vs
    type-system extension) and record the decision.
 4. Implement §4 (and optionally §5), test per §7, fresh-eyes review, commit.
+
+## 10. Resolution — §3 decision + what landed (bead `bd-9sed.16`)
+
+**§3 decided: it is a VBA modelling fact, not an OxVBA typing limitation.** In VBA's
+static type system `Dim a(1 To 3) As Long` and `Dim a() As Long` are *both* "array of
+Long" — there is no separate static type. The fixed/dynamic distinction is a **storage
+property on the SAFEARRAY value at runtime**: the `FADF_FIXEDSIZE` (`0x0010`) `fFeatures`
+bit. Validated against the live-evidence fact pack
+(`docs/evidence/runtime/WINDOWS_VBA71_X64_VARIANT_AND_SAFEARRAY_FACT_PACK_2026-04-20.md`,
+`SAFEARRAY-F4`/`F5`: `fFeatures` carries `FADF_FIXEDSIZE`; `SafeArrayCreateVector` arrays
+are always fixed-size). So we carry the flag on the **runtime array value** (§4), not the
+static `VarTypeRef`.
+
+**Landed (the `Erase` bead):**
+- `oxvba-runtime/safe_array.rs`: `FADF_FIXEDSIZE_VALUE`, `is_fixed_size`/`set_fixed_size`/
+  `with_fixed_size`, preserved across `Clone` and surfaced in `feature_flags()` (so it
+  rides the COM `fFeatures` round-trip for free).
+- `fixed: bool` threaded `CoreStmt::ReDim` → `OxInst::ArrayRedim` → the shared
+  `redim_safearray_from_elements` builder. Binder: fixed `Dim` + UDT fixed-array-field
+  init emit `fixed: true`; user `ReDim` emits `fixed: false`.
+- UDT fixed-array record-field read-back (`vba_record.rs`) surfaces `FADF_FIXEDSIZE` (the
+  inline field is inherently fixed), so the materialize-and-write-back compound `Erase`
+  resets it instead of trying to store `Empty` into inline storage.
+- `bind_erase` now resolves the element type for **both** `Array` and `FixedArray`
+  spellings (`types::array_element`) so a fixed UDT field re-defaults with its real type.
+- vm3 `ArrayErase` dispatches on the array's own flag: fixed → rebuild a fresh
+  default-initialized array of the same bounds+element+flag; dynamic → store `Empty`.
+- Tests: `oxvba-differential/tests/fixed_array_erase_vm3.rs` (top-level reset for every
+  element type, dynamic-deallocate-raises, UDT fixed-field reset) + runtime unit tests for
+  flag/clone/raw-roundtrip; the dynamic compound test was kept. Golden re-blessed: the one
+  changed line is `erase_array_basic.bas`, which now completes (the old golden froze the
+  error-13 bug).
+
+**Deferred (separate beads, as §5 anticipated):**
+- `ReDim` of a fixed array should be a (compile-time) error — not yet rejected; a user
+  `ReDim` silently replaces with a dynamic array. Only reachable from invalid VBA.
+- A fixed array stored into a `Variant`-typed holder then `Erase`d re-defaults to
+  `Variant`/`Empty` (the binder can't see the element type through `Variant`) — minor
+  fidelity edge.
+- Pre-existing workspace-lint debt: a clean `cargo clippy` build surfaces ~101
+  `undocumented_unsafe_blocks` in `oxvba-runtime` (`safe_array.rs`/`vba_record.rs`) —
+  identical on `HEAD`, unaffected by this bead (incremental caches normally hide it). Own
+  bead.

@@ -601,6 +601,12 @@ pub enum CoreStmt {
         bounds: Vec<CoreBound>,
         element_type: ArrayElementType,
         preserve: bool,
+        /// Whether the allocated array is fixed-size (`Dim a(1 To 3)` / a UDT
+        /// fixed-array field) rather than a dynamic user `ReDim`. Carried onto
+        /// the runtime SAFEARRAY's `FADF_FIXEDSIZE` bit so `Erase` can reset a
+        /// fixed array (vs deallocate a dynamic one) by reading the value's own
+        /// flag.
+        fixed: bool,
     },
     Erase {
         array: CorePlace,

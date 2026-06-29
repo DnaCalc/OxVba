@@ -646,6 +646,7 @@ impl<'a> Lowerer<'a> {
                 bounds,
                 element_type,
                 preserve,
+                fixed,
             } => {
                 let mut upper_bounds = Vec::with_capacity(bounds.len());
                 let mut lower_bounds = Vec::with_capacity(bounds.len());
@@ -677,6 +678,7 @@ impl<'a> Lowerer<'a> {
                     lower_bounds,
                     element: element_type.clone(),
                     preserve: *preserve,
+                    fixed: *fixed,
                 });
                 if compound {
                     self.store_to_place(array, OxOperand::Use(dst))?;
@@ -2774,6 +2776,7 @@ mod tests {
                 }],
                 element_type: ArrayElementType::Long,
                 preserve: false,
+                fixed: false,
             },
             assign(
                 CorePlace::Index {

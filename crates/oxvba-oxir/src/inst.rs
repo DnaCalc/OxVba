@@ -303,6 +303,9 @@ pub enum OxInst {
         lower_bounds: Vec<i32>,
         element: ArrayElementType,
         preserve: bool,
+        /// Whether the allocated array is fixed-size (set on the runtime
+        /// SAFEARRAY's `FADF_FIXEDSIZE` bit); see [`super::OxInst::ArrayErase`].
+        fixed: bool,
     },
     /// Array element read (fallible: subscript out of range 9; or default-member
     /// dispatch if the receiver is an object).

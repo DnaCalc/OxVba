@@ -34,6 +34,11 @@ pub const VT_RECORD_VALUE: u16 = 0x0024;
 
 pub const FADF_HAVEVARTYPE_VALUE: u16 = 0x0080;
 pub const FADF_RECORD_VALUE: u16 = 0x0020;
+/// `FADF_FIXEDSIZE` (0x0010): the SAFEARRAY may not be resized or reallocated.
+/// VBA sets this on a fixed-size array (`Dim a(1 To 3)`), where `Erase`
+/// reinitializes each element to its type default and keeps the array, in
+/// contrast to a dynamic array (`Dim a()` + `ReDim`) whose `Erase` deallocates.
+pub const FADF_FIXEDSIZE_VALUE: u16 = 0x0010;
 pub const FADF_BSTR_VALUE: u16 = 0x0100;
 pub const FADF_UNKNOWN_VALUE: u16 = 0x0200;
 pub const FADF_DISPATCH_VALUE: u16 = 0x0400;
@@ -1097,6 +1102,38 @@ impl SafeArray {
         unsafe { (*self.0.as_ptr()).f_features }
     }
 
+    /// Whether this SAFEARRAY carries `FADF_FIXEDSIZE` — i.e. it is a fixed-size
+    /// array (`Dim a(1 To 3)`) whose `Erase` resets elements rather than freeing
+    /// the storage. The bit lives in the descriptor's `fFeatures`, so it travels
+    /// with [`Clone`] and across the COM boundary exactly like the other FADF
+    /// flags.
+    pub fn is_fixed_size(&self) -> bool {
+        self.feature_flags() & FADF_FIXEDSIZE_VALUE != 0
+    }
+
+    /// Set or clear the descriptor's `FADF_FIXEDSIZE` bit in place.
+    pub fn set_fixed_size(&mut self, fixed: bool) {
+        // SAFETY: `self.0` is this value's live descriptor and `&mut self`
+        // guarantees exclusive access, so toggling the `f_features` bit is a
+        // sound in-bounds write.
+        unsafe {
+            let header = self.0.as_ptr();
+            if fixed {
+                (*header).f_features |= FADF_FIXEDSIZE_VALUE;
+            } else {
+                (*header).f_features &= !FADF_FIXEDSIZE_VALUE;
+            }
+        }
+    }
+
+    /// Consume `self`, setting/clearing `FADF_FIXEDSIZE`, and return it — a
+    /// builder-style convenience over [`Self::set_fixed_size`].
+    #[must_use]
+    pub fn with_fixed_size(mut self, fixed: bool) -> Self {
+        self.set_fixed_size(fixed);
+        self
+    }
+
     fn element_kind(&self) -> SafeArrayElementKind {
         SafeArrayElementKind::from_vartype(self.element_vartype())
             .expect("internal SAFEARRAY element vartype should remain supported")
@@ -1319,6 +1356,12 @@ impl SafeArray {
 
 impl Clone for SafeArray {
     fn clone(&self) -> Self {
+        // The clone is rebuilt from bounds + element vartype + values, which
+        // derives `f_features` afresh from the element type — so the
+        // `FADF_FIXEDSIZE` storage property must be re-applied explicitly to
+        // travel with the copy (matching VBA, where the descriptor's fixed-ness
+        // moves with the array value).
+        let fixed = self.is_fixed_size();
         let bounds = self.bounds_for_shape();
         if let Some(layout) = self.vba_record_layout() {
             let values = self
@@ -1332,7 +1375,8 @@ impl Clone for SafeArray {
                 })
                 .collect();
             return Self::from_vba_records_nd(bounds, layout, values)
-                .expect("cloning native record SAFEARRAY should succeed");
+                .expect("cloning native record SAFEARRAY should succeed")
+                .with_fixed_size(fixed);
         }
         match self.variant_elements() {
             Some(values) => {
@@ -1342,6 +1386,7 @@ impl Clone for SafeArray {
             None => Self::from_bounds_and_variants(bounds, self.element_vartype(), None)
                 .expect("cloning shape-only SAFEARRAY should succeed"),
         }
+        .with_fixed_size(fixed)
     }
 }
 
@@ -1608,6 +1653,49 @@ mod tests {
             adopted.variant_elements().expect("elements"),
             vec![Variant::from_i32(4)]
         );
+    }
+
+    #[test]
+    fn fixed_size_flag_surfaces_in_feature_flags_and_survives_clone() {
+        use super::FADF_FIXEDSIZE_VALUE;
+
+        let dynamic = SafeArray::from_variants(vec![Variant::from_i32(7)]);
+        assert!(!dynamic.is_fixed_size());
+        assert_eq!(dynamic.feature_flags() & FADF_FIXEDSIZE_VALUE, 0);
+
+        let fixed = SafeArray::from_variants(vec![Variant::from_i32(7)]).with_fixed_size(true);
+        assert!(fixed.is_fixed_size());
+        assert_eq!(
+            fixed.feature_flags() & FADF_FIXEDSIZE_VALUE,
+            FADF_FIXEDSIZE_VALUE
+        );
+        // The non-fixed FADF metadata is untouched alongside the fixed bit.
+        assert_eq!(
+            fixed.feature_flags(),
+            dynamic.feature_flags() | FADF_FIXEDSIZE_VALUE
+        );
+
+        // The descriptor flag travels with the value copy (Variant assignment,
+        // ByVal/ByRef copies all clone the SafeArray).
+        let cloned = fixed.clone();
+        assert!(cloned.is_fixed_size());
+        assert_eq!(cloned.variant_elements(), Some(vec![Variant::from_i32(7)]));
+
+        // Clearing the bit is observable, and a cleared array clones as dynamic.
+        let recleared = cloned.with_fixed_size(false);
+        assert!(!recleared.is_fixed_size());
+        assert!(!recleared.clone().is_fixed_size());
+    }
+
+    #[test]
+    fn fixed_size_flag_travels_through_raw_descriptor_roundtrip() {
+        let fixed = SafeArray::from_typed_variants(VT_I2_VALUE, vec![Variant::from_i16(3)])
+            .expect("typed array")
+            .with_fixed_size(true);
+        let raw = fixed.clone_raw_safearray_ptr();
+        let adopted = unsafe { SafeArray::from_raw_safearray_owned(raw) }
+            .expect("OxVba-owned descriptor should adopt");
+        assert!(adopted.is_fixed_size());
     }
 
     #[test]
