@@ -699,6 +699,11 @@ impl<'h> Vm3<'h> {
                 // stays on the stack to back the snapshot) and end the run.
                 OxTerminator::Halt => {
                     self.frames.truncate(base + 1);
+                    // Re-derive `cur` to the surviving (base/entry) frame's program: `End` may
+                    // fire inside a cross-program callee, and the post-run snapshot reader
+                    // (`slot`) reads `programs[cur]`'s globals — which must be the entry
+                    // program's, to stay consistent with the entry frame's locals it also reads.
+                    self.cur = self.frames[base].prog;
                     break;
                 }
                 // The landing pad: dispatch the in-flight fault on the activation's
@@ -897,13 +902,20 @@ impl<'h> Vm3<'h> {
     /// carries one (`Err.Raise … Source`), else the **project name** — the VBA default
     /// for any error generated within the project, matching the Excel/VBA 7.1 oracle
     /// (`Err.Source = "VBAProject"`; see `docs/VBA_ERROR_MODEL_ORACLE_FINDINGS.md`).
-    fn raise(&mut self, fault: Fault) {
+    fn raise(&mut self, mut fault: Fault) {
         self.err.number = fault.code;
         self.err.description = fault.message.clone();
-        self.err.source = fault
+        // The source is the fault's explicit one (`Err.Raise … Source`) or, on the FIRST raise
+        // of a source-less fault, the ORIGIN project's name. Persisting it back onto the fault is
+        // what keeps the origin as the fault propagates: a cross-program unwind re-routes (and
+        // re-`raise`s) the SAME pending fault, so without this the source would be re-stamped with
+        // each catching project's name instead of the project where it was raised.
+        let source = fault
             .source
             .clone()
             .unwrap_or_else(|| self.cur_program().unit_name.clone());
+        self.err.source = source.clone();
+        fault.source = Some(source);
         self.pending_fault = Some(fault);
     }
 

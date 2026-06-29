@@ -224,6 +224,14 @@ fn cross_program_fault_unwinds_to_the_callers_handler() {
     // statement ran in App → global 0 == 42 (the per-iteration `cur` re-derivation restores the
     // caller's program as the fault unwinds, with no explicit route_fault bookkeeping).
     assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+    // Err carries the ORIGIN project's name as it unwinds across the boundary (Resume Next does
+    // not clear Err): the error came from Lib, even though App's handler caught it.
+    assert_eq!(vm.err_number(), 5);
+    assert_eq!(
+        vm.err_source(),
+        "Lib",
+        "Err.Source is the ORIGIN project, not the catching project"
+    );
 }
 
 #[test]
