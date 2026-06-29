@@ -44,8 +44,8 @@ use oxvba_bundle::{
     default_array_element, redim_safearray_from_elements, vba_record_layout_for_fields,
 };
 use oxvba_com::{
-    DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue,
-    TypeLibMemberInvokeKind,
+    ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
+    DynamicMemberSelector, DynamicValue, TypeLibMemberInvokeKind,
 };
 use oxvba_eval::arith::{self, ArithError};
 use oxvba_hal::HostServices;
@@ -277,6 +277,13 @@ struct ErrState {
     source: String,
 }
 
+/// A live host (COM) event subscription: which sink handler to invoke when the host delivers a
+/// callback for this subscription. Mirrors vm2's `ComEventSink`.
+struct ComEventSink {
+    owner: Variant,
+    handler: usize,
+}
+
 /// One linked program's mutable runtime tables (one per VBA project). A whole VBA *project*
 /// is exactly one `OxProgram`, so the common case is a single `LoadedProgram`; the vector in
 /// [`Vm3`] exists so cross-project references (project A → project B's classes/procs) can
@@ -328,6 +335,14 @@ pub struct Vm3<'h> {
     draining: bool,
     /// Live `WithEvents` bindings, keyed by `withevents_key(owner, binding-token)`.
     withevents: HashMap<i64, EventBinding>,
+    /// Live host (COM) event subscriptions: subscription-token raw → sink handler (mirrors vm2's
+    /// `com_subscriptions`). Populated when a `WithEvents` field binds a COM source.
+    com_subscriptions: HashMap<i32, ComEventSink>,
+    /// COM subscription tokens grouped by `withevents` key, for teardown on rebind / clear /
+    /// terminate (mirrors vm2's `com_subscriptions_by_key`).
+    com_subscriptions_by_key: HashMap<i64, Vec<i32>>,
+    /// Re-entrancy guard for [`Vm3::pump_com_events`] (a delivered handler can re-enter the loop).
+    pumping: bool,
     /// `For Each obj In <WithEvents owners>` iterator stack (the `WithEventsFirstOwner`/
     /// `NextOwner` cursor) — a stack so nested owner-iterations never alias.
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
@@ -444,6 +459,9 @@ impl<'h> Vm3<'h> {
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
             withevents: HashMap::new(),
+            com_subscriptions: HashMap::new(),
+            com_subscriptions_by_key: HashMap::new(),
+            pumping: false,
             withevents_iters: Vec::new(),
             project_event_sink: None,
         };
@@ -1152,7 +1170,12 @@ impl<'h> Vm3<'h> {
             // A statement boundary drives finalization timing: run any parked
             // `Class_Terminate`s released by the previous statement (the error model takes its
             // `Resume` seeds from `FaultDispatch`, not from here).
-            OxInst::StmtBoundary { .. } => self.maybe_drain(),
+            OxInst::StmtBoundary { .. } => {
+                // VBA statement-granular timing: run parked `Class_Terminate`s, then dispatch any
+                // inbound host (COM) events (mirrors vm2's statement-boundary drain + pump).
+                self.maybe_drain();
+                self.pump_com_events();
+            }
 
             // `Let`/`Set` legality check (M3-4).
             OxInst::ValidateAssignment {
@@ -1466,20 +1489,19 @@ impl<'h> Vm3<'h> {
                 let owner_ref = variant_to_object(&owner_value)?;
                 let key = withevents_key(&owner_ref, *binding as i64);
                 let v = self.operand(value)?;
+                // Replacing a binding tears down its old host (COM) subscriptions first.
+                self.unsubscribe_com_key(key);
                 if is_nothing(&v) {
                     self.withevents.remove(&key);
                 } else {
-                    // A COM/foreign event source is wired through the host's connection
-                    // points — that lands with COM (M3-8); no COM object can exist in vm3
-                    // yet, so this is unreachable today, surfaced honestly rather than
-                    // silently dropping the subscription. A project source dispatches
-                    // internally via `RaiseEvent` (no host subscription).
+                    // A COM/foreign source is wired through the host's connection points (the
+                    // shared, live-tested HAL `subscribe_event`); a project source dispatches
+                    // internally via `RaiseEvent` (no host subscription). Mirrors vm2's
+                    // WithEventsSet.
                     if let Some(source) = v.as_object_ref()
                         && !source.is_project_instance()
                     {
-                        return Err(Vm3Error::Unimplemented {
-                            what: "WithEvents on a COM/foreign object",
-                        });
+                        self.subscribe_com_events(key, *binding, &owner_value, &source);
                     }
                     self.withevents.insert(
                         key,
@@ -1494,6 +1516,7 @@ impl<'h> Vm3<'h> {
             OxInst::WithEventsClearOwner { dst, owner } => {
                 let owner_ref = variant_to_object(&self.operand(owner)?)?;
                 let owner_raw = owner_ref.raw();
+                self.unsubscribe_com_owner(owner_raw);
                 self.withevents
                     .retain(|key, _| withevents_owner(*key).raw() != owner_raw);
                 self.store(dst, Variant::from_i32(0))?;
@@ -2255,13 +2278,117 @@ impl<'h> Vm3<'h> {
                         self.run_proc_with_me(bundle, proc, Variant::from_object_ref(object), &[], true);
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
-                // Drop any `WithEvents` bindings the terminated instance owned (it can no
-                // longer sink events) — mirrors vm2's teardown in `maybe_drain`.
+                // Drop any `WithEvents` bindings + host (COM) subscriptions the terminated
+                // instance owned (it can no longer sink events) — mirrors vm2's teardown.
+                self.unsubscribe_com_owner(instance_id);
                 self.withevents
                     .retain(|key, _| withevents_owner(*key).raw() != instance_id);
             }
         }
         self.draining = false;
+    }
+
+    /// Subscribe a `WithEvents` sink (`owner`) to a COM `source`'s events for `binding_token`:
+    /// for each event the sink routes, advise the host's connection point (the shared, live-
+    /// tested HAL `subscribe_event`) and record the subscription for dispatch + teardown.
+    /// Mirrors vm2's `subscribe_com_events`.
+    fn subscribe_com_events(
+        &mut self,
+        key: i64,
+        binding_token: i32,
+        owner: &Variant,
+        source: &ObjectRef,
+    ) {
+        let routes: Vec<(i32, usize)> = self.programs[self.cur]
+            .event_routes
+            .iter()
+            .filter(|((binding, _), _)| *binding == binding_token)
+            .map(|((_, event), handler)| (*event, *handler))
+            .collect();
+        for (event, handler) in routes {
+            if let Ok(subscription) = self
+                .host
+                .com()
+                .subscribe_event(source.clone(), ComMemberToken::new(event))
+            {
+                self.com_subscriptions.insert(
+                    subscription.raw(),
+                    ComEventSink {
+                        owner: owner.clone(),
+                        handler,
+                    },
+                );
+                self.com_subscriptions_by_key
+                    .entry(key)
+                    .or_default()
+                    .push(subscription.raw());
+            }
+        }
+    }
+
+    /// Tear down every host (COM) subscription a `withevents` key holds (rebind / Set Nothing).
+    fn unsubscribe_com_key(&mut self, key: i64) {
+        if let Some(tokens) = self.com_subscriptions_by_key.remove(&key) {
+            for raw in tokens {
+                let _ = self
+                    .host
+                    .com()
+                    .unsubscribe_event_variant(ComSubscriptionToken::new(raw));
+                self.com_subscriptions.remove(&raw);
+            }
+        }
+    }
+
+    /// Tear down every host (COM) subscription owned by `owner_raw` (owner cleared / terminated).
+    fn unsubscribe_com_owner(&mut self, owner_raw: i32) {
+        let keys: Vec<i64> = self
+            .com_subscriptions_by_key
+            .keys()
+            .copied()
+            .filter(|key| withevents_owner(*key).raw() == owner_raw)
+            .collect();
+        for key in keys {
+            self.unsubscribe_com_key(key);
+        }
+    }
+
+    /// Drain inbound host (COM) events: poll the host for delivered callbacks and dispatch each
+    /// to the subscribed sink handler (run in the sink owner's program). Re-entrancy-guarded;
+    /// handler faults are suppressed (events arrive out-of-band from the raiser). Mirrors vm2's
+    /// `pump_com_events`; called at statement boundaries.
+    fn pump_com_events(&mut self) {
+        if self.pumping {
+            return;
+        }
+        self.pumping = true;
+        loop {
+            let payload = match self.host.com().poll_event_callback() {
+                Ok(Some(payload)) => payload,
+                // `Ok(None)` = nothing pending; `Err` = the host has no event delivery (the null
+                // host) — either way, stop pumping.
+                _ => break,
+            };
+            let sink = self
+                .com_subscriptions
+                .get(&payload.subscription.raw())
+                .map(|sink| (sink.owner.clone(), sink.handler));
+            if let Some((owner, handler)) = sink {
+                let values: Vec<Variant> =
+                    payload.args.iter().map(|arg| arg.variant().clone()).collect();
+                // Run the handler in the sink owner's program (its bundle_id), suppressing faults.
+                let owner_bundle = owner
+                    .as_object_ref()
+                    .map(|o| o.bundle_id() as usize)
+                    .unwrap_or(self.cur);
+                let _ =
+                    self.run_proc_with_values(owner_bundle, FuncId(handler), owner, values, true);
+            }
+            let _ = self
+                .host
+                .com()
+                .release_event_callback_variant(payload.callback);
+        }
+        self.pumping = false;
     }
 
     /// `TypeOf <object> Is <Type>`: for a project instance, match the bare type name against
