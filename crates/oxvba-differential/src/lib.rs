@@ -468,6 +468,24 @@ mod tests {
         assert_eq!(snap.get(1), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
     }
 
+    /// `TypeOf Nothing Is X` is False, not error 91 — and so is the test on an unset object
+    /// variable. Closes the `typeof-nothing-raises-91` gap.
+    #[test]
+    fn vm3_typeof_nothing_is_false() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gNothing As Boolean\nPublic gUnset As Boolean\nSub Main()\n  Dim w As Widget\n  gNothing = (TypeOf Nothing Is Widget)\n  gUnset = (TypeOf w Is Widget)\nEnd Sub\n",
+            ),
+            ("Widget", Class, "' widget\n"),
+        ]);
+        // Neither raised (run_obj_ok asserts that); both are False.
+        assert_eq!(snap.first(), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
+        assert_eq!(snap.get(1), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
+    }
+
     /// An object created in a called proc that faults: the object parks as the fault unwinds
     /// out of the proc, and (the error caught by `On Error Resume Next`) its `Class_Terminate`
     /// runs before `Main` continues — so the post-resume read sees the terminate's effect.

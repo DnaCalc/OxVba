@@ -70,7 +70,7 @@ may remain unexamined.
 |---|----|-----------|-----|-----|-----------|
 |☑|redim-fixed-array-reject|Med/SilentWrong|S|`ReDim` of a fixed array silently re-dimensions instead of erroring|runtime guard in `array_redim` on `is_fixed_size()` → Fault 10 *(done; 6 corpus progs fixed to valid dynamic arrays)*|
 |☑|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|bind-site element unless Variant, then `array_element_type_for_vartype(element_vartype())` *(done)*|
-|☐|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declines|VM-agnostic `CallbackRegistry` in oxvba-runtime + trampoline pool|
+|⊘|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declines (vm3 lib.rs:3046)|**DECISION (keep the honest decline for now):** it is *correct*, just unimplemented — no in-scope corpus program exercises it, and it is the only capability that would need a large UB-adjacent unsafe facility (thunk pool + reentrant `*mut Vm3` re-entered from a C trampoline mid-FFI). Intra-VBA `AddressOf`/`CallProcRef` already works. Design when a real program needs it: substitute the thunk address as the `LongPtr` arg (HAL unchanged — it marshals `LongPtr` as a pointer-sized int), copy out `self.host` so the VM is unborrowed across the FFI, re-enter via `run_proc_with_values`. Sync-only (EnumWindows-style); async (SetTimer) additionally needs a message pump + thunk outliving the call.|
 |☑|getobject-absent|Low/Absent|M|`GetObject` not bindable|catalog SpecialForm + `Native(GetObject)` route; `host::get_object` → `ComHal::get_object_variant`; HAL 3-mode dispatch (omitted→`GetActiveObject`, ""→`CreateObject`, path→`CoGetObject`); bridge `get_active_object`/`bind_file_object`. LIVE-verified (Dictionary new-instance + running Excel). *(done)* NOTE: miss surfaces as Err 5 not 429 pending `hal-errors-flattened-to-5` (HRESULT preserved in the fault message)|
 
 ## Tier 1 — Critical SilentWrong (data loss / everyday code)
@@ -102,7 +102,7 @@ may remain unexamined.
 |☐|mixed-string-numeric-compare-no-13|High/SilentWrong|M|String-vs-numeric compare returns value not Err 13|`cmp_order` mismatch guard (Empty exempt)|
 |☐|and-or-imp-null-three-valued|High/SilentWrong|M|And/Or/Imp with Null always Null (no 3-valued logic)|special-case Null in and/or/imp|
 |☐|null-not-propagated-string-fns|High/SilentWrong|M|string fns on Null raise 13 not Null (or 94 for `$`)|Null-propagation policy table|
-|☐|typeof-nothing-raises-91|High/SilentWrong|S|`TypeOf Nothing Is X` raises 91 not False|early `Ok(false)` for Nothing/Empty/Null in `type_of_is`|
+|☑|typeof-nothing-raises-91|High/SilentWrong|S|`TypeOf Nothing Is X` raises 91 not False|early `Ok(false)` for Nothing/Empty/Null (and an unset/`Set Nothing` object var) in `type_of_is` *(done)*|
 |☐|for-counter-no-overflow|High/SilentWrong|M|`For` counter increment never overflows (Widening)|Checked mode for fixed-type counters|
 |☐|integer-literal-surfaces-as-long|High/SilentWrong|M|Integer literals are Long at runtime (VarType/TypeName)|OxConst::I16 carrier|
 |☐|vba-hex-oct-literal-sign|High/SilentWrong|M|`&HFFFFFFFF`=4294967295 not -1 (no width sign)|width-based two's-complement in parse_radix (both copies)|

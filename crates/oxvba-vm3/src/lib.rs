@@ -2545,6 +2545,14 @@ impl<'h> Vm3<'h> {
     /// delegate to the host (unreachable until `CreateObject` lands in M3-8, but mirrors vm2).
     fn type_of_is(&self, object: &OxOperand, type_name: &str) -> Result<bool, Vm3Error> {
         let v = self.operand(object)?;
+        // `TypeOf Nothing Is X` is False, not an error — and so is the same test on an unset
+        // or `Set …= Nothing` object variable (`Nothing` is represented as `Empty`) and on
+        // `Empty`/`Null`. Guard before `variant_to_object`, which would otherwise raise 91.
+        if matches!(v.vtype(), VarType::Empty | VarType::Null)
+            || v.as_object_ref().is_some_and(|o| o.raw() == 0)
+        {
+            return Ok(false);
+        }
         let obj = variant_to_object(&v)?;
         let bare = type_name.rsplit('.').next().unwrap_or(type_name);
         // A built-in `Collection` carries the reserved sentinel route key (it indexes no project
