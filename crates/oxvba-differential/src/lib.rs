@@ -786,6 +786,87 @@ mod tests {
         out
     }
 
+    /// A deterministic single-line rendering of a run's observable (axis 1 snapshot + axis 2
+    /// `Err` + completion shape), for the vm3 golden snapshot. `{:?}` on the `Err` keeps it on
+    /// one line (newlines in a description escape to `\n`).
+    fn render_outcome(o: &RunOutcome) -> String {
+        if let Some(what) = &o.unsupported {
+            return format!("unsupported({what})");
+        }
+        let body = match &o.result {
+            Ok(values) => format!(
+                "ok[{}]",
+                values
+                    .iter()
+                    .map(|c| format!("{c:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Err(msg) => format!("err({msg})"),
+        };
+        format!("{body} raised={} err={:?}", o.raised, o.err)
+    }
+
+    /// W11 — the vm3 GOLDEN SNAPSHOT regression net. Pins vm3's validated observable for every
+    /// corpus program so vm3 coverage survives vm2's eventual deletion: this is the standalone
+    /// gate that REPLACES the vm2-vs-vm3 differential once vm2 is gone (a vm3-minted snapshot,
+    /// already oracle-validated on the captured subset + vm2-cross-checked on the rest as it is
+    /// blessed). Drift fails the test; re-bless an intentional change with `OXVBA_BLESS_GOLDEN=1`.
+    #[test]
+    fn vm3_golden_snapshot() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let budget = std::time::Duration::from_secs(8);
+        let mut lines: Vec<String> = Vec::new();
+        for dir in ["conformance", "examples"] {
+            for path in bas_files(&root.join(dir)) {
+                let Ok(source) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                if source.trim().is_empty() {
+                    continue;
+                }
+                let rel = path
+                    .strip_prefix(&root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let rendered = match run_with_timeout(Executor::Vm3, &source, "Main", budget) {
+                    Some(outcome) => render_outcome(&outcome),
+                    None => "TIMEOUT".to_string(),
+                };
+                lines.push(format!("{rel}\t{rendered}"));
+            }
+        }
+        lines.sort();
+        let actual = format!("{}\n", lines.join("\n"));
+        let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("vm3_golden.snap");
+        if std::env::var_os("OXVBA_BLESS_GOLDEN").is_some() {
+            std::fs::write(&golden, &actual).expect("write golden snapshot");
+            eprintln!("blessed vm3 golden snapshot: {} programs", lines.len());
+            return;
+        }
+        let expected = std::fs::read_to_string(&golden).unwrap_or_default();
+        if actual != expected {
+            let a: Vec<&str> = actual.lines().collect();
+            let e: Vec<&str> = expected.lines().collect();
+            let detail = match a.iter().zip(e.iter()).position(|(x, y)| x != y) {
+                Some(i) => format!(
+                    "first drift at line {i}:\n  golden: {}\n  actual: {}",
+                    e.get(i).copied().unwrap_or("<none>"),
+                    a.get(i).copied().unwrap_or("<none>")
+                ),
+                None => format!(
+                    "length differs: golden {} lines, actual {} lines",
+                    e.len(),
+                    a.len()
+                ),
+            };
+            panic!(
+                "vm3 golden snapshot drift (re-bless with OXVBA_BLESS_GOLDEN=1 if intended).\n{detail}"
+            );
+        }
+    }
+
     /// The M2-d gate: for every corpus program vm3 can run (no `Unimplemented`), its
     /// snapshot must match vm2. Programs vm3 doesn't yet implement are skipped; programs
     /// both backends error on match coarsely. As vm3 implements more, `skipped` shrinks
