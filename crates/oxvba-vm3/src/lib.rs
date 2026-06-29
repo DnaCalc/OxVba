@@ -326,6 +326,29 @@ impl<'h> Vm3<'h> {
         Ok(vm)
     }
 
+    /// Link `programs` into a runnable image and [`activate`](Self::activate) it (without running
+    /// the entry — the host drives that). A single program is the common case: a whole VBA
+    /// *project* is exactly ONE `OxProgram` with many classes, so it links trivially and this is
+    /// what the single-project product paths (CLI run, single-class COM server) need.
+    ///
+    /// True multi-`OxProgram` CROSS-PROJECT linking (project A referencing project B's
+    /// classes/procs — closes G6) is the remaining part of this milestone: it needs per-program
+    /// global/descriptor tables (a `LoadedProgram` vector), a program-tagged `Loc::Global` and
+    /// `Frame`/`ObjectRef.bundle_id`, and program-aware dispatch/identity/TypeOf/RaiseEvent. Until
+    /// that lands, a multi-program link is an explicit `Unimplemented` (never a silent mis-link).
+    /// The entry is the last program, mirroring vm2's `Vm::link`.
+    pub fn link(programs: &[&'h OxProgram], host: &'h dyn HostServices) -> Result<Self, Vm3Error> {
+        match programs {
+            [single] => Self::activate(single, host),
+            [] => Err(Vm3Error::Malformed(
+                "Vm3::link requires at least one program".into(),
+            )),
+            _ => Err(Vm3Error::Unimplemented {
+                what: "cross-project OxProgram link",
+            }),
+        }
+    }
+
     /// Build the VM and run the module-global initializer, but do NOT run the entry (`Main`).
     /// This is the front half of [`Vm3::run`], split out so a long-lived host session can
     /// activate a program once and then issue many member invokes against it. The per-run
@@ -3189,6 +3212,31 @@ mod tests {
         let prog = procs_program(vec![main, add]);
         let vm = run_core(&prog);
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(15));
+    }
+
+    #[test]
+    fn link_over_a_single_program_runs_like_run() {
+        // W2 slice 1: Vm3::link over a single program activates the same image Vm3::run does;
+        // a multi-program (cross-project) link is a clean Unimplemented (the deferred remainder).
+        let prog = main_proc(
+            vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
+            vec![assign(lc(0), CoreValue::Const(CoreConst::I32(42)))],
+        );
+        let oxp: &'static OxProgram =
+            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate")));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let mut vm = Vm3::link(&[oxp], host).expect("link single program");
+        vm.run_entry().expect("run_entry");
+        assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+
+        assert!(
+            matches!(
+                Vm3::link(&[oxp, oxp], host),
+                Err(Vm3Error::Unimplemented { .. })
+            ),
+            "multi-program cross-project link is the deferred remainder of W2"
+        );
     }
 
     #[test]
