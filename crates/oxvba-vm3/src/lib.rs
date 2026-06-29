@@ -9,9 +9,9 @@
 //! kernel — refactoring upstream where that improves the whole.
 //!
 //! vm3 is OxIR's **executable specification**: its observable behaviour defines what
-//! OxIR means, and the Cranelift JIT must match it. During the transition, the
-//! legacy `oxvba-vm2` (`Op` bundle) remains the **golden oracle** until vm3 reaches
-//! full-corpus parity (the "oracle handoff"), after which vm2 is frozen.
+//! OxIR means, and the Cranelift JIT must match it. vm3 is now the sole runtime and the
+//! oracle for the JIT — the legacy `Op`-bundle interpreter has been retired, its role
+//! replaced by the vm3 GOLDEN SNAPSHOT (`oxvba-differential::tests::vm3_golden_snapshot`).
 //!
 //! # Status (M2 bring-up)
 //!

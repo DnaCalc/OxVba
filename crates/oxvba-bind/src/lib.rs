@@ -75,9 +75,9 @@ pub fn bind_program(
 /// Bind every referenced project plus the active project — the **whole transitive
 /// closure**, leaf-first — into one `CoreProgram` per project (each a bundle). Each
 /// project is bound from its own full [`SymbolProjectManifest`] (carrying its
-/// flattened transitive reference source). The caller links them with
-/// `oxvba_vm2::Vm::link` (entry last); `Vm::link` resolves each import by unit name
-/// against any loaded bundle and rejects a duplicate unit, so a shared/diamond
+/// flattened transitive reference source). The caller elaborates each to OxIR and links
+/// them with `oxvba_vm3::Vm3::link` (entry last); the linker resolves each import by unit
+/// name against any loaded program and rejects a duplicate unit, so a shared/diamond
 /// dependency (`A→B→D`, `A→C→D`) appears — and links — exactly once.
 ///
 /// `closure_leaf_first` lists every project in the closure in leaf-first order,

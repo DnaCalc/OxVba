@@ -3,9 +3,9 @@
 //! Every `oxvba_bundle::NativeImplId` is dispatched here to a Rust body, copied
 //! out of the legacy VM's intrinsic logic. Pure functions compute over
 //! `oxvba_runtime::Variant`; host-sensitive functions delegate to the
-//! `oxvba_hal::HostServices` facets. `oxvba-vm2` calls [`invoke`] for every
-//! `Op::CallNative { callee: Builtin(..) }` (COM dispatch and `Declare` are
-//! handled by the VM via the host directly, not here).
+//! `oxvba_hal::HostServices` facets. The interpreter calls [`invoke`] for every
+//! native built-in call (COM dispatch and `Declare` are handled by the VM via the
+//! host directly, not here).
 //!
 //! Completeness is structural: [`invoke`] is an exhaustive `match` over
 //! `NativeImplId`, so a missing built-in is a compile error. The remaining

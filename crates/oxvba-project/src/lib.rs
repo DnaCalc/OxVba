@@ -15,7 +15,7 @@
 //! .basproj graph
 //!     ↓  (load_project_closure)
 //! Vec<oxvba_symbol::manifest::SymbolProjectManifest>   ← leaf-first closure
-//!     ↓  (oxvba_bind::bind_projects → linearize → oxvba_vm2::Vm::link)
+//!     ↓  (oxvba_bind::bind_projects → oxvba_oxir::elaborate → oxvba_vm3::Vm3::link)
 //! ```
 //!
 //! [`manifest`] holds the loader's own project-manifest types (relocated from the

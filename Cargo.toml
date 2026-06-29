@@ -13,7 +13,6 @@ members = [
     "crates/oxvba-project",
     "crates/oxvba-bundle",
     "crates/oxvba-lib",
-    "crates/oxvba-vm2",
     "crates/oxvba-symbol",
     "crates/oxvba-bind",
     "crates/oxvba-oxir",
@@ -61,7 +60,6 @@ oxvba-build = { path = "crates/oxvba-build" }
 oxvba-project = { path = "crates/oxvba-project" }
 oxvba-bundle = { path = "crates/oxvba-bundle" }
 oxvba-lib = { path = "crates/oxvba-lib" }
-oxvba-vm2 = { path = "crates/oxvba-vm2" }
 oxvba-symbol = { path = "crates/oxvba-symbol" }
 oxvba-bind = { path = "crates/oxvba-bind" }
 oxvba-oxir = { path = "crates/oxvba-oxir" }

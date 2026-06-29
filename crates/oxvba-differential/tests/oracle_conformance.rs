@@ -1,15 +1,13 @@
-//! Oracle-conformance gate: validate the OxVBA executors against the **live Excel/VBA
-//! 7.1 oracle** captured in `oracle/results/*.json`.
+//! Oracle-conformance gate: validate vm3 against the **live Excel/VBA 7.1 oracle**
+//! captured in `oracle/results/*.json`.
 //!
-//! For every probe in the oracle corpus this runs the self-contained program under both
-//! vm3 (the executor under construction; it MUST be 100% oracle-compliant) and vm2 (the
-//! transitional golden oracle, which we expect to deviate in places and do NOT fix —
-//! those deviations are reported, not failed). The ground truth is the oracle string.
+//! For every probe in the oracle corpus this runs the self-contained program under vm3
+//! (the sole product runtime + JIT oracle; it MUST be 100% oracle-compliant). The ground
+//! truth is the oracle string.
 //!
 //! The single hard assertion: **vm3 matches the oracle on every case outside the
-//! documented out-of-scope allowlist.** As vm3 grows (M2-c-2, then M3), entries leave the
-//! allowlist; an allowlisted case that starts matching is flagged so the allowlist can
-//! shrink.
+//! documented out-of-scope allowlist.** An allowlisted case that starts matching is
+//! flagged so the allowlist can shrink.
 
 use oxvba_differential::oracle::{
     OracleObservation, all_oracle_cases, run_oracle_case,
@@ -42,24 +40,20 @@ fn vm3_is_oracle_compliant() {
 
     let mut vm3_match = 0usize;
     let mut vm3_mismatch: Vec<String> = Vec::new();
-    let mut vm2_divergence: Vec<String> = Vec::new();
     let mut allowlisted_now_passing: Vec<String> = Vec::new();
     let mut report: Vec<String> = Vec::new();
 
     for case in &cases {
         let vm3 = run_oracle_case(Executor::Vm3, case);
-        let vm2 = run_oracle_case(Executor::Vm2, case);
         let allowlisted = KNOWN_VM3_GAPS.contains(&case.name.as_str());
 
         let vm3_ok = vm3.value() == Some(case.expected.as_str());
-        let vm2_ok = vm2.value() == Some(case.expected.as_str());
 
         report.push(format!(
-            "{:<36} oracle={:<40} vm3={:<44} vm2={}",
+            "{:<36} oracle={:<40} vm3={}",
             case.name,
             format!("\"{}\"", case.expected),
             render(&vm3),
-            render(&vm2),
         ));
 
         if allowlisted {
@@ -76,18 +70,9 @@ fn vm3_is_oracle_compliant() {
                 render(&vm3)
             ));
         }
-
-        if !vm2_ok {
-            vm2_divergence.push(format!(
-                "  {} : oracle=\"{}\"  vm2={}",
-                case.name,
-                case.expected,
-                render(&vm2)
-            ));
-        }
     }
 
-    eprintln!("\n=== oracle three-way report (oracle | vm3 | vm2) ===");
+    eprintln!("\n=== oracle two-way report (oracle | vm3) ===");
     for line in &report {
         eprintln!("{line}");
     }
@@ -97,15 +82,6 @@ fn vm3_is_oracle_compliant() {
         vm3_mismatch.len(),
         KNOWN_VM3_GAPS.len()
     );
-    if !vm2_divergence.is_empty() {
-        eprintln!(
-            "\nvm2-vs-oracle divergences ({} — documented vm2 non-compliances, NOT failed here):",
-            vm2_divergence.len()
-        );
-        for line in &vm2_divergence {
-            eprintln!("{line}");
-        }
-    }
 
     // If an allowlisted case now passes, the allowlist is stale — shrink it.
     assert!(

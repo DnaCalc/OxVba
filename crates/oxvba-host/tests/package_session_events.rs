@@ -1,6 +1,13 @@
-use oxvba_bundle::{BundlePackage, ProjectMemberKind};
+//! WithEvents event-dispatch through a host runtime session (the in-process COM-server
+//! create-class / invoke-member / event-sink surface), running on vm3 via
+//! `Engine::prepare_image_session` over an elaborated `OxImage`. The vm3 counterpart of the
+//! retired vm2 `ProjectRuntimeSession` flow; complements `vm3_session.rs` (create + invoke)
+//! with the parameterless-probe-event and native-FM20-named-event WithEvents fan-out.
+
+use oxvba_bundle::ProjectMemberKind;
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, Vm3RuntimeSession};
+use oxvba_oxir::OxImage;
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
@@ -18,7 +25,7 @@ fn class_module(name: &str, source: &str) -> ModuleUnit {
     }
 }
 
-fn package_session_for(modules: Vec<ModuleUnit>) -> oxvba_host::ProjectRuntimeSession {
+fn package_session_for(modules: Vec<ModuleUnit>) -> Vm3RuntimeSession {
     let manifest = SymbolProjectManifest {
         project_name: "DemoServer".to_string(),
         project_kind: ProjectKind::Library,
@@ -29,16 +36,16 @@ fn package_session_for(modules: Vec<ModuleUnit>) -> oxvba_host::ProjectRuntimeSe
     };
     let typelibs = oxvba_symbol::CatalogTypeLibResolver;
     let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind package");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize package");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate package");
     let mut engine = Engine::new(HostConfig::default());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .prepare_bundle_package_session(BundlePackage::single(bundle))
-        .expect("prepare package session")
+        .prepare_image_session(OxImage::new(vec![oxp]))
+        .expect("prepare vm3 session")
 }
 
 fn invoke(
-    session: &mut oxvba_host::ProjectRuntimeSession,
+    session: &mut Vm3RuntimeSession,
     object: oxvba_runtime::ObjectRef,
     member: &str,
     args: Vec<Variant>,

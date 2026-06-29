@@ -1,6 +1,6 @@
 //! `NativeImplId` — the complete enumeration of the VBA base library / built-in
 //! surface whose bodies are native (the "DLL side"). Each variant names one
-//! library function; `oxvba-lib` provides the body, `oxvba-vm2` dispatches it.
+//! library function; `oxvba-lib` provides the body, the interpreter dispatches it.
 //!
 //! This list is a *total* partition of the genuine library functions in the
 //! legacy `Instruction` set (the structural primitives — arrays, with-events,

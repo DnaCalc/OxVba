@@ -231,11 +231,10 @@ fn host_injected_application_run_and_ontime_execute_through_portable_host_root()
     let manifest = application_host_manifest();
 
     let program = oxvba_bind::bind_program(&manifest, &ApplicationTypeLibs).expect("bind");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
-    let mut vm = oxvba_vm2::Vm::link(&[&bundle], &*host).expect("link");
-    vm.run().expect("run");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
+    let vm = oxvba_vm3::Vm3::run(&oxp, &*host).expect("run");
 
-    assert_eq!(vm.slot(0), Some(&Variant::from_i32(1)));
+    assert_eq!(vm.slot(0), Some(Variant::from_i32(1)));
     assert_eq!(
         calls.lock().expect("call log").as_slice(),
         ["Run:2".to_string(), "OnTime:2".to_string()]

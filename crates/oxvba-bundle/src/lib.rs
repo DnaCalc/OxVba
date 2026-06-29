@@ -8,9 +8,10 @@
 //! dependency on the legacy compiler crate.
 //!
 //! A program reaches this bundle through `coreir` + `linearize` (the binder that
-//! builds `coreir` from source is the remaining upstream piece), then runs on
-//! `oxvba-vm2`. The `.oxb` carrier is a versioned [`BundlePackage`] over one or
-//! more linked bundles so wrapper targets can embed the same executable package.
+//! builds `coreir` from source is the remaining upstream piece). The `.oxb` carrier is a
+//! versioned [`BundlePackage`] over one or more linked bundles. NOTE: the `Op`-bundle
+//! interpreter that executed these bundles has been retired; `linearize`/`Bundle`/`Op`
+//! are now orphaned (a separate cleanup pass — see git history).
 
 pub mod array_runtime;
 pub mod coreir;

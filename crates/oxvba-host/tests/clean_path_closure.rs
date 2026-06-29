@@ -1,8 +1,8 @@
 //! End-to-end clean path from on-disk `.basproj` files: a two-project workspace
 //! (App → Lib) loaded with `oxvba_project::load_project_closure`, then run on the
 //! new pipeline via `Engine::execute_project_closure_with_variant_snapshot`
-//! (`bind_projects` → `linearize` → `oxvba_vm2::Vm::link` → run). Proves the host
-//! runs a cross-project workspace straight from disk.
+//! (`bind_projects` → `oxvba_oxir::elaborate` → `oxvba_vm3::Vm3::link` → run). Proves the
+//! host runs a cross-project workspace straight from disk.
 
 use std::path::{Path, PathBuf};
 

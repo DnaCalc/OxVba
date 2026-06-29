@@ -2,8 +2,8 @@
 //! hand-built [`CoreProgram`]s → `elaborate` → `Vm3::link` → run, exercising a free/module
 //! function call across a program boundary (`OxInst::CallExtern` to another program's exported
 //! proc), a fault that unwinds across the boundary to the caller's handler, and an unresolved
-//! reference. The vm3 counterpart of `oxvba-vm2/tests/cross_bundle_roundtrip.rs` — the tested
-//! scope vm3 must match so cross-project sessions never regress when vm2 retires.
+//! reference. The cross-project session scope vm3 must support (cross-bundle calls, faults
+//! unwinding across program boundaries, and unresolved-reference rejection).
 
 use oxvba_bundle::coreir::*;
 use oxvba_bundle::{

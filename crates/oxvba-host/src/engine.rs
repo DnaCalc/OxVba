@@ -1,12 +1,11 @@
 //! Engine: the host orchestration entry point for the clean execution stack.
 //!
 //! `Engine` configures host services (HAL profile / policy / callbacks) and runs
-//! VBA on the clean pipeline — `oxvba_bind` → `oxvba_bundle::linearize` →
-//! `oxvba_vm2` — for a single source module (optionally carrying typelib/native/host
+//! VBA on the clean pipeline — `oxvba_bind` → `oxvba_oxir::elaborate` →
+//! `oxvba_vm3` — for a single source module (optionally carrying typelib/native/host
 //! references, so an early-bound COM call reaches the resolver) or a `.basproj`
-//! project closure. The
-//! legacy compiler/VM execution path (and its COM-event / session / immediate-window
-//! machinery) was removed with `oxvba-compiler`/`oxvba-vm`; see git history.
+//! project closure. vm3 is the sole runtime; the legacy `Op`-bundle interpreter
+//! and the older compiler/VM path were removed; see git history.
 
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
@@ -29,7 +28,7 @@ use oxvba_symbol::{CatalogTypeLibResolver, TypeLibResolver};
 use crate::runner::RuntimeProfileId;
 
 const JIT_NOT_IMPLEMENTED_MESSAGE: &str =
-    "JIT execution is not implemented; the clean stack runs on the oxvba_vm2 interpreter";
+    "JIT execution is not implemented; the clean stack runs on the oxvba_vm3 interpreter";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticPhase {
@@ -39,8 +38,8 @@ pub enum DiagnosticPhase {
 
 /// The outcome of a vm3 run for the differential harness: a result snapshot, an
 /// out-of-scope construct to skip, or a genuine failure. The skip/fail split lets the
-/// harness gate vm3-vs-vm2 on the subset vm3 currently runs, growing automatically as
-/// vm3 implements more (an `Unsupported` program becomes `Ran` once its construct lands).
+/// harness gate the golden snapshot on the subset vm3 currently runs, growing automatically
+/// as vm3 implements more (an `Unsupported` program becomes `Ran` once its construct lands).
 #[derive(Debug, Clone)]
 pub enum Vm3Snapshot {
     /// The run completed: the module globals followed by the entry `Main` frame's locals.
@@ -141,19 +140,6 @@ fn jit_not_implemented_diagnostic() -> PhaseDiagnostic {
     ))
 }
 
-fn linearize_diagnostic(err: oxvba_bundle::LinearizeError) -> OxDiagnostic {
-    OxDiagnostic::error(
-        "BUND-E-MALFORMED-CORE",
-        OxDiagnosticPhase::Bundle,
-        err.to_string(),
-    )
-    .with_help("This indicates the binder emitted invalid Core IR; reduce the source to a regression case.")
-}
-
-fn runtime_diagnostic(err: oxvba_vm2::VmError) -> PhaseDiagnostic {
-    PhaseDiagnostic::from_diagnostic(err.to_diagnostic())
-}
-
 fn vm3_runtime_diagnostic(err: oxvba_vm3::Vm3Error) -> PhaseDiagnostic {
     let code = match &err {
         oxvba_vm3::Vm3Error::Unimplemented { .. } => "VM3-E-UNIMPLEMENTED",
@@ -209,78 +195,9 @@ pub struct Engine {
     host_services: Arc<dyn HostServices>,
 }
 
-pub struct ProjectRuntimeSession {
-    vm: oxvba_vm2::Vm<'static>,
-    entry_bundle: usize,
-    host_services: Arc<dyn HostServices>,
-}
-
-impl ProjectRuntimeSession {
-    pub fn entry_bundle(&self) -> usize {
-        self.entry_bundle
-    }
-
-    pub fn create_class_instance(
-        &mut self,
-        class_name: &str,
-    ) -> Result<ObjectRef, PhaseDiagnostic> {
-        self.vm
-            .create_project_instance(self.entry_bundle, class_name)
-            .map_err(runtime_diagnostic)
-    }
-
-    pub fn invoke_member_values(
-        &mut self,
-        object: ObjectRef,
-        member_name: &str,
-        kind_hint: Option<oxvba_bundle::ProjectMemberKind>,
-        args: Vec<Variant>,
-    ) -> Result<Variant, PhaseDiagnostic> {
-        self.vm
-            .invoke_project_member_values(object, member_name, kind_hint, args)
-            .map_err(runtime_diagnostic)
-    }
-
-    pub fn set_project_event_sink<F>(&mut self, sink: F)
-    where
-        F: FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'static,
-    {
-        self.vm.set_project_event_sink(sink);
-    }
-
-    pub fn clear_project_event_sink(&mut self) {
-        self.vm.clear_project_event_sink();
-    }
-
-    /// Bind a retained native `IDispatch*` supplied by a host callback into the
-    /// runtime COM object table, preserving the supplied type identity for
-    /// early-bound member dispatch inside the VBA implementation.
-    ///
-    /// # Safety
-    ///
-    /// `dispatch` must be null or a valid `IDispatch*` carrying one retained
-    /// reference owned by the caller. The HAL takes ownership of that reference.
-    #[cfg(target_os = "windows")]
-    pub unsafe fn bind_native_dispatch_object_value(
-        &mut self,
-        prog_id: &str,
-        dispatch: *mut c_void,
-    ) -> Result<Variant, PhaseDiagnostic> {
-        // SAFETY: the caller provides the retained `IDispatch*` described by
-        // this function's safety contract, and this method transfers it directly
-        // to the host COM boundary that assumes that ownership.
-        unsafe {
-            self.host_services
-                .com()
-                .bind_native_dispatch_object_variant(prog_id, dispatch)
-        }
-        .map_err(|err| PhaseDiagnostic::from_diagnostic(err.to_diagnostic()))
-    }
-}
-
-/// A vm3-backed project runtime session (the vm3 counterpart of [`ProjectRuntimeSession`]): the
-/// in-process COM server's create-class / invoke-member / event-sink surface, running on the
-/// vm3 interpreter over a linked [`oxvba_oxir::OxImage`]. Built by
+/// A vm3-backed project runtime session: the in-process COM server's create-class /
+/// invoke-member / event-sink surface, running on the vm3 interpreter over a linked
+/// [`oxvba_oxir::OxImage`]. Built by
 /// [`Engine::prepare_image_session`].
 pub struct Vm3RuntimeSession {
     vm: oxvba_vm3::Vm3<'static>,
@@ -334,8 +251,8 @@ impl Vm3RuntimeSession {
         self.vm.clear_project_event_sink();
     }
 
-    /// Bind a retained native `IDispatch*` into the runtime COM object table (host boundary, vm
-    /// agnostic — identical to [`ProjectRuntimeSession::bind_native_dispatch_object_value`]).
+    /// Bind a retained native `IDispatch*` into the runtime COM object table (a host-boundary,
+    /// vm-agnostic operation).
     ///
     /// # Safety
     ///
@@ -586,8 +503,7 @@ impl Engine {
     }
 
     /// Prepare a vm3-backed runtime session from an [`oxvba_oxir::OxImage`] (the `.oxi`) — the
-    /// vm3 counterpart of [`prepare_bundle_package_session`](Self::prepare_bundle_package_session),
-    /// and the path the in-process COM server uses to run on vm3. The image's programs + the
+    /// path the in-process COM server uses to run on vm3. The image's programs + the
     /// host-service `Arc` are promoted to `'static` (a loaded in-process COM server is
     /// process-lifetime), then linked via `Vm3::link` (entry = the last program, the COM-server
     /// project — the image's `entry`).
@@ -635,73 +551,27 @@ impl Engine {
         self.prepare_image_session(image)
     }
 
-    /// Prepare a package-backed runtime session without running a startup entry.
-    /// Wrapper targets use this for activation-style hosts: the package is linked
-    /// once, then class factories create project-class instances on demand.
-    ///
-    /// The current VM borrows bundles and host services. A loaded in-process COM
-    /// server is process-lifetime, so this method intentionally promotes the
-    /// package bundles and host-service Arc to `'static` for the session.
-    pub fn prepare_bundle_package_session(
-        &self,
-        package: oxvba_bundle::BundlePackage,
-    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
-        if self.config.enable_jit {
-            return Err(jit_not_implemented_diagnostic());
-        }
-        package.validate().map_err(|err| {
-            PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
-                "BUND-E-PACKAGE",
-                OxDiagnosticPhase::Bundle,
-                err.to_string(),
-            ))
-        })?;
-        let entry_bundle = package.entry_bundle;
-        let leaked_bundles: &'static [oxvba_bundle::Bundle] =
-            Box::leak(package.bundles.into_boxed_slice());
-        let bundle_refs: Vec<&'static oxvba_bundle::Bundle> = leaked_bundles.iter().collect();
-        let leaked_host_services: &'static mut Arc<dyn HostServices> =
-            Box::leak(Box::new(self.host_services.clone()));
-        let host_services: &'static dyn HostServices = &**leaked_host_services;
-        let vm = oxvba_vm2::Vm::link(&bundle_refs, host_services)
-            .map_err(|err| PhaseDiagnostic::from_diagnostic(err.to_diagnostic()))?;
-        Ok(ProjectRuntimeSession {
-            vm,
-            entry_bundle,
-            host_services: self.host_services.clone(),
-        })
-    }
-
     /// Execute a **clean-path** project closure (the leaf-first, entry-last output of
-    /// `oxvba_project::load_project_closure`): `oxvba_bind::bind_projects` (one bundle
-    /// per project) → `linearize` each → `oxvba_vm2::Vm::link` (multi-bundle image,
-    /// entry last) → run. The snapshot is the entry project's module-level globals.
+    /// `oxvba_project::load_project_closure`): `oxvba_bind::bind_projects` (one program
+    /// per project) → `oxvba_oxir::elaborate` each → `oxvba_vm3::Vm3::link` (multi-program
+    /// image, entry last) → run. The snapshot is the entry project's module-level globals.
+    /// Runs on vm3 (the sole runtime) via
+    /// [`execute_project_closure_with_variant_snapshot_vm3`](Self::execute_project_closure_with_variant_snapshot_vm3);
+    /// a vm3 out-of-scope/defect surfaces as a `PhaseDiagnostic` (preserving this method's
+    /// `Result` signature for its existing callers).
     pub fn execute_project_closure_with_variant_snapshot(
         &self,
         closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
-        if self.config.enable_jit {
-            return Err(jit_not_implemented_diagnostic());
+        match self.execute_project_closure_with_variant_snapshot_vm3(closure) {
+            Vm3Snapshot::Ran(values) => Ok(values),
+            Vm3Snapshot::Unsupported(what) => Err(PhaseDiagnostic::from_diagnostic(
+                OxDiagnostic::error("VM3-E-UNIMPLEMENTED", OxDiagnosticPhase::Host, what),
+            )),
+            Vm3Snapshot::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(
+                OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg),
+            )),
         }
-        let programs = oxvba_bind::bind_projects(closure, &*self.typelib_resolver)
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
-        let bundles: Vec<oxvba_bundle::Bundle> = programs
-            .iter()
-            .map(oxvba_bundle::linearize)
-            .collect::<Result<_, _>>()
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(linearize_diagnostic(e)))?;
-        let refs: Vec<&oxvba_bundle::Bundle> = bundles.iter().collect();
-        let mut vm = oxvba_vm2::Vm::link(&refs, &*self.host_services)
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
-        vm.run()
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
-        // The entry project's globals are the result snapshot (entry bundle is last;
-        // after `run` the cursor rests in it).
-        let entry_globals = bundles.last().map(|b| b.global_count).unwrap_or(0);
-        let values = (0..entry_globals)
-            .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
-            .collect();
-        Ok(values)
     }
 
     /// The vm3 counterpart of
@@ -746,7 +616,7 @@ impl Engine {
             };
         }
         // The entry project's globals are the result snapshot (entry is the last program; after
-        // run_entry the cursor rests in it), matching the vm2 closure path.
+        // run_entry the cursor rests in it).
         let entry_globals = ox_programs.last().map(|p| p.globals.len()).unwrap_or(0);
         let values = (0..entry_globals)
             .map(|slot| vm.slot(slot).unwrap_or_else(Variant::empty))
@@ -810,40 +680,31 @@ impl Engine {
     /// snapshotting the module globals followed by the entry `Sub Main` frame's
     /// locals. This is the multi-module counterpart of
     /// [`Self::execute_source_with_references_and_snapshot`]; it is what a `WithEvents`
-    /// sink test needs, since `WithEvents` is only valid in a class module.
+    /// sink test needs, since `WithEvents` is only valid in a class module. Runs on vm3 (the
+    /// sole runtime) via
+    /// [`execute_manifest_with_variant_snapshot_vm3`](Self::execute_manifest_with_variant_snapshot_vm3);
+    /// a vm3 out-of-scope/defect surfaces as a `PhaseDiagnostic` (preserving this method's
+    /// `Result` signature for its existing callers).
     pub fn execute_manifest_with_variant_snapshot(
         &self,
         manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
-        if self.config.enable_jit {
-            return Err(jit_not_implemented_diagnostic());
+        match self.execute_manifest_with_variant_snapshot_vm3(manifest) {
+            Vm3Snapshot::Ran(values) => Ok(values),
+            Vm3Snapshot::Unsupported(what) => Err(PhaseDiagnostic::from_diagnostic(
+                OxDiagnostic::error("VM3-E-UNIMPLEMENTED", OxDiagnosticPhase::Host, what),
+            )),
+            Vm3Snapshot::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(
+                OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg),
+            )),
         }
-        let program = oxvba_bind::bind_program(manifest, &*self.typelib_resolver)
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
-        let bundle = oxvba_bundle::linearize(&program)
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(linearize_diagnostic(e)))?;
-        let mut vm = oxvba_vm2::Vm::link(&[&bundle], &*self.host_services)
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
-        vm.run()
-            .map_err(|e| PhaseDiagnostic::from_diagnostic(e.to_diagnostic()))?;
-        // Snapshot = module globals + the entry frame's locals (the script's variables).
-        let local_count = program
-            .entry
-            .and_then(|entry| program.procs.get(entry.0))
-            .map(|main| main.locals.len())
-            .unwrap_or(0);
-        let count = bundle.global_count + local_count;
-        let values = (0..count)
-            .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
-            .collect();
-        Ok(values)
     }
 
     /// Run a single VBA **source** module on the **vm3** path (`oxvba_bind` →
     /// `oxvba_oxir::elaborate` → `oxvba_vm3`), snapshotting the module globals followed
     /// by the entry `Sub Main` frame's locals — the *exact* index space
-    /// [`Self::execute_source_with_variant_snapshot_clean`] (vm2) exposes, so the two are
-    /// directly comparable in the differential harness. Distinguishes a vm3 *out-of-scope*
+    /// [`Self::execute_source_with_variant_snapshot_clean`] exposes (it shares this vm3 path),
+    /// so the differential harness reads a stable observable. Distinguishes a vm3 *out-of-scope*
     /// construct (an elaboration- or execution-time `Unimplemented`) from a genuine
     /// failure, so the harness can skip an unimplemented program rather than score it as a
     /// divergence.
@@ -889,9 +750,8 @@ impl Engine {
             }
             Err(e) => return Vm3Snapshot::Failed(format!("vm3: {e}")),
         };
-        // The same snapshot shape vm2 exposes: module globals (vm3's global table is 1:1
-        // with the Core IR globals, exactly as the linearized bundle's) followed by the
-        // entry `Main` frame's locals.
+        // The snapshot shape: module globals (vm3's global table is 1:1 with the Core IR
+        // globals) followed by the entry `Main` frame's locals.
         let local_count = program
             .entry
             .and_then(|entry| program.procs.get(entry.0))
@@ -902,53 +762,6 @@ impl Engine {
             .map(|slot| vm.slot(slot).unwrap_or_else(Variant::empty))
             .collect();
         Vm3Snapshot::Ran(values)
-    }
-
-    /// Like [`Self::execute_manifest_with_variant_snapshot`] (vm2), but also surfaces the
-    /// final `Err` object and distinguishes an uncaught VBA error from a compile defect —
-    /// the observable the differential error-state axis needs. vm2 keeps the VM alive across
-    /// `run()`, so the residual `Err` is readable on both the completed and raised paths.
-    pub fn execute_manifest_snapshot_with_err(
-        &self,
-        manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
-    ) -> SnapshotOutcome {
-        if self.config.enable_jit {
-            return SnapshotOutcome::Failed(JIT_NOT_IMPLEMENTED_MESSAGE.to_string());
-        }
-        let program = match oxvba_bind::bind_program(manifest, &*self.typelib_resolver) {
-            Ok(p) => p,
-            Err(e) => return SnapshotOutcome::Failed(format!("bind: {}", e.to_diagnostic().message)),
-        };
-        let bundle = match oxvba_bundle::linearize(&program) {
-            Ok(b) => b,
-            Err(e) => return SnapshotOutcome::Failed(format!("linearize: {e}")),
-        };
-        let mut vm = match oxvba_vm2::Vm::link(&[&bundle], &*self.host_services) {
-            Ok(v) => v,
-            Err(e) => return SnapshotOutcome::Failed(format!("link: {}", e.to_diagnostic().message)),
-        };
-        let run = vm.run();
-        let err = FinalErr {
-            number: vm.err_number(),
-            source: vm.err_source().to_string(),
-            description: vm.err_description().to_string(),
-            last_dll_error: vm.last_dll_error(),
-        };
-        match run {
-            Ok(()) => {
-                let local_count = program
-                    .entry
-                    .and_then(|entry| program.procs.get(entry.0))
-                    .map(|main| main.locals.len())
-                    .unwrap_or(0);
-                let count = bundle.global_count + local_count;
-                let values = (0..count)
-                    .map(|slot| vm.slot(slot).cloned().unwrap_or_else(Variant::empty))
-                    .collect();
-                SnapshotOutcome::Completed { values, err }
-            }
-            Err(_) => SnapshotOutcome::Raised { err },
-        }
     }
 
     /// Like [`Self::execute_manifest_with_variant_snapshot_vm3`], but also surfaces the final
@@ -1010,11 +823,23 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
-    use oxvba_bundle::{BundlePackage, ProjectMemberKind};
+    use oxvba_bundle::ProjectMemberKind;
+    use oxvba_oxir::OxImage;
     use oxvba_runtime::Variant;
     use oxvba_symbol::manifest::{
         ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
     };
+
+    /// Build a vm3-backed [`super::Vm3RuntimeSession`] from a single-project manifest (bind →
+    /// elaborate → `OxImage` → `prepare_image_session`), the in-process COM-server path.
+    fn vm3_session_for(engine: &Engine, manifest: &SymbolProjectManifest) -> super::Vm3RuntimeSession {
+        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
+        let program = oxvba_bind::bind_program(manifest, &typelibs).expect("bind");
+        let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
+        engine
+            .prepare_image_session(OxImage::new(vec![oxp]))
+            .expect("prepare vm3 session")
+    }
 
     #[test]
     fn phase_diagnostic_exposes_stable_code() {
@@ -1050,13 +875,8 @@ End Function
             reference_projects: Vec::new(),
             conditional_constants: Default::default(),
         };
-        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
-        let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind");
-        let bundle = oxvba_bundle::linearize(&program).expect("linearize");
         let engine = Engine::new(HostConfig::default());
-        let mut session = engine
-            .prepare_bundle_package_session(BundlePackage::single(bundle))
-            .expect("prepare session");
+        let mut session = vm3_session_for(&engine, &manifest);
 
         let object = session
             .create_class_instance("Calculator")
@@ -1097,13 +917,8 @@ End Sub
             reference_projects: Vec::new(),
             conditional_constants: Default::default(),
         };
-        let typelibs = oxvba_symbol::CatalogTypeLibResolver;
-        let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind");
-        let bundle = oxvba_bundle::linearize(&program).expect("linearize");
         let engine = Engine::new(HostConfig::default());
-        let mut session = engine
-            .prepare_bundle_package_session(BundlePackage::single(bundle))
-            .expect("prepare session");
+        let mut session = vm3_session_for(&engine, &manifest);
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen_sink = seen.clone();
         session.set_project_event_sink(move |source, event_id, args| {
