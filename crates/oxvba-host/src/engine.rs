@@ -704,6 +704,56 @@ impl Engine {
         Ok(values)
     }
 
+    /// The vm3 counterpart of
+    /// [`execute_project_closure_with_variant_snapshot`](Self::execute_project_closure_with_variant_snapshot):
+    /// bind the closure, elaborate each project to OxIR, link the whole image on vm3, run the
+    /// entry, and snapshot the entry project's globals. This is the `run-project` runtime.
+    pub fn execute_project_closure_with_variant_snapshot_vm3(
+        &self,
+        closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
+    ) -> Vm3Snapshot {
+        if self.config.enable_jit {
+            return Vm3Snapshot::Unsupported("JIT execution is not implemented".to_string());
+        }
+        let programs = match oxvba_bind::bind_projects(closure, &*self.typelib_resolver) {
+            Ok(p) => p,
+            Err(e) => return Vm3Snapshot::Failed(format!("bind: {e:?}")),
+        };
+        let mut ox_programs = Vec::with_capacity(programs.len());
+        for program in &programs {
+            match oxvba_oxir::elaborate::elaborate(program) {
+                Ok(o) => ox_programs.push(o),
+                Err(oxvba_oxir::elaborate::ElaborateError::Unimplemented { what }) => {
+                    return Vm3Snapshot::Unsupported(format!("elaborate: {what}"));
+                }
+                Err(e) => return Vm3Snapshot::Failed(format!("elaborate: {e}")),
+            }
+        }
+        let refs: Vec<&oxvba_oxir::OxProgram> = ox_programs.iter().collect();
+        let mut vm = match oxvba_vm3::Vm3::link(&refs, &*self.host_services) {
+            Ok(v) => v,
+            Err(oxvba_vm3::Vm3Error::Unimplemented { what }) => {
+                return Vm3Snapshot::Unsupported(format!("vm3 link: {what}"));
+            }
+            Err(e) => return Vm3Snapshot::Failed(format!("vm3 link: {e}")),
+        };
+        if let Err(e) = vm.run_entry() {
+            return match e {
+                oxvba_vm3::Vm3Error::Unimplemented { what } => {
+                    Vm3Snapshot::Unsupported(format!("vm3: {what}"))
+                }
+                other => Vm3Snapshot::Failed(format!("vm3: {other}")),
+            };
+        }
+        // The entry project's globals are the result snapshot (entry is the last program; after
+        // run_entry the cursor rests in it), matching the vm2 closure path.
+        let entry_globals = ox_programs.last().map(|p| p.globals.len()).unwrap_or(0);
+        let values = (0..entry_globals)
+            .map(|slot| vm.slot(slot).unwrap_or_else(Variant::empty))
+            .collect();
+        Vm3Snapshot::Ran(values)
+    }
+
     /// Execute a single VBA **source** module on the clean path (`oxvba run <source>`):
     /// wrap it in a one-module project, run it, and snapshot the module-level globals
     /// **followed by the entry `Sub Main` frame's locals** (the script's variables —

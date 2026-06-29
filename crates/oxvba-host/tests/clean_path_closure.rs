@@ -113,6 +113,55 @@ fn cross_project_workspace_runs_from_disk() {
 }
 
 #[test]
+fn cross_project_workspace_runs_from_disk_on_vm3() {
+    // The `run-project` vm3 path (W8): the same cross-project workspace, run via
+    // execute_project_closure_with_variant_snapshot_vm3 — bind the closure, elaborate each
+    // project, link the image on vm3, run the entry. App.r = Lib.Add(20, 22) = 42 across the two
+    // linked OxPrograms (exercises the W2 cross-project executor through the real on-disk loader).
+    let root = unique_root("app_lib_vm3");
+    write_project(
+        &root,
+        "Lib",
+        "Library",
+        None,
+        &[(
+            "LibMod.bas",
+            "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\nAdd = a + b\nEnd Function\n",
+        )],
+        &[],
+    );
+    let app = write_project(
+        &root,
+        "App",
+        "Exe",
+        Some("Program.Run"),
+        &[(
+            "Program.bas",
+            "Public r As Long\nPublic Sub Run()\nr = Add(20, 22)\nEnd Sub\n",
+        )],
+        &["../Lib/Lib.basproj"],
+    );
+
+    let closure = oxvba_project::load_project_closure(&app).expect("load closure");
+    assert_eq!(closure.len(), 2, "Lib + App");
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    match engine.execute_project_closure_with_variant_snapshot_vm3(&closure) {
+        oxvba_host::Vm3Snapshot::Ran(values) => {
+            assert_eq!(
+                values.first().and_then(|v| v.as_i32()),
+                Some(42),
+                "Lib.Add(20, 22) across projects on vm3"
+            );
+        }
+        oxvba_host::Vm3Snapshot::Unsupported(what) => panic!("vm3 run-project unsupported: {what}"),
+        oxvba_host::Vm3Snapshot::Failed(msg) => panic!("vm3 run-project failed: {msg}"),
+    }
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn class_enum_fields_are_scalar_across_project_closure() {
     let root = unique_root("class_enum_field");
     let app = write_project(

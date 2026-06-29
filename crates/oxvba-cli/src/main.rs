@@ -1,7 +1,7 @@
 //! `oxvba` — command-line driver for the clean execution stack.
 //!
 //! The run subcommands execute VBA through `oxvba_bind` →
-//! `oxvba_bundle::linearize` → `oxvba_vm2`:
+//! `oxvba_oxir::elaborate` → `oxvba_vm3`:
 //!   * `run <source.bas>` — execute a single source module.
 //!   * `run-project [path] [--entry M.P]` — load a `.basproj`/`.vbp` (and its
 //!     transitive project-reference graph) into a closure and execute it.
@@ -103,18 +103,24 @@ fn run_execute(cli_args: Vec<String>) {
         .unwrap_or_else(|| "Sub Main()\nEnd Sub".to_string());
     let dump_values = args.as_ref().map(|a| a.dump_values).unwrap_or(false);
 
-    match engine.execute_source_with_variant_snapshot_clean(&source) {
-        Ok(values) => {
+    match engine.execute_source_with_variant_snapshot_vm3(&source) {
+        oxvba_host::Vm3Snapshot::Ran(values) => {
             if dump_values {
                 print_values(&values);
             }
         }
-        Err(err) => {
-            emit_diagnostic(
-                "oxvba: execution failed",
-                err.diagnostic(),
-                diagnostic_format,
+        oxvba_host::Vm3Snapshot::Unsupported(what) => {
+            let diagnostic = OxDiagnostic::error(
+                "VM3-E-UNSUPPORTED",
+                OxDiagnosticPhase::Host,
+                format!("vm3 does not support this program: {what}"),
             );
+            emit_diagnostic("oxvba: unsupported", &diagnostic, diagnostic_format);
+            std::process::exit(1);
+        }
+        oxvba_host::Vm3Snapshot::Failed(msg) => {
+            let diagnostic = OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg);
+            emit_diagnostic("oxvba: execution failed", &diagnostic, diagnostic_format);
             std::process::exit(1);
         }
     }
@@ -193,18 +199,24 @@ fn run_project(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    match engine.execute_project_closure_with_variant_snapshot(&closure) {
-        Ok(values) => {
+    match engine.execute_project_closure_with_variant_snapshot_vm3(&closure) {
+        oxvba_host::Vm3Snapshot::Ran(values) => {
             if parsed.dump_values {
                 print_values(&values);
             }
         }
-        Err(err) => {
-            emit_diagnostic(
-                "oxvba run-project",
-                err.diagnostic(),
-                parsed.diagnostic_format,
+        oxvba_host::Vm3Snapshot::Unsupported(what) => {
+            let diagnostic = OxDiagnostic::error(
+                "VM3-E-UNSUPPORTED",
+                OxDiagnosticPhase::Host,
+                format!("vm3 does not support this program: {what}"),
             );
+            emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
+            std::process::exit(1);
+        }
+        oxvba_host::Vm3Snapshot::Failed(msg) => {
+            let diagnostic = OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg);
+            emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
             std::process::exit(1);
         }
     }
