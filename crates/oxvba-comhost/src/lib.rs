@@ -33,7 +33,7 @@ use oxvba_com::{
     disp_params_to_runtime_call_frame, runtime_call_error_to_excepinfo,
     runtime_call_result_to_variant, variant_to_com_value,
 };
-use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession, RuntimeProfileId};
+use oxvba_host::{Engine, HostConfig, Vm3RuntimeSession, RuntimeProfileId};
 use oxvba_runtime::{
     ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant, bstr::BStr,
     safe_array::SafeArray,
@@ -60,7 +60,9 @@ use windows_sys::core::{BSTR, GUID};
 
 struct HostArtifacts {
     project_name: String,
-    oxb_path: PathBuf,
+    /// The vm3 runtime artifact (`OxImage`) loaded into the session — the `.oxi` sidecar next to
+    /// the COM host DLL (the build emits it alongside the legacy `.oxb`).
+    oxi_path: PathBuf,
     descriptor_path: PathBuf,
     tlb_path: PathBuf,
 }
@@ -102,7 +104,7 @@ fn resolve_sidecar_artifacts() -> Result<HostArtifacts, String> {
         .to_string();
     Ok(HostArtifacts {
         project_name: stem.clone(),
-        oxb_path: parent.join(format!("{stem}.oxb")),
+        oxi_path: parent.join(format!("{stem}.oxi")),
         descriptor_path: parent.join(format!("{stem}.comserver.json")),
         tlb_path: parent.join(format!("{stem}.tlb")),
     })
@@ -114,10 +116,10 @@ fn artifact_descriptor_json() -> Result<String, String> {
         .map_err(|err| format!("failed to read COM descriptor `{}`: {err}", path.display()))
 }
 
-fn artifact_bundle_bytes() -> Result<Vec<u8>, String> {
-    let path = artifacts()?.oxb_path.clone();
+fn artifact_image_bytes() -> Result<Vec<u8>, String> {
+    let path = artifacts()?.oxi_path.clone();
     fs::read(&path)
-        .map_err(|err| format!("failed to read OxVBA bundle `{}`: {err}", path.display()))
+        .map_err(|err| format!("failed to read OxVBA image `{}`: {err}", path.display()))
 }
 
 fn artifact_tlb_path_string() -> Result<String, String> {
@@ -233,7 +235,7 @@ static DESCRIPTOR: OnceLock<Result<ComServerDescriptor, String>> = OnceLock::new
 static mut MODULE_HANDLE: HMODULE = ptr::null_mut();
 
 thread_local! {
-    static SESSION: RefCell<Option<ProjectRuntimeSession>> = const { RefCell::new(None) };
+    static SESSION: RefCell<Option<Vm3RuntimeSession>> = const { RefCell::new(None) };
     static WRAPPERS: RefCell<HashMap<i32, Vec<*mut DispatchObject>>> = RefCell::new(HashMap::new());
 }
 
@@ -1108,7 +1110,7 @@ unsafe fn disp_params_contain_object(params: *const DISPPARAMS) -> bool {
 unsafe fn generated_server_object_aware_args(
     member: &ComMemberDescriptor,
     params: *const DISPPARAMS,
-    session: &mut ProjectRuntimeSession,
+    session: &mut Vm3RuntimeSession,
 ) -> Result<Vec<Variant>, String> {
     if params.is_null() {
         return Err("IDispatch::Invoke received null DISPPARAMS".to_string());
@@ -1149,7 +1151,7 @@ unsafe fn generated_server_object_aware_args(
 unsafe fn generated_server_variant_arg(
     param: ComParamType,
     variant: &VARIANT,
-    session: &mut ProjectRuntimeSession,
+    session: &mut Vm3RuntimeSession,
 ) -> Result<Variant, String> {
     if matches!(param, ComParamType::Object | ComParamType::ByRefObject) {
         generated_server_object_variant_arg(variant)
@@ -1176,7 +1178,7 @@ unsafe fn variant_contains_dispatch_or_unknown(variant: &VARIANT) -> bool {
 
 unsafe fn generated_server_foreign_object_variant_arg(
     variant: &VARIANT,
-    session: &mut ProjectRuntimeSession,
+    session: &mut Vm3RuntimeSession,
 ) -> Result<Variant, String> {
     let dispatch = retained_dispatch_from_object_variant(variant)?;
     if dispatch.is_null() {
@@ -2983,21 +2985,17 @@ fn descriptor() -> Result<&'static ComServerDescriptor, i32> {
 }
 
 fn with_session<R>(
-    f: impl FnOnce(&mut ProjectRuntimeSession) -> Result<R, String>,
+    f: impl FnOnce(&mut Vm3RuntimeSession) -> Result<R, String>,
 ) -> Result<R, String> {
     SESSION.with(|slot| {
         let needs_init = slot.borrow().is_none();
         if needs_init {
-            let package = artifact_bundle_bytes()
-                .and_then(|bytes| {
-                    oxvba_bundle::BundlePackage::from_bytes(&bytes).map_err(|err| err.to_string())
-                })
-                .map_err(|err| err.to_string())?;
+            let image_bytes = artifact_image_bytes()?;
             let mut engine = Engine::new(HostConfig { enable_jit: false })
                 .with_runtime_profile(RuntimeProfileId::WindowsHeadless);
             engine.enable_host_native_runtime();
             let mut session = engine
-                .prepare_bundle_package_session(package)
+                .prepare_image_session_bytes(&image_bytes)
                 .map_err(|err| err.to_string())?;
             session.set_project_event_sink(|source, event_id, args| {
                 // SAFETY: the runtime invokes this sink with descriptor-defined event payloads

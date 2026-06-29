@@ -618,6 +618,23 @@ impl Engine {
         })
     }
 
+    /// [`prepare_image_session`](Self::prepare_image_session) from the serialized `.oxi` bytes —
+    /// the entry point the in-process COM server uses (it owns only the artifact bytes, so the
+    /// `OxImage` deserialization lives here rather than pulling oxir into the comhost).
+    pub fn prepare_image_session_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Vm3RuntimeSession, PhaseDiagnostic> {
+        let image = oxvba_oxir::OxImage::from_bytes(bytes).map_err(|err| {
+            PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                "VM3-E-IMAGE",
+                OxDiagnosticPhase::Host,
+                err.to_string(),
+            ))
+        })?;
+        self.prepare_image_session(image)
+    }
+
     /// Prepare a package-backed runtime session without running a startup entry.
     /// Wrapper targets use this for activation-style hosts: the package is linked
     /// once, then class factories create project-class instances on demand.
