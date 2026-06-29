@@ -270,12 +270,32 @@ struct ErrState {
     source: String,
 }
 
-/// The vm3 interpreter over a typed OxIR program.
-pub struct Vm3<'h> {
+/// One linked program's mutable runtime tables (one per VBA project). A whole VBA *project*
+/// is exactly one `OxProgram`, so the common case is a single `LoadedProgram`; the vector in
+/// [`Vm3`] exists so cross-project references (project A → project B's classes/procs) can
+/// co-reside in one VM — the remaining W2 work layers program-aware dispatch on top of this.
+struct LoadedProgram<'h> {
     program: &'h OxProgram,
+    /// Module-global slots (dense, sized `program.globals.len()`).
+    globals: Vec<Variant>,
+    /// Per-class leaked `&'static` runtime descriptors (1:1 with `program.classes`) —
+    /// `ObjectRef::from_project_instance` requires a `'static` descriptor (vm2 leaks the same).
+    class_descriptors: Vec<&'static RuntimeClassDescriptor>,
+    /// `VB_PredeclaredId` singleton cache, keyed by class index (allocate-once + run
+    /// `Class_Initialize` once), mirroring vm2's per-bundle `predeclared_singletons`.
+    predeclared_singletons: HashMap<usize, Variant>,
+    /// `(binding-token, event-id) → handler proc index`, built from `program.event_routes`.
+    event_routes: HashMap<(i32, i32), usize>,
+}
+
+/// The vm3 interpreter over one or more typed OxIR programs.
+pub struct Vm3<'h> {
+    /// The linked programs (one per VBA project). `cur` selects the executing one.
+    programs: Vec<LoadedProgram<'h>>,
+    /// Index into `programs` of the executing program (`0` for single-project activation).
+    cur: usize,
     host: &'h dyn HostServices,
     lib: LibContext,
-    globals: Vec<Variant>,
     /// The activation stack. `frames[0]` is the entry (`Main`) frame and is never
     /// popped — it backs the result snapshot; deeper frames are `CallProc` callees.
     frames: Vec<Frame>,
@@ -299,18 +319,8 @@ pub struct Vm3<'h> {
     /// Re-entrancy guard for [`Vm3::maybe_drain`] (a `Class_Terminate` can itself drop the
     /// last reference to another object — the guard keeps the drain a single fixpoint loop).
     draining: bool,
-    /// Per-class leaked `&'static` runtime descriptors (1:1 with `program.classes`), built
-    /// once in [`Vm3::run`] — `ObjectRef::from_project_instance` requires a `'static`
-    /// descriptor, exactly as vm2's `LoadedBundle` leaks them.
-    class_descriptors: Vec<&'static RuntimeClassDescriptor>,
-    /// `VB_PredeclaredId` singleton cache, keyed by class index (allocate-once + run
-    /// `Class_Initialize` once), mirroring vm2's per-bundle `predeclared_singletons`.
-    predeclared_singletons: HashMap<usize, Variant>,
     /// Live `WithEvents` bindings, keyed by `withevents_key(owner, binding-token)`.
     withevents: HashMap<i64, EventBinding>,
-    /// `(binding-token, event-id) → handler proc index`, built once from
-    /// `program.event_routes`, for `RaiseEvent` dispatch (mirrors vm2's `event_routes`).
-    event_routes: HashMap<(i32, i32), usize>,
     /// `For Each obj In <WithEvents owners>` iterator stack (the `WithEventsFirstOwner`/
     /// `NextOwner` cursor) — a stack so nested owner-iterations never alias.
     withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
@@ -323,6 +333,13 @@ pub struct Vm3<'h> {
 }
 
 impl<'h> Vm3<'h> {
+    /// The currently-executing program's static IR (`programs[cur]`). A `&'h` copy, so callers
+    /// can hold it across `&mut self` mutations exactly as the old `self.program` field allowed.
+    #[inline]
+    fn cur_program(&self) -> &'h OxProgram {
+        self.programs[self.cur].program
+    }
+
     /// Run `program` to completion and return the finished VM (read the result snapshot
     /// with [`Vm3::slot`]). Mirrors vm2: the global initializer runs first, then `Main`
     /// in an entry frame that is never popped.
@@ -361,7 +378,7 @@ impl<'h> Vm3<'h> {
     /// (429). The instance's state lives on the object box exactly as `New`-minted ones.
     pub fn create_project_instance(&mut self, class_name: &str) -> Result<Variant, Vm3Error> {
         let idx = self
-            .program
+            .cur_program()
             .classes
             .iter()
             .position(|c| c.name.eq_ignore_ascii_case(class_name))
@@ -386,7 +403,7 @@ impl<'h> Vm3<'h> {
             return self.dispatch_collection_values(&object, name, args);
         }
         let class_idx = object.route_key() as usize;
-        let class = self.program.classes.get(class_idx).ok_or_else(|| {
+        let class = self.cur_program().classes.get(class_idx).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
         })?;
         let member = class
@@ -468,10 +485,16 @@ impl<'h> Vm3<'h> {
             event_routes.insert((route.binding, route.event), route.handler);
         }
         let mut vm = Vm3 {
-            program,
+            programs: vec![LoadedProgram {
+                program,
+                globals: vec![Variant::empty(); program.globals.len()],
+                class_descriptors,
+                predeclared_singletons: HashMap::new(),
+                event_routes,
+            }],
+            cur: 0,
             host,
             lib: LibContext::default(),
-            globals: vec![Variant::empty(); program.globals.len()],
             frames: Vec::new(),
             error_mode: ErrorMode::None,
             active_error: None,
@@ -481,10 +504,7 @@ impl<'h> Vm3<'h> {
             for_each: HashMap::new(),
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
-            class_descriptors,
-            predeclared_singletons: HashMap::new(),
             withevents: HashMap::new(),
-            event_routes,
             withevents_iters: Vec::new(),
             project_event_sink: None,
         };
@@ -508,7 +528,7 @@ impl<'h> Vm3<'h> {
     /// when the program has no entry. The back half of [`Vm3::run`], split out so a session can
     /// `activate()` without running `Main`.
     pub fn run_entry(&mut self) -> Result<(), Vm3Error> {
-        if let Some(entry) = self.program.entry {
+        if let Some(entry) = self.cur_program().entry {
             let frame = self.new_frame(entry);
             self.frames.push(frame);
             // The entry frame is never popped — it stays as `frames[0]` for the snapshot.
@@ -527,9 +547,9 @@ impl<'h> Vm3<'h> {
     /// The result snapshot slot `i`: module globals occupy `[0, globals.len())`; higher
     /// indices are the entry (`Main`) frame's locals (the same layout vm2 exposes).
     pub fn slot(&self, i: usize) -> Option<Variant> {
-        let global_count = self.globals.len();
+        let global_count = self.programs[self.cur].globals.len();
         if i < global_count {
-            self.globals.get(i).cloned()
+            self.programs[self.cur].globals.get(i).cloned()
         } else {
             let rel = i - global_count;
             self.frames.first()?.locals.get(rel).cloned()
@@ -553,7 +573,7 @@ impl<'h> Vm3<'h> {
     }
 
     fn new_frame(&self, func: FuncId) -> Frame {
-        let f = &self.program.funcs[func.0];
+        let f = &self.cur_program().funcs[func.0];
         Frame {
             func,
             block: f.entry,
@@ -576,7 +596,7 @@ impl<'h> Vm3<'h> {
     /// overflow — and the model mirrors vm2's iterative dispatch.
     fn run_loop(&mut self, base: usize) -> Result<(), Vm3Error> {
         // `program` is a `'h` reference, independent of the `&mut self` exec borrows.
-        let program = self.program;
+        let program = self.cur_program();
         while self.frames.len() > base {
             let top = self.frames.len() - 1;
             let (func, block, ip) = {
@@ -778,7 +798,7 @@ impl<'h> Vm3<'h> {
     fn route_fault(&mut self, fault: Fault) -> Result<(), Vm3Error> {
         let top = self.frames.len() - 1;
         let (func, block) = (self.frames[top].func, self.frames[top].block);
-        let pad = self.program.funcs[func.0].blocks[block.0]
+        let pad = self.cur_program().funcs[func.0].blocks[block.0]
             .fault_target
             .ok_or_else(|| {
                 Vm3Error::Malformed(
@@ -833,7 +853,7 @@ impl<'h> Vm3<'h> {
         self.err.source = fault
             .source
             .clone()
-            .unwrap_or_else(|| self.program.unit_name.clone());
+            .unwrap_or_else(|| self.cur_program().unit_name.clone());
         self.pending_fault = Some(fault);
     }
 
@@ -997,7 +1017,7 @@ impl<'h> Vm3<'h> {
                 let proc = self
                     .operand(target)?
                     .as_proc_ref()
-                    .filter(|&p| p < self.program.funcs.len())
+                    .filter(|&p| p < self.cur_program().funcs.len())
                     .ok_or_else(|| Vm3Error::Fault(Fault::new(490, "invalid procedure reference")))?;
                 let dst = dst.as_ref().copied();
                 self.call_proc(dst, FuncId(proc), args)?;
@@ -1450,7 +1470,7 @@ impl<'h> Vm3<'h> {
                         continue;
                     }
                     let token = withevents_binding(*key) as i32;
-                    if let Some(&handler) = self.event_routes.get(&(token, event_id)) {
+                    if let Some(&handler) = self.programs[self.cur].event_routes.get(&(token, event_id)) {
                         let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
                         targets.push((sink_id, binding.owner.clone(), handler));
                     }
@@ -1489,7 +1509,7 @@ impl<'h> Vm3<'h> {
             } => {
                 let recv_v = self.operand(recv)?;
                 let object = variant_to_object(&recv_v)?;
-                let descriptor = self.program.com_method(*method).ok_or_else(|| {
+                let descriptor = self.cur_program().com_method(*method).ok_or_else(|| {
                     Vm3Error::Malformed(format!("ComCallEarly: unresolved method ref {method:?}"))
                 })?;
                 let dispid = descriptor.token;
@@ -1575,7 +1595,7 @@ impl<'h> Vm3<'h> {
         proc: FuncId,
         args: &[OxArg],
     ) -> Result<(), Vm3Error> {
-        let program = self.program;
+        let program = self.cur_program();
         let callee = program
             .funcs
             .get(proc.0)
@@ -1661,7 +1681,7 @@ impl<'h> Vm3<'h> {
     /// member dispatch on a `Collection` instance, which lands with the object model.)
     fn resolve_library_import(&self, import: ImportId) -> Result<NativeImplId, Vm3Error> {
         let imp = self
-            .program
+            .cur_program()
             .imports
             .get(import.0)
             .ok_or_else(|| Vm3Error::Malformed(format!("CallExtern names unknown import {}", import.0)))?;
@@ -1883,11 +1903,11 @@ impl<'h> Vm3<'h> {
     /// (bundle id is always 0 — vm3 runs one program). The instance's `has_terminate` flag is
     /// what later parks it for `Class_Terminate` when its last reference drops.
     fn new_project_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
-        let descriptor = *self
+        let descriptor = *self.programs[self.cur]
             .class_descriptors
             .get(class_idx)
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
-        let program = self.program;
+        let program = self.cur_program();
         let class = program
             .classes
             .get(class_idx)
@@ -1909,14 +1929,14 @@ impl<'h> Vm3<'h> {
     /// singleton + run `Class_Initialize` on first access, then reuse the cached instance.
     /// Mirrors vm2's `predeclared_instance`.
     fn predeclared_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
-        if let Some(existing) = self.predeclared_singletons.get(&class_idx) {
+        if let Some(existing) = self.programs[self.cur].predeclared_singletons.get(&class_idx) {
             return Ok(existing.clone());
         }
-        let descriptor = *self
+        let descriptor = *self.programs[self.cur]
             .class_descriptors
             .get(class_idx)
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
-        let program = self.program;
+        let program = self.cur_program();
         let class = program
             .classes
             .get(class_idx)
@@ -1928,7 +1948,7 @@ impl<'h> Vm3<'h> {
         let object =
             ObjectRef::from_project_instance(instance_id, class_idx as i32, 0, has_terminate, descriptor);
         let value = Variant::from_object_ref(object);
-        self.predeclared_singletons.insert(class_idx, value.clone());
+        self.programs[self.cur].predeclared_singletons.insert(class_idx, value.clone());
         if let Some(init) = initialize {
             self.run_proc_with_me(init, value.clone(), &[], false)?;
         }
@@ -2080,7 +2100,7 @@ impl<'h> Vm3<'h> {
         while oxvba_runtime::has_pending_terminations() {
             for (instance_id, _bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
                 let terminate = self
-                    .program
+                    .cur_program()
                     .classes
                     .get(route_key as usize)
                     .and_then(|c| c.terminate);
@@ -2111,7 +2131,7 @@ impl<'h> Vm3<'h> {
         let bare = type_name.rsplit('.').next().unwrap_or(type_name);
         if obj.is_project_instance() {
             return Ok(self
-                .program
+                .cur_program()
                 .classes
                 .get(obj.route_key() as usize)
                 .is_some_and(|class| {
@@ -2135,7 +2155,7 @@ impl<'h> Vm3<'h> {
     fn object_type_name(&self, object: &ObjectRef) -> Option<String> {
         if object.is_project_instance() {
             return self
-                .program
+                .cur_program()
                 .classes
                 .get(object.route_key() as usize)
                 .map(|c| c.name.clone());
@@ -2164,7 +2184,7 @@ impl<'h> Vm3<'h> {
         }
         let kind = project_member_kind(invoke_kind);
         let class_idx = object.route_key() as usize;
-        let program = self.program;
+        let program = self.cur_program();
         let class = program.classes.get(class_idx).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
         })?;
@@ -2234,7 +2254,7 @@ impl<'h> Vm3<'h> {
         &self,
         import: ImportId,
     ) -> Result<&'static RuntimeClassDescriptor, Vm3Error> {
-        let imp = self.program.imports.get(import.0).ok_or_else(|| {
+        let imp = self.cur_program().imports.get(import.0).ok_or_else(|| {
             Vm3Error::Malformed(format!("NewExtern names unknown import {}", import.0))
         })?;
         if !imp.unit.eq_ignore_ascii_case("VBA") {
@@ -2474,9 +2494,9 @@ impl<'h> Vm3<'h> {
         args: &[OxCallArg],
         ptr_writebacks: &[oxvba_oxir::value::DeclarePtrWriteback],
     ) -> Result<Variant, Vm3Error> {
-        // `self.program` is `&'h OxProgram` (a reference independent of the `&mut self`
+        // `cur_program()` returns `&'h OxProgram` (a reference independent of the `&mut self`
         // borrow), so the descriptor borrow does not conflict with the mutable calls below.
-        let program = self.program;
+        let program = self.cur_program();
         let descriptor = program
             .external_calls
             .iter()
@@ -2671,7 +2691,7 @@ impl<'h> Vm3<'h> {
     /// `Temp` absence is the SSA write-before-read contract (sparse map → `Empty`).
     fn read_loc(&self, loc: Loc) -> Result<Variant, Vm3Error> {
         match loc {
-            Loc::Global(g) => self
+            Loc::Global(g) => self.programs[self.cur]
                 .globals
                 .get(g)
                 .cloned()
@@ -2695,7 +2715,7 @@ impl<'h> Vm3<'h> {
     fn write_loc(&mut self, loc: Loc, v: Variant) -> Result<(), Vm3Error> {
         match loc {
             Loc::Global(g) => {
-                *self
+                *self.programs[self.cur]
                     .globals
                     .get_mut(g)
                     .ok_or_else(|| Vm3Error::Malformed(format!("global {g} out of range")))? = v;
