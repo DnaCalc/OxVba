@@ -40,14 +40,14 @@ Status legend: ☐ open · ◐ in progress · ☑ done (commit).
 |☐|print-write-only-first-field|Crit/SilentWrong|M|`Print #`/`Write #` emit only the FIRST field|`file_print`/`file_write` consume `args[1..]`; carry separators|
 |☐|input-stmt-no-writeback|Crit/SilentWrong|L|`Input #` never writes parsed fields back to targets|dedicated binder emitting per-target `Assign = FileInput(handle)`|
 |☐|line-input-no-writeback|Crit/SilentWrong|M|`Line Input #` never writes the line back|dedicated binder `strvar = FileLineInput(handle)`|
-|☐|isdate-always-false|Crit/SilentWrong|S|`IsDate` False for all date strings|route through string-date parsers, not `coerce_to(..,Date)`|
+|☑|isdate-always-false|Crit/SilentWrong|S|`IsDate` False for all date strings|route strings through `cdate_from_string`; raw number not a date; validate calendar *(done)*|
 
 ## Tier 2 — High SilentWrong (common correctness bugs)
 
 | # | id | sev/class | eff | gap | fix locus |
 |---|----|-----------|-----|-----|-----------|
 |☐|date-to-string-emits-serial|High/SilentWrong|M|Date→String emits raw serial, not formatted|General-Date formatter in `variant_to_vba_string`/`print_display_text`|
-|☐|datevalue-cdate-of-date-raises-13|High/SilentWrong|S|`DateValue`/`CDate` of Date/numeric raises 13|vtype dispatch in `date_value`|
+|☑|datevalue-cdate-of-date-raises-13|High/SilentWrong|S|`DateValue`/`CDate` of Date/numeric raises 13|vtype dispatch in `date_value`; + calendar validation (Feb 30 → 13) *(done; CDate already dispatched)*|
 |☑|redim-preserve-multidim-corrupt|High/SilentWrong|M|multi-dim `ReDim Preserve` flat-copies (corrupts)|coordinate-aware copy *(done w/ redim bead)*|
 |☑|redim-preserve-no-dimension-guard|High/SilentWrong|M|`ReDim Preserve` doesn't enforce only-last-dim (no Err 9)|compare new vs old bounds *(done w/ redim bead)*|
 |☐|option-base-1-ignored|High/SilentWrong|M|`Option Base 1` ignored (arrays always 0-based)|thread module base into `bind_array_bounds`/Array()|

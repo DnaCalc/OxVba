@@ -641,11 +641,18 @@ pub fn time_serial(args: &[Variant]) -> LibResult<Variant> {
     ))
 }
 
-/// FIDELITY: parses ISO-ish `YYYY-MM-DD` and `M/D/YYYY`; locale formats later.
+/// VBA `DateValue` returns the DATE-ONLY part of its argument. It accepts a Date or a numeric
+/// serial (not just a string): `DateValue(Now)` is today at midnight. Strings parse through the
+/// same lenient parser as `CDate`. The time-of-day is dropped by truncating the serial toward
+/// zero (so a negative serial keeps its calendar day).
 pub fn date_value(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
-    let (y, m, d) = parse_date(&s)?;
-    Ok(Variant::from_date_f64(ymd_to_serial(y, m, d)))
+    let v = need(args, 0)?;
+    let serial = match v.vtype() {
+        VarType::Date => v.as_date_f64().unwrap_or(0.0),
+        VarType::String => cdate_from_string(&as_str(v)?)?.as_date_f64().unwrap_or(0.0),
+        _ => conv_f64(v)?,
+    };
+    Ok(Variant::from_date_f64(serial.trunc()))
 }
 
 pub fn time_value(args: &[Variant]) -> LibResult<Variant> {
@@ -662,8 +669,26 @@ pub fn time_value(args: &[Variant]) -> LibResult<Variant> {
     ))
 }
 
+/// Whether `(y, m, d)` is a real calendar date. The month/day are normalized by
+/// `days_from_civil` (Feb 30 rolls into March), so a round-trip through the serial that does
+/// NOT return the same `(y, m, d)` means the input was an invalid date — matching VBA, where
+/// `CDate("February 30, 2000")` raises error 13 and `IsDate(...)` of it is False.
+fn ymd_is_valid(y: i64, m: i64, d: i64) -> bool {
+    (1..=12).contains(&m) && d >= 1 && civil_from_days(days_from_civil(y, m, d)) == (y, m, d)
+}
+
 fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
     let err = || LibError::type_mismatch(format!("cannot parse date `{s}`"));
+    let (y, m, d) = parse_date_raw(s).ok_or_else(err)?;
+    if !ymd_is_valid(y, m, d) {
+        return Err(err());
+    }
+    Ok((y, m, d))
+}
+
+/// Parse a date string into `(year, month, day)` WITHOUT validating the calendar (see
+/// [`ymd_is_valid`]). Accepts ISO `YYYY-MM-DD`, US `M/D/YYYY`, and month-name forms.
+fn parse_date_raw(s: &str) -> Option<(i64, i64, i64)> {
     let s = s.trim();
     // ISO `YYYY-MM-DD` (all-numeric; falls through to the month-name path otherwise).
     if let Some((y, rest)) = s.split_once('-')
@@ -674,7 +699,7 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
             d.trim().parse::<i64>(),
         )
     {
-        return Ok((y, m, d));
+        return Some((y, m, d));
     }
     // US `M/D/YYYY`.
     if let Some((m, rest)) = s.split_once('/')
@@ -685,7 +710,7 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
             y.trim().parse::<i64>(),
         )
     {
-        return Ok((y, m, d));
+        return Some((y, m, d));
     }
     // Month-name forms: `d mmm yyyy`, `mmm d, yyyy`, `dd mmmm yyyy`, … — a month name
     // plus a day and a year, in either order, space/comma separated.
@@ -697,7 +722,7 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
         } else if let Ok(n) = tok.trim().parse::<i64>() {
             nums.push(n);
         } else {
-            return Err(err());
+            return None;
         }
     }
     if let (Some(m), [a, b]) = (month, nums.as_slice()) {
@@ -709,9 +734,9 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
             30..=99 => year + 1900,
             other => other,
         };
-        return Ok((year, m, day));
+        return Some((year, m, day));
     }
-    Err(err())
+    None
 }
 
 /// The 1-based month number for a month name or its 3-letter prefix (`Jan`,
@@ -1526,10 +1551,15 @@ fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
 
 pub fn is_date(args: &[Variant]) -> LibResult<Variant> {
     let v = need(args, 0)?;
-    Ok(vbool(
-        matches!(v.vtype(), VarType::Date)
-            || oxvba_runtime::coerce::coerce_to(v, VarType::Date).is_ok(),
-    ))
+    // VBA `IsDate` is True for a Date value or a STRING recognizable as a valid date/time
+    // (using the same lenient parser as `CDate`); a raw numeric, Empty, Null, Boolean, or
+    // object is NOT a date to `IsDate` (even though `CDate` would convert a number).
+    let ok = match v.vtype() {
+        VarType::Date => true,
+        VarType::String => as_str(v).ok().is_some_and(|s| cdate_from_string(&s).is_ok()),
+        _ => false,
+    };
+    Ok(vbool(ok))
 }
 
 /// VBA truthiness for the special forms: `Null`/`Empty` are false, otherwise a
