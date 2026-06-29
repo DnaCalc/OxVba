@@ -1,11 +1,17 @@
 # vm3 vs complete-VBA-spec gap inventory
 
 Source: the `vm3-spec-gap-audit` workflow (14 spec-dimension finders → synthesis;
-2026-06-29). Authority = **complete MS-VBAL spec + live Office VBA 7.1**, NOT vm2.
-160 raw findings → **109 deduplicated items, 54 SilentWrong**. Several finders ran
-empirical probes through the real vm3 pipeline; the completeness-critic stage died on a
-connection error, so treat un-reverified claims with mild caution — **each bead re-confirms
-the gap against the code before fixing**.
+2026-06-29) **+ the `vm3-gap-critique-redo` completeness-critic pass** (the original critic
+died on a connection error; redone 2026-06-29). Authority = **complete MS-VBAL spec + live
+Office VBA 7.1**, NOT vm2. 160 raw findings → 110 synthesized → **after critique: ~118
+actionable gaps** (110 − 7 reclassified-DONE + 15 critic-added). Each bead still re-confirms
+the gap against the code before fixing.
+
+**Critique verdict (see "Critique addendum" below):** 27 of 29 Critical/High claims were
+independently re-confirmed against live `file:line`; the 2 "refuted" were the redim-preserve
+fixes I'd already landed (correctly caught). No behavior_class was mis-assigned. 15 net-new
+gaps were found — most notably a whole **intra-project visibility/scoping cluster** the
+per-dimension finders missed (none built a 2-module program).
 
 `behavior_class`: **SilentWrong** (runs, wrong value — worst) · **HonestDecline**
 (`Unimplemented`) · **BinderReject** (`Unsupported`/`Malformed`) · **Absent** (not in
@@ -23,6 +29,40 @@ binary, FreeFile, Dir/Kill/attrs, conditional compilation, Enum folding, UDT lay
 > For-Each-over-COM happy-path are implemented; only the edge cases below remain.
 
 Status legend: ☐ open · ◐ in progress · ☑ done (commit).
+
+## Critique addendum (completeness-critic redo, 2026-06-29)
+
+The redone critic re-verified every Critical/High item against live code (27/29 Confirmed; 2
+were already-fixed), found the 15 gaps below that the single-dimension finders missed, and
+corrected the sequence. **Sequence fixes:** (1) `isarray-unallocated-false` was listed twice —
+drop one; (2) `redim-undeclared-rejected` must come *after* `option-explicit-awareness` (its
+dep); (3) the 7 DONE items (redim-fixed-array-reject, redim-preserve-{multidim-corrupt,
+no-dimension-guard}, redim-multidim-count-overflow, erase-fixed-array-in-variant-element-type,
+isdate-always-false, datevalue-cdate-of-date-raises-13) are struck from the actionable head, so
+the remaining user-named work (AddressOf, GetObject) + the 3 Critical file-I/O bugs lead.
+**Residual risk:** no multi-module/multi-project differential fixtures were built, so other
+cross-module resolution edges (WithEvents source visibility, Public Const cross-module collision)
+may remain unexamined.
+
+### Critic-added gaps (15)
+
+| # | id | sev/class | eff | gap | fix locus |
+|---|----|-----------|-----|-----|-----------|
+|☐|intra-project-private-not-enforced|High/SilentWrong|M|`Private` members of one module resolve (unqualified + `Module.Foo`) from other modules same project|`MemberEntry` carries no visibility (oxvba-symbol providers/project.rs:17-20,53,136-150,90-99); thread `member.visibility`, exclude Private from the unqualified `public` map + `resolve_owner_member` unless requesting module is the declarer|
+|☐|ambiguous-name-not-detected|High/SilentWrong|M|duplicate `Public` members across modules silently resolve to the first scanned (no "Ambiguous name detected")|project.rs:104 `candidates.first()`; when the candidate Vec spans >1 module, surface AmbiguousName|
+|☐|date-arith-loses-date-type|High/SilentWrong|M|`Date + number` / `Date - number` yield Double/Variant (Date subtype + TypeName lost); `Date - Date` is Double|types.rs:225-243 (numeric_rank None for Date → Variant), arithmetic.rs:50-63; add Date to the +/- lattice + runtime lane (compute on serial, re-tag Date)|
+|☐|currency-single-float-suffix-literals|Med/SilentWrong|S|`@`/`!` float-suffix literals typed Double (Currency/Single subtype + Currency exactness lost)|lexer.rs:339-340 collapses !/#/@→FloatLiteral; expr.rs:63-66 all→F64; emit CoreConst::Currency for `@`, Single for `!`|
+|☐|implicit-string-to-boolean-13|Med/SilentWrong|S|`Dim b As Boolean: b = "True"` raises 13 (explicit `CBool` works) — implicit/explicit diverge|oxvba-eval arith.rs:483-488 coerce_numeric Boolean arm → num() f64::parse; special-case "true"/"false" (share pure::cbool)|
+|☐|currency-mul-f64-lossy|Med/SilentWrong|M|`Currency * Currency` computes in f64, diverging near the ±922,337,203,685,477.5807 boundary|oxvba-eval arith.rs:170-199,523-530,114-127; exact scaled-i64/i128 lane for Currency * and +/-|
+|☐|module-name-public-member-collision|Med/SilentWrong|M|a name used both as a module name and a project-level Public member is never diagnosed (VBA: ambiguous)|project.rs:90-97; detect module-name == unqualified Public member at env build|
+|☐|rgb-qbcolor-absent|Med/Absent|S|`RGB`/`QBColor` color functions absent (color *constants* exist)|native.rs/catalog.rs add Rgb(3,3)/QbColor(1,1) pure bodies|
+|☐|format-number-family-absent|Med/Absent|M|`FormatNumber`/`FormatCurrency`/`FormatPercent`/`FormatDateTime` absent (only generic `Format`)|build on format.rs; named-format consts already exist (vba_library.rs:315-319) unconsumed|
+|☐|financial-ipmt-ppmt-sln-syd-ddb-absent|Med/Absent|M|`IPmt`/`PPmt`/`SLN`/`SYD`/`DDB` absent (FV/PV/Pmt/NPV/IRR/MIRR/Rate/NPer exist)|native.rs:139-147 + catalog.rs:180-187 + pure bodies|
+|☐|project-qualifier-ignored|Low/SilentWrong|S|`Project1.Module1.Foo` ignores a wrong/nonexistent project segment|project.rs:85 discards `_project`; validate vs active/referenced project names|
+|☐|partition-absent|Low/Absent|S|`Partition(number,start,stop,interval)` absent|native.rs/catalog.rs add Partition(4,4) pure body|
+|☐|getsetting-family-absent|Low/Absent|M|`GetSetting`/`SaveSetting`/`GetAllSettings`/`DeleteSetting` absent|route to a settings HAL facet (headless no-op) or HonestDecline|
+|☐|vbmodal-vbmodeless-absent|Low/Absent|S|`vbModal`(1)/`vbModeless`(0) `Show`-modality constants absent (MsgBox modal consts exist)|vba_library.rs:294-295 add the two arms|
+|☐|friend-on-standard-module|Low/SilentWrong|S|`Friend` accepted on standard-module members (VBA: class-only; compile error otherwise)|scanner.rs:641-646; reject Friend when module_kind is Procedural|
 
 ## Tier 0 — user-named deferred beads (do first)
 
