@@ -349,6 +349,76 @@ impl<'h> Vm3<'h> {
         }
     }
 
+    /// Host session factory (W7): mint a project-class instance by NAME (running its
+    /// `Class_Initialize`) and return it as a held object. The COM-server (`oxvba-comhost`)
+    /// activation path calls this. A class the program doesn't declare is "can't create object"
+    /// (429). The instance's state lives on the object box exactly as `New`-minted ones.
+    pub fn create_project_instance(&mut self, class_name: &str) -> Result<Variant, Vm3Error> {
+        let idx = self
+            .program
+            .classes
+            .iter()
+            .position(|c| c.name.eq_ignore_ascii_case(class_name))
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(429, "ActiveX component can't create object"))
+            })?;
+        self.new_project_instance(idx)
+    }
+
+    /// Host session invoke (W7): call a member by NAME on a held instance with pre-marshaled
+    /// by-value args (the COM-server dispatch path). Resolves the member proc by name + accessor
+    /// kind (with vm2's get↔method fallback) and runs it via [`Self::run_proc_with_values`]; a
+    /// built-in `Collection` receiver routes to the shared keyed dispatch. Missing member → 438.
+    pub fn invoke_member_values(
+        &mut self,
+        object: ObjectRef,
+        name: &str,
+        kind_hint: Option<ProjectMemberKind>,
+        args: Vec<Variant>,
+    ) -> Result<Variant, Vm3Error> {
+        if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return self.dispatch_collection_values(&object, name, args);
+        }
+        let class_idx = object.route_key() as usize;
+        let class = self.program.classes.get(class_idx).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+        })?;
+        let member = class
+            .methods
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(name) && kind_hint.is_none_or(|k| m.kind == k))
+            .or_else(|| class.methods.iter().find(|m| m.name.eq_ignore_ascii_case(name)));
+        let proc = member.map(|m| m.proc).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'")))
+        })?;
+        self.run_proc_with_values(proc, Variant::from_object_ref(object), args, false)
+    }
+
+    /// A built-in `Collection` member call with already-marshaled by-value args (the
+    /// [`Self::invoke_member_values`] counterpart of [`Self::dispatch_collection_method`], whose
+    /// args arrive as `OxCallArg`s).
+    fn dispatch_collection_values(
+        &mut self,
+        object: &ObjectRef,
+        name: &str,
+        args: Vec<Variant>,
+    ) -> Result<Variant, Vm3Error> {
+        let native = Self::vba_collection_native_method(name).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, format!("Collection doesn't support '{name}'")))
+        })?;
+        let method = match native {
+            oxvba_bundle::NativeMethodId::CollectionAdd => CollectionMethod::Add,
+            oxvba_bundle::NativeMethodId::CollectionItem => CollectionMethod::Item,
+            oxvba_bundle::NativeMethodId::CollectionCount => CollectionMethod::Count,
+            oxvba_bundle::NativeMethodId::CollectionRemove => CollectionMethod::Remove,
+        };
+        object
+            .with_native_collection(|d| dispatch_collection(method, d, &args))
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
+            .map_err(Self::collection_fault)
+            .map_err(Vm3Error::Fault)
+    }
+
     /// Build the VM and run the module-global initializer, but do NOT run the entry (`Main`).
     /// This is the front half of [`Vm3::run`], split out so a long-lived host session can
     /// activate a program once and then issue many member invokes against it. The per-run
@@ -2816,13 +2886,15 @@ fn inst_kind(inst: &OxInst) -> &'static str {
 mod tests {
     use super::*;
     use oxvba_bundle::coreir::{
-        CoreArg, CoreBinOp, CoreCallee, CoreConst, CoreGlobal, CoreLocal, CoreParam, CorePlace,
+        CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreClassMethod, CoreConst, CoreGlobal,
+        CoreLocal, CoreParam, CorePlace,
         CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp, ExitKind, LabelId,
         LocalId as CoreLocalId, ProcId, PtrWriteback,
     };
     use oxvba_bundle::{
         AssignmentIntent, AssignmentTargetKind, BuiltinType, DeclareParamType, ExternalCallDescriptor,
-        NativeImplId, NumericCoerceTarget, NumericMode, ProcedureKind, StringCompareMode, VarTypeRef,
+        NativeImplId, NumericCoerceTarget, NumericMode, ProcedureKind, ProjectMemberKind,
+        StringCompareMode, VarTypeRef,
     };
     use oxvba_hal::HostPolicy;
     use oxvba_hal::adapters::null::NullHostServices;
@@ -3237,6 +3309,61 @@ mod tests {
             ),
             "multi-program cross-project link is the deferred remainder of W2"
         );
+    }
+
+    #[test]
+    fn host_session_creates_a_class_and_invokes_a_member() {
+        // W7: the host session API — create a project-class instance by name (activate without
+        // running Main), then invoke a member with pre-marshaled value args. Class Widget with
+        // Function Twice(x) = x + x; Widget.Twice(21) -> 42.
+        let twice = proc(
+            "Twice",
+            ProcedureKind::Function,
+            vec![long_param("me"), long_param("x")], // me LocalId 0, x LocalId 1
+            vec![local("Twice", VarTypeRef::Builtin(BuiltinType::Long))], // return local, LocalId 2
+            Some(CoreLocalId(2)),
+            vec![assign(lc(2), long_add(load(1), load(1)))],
+        );
+        let main = proc("Main", ProcedureKind::Sub, Vec::new(), Vec::new(), None, Vec::new());
+        let prog = CoreProgram {
+            procs: vec![main, twice],
+            entry: Some(ProcId(0)),
+            unit_name: "T".into(),
+            classes: vec![CoreClass {
+                name: "Widget".into(),
+                initialize: None,
+                terminate: None,
+                methods: vec![CoreClassMethod {
+                    name: "Twice".into(),
+                    kind: ProjectMemberKind::Method,
+                    proc: ProcId(1),
+                    is_default_member: false,
+                }],
+                implements: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let oxp: &'static OxProgram =
+            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate")));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let mut vm = Vm3::activate(oxp, host).expect("activate");
+        let widget = vm.create_project_instance("Widget").expect("create Widget");
+        let obj = widget.as_object_ref().expect("Widget is an object");
+        let r = vm
+            .invoke_member_values(
+                obj,
+                "Twice",
+                Some(ProjectMemberKind::Method),
+                vec![Variant::from_i32(21)],
+            )
+            .expect("invoke Twice");
+        assert_eq!(r.as_i32(), Some(42), "create + invoke a member with value args");
+        // An unknown class is "can't create object" (429).
+        assert!(matches!(
+            vm.create_project_instance("Nope"),
+            Err(Vm3Error::Fault(_))
+        ));
     }
 
     #[test]
