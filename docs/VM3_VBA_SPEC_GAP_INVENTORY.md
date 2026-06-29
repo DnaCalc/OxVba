@@ -99,7 +99,7 @@ may remain unexamined.
 |☐|split-ignores-limit-compare|High/SilentWrong|S|`Split` ignores limit+compare|implement limit/compare|
 |☐|option-compare-text-ignored-string-fns|High/SilentWrong|M|`Option Compare Text` ignored by InStr/StrComp/Replace/Filter/InStrRev|append synthesized compare-mode const in binder|
 |☐|select-case-ignores-option-compare-text|High/SilentWrong|S|`Select Case` ignores Option Compare Text for strings|add mode to CaseClause, set from compare_mode|
-|☐|mixed-string-numeric-compare-no-13|High/SilentWrong|M|String-vs-numeric compare returns value not Err 13|`cmp_order` mismatch guard (Empty exempt)|
+|☑|mixed-string-numeric-compare-no-13|High/SilentWrong|M|String-vs-numeric compare returns value not Err 13|`cmp_order` guard: `String` (incl. numeric-looking) vs numeric/Boolean/Date → Err 13; `Empty`/`Null` exempt *(done; no golden drift)*|
 |☑|and-or-imp-null-three-valued|High/SilentWrong|M|And/Or/Imp with Null always Null (no 3-valued logic)|`bitlogic` now evaluates the known operand against the unknown-as-0 vs unknown-as-(-1): agreeing bits survive (`False And Null`=False, `True Or Null`=True, Imp follows), else Null; Xor/Eqv always Null *(done; Not Null already Null)*|
 |☐|null-not-propagated-string-fns|High/SilentWrong|M|string fns on Null raise 13 not Null (or 94 for `$`)|Null-propagation policy table|
 |☑|typeof-nothing-raises-91|High/SilentWrong|S|`TypeOf Nothing Is X` raises 91 not False|early `Ok(false)` for Nothing/Empty/Null (and an unset/`Set Nothing` object var) in `type_of_is` *(done)*|

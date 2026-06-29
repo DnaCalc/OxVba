@@ -371,11 +371,45 @@ fn norm_units(units: &[u16], mode: StringCompareMode) -> Vec<u16> {
     }
 }
 
+/// A `String`-subtype operand (the only kind compared lexically).
+fn cmp_is_string(v: &Variant) -> bool {
+    v.vtype() == VarType::String
+}
+
+/// A numeric-subtype operand (`Boolean`/`Date`/`Currency`/`Decimal` are numeric in VBA). An
+/// `Empty` operand is intentionally NOT numeric here — it adapts to the other side (0 or "").
+fn cmp_is_numeric(v: &Variant) -> bool {
+    matches!(
+        v.vtype(),
+        VarType::Boolean
+            | VarType::SignedByte
+            | VarType::Byte
+            | VarType::Integer
+            | VarType::UnsignedInteger
+            | VarType::Long
+            | VarType::UnsignedLong
+            | VarType::UnsignedInt
+            | VarType::LongLong
+            | VarType::UnsignedLongLong
+            | VarType::Single
+            | VarType::Double
+            | VarType::Currency
+            | VarType::Decimal
+            | VarType::Date
+    )
+}
+
 fn cmp_order(
     l: &Variant,
     r: &Variant,
     mode: StringCompareMode,
 ) -> Result<std::cmp::Ordering, ArithError> {
+    // A `String` compared with a numeric is a Type mismatch in VBA — even when the string is
+    // numeric-looking (`"5" = 5` raises 13). Only same-kind operands compare; `Empty`/`Null`
+    // are exempt (`Null` is handled by the caller; `Empty` adapts to the other operand).
+    if (cmp_is_string(l) && cmp_is_numeric(r)) || (cmp_is_numeric(l) && cmp_is_string(r)) {
+        return Err(ArithError::type_mismatch());
+    }
     let both_string = l.vtype() == VarType::String && r.vtype() == VarType::String;
     if both_string {
         // Compare at the UTF-16 code-unit level (faithful to lone surrogate halves)
