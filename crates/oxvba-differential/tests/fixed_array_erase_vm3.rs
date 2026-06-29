@@ -325,6 +325,47 @@ End Sub
     assert_contains(source, &Canon::Empty);
 }
 
+// ── Erase reset uses the array's OWN element type (Variant-held fixed array) ──
+
+/// `Erase` of a fixed array held in a `Variant` slot resets each element to the
+/// array's OWN element-type default and keeps that type — a fixed `Long` array
+/// stays `VT_I4` (`VarType` = vbLong 3), not re-typed to `Variant`/`Empty`.
+/// (Previously the reset used the bind-site element, which is `Variant` for a
+/// Variant holder, flipping the element type and zeroing as `Empty`.)
+#[test]
+fn erase_variant_held_fixed_array_keeps_element_type() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim a(1 To 3) As Long
+    Dim v As Variant
+    a(2) = 7
+    v = a
+    Erase v
+    result = VarType(v(2))
+End Sub
+"#;
+    // vbLong = 3. Before the fix the element became Empty (vbEmpty = 0).
+    assert_contains(source, &expect(Variant::from_i32(3)));
+}
+
+/// And the erased element reads back as a real typed zero (Long 0), still usable.
+#[test]
+fn erase_variant_held_fixed_array_reads_typed_zero() {
+    let source = r#"
+Public result As Long
+Sub Main()
+    Dim a(1 To 3) As Long
+    Dim v As Variant
+    a(2) = 7
+    v = a
+    Erase v
+    result = v(2)
+End Sub
+"#;
+    assert_contains(source, &expect(Variant::from_i32(0)));
+}
+
 // ── Dynamic array: `Erase` deallocates (read afterwards raises) ──────────────
 
 /// A dynamic array's `Erase` frees the storage — reading an element afterwards

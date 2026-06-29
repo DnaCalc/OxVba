@@ -41,7 +41,8 @@ use std::collections::HashMap;
 
 use oxvba_bundle::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, ProjectMemberKind,
-    default_array_element, redim_safearray_from_elements, vba_record_layout_for_fields,
+    array_element_type_for_vartype, default_array_element, redim_safearray_from_elements,
+    vba_record_layout_for_fields,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -1317,11 +1318,25 @@ impl<'h> Vm3<'h> {
                     // default-initialized — i.e. a `ReDim`-to-current-bounds, which already
                     // default-inits correctly for every element type (scalars, String → "",
                     // Variant → Empty, UDT → recursively zeroed record).
+                    //
+                    // Pick the reset element type. The bind-site `element` is the authoritative
+                    // DECLARED type for a directly-typed array — including a UDT fixed-array
+                    // field, whose materialized value is a VT_VARIANT SAFEARRAY that has lost the
+                    // declared element type. A bind-site `Variant` is the ambiguous case: either a
+                    // genuine `Variant` array, or a typed array materialized into a `Variant` slot
+                    // (which keeps its real element vartype on the value but erases the bind-site
+                    // type). Only then is the array's OWN runtime vartype the truth.
                     let bounds = arr.bounds().unwrap_or_default();
                     let count = arr.len();
+                    let et = match element {
+                        ArrayElementType::Variant => {
+                            array_element_type_for_vartype(arr.element_vartype())
+                        }
+                        other => other.clone(),
+                    };
                     let elems: Vec<Variant> =
-                        (0..count).map(|_| default_array_element(element)).collect();
-                    redim_safearray_from_elements(bounds, element, elems, true)
+                        (0..count).map(|_| default_array_element(&et)).collect();
+                    redim_safearray_from_elements(bounds, &et, elems, true)
                 });
                 match reset {
                     Some(built) => {

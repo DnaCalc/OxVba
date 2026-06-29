@@ -29,7 +29,7 @@ Status legend: ☐ open · ◐ in progress · ☑ done (commit).
 | # | id | sev/class | eff | gap | fix locus |
 |---|----|-----------|-----|-----|-----------|
 |☑|redim-fixed-array-reject|Med/SilentWrong|S|`ReDim` of a fixed array silently re-dimensions instead of erroring|runtime guard in `array_redim` on `is_fixed_size()` → Fault 10 *(done; 6 corpus progs fixed to valid dynamic arrays)*|
-|☐|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|drive reset from `SafeArray::element_vartype()` not bind-time element|
+|☑|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|bind-site element unless Variant, then `array_element_type_for_vartype(element_vartype())` *(done)*|
 |☐|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declines|VM-agnostic `CallbackRegistry` in oxvba-runtime + trampoline pool|
 |☐|getobject-absent|Low/Absent|M|`GetObject` not bindable|mirror CreateObject pipeline; `ComHal::get_object_variant`; Err 429 on miss|
 

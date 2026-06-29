@@ -79,6 +79,29 @@ pub fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
     }
 }
 
+/// The declared array element type for a SAFEARRAY's runtime element vartype (`VT_*`) — the
+/// inverse of [`safearray_vartype_for_element`] for the intrinsic scalar/string/Variant carriers.
+/// Used by `Erase` of a fixed-size array to re-default each element to the array's OWN element
+/// type (runtime truth) rather than a possibly-erased bind-site type (a fixed array held in a
+/// `Variant` slot keeps its real element type). `VT_RECORD` and any object/unknown carrier fall
+/// back to `Variant` — record arrays are handled separately via their stored layout, and a typed
+/// object SAFEARRAY is stored as `VT_VARIANT` by this runtime, so neither reaches the fallback.
+pub fn array_element_type_for_vartype(element_vt: u16) -> ArrayElementType {
+    match element_vt {
+        VT_I2_VALUE => ArrayElementType::Integer,
+        VT_I4_VALUE => ArrayElementType::Long,
+        VT_I8_VALUE => ArrayElementType::LongLong,
+        VT_UI1_VALUE => ArrayElementType::Byte,
+        VT_R4_VALUE => ArrayElementType::Single,
+        VT_R8_VALUE => ArrayElementType::Double,
+        VT_CY_VALUE => ArrayElementType::Currency,
+        VT_DATE_VALUE => ArrayElementType::Date,
+        VT_BOOL_VALUE => ArrayElementType::Boolean,
+        VT_BSTR_VALUE => ArrayElementType::String,
+        _ => ArrayElementType::Variant,
+    }
+}
+
 /// The default value for a freshly-`ReDim`-ed array element. A UDT-record element is a native
 /// VBA record with descriptor-backed field offsets, built recursively so nested scalar-UDT
 /// subfields are themselves default records — mirroring the binder's `emit_udt_record_init` so
