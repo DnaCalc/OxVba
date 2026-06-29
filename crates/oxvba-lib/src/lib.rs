@@ -309,12 +309,6 @@ pub fn invoke(
         Choose => pure::choose(args),
         Switch => pure::switch(args),
 
-        // ── Collection (SafeArray-backed; keyed access awaits the vm2 object model) ──
-        CollectionAdd => pure::collection_add(args),
-        CollectionItem => pure::collection_item(args),
-        CollectionRemove => pure::collection_remove(args),
-        CollectionCount => pure::collection_count(args),
-
         // ── File / Console I/O ──
         FreeFile => host::free_file(args, host),
         FileOpen => host::file_open(args, host),

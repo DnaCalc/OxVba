@@ -161,12 +161,6 @@ native_impl_ids! {
     Choose,    // `Choose(idx, v1, …)` — 1-based, eager
     Switch,    // `Switch(c1, v1, c2, v2, …)` — eager
 
-    // ── Collection ───────────────────────────────────────────
-    CollectionAdd,
-    CollectionItem,
-    CollectionRemove,
-    CollectionCount,
-
     // ── File / Console I/O ───────────────────────────────────
     FreeFile,
     FileOpen,
@@ -232,7 +226,6 @@ pub enum LibraryModule {
     Random,
     Financial,
     Information,
-    Collection,
     FileIo,
     Interaction,
     Diagnostics,
@@ -257,7 +250,6 @@ impl NativeImplId {
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
             | IsEmpty | IsMissing | IIf | Choose | Switch => M::Information,
-            CollectionAdd | CollectionItem | CollectionRemove | CollectionCount => M::Collection,
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
             | FileChDir | FileLen | FileCopy | FileGetAttr | FileSetAttr | FileChDrive
             | FileDateTime | FileRead | FileWrite | FilePrint | ConsolePrint | FileInput
@@ -518,7 +510,7 @@ impl NativeImplId {
             // `Collection`/`Diagnostics` have no migrated members, so no id that reaches
             // here belongs to them; if one ever did it would be a bug to surface loudly
             // rather than silently mis-route.
-            LibraryModule::Collection | LibraryModule::Diagnostics => {
+            LibraryModule::Diagnostics => {
                 unreachable!(
                     "non-migrated module {:?} yielded a member name",
                     self.module()

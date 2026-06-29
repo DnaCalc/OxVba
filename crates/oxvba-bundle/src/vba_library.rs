@@ -302,7 +302,7 @@ mod tests {
                 M::Information => information_predicate(id),
                 M::Interaction => interaction_host_fn(id),
                 M::FileIo => fileio_by_name(id),
-                M::Collection | M::Diagnostics => false,
+                M::Diagnostics => false,
             };
             assert_eq!(
                 id.library_member().is_some(),

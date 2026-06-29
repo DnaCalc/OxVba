@@ -204,12 +204,6 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Choose => e(Choose, &[], variadic(1), SpecialForm),
         Switch => e(Switch, &[], variadic(2), SpecialForm),
 
-        // ── Collection (members of the predeclared Collection object) ──
-        CollectionAdd => e(CollectionAdd, &[], sig(1, 4), Ordinary),
-        CollectionItem => e(CollectionItem, &[], sig(1, 1), Ordinary),
-        CollectionRemove => e(CollectionRemove, &[], sig(1, 1), Ordinary),
-        CollectionCount => e(CollectionCount, &[], sig(0, 0), Ordinary),
-
         // ── File / Console I/O ──
         FreeFile => e(FreeFile, &["FreeFile"], sig(0, 1), Ordinary),
         FileOpen => e(FileOpen, &[], variadic(0), FileStatement),
