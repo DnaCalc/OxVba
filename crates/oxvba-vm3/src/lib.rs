@@ -1574,20 +1574,30 @@ impl<'h> Vm3<'h> {
                 // Collect subscribers whose binding holds this source and routes this event,
                 // then run each handler in sink-identity order (vm2's order) with the sink as
                 // `me` and the event args; an unhandled error propagates to the raiser.
-                let mut targets: Vec<(i32, Variant, usize)> = Vec::new();
+                let mut targets: Vec<(i32, Variant, usize, usize)> = Vec::new();
                 for (key, binding) in &self.withevents {
                     if object_identity(&binding.source) != source_id {
                         continue;
                     }
                     let token = withevents_binding(*key) as i32;
-                    if let Some(&handler) = self.programs[self.cur].event_routes.get(&(token, event_id)) {
+                    // A sink's event routes + handler proc live in the SINK OWNER's program, which
+                    // may differ from the raiser's `cur` for a cross-project `WithEvents` (project
+                    // A sinks project B's source). Look the route up — and run the handler — there.
+                    let owner_bundle = binding
+                        .owner
+                        .as_object_ref()
+                        .map(|o| o.bundle_id() as usize)
+                        .unwrap_or(self.cur);
+                    if let Some(&handler) =
+                        self.programs[owner_bundle].event_routes.get(&(token, event_id))
+                    {
                         let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
-                        targets.push((sink_id, binding.owner.clone(), handler));
+                        targets.push((sink_id, binding.owner.clone(), handler, owner_bundle));
                     }
                 }
                 targets.sort_by_key(|(sink_id, ..)| *sink_id);
-                for (_, sink, handler) in targets {
-                    self.run_proc_with_me(self.cur, FuncId(handler), sink, args, false)?;
+                for (_, sink, handler, owner_bundle) in targets {
+                    self.run_proc_with_me(owner_bundle, FuncId(handler), sink, args, false)?;
                 }
                 // After the internal WithEvents fan-out, deliver to the host event sink (W7):
                 // the COM server forwards the event to its connection-point clients. Take the
