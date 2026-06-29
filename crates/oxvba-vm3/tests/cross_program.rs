@@ -367,6 +367,162 @@ fn cross_program_dispatch_uses_the_objects_program_not_the_executing_one() {
     assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(99));
 }
 
+/// Library program: `Function Apply(o)` sets ITS module global `gLib = 55` then returns
+/// `o.Echo(gLib)` — the late-bound method argument names a LIB global, so it must resolve in
+/// Lib (the dispatching program), not the object's program.
+fn lib_apply_global_arg_program() -> CoreProgram {
+    let apply = CoreProc {
+        name: "Apply".into(),
+        kind: ProcedureKind::Function,
+        params: vec![CoreParam {
+            name: "o".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            by_ref: false,
+            variadic: false,
+        }],
+        locals: vec![CoreLocal {
+            name: "Apply".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        return_local: Some(LocalId(1)),
+        body: vec![
+            assign(
+                CorePlace::Global(GlobalId(0)),
+                CoreValue::Const(CoreConst::I32(55)),
+                "gLib",
+            ),
+            assign(
+                CorePlace::Local(LocalId(1)),
+                CoreValue::Call {
+                    callee: CoreCallee::LateDispatch {
+                        name: "Echo".into(),
+                        kind: Some(ProjectMemberKind::Method),
+                    },
+                    args: vec![
+                        CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(0)))),
+                        CoreArg::ByVal(CoreValue::Load(CorePlace::Global(GlobalId(0)))),
+                    ],
+                },
+                "Apply",
+            ),
+        ],
+    };
+    CoreProgram {
+        globals: vec![CoreGlobal {
+            name: "gLib".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        procs: vec![apply],
+        unit_name: "Lib".into(),
+        exports: vec![BundleExport {
+            token: ExportToken::ModuleFunc {
+                module: "Lib".into(),
+                member: "Apply".into(),
+                kind: ProjectMemberKind::Method,
+            },
+            target: ExportTarget::Proc(0),
+        }],
+        ..Default::default()
+    }
+}
+
+/// Referrer owning `Class Thing` (`Function Echo(n) = n`); `Sub Main()` does
+/// `result = Lib.Apply(New Thing)`.
+fn app_echo_program() -> CoreProgram {
+    let echo = CoreProc {
+        name: "Echo".into(),
+        kind: ProcedureKind::Function,
+        params: vec![
+            CoreParam {
+                name: "me".into(),
+                ty: oxvba_bundle::VarTypeRef::Variant,
+                by_ref: false,
+                variadic: false,
+            },
+            CoreParam {
+                name: "n".into(),
+                ty: oxvba_bundle::VarTypeRef::Variant,
+                by_ref: false,
+                variadic: false,
+            },
+        ],
+        locals: vec![CoreLocal {
+            name: "Echo".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        return_local: Some(LocalId(2)),
+        body: vec![assign(
+            CorePlace::Local(LocalId(2)),
+            CoreValue::Load(CorePlace::Local(LocalId(1))),
+            "Echo",
+        )],
+    };
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: Vec::new(),
+        return_local: None,
+        body: vec![assign(
+            CorePlace::Global(GlobalId(0)),
+            CoreValue::Call {
+                callee: CoreCallee::ExternProc { import: 0 },
+                args: vec![CoreArg::ByVal(CoreValue::New(ClassId(0)))],
+            },
+            "result",
+        )],
+    };
+    CoreProgram {
+        globals: vec![CoreGlobal {
+            name: "result".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        procs: vec![main, echo], // Main = ProcId 0, Echo = ProcId 1
+        classes: vec![CoreClass {
+            name: "Thing".into(),
+            initialize: None,
+            terminate: None,
+            methods: vec![CoreClassMethod {
+                name: "Echo".into(),
+                kind: ProjectMemberKind::Method,
+                proc: ProcId(1),
+                is_default_member: false,
+            }],
+            implements: Vec::new(),
+        }],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: ExportToken::ModuleFunc {
+                module: "Lib".into(),
+                member: "Apply".into(),
+                kind: ProjectMemberKind::Method,
+            },
+        }],
+        unit_name: "App".into(),
+        entry: Some(ProcId(0)),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cross_program_method_arg_resolves_in_the_callers_program() {
+    // Lib.Apply sets its OWN module global gLib=55 and calls o.Echo(gLib) on an App-minted Thing.
+    // The argument names a LIB global, so it must resolve in Lib (the dispatching program), not
+    // the object's program (App) — so Echo receives 55, and result == 55. (Slice 5b review fix:
+    // method args are resolved in the caller's program BEFORE cur switches to the object's; the
+    // bug read App's global slot 0, which is `result`, still Empty -> wrong value.)
+    let lib = elaborate(&lib_apply_global_arg_program()).expect("elaborate lib");
+    let app = elaborate(&app_echo_program()).expect("elaborate app");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = Vm3::link(&[&lib, &app], &host).expect("link");
+    vm.run_entry().expect("run");
+    assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(55));
+}
+
 /// Library program owning `Class Widget` (`Function Val() = 42`), exported as a public class.
 fn lib_widget_program() -> CoreProgram {
     let val = CoreProc {

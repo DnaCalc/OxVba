@@ -518,11 +518,9 @@ impl<'h> Vm3<'h> {
         let proc = member.map(|m| m.proc).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'")))
         })?;
-        let saved_cur = self.cur;
-        self.cur = obj_bundle;
-        let result = self.run_proc_with_values(proc, Variant::from_object_ref(object), args, false);
-        self.cur = saved_cur;
-        result
+        // Host args are already by-value (resolution-order is moot), but run in the object's
+        // program (target_prog = obj_bundle).
+        self.run_proc_with_values(obj_bundle, proc, Variant::from_object_ref(object), args, false)
     }
 
     /// A built-in `Collection` member call with already-marshaled by-value args (the
@@ -625,9 +623,18 @@ impl<'h> Vm3<'h> {
     }
 
     fn new_frame(&self, func: FuncId) -> Frame {
-        let f = &self.cur_program().funcs[func.0];
+        self.new_frame_in(self.cur, func)
+    }
+
+    /// Build a fresh frame for `func` in program `prog` (locals sized from that program's
+    /// function); the frame carries `prog`, so `run_loop` executes it against that program's
+    /// globals/code regardless of the resolving `cur`. Used to run a cross-project callee (an
+    /// object method, or a referenced project's proc) whose ARGUMENTS are resolved in the
+    /// caller's program (`cur`) BEFORE this frame runs — matching vm2's resolve-then-switch.
+    fn new_frame_in(&self, prog: usize, func: FuncId) -> Frame {
+        let f = &self.programs[prog].program.funcs[func.0];
         Frame {
-            prog: self.cur,
+            prog,
             func,
             block: f.entry,
             ip: 0,
@@ -1556,7 +1563,7 @@ impl<'h> Vm3<'h> {
                 }
                 targets.sort_by_key(|(sink_id, ..)| *sink_id);
                 for (_, sink, handler) in targets {
-                    self.run_proc_with_me(FuncId(handler), sink, args, false)?;
+                    self.run_proc_with_me(self.cur, FuncId(handler), sink, args, false)?;
                 }
                 // After the internal WithEvents fan-out, deliver to the host event sink (W7):
                 // the COM server forwards the event to its connection-point clients. Take the
@@ -2035,7 +2042,7 @@ impl<'h> Vm3<'h> {
             ObjectRef::from_project_instance(instance_id, class_idx as i32, self.cur as i32, has_terminate, descriptor);
         let value = Variant::from_object_ref(object.clone());
         if let Some(init) = initialize {
-            self.run_proc_with_me(init, Variant::from_object_ref(object), &[], false)?;
+            self.run_proc_with_me(self.cur, init, Variant::from_object_ref(object), &[], false)?;
         }
         Ok(value)
     }
@@ -2065,7 +2072,7 @@ impl<'h> Vm3<'h> {
         let value = Variant::from_object_ref(object);
         self.programs[self.cur].predeclared_singletons.insert(class_idx, value.clone());
         if let Some(init) = initialize {
-            self.run_proc_with_me(init, value.clone(), &[], false)?;
+            self.run_proc_with_me(self.cur, init, value.clone(), &[], false)?;
         }
         Ok(value)
     }
@@ -2082,6 +2089,7 @@ impl<'h> Vm3<'h> {
     /// `Malformed` always propagates.
     fn run_proc_with_me(
         &mut self,
+        target_prog: usize,
         proc: FuncId,
         me: Variant,
         args: &[OxArg],
@@ -2094,7 +2102,7 @@ impl<'h> Vm3<'h> {
         // sets `cur` to the receiver's program (object dispatch / terminate) before calling.
         let saved_cur = self.cur;
         let base = self.frames.len();
-        let mut frame = self.new_frame(proc);
+        let mut frame = self.new_frame_in(target_prog, proc);
         if let Some(slot) = frame.locals.get_mut(0) {
             *slot = me;
         }
@@ -2159,9 +2167,9 @@ impl<'h> Vm3<'h> {
     /// Returns the proc's result; with `suppress`, a `Fault` is swallowed to `Empty` (used by
     /// lifecycle/event callbacks). Wired by W3 (Collection dispatch), W5 (events) and W7
     /// (the host create/invoke session API).
-    #[allow(dead_code)] // callers land in W3/W5/W7 of the vm3-completion worksets
     fn run_proc_with_values(
         &mut self,
+        target_prog: usize,
         proc: FuncId,
         me: Variant,
         args: Vec<Variant>,
@@ -2174,7 +2182,7 @@ impl<'h> Vm3<'h> {
         // sets `cur` to the receiver's program (object dispatch / terminate) before calling.
         let saved_cur = self.cur;
         let base = self.frames.len();
-        let mut frame = self.new_frame(proc);
+        let mut frame = self.new_frame_in(target_prog, proc);
         if let Some(slot) = frame.locals.get_mut(0) {
             *slot = me;
         }
@@ -2238,13 +2246,12 @@ impl<'h> Vm3<'h> {
                     terminate,
                     oxvba_runtime::retained_parked_termination_object(instance_id),
                 ) {
-                    // Run the finalizer in the object's program (so its globals/funcs resolve).
-                    // A fault in `Class_Terminate` is swallowed (suppress); a `Malformed`
-                    // defect would still surface — drop it here to match vm2's `let _ = …`.
-                    let saved_cur = self.cur;
-                    self.cur = bundle;
-                    let _ = self.run_proc_with_me(proc, Variant::from_object_ref(object), &[], true);
-                    self.cur = saved_cur;
+                    // Run the finalizer in the object's program (target_prog = bundle), so its
+                    // globals/funcs resolve there. A fault in `Class_Terminate` is swallowed
+                    // (suppress); a `Malformed` defect would still surface — drop it to match
+                    // vm2's `let _ = …`.
+                    let _ =
+                        self.run_proc_with_me(bundle, proc, Variant::from_object_ref(object), &[], true);
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
                 // Drop any `WithEvents` bindings the terminated instance owned (it can no
@@ -2367,13 +2374,11 @@ impl<'h> Vm3<'h> {
                 )),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        // Run the method body in the object's program; run_proc_with_me restores `cur` to this
-        // entry value, then we restore the caller's program for the post-call store.
-        let saved_cur = self.cur;
-        self.cur = obj_bundle;
-        let result = self.run_proc_with_me(proc, me, &proc_args, false);
-        self.cur = saved_cur;
-        result
+        // Run the method body in the object's program (target_prog = obj_bundle). The args +
+        // result dst are resolved by run_proc_with_me in THIS caller's program (cur unchanged),
+        // so a method argument naming a caller global reads/writes the CALLER's global (vm2's
+        // resolve-args-then-switch order), not the object program's.
+        self.run_proc_with_me(obj_bundle, proc, me, &proc_args, false)
     }
 
     /// Mint a built-in library-class instance for `New <LibClass>` (`OxInst::NewExtern`). Only
@@ -3655,6 +3660,7 @@ mod tests {
 
         let first = vm
             .run_proc_with_values(
+                0,
                 FuncId(1),
                 Variant::empty(),
                 vec![Variant::from_i32(20), Variant::from_i32(22)],
@@ -3665,6 +3671,7 @@ mod tests {
 
         let second = vm
             .run_proc_with_values(
+                0,
                 FuncId(1),
                 Variant::empty(),
                 vec![Variant::from_i32(1), Variant::from_i32(2)],
