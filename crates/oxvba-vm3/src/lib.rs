@@ -1305,10 +1305,11 @@ impl<'h> Vm3<'h> {
                         // A project instance (or an empty Collection) has nothing to enumerate.
                         Vec::new()
                     } else {
-                        // A foreign COM enumerator (IEnumVARIANT) is W5.
-                        return Err(Vm3Error::Unimplemented {
-                            what: "For Each over a COM enumerator",
-                        });
+                        // A foreign COM collection: snapshot its elements through the host's
+                        // IEnumVARIANT bridge — the shared, live-tested HAL `enumerate_object`,
+                        // exactly as vm2. A host that cannot enumerate (no COM transport / no
+                        // enumerator) yields an empty iteration.
+                        self.host.com().enumerate_object(obj).unwrap_or_default()
                     }
                 } else {
                     Vec::new()
