@@ -500,7 +500,14 @@ impl<'h> Vm3<'h> {
             return self.dispatch_collection_values(&object, name, args);
         }
         let class_idx = object.route_key() as usize;
-        let class = self.cur_program().classes.get(class_idx).ok_or_else(|| {
+        // Resolve + run in the object's OWN program (bundle_id), not the executing cur.
+        let obj_bundle = object.bundle_id() as usize;
+        let program = self
+            .programs
+            .get(obj_bundle)
+            .map(|lp| lp.program)
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, "Object doesn't support this member")))?;
+        let class = program.classes.get(class_idx).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
         })?;
         let member = class
@@ -511,7 +518,11 @@ impl<'h> Vm3<'h> {
         let proc = member.map(|m| m.proc).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'")))
         })?;
-        self.run_proc_with_values(proc, Variant::from_object_ref(object), args, false)
+        let saved_cur = self.cur;
+        self.cur = obj_bundle;
+        let result = self.run_proc_with_values(proc, Variant::from_object_ref(object), args, false);
+        self.cur = saved_cur;
+        result
     }
 
     /// A built-in `Collection` member call with already-marshaled by-value args (the
@@ -2017,7 +2028,7 @@ impl<'h> Vm3<'h> {
         let instance_id = self.next_instance_id;
         self.next_instance_id += 1;
         let object =
-            ObjectRef::from_project_instance(instance_id, class_idx as i32, 0, has_terminate, descriptor);
+            ObjectRef::from_project_instance(instance_id, class_idx as i32, self.cur as i32, has_terminate, descriptor);
         let value = Variant::from_object_ref(object.clone());
         if let Some(init) = initialize {
             self.run_proc_with_me(init, Variant::from_object_ref(object), &[], false)?;
@@ -2046,7 +2057,7 @@ impl<'h> Vm3<'h> {
         let instance_id = self.next_instance_id;
         self.next_instance_id += 1;
         let object =
-            ObjectRef::from_project_instance(instance_id, class_idx as i32, 0, has_terminate, descriptor);
+            ObjectRef::from_project_instance(instance_id, class_idx as i32, self.cur as i32, has_terminate, descriptor);
         let value = Variant::from_object_ref(object);
         self.programs[self.cur].predeclared_singletons.insert(class_idx, value.clone());
         if let Some(init) = initialize {
@@ -2073,6 +2084,11 @@ impl<'h> Vm3<'h> {
         suppress: bool,
     ) -> Result<Variant, Vm3Error> {
         self.guard_call_depth()?;
+        // Preserve the caller's program across the nested run_loop: it leaves `cur` at the
+        // callee's program (run_loop re-derives cur per iteration), so the caller's post-call
+        // resolves (store dst / extern_args) would otherwise use the wrong program. The caller
+        // sets `cur` to the receiver's program (object dispatch / terminate) before calling.
+        let saved_cur = self.cur;
         let base = self.frames.len();
         let mut frame = self.new_frame(proc);
         if let Some(slot) = frame.locals.get_mut(0) {
@@ -2118,6 +2134,7 @@ impl<'h> Vm3<'h> {
             self.active_error = fr.saved_active_error;
         }
         self.frames.truncate(base);
+        self.cur = saved_cur;
         // Truncating released the lifecycle frame's object locals (and any an uncaught fault
         // left parked as it unwound) — run their `Class_Terminate`s now, the nested-epilogue /
         // fault-path drain that mirrors vm2 (re-entrant drains fold via the `draining` guard).
@@ -2147,6 +2164,11 @@ impl<'h> Vm3<'h> {
         suppress: bool,
     ) -> Result<Variant, Vm3Error> {
         self.guard_call_depth()?;
+        // Preserve the caller's program across the nested run_loop: it leaves `cur` at the
+        // callee's program (run_loop re-derives cur per iteration), so the caller's post-call
+        // resolves (store dst / extern_args) would otherwise use the wrong program. The caller
+        // sets `cur` to the receiver's program (object dispatch / terminate) before calling.
+        let saved_cur = self.cur;
         let base = self.frames.len();
         let mut frame = self.new_frame(proc);
         if let Some(slot) = frame.locals.get_mut(0) {
@@ -2178,6 +2200,7 @@ impl<'h> Vm3<'h> {
             self.active_error = fr.saved_active_error;
         }
         self.frames.truncate(base);
+        self.cur = saved_cur;
         self.maybe_drain();
         match result {
             Ok(()) => Ok(ret),
@@ -2198,19 +2221,26 @@ impl<'h> Vm3<'h> {
         }
         self.draining = true;
         while oxvba_runtime::has_pending_terminations() {
-            for (instance_id, _bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
+            for (instance_id, bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
+                // A terminating object's `Class_Terminate` lives in ITS OWN program (the one that
+                // minted it — stamped into `bundle_id`), not necessarily the executing `cur`.
+                let bundle = bundle_id as usize;
                 let terminate = self
-                    .cur_program()
-                    .classes
-                    .get(route_key as usize)
+                    .programs
+                    .get(bundle)
+                    .and_then(|lp| lp.program.classes.get(route_key as usize))
                     .and_then(|c| c.terminate);
                 if let (Some(proc), Some(object)) = (
                     terminate,
                     oxvba_runtime::retained_parked_termination_object(instance_id),
                 ) {
+                    // Run the finalizer in the object's program (so its globals/funcs resolve).
                     // A fault in `Class_Terminate` is swallowed (suppress); a `Malformed`
                     // defect would still surface — drop it here to match vm2's `let _ = …`.
+                    let saved_cur = self.cur;
+                    self.cur = bundle;
                     let _ = self.run_proc_with_me(proc, Variant::from_object_ref(object), &[], true);
+                    self.cur = saved_cur;
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
                 // Drop any `WithEvents` bindings the terminated instance owned (it can no
@@ -2231,9 +2261,9 @@ impl<'h> Vm3<'h> {
         let bare = type_name.rsplit('.').next().unwrap_or(type_name);
         if obj.is_project_instance() {
             return Ok(self
-                .cur_program()
-                .classes
-                .get(obj.route_key() as usize)
+                .programs
+                .get(obj.bundle_id() as usize)
+                .and_then(|lp| lp.program.classes.get(obj.route_key() as usize))
                 .is_some_and(|class| {
                     class.name.eq_ignore_ascii_case(bare)
                         || class
@@ -2255,9 +2285,9 @@ impl<'h> Vm3<'h> {
     fn object_type_name(&self, object: &ObjectRef) -> Option<String> {
         if object.is_project_instance() {
             return self
-                .cur_program()
-                .classes
-                .get(object.route_key() as usize)
+                .programs
+                .get(object.bundle_id() as usize)
+                .and_then(|lp| lp.program.classes.get(object.route_key() as usize))
                 .map(|c| c.name.clone());
         }
         self.host.com().object_type_name(object.clone()).ok().flatten()
@@ -2284,7 +2314,15 @@ impl<'h> Vm3<'h> {
         }
         let kind = project_member_kind(invoke_kind);
         let class_idx = object.route_key() as usize;
-        let program = self.cur_program();
+        // The object's class lives in ITS OWN program (stamped into bundle_id when minted), which
+        // may differ from the executing `cur` when a cross-project call passed it across a
+        // program boundary. Resolve the member there, and run the body in that program.
+        let obj_bundle = object.bundle_id() as usize;
+        let program = self
+            .programs
+            .get(obj_bundle)
+            .map(|lp| lp.program)
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, "Object doesn't support this member")))?;
         let class = program.classes.get(class_idx).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
         })?;
@@ -2325,7 +2363,13 @@ impl<'h> Vm3<'h> {
                 )),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        self.run_proc_with_me(proc, me, &proc_args, false)
+        // Run the method body in the object's program; run_proc_with_me restores `cur` to this
+        // entry value, then we restore the caller's program for the post-call store.
+        let saved_cur = self.cur;
+        self.cur = obj_bundle;
+        let result = self.run_proc_with_me(proc, me, &proc_args, false);
+        self.cur = saved_cur;
+        result
     }
 
     /// Mint a built-in library-class instance for `New <LibClass>` (`OxInst::NewExtern`). Only
@@ -2339,7 +2383,7 @@ impl<'h> Vm3<'h> {
         let object = ObjectRef::from_project_instance(
             instance_id,
             VBA_COLLECTION_ROUTE_KEY,
-            0,
+            self.cur as i32,
             false,
             descriptor,
         );

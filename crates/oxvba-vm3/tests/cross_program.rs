@@ -234,6 +234,139 @@ fn cross_program_fault_unwinds_to_the_callers_handler() {
     );
 }
 
+/// Library program: `Function Apply(o)` returns `o.GetVal()` via a late-bound dispatch — the
+/// receiver `o` is an object minted by a DIFFERENT program, so dispatch must resolve its class
+/// in the object's own program, not Lib's.
+fn lib_apply_program() -> CoreProgram {
+    let apply = CoreProc {
+        name: "Apply".into(),
+        kind: ProcedureKind::Function,
+        params: vec![CoreParam {
+            name: "o".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            by_ref: false,
+            variadic: false,
+        }],
+        locals: vec![CoreLocal {
+            name: "Apply".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        return_local: Some(LocalId(1)),
+        body: vec![assign(
+            CorePlace::Local(LocalId(1)),
+            CoreValue::Call {
+                callee: CoreCallee::LateDispatch {
+                    name: "GetVal".into(),
+                    kind: Some(ProjectMemberKind::Method),
+                },
+                args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(0))))],
+            },
+            "Apply",
+        )],
+    };
+    CoreProgram {
+        procs: vec![apply],
+        unit_name: "Lib".into(),
+        exports: vec![BundleExport {
+            token: ExportToken::ModuleFunc {
+                module: "Lib".into(),
+                member: "Apply".into(),
+                kind: ProjectMemberKind::Method,
+            },
+            target: ExportTarget::Proc(0),
+        }],
+        ..Default::default()
+    }
+}
+
+/// Referrer program owning `Class Thing` (`Function GetVal() = 99`). `Sub Main()` creates a
+/// Thing and passes it to `Lib.Apply` — so the object is minted in App but dispatched in Lib.
+fn app_with_thing_program() -> CoreProgram {
+    let getval = CoreProc {
+        name: "GetVal".into(),
+        kind: ProcedureKind::Function,
+        params: vec![CoreParam {
+            name: "me".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            by_ref: false,
+            variadic: false,
+        }],
+        locals: vec![CoreLocal {
+            name: "GetVal".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        return_local: Some(LocalId(1)),
+        body: vec![assign(
+            CorePlace::Local(LocalId(1)),
+            CoreValue::Const(CoreConst::I32(99)),
+            "GetVal",
+        )],
+    };
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: Vec::new(),
+        return_local: None,
+        body: vec![assign(
+            CorePlace::Global(GlobalId(0)),
+            CoreValue::Call {
+                callee: CoreCallee::ExternProc { import: 0 },
+                args: vec![CoreArg::ByVal(CoreValue::New(ClassId(0)))],
+            },
+            "result",
+        )],
+    };
+    CoreProgram {
+        globals: vec![CoreGlobal {
+            name: "result".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        procs: vec![main, getval], // Main = ProcId 0, GetVal = ProcId 1
+        classes: vec![CoreClass {
+            name: "Thing".into(),
+            initialize: None,
+            terminate: None,
+            methods: vec![CoreClassMethod {
+                name: "GetVal".into(),
+                kind: ProjectMemberKind::Method,
+                proc: ProcId(1),
+                is_default_member: false,
+            }],
+            implements: Vec::new(),
+        }],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: ExportToken::ModuleFunc {
+                module: "Lib".into(),
+                member: "Apply".into(),
+                kind: ProjectMemberKind::Method,
+            },
+        }],
+        unit_name: "App".into(),
+        entry: Some(ProcId(0)),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cross_program_dispatch_uses_the_objects_program_not_the_executing_one() {
+    // App owns class Thing (GetVal = 99). App.Main creates a Thing and passes it to Lib.Apply,
+    // which late-binds `o.GetVal()` while executing in LIB's program. Dispatch must resolve the
+    // object's class in ITS OWN program (App, via bundle_id), not the executing program (Lib) —
+    // otherwise it mis-dispatches or raises 438. Result (App global 0) == 99. (Slice 5b: object
+    // dispatch keyed on ObjectRef.bundle_id, not the executing cur.)
+    let lib = elaborate(&lib_apply_program()).expect("elaborate lib");
+    let app = elaborate(&app_with_thing_program()).expect("elaborate app");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = Vm3::link(&[&lib, &app], &host).expect("link");
+    vm.run_entry().expect("run");
+    assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(99));
+}
+
 #[test]
 fn link_rejects_an_unresolved_reference() {
     // App imports unit "Lib", but we only load App → the link must fail naming the missing unit.
