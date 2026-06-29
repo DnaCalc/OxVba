@@ -154,6 +154,19 @@ fn runtime_diagnostic(err: oxvba_vm2::VmError) -> PhaseDiagnostic {
     PhaseDiagnostic::from_diagnostic(err.to_diagnostic())
 }
 
+fn vm3_runtime_diagnostic(err: oxvba_vm3::Vm3Error) -> PhaseDiagnostic {
+    let code = match &err {
+        oxvba_vm3::Vm3Error::Unimplemented { .. } => "VM3-E-UNIMPLEMENTED",
+        oxvba_vm3::Vm3Error::Fault(_) => "VM3-E-FAULT",
+        oxvba_vm3::Vm3Error::Malformed(_) => "VM3-E-MALFORMED",
+    };
+    PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+        code,
+        OxDiagnosticPhase::Host,
+        err.to_string(),
+    ))
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
     pub enable_jit: bool,
@@ -256,6 +269,86 @@ impl ProjectRuntimeSession {
         // SAFETY: the caller provides the retained `IDispatch*` described by
         // this function's safety contract, and this method transfers it directly
         // to the host COM boundary that assumes that ownership.
+        unsafe {
+            self.host_services
+                .com()
+                .bind_native_dispatch_object_variant(prog_id, dispatch)
+        }
+        .map_err(|err| PhaseDiagnostic::from_diagnostic(err.to_diagnostic()))
+    }
+}
+
+/// A vm3-backed project runtime session (the vm3 counterpart of [`ProjectRuntimeSession`]): the
+/// in-process COM server's create-class / invoke-member / event-sink surface, running on the
+/// vm3 interpreter over a linked [`oxvba_oxir::OxImage`]. Built by
+/// [`Engine::prepare_image_session`].
+pub struct Vm3RuntimeSession {
+    vm: oxvba_vm3::Vm3<'static>,
+    host_services: Arc<dyn HostServices>,
+}
+
+impl Vm3RuntimeSession {
+    /// Mint a project-class instance by name (running its `Class_Initialize`) in the entry
+    /// program. A class the image doesn't declare is "can't create object" (429, surfaced as a
+    /// diagnostic).
+    pub fn create_class_instance(
+        &mut self,
+        class_name: &str,
+    ) -> Result<ObjectRef, PhaseDiagnostic> {
+        let value = self
+            .vm
+            .create_project_instance(class_name)
+            .map_err(vm3_runtime_diagnostic)?;
+        value.as_object_ref().ok_or_else(|| {
+            PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                "VM3-E-CREATE",
+                OxDiagnosticPhase::Host,
+                format!("New {class_name} did not yield an object instance"),
+            ))
+        })
+    }
+
+    /// Invoke a member by name on a held instance with pre-marshaled by-value args.
+    pub fn invoke_member_values(
+        &mut self,
+        object: ObjectRef,
+        member_name: &str,
+        kind_hint: Option<oxvba_bundle::ProjectMemberKind>,
+        args: Vec<Variant>,
+    ) -> Result<Variant, PhaseDiagnostic> {
+        self.vm
+            .invoke_member_values(object, member_name, kind_hint, args)
+            .map_err(vm3_runtime_diagnostic)
+    }
+
+    /// Register the host event sink (project `RaiseEvent` -> connection-point clients).
+    pub fn set_project_event_sink<F>(&mut self, sink: F)
+    where
+        F: FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'static,
+    {
+        self.vm.set_project_event_sink(sink);
+    }
+
+    /// Remove the host event sink.
+    pub fn clear_project_event_sink(&mut self) {
+        self.vm.clear_project_event_sink();
+    }
+
+    /// Bind a retained native `IDispatch*` into the runtime COM object table (host boundary, vm
+    /// agnostic — identical to [`ProjectRuntimeSession::bind_native_dispatch_object_value`]).
+    ///
+    /// # Safety
+    ///
+    /// `dispatch` must be null or a valid `IDispatch*` carrying one retained reference owned by
+    /// the caller; the HAL takes ownership of that reference.
+    #[cfg(target_os = "windows")]
+    pub unsafe fn bind_native_dispatch_object_value(
+        &mut self,
+        prog_id: &str,
+        dispatch: *mut c_void,
+    ) -> Result<Variant, PhaseDiagnostic> {
+        // SAFETY: the caller upholds the same retained-`IDispatch*` contract this method's safety
+        // section documents; the reference is transferred to the host COM boundary.
         unsafe {
             self.host_services
                 .com()
@@ -490,6 +583,39 @@ impl Engine {
 
     pub fn hal_descriptor(&self) -> HalDescriptor {
         self.host_services.descriptor()
+    }
+
+    /// Prepare a vm3-backed runtime session from an [`oxvba_oxir::OxImage`] (the `.oxi`) — the
+    /// vm3 counterpart of [`prepare_bundle_package_session`](Self::prepare_bundle_package_session),
+    /// and the path the in-process COM server uses to run on vm3. The image's programs + the
+    /// host-service `Arc` are promoted to `'static` (a loaded in-process COM server is
+    /// process-lifetime), then linked via `Vm3::link` (entry = the last program, the COM-server
+    /// project — the image's `entry`).
+    pub fn prepare_image_session(
+        &self,
+        image: oxvba_oxir::OxImage,
+    ) -> Result<Vm3RuntimeSession, PhaseDiagnostic> {
+        if self.config.enable_jit {
+            return Err(jit_not_implemented_diagnostic());
+        }
+        image.validate().map_err(|err| {
+            PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                "VM3-E-IMAGE",
+                OxDiagnosticPhase::Host,
+                err.to_string(),
+            ))
+        })?;
+        let leaked_programs: &'static [oxvba_oxir::OxProgram] =
+            Box::leak(image.programs.into_boxed_slice());
+        let program_refs: Vec<&'static oxvba_oxir::OxProgram> = leaked_programs.iter().collect();
+        let leaked_host_services: &'static mut Arc<dyn HostServices> =
+            Box::leak(Box::new(self.host_services.clone()));
+        let host_services: &'static dyn HostServices = &**leaked_host_services;
+        let vm = oxvba_vm3::Vm3::link(&program_refs, host_services).map_err(vm3_runtime_diagnostic)?;
+        Ok(Vm3RuntimeSession {
+            vm,
+            host_services: self.host_services.clone(),
+        })
     }
 
     /// Prepare a package-backed runtime session without running a startup entry.
