@@ -199,12 +199,12 @@ pub struct Engine {
 /// invoke-member / event-sink surface, running on the vm3 interpreter over a linked
 /// [`oxvba_oxir::OxImage`]. Built by
 /// [`Engine::prepare_image_session`].
-pub struct Vm3RuntimeSession {
+pub struct ProjectRuntimeSession {
     vm: oxvba_vm3::Vm3<'static>,
     host_services: Arc<dyn HostServices>,
 }
 
-impl Vm3RuntimeSession {
+impl ProjectRuntimeSession {
     /// Mint a project-class instance by name (running its `Class_Initialize`) in the entry
     /// program. A class the image doesn't declare is "can't create object" (429, surfaced as a
     /// diagnostic).
@@ -510,7 +510,7 @@ impl Engine {
     pub fn prepare_image_session(
         &self,
         image: oxvba_oxir::OxImage,
-    ) -> Result<Vm3RuntimeSession, PhaseDiagnostic> {
+    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
         if self.config.enable_jit {
             return Err(jit_not_implemented_diagnostic());
         }
@@ -528,7 +528,7 @@ impl Engine {
             Box::leak(Box::new(self.host_services.clone()));
         let host_services: &'static dyn HostServices = &**leaked_host_services;
         let vm = oxvba_vm3::Vm3::link(&program_refs, host_services).map_err(vm3_runtime_diagnostic)?;
-        Ok(Vm3RuntimeSession {
+        Ok(ProjectRuntimeSession {
             vm,
             host_services: self.host_services.clone(),
         })
@@ -540,7 +540,7 @@ impl Engine {
     pub fn prepare_image_session_bytes(
         &self,
         bytes: &[u8],
-    ) -> Result<Vm3RuntimeSession, PhaseDiagnostic> {
+    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
         let image = oxvba_oxir::OxImage::from_bytes(bytes).map_err(|err| {
             PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
                 "VM3-E-IMAGE",
@@ -841,9 +841,9 @@ mod tests {
         ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
     };
 
-    /// Build a vm3-backed [`super::Vm3RuntimeSession`] from a single-project manifest (bind →
+    /// Build a vm3-backed [`super::ProjectRuntimeSession`] from a single-project manifest (bind →
     /// elaborate → `OxImage` → `prepare_image_session`), the in-process COM-server path.
-    fn vm3_session_for(engine: &Engine, manifest: &SymbolProjectManifest) -> super::Vm3RuntimeSession {
+    fn vm3_session_for(engine: &Engine, manifest: &SymbolProjectManifest) -> super::ProjectRuntimeSession {
         let typelibs = oxvba_symbol::CatalogTypeLibResolver;
         let program = oxvba_bind::bind_program(manifest, &typelibs).expect("bind");
         let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");

@@ -33,7 +33,7 @@ use oxvba_com::{
     disp_params_to_runtime_call_frame, runtime_call_error_to_excepinfo,
     runtime_call_result_to_variant, variant_to_com_value,
 };
-use oxvba_host::{Engine, HostConfig, Vm3RuntimeSession, RuntimeProfileId};
+use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession, RuntimeProfileId};
 use oxvba_runtime::{
     ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant, bstr::BStr,
     safe_array::SafeArray,
@@ -235,7 +235,7 @@ static DESCRIPTOR: OnceLock<Result<ComServerDescriptor, String>> = OnceLock::new
 static mut MODULE_HANDLE: HMODULE = ptr::null_mut();
 
 thread_local! {
-    static SESSION: RefCell<Option<Vm3RuntimeSession>> = const { RefCell::new(None) };
+    static SESSION: RefCell<Option<ProjectRuntimeSession>> = const { RefCell::new(None) };
     static WRAPPERS: RefCell<HashMap<i32, Vec<*mut DispatchObject>>> = RefCell::new(HashMap::new());
 }
 
@@ -1110,7 +1110,7 @@ unsafe fn disp_params_contain_object(params: *const DISPPARAMS) -> bool {
 unsafe fn generated_server_object_aware_args(
     member: &ComMemberDescriptor,
     params: *const DISPPARAMS,
-    session: &mut Vm3RuntimeSession,
+    session: &mut ProjectRuntimeSession,
 ) -> Result<Vec<Variant>, String> {
     if params.is_null() {
         return Err("IDispatch::Invoke received null DISPPARAMS".to_string());
@@ -1151,7 +1151,7 @@ unsafe fn generated_server_object_aware_args(
 unsafe fn generated_server_variant_arg(
     param: ComParamType,
     variant: &VARIANT,
-    session: &mut Vm3RuntimeSession,
+    session: &mut ProjectRuntimeSession,
 ) -> Result<Variant, String> {
     if matches!(param, ComParamType::Object | ComParamType::ByRefObject) {
         generated_server_object_variant_arg(variant)
@@ -1178,7 +1178,7 @@ unsafe fn variant_contains_dispatch_or_unknown(variant: &VARIANT) -> bool {
 
 unsafe fn generated_server_foreign_object_variant_arg(
     variant: &VARIANT,
-    session: &mut Vm3RuntimeSession,
+    session: &mut ProjectRuntimeSession,
 ) -> Result<Variant, String> {
     let dispatch = retained_dispatch_from_object_variant(variant)?;
     if dispatch.is_null() {
@@ -2985,7 +2985,7 @@ fn descriptor() -> Result<&'static ComServerDescriptor, i32> {
 }
 
 fn with_session<R>(
-    f: impl FnOnce(&mut Vm3RuntimeSession) -> Result<R, String>,
+    f: impl FnOnce(&mut ProjectRuntimeSession) -> Result<R, String>,
 ) -> Result<R, String> {
     SESSION.with(|slot| {
         let needs_init = slot.borrow().is_none();

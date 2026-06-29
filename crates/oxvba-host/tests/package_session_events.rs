@@ -1,12 +1,12 @@
 //! WithEvents event-dispatch through a host runtime session (the in-process COM-server
 //! create-class / invoke-member / event-sink surface), running on vm3 via
 //! `Engine::prepare_image_session` over an elaborated `OxImage`. The vm3 counterpart of the
-//! retired vm2 `ProjectRuntimeSession` flow; complements `vm3_session.rs` (create + invoke)
+//! retired vm2 session flow; complements `vm3_session.rs` (create + invoke)
 //! with the parameterless-probe-event and native-FM20-named-event WithEvents fan-out.
 
 use oxvba_bundle::ProjectMemberKind;
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig, Vm3RuntimeSession};
+use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession};
 use oxvba_oxir::OxImage;
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::{
@@ -25,7 +25,7 @@ fn class_module(name: &str, source: &str) -> ModuleUnit {
     }
 }
 
-fn package_session_for(modules: Vec<ModuleUnit>) -> Vm3RuntimeSession {
+fn package_session_for(modules: Vec<ModuleUnit>) -> ProjectRuntimeSession {
     let manifest = SymbolProjectManifest {
         project_name: "DemoServer".to_string(),
         project_kind: ProjectKind::Library,
@@ -45,7 +45,7 @@ fn package_session_for(modules: Vec<ModuleUnit>) -> Vm3RuntimeSession {
 }
 
 fn invoke(
-    session: &mut Vm3RuntimeSession,
+    session: &mut ProjectRuntimeSession,
     object: oxvba_runtime::ObjectRef,
     member: &str,
     args: Vec<Variant>,

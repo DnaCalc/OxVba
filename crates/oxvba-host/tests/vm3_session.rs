@@ -1,4 +1,4 @@
-//! W8-c: the vm3-backed host session (`Vm3RuntimeSession`) built from an `OxImage` via
+//! W8-c: the vm3-backed host session (`ProjectRuntimeSession`) built from an `OxImage` via
 //! `Engine::prepare_image_session` — the path the in-process COM server uses to run on vm3.
 //! Mirrors the vm2 `package_session_events` flow (bind a project, then create/invoke class
 //! members), but elaborates to OxIR + links on vm3 instead of linearizing + linking on vm2.
@@ -24,7 +24,7 @@ fn class_module(name: &str, source: &str) -> ModuleUnit {
     }
 }
 
-fn vm3_session_for(modules: Vec<ModuleUnit>) -> oxvba_host::Vm3RuntimeSession {
+fn vm3_session_for(modules: Vec<ModuleUnit>) -> oxvba_host::ProjectRuntimeSession {
     let manifest = SymbolProjectManifest {
         project_name: "DemoServer".to_string(),
         project_kind: ProjectKind::Library,
@@ -45,8 +45,8 @@ fn vm3_session_for(modules: Vec<ModuleUnit>) -> oxvba_host::Vm3RuntimeSession {
 
 #[test]
 fn vm3_image_session_creates_and_invokes_a_class_member() {
-    // The build emits an OxImage (.oxi); the COM server loads it into a Vm3RuntimeSession and
-    // drives it exactly as the vm2 ProjectRuntimeSession — create a class instance, invoke a
+    // The build emits an OxImage (.oxi); the COM server loads it into a ProjectRuntimeSession and
+    // drives it exactly as the retired vm2 session did — create a class instance, invoke a
     // member with by-value args. Widget.Twice(21) = 42, all on vm3.
     let source = r#"
 Option Explicit
