@@ -2032,7 +2032,7 @@ impl<'h> Vm3<'h> {
         intent: AssignmentIntent,
         target_kind: AssignmentTargetKind,
         target_name: &str,
-        _target_type_name: &str,
+        target_type_name: &str,
     ) -> Result<(), Vm3Error> {
         use AssignmentIntent as Intent;
         use AssignmentTargetKind as Kind;
@@ -2050,6 +2050,48 @@ impl<'h> Vm3<'h> {
                 424,
                 format!("Object required: {target_name}"),
             ))),
+            // Strict `Set` type check (error 13): when the target's declared type is a known
+            // project class/interface, a project-instance source must be that class or
+            // implement that interface. Unconstrained targets (`Object`/`Variant`, or any
+            // non-project type) are not checked, and `Nothing` is always allowed. Mirrors
+            // vm2's `validate_assignment` (the source object's class + the target type are
+            // both resolved in the object's OWN program, against the bare target name).
+            Intent::Set if value.vtype() == VarType::Object && !target_type_name.is_empty() => {
+                let obj = variant_to_object(&value)?;
+                let bare_target = target_type_name
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(target_type_name);
+                if obj.is_project_instance()
+                    && let Some(lp) = self.programs.get(obj.bundle_id() as usize)
+                {
+                    let target_is_project = lp.program.classes.iter().any(|c| {
+                        c.name.eq_ignore_ascii_case(bare_target)
+                            || c.implements
+                                .iter()
+                                .any(|i| i.eq_ignore_ascii_case(bare_target))
+                    });
+                    if target_is_project
+                        && let Some(class) = lp.program.classes.get(obj.route_key() as usize)
+                    {
+                        let compatible = class.name.eq_ignore_ascii_case(bare_target)
+                            || class
+                                .implements
+                                .iter()
+                                .any(|i| i.eq_ignore_ascii_case(bare_target));
+                        if !compatible {
+                            return Err(Vm3Error::Fault(Fault::new(
+                                13,
+                                format!(
+                                    "Type mismatch: `{}` cannot be assigned to `{target_type_name}`",
+                                    class.name
+                                ),
+                            )));
+                        }
+                    }
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }

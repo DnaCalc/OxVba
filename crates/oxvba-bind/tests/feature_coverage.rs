@@ -1,5 +1,5 @@
 //! Wide VBA-semantics conformance for the **clean stack** (`oxvba-bind` →
-//! `oxvba-bundle::linearize` → `oxvba-vm2`), re-pointed from the legacy
+//! `oxvba-oxir::elaborate` → `oxvba-vm3`), re-pointed from the legacy
 //! `oxvba-vm/tests/vm_feature_coverage.rs`. Same VBA snippets + assertions; only the
 //! harness changed. Failures here = gaps in the clean stack vs the old compiler
 //! (catalog them in POST_CLEANUP.md). Touches the core shapes the VM must run: the
@@ -43,17 +43,21 @@ fn manifest(source: &str) -> SymbolProjectManifest {
     }
 }
 
-/// Bind + linearize + run on the clean stack; the user-visible snapshot is the
+/// Bind + elaborate + run on vm3 (the clean stack); the user-visible snapshot is the
 /// module globals followed by the entry (`Sub Main`) frame's locals (matching the
 /// legacy `snapshot_variants` slot order).
 fn run_result(source: &str) -> Result<Vec<Variant>, String> {
     let program = oxvba_bind::bind_program(&manifest(source), &NullTypeLibs)
         .map_err(|e| format!("bind error: {e:?}"))?;
-    let bundle =
-        oxvba_bundle::linearize(&program).map_err(|e| format!("linearize error: {e:?}"))?;
+    let oxp = oxvba_oxir::elaborate::elaborate(&program)
+        .map_err(|e| format!("elaborate error: {e:?}"))?;
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host)
-        .map_err(|e| format!("runtime error: {} {}", e.code, e.message))?;
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).map_err(|e| match e {
+        oxvba_vm3::Vm3Error::Fault(fault) => {
+            format!("runtime error: {} {}", fault.code, fault.message)
+        }
+        other => format!("runtime error: {other}"),
+    })?;
     let entry = program
         .entry
         .ok_or_else(|| "no entry procedure".to_string())?;
@@ -61,9 +65,9 @@ fn run_result(source: &str) -> Result<Vec<Variant>, String> {
         .procs
         .get(entry.0)
         .ok_or_else(|| "entry out of range".to_string())?;
-    let count = bundle.global_count + main.locals.len();
+    let count = oxp.globals.len() + main.locals.len();
     Ok((0..count)
-        .map(|i| vm.slot(i).cloned().unwrap_or_else(Variant::empty))
+        .map(|i| vm.slot(i).unwrap_or_else(Variant::empty))
         .collect())
 }
 

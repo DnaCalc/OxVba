@@ -1,6 +1,6 @@
 //! End-to-end cross-VBA-project references: real source for *several* projects →
-//! `oxvba_bind::bind_projects` (one bundle per project) → `oxvba_bundle::linearize`
-//! → `oxvba_vm2::Vm::link` (the ".NET assembly" model) → run. Exercises every
+//! `oxvba_bind::bind_projects` (one program per project) → `oxvba_oxir::elaborate`
+//! → `oxvba_vm3::Vm3::link` (the ".NET assembly" model) → run. Exercises every
 //! cross-bundle binding form: a hidden-module function call, `New` + method on a
 //! referenced coclass, a referenced `Const`/`Enum` value, cross-bundle `WithEvents`,
 //! `TypeOf … Is` a referenced interface, and multi-level / diamond reference chains.
@@ -87,31 +87,31 @@ fn project(
     }
 }
 
-/// Bind the whole closure (leaf-first, entry last), linearize each project to a
-/// bundle, link them (entry last), run, and return the entry bundle's global 0.
+/// Bind the whole closure (leaf-first, entry last), elaborate each project to OxIR,
+/// link them on vm3 (entry last), run, and return the entry program's global 0.
 fn link_run_global0_i32(closure_leaf_first: &[SymbolProjectManifest]) -> Option<i32> {
     let programs = bind_projects(closure_leaf_first, &NullTypeLibs).expect("bind_projects");
-    let bundles: Vec<_> = programs
+    let oxps: Vec<_> = programs
         .iter()
-        .map(|p| oxvba_bundle::linearize(p).expect("linearize"))
+        .map(|p| oxvba_oxir::elaborate::elaborate(p).expect("elaborate"))
         .collect();
-    let refs: Vec<&_> = bundles.iter().collect();
+    let refs: Vec<&_> = oxps.iter().collect();
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let mut vm = oxvba_vm2::Vm::link(&refs, &host).expect("link");
-    vm.run().expect("run");
+    let mut vm = oxvba_vm3::Vm3::link(&refs, &host).expect("link");
+    vm.run_entry().expect("run");
     vm.slot(0).and_then(|v| v.as_i32())
 }
 
 fn link_run_fails(closure_leaf_first: &[SymbolProjectManifest]) {
     let programs = bind_projects(closure_leaf_first, &NullTypeLibs).expect("bind_projects");
-    let bundles: Vec<_> = programs
+    let oxps: Vec<_> = programs
         .iter()
-        .map(|p| oxvba_bundle::linearize(p).expect("linearize"))
+        .map(|p| oxvba_oxir::elaborate::elaborate(p).expect("elaborate"))
         .collect();
-    let refs: Vec<&_> = bundles.iter().collect();
+    let refs: Vec<&_> = oxps.iter().collect();
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let mut vm = oxvba_vm2::Vm::link(&refs, &host).expect("link");
-    assert!(vm.run().is_err());
+    let mut vm = oxvba_vm3::Vm3::link(&refs, &host).expect("link");
+    assert!(vm.run_entry().is_err());
 }
 
 fn bind_projects_error(closure_leaf_first: &[SymbolProjectManifest]) -> String {
@@ -819,7 +819,7 @@ fn multi_level_chain_a_b_c() {
 
 #[test]
 fn diamond_a_b_d_a_c_d_links_d_once() {
-    // A → B → D and A → C → D: D is referenced via two paths. `Vm::link` resolves
+    // A → B → D and A → C → D: D is referenced via two paths. `Vm3::link` resolves
     // both B's and C's import of D to the single loaded D bundle (D links once).
     let d = || {
         referenced(

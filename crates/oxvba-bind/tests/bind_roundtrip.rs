@@ -1,5 +1,5 @@
-//! End-to-end: real VBA source → `oxvba_bind::bind_program` → `oxvba_bundle::linearize`
-//! → run on `oxvba-vm2`. This is the "tie the path together" proof — the whole
+//! End-to-end: real VBA source → `oxvba_bind::bind_program` → `oxvba_oxir::elaborate`
+//! → run on `oxvba-vm3`. This is the "tie the path together" proof — the whole
 //! clean pipeline exercised from source text.
 
 use std::collections::BTreeMap;
@@ -71,13 +71,13 @@ fn bind_error(source: &str) -> String {
     )
 }
 
-/// Bind + linearize + run; read `Main`'s first local as a number.
+/// Bind + elaborate + run on vm3; read `Main`'s first local as a number.
 fn run_main_local0(source: &str) -> Option<f64> {
     let program = bind(source);
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
-    let value = vm.slot(bundle.global_count)?;
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    let value = vm.slot(oxp.globals.len())?;
     value
         .as_f64()
         .or_else(|| value.as_f32().map(f64::from))
@@ -105,10 +105,10 @@ fn arithmetic_precedence() {
 
 fn run_main_local0_string(source: &str) -> Option<String> {
     let program = bind(source);
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
-    vm.slot(bundle.global_count)?.as_bstr().map(|b| b.as_str())
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    vm.slot(oxp.globals.len())?.as_bstr().map(|b| b.as_str())
 }
 
 #[test]
@@ -325,13 +325,10 @@ fn module_qualified_global_variable_is_read_and_written_as_place() {
         ),
     ]);
     let program = bind_program(&manifest, &NullTypeLibs).expect("bind qualified global");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
-    assert_eq!(
-        vm.slot(bundle.global_count).and_then(|v| v.as_i32()),
-        Some(42)
-    );
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    assert_eq!(vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()), Some(42));
 }
 
 #[test]
@@ -349,13 +346,10 @@ fn module_qualified_object_global_can_receive_member_calls() {
         ),
     ]);
     let program = bind_program(&manifest, &NullTypeLibs).expect("bind qualified object global");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
-    assert_eq!(
-        vm.slot(bundle.global_count).and_then(|v| v.as_i32()),
-        Some(1)
-    );
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    assert_eq!(vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()), Some(1));
 }
 
 #[test]
@@ -644,7 +638,7 @@ fn random_file_put_get_round_trips_through_vm() {
         Close #1\n\
     End Sub\n";
     let program = bind(src);
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = oxvba_hal::adapters::builder::HostBuilder::new()
         .profile(oxvba_hal::HalProfileId::Windows)
         .policy(oxvba_hal::HostPolicy {
@@ -652,18 +646,15 @@ fn random_file_put_get_round_trips_through_vm() {
             ..oxvba_hal::HostPolicy::default()
         })
         .build();
-    let vm = oxvba_vm2::run(&bundle, host.as_ref()).expect("run");
-    assert_eq!(
-        vm.slot(bundle.global_count).and_then(|v| v.as_i32()),
-        Some(222)
-    );
+    let vm = oxvba_vm3::Vm3::run(&oxp, host.as_ref()).expect("run");
+    assert_eq!(vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()), Some(222));
 }
 
 /// Run a single-module source on the standard (in-memory) host; read `Main`'s
 /// first local as a string.
 fn run_main_local0_string_std(src: &str) -> Option<String> {
     let program = bind(src);
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = oxvba_hal::adapters::builder::HostBuilder::new()
         .profile(oxvba_hal::HalProfileId::Windows)
         .policy(oxvba_hal::HostPolicy {
@@ -671,8 +662,8 @@ fn run_main_local0_string_std(src: &str) -> Option<String> {
             ..oxvba_hal::HostPolicy::default()
         })
         .build();
-    let vm = oxvba_vm2::run(&bundle, host.as_ref()).expect("run");
-    vm.slot(bundle.global_count)?.as_bstr().map(|b| b.as_str())
+    let vm = oxvba_vm3::Vm3::run(&oxp, host.as_ref()).expect("run");
+    vm.slot(oxp.globals.len())?.as_bstr().map(|b| b.as_str())
 }
 
 #[test]
@@ -911,17 +902,17 @@ fn class_manifest(main_src: &str, class_name: &str, class_src: &str) -> SymbolPr
     }
 }
 
-/// Bind + linearize + run a class project; read `Main`'s first local as a number.
+/// Bind + elaborate + run a class project on vm3; read `Main`'s first local as a number.
 fn run_class_main_local0(main_src: &str, class_name: &str, class_src: &str) -> Option<f64> {
     let program = bind_program(
         &class_manifest(main_src, class_name, class_src),
         &NullTypeLibs,
     )
     .expect("bind_program");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
-    let value = vm.slot(bundle.global_count)?;
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    let value = vm.slot(oxp.globals.len())?;
     value
         .as_f64()
         .or_else(|| value.as_i32().map(f64::from))
@@ -1126,11 +1117,12 @@ fn let_assignment_to_object_without_default_member_is_runtime_error() {
     let widget = "Public Function GetValue() As Long\n    GetValue = 1\nEnd Function\n";
     let program =
         bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).expect("bind_program");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let err = match oxvba_vm2::run(&bundle, &host) {
+    let err = match oxvba_vm3::Vm3::run(&oxp, &host) {
         Ok(_) => panic!("Let into an object slot must fail"),
-        Err(err) => err,
+        Err(oxvba_vm3::Vm3Error::Fault(fault)) => fault,
+        Err(other) => panic!("expected a VBA fault, got {other:?}"),
     };
     assert_eq!(err.code, 424);
 }
@@ -1215,9 +1207,9 @@ fn callbyname_unknown_member_errors() {
     let main = "Sub Main()\n    Dim r\n    Dim o As Calc\n    Set o = New Calc\n    r = CallByName(o, \"Nope\", vbMethod)\nEnd Sub\n";
     let calc = "Public Function Add(a As Long, b As Long) As Long\n    Add = a + b\nEnd Function\n";
     let program = bind_program(&class_manifest(main, "Calc", calc), &NullTypeLibs).expect("bind");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    assert!(oxvba_vm2::run(&bundle, &host).is_err());
+    assert!(oxvba_vm3::Vm3::run(&oxp, &host).is_err());
 }
 
 // ── Implements: interface dispatch + TypeOf + strict Set ─────────────────────
@@ -1436,9 +1428,16 @@ fn implements_set_type_mismatch_errors() {
         &NullTypeLibs,
     )
     .expect("bind");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    assert!(oxvba_vm2::run(&bundle, &host).is_err());
+    match oxvba_vm3::Vm3::run(&oxp, &host) {
+        Ok(_) => panic!("Set of a non-implementing class into an interface var must fail"),
+        Err(oxvba_vm3::Vm3Error::Fault(fault)) => assert_eq!(
+            fault.code, 13,
+            "interface type mismatch must be VBA error 13 (Type mismatch)"
+        ),
+        Err(other) => panic!("expected a VBA type-mismatch fault, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1574,10 +1573,10 @@ fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest
 
 fn run_multi_main_local0(modules: &[(&str, ModuleKind, &str)]) -> Option<f64> {
     let program = bind_program(&multi_manifest(modules), &NullTypeLibs).expect("bind_program");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
-    let vm = oxvba_vm2::run(&bundle, &host).expect("run");
-    let value = vm.slot(bundle.global_count)?;
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    let value = vm.slot(oxp.globals.len())?;
     value
         .as_f64()
         .or_else(|| value.as_i32().map(f64::from))

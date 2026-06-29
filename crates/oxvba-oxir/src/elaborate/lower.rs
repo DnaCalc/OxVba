@@ -307,6 +307,13 @@ struct LoopCtx {
     brk: BlockId,
 }
 
+/// A copy-out for a compound `ByRef` argument: the materialized `temp` (aliased ByRef for the
+/// call) is stored back into the compound `place` it was copied from once the call returns.
+struct ArgWriteback {
+    place: coreir::CorePlace,
+    temp: OxPlace,
+}
+
 struct Lowerer<'a> {
     /// Blocks indexed by [`BlockId`]; `None` = reserved but not yet finalized. Every
     /// reserved id is filled exactly once, so the final vector has `id == position`.
@@ -755,12 +762,13 @@ impl<'a> Lowerer<'a> {
                 args,
             } => {
                 let (src, _) = self.lower_value(source)?;
-                let event_args = self.lower_proc_args(args)?;
+                let (event_args, writebacks) = self.lower_proc_args(args)?;
                 self.emit(OxInst::RaiseEvent {
                     source: src,
                     event: *event,
                     args: event_args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
@@ -1641,26 +1649,28 @@ impl<'a> Lowerer<'a> {
     ) -> Result<()> {
         match callee {
             coreir::CoreCallee::VbaProc { proc } => {
-                let args = self.lower_proc_args(args)?;
+                let (args, writebacks) = self.lower_proc_args(args)?;
                 self.emit(OxInst::CallProc {
                     dst,
                     proc: FuncId(proc.0),
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             coreir::CoreCallee::Native(id) => {
-                let args = self.lower_call_args(args)?;
+                let (args, writebacks) = self.lower_call_args(args)?;
                 self.emit(OxInst::CallNative {
                     dst,
                     callee: OxNativeCallee::Builtin(*id),
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             coreir::CoreCallee::Declare {
                 descriptor_id,
                 ptr_writebacks,
             } => {
-                let args = self.lower_call_args(args)?;
+                let (args, arg_writebacks) = self.lower_call_args(args)?;
                 let mut writebacks = Vec::with_capacity(ptr_writebacks.len());
                 for wb in ptr_writebacks {
                     writebacks.push(DeclarePtrWriteback {
@@ -1677,14 +1687,16 @@ impl<'a> Lowerer<'a> {
                     },
                     args,
                 });
+                self.emit_arg_writebacks(arg_writebacks)?;
             }
             coreir::CoreCallee::ExternProc { import } => {
-                let args = self.lower_proc_args(args)?;
+                let (args, writebacks) = self.lower_proc_args(args)?;
                 self.emit(OxInst::CallExtern {
                     dst,
                     import: ImportId(*import),
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             coreir::CoreCallee::DynamicByName => {
                 // args = [object, name, calltype, forwarded args…].
@@ -1696,7 +1708,7 @@ impl<'a> Lowerer<'a> {
                 let object = self.lower_arg_value(obj)?;
                 let name = self.lower_arg_value(name)?;
                 let calltype = self.lower_arg_value(calltype)?;
-                let args = self.lower_call_args(rest)?;
+                let (args, writebacks) = self.lower_call_args(rest)?;
                 self.emit(OxInst::CallByName {
                     dst,
                     object,
@@ -1704,6 +1716,7 @@ impl<'a> Lowerer<'a> {
                     calltype,
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             // Early-bound, descriptor-typed COM dispatch: intern the resolved member
             // into the typed interface table and name it by a stable `ComMethodRef`.
@@ -1713,7 +1726,7 @@ impl<'a> Lowerer<'a> {
                 member,
                 ..
             } => {
-                let (recv, args) = self.lower_com_receiver_and_args(args)?;
+                let (recv, args, writebacks) = self.lower_com_receiver_and_args(args)?;
                 let method = self.com.intern(interface_name, member);
                 self.emit(OxInst::ComCallEarly {
                     dst,
@@ -1722,10 +1735,11 @@ impl<'a> Lowerer<'a> {
                     recv,
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
             // Late-bound, by-name COM dispatch (the one dynamic COM path) — Variant args.
             coreir::CoreCallee::LateDispatch { name, kind } => {
-                let (recv, args) = self.lower_com_receiver_and_args(args)?;
+                let (recv, args, writebacks) = self.lower_com_receiver_and_args(args)?;
                 self.emit(OxInst::ComCallLate {
                     dst,
                     recv,
@@ -1733,50 +1747,97 @@ impl<'a> Lowerer<'a> {
                     invoke_kind: invoke_kind_from_member_kind(*kind),
                     args,
                 });
+                self.emit_arg_writebacks(writebacks)?;
             }
         }
         Ok(())
     }
 
     /// Split a COM call's argument list into its receiver (`args[0]`, the typed
-    /// interface pointer) and the lowered method arguments (`args[1..]`). The binder
-    /// always emits the receiver as the first argument of an `EarlyCom`/`LateDispatch`.
+    /// interface pointer) and the lowered method arguments (`args[1..]`), plus the copy-out
+    /// write-backs for any compound `ByRef` method argument. The binder always emits the
+    /// receiver as the first argument of an `EarlyCom`/`LateDispatch`.
     fn lower_com_receiver_and_args(
         &mut self,
         args: &[CoreArg],
-    ) -> Result<(OxOperand, Vec<OxCallArg>)> {
+    ) -> Result<(OxOperand, Vec<OxCallArg>, Vec<ArgWriteback>)> {
         let (recv_arg, rest) = args.split_first().ok_or_else(|| {
             ElaborateError::Malformed("COM dispatch requires a receiver argument".into())
         })?;
         let recv = self.lower_arg_value(recv_arg)?;
-        let method_args = self.lower_call_args(rest)?;
-        Ok((recv, method_args))
+        let (method_args, writebacks) = self.lower_call_args(rest)?;
+        Ok((recv, method_args, writebacks))
     }
 
-    /// Lower arguments for a compiled VBA / cross-bundle procedure call (`OxArg`).
-    fn lower_proc_args(&mut self, args: &[CoreArg]) -> Result<Vec<OxArg>> {
+    /// Resolve a `ByRef` argument place into an addressable `OxPlace`.
+    ///
+    /// A simple base (local/global) aliases directly — no copy. A COMPOUND place
+    /// (`Field`/`Index`/`RecordField`/`WithEvents`) has no directly addressable slot, so
+    /// mirror vm2's linearize: copy the place's current value into a fresh temp, alias the
+    /// temp ByRef, and record a write-back that stores the (possibly-mutated) temp back to
+    /// the place after the call. Returns the place to alias plus an optional write-back.
+    fn lower_byref_place(
+        &mut self,
+        place: &coreir::CorePlace,
+    ) -> Result<(OxPlace, Option<ArgWriteback>)> {
+        if Self::is_simple_place(place) {
+            Ok((self.simple_place(place)?, None))
+        } else {
+            let value = self.place_as_operand(place)?;
+            let t = self.new_temp();
+            self.emit(OxInst::Assign {
+                dst: OxPlace::Temp(t),
+                value,
+            });
+            Ok((
+                OxPlace::Temp(t),
+                Some(ArgWriteback {
+                    place: place.clone(),
+                    temp: OxPlace::Temp(t),
+                }),
+            ))
+        }
+    }
+
+    /// Lower arguments for a compiled VBA / cross-bundle procedure call (`OxArg`), plus the
+    /// copy-out write-backs for any compound `ByRef` argument (see [`Self::lower_byref_place`]).
+    fn lower_proc_args(&mut self, args: &[CoreArg]) -> Result<(Vec<OxArg>, Vec<ArgWriteback>)> {
         let mut out = Vec::with_capacity(args.len());
+        let mut writebacks = Vec::new();
         for arg in args {
             out.push(match arg {
                 CoreArg::ByVal(v) => OxArg::ByVal(self.lower_value(v)?.0),
-                CoreArg::ByRef(place) => OxArg::ByRef(self.simple_place(place)?),
+                CoreArg::ByRef(place) => {
+                    let (p, wb) = self.lower_byref_place(place)?;
+                    writebacks.extend(wb);
+                    OxArg::ByRef(p)
+                }
                 CoreArg::Omitted => OxArg::Omitted,
                 // A named argument to a project proc lowers to a positional value (the
                 // binder has already resolved the position).
                 CoreArg::Named { value, .. } => OxArg::ByVal(self.lower_value(value)?.0),
             });
         }
-        Ok(out)
+        Ok((out, writebacks))
     }
 
     /// Lower arguments for a native / late-bound call (`OxCallArg`, which keeps named
-    /// arguments and ByRef copy-out distinct).
-    fn lower_call_args(&mut self, args: &[CoreArg]) -> Result<Vec<OxCallArg>> {
+    /// arguments and ByRef copy-out distinct), plus the copy-out write-backs for any compound
+    /// `ByRef` argument (see [`Self::lower_byref_place`]).
+    fn lower_call_args(
+        &mut self,
+        args: &[CoreArg],
+    ) -> Result<(Vec<OxCallArg>, Vec<ArgWriteback>)> {
         let mut out = Vec::with_capacity(args.len());
+        let mut writebacks = Vec::new();
         for arg in args {
             out.push(match arg {
                 CoreArg::ByVal(v) => OxCallArg::Operand(self.lower_value(v)?.0),
-                CoreArg::ByRef(place) => OxCallArg::ByRef(self.simple_place(place)?),
+                CoreArg::ByRef(place) => {
+                    let (p, wb) = self.lower_byref_place(place)?;
+                    writebacks.extend(wb);
+                    OxCallArg::ByRef(p)
+                }
                 CoreArg::Omitted => OxCallArg::Omitted,
                 CoreArg::Named { name, value } => OxCallArg::Named {
                     name: name.clone(),
@@ -1784,7 +1845,17 @@ impl<'a> Lowerer<'a> {
                 },
             });
         }
-        Ok(out)
+        Ok((out, writebacks))
+    }
+
+    /// Emit the copy-out write-backs recorded by [`Self::lower_proc_args`] /
+    /// [`Self::lower_call_args`]: store each materialized `ByRef` temp back into the compound
+    /// place it was copied from, after the call has run (matching vm2's `emit_arg_writebacks`).
+    fn emit_arg_writebacks(&mut self, writebacks: Vec<ArgWriteback>) -> Result<()> {
+        for wb in writebacks {
+            self.store_to_place(&wb.place, OxOperand::Use(wb.temp))?;
+        }
+        Ok(())
     }
 
     /// Lower a call argument that must be a plain value operand (the object/name/
