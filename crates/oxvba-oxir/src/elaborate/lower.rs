@@ -634,13 +634,30 @@ impl<'a> Lowerer<'a> {
                 element_type,
                 preserve,
             } => {
-                let dst = self.simple_place(array)?;
                 let mut upper_bounds = Vec::with_capacity(bounds.len());
                 let mut lower_bounds = Vec::with_capacity(bounds.len());
                 for b in bounds {
                     upper_bounds.push(self.lower_value(&b.upper)?.0);
                     lower_bounds.push(b.lower);
                 }
+                // A simple target is resized in place; a COMPOUND target (e.g. a member
+                // array `ReDim b.arr(n)`) builds the new array into a temp, which is then
+                // written back into the nested base (materialize-and-write-back).
+                let compound = !Self::is_simple_place(array);
+                let dst = if compound {
+                    // `Preserve` needs the base's current array as the temp's starting
+                    // value; a plain `ReDim` overwrites it, but seeding the temp keeps the
+                    // redim's element type / preserve logic uniform with the simple path.
+                    let cur = self.place_as_operand(array)?;
+                    let t = self.new_temp();
+                    self.emit(OxInst::Assign {
+                        dst: OxPlace::Temp(t),
+                        value: cur,
+                    });
+                    OxPlace::Temp(t)
+                } else {
+                    self.simple_place(array)?
+                };
                 self.emit(OxInst::ArrayRedim {
                     dst,
                     upper_bounds,
@@ -648,6 +665,9 @@ impl<'a> Lowerer<'a> {
                     element: element_type.clone(),
                     preserve: *preserve,
                 });
+                if compound {
+                    self.store_to_place(array, OxOperand::Use(dst))?;
+                }
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
@@ -1857,9 +1877,19 @@ impl<'a> Lowerer<'a> {
     }
 
     /// Store `value` into `place`. Simple variables become an `Assign`; array elements
-    /// and UDT fields become a dedicated `ArraySet`/`RecordSet` whose base is a simple
-    /// variable place (one-level; a nested mutable base — e.g. `m(j)(i) =` or `obj.arr(i) =`
-    /// — is a noted later refinement).
+    /// and UDT fields become a dedicated `ArraySet`/`RecordSet` on their base place.
+    ///
+    /// A one-level base (`arr(i) =`, `b.field =` where `arr`/`b` is a local or global) is
+    /// the array/record place directly — vm3's `ArraySet`/`RecordSet` reads it, mutates
+    /// the element, and writes the (alias-resolved) value back in place.
+    ///
+    /// A COMPOUND base — a nested mutable base such as `b.arr(i) =` (member array) or
+    /// `o.x.y =` (nested UDT) — has no directly addressable `OxPlace`. Under VBA value
+    /// semantics (UDT member arrays / fields are owned, not aliased) this is exactly
+    /// materialize-and-write-back: read the base into a fresh temp, run the
+    /// `ArraySet`/`RecordSet` against that temp, then **recursively store the mutated temp
+    /// back into the base**. The recursion threads the write-back up through any depth of
+    /// `Field`/`Index`/`RecordField` nesting.
     fn store_to_place(&mut self, place: &coreir::CorePlace, value: OxOperand) -> Result<()> {
         match place {
             coreir::CorePlace::Local(_) | coreir::CorePlace::Global(_) => {
@@ -1867,21 +1897,31 @@ impl<'a> Lowerer<'a> {
                 self.emit(OxInst::Assign { dst, value });
             }
             coreir::CorePlace::Index { array, indices } => {
-                let arr = self.simple_place(array)?;
                 let indices = self.lower_indices(indices)?;
+                let (arr, compound) = self.mutable_base_place(array)?;
                 self.emit(OxInst::ArraySet {
                     array: arr,
                     indices,
                     value,
                 });
+                // A compound base was materialized into a temp; write the mutated array
+                // back into the nested base it came from.
+                if compound {
+                    self.store_to_place(array, OxOperand::Use(arr))?;
+                }
             }
             coreir::CorePlace::RecordField { base, index } => {
-                let rec = self.simple_place(base)?;
+                let (rec, compound) = self.mutable_base_place(base)?;
                 self.emit(OxInst::RecordSet {
                     record: rec,
                     index: *index,
                     value,
                 });
+                // A compound base was materialized into a temp; write the mutated record
+                // back into the nested base it came from.
+                if compound {
+                    self.store_to_place(base, OxOperand::Use(rec))?;
+                }
             }
             coreir::CorePlace::Field { object, field } => {
                 let obj = self.lower_value(object)?.0;
@@ -1924,6 +1964,39 @@ impl<'a> Lowerer<'a> {
             | coreir::CorePlace::Index { .. }
             | coreir::CorePlace::RecordField { .. }
             | coreir::CorePlace::WithEvents { .. } => Err(unimpl("compound place")),
+        }
+    }
+
+    /// True for a directly addressable place (a local or a global) — the cases
+    /// [`simple_place`](Self::simple_place) accepts.
+    fn is_simple_place(place: &coreir::CorePlace) -> bool {
+        matches!(
+            place,
+            coreir::CorePlace::Local(_) | coreir::CorePlace::Global(_)
+        )
+    }
+
+    /// Resolve the mutable base of an in-place array/record op into an addressable
+    /// [`OxPlace`]. Returns `(place, compound)`:
+    ///
+    /// * a SIMPLE base (local/global) → `(that place, false)`: the op mutates it directly.
+    /// * a COMPOUND base (a nested mutable base, e.g. a member array `b.arr` or a nested
+    ///   field `o.x`) → `(Temp, true)`: the base's current value is materialized into a
+    ///   fresh temp via the value-read path, and the `true` tells the caller it must write
+    ///   the mutated temp back into the base afterwards (via `store_to_place`). This is
+    ///   value-semantically identical to in-place mutation for VBA UDT member arrays and
+    ///   fields, which are owned aggregates.
+    fn mutable_base_place(&mut self, base: &coreir::CorePlace) -> Result<(OxPlace, bool)> {
+        if Self::is_simple_place(base) {
+            Ok((self.simple_place(base)?, false))
+        } else {
+            let value = self.place_as_operand(base)?;
+            let t = self.new_temp();
+            self.emit(OxInst::Assign {
+                dst: OxPlace::Temp(t),
+                value,
+            });
+            Ok((OxPlace::Temp(t), true))
         }
     }
 
