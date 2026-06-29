@@ -2408,6 +2408,11 @@ impl<'h> Vm3<'h> {
         let v = self.operand(object)?;
         let obj = variant_to_object(&v)?;
         let bare = type_name.rsplit('.').next().unwrap_or(type_name);
+        // A built-in `Collection` carries the reserved sentinel route key (it indexes no project
+        // class), so it must be matched by name before the `classes` lookup.
+        if obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return Ok(bare.eq_ignore_ascii_case("Collection"));
+        }
         if obj.is_project_instance() {
             return Ok(self
                 .programs
@@ -2432,6 +2437,10 @@ impl<'h> Vm3<'h> {
     /// The class name of a project instance (else the host's COM name) — the
     /// `TypeName`-of-object resolution mirroring vm2's `object_type_name`.
     fn object_type_name(&self, object: &ObjectRef) -> Option<String> {
+        // A built-in `Collection` (reserved sentinel route key) reports `TypeName` "Collection".
+        if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return Some("Collection".to_string());
+        }
         if object.is_project_instance() {
             return self
                 .programs
