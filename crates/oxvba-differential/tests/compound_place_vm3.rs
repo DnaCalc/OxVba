@@ -154,3 +154,60 @@ End Sub
 "#;
     assert_vm3_contains(source, &long(11));
 }
+
+/// 6. **Compound `ByRef` copy-out change-detection (the `VariantChanged` guard).** A
+///    compound place (`g.Count`, a `RecordField`) is passed `ByRef` to a proc that LEAVES
+///    the parameter byte-identical but mutates the SAME place out-of-band (`g.Count = 100`).
+///    The copied-in `ByRef` temp is unchanged, so its copy-out MUST be suppressed — otherwise
+///    the stale pre-call snapshot (5) clobbers the out-of-band write (100). vm2 leaves 100
+///    (its `VariantChanged` + `JumpIfZero` guard); vm3 must match. Without the guard, an
+///    unconditional copy-out resets `g.Count` to 5.
+#[test]
+fn compound_byref_unchanged_param_does_not_clobber_out_of_band_mutation() {
+    let source = r#"
+Type T
+    Count As Long
+End Type
+
+Public g As T
+Public result As Long
+
+Sub Main()
+    g.Count = 5
+    Foo g.Count
+    result = g.Count
+End Sub
+
+Sub Foo(ByRef x As Long)
+    ' x is NOT touched; the same place is mutated out-of-band.
+    g.Count = 100
+End Sub
+"#;
+    assert_vm3_contains(source, &long(100));
+}
+
+/// 7. Companion to (6): when the callee DOES change the `ByRef` compound parameter, the
+///    copy-out must fire (the guard suppresses only unchanged copies). `Foo` sets `x = 42`,
+///    so the read-back of `g.Count` is 42 (the copied-out value), not the original 5.
+#[test]
+fn compound_byref_changed_param_writes_back() {
+    let source = r#"
+Type T
+    Count As Long
+End Type
+
+Public g As T
+Public result As Long
+
+Sub Main()
+    g.Count = 5
+    Foo g.Count
+    result = g.Count
+End Sub
+
+Sub Foo(ByRef x As Long)
+    x = 42
+End Sub
+"#;
+    assert_vm3_contains(source, &long(42));
+}

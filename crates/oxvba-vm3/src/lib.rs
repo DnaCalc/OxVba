@@ -982,6 +982,17 @@ impl<'h> Vm3<'h> {
                 let v = self.operand(value)?;
                 self.store(dst, v)?;
             }
+            // `dst := (current != original)` — VBA-`Variant`-equality change detection that
+            // guards a compound `ByRef` copy-out (mirrors vm2's `Op::VariantChanged`, which
+            // compares with `Variant`'s `PartialEq`).
+            OxInst::VariantChanged {
+                dst,
+                current,
+                original,
+            } => {
+                let changed = self.operand(current)? != self.operand(original)?;
+                self.store(dst, Variant::from_bool(changed))?;
+            }
             OxInst::Arith {
                 dst,
                 op,

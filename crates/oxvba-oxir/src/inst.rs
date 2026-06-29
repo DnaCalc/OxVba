@@ -13,7 +13,7 @@
 //! variant (which would be exactly the type-erasure this IR exists to undo).
 //!
 //! Also not yet modelled (added when a consumer needs them): host-injected object
-//! handles (`isa::Op::LoadProjectObjectRef`), `VariantChanged`, and the peephole
+//! handles (`isa::Op::LoadProjectObjectRef`) and the peephole
 //! `AddConstI32`/`SubConstI32`/`IncSlot` ops (OxIR favours a general [`OxInst::Arith`]
 //! and lets the optimizer introduce strength-reduced forms later).
 
@@ -96,6 +96,17 @@ pub enum OxInst {
     },
     /// `AddressOf proc` — materialize a procedure reference into `dst`.
     LoadProcRef { dst: OxPlace, proc: FuncId },
+    /// `dst := (current != original)` — VBA-`Variant`-equality change detection. Used to
+    /// guard the copy-out of a compound `ByRef` argument: the caller snapshots the copied-in
+    /// value (`original`) before the call and writes the (possibly-mutated) `current` temp
+    /// back to the place ONLY when this reports a change. Mirrors vm2's `Op::VariantChanged`
+    /// then `JumpIfZero` guard, so an unchanged compound `ByRef` param never clobbers an
+    /// out-of-band mutation of the same place and never re-runs a `WithEvents` (un)subscribe.
+    VariantChanged {
+        dst: OxPlace,
+        current: OxOperand,
+        original: OxOperand,
+    },
 
     // ── Arithmetic / comparison / logic ──────────────────────────────────────
     /// `Checked` arithmetic is fallible (overflow 6); `Widening` never raises.
@@ -407,6 +418,7 @@ impl OxInst {
             OxInst::Assign { .. }
             | OxInst::Box { .. }
             | OxInst::LoadProcRef { .. }
+            | OxInst::VariantChanged { .. }
             | OxInst::CompareObjectIs { .. }
             | OxInst::TypeOfIs { .. }
             | OxInst::ErrFieldGet { .. }

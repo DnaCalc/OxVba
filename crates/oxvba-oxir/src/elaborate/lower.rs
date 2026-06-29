@@ -308,10 +308,16 @@ struct LoopCtx {
 }
 
 /// A copy-out for a compound `ByRef` argument: the materialized `temp` (aliased ByRef for the
-/// call) is stored back into the compound `place` it was copied from once the call returns.
+/// call) is stored back into the compound `place` it was copied from once the call returns —
+/// but ONLY if it actually changed (`temp != original`), mirroring vm2's `VariantChanged`
+/// guard so an unchanged compound `ByRef` param never clobbers an out-of-band mutation of the
+/// same place (or needlessly re-runs a `WithEvents` (un)subscribe).
 struct ArgWriteback {
     place: coreir::CorePlace,
     temp: OxPlace,
+    /// The copied-in snapshot, captured at copy-in time; the write-back runs only when
+    /// `temp != original`.
+    original: OxPlace,
 }
 
 struct Lowerer<'a> {
@@ -1783,17 +1789,26 @@ impl<'a> Lowerer<'a> {
         if Self::is_simple_place(place) {
             Ok((self.simple_place(place)?, None))
         } else {
+            // Copy the place's current value into a fresh temp (the aliased ByRef slot), and
+            // a SECOND `original` snapshot temp captured at copy-in, so the post-call
+            // write-back can be change-gated (vm2's `Op::Copy` of `tmp` into `original`).
             let value = self.place_as_operand(place)?;
             let t = self.new_temp();
             self.emit(OxInst::Assign {
                 dst: OxPlace::Temp(t),
                 value,
             });
+            let orig = self.new_temp();
+            self.emit(OxInst::Assign {
+                dst: OxPlace::Temp(orig),
+                value: OxOperand::Use(OxPlace::Temp(t)),
+            });
             Ok((
                 OxPlace::Temp(t),
                 Some(ArgWriteback {
                     place: place.clone(),
                     temp: OxPlace::Temp(t),
+                    original: OxPlace::Temp(orig),
                 }),
             ))
         }
@@ -1850,10 +1865,31 @@ impl<'a> Lowerer<'a> {
 
     /// Emit the copy-out write-backs recorded by [`Self::lower_proc_args`] /
     /// [`Self::lower_call_args`]: store each materialized `ByRef` temp back into the compound
-    /// place it was copied from, after the call has run (matching vm2's `emit_arg_writebacks`).
+    /// place it was copied from, after the call has run — but ONLY when the value actually
+    /// changed (`temp != original`), mirroring vm2's `VariantChanged` + `JumpIfZero` guard.
+    /// The guard is a per-write-back block split: a `VariantChanged` test, a `Branch` to a
+    /// store-block when changed (else straight to the merge), then a merge continuation.
     fn emit_arg_writebacks(&mut self, writebacks: Vec<ArgWriteback>) -> Result<()> {
         for wb in writebacks {
+            let changed = self.new_temp();
+            self.emit(OxInst::VariantChanged {
+                dst: OxPlace::Temp(changed),
+                current: OxOperand::Use(wb.temp),
+                original: OxOperand::Use(wb.original),
+            });
+            let store_blk = self.reserve();
+            let merge_blk = self.reserve();
+            // `Branch` reads a pre-computed Boolean (`changed`); the store runs only when true.
+            self.finish_to(
+                OxTerminator::Branch {
+                    cond: OxOperand::Use(OxPlace::Temp(changed)),
+                    then_blk: store_blk,
+                    else_blk: merge_blk,
+                },
+                store_blk,
+            );
             self.store_to_place(&wb.place, OxOperand::Use(wb.temp))?;
+            self.finish_to(OxTerminator::Jump(merge_blk), merge_blk);
         }
         Ok(())
     }
