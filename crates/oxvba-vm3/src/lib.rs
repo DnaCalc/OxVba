@@ -1395,6 +1395,10 @@ impl<'h> Vm3<'h> {
                 let object = self.predeclared_instance(class.0)?;
                 self.store(dst, object)?;
             }
+            OxInst::PredeclaredExtern { dst, import } => {
+                let object = self.predeclared_extern_instance(*import)?;
+                self.store(dst, object)?;
+            }
             OxInst::FieldGet { dst, object, field } => {
                 let recv = self.operand(object)?;
                 let instance = variant_to_object(&recv)?;
@@ -2377,6 +2381,25 @@ impl<'h> Vm3<'h> {
     /// object box (`native_state`), so no `Class_Initialize` runs and a reserved sentinel route
     /// key marks it for the Collection dispatch leg.
     fn new_extern_instance(&mut self, import: ImportId) -> Result<Variant, Vm3Error> {
+        let imp = self.cur_program().imports.get(import.0).ok_or_else(|| {
+            Vm3Error::Malformed(format!("NewExtern names unknown import {}", import.0))
+        })?;
+        // A cross-PROJECT class `New OtherProj.Class`: resolve it by unit name + class token to a
+        // class in the referenced program and mint a project instance THERE — its bundle_id,
+        // leaked descriptor, and Class_Initialize, exactly as a local `New` would in that
+        // program. The synthetic `VBA` unit is the built-in library path (Collection) below.
+        if !imp.unit.eq_ignore_ascii_case("VBA") {
+            // Mint in the referenced program (cur=B) so new_project_instance stamps B's
+            // bundle_id + descriptor and runs Class_Initialize in B; restore the caller's
+            // program after (run_proc_with_me already preserves cur across the init body).
+            let (b, class_idx) = self.resolve_cross_project_class(import)?;
+            let saved_cur = self.cur;
+            self.cur = b;
+            let result = self.new_project_instance(class_idx);
+            self.cur = saved_cur;
+            return result;
+        }
+        // Built-in library class (Collection): native-backed, reserved sentinel route key.
         let descriptor = self.resolve_extern_class(import)?;
         let instance_id = self.next_instance_id;
         self.next_instance_id += 1;
@@ -2388,6 +2411,47 @@ impl<'h> Vm3<'h> {
             descriptor,
         );
         Ok(Variant::from_object_ref(object))
+    }
+
+    /// Resolve a cross-project class import (`New`/predeclared of `OtherProj.Class`) to the
+    /// referenced program index + the class index within it (by unit name + class export token).
+    fn resolve_cross_project_class(&self, import: ImportId) -> Result<(usize, usize), Vm3Error> {
+        let imp = self.cur_program().imports.get(import.0).ok_or_else(|| {
+            Vm3Error::Malformed(format!("NewExtern names unknown import {}", import.0))
+        })?;
+        let b = self.program_index_by_unit(&imp.unit).ok_or_else(|| {
+            Vm3Error::Malformed(format!("unresolved reference to unit '{}'", imp.unit))
+        })?;
+        let class_idx = self.programs[b]
+            .program
+            .exports
+            .iter()
+            .find(|e| e.token.matches(&imp.token))
+            .ok_or_else(|| {
+                Vm3Error::Malformed(format!(
+                    "unit '{}' has no export matching the class import",
+                    imp.unit
+                ))
+            })
+            .and_then(|export| match export.target {
+                oxvba_bundle::ExportTarget::Class(c) => Ok(c),
+                _ => Err(Vm3Error::Malformed(
+                    "a cross-project class import resolved to a non-class export".into(),
+                )),
+            })?;
+        Ok((b, class_idx))
+    }
+
+    /// A cross-project `VB_PredeclaredId` singleton (`OtherProj.Class1` with no `New`): the
+    /// `PredeclaredExtern` analogue of [`Self::new_extern_instance`] — get-or-create the
+    /// singleton in the referenced program (cached there, with that program's bundle_id).
+    fn predeclared_extern_instance(&mut self, import: ImportId) -> Result<Variant, Vm3Error> {
+        let (b, class_idx) = self.resolve_cross_project_class(import)?;
+        let saved_cur = self.cur;
+        self.cur = b;
+        let result = self.predeclared_instance(class_idx);
+        self.cur = saved_cur;
+        result
     }
 
     /// Resolve a `New <LibClass>` import to its runtime QI descriptor. The `ExportToken::Class`

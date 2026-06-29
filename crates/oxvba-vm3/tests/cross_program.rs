@@ -367,6 +367,175 @@ fn cross_program_dispatch_uses_the_objects_program_not_the_executing_one() {
     assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(99));
 }
 
+/// Library program owning `Class Widget` (`Function Val() = 42`), exported as a public class.
+fn lib_widget_program() -> CoreProgram {
+    let val = CoreProc {
+        name: "Val".into(),
+        kind: ProcedureKind::Function,
+        params: vec![CoreParam {
+            name: "me".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            by_ref: false,
+            variadic: false,
+        }],
+        locals: vec![CoreLocal {
+            name: "Val".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        return_local: Some(LocalId(1)),
+        body: vec![assign(
+            CorePlace::Local(LocalId(1)),
+            CoreValue::Const(CoreConst::I32(42)),
+            "Val",
+        )],
+    };
+    CoreProgram {
+        procs: vec![val],
+        classes: vec![CoreClass {
+            name: "Widget".into(),
+            initialize: None,
+            terminate: None,
+            methods: vec![CoreClassMethod {
+                name: "Val".into(),
+                kind: ProjectMemberKind::Method,
+                proc: ProcId(0),
+                is_default_member: false,
+            }],
+            implements: Vec::new(),
+        }],
+        unit_name: "Lib".into(),
+        exports: vec![BundleExport {
+            token: ExportToken::Class {
+                name: "Widget".into(),
+            },
+            target: ExportTarget::Class(0),
+        }],
+        ..Default::default()
+    }
+}
+
+/// Referrer: `Sub Main()` does `Set w = New Lib.Widget` then `result = w.Val()`.
+fn app_new_extern_program() -> CoreProgram {
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: vec![CoreLocal {
+            name: "w".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        return_local: None,
+        body: vec![
+            // Set w = New Lib.Widget
+            CoreStmt::Assign {
+                place: CorePlace::Local(LocalId(0)),
+                value: CoreValue::NewExtern { import: 0 },
+                intent: AssignmentIntent::Set,
+                target_kind: AssignmentTargetKind::Object,
+                target_name: "w".into(),
+                target_type_name: "Object".into(),
+            },
+            // result = w.Val()
+            assign(
+                CorePlace::Global(GlobalId(0)),
+                CoreValue::Call {
+                    callee: CoreCallee::LateDispatch {
+                        name: "Val".into(),
+                        kind: Some(ProjectMemberKind::Method),
+                    },
+                    args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(0))))],
+                },
+                "result",
+            ),
+        ],
+    };
+    CoreProgram {
+        globals: vec![CoreGlobal {
+            name: "result".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        procs: vec![main],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: ExportToken::Class {
+                name: "Widget".into(),
+            },
+        }],
+        unit_name: "App".into(),
+        entry: Some(ProcId(0)),
+        ..Default::default()
+    }
+}
+
+/// Referrer: `Sub Main()` does `result = Lib.Widget.Val()` referencing Widget as a predeclared
+/// singleton of the referenced project (a `PredeclaredExtern`, no `New`).
+fn app_predeclared_extern_program() -> CoreProgram {
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: Vec::new(),
+        return_local: None,
+        body: vec![assign(
+            CorePlace::Global(GlobalId(0)),
+            CoreValue::Call {
+                callee: CoreCallee::LateDispatch {
+                    name: "Val".into(),
+                    kind: Some(ProjectMemberKind::Method),
+                },
+                args: vec![CoreArg::ByVal(CoreValue::PredeclaredExtern { import: 0 })],
+            },
+            "result",
+        )],
+    };
+    CoreProgram {
+        globals: vec![CoreGlobal {
+            name: "result".into(),
+            ty: oxvba_bundle::VarTypeRef::Variant,
+            array_element: None,
+        }],
+        procs: vec![main],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: ExportToken::Class {
+                name: "Widget".into(),
+            },
+        }],
+        unit_name: "App".into(),
+        entry: Some(ProcId(0)),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cross_program_predeclared_resolves_the_referenced_singleton() {
+    // App references Lib.Widget as a predeclared singleton: result = Lib.Widget.Val() -> 42, the
+    // singleton minted + cached in Lib (bundle_id = Lib). (Slice 5b: cross-project
+    // PredeclaredExtern, the no-New sibling of NewExtern.)
+    let lib = elaborate(&lib_widget_program()).expect("elaborate lib");
+    let app = elaborate(&app_predeclared_extern_program()).expect("elaborate app");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = Vm3::link(&[&lib, &app], &host).expect("link");
+    vm.run_entry().expect("run");
+    assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+}
+
+#[test]
+fn cross_program_new_creates_and_dispatches_the_referenced_class() {
+    // App does `Set w = New Lib.Widget : result = w.Val()`. The instance is minted in Lib (its
+    // bundle_id + descriptor + Class_Initialize), and w.Val() dispatches back into Lib -> 42.
+    // (Slice 5b item 5: cross-project object CREATION via NewExtern of a referenced class.)
+    let lib = elaborate(&lib_widget_program()).expect("elaborate lib");
+    let app = elaborate(&app_new_extern_program()).expect("elaborate app");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = Vm3::link(&[&lib, &app], &host).expect("link");
+    vm.run_entry().expect("run");
+    assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+}
+
 #[test]
 fn link_rejects_an_unresolved_reference() {
     // App imports unit "Lib", but we only load App → the link must fail naming the missing unit.
