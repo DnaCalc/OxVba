@@ -215,18 +215,59 @@ pub fn ucase(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(as_str(need(args, 0)?)?.to_uppercase()))
 }
 
+/// `Split(expression, [delimiter = " "], [limit = -1], [compare])`. `limit` caps the number
+/// of substrings (the last element holds the unsplit remainder); `compare` chooses how the
+/// delimiter is matched (binary vs. case-insensitive text). Both were previously ignored.
 pub fn split(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let delim = match opt(args, 1) {
         Some(v) => as_str(v)?,
         None => " ".to_string(),
     };
+    let limit = match opt(args, 2) {
+        Some(v) => as_i32(v)?,
+        None => -1,
+    };
+    let text = text_compare(args, 3)?;
     let parts: Vec<Variant> = if delim.is_empty() {
+        // An empty delimiter never splits — the whole string is the single element.
         vec![vstr(s)]
+    } else if limit == 0 {
+        // A zero limit returns an empty (`LBound 0, UBound -1`) array.
+        Vec::new()
     } else {
-        s.split(&delim).map(vstr).collect()
+        split_with_limit(&s, &delim, limit, text)
     };
     Ok(Variant::from_safearray(SafeArray::from_variants(parts)))
+}
+
+/// Split `s` on `delim` into at most `limit` parts (negative = unlimited), matching the
+/// delimiter case-insensitively when `text`. Substrings are taken from the ORIGINAL string
+/// (original case preserved); only the delimiter *positions* are found case-insensitively.
+fn split_with_limit(s: &str, delim: &str, limit: i32, text: bool) -> Vec<Variant> {
+    // For binary compare `hay`/`needle` equal the originals, so byte offsets are exact; for
+    // text compare they are the lowercased forms (byte-length-preserving for ASCII and most
+    // text — the same approximation `InStr`/`norm_compare` already make).
+    let hay = norm_compare(s.to_string(), text);
+    let needle = norm_compare(delim.to_string(), text);
+    let mut parts: Vec<Variant> = Vec::new();
+    let mut cursor = 0usize;
+    loop {
+        // Once `limit - 1` parts are emitted, the final element holds the whole remainder.
+        if limit >= 0 && parts.len() as i32 == limit - 1 {
+            break;
+        }
+        match hay[cursor..].find(&needle) {
+            Some(rel) => {
+                let pos = cursor + rel;
+                parts.push(vstr(s[cursor..pos].to_string()));
+                cursor = pos + needle.len();
+            }
+            None => break,
+        }
+    }
+    parts.push(vstr(s[cursor..].to_string()));
+    parts
 }
 
 /// `Filter(source, match, [include=True], [compare=binary])` — the subset of a
@@ -1636,6 +1677,47 @@ mod tests {
     }
     fn instr_(args: &[Variant], rev: bool) -> i32 {
         instr(args, rev).unwrap().as_i32().unwrap()
+    }
+    fn split_(args: &[Variant]) -> Vec<String> {
+        split(args)
+            .unwrap()
+            .as_safearray()
+            .unwrap()
+            .variant_elements()
+            .unwrap_or_default()
+            .iter()
+            .map(|v| v.as_bstr().map(|b| b.as_str()).unwrap_or_default())
+            .collect()
+    }
+
+    #[test]
+    fn split_honours_limit_and_compare() {
+        // No limit → all substrings.
+        assert_eq!(split_(&[vs("a,b,c"), vs(",")]), ["a", "b", "c"]);
+        // limit=2 → the last element holds the unsplit remainder.
+        assert_eq!(
+            split_(&[vs("a,b,c"), vs(","), Variant::from_i32(2)]),
+            ["a", "b,c"]
+        );
+        // limit=1 → the whole string.
+        assert_eq!(
+            split_(&[vs("a,b,c"), vs(","), Variant::from_i32(1)]),
+            ["a,b,c"]
+        );
+        // limit=0 → an empty array.
+        assert!(split_(&[vs("a,b,c"), vs(","), Variant::from_i32(0)]).is_empty());
+        // Text compare (mode 1): split on "x" case-insensitively, original case preserved.
+        assert_eq!(
+            split_(&[
+                vs("aXbxC"),
+                vs("x"),
+                Variant::from_i32(-1),
+                Variant::from_i32(1)
+            ]),
+            ["a", "b", "C"]
+        );
+        // Binary compare (default): only the lowercase "x" splits.
+        assert_eq!(split_(&[vs("aXbxC"), vs("x")]), ["aXb", "C"]);
     }
 
     #[test]

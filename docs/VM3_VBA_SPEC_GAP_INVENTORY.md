@@ -96,7 +96,7 @@ may remain unexamined.
 |☐|no-call-arity-validation|High/SilentWrong|S|extra args dropped; missing→late wrong error|arity check in `bind_proc_args`|
 |☑|instr-leading-start-by-type|High/SilentWrong|S|`InStr` start detected by TYPE not arity|now arity-based: 2 args=(s1,s2), 3–4 args=(start,s1,s2,[compare]). Fixed 3 corpus progs (`InStr(12345,34)` was err 5, now 3) *(done)*|
 |☑|instrrev-ignores-start-compare|High/SilentWrong|M|`InStrRev` ignores start, misreads compare|dedicated `instr_rev` with `(stringcheck,stringmatch,[start=-1],[compare])` layout: honours `start` (search region) + `compare` at arg 4 *(done)*|
-|☐|split-ignores-limit-compare|High/SilentWrong|S|`Split` ignores limit+compare|implement limit/compare|
+|☑|split-ignores-limit-compare|High/SilentWrong|S|`Split` ignores limit+compare|`split_with_limit`: honours `limit` (last element = remainder; 0 → empty array) + `compare` (case-insensitive delimiter match, original case preserved) *(done)*|
 |☐|option-compare-text-ignored-string-fns|High/SilentWrong|M|`Option Compare Text` ignored by InStr/StrComp/Replace/Filter/InStrRev|append synthesized compare-mode const in binder|
 |☐|select-case-ignores-option-compare-text|High/SilentWrong|S|`Select Case` ignores Option Compare Text for strings|add mode to CaseClause, set from compare_mode|
 |☑|mixed-string-numeric-compare-no-13|High/SilentWrong|M|String-vs-numeric compare returns value not Err 13|`cmp_order` guard: `String` (incl. numeric-looking) vs numeric/Boolean/Date → Err 13; `Empty`/`Null` exempt *(done; no golden drift)*|
