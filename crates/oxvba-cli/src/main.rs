@@ -230,6 +230,7 @@ fn run_build(args: Vec<String>) {
     }) {
         Ok(output) => {
             println!("OXB:{}", output.oxb_path.display());
+            println!("OXI:{}", output.oxi_path.display());
             println!("COM_DESCRIPTOR:{}", output.descriptor_path.display());
             println!("IDL:{}", output.idl_path.display());
             if let Some(path) = output.comhost_source_path.as_ref() {

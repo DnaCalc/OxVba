@@ -410,6 +410,18 @@ End Function
     assert!(output.dll_target_path.exists());
     assert!(output.tlb_target_path.exists());
 
+    // W8-b: the build also emits the vm3 runtime artifact (the OxImage `.oxi`), elaborated from
+    // the same bound programs — it must exist and parse, carrying at least the entry program.
+    assert!(output.oxi_path.exists(), "the vm3 OxImage artifact (.oxi) is emitted");
+    let image = oxvba_oxir::OxImage::from_bytes(
+        &std::fs::read(&output.oxi_path).expect("read .oxi"),
+    )
+    .expect("the .oxi parses as a valid OxImage");
+    assert!(
+        !image.programs.is_empty(),
+        "the OxImage carries the elaborated program(s)"
+    );
+
     let descriptor_text =
         std::fs::read_to_string(&output.descriptor_path).expect("descriptor should exist");
     let descriptor: oxvba_build::ComServerDescriptor =

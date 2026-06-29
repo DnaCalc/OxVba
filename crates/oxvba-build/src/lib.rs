@@ -39,6 +39,9 @@ pub struct WrappedComServerBuildOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedComServerBuildOutput {
     pub oxb_path: PathBuf,
+    /// The vm3 runtime artifact (`OxImage`) — the typed `.oxi` the in-process COM server links
+    /// on vm3, emitted alongside the legacy vm2 `.oxb`.
+    pub oxi_path: PathBuf,
     pub descriptor_path: PathBuf,
     pub idl_path: PathBuf,
     pub dll_target_path: PathBuf,
@@ -60,6 +63,8 @@ pub enum BuildError {
     Bind(#[from] oxvba_bind::BindError),
     #[error("{0}")]
     Linearize(String),
+    #[error("OxIR elaboration failed (vm3 cannot run this project): {0}")]
+    Elaborate(String),
     #[error("{0}")]
     Symbol(#[from] oxvba_symbol::SymbolModelError),
     #[error("{0}")]
@@ -116,9 +121,16 @@ pub fn build_wrapped_com_server(
     let project_name = root_manifest.project_name.clone();
     let artifact_stem = artifact_stem(&project_name);
 
-    let package = build_bundle_package(&closure)?;
+    let (package, ox_image) = build_artifacts(&closure)?;
     let oxb_path = options.out_dir.join(format!("{artifact_stem}.oxb"));
     write_bytes(&oxb_path, &package.to_bytes()?)?;
+    let oxi_path = options.out_dir.join(format!("{artifact_stem}.oxi"));
+    write_bytes(
+        &oxi_path,
+        &ox_image
+            .to_bytes()
+            .map_err(|err| BuildError::Elaborate(err.to_string()))?,
+    )?;
 
     let descriptor = build_com_descriptor(root_manifest)?;
     if descriptor.classes.is_empty() {
@@ -150,6 +162,7 @@ pub fn build_wrapped_com_server(
 
     Ok(WrappedComServerBuildOutput {
         oxb_path,
+        oxi_path,
         descriptor_path,
         idl_path,
         dll_target_path,
@@ -186,9 +199,13 @@ fn validate_wrapped_com_server_project(
     Ok(())
 }
 
-fn build_bundle_package(
+/// Bind the closure ONCE, then produce both runtime artifacts from the same bound programs:
+/// the legacy vm2 `BundlePackage` (linearized Op) and the vm3 `OxImage` (elaborated OxIR). A
+/// project that fails to elaborate cannot run on vm3 — surfaced as a build error, not a silent
+/// vm2-only fallback (the build commits to vm3 as the runtime).
+fn build_artifacts(
     closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
-) -> Result<oxvba_bundle::BundlePackage, BuildError> {
+) -> Result<(oxvba_bundle::BundlePackage, oxvba_oxir::OxImage), BuildError> {
     let typelibs = oxvba_symbol::CatalogTypeLibResolver;
     let programs = oxvba_bind::bind_projects(closure, &typelibs)?;
     let bundles: Vec<oxvba_bundle::Bundle> = programs
@@ -196,10 +213,13 @@ fn build_bundle_package(
         .map(oxvba_bundle::linearize)
         .collect::<Result<_, _>>()
         .map_err(|err| BuildError::Linearize(err.to_string()))?;
-    Ok(oxvba_bundle::BundlePackage::new(
-        bundles,
-        closure.len().saturating_sub(1),
-    ))
+    let ox_programs: Vec<oxvba_oxir::OxProgram> = programs
+        .iter()
+        .map(oxvba_oxir::elaborate::elaborate)
+        .collect::<Result<_, _>>()
+        .map_err(|err| BuildError::Elaborate(err.to_string()))?;
+    let package = oxvba_bundle::BundlePackage::new(bundles, closure.len().saturating_sub(1));
+    Ok((package, oxvba_oxir::OxImage::new(ox_programs)))
 }
 
 fn build_com_descriptor(

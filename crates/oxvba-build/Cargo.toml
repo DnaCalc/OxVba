@@ -12,6 +12,7 @@ oxvba-bind.workspace = true
 oxvba-bundle.workspace = true
 oxvba-com.workspace = true
 oxvba-diagnostics.workspace = true
+oxvba-oxir.workspace = true
 oxvba-project.workspace = true
 oxvba-symbol.workspace = true
 serde.workspace = true
