@@ -7,16 +7,17 @@
 //! JIT-targetable. It is built on the `oxvba-runtime` value substrate and has no
 //! dependency on the legacy compiler crate.
 //!
-//! A program reaches this bundle through `coreir` + `linearize` (the binder that
-//! builds `coreir` from source is the remaining upstream piece). The `.oxb` carrier is a
-//! versioned [`BundlePackage`] over one or more linked bundles. NOTE: the `Op`-bundle
-//! interpreter that executed these bundles has been retired; `linearize`/`Bundle`/`Op`
-//! are now orphaned (a separate cleanup pass — see git history).
+//! The `coreir` tree is the front-end's resolved program shape (`oxvba-bind` builds it; the
+//! vm3 path elaborates it to OxIR). The `Bundle`/`Op`/`ProcedureDescriptor` machine that follows
+//! is no longer a `CoreProgram → Bundle` lowering target — the `Op`-bundle interpreter (vm2) and
+//! its `linearize` lowering + `.oxb` package have been retired. What remains of the `Op` machine
+//! is the hand-authored synthetic `VBA` library bundle ([`vba_library::vba_library_bundle`]),
+//! which vm3 reads to resolve built-in library functions; the `Bundle`/`Op`/`ProcedureDescriptor`
+//! types stay solely to carry that bundle.
 
 pub mod array_runtime;
 pub mod coreir;
 pub mod isa;
-pub mod linearize;
 pub mod native;
 pub mod vartype;
 pub mod vba_library;
@@ -26,7 +27,6 @@ pub use array_runtime::{
     vba_record_field_kind, vba_record_layout_for_fields,
 };
 pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
-pub use linearize::{LinearizeError, linearize};
 pub use native::{LibraryModule, NativeBody, NativeImplId, NativeMethodId};
 pub use vartype::{BuiltinType, VarTypeRef};
 pub use vba_library::vba_library_bundle;
@@ -38,9 +38,6 @@ pub use coreir::{
 };
 
 use oxvba_runtime::DynLinkSymbol;
-
-pub const BUNDLE_PACKAGE_FORMAT: &str = "oxvba.bundle-package";
-pub const BUNDLE_PACKAGE_VERSION: u32 = 2;
 
 // ── Shared scalar enums (the bundle's own clean copies) ──────────────────────
 
@@ -422,125 +419,5 @@ impl Bundle {
         self.external_calls
             .iter()
             .find(|d| d.descriptor_id == descriptor_id)
-    }
-}
-
-/// A versioned `.oxb` payload. A package carries one bundle per project in
-/// link order, with `entry_bundle` identifying the project that should act as
-/// the runtime entry/activation owner. Wrapper targets embed this package
-/// directly instead of reconstructing execution facts from source.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct BundlePackage {
-    pub format: String,
-    pub version: u32,
-    pub entry_bundle: usize,
-    pub bundles: Vec<Bundle>,
-}
-
-impl BundlePackage {
-    pub fn new(bundles: Vec<Bundle>, entry_bundle: usize) -> Self {
-        Self {
-            format: BUNDLE_PACKAGE_FORMAT.to_string(),
-            version: BUNDLE_PACKAGE_VERSION,
-            entry_bundle,
-            bundles,
-        }
-    }
-
-    pub fn single(bundle: Bundle) -> Self {
-        Self::new(vec![bundle], 0)
-    }
-
-    pub fn to_bytes(&self) -> Result<Vec<u8>, BundlePackageError> {
-        serde_json::to_vec_pretty(self).map_err(BundlePackageError::Serialize)
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BundlePackageError> {
-        let package: Self =
-            serde_json::from_slice(bytes).map_err(BundlePackageError::Deserialize)?;
-        package.validate()?;
-        Ok(package)
-    }
-
-    pub fn validate(&self) -> Result<(), BundlePackageError> {
-        if self.format != BUNDLE_PACKAGE_FORMAT {
-            return Err(BundlePackageError::UnsupportedFormat {
-                found: self.format.clone(),
-            });
-        }
-        if self.version != BUNDLE_PACKAGE_VERSION {
-            return Err(BundlePackageError::UnsupportedVersion {
-                found: self.version,
-            });
-        }
-        if self.bundles.is_empty() {
-            return Err(BundlePackageError::EmptyPackage);
-        }
-        if self.entry_bundle >= self.bundles.len() {
-            return Err(BundlePackageError::InvalidEntryBundle {
-                entry_bundle: self.entry_bundle,
-                bundle_count: self.bundles.len(),
-            });
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub enum BundlePackageError {
-    Serialize(serde_json::Error),
-    Deserialize(serde_json::Error),
-    UnsupportedFormat {
-        found: String,
-    },
-    UnsupportedVersion {
-        found: u32,
-    },
-    EmptyPackage,
-    InvalidEntryBundle {
-        entry_bundle: usize,
-        bundle_count: usize,
-    },
-}
-
-impl std::fmt::Display for BundlePackageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Serialize(err) => write!(f, "failed to serialize bundle package: {err}"),
-            Self::Deserialize(err) => write!(f, "failed to deserialize bundle package: {err}"),
-            Self::UnsupportedFormat { found } => {
-                write!(f, "unsupported bundle package format `{found}`")
-            }
-            Self::UnsupportedVersion { found } => {
-                write!(f, "unsupported bundle package version {found}")
-            }
-            Self::EmptyPackage => write!(f, "bundle package contains no bundles"),
-            Self::InvalidEntryBundle {
-                entry_bundle,
-                bundle_count,
-            } => write!(
-                f,
-                "bundle package entry bundle {entry_bundle} is outside bundle count {bundle_count}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for BundlePackageError {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bundle_package_uses_current_version_and_rejects_previous_version() {
-        let mut package = BundlePackage::single(Bundle::empty());
-        assert_eq!(package.version, BUNDLE_PACKAGE_VERSION);
-
-        package.version = BUNDLE_PACKAGE_VERSION - 1;
-        assert!(matches!(
-            package.validate(),
-            Err(BundlePackageError::UnsupportedVersion { found }) if found == BUNDLE_PACKAGE_VERSION - 1
-        ));
     }
 }

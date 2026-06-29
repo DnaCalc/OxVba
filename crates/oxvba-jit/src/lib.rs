@@ -3,9 +3,10 @@
 //! The previous Cranelift prototype was intentionally removed because it
 //! silently fell back to VM execution and used the interpreter's `Variant` slot
 //! file as its core execution model. This crate stays as the stable boundary for
-//! the future JIT v2 design — which will lower the clean `oxvba_bundle::Bundle`
-//! (its self-describing ISA: typed `NumericMode` arithmetic, record ops, …) — but
-//! no executable JIT is currently available.
+//! the future JIT v2 design — which will lower the typed OxIR program
+//! (`oxvba_oxir::OxProgram` / `OxImage`: its self-describing ISA with typed
+//! `NumericMode` arithmetic, record ops, …) that vm3 also runs — but no executable
+//! JIT is currently available.
 
 use thiserror::Error;
 

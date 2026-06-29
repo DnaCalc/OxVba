@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "The binder: a single typed pass that lowers the resolved oxvba-syntax CST + oxvba-symbol resolution into symbol-free oxvba-bundle Core IR (coreir) for linearize → VM/JIT."
+description = "The binder: a single typed pass that lowers the resolved oxvba-syntax CST + oxvba-symbol resolution into symbol-free oxvba-bundle Core IR (coreir) for OxIR elaboration → vm3/JIT."
 
 [dependencies]
 oxvba-diagnostics.workspace = true

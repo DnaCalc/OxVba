@@ -161,5 +161,5 @@ pub struct DeclarePtrWriteback {
 // (`Err.Number`/…) and `PtrWritebackKind` (a `Declare` pointer write-back's read-back
 // projection) are defined once in `coreir` and reused here verbatim — OxIR does not
 // re-model them. They carry `serde` (added on the canonical definitions), so they
-// serialize into the `.oxb` package directly.
+// serialize into the `.oxi` image directly.
 pub use oxvba_bundle::coreir::{BoundWhich, ErrField, PtrKind, PtrWritebackKind};

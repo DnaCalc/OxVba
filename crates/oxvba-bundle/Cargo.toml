@@ -5,12 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Clean, slim execution target: primitive instruction set + native-call + metadata package."
+description = "Core IR (coreir) + shared front-end vocabulary, and the synthetic VBA built-in library bundle vm3 reads."
 
 [dependencies]
 oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 [lints]
 workspace = true

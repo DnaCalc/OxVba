@@ -558,7 +558,7 @@ fn random_access_file_statements_bind_and_lower() {
         Name \"a\" As \"b\"\n\
     End Sub\n";
     let program = bind(src);
-    assert!(oxvba_bundle::linearize(&program).is_ok());
+    assert!(oxvba_oxir::elaborate::elaborate(&program).is_ok());
 }
 
 #[test]
@@ -604,18 +604,17 @@ fn kill_statement_routes_to_vba_filesystem() {
     // cross-bundle to the `VBA` unit's `FileSystem.Kill` member (an `ExternProc` call),
     // exactly like the by-name file functions — not the bespoke `Native` route.
     let program = bind("Sub Main()\n    Kill \"scratch.tmp\"\nEnd Sub\n");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
     assert!(
-        imports_vba_filesystem(&bundle, "Kill"),
+        imports_vba_filesystem(&program, "Kill"),
         "`Kill` should import VBA/FileSystem.Kill: {:?}",
-        bundle.imports
+        program.imports
     );
 }
 
-/// True if the linearized `bundle` imports a `VBA`/`FileSystem` `ModuleFunc` named
+/// True if the bound `program` imports a `VBA`/`FileSystem` `ModuleFunc` named
 /// `member` (the cross-bundle link a `FileSystem` call lowers to).
-fn imports_vba_filesystem(bundle: &oxvba_bundle::Bundle, member: &str) -> bool {
-    bundle.imports.iter().any(|imp| {
+fn imports_vba_filesystem(program: &oxvba_bundle::coreir::CoreProgram, member: &str) -> bool {
+    program.imports.iter().any(|imp| {
         imp.unit.eq_ignore_ascii_case("VBA")
             && matches!(
                 &imp.token,
@@ -2467,12 +2466,11 @@ fn file_io_lowers_to_vba_filesystem_externs() {
     // entry bundle imports each member; the special arg-shaping is unchanged.
     let src = "Sub Main()\n    Dim f As Long\n    f = FreeFile\n    Open \"x.txt\" For Output As #1\n    Print #1, \"hi\"\n    Close #1\nEnd Sub\n";
     let program = bind(src);
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize");
     for member in ["Open", "Print", "Close"] {
         assert!(
-            imports_vba_filesystem(&bundle, member),
+            imports_vba_filesystem(&program, member),
             "expected a VBA/FileSystem import for {member}: {:?}",
-            bundle.imports
+            program.imports
         );
     }
     // No file statement remains on the bespoke `CoreCallee::Native` route.

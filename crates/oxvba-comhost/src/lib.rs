@@ -61,7 +61,7 @@ use windows_sys::core::{BSTR, GUID};
 struct HostArtifacts {
     project_name: String,
     /// The vm3 runtime artifact (`OxImage`) loaded into the session — the `.oxi` sidecar next to
-    /// the COM host DLL (the build emits it alongside the legacy `.oxb`).
+    /// the COM host DLL (the sole runtime artifact the build emits).
     oxi_path: PathBuf,
     descriptor_path: PathBuf,
     tlb_path: PathBuf,

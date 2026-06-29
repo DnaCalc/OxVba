@@ -88,8 +88,8 @@ pub struct OxClass {
     pub implements: Vec<String>,
 }
 
-/// A complete compilation unit in OxIR — the typed, CFG-structured analogue of
-/// `oxvba_bundle::Bundle`. vm3 interprets it; the Cranelift backend lowers it.
+/// A complete compilation unit in OxIR — the typed, CFG-structured program shape.
+/// vm3 interprets it; the Cranelift backend lowers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OxProgram {
     /// Procedures, indexed by [`FuncId`].
@@ -113,7 +113,7 @@ pub struct OxProgram {
     /// Typed COM interface table, indexed by [`crate::ty::IfaceId`]: one entry per
     /// referenced/served COM interface (the canonical `oxvba_com::TypeLibInterfaceMetadata`
     /// grouping, with its full typed member descriptors) and per project `Implements`
-    /// interface a typed object value can name. Persisted in `.oxb` so vm3/JIT make
+    /// interface a typed object value can name. Persisted in the `.oxi` image so vm3/JIT make
     /// typed COM calls with no typelib re-resolution. An early-bound call
     /// ([`crate::inst::OxInst::ComCallEarly`]) names a member here via
     /// [`crate::com::ComMethodRef`]; resolve it with [`OxProgram::com_method`].

@@ -38,9 +38,8 @@ pub struct WrappedComServerBuildOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedComServerBuildOutput {
-    pub oxb_path: PathBuf,
     /// The vm3 runtime artifact (`OxImage`) — the typed `.oxi` the in-process COM server links
-    /// on vm3, emitted alongside the legacy vm2 `.oxb`.
+    /// and runs. This is the sole runtime carrier (vm3 is the only runtime).
     pub oxi_path: PathBuf,
     pub descriptor_path: PathBuf,
     pub idl_path: PathBuf,
@@ -61,14 +60,10 @@ pub enum BuildError {
     Project(#[from] oxvba_project::BasProjError),
     #[error("{0}")]
     Bind(#[from] oxvba_bind::BindError),
-    #[error("{0}")]
-    Linearize(String),
     #[error("OxIR elaboration failed (vm3 cannot run this project): {0}")]
     Elaborate(String),
     #[error("{0}")]
     Symbol(#[from] oxvba_symbol::SymbolModelError),
-    #[error("{0}")]
-    BundlePackage(#[from] oxvba_bundle::BundlePackageError),
     #[error("WrappedComServer requires OutputType=ComServer, found {found:?}")]
     InvalidOutputType { found: oxvba_project::OutputType },
     #[error("WrappedComServer requires BuildTarget=WrappedComServer, found {found:?}")]
@@ -121,9 +116,7 @@ pub fn build_wrapped_com_server(
     let project_name = root_manifest.project_name.clone();
     let artifact_stem = artifact_stem(&project_name);
 
-    let (package, ox_image) = build_artifacts(&closure)?;
-    let oxb_path = options.out_dir.join(format!("{artifact_stem}.oxb"));
-    write_bytes(&oxb_path, &package.to_bytes()?)?;
+    let ox_image = build_artifacts(&closure)?;
     let oxi_path = options.out_dir.join(format!("{artifact_stem}.oxi"));
     write_bytes(
         &oxi_path,
@@ -161,7 +154,6 @@ pub fn build_wrapped_com_server(
     }
 
     Ok(WrappedComServerBuildOutput {
-        oxb_path,
         oxi_path,
         descriptor_path,
         idl_path,
@@ -199,27 +191,20 @@ fn validate_wrapped_com_server_project(
     Ok(())
 }
 
-/// Bind the closure ONCE, then produce both runtime artifacts from the same bound programs:
-/// the legacy vm2 `BundlePackage` (linearized Op) and the vm3 `OxImage` (elaborated OxIR). A
-/// project that fails to elaborate cannot run on vm3 — surfaced as a build error, not a silent
-/// vm2-only fallback (the build commits to vm3 as the runtime).
+/// Bind the closure ONCE, then elaborate to the vm3 `OxImage` (typed OxIR) — the sole runtime
+/// artifact. A project that fails to elaborate cannot run on vm3, so it is surfaced as a build
+/// error (the build commits to vm3 as the runtime).
 fn build_artifacts(
     closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
-) -> Result<(oxvba_bundle::BundlePackage, oxvba_oxir::OxImage), BuildError> {
+) -> Result<oxvba_oxir::OxImage, BuildError> {
     let typelibs = oxvba_symbol::CatalogTypeLibResolver;
     let programs = oxvba_bind::bind_projects(closure, &typelibs)?;
-    let bundles: Vec<oxvba_bundle::Bundle> = programs
-        .iter()
-        .map(oxvba_bundle::linearize)
-        .collect::<Result<_, _>>()
-        .map_err(|err| BuildError::Linearize(err.to_string()))?;
     let ox_programs: Vec<oxvba_oxir::OxProgram> = programs
         .iter()
         .map(oxvba_oxir::elaborate::elaborate)
         .collect::<Result<_, _>>()
         .map_err(|err| BuildError::Elaborate(err.to_string()))?;
-    let package = oxvba_bundle::BundlePackage::new(bundles, closure.len().saturating_sub(1));
-    Ok((package, oxvba_oxir::OxImage::new(ox_programs)))
+    Ok(oxvba_oxir::OxImage::new(ox_programs))
 }
 
 fn build_com_descriptor(
@@ -685,11 +670,10 @@ End Function
         })
         .expect("WrappedComServer build should emit artifacts");
 
-        let package_bytes = std::fs::read(&output.oxb_path).expect("oxb should exist");
-        let package =
-            oxvba_bundle::BundlePackage::from_bytes(&package_bytes).expect("oxb should parse");
-        assert_eq!(package.bundles.len(), 1);
-        assert_eq!(package.entry_bundle, 0);
+        let image_bytes = std::fs::read(&output.oxi_path).expect("oxi should exist");
+        let image = oxvba_oxir::OxImage::from_bytes(&image_bytes).expect("oxi should parse");
+        assert_eq!(image.programs.len(), 1);
+        assert_eq!(image.entry, 0);
 
         let descriptor_text =
             std::fs::read_to_string(&output.descriptor_path).expect("descriptor should exist");

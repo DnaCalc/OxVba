@@ -9,7 +9,6 @@ description = "Clean OxVBA build target orchestration and wrapper artifact gener
 
 [dependencies]
 oxvba-bind.workspace = true
-oxvba-bundle.workspace = true
 oxvba-com.workspace = true
 oxvba-diagnostics.workspace = true
 oxvba-oxir.workspace = true

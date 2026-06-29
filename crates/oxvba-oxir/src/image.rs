@@ -3,16 +3,14 @@
 //!
 //! A whole VBA project is exactly one [`OxProgram`]; cross-project references add more, with the
 //! entry (the COM-server / startup project) LAST — the same ordering [`crate`]'s consumer
-//! `oxvba_vm3::Vm3::link` and the legacy `oxvba_bundle::BundlePackage` use. This is the typed,
-//! vm3-native replacement for the linearized `BundlePackage` the vm2 path consumes: a build
-//! emits it (by elaborating each project's `CoreProgram`) for the in-process COM server to load
-//! and link. `OxProgram` is fully serde-serializable, so the image round-trips through JSON.
+//! `oxvba_vm3::Vm3::link` uses. This is the vm3 runtime artifact: a build emits it (by
+//! elaborating each project's `CoreProgram`) for the in-process COM server to load and link.
+//! `OxProgram` is fully serde-serializable, so the image round-trips through JSON.
 
 use crate::program::OxProgram;
 use serde::{Deserialize, Serialize};
 
-/// On-disk format tag for an `OxImage` artifact (rejects a stale/foreign blob, like
-/// `BundlePackage`'s header).
+/// On-disk format tag for an `OxImage` artifact (rejects a stale/foreign blob via its header).
 pub const OX_IMAGE_FORMAT: &str = "oxvba.ox-image";
 /// On-disk schema version.
 pub const OX_IMAGE_VERSION: u32 = 1;
@@ -23,7 +21,7 @@ pub struct OxImage {
     pub format: String,
     pub version: u32,
     /// Index into `programs` of the entry project (whose `Main`/exported classes the host
-    /// drives). The cross-project entry is LAST, matching `Vm3::link` + `BundlePackage`.
+    /// drives). The cross-project entry is LAST, matching `Vm3::link`.
     pub entry: usize,
     pub programs: Vec<OxProgram>,
 }
@@ -74,7 +72,7 @@ impl OxImage {
         }
     }
 
-    /// Serialize to the `.oxi` byte form (pretty JSON, like `BundlePackage::to_bytes`).
+    /// Serialize to the `.oxi` byte form (pretty JSON).
     pub fn to_bytes(&self) -> Result<Vec<u8>, OxImageError> {
         serde_json::to_vec_pretty(self).map_err(OxImageError::Serialize)
     }

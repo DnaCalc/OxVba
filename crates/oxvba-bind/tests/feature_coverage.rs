@@ -1052,11 +1052,10 @@ fn filesystem_functions_route_through_vba_bundle() {
         &NullTypeLibs,
     )
     .expect("bind should succeed");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize should succeed");
 
     for member in ["FreeFile", "CurDir", "FileLen", "MkDir", "FileCopy"] {
         assert!(
-            bundle.imports.iter().any(|imp| {
+            program.imports.iter().any(|imp| {
                 imp.unit.eq_ignore_ascii_case("VBA")
                     && matches!(
                         &imp.token,
@@ -1066,7 +1065,7 @@ fn filesystem_functions_route_through_vba_bundle() {
                     )
             }),
             "expected a VBA/FileSystem import for {member}: {:?}",
-            bundle.imports
+            program.imports
         );
     }
 }
@@ -1101,7 +1100,6 @@ fn file_statements_route_through_vba_bundle() {
         &NullTypeLibs,
     )
     .expect("bind should succeed");
-    let bundle = oxvba_bundle::linearize(&program).expect("linearize should succeed");
 
     // The internal member names the parser-bound statements import, plus `Seek`
     // (the statement form reuses the by-name function member).
@@ -1109,7 +1107,7 @@ fn file_statements_route_through_vba_bundle() {
         "Open", "Print", "Put", "Get", "Seek", "Width", "Close", "Name",
     ] {
         assert!(
-            bundle.imports.iter().any(|imp| {
+            program.imports.iter().any(|imp| {
                 imp.unit.eq_ignore_ascii_case("VBA")
                     && matches!(
                         &imp.token,
@@ -1119,7 +1117,7 @@ fn file_statements_route_through_vba_bundle() {
                     )
             }),
             "expected a VBA/FileSystem import for statement member {member}: {:?}",
-            bundle.imports
+            program.imports
         );
     }
     // And no file statement remains on the bespoke `CoreCallee::Native` route.

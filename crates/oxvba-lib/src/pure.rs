@@ -30,8 +30,8 @@ fn chars(s: &str) -> Vec<char> {
 }
 
 /// Optional trailing compare-mode argument: 0 = binary (default), 1 = text. The
-/// lowering (`oxvba-bundle::linearize`) supplies that mode as a trailing
-/// argument here, resolved from the source's `Option Compare`.
+/// front-end supplies that mode as a trailing argument here, resolved from the
+/// source's `Option Compare`.
 fn text_compare(args: &[Variant], index: usize) -> LibResult<bool> {
     match opt(args, index) {
         Some(v) => Ok(as_i32(v)? == 1),

@@ -1,15 +1,14 @@
 //! The Core IR — a desugared, **fully resolved** tree (the contract's §5 form).
 //!
-//! This is the structured, in-memory shape of a program; [`crate::linearize`]
-//! flattens it to the [`crate::Bundle`] machine ([`crate::isa::Op`]). The two
-//! share a vocabulary but differ in shape: this tree has nested values and
-//! structured control flow; the bundle is a flat slot machine.
+//! This is the structured, in-memory shape of a program: the front-end (`oxvba-bind`) builds it,
+//! and the vm3 path (`oxvba-oxir::elaborate`) lowers it to typed OxIR. It has nested values and
+//! structured control flow.
 //!
 //! Invariant: the Core IR carries **no symbol references**. Names are already
 //! resolved — callees are a `NativeImplId` / a [`ProcId`] / a typed COM member
 //! descriptor / a `Declare` descriptor id; coercion targets use the bundle's enums
 //! and `oxvba_runtime::VarType`; variables are logical [`LocalId`]/[`GlobalId`]s
-//! that `linearize` assigns to slots. `oxvba-bundle` therefore never needs the
+//! that the consumer assigns to slots. `oxvba-bundle` therefore never needs the
 //! symbol model or the front-end. It does depend on `oxvba-com` for the **canonical
 //! typed COM member descriptor** ([`oxvba_com::TypeLibMemberMetadata`]) that
 //! [`CoreCallee::EarlyCom`] carries: that descriptor is the one source of truth for a
