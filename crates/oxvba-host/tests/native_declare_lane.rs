@@ -130,7 +130,7 @@ fn riff_exact_kernel32_memory_lane_handles_raw_pointer_offsets_and_zeroing() {
     // native side effect bounded to one private allocation.
     let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
          Private Const MEM_RESERVE As Long = &H2000\n\
-         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const MEM_RELEASE As Long = &H8000&\n\
          Private Const PAGE_READWRITE As Long = &H4\n\
          Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr\n\
          Private Declare PtrSafe Function VirtualFree Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal dwFreeType As Long) As Long\n\
@@ -252,7 +252,7 @@ fn riff_exact_vtableproc_reads_synthetic_vtable_slot() {
     // or calling an arbitrary native function pointer.
     let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
          Private Const MEM_RESERVE As Long = &H2000\n\
-         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const MEM_RELEASE As Long = &H8000&\n\
          Private Const PAGE_READWRITE As Long = &H4\n\
          Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr\n\
          Private Declare PtrSafe Function VirtualFree Lib \"kernel32\" (ByVal lpAddress As LongPtr, ByVal dwSize As LongPtr, ByVal dwFreeType As Long) As Long\n\
@@ -332,7 +332,7 @@ fn riff_exact_iidfromstring_writes_guid_udt_through_as_any() {
 fn byref_as_any_copies_general_nested_udt_records() {
     let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
          Private Const MEM_RESERVE As Long = &H2000\n\
-         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const MEM_RELEASE As Long = &H8000&\n\
          Private Const PAGE_READWRITE As Long = &H4\n\
          Private Type Inner\n\
          Flag As Boolean\n\
@@ -479,7 +479,7 @@ fn riff_shaped_dispcallfunc_vtable_call_writes_variant_result() {
     // points at a harmless kernel32 no-arg export, avoiding real WASAPI activation.
     let snapshot = run("Private Const MEM_COMMIT As Long = &H1000\n\
          Private Const MEM_RESERVE As Long = &H2000\n\
-         Private Const MEM_RELEASE As Long = &H8000\n\
+         Private Const MEM_RELEASE As Long = &H8000&\n\
          Private Const PAGE_READWRITE As Long = &H4\n\
          Private Const CC_STDCALL As Long = 4\n\
          Private Const vbLong As Integer = 3\n\
