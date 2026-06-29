@@ -441,8 +441,34 @@ fn bitlogic(
     bit: impl Fn(i64, i64) -> i64,
     logic: impl Fn(bool, bool) -> bool,
 ) -> R {
-    if is_null(l) || is_null(r) {
+    let l_null = is_null(l);
+    let r_null = is_null(r);
+    if l_null && r_null {
         return Ok(Variant::null());
+    }
+    if l_null || r_null {
+        // VBA three-valued logic: one operand is `Null` (every bit unknown). A result bit is
+        // known only where the *other* operand alone forces it; if any bit still depends on
+        // the unknown operand the whole result is `Null`. We detect this by evaluating the
+        // bit-op with the unknown operand as all-0 vs all-1: where the two agree, the known
+        // operand decided every bit. (`x And Null` = Null unless x=0→0; `x Or Null` = Null
+        // unless x=-1→-1; `Xor`/`Eqv` never agree → Null; `Imp` = `(Not a) Or b` follows.)
+        let (known, known_ty) = if l_null { (int(r)?, r.vtype()) } else { (int(l)?, l.vtype()) };
+        let (lo, hi) = if l_null {
+            (bit(0, known), bit(-1, known))
+        } else {
+            (bit(known, 0), bit(known, -1))
+        };
+        if lo != hi {
+            return Ok(Variant::null());
+        }
+        // Determined: a `Boolean` known operand yields a `Boolean` result (e.g.
+        // `False And Null` = False, `True Or Null` = True); otherwise a `Long`.
+        return Ok(if known_ty == VarType::Boolean {
+            Variant::from_bool(lo != 0)
+        } else {
+            long_or_double(lo)
+        });
     }
     if l.vtype() == VarType::Boolean && r.vtype() == VarType::Boolean {
         return Ok(Variant::from_bool(logic(
