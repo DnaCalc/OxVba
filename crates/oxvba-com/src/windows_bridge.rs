@@ -216,6 +216,34 @@ impl WindowsComBridge {
         )
     }
 
+    /// `GetObject(, "<ProgID>")` — bind to the currently-running registered instance of a
+    /// ProgID (`GetActiveObject`), registering the recovered `IDispatch` as a runtime object
+    /// binding exactly like an activated one. Errors when no instance is running.
+    pub fn get_active_object(&self, prog_id_name: &str) -> Result<ObjectRef, String> {
+        let dispatch = crate::get_active_dispatch_by_prog_id(prog_id_name)?;
+        // SAFETY: `get_active_dispatch_by_prog_id` returns one retained IDispatch reference
+        // (or errors before returning), and `bind_host_dispatch_object` takes ownership of
+        // that single reference on both success and failure.
+        unsafe { self.bind_host_dispatch_object(prog_id_name, dispatch) }
+    }
+
+    /// `GetObject("<pathname>"[, class])` — bind to the object a file path names
+    /// (`CoGetObject`), registering the recovered `IDispatch` as a runtime object binding.
+    /// `class`, when given, only labels the object's metadata (the moniker bind uses the
+    /// path); without it the object binds late (dispatch-only).
+    pub fn bind_file_object(
+        &self,
+        path: &str,
+        class_name: Option<&str>,
+    ) -> Result<ObjectRef, String> {
+        let dispatch = crate::bind_dispatch_by_path(path)?;
+        let label = class_name.unwrap_or(path);
+        // SAFETY: `bind_dispatch_by_path` returns one retained IDispatch reference (or errors
+        // before returning), and `bind_host_dispatch_object` takes ownership of that single
+        // reference on both success and failure.
+        unsafe { self.bind_host_dispatch_object(label, dispatch) }
+    }
+
     pub fn bind_projection_object(
         &self,
         object: ObjectRef,

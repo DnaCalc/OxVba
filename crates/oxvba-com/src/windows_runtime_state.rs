@@ -667,6 +667,18 @@ pub fn bind_host_dispatch_object(
         .copied()
         && let Some(existing) = state.bindings.get_mut(&handle)
     {
+        // An existing binding already owns retained dispatch/unknown references for this
+        // ProgID, so the incoming `binding`'s references (its `native_dispatch`, and the
+        // `native_unknown` the caller AddRef'd via `query_unknown_from_dispatch`) are surplus
+        // duplicates. `ComBinding` stores them as bare `usize` with no `Drop`, so dropping it
+        // here would leak them — release each exactly once first (mirrors
+        // `bind_native_dispatch_result`'s dedup branch).
+        // SAFETY: `native_dispatch`/`native_unknown` are 0 or live COM pointers this binding
+        // exclusively owns; `release_*` are null-safe, so a 0 slot is a no-op.
+        unsafe {
+            release_dispatch(binding.native_dispatch as *mut RawIDispatch);
+            release_unknown(binding.native_unknown as *mut core::ffi::c_void);
+        }
         return retained_runtime_object(existing, handle);
     }
     let handle = state.allocate_handle();

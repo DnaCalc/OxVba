@@ -280,6 +280,15 @@ pub fn create_object(args: &[Variant], host: &dyn HostServices) -> LibResult<Var
     Ok(host.com().create_object_variant(req(args, 0)?)?)
 }
 
+/// `GetObject([pathname], [class])`. The mode (running instance / new instance / file
+/// bind) is decided by the argument shape, which the HAL resolves: an omitted `pathname`
+/// arrives as `Empty`, distinguishing it from a present `""`.
+pub fn get_object(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host
+        .com()
+        .get_object_variant(arg_or_empty(args, 0), arg_or_empty(args, 1))?)
+}
+
 // Variant → typed-handle conversions, ported from the legacy VM
 // (`semantics::variant_to_com_*`): COM handles/tokens are `i32` newtypes that a
 // Variant may carry as an object ref, an `i32`, or a range-checked `i64`.

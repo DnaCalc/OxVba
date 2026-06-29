@@ -204,6 +204,7 @@ native_impl_ids! {
     Environ,
     Dir,
     CreateObject,
+    GetObject,
     ComSubscribeEvent,
     ComUnsubscribeEvent,
     ComEventCallbackSubscription,
@@ -265,6 +266,7 @@ impl NativeImplId {
             | Environ
             | Dir
             | CreateObject
+            | GetObject
             | ComSubscribeEvent
             | ComUnsubscribeEvent
             | ComEventCallbackSubscription

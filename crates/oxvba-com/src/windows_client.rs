@@ -263,6 +263,83 @@ pub fn activate_dispatch_by_prog_id(prog_id: &str) -> Result<*mut RawIDispatch, 
     Ok(dispatch_ptr.cast::<RawIDispatch>())
 }
 
+/// `GetObject(, "<ProgID>")` — bind to the currently-RUNNING registered instance of a
+/// ProgID via the Running Object Table (`GetActiveObject`), `QueryInterface`-ing it to
+/// `IDispatch`. Returns one retained `IDispatch` reference owned by the caller. An error
+/// (no running instance / `MK_E_UNAVAILABLE`) is what the VBA caller surfaces as run-time
+/// error 429 ("ActiveX component can't create object").
+#[cfg(target_os = "windows")]
+pub fn get_active_dispatch_by_prog_id(prog_id: &str) -> Result<*mut RawIDispatch, String> {
+    use windows_sys::Win32::System::Ole::GetActiveObject;
+    let wide: Vec<u16> = prog_id.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut clsid = windows_sys::core::GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    // SAFETY: `wide` is a NUL-terminated UTF-16 buffer alive across the call, and
+    // `&mut clsid` is a live out-slot for one GUID CLSIDFromProgID writes on success.
+    let hr = unsafe { CLSIDFromProgID(wide.as_ptr(), &mut clsid) };
+    if hr < 0 {
+        return Err(format!(
+            "CLSIDFromProgID failed for `{prog_id}` with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let mut unknown_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    // SAFETY: `clsid` was populated above, `pvReserved` must be null, and `&mut unknown_ptr`
+    // is a live out-slot. GetActiveObject returns S_OK + a retained IUnknown when an instance
+    // is registered in the ROT, or an error HRESULT otherwise (turned into Err below). An
+    // uninitialized apartment is not UB here — it surfaces as an error HRESULT.
+    let hr = unsafe { GetActiveObject(&clsid, std::ptr::null_mut(), &mut unknown_ptr) };
+    if hr < 0 {
+        return Err(format!(
+            "GetActiveObject failed for `{prog_id}` with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    if unknown_ptr.is_null() {
+        return Err("GetActiveObject returned a null IUnknown pointer".to_string());
+    }
+    // SAFETY: `unknown_ptr` is a live retained IUnknown from GetActiveObject; QI for IDispatch
+    // (which retains its own separate reference on success), then release our IUnknown ref
+    // regardless of the QI outcome so it never leaks.
+    let dispatch = unsafe { query_dispatch_from_unknown(unknown_ptr.cast::<RawIUnknown>()) };
+    // SAFETY: we own exactly one IUnknown reference from GetActiveObject (non-null, checked
+    // above); release it exactly once here.
+    unsafe {
+        release_unknown(unknown_ptr);
+    }
+    dispatch
+}
+
+/// `GetObject("<pathname>"[, class])` — bind to the persistent object a file path names
+/// via `CoGetObject` (the file-moniker bind), requesting `IDispatch`. Returns one retained
+/// `IDispatch` reference owned by the caller. A failure (file not found / no handler) is
+/// what the VBA caller surfaces as run-time error 432/429. `class`, when supplied, only
+/// labels the resulting object's metadata; the moniker bind itself uses the path.
+#[cfg(target_os = "windows")]
+pub fn bind_dispatch_by_path(path: &str) -> Result<*mut RawIDispatch, String> {
+    use windows_sys::Win32::System::Com::CoGetObject;
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    // SAFETY: `wide` is a NUL-terminated UTF-16 buffer alive across the call, `pBindOptions`
+    // may be null (default bind), `IID_IDISPATCH` is a 'static GUID, and `&mut dispatch_ptr`
+    // is a live out-slot. CoGetObject returns S_OK + a retained IDispatch on success.
+    let hr = unsafe { CoGetObject(wide.as_ptr(), std::ptr::null(), &IID_IDISPATCH, &mut dispatch_ptr) };
+    if hr < 0 {
+        return Err(format!(
+            "CoGetObject failed for `{path}` with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    if dispatch_ptr.is_null() {
+        return Err("CoGetObject returned a null IDispatch pointer".to_string());
+    }
+    Ok(dispatch_ptr.cast::<RawIDispatch>())
+}
+
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 /// # Safety

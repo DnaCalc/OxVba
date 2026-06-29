@@ -21,10 +21,22 @@ use oxvba_com::{
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
     platform::portable::PortableDispatch,
 };
-use oxvba_runtime::{ObjectRef, Variant, variant_to_vba_string};
+use oxvba_runtime::{ObjectRef, VarType, Variant, variant_to_vba_string};
 use std::sync::Arc;
 
 use super::StandardHostServices;
+
+/// A `GetObject` argument as an optional, trimmed, non-empty class/ProgID string. An
+/// `Empty`/`Null`/`Error` (omitted) variant — or a blank string — yields `None`.
+fn com_optional_string(value: &Variant) -> Option<String> {
+    match value.vtype() {
+        VarType::Empty | VarType::Null | VarType::Error => None,
+        _ => variant_to_vba_string(value)
+            .ok()
+            .map(|text| text.as_str().trim().to_string())
+            .filter(|text| !text.is_empty()),
+    }
+}
 
 fn is_dispatch_fixture_prog_id_name(prog_id_name: &str) -> bool {
     known_typelib_identity_for_prog_id_name(prog_id_name).is_some_and(|identity| {
@@ -224,6 +236,86 @@ impl ComHal for StandardHostServices {
         #[cfg(target_os = "windows")]
         try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
         Ok(Variant::from_object_ref(object))
+    }
+
+    fn get_object_variant(&self, pathname: Variant, class: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "get_object"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "get_object"));
+        }
+        let class_name = com_optional_string(&class);
+        // An omitted pathname is an `Empty`/`Null`/`Error` variant; a *present* one keeps its
+        // string form — which may be "" (the new-instance mode, distinct from omitted).
+        let pathname_present =
+            !matches!(pathname.vtype(), VarType::Empty | VarType::Null | VarType::Error);
+        let path_text = if pathname_present {
+            Some(
+                variant_to_vba_string(&pathname)
+                    .map_err(|detail| {
+                        HalError::adapter_fault(self.profile, capability, "get_object", detail)
+                    })?
+                    .as_str()
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+
+        // A call with neither a class nor a non-empty pathname (`GetObject()` /
+        // `GetObject("")`) is invalid in every mode — reject it identically across profiles,
+        // BEFORE the native gate, so the diagnostic does not depend on whether native COM is
+        // available.
+        let pathname_absent_or_empty = path_text.as_deref().map(str::is_empty).unwrap_or(true);
+        if class_name.is_none() && pathname_absent_or_empty {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "get_object",
+                "GetObject requires a pathname or a class",
+            ));
+        }
+
+        // `GetObject("", class)` returns a NEW instance of `class` — identical to
+        // `CreateObject(class)`, and available in every mode (incl. the portable projection),
+        // so handle it before the native-COM gate.
+        if let (Some(path), Some(class)) = (path_text.as_deref(), class_name.as_deref())
+            && path.is_empty()
+        {
+            return self.create_object_variant(Variant::from_string(class.to_string()));
+        }
+
+        #[cfg(target_os = "windows")]
+        if self.native_com_enabled() {
+            self.ensure_thread_com_apartment("get_object")?;
+            let object = match (path_text.as_deref(), class_name.as_deref()) {
+                // `GetObject(, class)` — the currently-running registered instance.
+                (None, Some(class)) => self.com_bridge.get_active_object(class),
+                // `GetObject(path[, class])` — bind to the object the file names.
+                (Some(path), class_opt) if !path.is_empty() => {
+                    self.com_bridge.bind_file_object(path, class_opt)
+                }
+                // The invalid shapes were already rejected above; defend the invariant.
+                _ => unreachable!("GetObject invalid-arg shapes are rejected before the native gate"),
+            }
+            .map_err(|message| self.com_getobject_adapter_fault(message))?;
+            return Ok(Variant::from_object_ref(object));
+        }
+
+        // Non-native (deterministic/portable) or non-Windows: the running-instance and
+        // file-bind modes have no headless equivalent, so decline honestly. NOTE: this (and
+        // the native miss/HRESULT faults) currently reaches VBA as `Err.Number = 5`, not the
+        // canonical 429 — `From<HalError> for LibError` flattens all COM faults (the known
+        // `hal-errors-flattened-to-5` gap). The HRESULT is preserved in the fault message.
+        let _ = (&path_text, &class_name);
+        Err(HalError::adapter_fault(
+            self.profile,
+            capability,
+            "get_object",
+            "GetObject cannot bind a running or file object without native COM",
+        ))
     }
 
     unsafe fn bind_native_dispatch_object_variant(

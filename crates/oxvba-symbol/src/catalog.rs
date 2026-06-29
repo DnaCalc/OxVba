@@ -253,6 +253,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Environ => e(Environ, &["Environ", "Environ$"], sig(1, 1), Ordinary),
         Dir => e(Dir, &["Dir", "Dir$"], sig(0, 2), Ordinary),
         CreateObject => e(CreateObject, &["CreateObject"], sig(1, 2), SpecialForm),
+        GetObject => e(GetObject, &["GetObject"], sig(1, 2), SpecialForm),
         ComSubscribeEvent => e(ComSubscribeEvent, &[], variadic(0), SpecialForm),
         ComUnsubscribeEvent => e(ComUnsubscribeEvent, &[], variadic(0), SpecialForm),
         ComEventCallbackSubscription => {

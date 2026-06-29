@@ -295,6 +295,10 @@ impl ComHal for RecordingHostServices {
         self.inner.com().create_object_variant(prog_id)
     }
 
+    fn get_object_variant(&self, pathname: Variant, class: Variant) -> HalResult<Variant> {
+        self.inner.com().get_object_variant(pathname, class)
+    }
+
     fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
         self.inner.com().release_object_variant(object)
     }

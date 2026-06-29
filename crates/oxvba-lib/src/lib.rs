@@ -352,6 +352,7 @@ pub fn invoke(
         Environ => host::environ(args, host),
         Dir => host::dir(args, host),
         CreateObject => host::create_object(args, host),
+        GetObject => host::get_object(args, host),
         ComSubscribeEvent => host::com_subscribe_event(args, host),
         ComUnsubscribeEvent => host::com_unsubscribe_event(args, host),
         ComEventCallbackSubscription => host::com_event_callback_subscription(args, host),

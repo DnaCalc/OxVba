@@ -316,6 +316,16 @@ pub trait ComHal: Send + Sync {
             "create_object_variant",
         )
     }
+    /// VBA `GetObject([pathname], [class])`. Three modes by the shape of the arguments:
+    /// an omitted `pathname` (an `Empty`/`Null` variant) binds to the currently-running
+    /// instance of `class` (`GetActiveObject`); a zero-length `pathname` creates a new
+    /// instance of `class` (like `CreateObject`); a non-empty `pathname` binds to the
+    /// object that file names (`CoGetObject`). A failure (e.g. no running instance) should
+    /// surface to VBA as error 429, but currently flattens to 5 — see the
+    /// `hal-errors-flattened-to-5` gap; the HRESULT is preserved in the fault message.
+    fn get_object_variant(&self, _pathname: Variant, _class: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ComActivationDispatch, "get_object_variant")
+    }
     /// Bind an existing native `IDispatch` pointer into the host COM state and
     /// associate it with a ProgID for subsequent host-root activation.
     ///

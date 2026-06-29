@@ -103,9 +103,10 @@ pub use windows_client::{
     RawIConnectionPointContainer, RawIConnectionPointContainerVtbl, RawIConnectionPointVtbl,
     RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl, activate_dispatch_by_prog_id,
     activate_runtime_binding, activate_runtime_dispatch, activate_runtime_object_binding_shared,
-    add_ref_dispatch, get_dispid_by_name, get_dispids_by_names, guid_equals, parse_guid_canonical,
-    query_dispatch_from_unknown, query_interface_pointer, query_unknown_from_dispatch,
-    release_connection_point, release_dispatch, release_unknown, resolve_named_argument_dispids,
+    add_ref_dispatch, bind_dispatch_by_path, get_active_dispatch_by_prog_id, get_dispid_by_name,
+    get_dispids_by_names, guid_equals, parse_guid_canonical, query_dispatch_from_unknown,
+    query_interface_pointer, query_unknown_from_dispatch, release_connection_point,
+    release_dispatch, release_unknown, resolve_named_argument_dispids,
 };
 #[cfg(target_os = "windows")]
 pub use windows_connection_point::{

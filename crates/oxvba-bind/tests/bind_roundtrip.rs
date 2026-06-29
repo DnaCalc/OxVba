@@ -1665,6 +1665,63 @@ fn new_com_coclass_lowers_to_create_object() {
     assert!(format!("{program:?}").contains("CreateObject"));
 }
 
+#[test]
+fn getobject_call_lowers_to_native_getobject() {
+    // `GetObject` is a SpecialForm intrinsic that keeps the bespoke `Native` route (like
+    // `CreateObject`); each of its three call shapes must reach `NativeImplId::GetObject`,
+    // including the leading-omitted `GetObject(, class)` (the running-instance mode).
+    for src in [
+        "Sub Main()\n    Dim x As Object\n    Set x = GetObject(\"c:\\book.xlsx\")\nEnd Sub\n",
+        "Sub Main()\n    Dim x As Object\n    Set x = GetObject(, \"Excel.Application\")\nEnd Sub\n",
+        "Sub Main()\n    Dim x As Object\n    Set x = GetObject(\"\", \"Scripting.Dictionary\")\nEnd Sub\n",
+    ] {
+        let program = bind(src);
+        assert!(
+            format!("{program:?}").contains("GetObject"),
+            "expected a Native(GetObject) call for:\n{src}"
+        );
+    }
+}
+
+#[test]
+fn getobject_omitted_pathname_passes_an_empty_first_arg() {
+    // `GetObject(, "Excel.Application")` — the omitted pathname must reach the native call as
+    // an Omitted arg (the VM materializes it as `Empty`), so the HAL can tell the
+    // running-instance mode from a present `""` (new-instance). Assert the first arg is
+    // Omitted and the second is the class string.
+    let program = bind(
+        "Sub Main()\n    Dim x As Object\n    Set x = GetObject(, \"Excel.Application\")\nEnd Sub\n",
+    );
+    fn native_getobject_args(program: &CoreProgram) -> Option<&Vec<CoreArg>> {
+        fn find(value: &CoreValue) -> Option<&Vec<CoreArg>> {
+            match value {
+                CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::GetObject),
+                    args,
+                } => Some(args),
+                CoreValue::Coerce { value, .. } => find(value),
+                _ => None,
+            }
+        }
+        program
+            .procs
+            .iter()
+            .flat_map(|p| &p.body)
+            .find_map(|s| match s {
+                CoreStmt::Assign { value, .. } => find(value),
+                CoreStmt::Eval(value) => find(value),
+                _ => None,
+            })
+    }
+    let args = native_getobject_args(&program).expect("a Native(GetObject) call");
+    assert_eq!(args.len(), 2, "pathname + class: {args:?}");
+    assert!(
+        matches!(args[0], CoreArg::Omitted),
+        "omitted pathname must stay Omitted: {:?}",
+        args[0]
+    );
+}
+
 // ── Events: WithEvents + RaiseEvent routing ──────────────────────────────────
 
 fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest {

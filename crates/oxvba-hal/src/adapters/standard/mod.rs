@@ -1085,6 +1085,34 @@ impl StandardHostServices {
         )
     }
 
+    /// `GetObject` activation fault — same HRESULT capture as
+    /// [`com_createobject_adapter_fault`], labelled `get_object`. The HRESULT (e.g.
+    /// `MK_E_UNAVAILABLE` for no running instance) is preserved in the fault message for
+    /// diagnostics and for a future correct `Err.Number` mapping. NOTE: it does NOT yet
+    /// reach VBA as 429/432 — `From<HalError> for LibError` currently flattens every COM
+    /// fault to `Err.Number = 5` (the `hal-errors-flattened-to-5` gap), exactly like
+    /// `CreateObject`.
+    #[cfg(target_os = "windows")]
+    fn com_getobject_adapter_fault(&self, message: String) -> HalError {
+        let hresult = parse_hresult_hex(&message);
+        let label = map_com_hresult_label(hresult, None);
+        let mut suffix = String::new();
+        if let Some(value) = hresult {
+            suffix.push_str(&format!("hresult=0x{value:08X};"));
+        }
+        let prefix = if suffix.is_empty() {
+            format!("com-getobject-{label}")
+        } else {
+            format!("com-getobject-{label};{suffix}")
+        };
+        HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "get_object",
+            format!("{prefix} {message}"),
+        )
+    }
+
     #[cfg(target_os = "windows")]
     fn com_dispatch_adapter_fault(&self, message: String) -> HalError {
         let hresult = parse_hresult_hex(&message);
