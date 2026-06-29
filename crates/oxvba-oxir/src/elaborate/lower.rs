@@ -1424,17 +1424,18 @@ impl<'a> Lowerer<'a> {
                 });
                 Ok((OxOperand::temp(t), OxTy::Bool))
             }
-            CoreValue::ArrayLiteral(values) => {
-                let mut ops = Vec::with_capacity(values.len());
-                for v in values {
+            CoreValue::ArrayLiteral { elems, lower_bound } => {
+                let mut ops = Vec::with_capacity(elems.len());
+                for v in elems {
                     ops.push(self.lower_value(v)?.0);
                 }
                 let t = self.new_temp();
                 self.emit(OxInst::ArrayLiteral {
                     dst: OxPlace::Temp(t),
                     values: ops,
+                    lower_bound: *lower_bound,
                 });
-                // `Array(…)` yields a dynamic 0-based Variant array.
+                // `Array(…)` yields a dynamic Variant array based at `Option Base`.
                 Ok((
                     OxOperand::temp(t),
                     OxTy::Array(Box::new(OxTy::Variant), ArrayShape::Dynamic),

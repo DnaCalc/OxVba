@@ -54,6 +54,10 @@ pub struct ProcInfo {
     pub me_local: Option<LocalId>,
     /// The enclosing module's `Option Compare` mode (for string comparisons).
     pub compare_mode: StringCompareMode,
+    /// The enclosing module's `Option Base` (0 or 1): the default lower bound of
+    /// an array dimension declared with only an upper bound (`Dim a(10)`) and of
+    /// the `Array()` function's result.
+    pub option_base: i32,
 }
 
 /// The whole project's id allocation: globals, procs, classes, and the symbol→id
@@ -166,6 +170,7 @@ impl IdAllocator {
         for module in env.modules() {
             let class_name = class_name_for(manifest, module.module_name);
             let compare_mode = module_compare_mode(module.syntax);
+            let option_base = module_option_base(module.syntax);
             let proc_scopes: Vec<ScopeId> = symbols
                 .scopes()
                 .iter()
@@ -192,6 +197,7 @@ impl IdAllocator {
                     proc_scope,
                     class_name.clone(),
                     compare_mode,
+                    option_base,
                 )?;
             }
         }
@@ -288,6 +294,7 @@ impl IdAllocator {
         proc_scope: ScopeId,
         class_name: Option<String>,
         compare_mode: StringCompareMode,
+        option_base: i32,
     ) -> Result<(), BindError> {
         let symbols = &env.symbols;
         let proc_id = ProcId(self.procs.len());
@@ -391,6 +398,7 @@ impl IdAllocator {
             class_name,
             me_local,
             compare_mode,
+            option_base,
         });
         Ok(())
     }
@@ -624,6 +632,27 @@ fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
         }
     }
     StringCompareMode::Binary
+}
+
+/// The module's `Option Base` (0 or 1): the default lower bound of an array
+/// dimension declared with only an upper bound, and of the `Array()` result.
+/// `Option Base 1` sets 1; absent (or `Option Base 0`) it is 0. VBA permits
+/// only 0 or 1 — any other literal is read as 1 only when it is exactly `1`.
+fn module_option_base(module: SyntaxNode<'_>) -> i32 {
+    for node in module.child_nodes() {
+        if node.kind() != SyntaxKind::OptionStmt {
+            continue;
+        }
+        let toks = node.child_tokens();
+        if !toks.iter().any(|t| t.kind == SyntaxKind::KwBase) {
+            continue;
+        }
+        let is_one = toks
+            .iter()
+            .any(|t| t.kind == SyntaxKind::IntLiteral && t.text.trim() == "1");
+        return i32::from(is_one);
+    }
+    0
 }
 
 /// Interface display names from a class module's `Implements` clauses (each is a

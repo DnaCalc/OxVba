@@ -940,8 +940,9 @@ impl<'a> ProcLower<'a> {
         })
     }
 
-    /// Lower an `ArrayBounds` node to `CoreBound`s (each `lower To upper`, or `0 To
-    /// upper` for a single bound). The lower bound must be a constant.
+    /// Lower an `ArrayBounds` node to `CoreBound`s (each `lower To upper`, or
+    /// `<Option Base> To upper` for a single bound). The lower bound must be a
+    /// constant.
     fn bind_array_bounds(
         &mut self,
         bounds_node: SyntaxNode<'_>,
@@ -951,7 +952,9 @@ impl<'a> ProcLower<'a> {
             let exprs = b.expr_children();
             let (lower, upper) = match exprs.len() {
                 0 => return Err(BindError::Malformed("empty array bound".into())),
-                1 => (0, self.bind_expr(exprs[0])?.value),
+                // A single bound (`Dim a(10)`) takes the module's `Option Base` as
+                // its lower bound; an explicit `lo To hi` overrides it.
+                1 => (self.info.option_base, self.bind_expr(exprs[0])?.value),
                 _ => {
                     let lo_val = self.bind_expr(exprs[0])?.value;
                     let lo = self.const_i32(&lo_val)?;

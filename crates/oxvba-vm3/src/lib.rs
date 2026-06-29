@@ -1205,12 +1205,27 @@ impl<'h> Vm3<'h> {
             )?,
 
             // ── Arrays / For Each (M3-2) ─────────────────────────────────────────────
-            OxInst::ArrayLiteral { dst, values } => {
+            OxInst::ArrayLiteral {
+                dst,
+                values,
+                lower_bound,
+            } => {
                 let elems = values
                     .iter()
                     .map(|v| self.operand(v))
                     .collect::<Result<Vec<_>, _>>()?;
-                self.store(dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
+                // `Array()` is based at the module's `Option Base` (0 or 1); a
+                // `ParamArray` always at 0. A non-zero base needs explicit bounds.
+                let array = if *lower_bound == 0 {
+                    SafeArray::from_variants(elems)
+                } else {
+                    let bounds = vec![SafeArrayBound {
+                        count: elems.len() as u32,
+                        lower: *lower_bound,
+                    }];
+                    SafeArray::from_variants_nd(bounds, elems)
+                };
+                self.store(dst, Variant::from_safearray(array))?;
             }
             OxInst::ArrayAppend { dst, array, item } => {
                 let mut elems = match self.operand(array)?.as_safearray() {

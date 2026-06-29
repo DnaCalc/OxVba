@@ -290,6 +290,9 @@ pub enum OxInst {
     ArrayLiteral {
         dst: OxPlace,
         values: Vec<OxOperand>,
+        /// The array's first index (its `LBound`): `Option Base` for `Array()`,
+        /// 0 for `ParamArray` boxing.
+        lower_bound: i32,
     },
     ArrayAppend {
         dst: OxPlace,

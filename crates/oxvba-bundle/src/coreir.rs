@@ -367,7 +367,13 @@ pub enum CoreValue {
         value: Box<CoreValue>,
     },
     ErrField(ErrField),
-    ArrayLiteral(Vec<CoreValue>),
+    /// A `Variant` array materialized from element values (VBA's `Array()` and
+    /// `ParamArray` boxing). `lower_bound` is the array's first index: the
+    /// module's `Option Base` for `Array()`, always 0 for a `ParamArray`.
+    ArrayLiteral {
+        elems: Vec<CoreValue>,
+        lower_bound: i32,
+    },
     Bound {
         which: BoundWhich,
         array: Box<CorePlace>,

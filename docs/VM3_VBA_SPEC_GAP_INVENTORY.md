@@ -90,7 +90,7 @@ may remain unexamined.
 |☑|datevalue-cdate-of-date-raises-13|High/SilentWrong|S|`DateValue`/`CDate` of Date/numeric raises 13|vtype dispatch in `date_value`; + calendar validation (Feb 30 → 13) *(done; CDate already dispatched)*|
 |☑|redim-preserve-multidim-corrupt|High/SilentWrong|M|multi-dim `ReDim Preserve` flat-copies (corrupts)|coordinate-aware copy *(done w/ redim bead)*|
 |☑|redim-preserve-no-dimension-guard|High/SilentWrong|M|`ReDim Preserve` doesn't enforce only-last-dim (no Err 9)|compare new vs old bounds *(done w/ redim bead)*|
-|☐|option-base-1-ignored|High/SilentWrong|M|`Option Base 1` ignored (arrays always 0-based)|thread module base into `bind_array_bounds`/Array()|
+|☑|option-base-1-ignored|High/SilentWrong|M|`Option Base 1` ignored (arrays always 0-based)|`module_option_base` threads the module's `Option Base` onto `ProcInfo.option_base` (mirrors `compare_mode`); `bind_array_bounds` uses it for a single-bound dim's lower (explicit `lo To hi` overrides); `Array()` carries it via a new `lower_bound` on `CoreValue/OxInst::ArrayLiteral` → vm3 builds the SafeArray with that base; `ParamArray` stays 0. Live-verified: Base1 `Dim a(3)`=1..3, `Array()`=1..3, explicit `2 To 5` & ParamArray=0-based *(done)*|
 |☐|statement-call-paren-not-byval|High/SilentWrong|M|`Foo(x)` statement call doesn't force ByVal|carry paren-arg flag parser→`bind_one_arg`|
 |☐|byref-type-mismatch-accepted|High/SilentWrong|M|`ByRef` type mismatch silently accepted+retypes caller|bind-time reject when ByRef param type ≠ l-value type|
 |☐|no-call-arity-validation|High/SilentWrong|S|extra args dropped; missing→late wrong error|arity check in `bind_proc_args`|

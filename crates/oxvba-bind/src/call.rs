@@ -130,7 +130,10 @@ impl<'a> ProcLower<'a> {
                     None => Vec::new(),
                 };
                 Ok(value_bound(
-                    CoreValue::ArrayLiteral(items),
+                    CoreValue::ArrayLiteral {
+                        elems: items,
+                        lower_bound: self.info.option_base,
+                    },
                     VarTypeRef::Variant,
                 ))
             }
@@ -1403,7 +1406,11 @@ impl<'a> ProcLower<'a> {
             // free procs and methods need no downstream variadic handling.
             Some(_) => {
                 let elems: Vec<CoreValue> = tail.into_iter().map(paramarray_element).collect();
-                args.push(CoreArg::ByVal(CoreValue::ArrayLiteral(elems)));
+                // A `ParamArray` slot is always 0-based, regardless of `Option Base`.
+                args.push(CoreArg::ByVal(CoreValue::ArrayLiteral {
+                    elems,
+                    lower_bound: 0,
+                }));
             }
             None => args.extend(tail),
         }
