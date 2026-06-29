@@ -347,6 +347,62 @@ impl<'h> Vm3<'h> {
         self.programs[self.cur].program
     }
 
+    /// Build a program's mutable runtime tables: one leaked `&'static` runtime descriptor per
+    /// class (the shape `ObjectRef::from_project_instance` requires, as vm2's `LoadedBundle`
+    /// leaks them; bounded by class count), the `(binding,event)→handler` route table, and the
+    /// zeroed module-global slots.
+    fn build_loaded(program: &'h OxProgram) -> LoadedProgram<'h> {
+        let class_descriptors: Vec<&'static RuntimeClassDescriptor> = program
+            .classes
+            .iter()
+            .map(|class| {
+                let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
+                let interfaces: &'static [RuntimeInterfaceDescriptor] =
+                    Box::leak(Box::new([RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR]));
+                &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
+            })
+            .collect();
+        let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
+        for route in &program.event_routes {
+            event_routes.insert((route.binding, route.event), route.handler);
+        }
+        LoadedProgram {
+            program,
+            globals: vec![Variant::empty(); program.globals.len()],
+            class_descriptors,
+            predeclared_singletons: HashMap::new(),
+            event_routes,
+        }
+    }
+
+    /// The index of the loaded program declaring unit `name` (its `unit_name`), for resolving a
+    /// cross-project import/reference.
+    fn program_index_by_unit(&self, unit: &str) -> Option<usize> {
+        self.programs
+            .iter()
+            .position(|lp| lp.program.unit_name.eq_ignore_ascii_case(unit))
+    }
+
+    /// Every cross-project import (a non-`VBA` `unit`) must name a loaded program, else the link
+    /// is unresolved — reported naming the missing unit (never a silent mis-link). `VBA` imports
+    /// are the synthetic built-in library, resolved separately in `call_extern`.
+    fn validate_links(&self) -> Result<(), Vm3Error> {
+        for lp in &self.programs {
+            for imp in &lp.program.imports {
+                if imp.unit.eq_ignore_ascii_case("VBA") {
+                    continue;
+                }
+                if self.program_index_by_unit(&imp.unit).is_none() {
+                    return Err(Vm3Error::Malformed(format!(
+                        "unresolved reference to unit '{}'",
+                        imp.unit
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Run `program` to completion and return the finished VM (read the result snapshot
     /// with [`Vm3::slot`]). Mirrors vm2: the global initializer runs first, then `Main`
     /// in an entry frame that is never popped.
@@ -361,22 +417,56 @@ impl<'h> Vm3<'h> {
     /// *project* is exactly ONE `OxProgram` with many classes, so it links trivially and this is
     /// what the single-project product paths (CLI run, single-class COM server) need.
     ///
-    /// True multi-`OxProgram` CROSS-PROJECT linking (project A referencing project B's
-    /// classes/procs — closes G6) is the remaining part of this milestone: it needs per-program
-    /// global/descriptor tables (a `LoadedProgram` vector), a program-tagged `Loc::Global` and
-    /// `Frame`/`ObjectRef.bundle_id`, and program-aware dispatch/identity/TypeOf/RaiseEvent. Until
-    /// that lands, a multi-program link is an explicit `Unimplemented` (never a silent mis-link).
-    /// The entry is the last program, mirroring vm2's `Vm::link`.
+    /// Multiple programs are cross-project references (project A referencing project B's
+    /// procs/classes). The entry is the LAST program (mirrors vm2's `Vm::link`); cross-project
+    /// imports are resolved by `unit_name` and must all be present, else the link fails naming
+    /// the missing unit. Each program's module-global initializer runs in its own program
+    /// context; the entry's `Main` is run later by `run_entry`.
     pub fn link(programs: &[&'h OxProgram], host: &'h dyn HostServices) -> Result<Self, Vm3Error> {
-        match programs {
-            [single] => Self::activate(single, host),
-            [] => Err(Vm3Error::Malformed(
+        if programs.is_empty() {
+            return Err(Vm3Error::Malformed(
                 "Vm3::link requires at least one program".into(),
-            )),
-            _ => Err(Vm3Error::Unimplemented {
-                what: "cross-project OxProgram link",
-            }),
+            ));
         }
+        let entry = programs.len() - 1;
+        let mut vm = Vm3 {
+            programs: programs.iter().map(|p| Self::build_loaded(p)).collect(),
+            cur: entry,
+            host,
+            lib: LibContext::default(),
+            frames: Vec::new(),
+            error_mode: ErrorMode::None,
+            active_error: None,
+            err: ErrState::default(),
+            last_dll_error: 0,
+            pending_fault: None,
+            for_each: HashMap::new(),
+            next_instance_id: INSTANCE_ID_BASE,
+            draining: false,
+            withevents: HashMap::new(),
+            withevents_iters: Vec::new(),
+            project_event_sink: None,
+        };
+        // Every cross-project reference must resolve before any code runs.
+        vm.validate_links()?;
+        // Run each program's module-global initializer in ITS OWN program context (cur = i), so
+        // a global write lands in that program's globals (the entry's initializer runs last).
+        for i in 0..vm.programs.len() {
+            if let Some(init) = vm.programs[i].program.global_initializer {
+                vm.cur = i;
+                let frame = vm.new_frame(init);
+                vm.frames.push(frame);
+                let r = vm.run_loop(0);
+                // The initializer writes module globals; its own frame is discarded.
+                vm.frames.pop();
+                r?;
+            }
+        }
+        vm.cur = entry;
+        // Isolate this activation from any prior run on the shared thread-local termination
+        // queue, before any entry/invoke runs — matching vm2's per-run reset.
+        oxvba_runtime::reset_pending_terminations();
+        Ok(vm)
     }
 
     /// Host session factory (W7): mint a project-class instance by NAME (running its
@@ -464,70 +554,14 @@ impl<'h> Vm3<'h> {
         self.project_event_sink = None;
     }
 
-    /// Build the VM and run the module-global initializer, but do NOT run the entry (`Main`).
-    /// This is the front half of [`Vm3::run`], split out so a long-lived host session can
-    /// activate a program once and then issue many member invokes against it. The per-run
-    /// setup — the leaked `&'static` class descriptors, the event-route table, the global
-    /// initializer, and the shared termination-queue reset — happens here exactly ONCE, so a
-    /// session never re-leaks descriptors or double-drains across invokes.
+    /// Build the VM for a SINGLE program and run its module-global initializer, but do NOT run
+    /// the entry (`Main`) — the front half of [`Vm3::run`], split out so a long-lived host
+    /// session can activate once and issue many member invokes. A whole VBA project is exactly
+    /// one `OxProgram`; this is [`Vm3::link`] over `[program]` (which leaks the `&'static` class
+    /// descriptors, builds the event routes, runs the initializer, and resets the drain queue
+    /// exactly once).
     pub fn activate(program: &'h OxProgram, host: &'h dyn HostServices) -> Result<Self, Vm3Error> {
-        // One leaked `&'static` runtime descriptor per project class (its name + the universal
-        // IUnknown interface) — the shape `ObjectRef::from_project_instance` requires, exactly
-        // as vm2's `LoadedBundle::load` leaks them. The leak is per-activation and bounded by
-        // the class count (matching vm2); a future arena can reclaim it.
-        let class_descriptors: Vec<&'static RuntimeClassDescriptor> = program
-            .classes
-            .iter()
-            .map(|class| {
-                let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
-                let interfaces: &'static [RuntimeInterfaceDescriptor] =
-                    Box::leak(Box::new([RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR]));
-                &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
-            })
-            .collect();
-        // `(binding-token, event-id) → handler proc` for RaiseEvent dispatch (reused verbatim
-        // from the bundle's event routes, like vm2's `LoadedBundle`).
-        let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
-        for route in &program.event_routes {
-            event_routes.insert((route.binding, route.event), route.handler);
-        }
-        let mut vm = Vm3 {
-            programs: vec![LoadedProgram {
-                program,
-                globals: vec![Variant::empty(); program.globals.len()],
-                class_descriptors,
-                predeclared_singletons: HashMap::new(),
-                event_routes,
-            }],
-            cur: 0,
-            host,
-            lib: LibContext::default(),
-            frames: Vec::new(),
-            error_mode: ErrorMode::None,
-            active_error: None,
-            err: ErrState::default(),
-            last_dll_error: 0,
-            pending_fault: None,
-            for_each: HashMap::new(),
-            next_instance_id: INSTANCE_ID_BASE,
-            draining: false,
-            withevents: HashMap::new(),
-            withevents_iters: Vec::new(),
-            project_event_sink: None,
-        };
-
-        if let Some(init) = program.global_initializer {
-            let frame = vm.new_frame(init);
-            vm.frames.push(frame);
-            let r = vm.run_loop(0);
-            // The initializer writes module globals; its own frame is discarded.
-            vm.frames.pop();
-            r?;
-        }
-        // Isolate this activation from any prior run on the shared thread-local termination
-        // queue, before any entry/invoke runs — matching vm2's per-run reset.
-        oxvba_runtime::reset_pending_terminations();
-        Ok(vm)
+        Self::link(&[program], host)
     }
 
     /// Run the program entry (`Sub Main`) in an entry frame that is never popped — it stays as
@@ -809,6 +843,10 @@ impl<'h> Vm3<'h> {
     /// the pad's `FaultDispatch` then consults the error mode.
     fn route_fault(&mut self, fault: Fault) -> Result<(), Vm3Error> {
         let top = self.frames.len() - 1;
+        // Re-target `cur` to the faulting frame's program: `propagate_fault` may have popped to a
+        // caller in a DIFFERENT program before re-routing here, so the pad lookup + `Err.Source`
+        // (raise) must use that frame's program (mirrors vm2's route_fault `cur` restore).
+        self.cur = self.frames[top].prog;
         let (func, block) = (self.frames[top].func, self.frames[top].block);
         let pad = self.cur_program().funcs[func.0].blocks[block.0]
             .fault_target
@@ -986,7 +1024,9 @@ impl<'h> Vm3<'h> {
             }
             // A compiled VBA procedure call (intra-unit). The `AddressOf`-reference
             // `CallProcRef` is M3-7.
-            OxInst::CallProc { dst, proc, args } => self.call_proc(*dst, *proc, args)?,
+            OxInst::CallProc { dst, proc, args } => {
+                self.call_proc_in(self.cur, *dst, *proc, args)?
+            }
             // A cross-bundle call. vm3 links only the synthetic `VBA` library bundle today,
             // so this resolves to a native library function (`Strings.Left`, `Math.Abs`, …)
             // run through the same `invoke_native_lib` bridge as `CallNative { Builtin }`. A
@@ -1032,7 +1072,7 @@ impl<'h> Vm3<'h> {
                     .filter(|&p| p < self.cur_program().funcs.len())
                     .ok_or_else(|| Vm3Error::Fault(Fault::new(490, "invalid procedure reference")))?;
                 let dst = dst.as_ref().copied();
-                self.call_proc(dst, FuncId(proc), args)?;
+                self.call_proc_in(self.cur, dst, FuncId(proc), args)?;
             }
             // `On Error` sets the activation's handler policy and — per MS-VBAL §5.4.4.1
             // (doc rule R5) — unconditionally resets the `Err` object. (The active-error
@@ -1601,13 +1641,17 @@ impl<'h> Vm3<'h> {
     /// location so writes propagate live; an omitted optional gets the `MISSING_ARG`
     /// sentinel), then hand control to the dispatch loop. The return value is copied out
     /// when the frame returns (see `do_return`). Mirrors vm2's `call_proc`.
-    fn call_proc(
+    fn call_proc_in(
         &mut self,
+        target_prog: usize,
         dst: Option<OxPlace>,
         proc: FuncId,
         args: &[OxArg],
     ) -> Result<(), Vm3Error> {
-        let program = self.cur_program();
+        // The callee runs against `target_prog` (its own program for a cross-project call); the
+        // arguments + result dst are resolved below in the CALLER's context (`cur`), so a ByRef
+        // alias / the dst stay bound to the caller's program (see `Loc::Global` tagging).
+        let program = self.programs[target_prog].program;
         let callee = program
             .funcs
             .get(proc.0)
@@ -1643,7 +1687,7 @@ impl<'h> Vm3<'h> {
         // dispatch loop runs the callee and `do_return`/`propagate_fault` pops it — there
         // is no native recursion here, so the call depth is heap-bounded.
         self.frames.push(Frame {
-            prog: self.cur,
+            prog: target_prog,
             func: proc,
             block: entry,
             ip: 0,
@@ -1673,6 +1717,37 @@ impl<'h> Vm3<'h> {
         import: ImportId,
         args: &[OxArg],
     ) -> Result<(), Vm3Error> {
+        let imp = self.cur_program().imports.get(import.0).ok_or_else(|| {
+            Vm3Error::Malformed(format!("CallExtern names unknown import {}", import.0))
+        })?;
+        // A cross-PROJECT reference (a non-`VBA` unit) is a VBA-bodied proc in another loaded
+        // program: resolve it by unit name + export token and call INTO that program — the
+        // callee frame carries `prog = B` so it runs against B's globals, while the result dst
+        // and any ByRef args are resolved in this caller's program (see `Loc::Global` tagging).
+        // The synthetic `VBA` unit is the built-in native-library path below.
+        if !imp.unit.eq_ignore_ascii_case("VBA") {
+            let b = self.program_index_by_unit(&imp.unit).ok_or_else(|| {
+                Vm3Error::Malformed(format!("unresolved reference to unit '{}'", imp.unit))
+            })?;
+            let proc = self.programs[b]
+                .program
+                .exports
+                .iter()
+                .find(|e| e.token.matches(&imp.token))
+                .ok_or_else(|| {
+                    Vm3Error::Malformed(format!(
+                        "unit '{}' has no export matching the CallExtern import",
+                        imp.unit
+                    ))
+                })
+                .and_then(|export| match export.target {
+                    oxvba_bundle::ExportTarget::Proc(p) => Ok(p),
+                    _ => Err(Vm3Error::Malformed(
+                        "a cross-project CallExtern resolved to a non-procedure export".into(),
+                    )),
+                })?;
+            return self.call_proc_in(b, dst, FuncId(proc), args);
+        }
         let id = self.resolve_library_import(import)?;
         let argv = self.extern_args(args)?;
         let result = self.invoke_native_lib(id, &argv)?;
@@ -3354,8 +3429,9 @@ mod tests {
 
     #[test]
     fn link_over_a_single_program_runs_like_run() {
-        // W2 slice 1: Vm3::link over a single program activates the same image Vm3::run does;
-        // a multi-program (cross-project) link is a clean Unimplemented (the deferred remainder).
+        // W2: Vm3::link over a single program activates the same image Vm3::run does; a
+        // multi-program link now activates every program (cross-project EXECUTION — calls, fault
+        // unwind, unresolved-reference rejection — is covered in tests/cross_program.rs).
         let prog = main_proc(
             vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
             vec![assign(lc(0), CoreValue::Const(CoreConst::I32(42)))],
@@ -3368,13 +3444,11 @@ mod tests {
         vm.run_entry().expect("run_entry");
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
 
-        assert!(
-            matches!(
-                Vm3::link(&[oxp, oxp], host),
-                Err(Vm3Error::Unimplemented { .. })
-            ),
-            "multi-program cross-project link is the deferred remainder of W2"
-        );
+        // A multi-program link activates every program and runs the entry (the last program);
+        // two independent copies link cleanly and the entry's `n` slot is 42.
+        let mut multi = Vm3::link(&[oxp, oxp], host).expect("multi-program link");
+        multi.run_entry().expect("run_entry");
+        assert_eq!(multi.slot(0).and_then(|v| v.as_i32()), Some(42));
     }
 
     #[test]
