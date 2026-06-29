@@ -299,7 +299,7 @@ mod tests {
     /// by key), Remove — runs on vm3 via the shared keyed dispatch over the object box.
     #[test]
     fn vm3_runs_collection_methods() {
-        run_vm3_ok(
+        let snap = run_vm3_ok(
             "Sub Main()\n\
              Dim c As New Collection\n\
              c.Add 10\n\
@@ -313,6 +313,16 @@ mod tests {
              b = c.Item(\"k\")\n\
              c.Remove 1\n\
              End Sub\n",
+        );
+        // After Add 10; Add 20,"k"; Add 30,,before:=1 the collection is [30, 10, 20(key "k")].
+        // Snapshot = [c (Object), n=Count=3, a=Item(1)=30, b=Item("k")=20].
+        assert_eq!(snap.first(), Some(&Canon::Opaque { tag: 9 }), "c is an Object: {snap:?}");
+        assert!(snap.contains(&canon(&Variant::from_i32(3))), "Count==3: {snap:?}");
+        assert!(snap.contains(&canon(&Variant::from_i32(30))), "Item(1)==30: {snap:?}");
+        assert!(snap.contains(&canon(&Variant::from_i32(20))), "Item(\"k\")==20: {snap:?}");
+        assert!(
+            !snap.contains(&canon(&Variant::from_i32(10))),
+            "10 stays inside the collection, not in the snapshot: {snap:?}"
         );
     }
 
@@ -393,12 +403,19 @@ mod tests {
         assert_eq!(snap.first(), Some(&canon(&Variant::from_i32(42))), "{snap:?}");
     }
 
-    /// `Set w = Nothing` then `Set w = Nothing` lifecycle: the program runs cleanly on vm3
-    /// with the `Class_Terminate` drain wired in. The residual `gTerm` (global 0) matches vm3's
-    /// established, vm2-cross-checked observable (100 — the `+100` store; the terminate's `+1`
-    /// is not yet visible in this snapshot slot, exactly as vm2 produced).
+    /// `Set w = Nothing` in the entry `Main` does NOT drain `Class_Terminate` in the current
+    /// implementation: the entry frame is never popped (it holds the result snapshot), so the
+    /// Widget's last reference is never released to zero and `Class_Terminate` (`gTerm + 1`)
+    /// does not run before the snapshot is read. This test PINS that current, known-divergent
+    /// Set=Nothing-at-Main-scope behaviour: the residual `gTerm` (global 0) is 100 — only the
+    /// `+100` store landed, NOT 101. This is a PRE-EXISTING behaviour (vm3 here matched the now-
+    /// retired vm2 exactly; it is not a W12 regression). Correct VBA drains the terminate at the
+    /// `Set = Nothing` boundary → 101; FOLLOW-UP: drain at `Set <local> = Nothing` even inside
+    /// the never-popped entry frame, then flip this assertion to 101 and rename to
+    /// `..._runs_class_terminate`. (Terminate timing IS exercised correctly in a *called* proc by
+    /// `vm3_cross_proc_object_terminates_on_caught_fault`, where the frame is popped.)
     #[test]
-    fn vm3_set_nothing_runs_class_terminate() {
+    fn vm3_set_nothing_at_main_scope_does_not_yet_drain_terminate() {
         use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
         let snap = run_obj_ok(&[
             (
@@ -412,7 +429,11 @@ mod tests {
                 "Private Sub Class_Terminate()\n  gTerm = gTerm + 1\nEnd Sub\n",
             ),
         ]);
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_i32(100))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(100))),
+            "Set=Nothing at Main scope does not drain Class_Terminate (pinned known behaviour): {snap:?}"
+        );
     }
 
     #[test]

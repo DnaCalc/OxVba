@@ -563,6 +563,12 @@ impl Engine {
         &self,
         closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        // Honour the JIT toggle at the public entry (same as the source/manifest siblings),
+        // so a JIT-enabled engine returns the standard RUN-E-JIT-NOT-IMPLEMENTED diagnostic
+        // rather than the `_vm3` leg's generic VM3-E-UNIMPLEMENTED.
+        if self.config.enable_jit {
+            return Err(jit_not_implemented_diagnostic());
+        }
         match self.execute_project_closure_with_variant_snapshot_vm3(closure) {
             Vm3Snapshot::Ran(values) => Ok(values),
             Vm3Snapshot::Unsupported(what) => Err(PhaseDiagnostic::from_diagnostic(
@@ -689,6 +695,11 @@ impl Engine {
         &self,
         manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        // The public entry honours the JIT toggle exactly like its sibling source/closure
+        // paths (the `_vm3` leg is the differential's vm3-only runner and stays unguarded).
+        if self.config.enable_jit {
+            return Err(jit_not_implemented_diagnostic());
+        }
         match self.execute_manifest_with_variant_snapshot_vm3(manifest) {
             Vm3Snapshot::Ran(values) => Ok(values),
             Vm3Snapshot::Unsupported(what) => Err(PhaseDiagnostic::from_diagnostic(
