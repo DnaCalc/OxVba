@@ -232,6 +232,10 @@ struct EventBinding {
 /// explicit loop (no native recursion → deep VBA recursion is bounded by the frame
 /// ceiling, error 28, not a host stack overflow — and matches vm2's iterative model).
 struct Frame {
+    /// The program (index into `Vm3::programs`) whose `funcs`/`globals` this frame executes
+    /// against. `run_loop` sets `cur` from it each iteration, so a cross-program call/return
+    /// re-targets globals and instruction fetch automatically. Single-project runs are all `0`.
+    prog: usize,
     /// The function this frame is executing.
     func: FuncId,
     /// The current block and the index of the *next* instruction within it.
@@ -575,6 +579,7 @@ impl<'h> Vm3<'h> {
     fn new_frame(&self, func: FuncId) -> Frame {
         let f = &self.cur_program().funcs[func.0];
         Frame {
+            prog: self.cur,
             func,
             block: f.entry,
             ip: 0,
@@ -595,10 +600,14 @@ impl<'h> Vm3<'h> {
     /// recursion is bounded by the frame ceiling (error 28), never a host stack
     /// overflow — and the model mirrors vm2's iterative dispatch.
     fn run_loop(&mut self, base: usize) -> Result<(), Vm3Error> {
-        // `program` is a `'h` reference, independent of the `&mut self` exec borrows.
-        let program = self.cur_program();
         while self.frames.len() > base {
             let top = self.frames.len() - 1;
+            // Re-target `cur` to the executing frame's program each iteration: a cross-program
+            // call pushed a frame with a different `prog`, and a return pops back to the caller's,
+            // so globals (`programs[cur]`) and instruction fetch follow control flow with no
+            // explicit save/restore. `program` is a `'h` copy, independent of the exec borrows.
+            self.cur = self.frames[top].prog;
+            let program = self.cur_program();
             let (func, block, ip) = {
                 let fr = &self.frames[top];
                 (fr.func, fr.block, fr.ip)
@@ -1631,6 +1640,7 @@ impl<'h> Vm3<'h> {
         // dispatch loop runs the callee and `do_return`/`propagate_fault` pops it — there
         // is no native recursion here, so the call depth is heap-bounded.
         self.frames.push(Frame {
+            prog: self.cur,
             func: proc,
             block: entry,
             ip: 0,
