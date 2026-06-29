@@ -632,6 +632,170 @@ pub fn math1(args: &[Variant], f: impl Fn(f64) -> f64) -> LibResult<Variant> {
     Ok(vf64(f(as_f64(need(args, 0)?)?)))
 }
 
+/// `Abs` / `Int` / `Fix` — the three "type-preserving" unary math functions.
+/// Unlike the transcendentals they return the argument's own numeric subtype
+/// (so `Int(CCur(3.7))` is a `Currency`, `Fix(CDate(...))` is a `Date`), and
+/// `Abs` *promotes* on overflow rather than wrapping (`Abs(CInt(-32768))` is a
+/// `Long`, `Abs(CLng(&H80000000))` is a `Double`). Empty → `Integer` 0, Null →
+/// Null, Boolean → `Integer`, a numeric String → `Double`. Verified against
+/// live Office VBA 7.1.
+#[derive(Clone, Copy)]
+enum Math1Op {
+    Abs,
+    Int,
+    Fix,
+}
+
+pub fn abs(args: &[Variant]) -> LibResult<Variant> {
+    math1_typed(need(args, 0)?, Math1Op::Abs)
+}
+pub fn int_floor(args: &[Variant]) -> LibResult<Variant> {
+    math1_typed(need(args, 0)?, Math1Op::Int)
+}
+pub fn fix_trunc(args: &[Variant]) -> LibResult<Variant> {
+    math1_typed(need(args, 0)?, Math1Op::Fix)
+}
+
+/// `Sgn` — the sign of the argument as an `Integer` (-1, 0, 1), regardless of
+/// the input type. `Null` raises error 94 (the result is `Integer`, which
+/// cannot hold `Null`); `Empty` is 0.
+pub fn sgn(args: &[Variant]) -> LibResult<Variant> {
+    let v = need(args, 0)?;
+    if v.vtype() == VarType::Null {
+        return Err(LibError::new(94, "invalid use of Null"));
+    }
+    let x = conv_f64(v)?;
+    let s: i16 = if x > 0.0 {
+        1
+    } else if x < 0.0 {
+        -1
+    } else {
+        0
+    };
+    Ok(Variant::from_i16(s))
+}
+
+fn float_op(op: Math1Op, x: f64) -> f64 {
+    match op {
+        Math1Op::Abs => x.abs(),
+        Math1Op::Int => x.floor(),
+        Math1Op::Fix => x.trunc(),
+    }
+}
+
+/// `Abs` of a signed integer, promoting to the next wider type when the
+/// magnitude overflows the source type (VBA never wraps or errors here):
+/// SignedByte→Integer, Integer→Long, Long→Double, LongLong→Double.
+fn abs_signed_promote(x: i64, kind: VarType) -> Variant {
+    let mag = x.unsigned_abs();
+    match kind {
+        VarType::SignedByte if mag <= i8::MAX as u64 => Variant::from_i8(mag as i8),
+        VarType::SignedByte => Variant::from_i16(mag as i16),
+        VarType::Integer if mag <= i16::MAX as u64 => Variant::from_i16(mag as i16),
+        VarType::Integer => Variant::from_i32(mag as i32),
+        VarType::Long if mag <= i32::MAX as u64 => Variant::from_i32(mag as i32),
+        VarType::Long => Variant::from_f64(mag as f64),
+        VarType::LongLong if mag <= i64::MAX as u64 => Variant::from_i64(mag as i64),
+        VarType::LongLong => Variant::from_f64(mag as f64),
+        _ => Variant::from_f64(mag as f64),
+    }
+}
+
+/// `Abs`/`Int`/`Fix` of a `Currency` (a fixed 4-dp scaled `i64`), keeping the
+/// `Currency` type. `Int` floors toward −∞, `Fix` truncates toward zero.
+fn currency_op(op: Math1Op, scaled: i64) -> LibResult<Variant> {
+    let result = match op {
+        Math1Op::Abs => scaled
+            .checked_abs()
+            .ok_or_else(|| LibError::overflow("Abs overflows Currency"))?,
+        Math1Op::Fix => (scaled / 10_000) * 10_000,
+        Math1Op::Int => {
+            let q = scaled / 10_000;
+            let rem = scaled % 10_000;
+            let q = if rem != 0 && scaled < 0 { q - 1 } else { q };
+            q * 10_000
+        }
+    };
+    Ok(Variant::from_currency_scaled_i64(result))
+}
+
+/// `Abs`/`Int`/`Fix` of a `Decimal`, keeping the `Decimal` type. `Abs` clears
+/// the sign; `Int`/`Fix` drop the fractional digits (scale → 0), with `Int`
+/// flooring toward −∞ (a negative with a fraction rounds away from zero).
+fn decimal_op(op: Math1Op, d: oxvba_runtime::Decimal96) -> Variant {
+    use oxvba_runtime::Decimal96;
+    match op {
+        Math1Op::Abs => {
+            Variant::from_decimal96(Decimal96::from_parts(d.lo, d.mid, d.hi, d.scale(), false))
+        }
+        Math1Op::Int | Math1Op::Fix => {
+            let scale = u32::from(d.scale());
+            if scale == 0 {
+                return Variant::from_decimal96(d);
+            }
+            let magnitude = d.magnitude_u128();
+            let divisor = 10u128.pow(scale.min(38));
+            let mut whole = magnitude / divisor;
+            let remainder = magnitude % divisor;
+            if matches!(op, Math1Op::Int) && d.is_negative() && remainder != 0 {
+                whole += 1; // floor of a negative rounds away from zero
+            }
+            let lo = (whole & 0xFFFF_FFFF) as u32;
+            let mid = ((whole >> 32) & 0xFFFF_FFFF) as u32;
+            let hi = ((whole >> 64) & 0xFFFF_FFFF) as u32;
+            Variant::from_decimal96(Decimal96::from_parts(lo, mid, hi, 0, d.is_negative()))
+        }
+    }
+}
+
+fn math1_typed(v: &Variant, op: Math1Op) -> LibResult<Variant> {
+    match v.vtype() {
+        VarType::Null => Ok(Variant::null()),
+        VarType::Empty => Ok(Variant::from_i16(0)),
+        VarType::Boolean => {
+            let n: i16 = if v.as_bool().unwrap_or(false) { -1 } else { 0 };
+            Ok(Variant::from_i16(match op {
+                Math1Op::Abs => n.abs(),
+                Math1Op::Int | Math1Op::Fix => n,
+            }))
+        }
+        // Signed integers: Int/Fix are identity; Abs may promote.
+        kind @ (VarType::SignedByte | VarType::Integer | VarType::Long | VarType::LongLong) => {
+            match op {
+                Math1Op::Int | Math1Op::Fix => Ok(v.clone()),
+                Math1Op::Abs => {
+                    let x = match kind {
+                        VarType::SignedByte => i64::from(v.as_i8().unwrap_or(0)),
+                        VarType::Integer => i64::from(v.as_i16().unwrap_or(0)),
+                        VarType::Long => i64::from(v.as_i32().unwrap_or(0)),
+                        _ => v.as_i64().unwrap_or(0),
+                    };
+                    Ok(abs_signed_promote(x, kind))
+                }
+            }
+        }
+        // Unsigned integers are non-negative whole numbers: Abs/Int/Fix all identity.
+        VarType::Byte
+        | VarType::UnsignedInteger
+        | VarType::UnsignedLong
+        | VarType::UnsignedInt
+        | VarType::UnsignedLongLong => Ok(v.clone()),
+        VarType::Single => Ok(Variant::from_f32(
+            float_op(op, f64::from(v.as_f32().unwrap_or(0.0))) as f32,
+        )),
+        VarType::Double => Ok(Variant::from_f64(float_op(op, v.as_f64().unwrap_or(0.0)))),
+        VarType::Date => Ok(Variant::from_date_f64(float_op(
+            op,
+            v.as_date_f64().unwrap_or(0.0),
+        ))),
+        VarType::Currency => currency_op(op, v.as_currency_scaled_i64().unwrap_or(0)),
+        VarType::Decimal => Ok(decimal_op(op, v.as_decimal96().unwrap_or_default())),
+        // A numeric String coerces to Double; everything else (Object/Error/…) is a Type mismatch.
+        VarType::String => Ok(vf64(float_op(op, conv_f64(v)?))),
+        _ => Err(LibError::type_mismatch("Abs/Int/Fix expects a number")),
+    }
+}
+
 /// Banker's rounding (round-half-to-even), like VBA `Round`.
 pub fn round(args: &[Variant]) -> LibResult<Variant> {
     let x = as_f64(need(args, 0)?)?;

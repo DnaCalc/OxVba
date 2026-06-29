@@ -271,10 +271,13 @@ pub fn invoke(
         Filter => pure::filter(args),
 
         // ── Math ──
-        Abs => pure::math1(args, f64::abs),
-        Int => pure::math1(args, f64::floor),
-        Fix => pure::math1(args, f64::trunc),
-        Sgn => pure::math1(args, |x| x.signum() * (x != 0.0) as i64 as f64),
+        // Abs/Int/Fix preserve the argument's numeric subtype (Abs promotes on
+        // overflow); Sgn always returns Integer. The transcendentals below stay
+        // `math1` (Double).
+        Abs => pure::abs(args),
+        Int => pure::int_floor(args),
+        Fix => pure::fix_trunc(args),
+        Sgn => pure::sgn(args),
         Round => pure::round(args),
         Sqr => pure::math1(args, f64::sqrt),
         Sin => pure::math1(args, f64::sin),
