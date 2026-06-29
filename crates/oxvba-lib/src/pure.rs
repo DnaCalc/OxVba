@@ -10,6 +10,11 @@ use crate::{
     opt, vbool, vf64, vi32, vstr, vunit,
 };
 use oxvba_runtime::{Variant, safe_array::SafeArray, variant::VarType};
+// The VBA serial ↔ civil calendar math is canonical in `oxvba_runtime::vba_date`; re-export it
+// at `crate::pure::*` so this module's date functions (and `format.rs`) keep their call sites.
+pub(crate) use oxvba_runtime::{
+    civil_from_days, days_from_civil, serial_to_hms, serial_to_ymd, ymd_to_serial,
+};
 
 // ── Strings ──────────────────────────────────────────────────────────────────
 
@@ -642,39 +647,9 @@ pub fn round(args: &[Variant]) -> LibResult<Variant> {
 
 // ── Date / time (serial: days since 1899-12-30) ────────────────────────────────
 // Proleptic Gregorian, matching VBA's OLE-Automation `Date`. (The Excel
-// worksheet 1900 leap-year quirk is not part of VBA `Date` semantics.)
-
-const VBA_EPOCH_DAYS_FROM_UNIX: i64 = -25569; // days from 1970-01-01 back to 1899-12-30
-
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe - 719468
-}
-
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
-    let z = z + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (if m <= 2 { y + 1 } else { y }, m, d)
-}
-
-fn ymd_to_serial(y: i64, m: i64, d: i64) -> f64 {
-    (days_from_civil(y, m, d) - VBA_EPOCH_DAYS_FROM_UNIX) as f64
-}
-
-pub(crate) fn serial_to_ymd(serial: f64) -> (i64, i64, i64) {
-    civil_from_days(serial.floor() as i64 + VBA_EPOCH_DAYS_FROM_UNIX)
-}
+// worksheet 1900 leap-year quirk is not part of VBA `Date` semantics.) The serial
+// ↔ civil math lives in `oxvba_runtime::vba_date` (the single source of truth, so
+// the runtime's `Date` display formatters share it); imported above.
 
 /// Sakamoto's algorithm (ported from the legacy VM): 0 = Sunday … 6 = Saturday.
 pub(crate) fn day_of_week(year: i32, month: u32, day: u32) -> i32 {
@@ -714,18 +689,29 @@ pub fn date_value(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_date_f64(serial.trunc()))
 }
 
+/// VBA `TimeValue` returns the TIME-OF-DAY part of its argument. Like `DateValue` it accepts a
+/// `Date` or a numeric serial (not just a string) — `TimeValue(Now)` is the current time — and
+/// must NOT round-trip a `Date` through string formatting (which dropped precision and, once
+/// dates render as "General Date", misparsed the formatted text). Strings parse as `h[:m[:s]]`.
 pub fn time_value(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
-    let parts: Vec<f64> = s
-        .split(':')
-        .map(|p| p.trim().parse::<f64>().unwrap_or(0.0))
-        .collect();
-    let h = parts.first().copied().unwrap_or(0.0);
-    let m = parts.get(1).copied().unwrap_or(0.0);
-    let sec = parts.get(2).copied().unwrap_or(0.0);
-    Ok(Variant::from_date_f64(
-        (h * 3600.0 + m * 60.0 + sec) / 86400.0,
-    ))
+    let v = need(args, 0)?;
+    let serial = match v.vtype() {
+        VarType::Date => v.as_date_f64().unwrap_or(0.0),
+        VarType::String => {
+            let s = as_str(v)?;
+            let parts: Vec<f64> = s
+                .split(':')
+                .map(|p| p.trim().parse::<f64>().unwrap_or(0.0))
+                .collect();
+            let h = parts.first().copied().unwrap_or(0.0);
+            let m = parts.get(1).copied().unwrap_or(0.0);
+            let sec = parts.get(2).copied().unwrap_or(0.0);
+            (h * 3600.0 + m * 60.0 + sec) / 86400.0
+        }
+        _ => conv_f64(v)?,
+    };
+    // Keep only the time-of-day fraction (drop the integer date part).
+    Ok(Variant::from_date_f64(serial - serial.trunc()))
 }
 
 /// Whether `(y, m, d)` is a real calendar date. The month/day are normalized by
@@ -885,14 +871,6 @@ pub enum DatePart {
     Second,
 }
 
-/// Hours/minutes/seconds of a date serial's time-of-day. VBA derives the time
-/// from the serial's fractional part (the integer part is the date); rounding
-/// to the nearest second matches VBA's display.
-fn serial_to_hms(serial: f64) -> (i64, i64, i64) {
-    let frac = serial.abs().fract();
-    let total = ((frac * 86_400.0).round() as i64).rem_euclid(86_400);
-    (total / 3600, (total % 3600) / 60, total % 60)
-}
 
 pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
     let serial = as_f64(need(args, 0)?)?;

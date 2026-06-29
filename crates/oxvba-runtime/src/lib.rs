@@ -16,6 +16,7 @@ pub mod pointer_helpers;
 pub mod safe_array;
 pub mod value_types;
 pub mod variant;
+pub mod vba_date;
 pub mod vba_record;
 
 pub use call_frame::{
@@ -43,6 +44,10 @@ pub use object_ref::{
 };
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};
+pub use vba_date::{
+    civil_from_days, days_from_civil, format_general_date, format_write_date, serial_to_hms,
+    serial_to_ymd, ymd_to_serial, VBA_EPOCH_DAYS_FROM_UNIX,
+};
 pub use vba_record::{
     VbaRecord, VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
 };

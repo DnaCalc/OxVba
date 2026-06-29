@@ -212,7 +212,9 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
         VarType::UnsignedLongLong => BStr::from(format!("{}", value.as_u64().unwrap_or(0))),
         VarType::Single => BStr::from(format_vba_f64(f64::from(value.as_f32().unwrap_or(0.0)))),
         VarType::Double => BStr::from(format_vba_f64(value.as_f64().unwrap_or(0.0))),
-        VarType::Date => BStr::from(format_vba_f64(value.as_date_f64().unwrap_or(0.0))),
+        VarType::Date => BStr::from(crate::vba_date::format_general_date(
+            value.as_date_f64().unwrap_or(0.0),
+        )),
         VarType::Boolean => BStr::from(if value.as_bool().unwrap_or(false) {
             "True"
         } else {
@@ -325,7 +327,7 @@ pub fn print_display_text(value: &Variant) -> String {
         VarType::UnsignedLongLong => value.as_u64().unwrap_or(0).to_string(),
         VarType::Single => value.as_f32().unwrap_or(0.0).to_string(),
         VarType::Double => value.as_f64().unwrap_or(0.0).to_string(),
-        VarType::Date => value.as_date_f64().unwrap_or(0.0).to_string(),
+        VarType::Date => crate::vba_date::format_general_date(value.as_date_f64().unwrap_or(0.0)),
         VarType::Decimal => value
             .as_decimal96()
             .map(|decimal| decimal.to_string())
@@ -386,8 +388,10 @@ pub fn write_display_text(value: &Variant) -> String {
         VarType::Null => "#NULL#".to_string(),
         VarType::Empty => String::new(),
         VarType::Error => format!("#ERROR {}#", value.as_error_code().unwrap_or(0)),
-        // Numbers (incl. Currency/Decimal) and the deferred Date-serial case reuse
-        // the canonical locale-independent display rendering.
+        // `Write #` emits a date as the locale-independent `#YYYY-MM-DD HH:MM:SS#` literal,
+        // NOT the locale "General Date" form `print_display_text` would give.
+        VarType::Date => crate::vba_date::format_write_date(value.as_date_f64().unwrap_or(0.0)),
+        // Numbers (incl. Currency/Decimal) reuse the canonical locale-independent rendering.
         _ => print_display_text(value),
     }
 }

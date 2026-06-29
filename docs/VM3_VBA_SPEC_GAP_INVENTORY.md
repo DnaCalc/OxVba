@@ -86,7 +86,7 @@ may remain unexamined.
 
 | # | id | sev/class | eff | gap | fix locus |
 |---|----|-----------|-----|-----|-----------|
-|☐|date-to-string-emits-serial|High/SilentWrong|M|Date→String emits raw serial, not formatted|General-Date formatter in `variant_to_vba_string`/`print_display_text`|
+|☑|date-to-string-emits-serial|High/SilentWrong|M|Date→String emits raw serial, not formatted|new `oxvba_runtime::vba_date` (canonical serial↔civil math, deduped from oxvba-lib) + `format_general_date` (M/D/YYYY h:mm:ss AM/PM, date-only/time-only variants); wired into `variant_to_vba_string`/`print_display_text`. `write_display_text` gets the `#YYYY-MM-DD HH:MM:SS#` Write form. Also fixed `TimeValue(<Date>)` (was round-tripping through the serial string → garbage; now extracts the time fraction directly) *(done)*|
 |☑|datevalue-cdate-of-date-raises-13|High/SilentWrong|S|`DateValue`/`CDate` of Date/numeric raises 13|vtype dispatch in `date_value`; + calendar validation (Feb 30 → 13) *(done; CDate already dispatched)*|
 |☑|redim-preserve-multidim-corrupt|High/SilentWrong|M|multi-dim `ReDim Preserve` flat-copies (corrupts)|coordinate-aware copy *(done w/ redim bead)*|
 |☑|redim-preserve-no-dimension-guard|High/SilentWrong|M|`ReDim Preserve` doesn't enforce only-last-dim (no Err 9)|compare new vs old bounds *(done w/ redim bead)*|
