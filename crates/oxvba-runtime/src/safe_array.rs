@@ -350,7 +350,11 @@ unsafe fn validated_header_prefix(
 }
 
 unsafe fn header_record_layout(header: *const RawSafeArray) -> Option<Arc<VbaRecordLayout>> {
+    // SAFETY: forwards this fn's contract — `header` is a live OxVba descriptor, so
+    // `validated_header_prefix` may inspect its owner prefix.
     let prefix = unsafe { validated_header_prefix(header)? };
+    // SAFETY: `validated_header_prefix` returned `Some`, so `prefix` points at the
+    // live, initialized owner prefix; reading its `record_layout` field is in-bounds.
     let raw = unsafe { (*prefix).record_layout };
     if raw.is_null() {
         return None;
@@ -358,6 +362,8 @@ unsafe fn header_record_layout(header: *const RawSafeArray) -> Option<Arc<VbaRec
     // SAFETY: non-null record_layout pointers are stored from Arc::into_raw in
     // alloc_header and released when the SAFEARRAY descriptor is dropped.
     unsafe { Arc::increment_strong_count(raw) };
+    // SAFETY: `raw` came from `Arc::into_raw` for `VbaRecordLayout`; we just bumped
+    // the strong count, so reconstituting an owning `Arc` balances that increment.
     Some(unsafe { Arc::from_raw(raw) })
 }
 
@@ -639,66 +645,86 @@ unsafe fn encode_element_variant(
     Ok(())
 }
 
+/// # Safety
+/// `payload` must point at this array's element buffer holding more than `index`
+/// initialized elements of `kind`, so the `index`-th slot is live and writable.
 unsafe fn replace_element_variant(
     kind: SafeArrayElementKind,
     payload: *mut u8,
     index: usize,
     value: &Variant,
 ) -> Result<(), String> {
+    // SAFETY: `payload_offset` is `element_size(kind) * index`, and the contract
+    // guarantees `index` is in range, so this lands on the `index`-th element slot.
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     match kind {
         SafeArrayElementKind::Variant => {
+            // SAFETY: kind == Variant, so the slot holds an initialized `Variant`;
+            // `replace` writes the new clone and yields the old value to drop.
             let old = unsafe { ptr.cast::<Variant>().replace(value.clone()) };
             drop(old);
         }
+        // SAFETY: kind == I1, so the slot is a live, aligned `i8` scalar.
         SafeArrayElementKind::I1 => unsafe {
             *ptr.cast::<i8>() = i8::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I1 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == Ui1, so the slot is a live, aligned `u8` scalar.
         SafeArrayElementKind::Ui1 => unsafe {
             *ptr.cast::<u8>() = u8::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI1 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == I2, so the slot is a live, aligned `i16` scalar.
         SafeArrayElementKind::I2 => unsafe {
             *ptr.cast::<i16>() = i16::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I2 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == Ui2, so the slot is a live, aligned `u16` scalar.
         SafeArrayElementKind::Ui2 => unsafe {
             *ptr.cast::<u16>() = u16::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI2 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == I4/Int, so the slot is a live, aligned `i32` scalar.
         SafeArrayElementKind::I4 | SafeArrayElementKind::Int => unsafe {
             *ptr.cast::<i32>() = i32::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I4 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == Ui4/UInt, so the slot is a live, aligned `u32` scalar.
         SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => unsafe {
             *ptr.cast::<u32>() = u32::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI4 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == I8, so the slot is a live, aligned `i64` scalar.
         SafeArrayElementKind::I8 => unsafe {
             *ptr.cast::<i64>() = variant_i64(value)?;
         },
+        // SAFETY: kind == Ui8, so the slot is a live, aligned `u64` scalar.
         SafeArrayElementKind::Ui8 => unsafe {
             *ptr.cast::<u64>() = u64::try_from(variant_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI8 SAFEARRAY element"))?;
         },
+        // SAFETY: kind == R4, so the slot is a live, aligned `f32` scalar.
         SafeArrayElementKind::R4 => unsafe {
             *ptr.cast::<f32>() = variant_f64(value)? as f32;
         },
+        // SAFETY: kind == R8, so the slot is a live, aligned `f64` scalar.
         SafeArrayElementKind::R8 => unsafe {
             *ptr.cast::<f64>() = variant_f64(value)?;
         },
+        // SAFETY: kind == Currency, stored as a scaled `i64`; slot is an aligned `i64`.
         SafeArrayElementKind::Currency => unsafe {
             *ptr.cast::<i64>() = value
                 .as_currency_scaled_i64()
                 .ok_or_else(|| format!("expected Currency SAFEARRAY element, got {value:?}"))?;
         },
+        // SAFETY: kind == Date, stored as an `f64` serial; slot is an aligned `f64`.
         SafeArrayElementKind::Date => unsafe {
             *ptr.cast::<f64>() = value
                 .as_date_f64()
                 .or_else(|| value.as_f64())
                 .ok_or_else(|| format!("expected Date SAFEARRAY element, got {value:?}"))?;
         },
+        // SAFETY: kind == Bool, stored as a VBA `i16` (-1/0); slot is an aligned `i16`.
         SafeArrayElementKind::Bool => unsafe {
             *ptr.cast::<i16>() = if value
                 .as_bool()
@@ -709,6 +735,8 @@ unsafe fn replace_element_variant(
                 0
             };
         },
+        // SAFETY: kind == BStr, so the slot owns a BSTR carrier pointer; replace it
+        // with the freshly allocated BSTR and free the previous one.
         SafeArrayElementKind::BStr => unsafe {
             let new = alloc_raw_bstr_from_bstr(
                 &value
@@ -718,6 +746,8 @@ unsafe fn replace_element_variant(
             let old = ptr.cast::<*mut u16>().replace(new);
             free_raw_bstr(old);
         },
+        // SAFETY: kind == Dispatch/Unknown, so the slot owns a raw IUnknown pointer
+        // (as 8 bytes); store the new owned reference and release the previous one.
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => unsafe {
             let object = value
                 .as_object_ref()
@@ -731,6 +761,7 @@ unsafe fn replace_element_variant(
                 drop(object);
             }
         },
+        // SAFETY: kind == Decimal, so the slot is a live, aligned `RawDecimalArrayElement`.
         SafeArrayElementKind::Decimal => unsafe {
             *ptr.cast::<RawDecimalArrayElement>() = RawDecimalArrayElement::from_decimal96(
                 value
@@ -840,6 +871,8 @@ fn alloc_record_payload_from_records(
         return Ok(core::ptr::null_mut());
     }
     let payload_layout = record_payload_layout(layout, values.len())?;
+    // SAFETY: `record_payload_layout` returns a non-zero-size layout (each record is
+    // at least one byte × `values.len()`), satisfying `alloc_zeroed`; null is handled below.
     let raw = unsafe { std::alloc::alloc_zeroed(payload_layout) };
     if raw.is_null() {
         return Err("failed to allocate SAFEARRAY record payload".to_string());
@@ -849,23 +882,34 @@ fn alloc_record_payload_from_records(
         if values[initialized].layout().as_ref() != layout.as_ref() {
             let mut index = 0usize;
             while index < initialized {
+                // SAFETY: indices below `initialized` hold records already cloned into
+                // the buffer at `record_payload_offset(layout, index)`; drop each once.
                 unsafe {
                     VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout)
                 };
                 index += 1;
             }
+            // SAFETY: `raw` came from `alloc_zeroed` with `payload_layout`; the
+            // initialized prefix was dropped above and the pointer never escaped.
             unsafe { std::alloc::dealloc(raw, payload_layout) };
             return Err("SAFEARRAY record element layout mismatch".to_string());
         }
+        // SAFETY: `initialized < values.len()` and the buffer is laid out as
+        // `layout.size()`-strided records, so this offset is the in-bounds dst slot.
         let dst = unsafe { raw.add(record_payload_offset(layout, initialized)) };
+        // SAFETY: `dst` is uninitialized (zeroed), aligned, `layout.size()`-byte
+        // storage matching `values[initialized]`'s layout — `clone_into_raw`'s contract.
         if let Err(err) = unsafe { values[initialized].clone_into_raw(dst) } {
             let mut index = 0usize;
             while index < initialized {
+                // SAFETY: indices below `initialized` hold cloned records; drop each once.
                 unsafe {
                     VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout)
                 };
                 index += 1;
             }
+            // SAFETY: sole deallocation of the `alloc_zeroed` buffer after dropping
+            // its initialized prefix; the pointer never escaped this function.
             unsafe { std::alloc::dealloc(raw, payload_layout) };
             return Err(err);
         }
@@ -874,6 +918,9 @@ fn alloc_record_payload_from_records(
     Ok(raw.cast())
 }
 
+/// # Safety
+/// `payload` must be a `record_payload_layout(layout, count)` allocation holding
+/// `count` initialized records of `layout` (or null), freed exactly once here.
 unsafe fn free_record_payload(
     layout: &VbaRecordLayout,
     payload: *mut core::ffi::c_void,
@@ -885,10 +932,14 @@ unsafe fn free_record_payload(
     }
     let mut index = 0usize;
     while index < count {
+        // SAFETY: every `index < count` names an initialized record at its
+        // `layout.size()`-strided offset, dropped exactly once on this free.
         unsafe { VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout) };
         index += 1;
     }
     if let Ok(payload_layout) = record_payload_layout(layout, count) {
+        // SAFETY: `raw` came from `alloc_zeroed` with this same `payload_layout`;
+        // all records were dropped above and nothing reads the buffer afterward.
         unsafe { std::alloc::dealloc(raw, payload_layout) };
     }
 }
@@ -1018,6 +1069,9 @@ impl SafeArray {
         ) {
             Ok(header) => header,
             Err(err) => {
+                // SAFETY: `pv_data` is the `alloc_record_payload_from_records` buffer
+                // of `expected_len` records of `layout`; the header failed to adopt it,
+                // so we free it here exactly once.
                 unsafe { free_record_payload(&layout, pv_data, expected_len) };
                 return Err(err);
             }
@@ -1143,6 +1197,8 @@ impl SafeArray {
         if self.element_vartype() != VT_RECORD_VALUE {
             return None;
         }
+        // SAFETY: `self.0` is this value's own live OxVba descriptor, satisfying
+        // `header_record_layout`'s contract.
         unsafe { header_record_layout(self.0.as_ptr()) }
     }
 
@@ -1199,8 +1255,12 @@ impl SafeArray {
             let mut values = Vec::with_capacity(self.len());
             let mut index = 0usize;
             while index < self.len() {
+                // SAFETY: `data` is the record payload of `self.len()` records strided
+                // by `layout.size()`, and `index < self.len()`, so this is in-bounds.
                 let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
                 values.push(Variant::from_vba_record(
+                    // SAFETY: `ptr` references the live `index`-th record payload laid
+                    // out by `layout`; `clone_from_raw` deep-copies without consuming it.
                     unsafe { VbaRecord::clone_from_raw(ptr, layout.clone()) }
                         .expect("SAFEARRAY record payload should clone into VbaRecord"),
                 ));
@@ -1231,16 +1291,23 @@ impl SafeArray {
                 self.len()
             ));
         }
+        // SAFETY: `self.0` is this value's live descriptor; reading `pv_data` is
+        // valid, and the null (shape-only) case is handled immediately below.
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
             return Err("SAFEARRAY has no materialized element payload".to_string());
         }
         if let Some(layout) = self.vba_record_layout() {
+            // SAFETY: `index < self.len()` (checked above) and `data` is the record
+            // payload strided by `layout.size()`, so this offset is in-bounds.
             let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
+            // SAFETY: `ptr` references the live `index`-th record payload of `layout`.
             return Ok(Variant::from_vba_record(unsafe {
                 VbaRecord::clone_from_raw(ptr, layout)
             }?));
         }
+        // SAFETY: `data` is the non-null intrinsic payload of `self.len()` elements of
+        // this descriptor's kind, and `index < self.len()`, so the slot is in-bounds.
         unsafe { decode_element_variant(self.element_kind(), data, index) }
     }
 
@@ -1259,6 +1326,8 @@ impl SafeArray {
                 self.len()
             ));
         }
+        // SAFETY: `self.0` is this value's live descriptor; reading `pv_data` is
+        // valid, and the null (shape-only) case is handled immediately below.
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
             return Err("SAFEARRAY has no materialized element payload".to_string());
@@ -1273,13 +1342,19 @@ impl SafeArray {
             if record.layout().as_ref() != layout.as_ref() {
                 return Err("VBA record SAFEARRAY element layout mismatch".to_string());
             }
+            // SAFETY: `index < self.len()` (checked above) and `data` is the record
+            // payload strided by `layout.size()`, so this offset is the in-bounds slot.
             let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
+            // SAFETY: `ptr` is the live `index`-th record slot of `layout`; drop its
+            // current contents, then deep-copy the same-layout `record` into it.
             unsafe {
                 VbaRecord::drop_raw(ptr, &layout);
                 record.clone_into_raw(ptr)?;
             }
             return Ok(());
         }
+        // SAFETY: `data` is the non-null intrinsic payload of `self.len()` elements of
+        // this descriptor's kind, and `index < self.len()`, so the slot is writable.
         unsafe { replace_element_variant(self.element_kind(), data, index, value) }
     }
 
@@ -1461,8 +1536,12 @@ impl Drop for SafeArray {
             unsafe { free_payload(kind, data, len) };
         }
         if let Ok(layout) = owner_layout(self.dimensions() as usize) {
+            // SAFETY: `self.0` is this value's own live OxVba descriptor allocated by
+            // `alloc_header`, satisfying `validated_header_prefix`'s contract.
             let prefix = unsafe { validated_header_prefix(self.0.as_ptr()) };
             if let Some(prefix) = prefix {
+                // SAFETY: `validated_header_prefix` returned `Some`, so `prefix` points
+                // at the live owner prefix; reading `record_layout` is in-bounds.
                 let record_layout = unsafe { (*prefix).record_layout };
                 if !record_layout.is_null() {
                     // SAFETY: non-null record_layout pointers are stored from

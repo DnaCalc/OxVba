@@ -1014,24 +1014,37 @@ mod tests {
         assert_eq!(core::mem::align_of::<VariantData>(), 8);
         assert_eq!(core::mem::size_of::<Variant>(), 16);
         assert_eq!(core::mem::align_of::<Variant>(), 8);
+        // SAFETY (all five): `offset_of` calls the closure with `base` pointing to
+        // live, aligned `MaybeUninit<VariantCore>` storage; `addr_of!` computes the
+        // field's address without ever reading the (uninitialized) field.
         assert_eq!(
-            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).vtype) }),
+            offset_of::<VariantCore, _>(|base|
+                // SAFETY: see above — address-of only, no read.
+                unsafe { core::ptr::addr_of!((*base).vtype) }),
             0
         );
         assert_eq!(
-            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).reserved1) }),
+            offset_of::<VariantCore, _>(|base|
+                // SAFETY: see above — address-of only, no read.
+                unsafe { core::ptr::addr_of!((*base).reserved1) }),
             2
         );
         assert_eq!(
-            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).reserved2) }),
+            offset_of::<VariantCore, _>(|base|
+                // SAFETY: see above — address-of only, no read.
+                unsafe { core::ptr::addr_of!((*base).reserved2) }),
             4
         );
         assert_eq!(
-            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).reserved3) }),
+            offset_of::<VariantCore, _>(|base|
+                // SAFETY: see above — address-of only, no read.
+                unsafe { core::ptr::addr_of!((*base).reserved3) }),
             6
         );
         assert_eq!(
-            offset_of::<VariantCore, _>(|base| unsafe { core::ptr::addr_of!((*base).data) }),
+            offset_of::<VariantCore, _>(|base|
+                // SAFETY: see above — address-of only, no read.
+                unsafe { core::ptr::addr_of!((*base).data) }),
             8
         );
     }
@@ -1078,11 +1091,15 @@ mod tests {
         record_info: *mut c_void,
         record_data: *const c_void,
     ) -> Result<(*mut c_void, *mut c_void), String> {
+        // SAFETY: this clone callback is only registered for records whose data is a
+        // boxed `i32` (see `test_record_variant`), so `record_data` points to a live i32.
         let value = unsafe { *record_data.cast::<i32>() };
         Ok((record_info, Box::into_raw(Box::new(value)).cast()))
     }
 
     unsafe fn destroy_test_record(_record_info: *mut c_void, record_data: *mut c_void) {
+        // SAFETY: paired with `clone_test_record`/`test_record_variant`, `record_data`
+        // is a `Box<i32>` raw pointer reclaimed exactly once here.
         unsafe {
             drop(Box::from_raw(record_data.cast::<i32>()));
         }
@@ -1093,6 +1110,8 @@ mod tests {
             .as_ptr()
             .cast::<c_void>();
         let record_data = Box::into_raw(Box::new(value)).cast::<c_void>();
+        // SAFETY: `record_data` is a freshly leaked `Box<i32>`, `record_info` is a
+        // non-null placeholder, and the clone/destroy callbacks match that i32 payload.
         let record = unsafe {
             crate::ComRecord::from_raw_parts(
                 record_info,
@@ -1116,22 +1135,29 @@ mod tests {
             original_record.record_data_ptr(),
             cloned_record.record_data_ptr()
         );
+        // SAFETY: both records' data pointers reference the boxed `i32` payloads
+        // created by `test_record_variant`; they stay live for the whole test.
         assert_eq!(
+            // SAFETY: original record's data is a live `i32` (see above).
             unsafe { *original_record.record_data_ptr().cast::<i32>() },
             41
         );
         assert_eq!(
+            // SAFETY: cloned record's data is a live `i32` (deep-copied box).
             unsafe { *cloned_record.record_data_ptr().cast::<i32>() },
             41
         );
+        // SAFETY: original record's data is a live, uniquely-owned `i32` slot we mutate.
         unsafe {
             *original_record.record_data_ptr().cast::<i32>() = 99;
         }
         assert_eq!(
+            // SAFETY: re-reads the original's live `i32` after the mutation above.
             unsafe { *original_record.record_data_ptr().cast::<i32>() },
             99
         );
         assert_eq!(
+            // SAFETY: clone is an independent box, still holding its original `i32`.
             unsafe { *cloned_record.record_data_ptr().cast::<i32>() },
             41
         );
@@ -1148,6 +1174,8 @@ mod tests {
         );
         let mut record = VbaRecord::new_default(layout).expect("record");
         let field = record.layout().fields()[0].clone();
+        // SAFETY: `field` is this record's own `Long` field, so `field_mut_ptr` yields
+        // an in-bounds, `i32`-aligned slot to overwrite.
         unsafe {
             record.field_mut_ptr(&field).cast::<i32>().write(41);
         }
