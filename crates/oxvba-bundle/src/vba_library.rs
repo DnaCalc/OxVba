@@ -246,7 +246,10 @@ mod tests {
         // Information predicates, Interaction host functions, and the FileIo by-name
         // members are migrated members of their (otherwise partially excluded)
         // modules; everything else in those modules is explicitly excluded below.
-        let information_predicate = |id| {
+        // The Information-module ids that are migrated by-name bundle members: the
+        // predicate functions plus the colour functions RGB/QBColor. (`IIf`/`Choose`/
+        // `Switch` are special forms and stay `None`.)
+        let information_by_name = |id| {
             matches!(
                 id,
                 IsArray
@@ -259,6 +262,8 @@ mod tests {
                     | IsNull
                     | IsEmpty
                     | IsMissing
+                    | Rgb
+                    | QbColor
             )
         };
         let interaction_host_fn = |id| {
@@ -299,7 +304,7 @@ mod tests {
                 M::Strings | M::Math | M::DateTime | M::Conversion | M::Random | M::Financial => {
                     !matches!(id, MidStmt | Like)
                 }
-                M::Information => information_predicate(id),
+                M::Information => information_by_name(id),
                 M::Interaction => interaction_host_fn(id),
                 M::FileIo => fileio_by_name(id),
                 M::Diagnostics => false,

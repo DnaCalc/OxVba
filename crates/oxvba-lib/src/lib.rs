@@ -361,6 +361,8 @@ pub fn invoke(
         IIf => pure::iif(args),
         Choose => pure::choose(args),
         Switch => pure::switch(args),
+        Rgb => pure::rgb(args),
+        QbColor => pure::qb_color(args),
 
         // ── File / Console I/O ──
         FreeFile => host::free_file(args, host),

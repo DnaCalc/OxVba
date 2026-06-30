@@ -160,6 +160,8 @@ native_impl_ids! {
     IIf,       // `IIf(cond, t, f)` — eager (both arms evaluated)
     Choose,    // `Choose(idx, v1, …)` — 1-based, eager
     Switch,    // `Switch(c1, v1, c2, v2, …)` — eager
+    Rgb,       // `RGB(red, green, blue)` → packed Long colour
+    QbColor,   // `QBColor(0..15)` → legacy 16-colour palette Long
 
     // ── File / Console I/O ───────────────────────────────────
     FreeFile,
@@ -250,7 +252,7 @@ impl NativeImplId {
             Rnd | Randomize => M::Random,
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
-            | IsEmpty | IsMissing | IIf | Choose | Switch => M::Information,
+            | IsEmpty | IsMissing | IIf | Choose | Switch | Rgb | QbColor => M::Information,
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
             | FileChDir | FileLen | FileCopy | FileGetAttr | FileSetAttr | FileChDrive
             | FileDateTime | FileRead | FileWrite | FilePrint | ConsolePrint | FileInput
@@ -442,6 +444,10 @@ impl NativeImplId {
             IsNull => "IsNull",
             IsEmpty => "IsEmpty",
             IsMissing => "IsMissing",
+            // RGB/QBColor are ordinary by-name `Information` members (unlike the
+            // `IIf`/`Choose`/`Switch` special forms).
+            Rgb => "RGB",
+            QbColor => "QBColor",
             // ── Interaction (host functions only) ──
             MsgBox => "MsgBox",
             InputBox => "InputBox",
@@ -562,6 +568,9 @@ impl NativeImplId {
             // ── Information predicates ── (all single-argument)
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
             | IsEmpty | IsMissing => 1,
+            // ── Information colour functions ──
+            QbColor => 1,
+            Rgb => 3,
             // ── Interaction host functions ──
             Beep | DoEvents => 0,
             Environ => 1,
