@@ -278,6 +278,37 @@ impl VbaRecord {
         unsafe { write_field_variant_at(self.field_mut_ptr(&field), &field.kind, value) }
     }
 
+    /// Borrow field `index` as a `&Variant` **in place** (no clone), but only when it is a
+    /// `Variant`-kind member — a dynamic-array or `Variant` field, whose storage *is* a
+    /// live `Variant`. `None` for any inline-stored kind (scalars / fixed arrays / nested
+    /// records, which have no `Variant` to borrow) or an out-of-range index. This is the
+    /// O(1) element-access counterpart to [`Self::read_field_variant`], which clones the
+    /// whole field (deep-copying a held SAFEARRAY).
+    pub fn field_variant_ref(&self, index: usize) -> Option<&Variant> {
+        let field = self.layout.fields().get(index)?;
+        if !matches!(field.kind, VbaRecordFieldKind::Variant) {
+            return None;
+        }
+        // SAFETY: a `Variant`-kind field stores a live `Variant` at `field.offset` within
+        // this record's owned buffer (`init_field_at` writes `Variant::empty()` there and
+        // reads/writes keep it a valid `Variant`); the borrow is tied to `&self`.
+        Some(unsafe { &*self.field_ptr(field).cast::<Variant>() })
+    }
+
+    /// Mutably borrow field `index` as a `&mut Variant` **in place** (no clone/write-back),
+    /// for a `Variant`-kind member only — the write counterpart to
+    /// [`Self::field_variant_ref`]. `None` for any other field kind or an out-of-range
+    /// index.
+    pub fn field_variant_mut(&mut self, index: usize) -> Option<&mut Variant> {
+        let field = self.layout.fields().get(index)?.clone();
+        if !matches!(field.kind, VbaRecordFieldKind::Variant) {
+            return None;
+        }
+        // SAFETY: as in `field_variant_ref`; `&mut self` grants exclusive access to the
+        // `Variant` living at the field offset.
+        Some(unsafe { &mut *self.field_mut_ptr(&field).cast::<Variant>() })
+    }
+
     /// Clone a record value from raw storage described by `layout`.
     ///
     /// # Safety

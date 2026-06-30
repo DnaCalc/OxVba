@@ -972,6 +972,49 @@ impl ObjectRef {
         true
     }
 
+    /// Run `f` against instance field `token` borrowed **in place** (no clone) and return
+    /// its result. `None` when this is not a project instance or the field is absent — the
+    /// caller then falls back to the cloning [`Self::project_field_get`] path. Unlike
+    /// `project_field_get` (which clones the whole field `Variant`, deep-copying a held
+    /// SAFEARRAY), this borrows the stored `Variant` so a field-held array's element can be
+    /// read in O(1) (bd-us4v: keeps loops over a class-instance-field array O(N)).
+    pub fn with_project_field_ref<R>(&self, token: i32, f: impl FnOnce(&Variant) -> R) -> Option<R> {
+        if !self.is_project_instance() {
+            return None;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: `is_project_instance()` (vtbl-identity check) proves `owner` is a live
+        // `CompatObjectBase` kept alive by this `ObjectRef`'s retained reference; the
+        // `RefCell` borrow is single-threaded (`ObjectRef` is neither `Send` nor `Sync`).
+        unsafe {
+            let guard = (*owner).fields.borrow();
+            guard.get(&token).map(f)
+        }
+    }
+
+    /// Run `f` against instance field `token` mutably borrowed **in place** (no
+    /// clone/write-back) and return its result. `None` when this is not a project instance
+    /// or the field is absent (caller falls back). The in-place mutation persists on the
+    /// shared instance (object reference semantics), so a field-held array's element can be
+    /// written in O(1) with no whole-array copy — the write counterpart to
+    /// [`Self::with_project_field_ref`].
+    pub fn with_project_field_mut<R>(
+        &self,
+        token: i32,
+        f: impl FnOnce(&mut Variant) -> R,
+    ) -> Option<R> {
+        if !self.is_project_instance() {
+            return None;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: as in `with_project_field_ref`; `&mut` access via the single-threaded
+        // `RefCell::borrow_mut`, the field box outliving this borrow.
+        unsafe {
+            let mut guard = (*owner).fields.borrow_mut();
+            guard.get_mut(&token).map(f)
+        }
+    }
+
     /// Run `f` against this instance's built-in native-`Collection` state, lazily creating an
     /// empty [`crate::collection::CollectionData`] on first use. Returns `None` if this
     /// `ObjectRef` is not one of our compat boxes (a foreign COM object has no native state).

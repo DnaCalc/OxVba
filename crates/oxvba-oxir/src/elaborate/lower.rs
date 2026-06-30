@@ -1971,6 +1971,41 @@ impl<'a> Lowerer<'a> {
                 Ok((OxOperand::Use(OxPlace::Global(GlobalId(g.0))), OxTy::Variant))
             }
             coreir::CorePlace::Index { array, indices } => {
+                // Fused O(1) field-/record-array index: when the indexed base is an object
+                // field or a UDT field of an addressable slot, index it in place rather than
+                // cloning the whole field array on a `FieldGet`/`RecordGet` every access
+                // (bd-us4v — keeps loops over such arrays O(N), not O(N²)). The element type
+                // is unknown without the field-type table (as for the plain `FieldGet`/
+                // `RecordGet` paths below), so it is `Variant`.
+                match array.as_ref() {
+                    coreir::CorePlace::Field { object, field } => {
+                        let object = self.lower_value(object)?.0;
+                        let indices = self.lower_indices(indices)?;
+                        let t = self.new_temp();
+                        self.emit(OxInst::ArrayGetField {
+                            dst: OxPlace::Temp(t),
+                            object,
+                            field: *field,
+                            indices,
+                        });
+                        return Ok((OxOperand::temp(t), OxTy::Variant));
+                    }
+                    coreir::CorePlace::RecordField { base, index }
+                        if Self::is_simple_place(base) =>
+                    {
+                        let record = self.simple_place(base)?;
+                        let indices = self.lower_indices(indices)?;
+                        let t = self.new_temp();
+                        self.emit(OxInst::ArrayGetRecordField {
+                            dst: OxPlace::Temp(t),
+                            record,
+                            index: *index,
+                            indices,
+                        });
+                        return Ok((OxOperand::temp(t), OxTy::Variant));
+                    }
+                    _ => {}
+                }
                 let (arr, arr_ty) = self.lower_place_load(array)?;
                 let indices = self.lower_indices(indices)?;
                 // Recover the element type from the array's static type when known.
@@ -2044,6 +2079,37 @@ impl<'a> Lowerer<'a> {
                 self.emit(OxInst::Assign { dst, value });
             }
             coreir::CorePlace::Index { array, indices } => {
+                // Fused O(1) field-/record-array element assignment — the write mirror of the
+                // `ArrayGetField`/`ArrayGetRecordField` read fusion (bd-us4v). The element is
+                // mutated in place (object reference / record value semantics), so neither
+                // form needs the materialize-then-write-back the general compound path uses.
+                match array.as_ref() {
+                    coreir::CorePlace::Field { object, field } => {
+                        let object = self.lower_value(object)?.0;
+                        let indices = self.lower_indices(indices)?;
+                        self.emit(OxInst::ArraySetField {
+                            object,
+                            field: *field,
+                            indices,
+                            value,
+                        });
+                        return Ok(());
+                    }
+                    coreir::CorePlace::RecordField { base, index }
+                        if Self::is_simple_place(base) =>
+                    {
+                        let record = self.simple_place(base)?;
+                        let indices = self.lower_indices(indices)?;
+                        self.emit(OxInst::ArraySetRecordField {
+                            record,
+                            index: *index,
+                            indices,
+                            value,
+                        });
+                        return Ok(());
+                    }
+                    _ => {}
+                }
                 let indices = self.lower_indices(indices)?;
                 let (arr, compound) = self.mutable_base_place(array)?;
                 self.emit(OxInst::ArraySet {

@@ -322,6 +322,48 @@ pub enum OxInst {
         indices: Vec<OxOperand>,
         value: OxOperand,
     },
+    /// Fused O(1) read of element `indices` of the array held in object field `field`
+    /// of `object` — the field-load+[`OxInst::ArrayGet`] that, by borrowing the field's
+    /// array in place rather than materialising the whole field on a [`OxInst::FieldGet`],
+    /// keeps a loop over a class-instance-field array O(N) instead of O(N²) (bd-us4v).
+    /// Falls back to materialise-then-index for a non-array / non-project-instance receiver
+    /// (e.g. an object field whose default member is indexed), preserving exact semantics.
+    ArrayGetField {
+        dst: OxPlace,
+        object: OxOperand,
+        field: i32,
+        indices: Vec<OxOperand>,
+    },
+    /// Fused O(1) in-place write of element `indices` of object field `field`'s array.
+    /// The mutation persists on the shared instance (object reference semantics), so no
+    /// field write-back is emitted. The write counterpart to [`OxInst::ArrayGetField`].
+    ArraySetField {
+        object: OxOperand,
+        field: i32,
+        indices: Vec<OxOperand>,
+        value: OxOperand,
+    },
+    /// Fused O(1) read of element `indices` of the array held in UDT field `index` of the
+    /// record at slot `record` (a directly addressable local/global) — the record analog of
+    /// [`OxInst::ArrayGetField`]: borrows the member array in place rather than cloning it on
+    /// a [`OxInst::RecordGet`]. Falls back to materialise-then-index for a non-`Variant`-kind
+    /// member (e.g. an inline fixed array) or a SAFEARRAY-backed record bag.
+    ArrayGetRecordField {
+        dst: OxPlace,
+        record: OxPlace,
+        index: usize,
+        indices: Vec<OxOperand>,
+    },
+    /// Fused O(1) in-place write of element `indices` of UDT field `index`'s array in the
+    /// record at slot `record`. The slot's record is mutated in place (value semantics — a
+    /// ByRef-aliased record's backing receives the write), so no field write-back is
+    /// emitted. The write counterpart to [`OxInst::ArrayGetRecordField`].
+    ArraySetRecordField {
+        record: OxPlace,
+        index: usize,
+        indices: Vec<OxOperand>,
+        value: OxOperand,
+    },
     ArrayErase {
         array: OxPlace,
         element: ArrayElementType,

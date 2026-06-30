@@ -796,6 +796,27 @@ impl Variant {
             None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
         }
     }
+
+    /// Borrow native-record field `index` as a `&Variant` **in place** (no clone), for a
+    /// `Variant`-kind member only — the O(1) element-access counterpart to
+    /// [`Self::read_record_field_variant`]. `None` when this Variant is not a native VBA
+    /// record, the field is not `Variant`-kind, or the index is out of range.
+    pub fn record_field_variant_ref(&self, index: usize) -> Option<&Variant> {
+        match self.as_record_payload()? {
+            RecordPayload::Vba(record) => record.field_variant_ref(index),
+            RecordPayload::Com(_) => None,
+        }
+    }
+
+    /// Mutably borrow native-record field `index` as a `&mut Variant` **in place** (no
+    /// clone/write-back), for a `Variant`-kind member only — the write counterpart to
+    /// [`Self::record_field_variant_ref`].
+    pub fn record_field_variant_mut(&mut self, index: usize) -> Option<&mut Variant> {
+        match self.as_record_payload_mut()? {
+            RecordPayload::Vba(record) => record.field_variant_mut(index),
+            RecordPayload::Com(_) => None,
+        }
+    }
 }
 
 impl Clone for Variant {

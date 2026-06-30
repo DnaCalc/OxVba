@@ -1,14 +1,18 @@
 # HANDOVER → OxVba: vm3 dynamic-array element access is O(N) (array loops are O(N²))
 
-Status: `PARTIAL — STILL OPEN` (OxVba master, 2026-06-30) · From: OxForms · To: OxVba · Date: 2026-06-29
+Status: `FIXED` (OxVba master, 2026-06-30) · From: OxForms · To: OxVba · Date: 2026-06-29
 
-> **Update 2026-06-30 (reopened):** the first fix removed the O(N) clone for arrays
-> held in **module/local/temp slots** (those are now genuinely O(1) — ~13 µs/elem flat
-> across N), a real ~5–6× win. But OxForms' min-of-trials still shows O(N) per element,
-> and that is **confirmed**: arrays held as **class-instance fields** (`Private mX()` in a
-> `.cls`, the OxForms shape) are STILL O(N) per access — they bypass the slot fast path and
-> deep-clone the whole array on the field-load every iteration. The handover stays OPEN.
-> See "Residual" below.
+> **Update 2026-06-30 (FIXED):** the field-held residual is closed. Arrays held as
+> **class-instance fields** (`Private mX()` in a `.cls`, the OxForms shape) AND **UDT
+> members** (`rec.items()`) now read/write one element in O(1), so loops over them are
+> O(N) like the slot case. Both diagnostic rows are flat (~11 µs/elem at N=250..1000).
+> See "Resolution — Round 2" below. OxForms can re-run its hit-test bench and report the
+> new curve.
+>
+> **Update 2026-06-30 (reopened, now resolved):** the first fix removed the O(N) clone for
+> arrays held in **module/local/temp slots** (genuinely O(1)), but field-held arrays stayed
+> O(N) — they bypassed the slot fast path and deep-cloned the whole array on the field-load
+> every iteration. Round 2 (below) fixes that.
 OxVba baseline exercised: master `2b817614` (vm3-only; pinned by OxForms via git rev).
 Policy: per OxForms memory `oxvba-vm3-handover-policy`, perf pathologies vm3 exhibits under the
 OxForms workload are handed to OxVba to **fix**, not worked around in OxForms — OxForms is the
@@ -156,34 +160,55 @@ module-level** dynamic `Long` array; it now completes in **~70 ms** (debug) wher
 defect was tens of seconds, and asserts both the correct sum and a <5 s ceiling. Per-element
 cost is flat in N **for module/local/temp-slot arrays**.
 
-## Residual — class-instance-field arrays are STILL O(N) (the part OxForms hits)
+## Resolution — Round 2 (field-held arrays now O(1))
 
-The first fix only intercepts an array whose receiver place is a **slot** (Global/Local/Temp):
-`array_get_fast`/`array_set_fast` bail to the cloning general path for any other receiver. The
-OxForms workload reads arrays held as **class-instance fields** (`Private mX()` in
-`lex_hittest_bench_form.cls`), and that path was **not** covered — the field-held array is still
-deep-cloned on every access, so the loop stays O(N²).
+**Root cause of the residual (confirmed):** the first fix only intercepted an array whose receiver
+place is a **slot** (Global/Local/Temp). A field-held array (`Me.mX(i)` / `obj.field(i)` /
+`rec.items(i)`) lowered to a `FieldGet`/`RecordGet` that materialised the **whole** field `Variant`
+into a temp — and `Variant::as_safearray` / the field-`Variant` clone **deep-copies every element** —
+then an `ArrayGet`/`ArraySet` indexed the temp. The per-iteration whole-field clone is O(N), so the
+loop stayed O(N²). (The `ArrayGet` on the temp was already O(1); the cost was entirely the field-load
+clone.)
 
-Confirmed by a module-vs-field scaling diagnostic
+**Fix — fuse the field-load and the index so the whole field is never materialised** (option (b)):
+- New OxIR ops (`crates/oxvba-oxir/src/inst.rs`, emitted in `elaborate/lower.rs`):
+  - `ArrayGetField` / `ArraySetField` — `object.field(i…)`: the elaborator emits these instead of
+    `FieldGet` + `ArrayGet`/`ArraySet` whenever the indexed base is an object field.
+  - `ArrayGetRecordField` / `ArraySetRecordField` — `rec.items(i…)` where `rec` is a directly
+    addressable slot (local/global) UDT value.
+- New in-place descriptor-borrow primitives (reused by the vm3 ops, mirroring the Round-1 raw
+  element accessors):
+  - `ObjectRef::with_project_field_ref` / `with_project_field_mut` (`oxvba-runtime/src/object_ref.rs`)
+    — run a closure against an instance field `Variant` borrowed in place (no clone).
+  - `VbaRecord::field_variant_ref` / `field_variant_mut` (+ `Variant::record_field_variant_ref` /
+    `_mut`) — borrow a `Variant`-kind UDT member (a dynamic-array member) in place.
+- vm3 handlers (`oxvba-vm3/src/lib.rs`): `field_array_get_fast` / `field_array_set_fast` /
+  `record_field_array_get_fast` / `record_field_array_set_fast` bounds-check and read/write the single
+  element through `Variant::safearray_element` / `safearray_bounds_len` / `set_safearray_element` — no
+  whole-array clone. The in-place write persists via the shared instance (object reference semantics)
+  or the alias-resolved record slot (record value semantics), so **no field write-back** is emitted.
+  A non-array / object-default-member / inline-fixed-array / SAFEARRAY-bag receiver falls back to the
+  exact old materialise-then-index semantics (zero golden drift).
+
+**Result:** the module-vs-field diagnostic
 (`crates/oxvba-differential/tests/array_perf_diagnose.rs`,
-`cargo test -p oxvba-differential --test array_perf_diagnose -- --ignored --nocapture`):
+`cargo test -p oxvba-differential --test array_perf_diagnose -- --ignored --nocapture`) — both rows now
+flat (**O(1)**):
 
-| N | module-level (slot) | class-instance-field (`.cls`) |
+| N | module-level (slot) | class-instance-field (`.cls`) — before → after |
 |---|---|---|
-| 250 | 13.1 µs/elem | 270 µs/elem |
-| 500 | 13.5 µs/elem | 486 µs/elem |
-| 1000 | 14.9 µs/elem | 961 µs/elem |
-| 2000 | 11.0 µs/elem | 1920 µs/elem |
+| 250 | ~12 µs/elem | 270 → 12.8 µs/elem |
+| 500 | ~10 µs/elem | 486 → 11.0 µs/elem |
+| 1000 | ~10 µs/elem | 961 → 11.4 µs/elem |
 
-Module-level is flat (**O(1)**); class-field doubles with N (**O(N)** → loops O(N²)). This matches
-OxForms' min-of-trials.
+Non-flaky regression guard added:
+`crates/oxvba-differential/tests/class_field_array_access_perf_vm3.rs` — fills then reads a
+2000-element **class-instance-field** array and a **UDT-member** array, asserting the correct sum and a
+sub-second ceiling (~57 ms healthy vs ~8 s under the O(N²) residual), plus a correctness check that a
+`Collection` field `c(i)` still routes to its default member. Differential golden snapshot is
+zero-drift; workspace green.
 
-**Direction for the revisit (OxVba side):** make field-held array element access O(1) too. Trace how
-`obj.field(i)` / `Me.field(i)` lowers in OxIR (`crates/oxvba-oxir/src/elaborate/`) — almost certainly a
-record/field load that clones the whole field `Variant` before the `ArrayGet`, executed once per loop
-iteration. Options: (a) extend `array_get_fast`/`array_set_fast` to recognise a field-of-object/record
-receiver and borrow the field's array `Variant` in place (reuse the `Variant::safearray_element` /
-`safearray_bounds_len` descriptor-borrow primitives from the first fix); or (b) introduce a fused
-"index a field array" lowering that never materialises the whole field. Also check UDT-field arrays
-(`a.items(i)` where `a` is a `Type` record) — same shape, same likely fix. Re-run the diagnostic above
-(both rows should go flat) plus the OxForms bench.
+**Scope note:** an *inline fixed-size* UDT array member (`items(1 To 10)`) and a *nested compound*
+base (`Me.rec.items(i)`) keep the cloning path — both are bounded (small, fixed), so they are not the
+unbounded O(N²) pathology this report is about. The unbounded cases (dynamic class/module/UDT-member
+arrays) are all O(1) now.

@@ -1254,44 +1254,12 @@ impl<'h> Vm3<'h> {
                     self.store(dst, value)?;
                     return Ok(());
                 }
-                // `x(i…)` where `x` is a bare `Variant`/`As Object` resolves at run time: an
-                // OBJECT receiver makes the parentheses a default-member (`Item`, dispid 0) call.
+                // General path: `x(i…)` where `x` is a bare `Variant`/`As Object` resolves
+                // at run time — an OBJECT receiver makes the parentheses a default-member
+                // (`Item`, dispid 0) call; anything else indexes the array value.
                 let recv = self.operand(array)?;
-                if recv.as_safearray().is_none()
-                    && let Some(obj) = recv.as_object_ref()
-                {
-                    // A built-in `Collection`'s default member is `Item` — route `c(i)` to the
-                    // shared keyed dispatch. Other objects' default members (project class or
-                    // COM late-bound) remain a deferred residual.
-                    if obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
-                        let argv = self.operands_to_values(indices)?;
-                        let value = obj
-                            .with_native_collection(|d| {
-                                dispatch_collection(CollectionMethod::Item, d, &argv)
-                            })
-                            .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
-                            .map_err(Self::collection_fault)
-                            .map_err(Vm3Error::Fault)?;
-                        self.store(dst, value)?;
-                    } else {
-                        return Err(Vm3Error::Unimplemented {
-                            what: "array-index default-member call on an object",
-                        });
-                    }
-                } else {
-                    let arr = self.array_of(array)?;
-                    let bounds = arr
-                        .bounds()
-                        .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
-                    let flat = self.flat_index(indices, &bounds)?;
-                    if flat >= arr.len() {
-                        return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
-                    }
-                    let value = arr
-                        .variant_element(flat)
-                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-                    self.store(dst, value)?;
-                }
+                let value = self.array_get_value(recv, indices)?;
+                self.store(dst, value)?;
             }
             OxInst::ArraySet {
                 array,
@@ -1308,27 +1276,103 @@ impl<'h> Vm3<'h> {
                 }
                 // General path: a non-place receiver, or a run-time-resolved receiver
                 // (object default-member assignment is still a deferred residual).
-                let recv = self.read(array)?;
-                if recv.as_safearray().is_none() && recv.as_object_ref().is_some() {
+                let mut arr_v = self.read(array)?;
+                if !self.array_set_into_value(&mut arr_v, indices, &v)? {
                     return Err(Vm3Error::Unimplemented {
                         what: "array-index default-member assignment on an object",
                     });
                 }
-                let arr = recv
-                    .as_safearray()
-                    .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "expected an array")))?;
-                let bounds = arr
-                    .bounds()
-                    .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
-                let flat = self.flat_index(indices, &bounds)?;
-                if flat >= arr.len() {
-                    return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
-                }
-                let mut arr_v = recv;
-                arr_v
-                    .set_safearray_element(flat, &v)
-                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 self.store(array, arr_v)?;
+            }
+            OxInst::ArrayGetField {
+                dst,
+                object,
+                field,
+                indices,
+            } => {
+                let recv = self.operand(object)?;
+                let instance = variant_to_object(&recv)?;
+                // Fast O(1): borrow the field's array in place and read one element (no
+                // whole-array clone), so a loop over a class-instance-field array is O(N).
+                if let Some(value) = self.field_array_get_fast(&instance, *field, indices)? {
+                    self.store(dst, value)?;
+                    return Ok(());
+                }
+                // Fallback (identical semantics to `FieldGet` + `ArrayGet`): materialise the
+                // field then index it — covers an object field whose default member is
+                // indexed (e.g. a `Collection` field `c(i)`) and the empty/non-array field.
+                let field_val = instance
+                    .project_field_get(*field)
+                    .unwrap_or_else(Variant::empty);
+                let value = self.array_get_value(field_val, indices)?;
+                self.store(dst, value)?;
+            }
+            OxInst::ArraySetField {
+                object,
+                field,
+                indices,
+                value,
+            } => {
+                let v = self.operand(value)?;
+                let recv = self.operand(object)?;
+                let instance = variant_to_object(&recv)?;
+                // Fast O(1): mutate the field array element in place. The change persists on
+                // the shared instance (object reference semantics), so no write-back is run.
+                if self.field_array_set_fast(&instance, *field, indices, &v)? {
+                    return Ok(());
+                }
+                // Fallback (identical semantics to `FieldGet` → `ArraySet` → `FieldSet`):
+                // materialise the field, index-assign, write the whole field back.
+                let mut arr_v = instance
+                    .project_field_get(*field)
+                    .unwrap_or_else(Variant::empty);
+                if !self.array_set_into_value(&mut arr_v, indices, &v)? {
+                    return Err(Vm3Error::Unimplemented {
+                        what: "array-index default-member assignment on an object",
+                    });
+                }
+                instance.project_field_set(*field, arr_v);
+            }
+            OxInst::ArrayGetRecordField {
+                dst,
+                record,
+                index,
+                indices,
+            } => {
+                // Fast O(1): borrow the UDT member array in place and read one element.
+                if let Some(value) = self.record_field_array_get_fast(record, *index, indices)? {
+                    self.store(dst, value)?;
+                    return Ok(());
+                }
+                // Fallback (identical semantics to `RecordGet` + `ArrayGet`): read the member
+                // field (clone) then index it — covers inline fixed-array members and the
+                // legacy SAFEARRAY-backed record bag.
+                let field_val = self.record_field_get_value(record, *index)?;
+                let value = self.array_get_value(field_val, indices)?;
+                self.store(dst, value)?;
+            }
+            OxInst::ArraySetRecordField {
+                record,
+                index,
+                indices,
+                value,
+            } => {
+                let v = self.operand(value)?;
+                // Fast O(1): mutate the UDT member array element in place. The slot's record
+                // is mutated through its resolved (alias-resolved) location, so a ByRef-aliased
+                // record's backing sees the change — no whole-field write-back.
+                if self.record_field_array_set_fast(record, *index, indices, &v)? {
+                    return Ok(());
+                }
+                // Fallback (identical semantics to `RecordGet` → `ArraySet` → `RecordSet`):
+                // read the member field, index-assign, write the whole field back.
+                let mut arr_v = self.record_field_get_value(record, *index)?;
+                if !self.array_set_into_value(&mut arr_v, indices, &v)? {
+                    return Err(Vm3Error::Unimplemented {
+                        what: "array-index default-member assignment on an object",
+                    });
+                }
+                self.record_field_set_value(record, *index, arr_v)?;
             }
             OxInst::ArrayErase { array, element } => {
                 // VBA `Erase` is reset-vs-deallocate decided by the array's *own* storage
@@ -2093,6 +2137,262 @@ impl<'h> Vm3<'h> {
         arr.set_safearray_element(flat, value)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
         Ok(true)
+    }
+
+    /// General (cloning) `recv(indices)` element read given an already-read receiver
+    /// `Variant`: an array indexes its element; an OBJECT receiver routes its default
+    /// member (a built-in `Collection`'s `Item`, else a deferred residual). The fallback
+    /// for `ArrayGet` and the fused field/record index reads when the O(1) in-place path
+    /// does not apply.
+    fn array_get_value(
+        &self,
+        recv: Variant,
+        indices: &[OxOperand],
+    ) -> Result<Variant, Vm3Error> {
+        let arr = match recv.as_safearray() {
+            Some(arr) => arr,
+            None => {
+                if let Some(obj) = recv.as_object_ref() {
+                    // A built-in `Collection`'s default member is `Item` — route `c(i)` to
+                    // the shared keyed dispatch. Other objects' default members (project
+                    // class or COM late-bound) remain a deferred residual.
+                    return if obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
+                        let argv = self.operands_to_values(indices)?;
+                        obj.with_native_collection(|d| {
+                            dispatch_collection(CollectionMethod::Item, d, &argv)
+                        })
+                        .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
+                        .map_err(Self::collection_fault)
+                        .map_err(Vm3Error::Fault)
+                    } else {
+                        Err(Vm3Error::Unimplemented {
+                            what: "array-index default-member call on an object",
+                        })
+                    };
+                }
+                return Err(Vm3Error::Fault(Fault::new(13, "expected an array")));
+            }
+        };
+        let bounds = arr
+            .bounds()
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= arr.len() {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        arr.variant_element(flat)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+    }
+
+    /// General `recv(indices) = value` element write into an owned receiver `Variant`:
+    /// mutates `arr_v` in place when it is an array (returns `Ok(true)`); returns
+    /// `Ok(false)` when `arr_v` is an OBJECT (the caller raises the default-member
+    /// assignment residual). The caller writes the mutated `arr_v` back to its home (slot
+    /// / object field / record member) — value semantics. The fallback for `ArraySet` and
+    /// the fused field/record index writes.
+    fn array_set_into_value(
+        &self,
+        arr_v: &mut Variant,
+        indices: &[OxOperand],
+        value: &Variant,
+    ) -> Result<bool, Vm3Error> {
+        let Some(arr) = arr_v.as_safearray() else {
+            // A non-array receiver: an object is a (deferred) default-member assignment;
+            // anything else is a type mismatch.
+            if arr_v.as_object_ref().is_some() {
+                return Ok(false);
+            }
+            return Err(Vm3Error::Fault(Fault::new(13, "expected an array")));
+        };
+        let bounds = arr
+            .bounds()
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= arr.len() {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        arr_v
+            .set_safearray_element(flat, value)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        Ok(true)
+    }
+
+    /// Fast O(1) read of an element of an array held in object field `field` of `instance`:
+    /// borrow the field `Variant` in place and read one element through the SAFEARRAY
+    /// descriptor — no whole-field clone. `Ok(None)` when the in-place path does not apply
+    /// (not a project instance, the field is absent, or it is not an array), so the caller
+    /// runs the cloning fallback.
+    fn field_array_get_fast(
+        &self,
+        instance: &ObjectRef,
+        field: i32,
+        indices: &[OxOperand],
+    ) -> Result<Option<Variant>, Vm3Error> {
+        let outcome = instance.with_project_field_ref(field, |fv| -> Result<Option<Variant>, Vm3Error> {
+            let Some((bounds, len)) = fv.safearray_bounds_len() else {
+                return Ok(None); // field present but not an array → caller falls back
+            };
+            let flat = self.flat_index(indices, &bounds)?;
+            if flat >= len {
+                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+            }
+            let value = fv
+                .safearray_element(flat)
+                .expect("safearray_bounds_len already proved this is an array")
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+            Ok(Some(value))
+        });
+        match outcome {
+            Some(inner) => inner,
+            None => Ok(None), // not a project instance / field absent → caller falls back
+        }
+    }
+
+    /// Fast O(1) in-place write of an element of object field `field`'s array: borrow the
+    /// field `Variant` mutably and write one element through the SAFEARRAY descriptor (the
+    /// mutation persists on the shared instance). `Ok(false)` when the in-place path does
+    /// not apply, so the caller runs the cloning-and-write-back fallback.
+    fn field_array_set_fast(
+        &self,
+        instance: &ObjectRef,
+        field: i32,
+        indices: &[OxOperand],
+        value: &Variant,
+    ) -> Result<bool, Vm3Error> {
+        let outcome = instance.with_project_field_mut(field, |fv| -> Result<bool, Vm3Error> {
+            let Some((bounds, len)) = fv.safearray_bounds_len() else {
+                return Ok(false); // field present but not an array → caller falls back
+            };
+            let flat = self.flat_index(indices, &bounds)?;
+            if flat >= len {
+                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+            }
+            fv.set_safearray_element(flat, value)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+            Ok(true)
+        });
+        match outcome {
+            Some(inner) => inner,
+            None => Ok(false), // not a project instance / field absent → caller falls back
+        }
+    }
+
+    /// Fast O(1) read of an element of an array held in UDT field `index` of the record at
+    /// slot `record`: borrow the record's member `Variant` in place and read one element.
+    /// `Ok(None)` when the in-place path does not apply (the slot holds no native record, the
+    /// member is not a `Variant`-kind array, …), so the caller runs the cloning fallback.
+    fn record_field_array_get_fast(
+        &self,
+        record: &OxPlace,
+        index: usize,
+        indices: &[OxOperand],
+    ) -> Result<Option<Variant>, Vm3Error> {
+        let loc = self.resolve(record);
+        let Some(rec_v) = self.read_loc_ref(loc)? else {
+            return Ok(None); // unwritten slot → caller falls back
+        };
+        let Some(fv) = rec_v.record_field_variant_ref(index) else {
+            return Ok(None); // not a Variant-kind member of a native record → fall back
+        };
+        let Some((bounds, len)) = fv.safearray_bounds_len() else {
+            return Ok(None); // member present but not an array → fall back
+        };
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= len {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let value = fv
+            .safearray_element(flat)
+            .expect("safearray_bounds_len already proved this is an array")
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        Ok(Some(value))
+    }
+
+    /// Fast O(1) in-place write of an element of UDT field `index`'s array in the record at
+    /// slot `record`: borrow the slot's record mutably and write one element. The slot is
+    /// resolved through ByRef aliasing, so a write persists to an aliased record's backing.
+    /// `Ok(false)` when the in-place path does not apply, so the caller runs the fallback.
+    fn record_field_array_set_fast(
+        &mut self,
+        record: &OxPlace,
+        index: usize,
+        indices: &[OxOperand],
+        value: &Variant,
+    ) -> Result<bool, Vm3Error> {
+        let loc = self.resolve(record);
+        // Bounds + flat index under an immutable borrow first (reads index operands), then
+        // take the mutable borrow to write the element in place.
+        let (bounds, len) = match self.read_loc_ref(loc)? {
+            Some(rec_v) => match rec_v
+                .record_field_variant_ref(index)
+                .and_then(|fv| fv.safearray_bounds_len())
+            {
+                Some(bl) => bl,
+                None => return Ok(false),
+            },
+            None => return Ok(false),
+        };
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= len {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let rec_v = self
+            .read_loc_mut(loc)?
+            .expect("slot borrowed immutably just above is still present");
+        let fv = rec_v
+            .record_field_variant_mut(index)
+            .expect("Variant-kind array member proven present just above");
+        fv.set_safearray_element(flat, value)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        Ok(true)
+    }
+
+    /// Read UDT field `index` of the record at slot `record` as a `Variant` (cloning) —
+    /// mirrors the `RecordGet` handler (native record by field index, or a legacy
+    /// SAFEARRAY-backed record bag by element). The cloning fallback for the fused
+    /// record-field index ops.
+    fn record_field_get_value(
+        &self,
+        record: &OxPlace,
+        index: usize,
+    ) -> Result<Variant, Vm3Error> {
+        let source = self.read(record)?;
+        if let Some(rec) = source.as_safearray() {
+            if index >= rec.len() {
+                return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
+            }
+            rec.variant_element(index)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+        } else {
+            source
+                .read_record_field_variant(index)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+        }
+    }
+
+    /// Write `value` into UDT field `index` of the record at slot `record` (value
+    /// semantics — the alias-resolved slot's record receives the write) — mirrors the
+    /// `RecordSet` handler. The write-back of the fused record-field index ops' fallback.
+    fn record_field_set_value(
+        &mut self,
+        record: &OxPlace,
+        index: usize,
+        value: Variant,
+    ) -> Result<(), Vm3Error> {
+        let mut target = self.read(record)?;
+        if let Some(rec) = target.as_safearray() {
+            if index >= rec.len() {
+                return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
+            }
+            target
+                .set_safearray_element(index, &value)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        } else {
+            target
+                .write_record_field_variant(index, &value)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        }
+        self.store(record, target)
     }
 
     /// The array (SAFEARRAY) value of an operand, else type mismatch (13).
@@ -3597,6 +3897,10 @@ fn inst_kind(inst: &OxInst) -> &'static str {
         | OxInst::ArrayRedim { .. }
         | OxInst::ArrayGet { .. }
         | OxInst::ArraySet { .. }
+        | OxInst::ArrayGetField { .. }
+        | OxInst::ArraySetField { .. }
+        | OxInst::ArrayGetRecordField { .. }
+        | OxInst::ArraySetRecordField { .. }
         | OxInst::ArrayErase { .. }
         | OxInst::Bound { .. } => "array op",
         OxInst::ForEachInit { .. } | OxInst::ForEachNext { .. } => "For Each",
