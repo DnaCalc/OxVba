@@ -49,7 +49,9 @@ use oxvba_bundle::coreir::{
     self, CoreArg, CoreBinOp, CoreClass, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp,
     CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
 };
-use oxvba_bundle::{AssignmentIntent, AssignmentTargetKind, NumericMode, ProjectMemberKind};
+use oxvba_bundle::{
+    AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, NumericMode, ProjectMemberKind,
+};
 
 use oxvba_com::{TypeLibInterfaceMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata};
 
@@ -1010,7 +1012,19 @@ impl<'a> Lowerer<'a> {
         // their own pads. `cur_fault` is already the For's pad on entry.
         let for_pad = self.cur_fault;
         let var_place = self.simple_place(var)?;
-        let var_op = self.place_as_operand(var)?;
+        let (var_op, counter_ty) = self.lower_place_load(var)?;
+        // A fixed-integer counter OVERFLOWS at the increment when it would pass the
+        // type's max (`For i As Integer = ... To 32767` raises Err 6 after the body
+        // runs for 32767). A `Variant` counter promotes instead (Integer→Long), and
+        // float counters effectively never hit their bound — both keep widening.
+        let step_mode = match counter_ty {
+            OxTy::Byte => NumericMode::Checked(NumericCoerceTarget::Byte),
+            OxTy::Integer => NumericMode::Checked(NumericCoerceTarget::Integer),
+            OxTy::Long => NumericMode::Checked(NumericCoerceTarget::Long),
+            // vm3 targets Win64, where `LongPtr` is 64-bit.
+            OxTy::LongLong | OxTy::LongPtr => NumericMode::Checked(NumericCoerceTarget::LongLong),
+            _ => NumericMode::Widening,
+        };
 
         // counter = start
         let (start_op, _) = self.lower_value(start)?;
@@ -1102,7 +1116,8 @@ impl<'a> Lowerer<'a> {
         self.lower_block(body)?;
         self.loops.pop();
         self.finish_to(OxTerminator::Jump(step_blk), step_blk);
-        // step: counter = counter + step (widening — typed overflow is allowed here).
+        // step: counter = counter + step. A fixed-integer counter uses Checked so
+        // passing the type max raises Overflow (6); a Variant/float counter widens.
         // Belongs to the For statement, so restore its pad after the body.
         self.cur_fault = for_pad;
         self.emit(OxInst::Arith {
@@ -1110,7 +1125,7 @@ impl<'a> Lowerer<'a> {
             op: ArithOp::Add,
             lhs: var_op,
             rhs: OxOperand::temp(step_t),
-            mode: NumericMode::Widening,
+            mode: step_mode,
         });
         self.finish_to(OxTerminator::Jump(head), after);
         Ok(())
