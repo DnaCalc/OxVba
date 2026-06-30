@@ -145,6 +145,11 @@ native_impl_ids! {
     Mirr,
     Rate,
     NPer,
+    IPmt,    // interest portion of a period's payment
+    PPmt,    // principal portion of a period's payment
+    Sln,     // straight-line depreciation
+    Syd,     // sum-of-years'-digits depreciation
+    Ddb,     // double-declining-balance depreciation
 
     // ── Information ──────────────────────────────────────────
     IsArray,
@@ -250,7 +255,9 @@ impl NativeImplId {
             Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
             | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
             Rnd | Randomize => M::Random,
-            Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer => M::Financial,
+            Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer | IPmt | PPmt | Sln | Syd | Ddb => {
+                M::Financial
+            }
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
             | IsEmpty | IsMissing | IIf | Choose | Switch | Rgb | QbColor => M::Information,
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
@@ -433,6 +440,11 @@ impl NativeImplId {
             Mirr => "MIRR",
             Rate => "Rate",
             NPer => "NPer",
+            IPmt => "IPmt",
+            PPmt => "PPmt",
+            Sln => "SLN",
+            Syd => "SYD",
+            Ddb => "DDB",
             // ── Information (predicates only — IIf/Choose/Switch stay special forms) ──
             IsArray => "IsArray",
             VarType => "VarType",
@@ -562,9 +574,11 @@ impl NativeImplId {
             Rnd | Randomize => 1,
             // ── Financial ──
             Npv | Irr => 2,
-            Mirr => 3,
+            Mirr | Sln => 3,
+            Syd => 4,
+            Ddb => 5,
             Fv | Pv | Pmt | NPer => 5,
-            Rate => 6,
+            Rate | IPmt | PPmt => 6,
             // ── Information predicates ── (all single-argument)
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
             | IsEmpty | IsMissing => 1,

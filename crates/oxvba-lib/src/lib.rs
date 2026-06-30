@@ -346,6 +346,11 @@ pub fn invoke(
         Mirr => pure::mirr(args),
         Rate => pure::rate(args),
         NPer => pure::nper(args),
+        IPmt => pure::ipmt(args),
+        PPmt => pure::ppmt(args),
+        Sln => pure::sln(args),
+        Syd => pure::syd(args),
+        Ddb => pure::ddb(args),
 
         // ── Information ──
         IsArray => pure::is_vtype(args, |t| matches!(t, Vt::ArrayVariant)),

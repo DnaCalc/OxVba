@@ -1439,6 +1439,47 @@ fn cashflows(v: &Variant) -> LibResult<Vec<f64>> {
     }
 }
 
+/// Future value of `pv` plus `nper` payments `pmt` at periodic rate `i`
+/// (`t` = 0 ordinary / end-of-period, 1 annuity-due / begin-of-period). Shared by
+/// `FV` and the `IPmt`/`PPmt` balance computation.
+fn fv_value(i: f64, nper: f64, pmt: f64, pv: f64, t: f64) -> f64 {
+    if i == 0.0 {
+        -(pv + pmt * nper)
+    } else {
+        let g = (1.0 + i).powf(nper);
+        -(pv * g + pmt * (1.0 + i * t) * (g - 1.0) / i)
+    }
+}
+
+/// Periodic payment for present value `pv` reaching future value `fv` over `nper`
+/// periods at rate `i` (`t` as in [`fv_value`]). Shared by `Pmt` and `IPmt`/`PPmt`.
+fn pmt_value(i: f64, nper: f64, pv: f64, fv: f64, t: f64) -> f64 {
+    if i == 0.0 {
+        -(pv + fv) / nper
+    } else {
+        let g = (1.0 + i).powf(nper);
+        -(fv + pv * g) / ((1.0 + i * t) * (g - 1.0) / i)
+    }
+}
+
+/// The interest portion of the `per`-th payment (the basis for `IPmt`/`PPmt`). The
+/// interest is the balance carried into the period times the rate; for an annuity
+/// due (`t = 1`) the first period carries no interest and later periods discount by
+/// one period — the numpy-financial/Excel convention, live-verified against VBA
+/// (`IPmt(0.1/12, 2, 36, 10000, 0, 1) = -80.6667`).
+fn ipmt_value(rate: f64, per: f64, nper: f64, pv: f64, fv: f64, t: f64) -> f64 {
+    let pmt = pmt_value(rate, nper, pv, fv, t);
+    let mut interest = fv_value(rate, per - 1.0, pmt, pv, t) * rate;
+    if t == 1.0 {
+        if per == 1.0 {
+            interest = 0.0;
+        } else {
+            interest /= 1.0 + rate;
+        }
+    }
+    interest
+}
+
 pub fn fv(args: &[Variant]) -> LibResult<Variant> {
     let (i, n, pmt) = (
         as_f64(need(args, 0)?)?,
@@ -1447,12 +1488,7 @@ pub fn fv(args: &[Variant]) -> LibResult<Variant> {
     );
     let pv = opt_f64(args, 3, 0.0)?;
     let t = opt_f64(args, 4, 0.0)?;
-    Ok(vf64(if i == 0.0 {
-        -(pv + pmt * n)
-    } else {
-        let g = (1.0 + i).powf(n);
-        -(pv * g + pmt * (1.0 + i * t) * (g - 1.0) / i)
-    }))
+    Ok(vf64(fv_value(i, n, pmt, pv, t)))
 }
 
 pub fn pv(args: &[Variant]) -> LibResult<Variant> {
@@ -1479,12 +1515,81 @@ pub fn pmt(args: &[Variant]) -> LibResult<Variant> {
     );
     let fv = opt_f64(args, 3, 0.0)?;
     let t = opt_f64(args, 4, 0.0)?;
-    Ok(vf64(if i == 0.0 {
-        -(pv + fv) / n
+    Ok(vf64(pmt_value(i, n, pv, fv, t)))
+}
+
+/// `IPmt(rate, per, nper, pv, [fv = 0], [type = 0])` → the interest portion of the
+/// `per`-th payment.
+pub fn ipmt(args: &[Variant]) -> LibResult<Variant> {
+    let rate = as_f64(need(args, 0)?)?;
+    let per = as_f64(need(args, 1)?)?;
+    let nper = as_f64(need(args, 2)?)?;
+    let pv = as_f64(need(args, 3)?)?;
+    let fv = opt_f64(args, 4, 0.0)?;
+    let t = if opt_f64(args, 5, 0.0)? != 0.0 { 1.0 } else { 0.0 };
+    Ok(vf64(ipmt_value(rate, per, nper, pv, fv, t)))
+}
+
+/// `PPmt(rate, per, nper, pv, [fv = 0], [type = 0])` → the principal portion of the
+/// `per`-th payment, i.e. the period payment minus its interest portion.
+pub fn ppmt(args: &[Variant]) -> LibResult<Variant> {
+    let rate = as_f64(need(args, 0)?)?;
+    let per = as_f64(need(args, 1)?)?;
+    let nper = as_f64(need(args, 2)?)?;
+    let pv = as_f64(need(args, 3)?)?;
+    let fv = opt_f64(args, 4, 0.0)?;
+    let t = if opt_f64(args, 5, 0.0)? != 0.0 { 1.0 } else { 0.0 };
+    let payment = pmt_value(rate, nper, pv, fv, t);
+    Ok(vf64(payment - ipmt_value(rate, per, nper, pv, fv, t)))
+}
+
+/// `SLN(cost, salvage, life)` → straight-line depreciation per period.
+pub fn sln(args: &[Variant]) -> LibResult<Variant> {
+    let cost = as_f64(need(args, 0)?)?;
+    let salvage = as_f64(need(args, 1)?)?;
+    let life = as_f64(need(args, 2)?)?;
+    Ok(vf64((cost - salvage) / life))
+}
+
+/// `SYD(cost, salvage, life, period)` → sum-of-years'-digits depreciation for
+/// `period`.
+pub fn syd(args: &[Variant]) -> LibResult<Variant> {
+    let cost = as_f64(need(args, 0)?)?;
+    let salvage = as_f64(need(args, 1)?)?;
+    let life = as_f64(need(args, 2)?)?;
+    let period = as_f64(need(args, 3)?)?;
+    Ok(vf64(
+        (cost - salvage) * (life - period + 1.0) * 2.0 / (life * (life + 1.0)),
+    ))
+}
+
+/// `DDB(cost, salvage, life, period, [factor = 2])` → double-declining-balance
+/// depreciation for `period`. Uses the closed form `book(start) - book(end)` with
+/// the salvage floor (depreciation never takes book value below `salvage`) —
+/// live-verified against VBA (`DDB(10000,1000,5,5) = 296`, the salvage-capped final
+/// period; `DDB(…, factor:=3)` honours the rate override).
+pub fn ddb(args: &[Variant]) -> LibResult<Variant> {
+    let cost = as_f64(need(args, 0)?)?;
+    let salvage = as_f64(need(args, 1)?)?;
+    let life = as_f64(need(args, 2)?)?;
+    let period = as_f64(need(args, 3)?)?;
+    let factor = opt_f64(args, 4, 2.0)?;
+    let rate = factor / life;
+    let (book_start, book_end) = if rate >= 1.0 {
+        // A rate at/above 1 fully depreciates in the first period.
+        (if period == 1.0 { cost } else { 0.0 }, 0.0)
     } else {
-        let g = (1.0 + i).powf(n);
-        -(fv + pv * g) / ((1.0 + i * t) * (g - 1.0) / i)
-    }))
+        (
+            cost * (1.0 - rate).powf(period - 1.0),
+            cost * (1.0 - rate).powf(period),
+        )
+    };
+    let depreciation = if book_end < salvage {
+        book_start - salvage
+    } else {
+        book_start - book_end
+    };
+    Ok(vf64(depreciation.max(0.0)))
 }
 
 pub fn nper(args: &[Variant]) -> LibResult<Variant> {

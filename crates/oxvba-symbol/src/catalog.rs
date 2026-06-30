@@ -185,6 +185,11 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Mirr => e(Mirr, &["MIRR"], sig(3, 3), Ordinary),
         Rate => e(Rate, &["Rate"], sig(3, 6), Ordinary),
         NPer => e(NPer, &["NPer"], sig(3, 5), Ordinary),
+        IPmt => e(IPmt, &["IPmt"], sig(4, 6), Ordinary),
+        PPmt => e(PPmt, &["PPmt"], sig(4, 6), Ordinary),
+        Sln => e(Sln, &["SLN"], sig(3, 3), Ordinary),
+        Syd => e(Syd, &["SYD"], sig(4, 4), Ordinary),
+        Ddb => e(Ddb, &["DDB"], sig(4, 5), Ordinary),
 
         // ── Information ──
         IsArray => e(IsArray, &["IsArray"], sig(1, 1), Ordinary),
