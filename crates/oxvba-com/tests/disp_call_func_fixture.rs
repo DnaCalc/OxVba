@@ -45,6 +45,9 @@ unsafe extern "system" fn slot_one_i4(this: *mut SyntheticObject, value: i32) ->
 }
 
 fn variant_i4(value: &VARIANT) -> Option<i32> {
+    // SAFETY: `value` is a live, initialized VARIANT; reading the `vt` discriminant is
+    // always valid, and `lVal` is read only after confirming `vt == VT_I4`, so the
+    // accessed union member matches the active variant tag.
     unsafe {
         if value.Anonymous.Anonymous.vt == VT_I4 {
             Some(value.Anonymous.Anonymous.Anonymous.lVal)
@@ -67,8 +70,14 @@ fn dispcallfunc_invokes_synthetic_vtable_slots_and_returns_variant_i4() {
     };
     let expected_this = (&mut object as *mut SyntheticObject) as usize;
 
+    // SAFETY: an all-zero VARIANT is a valid VT_EMPTY value (VT_EMPTY == 0).
     let mut no_arg_result: VARIANT = unsafe { std::mem::zeroed() };
+    // SAFETY: `no_arg_result` is a live, writable VARIANT; VariantInit sets it VT_EMPTY.
     unsafe { VariantInit(&mut no_arg_result) };
+    // SAFETY: `object` is a live SyntheticObject whose slot0 (`slot_no_args`) matches
+    // the `extern "system" fn(this) -> i32` signature DispCallFunc invokes: oVft=0
+    // selects slot0, cActuals=0 with null arg arrays, vtReturn=VT_I4, and
+    // `no_arg_result` is a live VARIANT out-cell.
     let hr = unsafe {
         DispCallFunc(
             (&mut object as *mut SyntheticObject).cast(),
@@ -84,11 +93,16 @@ fn dispcallfunc_invokes_synthetic_vtable_slots_and_returns_variant_i4() {
     assert_eq!(hr, 0, "zero-arg DispCallFunc HRESULT");
     assert_eq!(variant_i4(&no_arg_result), Some(0x2345));
     assert_eq!(object.seen_this, expected_this);
+    // SAFETY: `no_arg_result` is the live VARIANT populated by DispCallFunc; clearing
+    // it releases any owned contents exactly once.
     unsafe {
         let _ = VariantClear(&mut no_arg_result);
     }
 
+    // SAFETY: an all-zero VARIANT is a valid VT_EMPTY value (VT_EMPTY == 0).
     let mut value: VARIANT = unsafe { std::mem::zeroed() };
+    // SAFETY: `value` is a live, writable VARIANT; init it to VT_EMPTY, then set the
+    // VT_I4 tag and write its `lVal` union member consistently with that tag.
     unsafe {
         VariantInit(&mut value);
         value.Anonymous.Anonymous.vt = VT_I4;
@@ -96,8 +110,14 @@ fn dispcallfunc_invokes_synthetic_vtable_slots_and_returns_variant_i4() {
     }
     let mut arg_types = [VT_I4];
     let mut arg_ptrs = [(&mut value as *mut VARIANT).cast::<c_void>()];
+    // SAFETY: an all-zero VARIANT is a valid VT_EMPTY value (VT_EMPTY == 0).
     let mut one_arg_result: VARIANT = unsafe { std::mem::zeroed() };
+    // SAFETY: `one_arg_result` is a live, writable VARIANT; VariantInit sets it VT_EMPTY.
     unsafe { VariantInit(&mut one_arg_result) };
+    // SAFETY: `object`'s slot1 (`slot_one_i4`) matches the `fn(this, i32) -> i32`
+    // signature: oVft=size_of::<usize>() selects slot1, cActuals=1 with arg_types=[VT_I4]
+    // and arg_ptrs referencing the live `value` VARIANT, vtReturn=VT_I4, and
+    // `one_arg_result` is a live VARIANT out-cell.
     let hr = unsafe {
         DispCallFunc(
             (&mut object as *mut SyntheticObject).cast(),
@@ -113,6 +133,8 @@ fn dispcallfunc_invokes_synthetic_vtable_slots_and_returns_variant_i4() {
     assert_eq!(hr, 0, "one-arg DispCallFunc HRESULT");
     assert_eq!(object.seen_arg, 37);
     assert_eq!(variant_i4(&one_arg_result), Some(0x1025));
+    // SAFETY: `one_arg_result` and `value` are both live, initialized VARIANTs,
+    // each cleared exactly once at the end of the test.
     unsafe {
         let _ = VariantClear(&mut one_arg_result);
         let _ = VariantClear(&mut value);

@@ -165,11 +165,15 @@ mod tests {
         let object = ObjectRef::from_compat_identity(1234);
         let dispatch = create_runtime_object_dispatch(object.clone());
 
+        // SAFETY: `dispatch` was just returned by `create_runtime_object_dispatch`, so
+        // it is a live runtime-object wrapper carrying `object`.
         let roundtrip = unsafe { runtime_object_from_dispatch(dispatch) }
             .expect("wrapper should expose carried object");
         assert_eq!(roundtrip.raw(), object.raw());
 
         let mut queried: *mut c_void = std::ptr::null_mut();
+        // SAFETY: `dispatch` is the live wrapper above; reading its vtbl and invoking
+        // `query_interface` with a valid IID and out-pointer follows the IUnknown ABI.
         let hr = unsafe {
             ((*(*dispatch).vtbl).unknown.query_interface)(
                 dispatch.cast(),
@@ -180,6 +184,9 @@ mod tests {
         assert_eq!(hr, 0);
         assert_eq!(queried, dispatch.cast::<c_void>());
 
+        // SAFETY: the QueryInterface above succeeded (hr == 0) and retained one
+        // reference into `queried`; `dispatch` holds the original reference. Release
+        // each of the two retained references exactly once.
         unsafe {
             release_dispatch(queried.cast());
             release_dispatch(dispatch);

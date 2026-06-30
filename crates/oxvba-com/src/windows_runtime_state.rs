@@ -449,6 +449,9 @@ pub unsafe fn bind_native_dispatch_result(
     // incoming reference and return the original runtime object, rather than
     // creating a spurious native COM binding for the wrapper itself.
     if let Some(object) = unsafe { runtime_object_from_dispatch(dispatch) } {
+        // SAFETY: `runtime_object_from_dispatch` returned `Some`, so `dispatch` is one
+        // of the bridge's own VM-object wrappers and the caller transferred us one
+        // retained reference to it; release that single reference exactly once.
         unsafe {
             release_dispatch(dispatch);
         }

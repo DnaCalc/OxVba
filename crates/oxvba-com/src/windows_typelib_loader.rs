@@ -4045,6 +4045,10 @@ mod tests {
             vt: VT_PTR,
         };
         assert_eq!(
+            // SAFETY: `typedesc_to_wire_type` walks `&array_tdesc` (VT_SAFEARRAY) to
+            // its `&element_tdesc` element via `union_field`; both are live stack
+            // descriptors for this call. The null ITypeInfo is never dereferenced for
+            // this SAFEARRAY shape (only VT_USERDEFINED resolution touches it).
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &array_tdesc, false) },
             TypeLibWireType::SafeArray {
                 element_vt: VT_I4,
@@ -4052,6 +4056,10 @@ mod tests {
             }
         );
         assert_eq!(
+            // SAFETY: `typedesc_to_wire_type` walks `&ptr_tdesc` (VT_PTR) → `&array_tdesc`
+            // (VT_SAFEARRAY) → `&element_tdesc` via `union_field`; all three are live
+            // stack descriptors for this call. The null ITypeInfo is never dereferenced
+            // for this VT_PTR→VT_SAFEARRAY shape.
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc, false) },
             TypeLibWireType::SafeArray {
                 element_vt: VT_I4,
@@ -4059,16 +4067,28 @@ mod tests {
             }
         );
         assert_eq!(
+            // SAFETY: `typedesc_to_param_type` strips `&ptr_tdesc` (VT_PTR) to its
+            // `&array_tdesc` (VT_SAFEARRAY) pointee via `union_field` and returns early
+            // as Variant; both are live stack descriptors here. The null ITypeInfo is
+            // never dereferenced for this VT_PTR→VT_SAFEARRAY shape.
             unsafe { typedesc_to_param_type(std::ptr::null_mut(), &ptr_tdesc, false) },
             TypeLibParamType::Variant,
             "SAFEARRAY* is semantically a Variant array; pointer transport lives in wire metadata"
         );
         assert_eq!(
+            // SAFETY: same live `&ptr_tdesc` → `&array_tdesc` chain as above (now with
+            // `is_byref = true`); the SAFEARRAY pointee is reached via `union_field` and
+            // both descriptors outlive the call. The null ITypeInfo is never
+            // dereferenced for this VT_PTR→VT_SAFEARRAY shape.
             unsafe { typedesc_to_param_type(std::ptr::null_mut(), &ptr_tdesc, true) },
             TypeLibParamType::Variant,
             "SAFEARRAY** still uses Variant semantics with ByRef SAFEARRAY wire metadata"
         );
         assert_eq!(
+            // SAFETY: `typedesc_to_wire_type` walks the live `&ptr_tdesc` → `&array_tdesc`
+            // → `&element_tdesc` chain via `union_field` (all live stack descriptors) to
+            // build the ByRef SAFEARRAY wire shape. The null ITypeInfo is never
+            // dereferenced for this VT_PTR→VT_SAFEARRAY shape.
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc, true) },
             TypeLibWireType::ByRefSafeArray {
                 element_vt: VT_I4,
@@ -4076,6 +4096,10 @@ mod tests {
             }
         );
         assert_eq!(
+            // SAFETY: `retval_typedesc_to_wire_type` strips `&ptr_tdesc` (VT_PTR) to its
+            // `&array_tdesc` (VT_SAFEARRAY) pointee via `union_field`, then reads
+            // `&element_tdesc`; all are live stack descriptors for this call. The null
+            // ITypeInfo is never dereferenced for this VT_PTR→VT_SAFEARRAY retval shape.
             unsafe { retval_typedesc_to_wire_type(std::ptr::null_mut(), &ptr_tdesc) },
             TypeLibWireType::SafeArray {
                 element_vt: VT_I4,
@@ -4096,6 +4120,10 @@ mod tests {
             vt: VT_CARRAY,
         };
         assert_eq!(
+            // SAFETY: `typedesc_to_wire_type` reads `&carray_tdesc` (VT_CARRAY) whose
+            // `union_field` points to the live stack `&carray_desc` ARRAYDESC, from which
+            // it reads `tdesc_elem`; both outlive the call. The null ITypeInfo is never
+            // dereferenced for this VT_CARRAY shape.
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &carray_tdesc, false) },
             TypeLibWireType::SafeArray {
                 element_vt: VT_I4,
@@ -4112,6 +4140,10 @@ mod tests {
             vt: VT_SAFEARRAY,
         };
         assert_eq!(
+            // SAFETY: `typedesc_to_wire_type` reads only `&malformed`, a live stack
+            // VT_SAFEARRAY descriptor whose `union_field` is 0, so no pointee is walked
+            // and the element VARTYPE defaults to VT_EMPTY. The null ITypeInfo is never
+            // dereferenced for this VT_SAFEARRAY shape.
             unsafe { typedesc_to_wire_type(std::ptr::null_mut(), &malformed, false) },
             TypeLibWireType::SafeArray {
                 element_vt: VT_EMPTY,
@@ -4169,6 +4201,9 @@ mod tests {
         };
         let blob = build_metadata_blob_from_typelib(ptlib, identity)
             .expect("Scripting typelib should build library metadata");
+        // SAFETY: `ptlib` came from `load_typelib_from_registry` above and was only
+        // borrowed (not consumed) by `build_metadata_blob_from_typelib`; it is the live
+        // ITypeLib and is released exactly once here per `release_typelib`'s contract.
         unsafe { release_typelib(ptlib) };
 
         assert!(
@@ -4224,28 +4259,46 @@ mod tests {
         let Ok(ptlib) = load_typelib_from_registry(&guid, 2, 0, 0) else {
             return;
         };
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_registry`; its
+        // first field is the vtable pointer, read here to call its methods.
         let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+        // SAFETY: `vtbl` was just read from the live `ptlib`; GetTypeInfoCount takes the
+        // live interface pointer and returns a count by value.
         let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
         for i in 0..count {
             let mut typekind: u32 = 0;
+            // SAFETY: live `vtbl`/`ptlib`; `i` is in 0..count, and `typekind` is a live
+            // local the callee writes through on S_OK.
             if unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) } != COM_S_OK
                 || typekind != TKIND_RECORD
             {
                 continue;
             }
             let mut ptinfo: *mut c_void = std::ptr::null_mut();
+            // SAFETY: live `vtbl`/`ptlib`; `i` is in range, and `ptinfo` is a live local
+            // into which GetTypeInfo stores a retained ITypeInfo on S_OK.
             if unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) } != COM_S_OK
                 || ptinfo.is_null()
             {
                 continue;
             }
+            // SAFETY: `ptinfo` was checked S_OK/non-null above, so it is a live
+            // ITypeInfo; its first field is the vtable pointer read here.
             let ti_vtbl = unsafe { *(ptinfo as *const *const ITypeInfoVtbl) };
             let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
+            // SAFETY: live `ti_vtbl`/`ptinfo`; GetTypeAttr writes a retained TYPEATTR
+            // pointer into the live local `pattr` on S_OK.
             if unsafe { ((*ti_vtbl).get_type_attr)(ptinfo, &mut pattr) } == COM_S_OK
                 && !pattr.is_null()
             {
+                // SAFETY: `pattr` was checked S_OK/non-null above; `&(*pattr).guid`
+                // borrows the live TYPEATTR's GUID field for the duration of from_guid.
                 let type_guid = crate::ComInterfaceIid::from_guid(unsafe { &(*pattr).guid });
+                // SAFETY: `ptinfo` is the live ITypeInfo and `&*pattr` borrows the live,
+                // S_OK/non-null TYPEATTR that owns the record descriptor data.
                 let descriptor = unsafe { record_typeinfo_descriptor(ptinfo, &*pattr) };
+                // SAFETY: live `ti_vtbl`/`ptinfo`; releases the `pattr` allocated by the
+                // matching GetTypeAttr above exactly once.
                 unsafe { ((*ti_vtbl).release_type_attr)(ptinfo, pattr) };
                 if !type_guid.is_null() {
                     let descriptor = descriptor
@@ -4266,8 +4319,12 @@ mod tests {
                     );
                 }
             }
+            // SAFETY: live `ti_vtbl`/`ptinfo`; releases the GetTypeInfo reference taken
+            // in this loop iteration exactly once, balancing its refcount.
             unsafe { ((*ti_vtbl).release)(ptinfo) };
         }
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_registry`,
+        // borrowed only via vtable calls above; released exactly once here.
         unsafe { release_typelib(ptlib) };
     }
 
@@ -4296,6 +4353,9 @@ mod tests {
             cache_key: "test:acrobroker".to_string(),
         };
         let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_registry`,
+        // borrowed (not consumed) by `build_metadata_blob_from_typelib`; released
+        // exactly once here per `release_typelib`'s contract.
         unsafe { release_typelib(ptlib) };
         let blob =
             blob_result.expect("AcroBroker typelib should build metadata when load succeeds");
@@ -4355,6 +4415,9 @@ mod tests {
             cache_key: "test:testeventserver-record-array".to_string(),
         };
         let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_path`, borrowed
+        // (not consumed) by `build_metadata_blob_from_typelib`; released exactly once
+        // here per `release_typelib`'s contract.
         unsafe { release_typelib(ptlib) };
         let blob = blob_result.expect("TestEventServer typelib should build metadata");
 
@@ -4418,6 +4481,9 @@ mod tests {
             cache_key: "test:visio".to_string(),
         };
         let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_registry`,
+        // borrowed (not consumed) by `build_metadata_blob_from_typelib`; released
+        // exactly once here per `release_typelib`'s contract.
         unsafe { release_typelib(ptlib) };
         let blob = blob_result.expect("Visio typelib should build metadata when load succeeds");
 

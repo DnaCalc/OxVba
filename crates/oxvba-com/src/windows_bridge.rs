@@ -1132,6 +1132,9 @@ mod tests {
         if record_info.is_null() || record_data.is_null() {
             return Err("test record clone received a null record pointer".to_string());
         }
+        // SAFETY: this clone callback is only registered (via `test_record_com_value`)
+        // for records whose data is a boxed `TestRecord`, and `record_data` was checked
+        // non-null above, so this reads a live `TestRecord`.
         let value = unsafe { *record_data.cast::<TestRecord>() };
         Ok((
             record_info,
@@ -1145,6 +1148,9 @@ mod tests {
         record_data: *mut core::ffi::c_void,
     ) {
         if !record_data.is_null() {
+            // SAFETY: paired with `clone_test_record`/`test_record_com_value`,
+            // `record_data` is a non-null `Box<TestRecord>` raw pointer reclaimed
+            // exactly once here.
             unsafe {
                 drop(Box::from_raw(record_data.cast::<TestRecord>()));
             }
@@ -1158,6 +1164,9 @@ mod tests {
         let info = (&RECORD_INFO_SENTINEL as *const u8)
             .cast_mut()
             .cast::<core::ffi::c_void>();
+        // SAFETY: `data` is a freshly leaked `Box<TestRecord>`, `info` points at a
+        // non-null static sentinel, and the clone/destroy callbacks match that
+        // `TestRecord` payload — satisfying `ComRecord::from_raw_parts`.
         let record = unsafe {
             oxvba_runtime::ComRecord::from_raw_parts(
                 info,
@@ -1496,6 +1505,8 @@ mod tests {
         let Ok(dispatch) = crate::activate_dispatch_by_prog_id("OxVba.TestEventServer") else {
             return;
         };
+        // SAFETY: `dispatch` is the live IDispatch reference returned by
+        // `activate_dispatch_by_prog_id` above; resolving a member name on it is valid.
         let dispid = match unsafe { crate::get_dispid_by_name(dispatch, "SumTypedRecordArray") } {
             Ok(dispid) => dispid,
             Err(_) => {
@@ -1504,6 +1515,8 @@ mod tests {
                 return;
             }
         };
+        // SAFETY: `dispatch` is the live activated IDispatch and `dispid` was just
+        // resolved on it, so recovering that member's live typelib metadata is valid.
         let Some(metadata) = (unsafe {
             crate::live_member_metadata_from_dispatch(
                 dispatch,
@@ -1534,6 +1547,9 @@ mod tests {
         let args = vec![crate::ComInvokeArg::positional_value(
             crate::ComValue::ArrayIntent(empty),
         )];
+        // SAFETY: `dispatch` is the live activated object, `dispid`/`spec` describe its
+        // `SumTypedRecordArray` member, and `bridge.shared_state()` is this bridge's live
+        // client state — the contract for a vtable member-spec invoke on this dispatch.
         let value = unsafe {
             crate::try_vtable_member_spec_invoke_with_shared_state(
                 dispatch.cast(),

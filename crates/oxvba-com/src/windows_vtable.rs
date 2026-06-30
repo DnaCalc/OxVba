@@ -1762,12 +1762,18 @@ mod tests {
         if record_info.is_null() || record_data.is_null() {
             return Err("test record clone received a null record pointer".to_string());
         }
+        // SAFETY: the null guard above proves `record_data` is non-null, and this
+        // clone callback is only registered for payloads built by
+        // `test_record_variant`, which always points at a live `TestRecord`.
         let value = unsafe { *record_data.cast::<TestRecord>() };
         Ok((record_info, Box::into_raw(Box::new(value)).cast::<c_void>()))
     }
 
     unsafe fn destroy_test_record(_record_info: *mut c_void, record_data: *mut c_void) {
         if !record_data.is_null() {
+            // SAFETY: this destroy callback only runs for payloads `test_record_variant`
+            // produced via `Box::into_raw(Box::new(TestRecord ..))`, so the non-null
+            // `record_data` is a uniquely-owned `TestRecord` box reclaimed exactly once.
             unsafe {
                 drop(Box::from_raw(record_data.cast::<TestRecord>()));
             }
@@ -1780,6 +1786,9 @@ mod tests {
         let info = (&RECORD_INFO_SENTINEL as *const u8)
             .cast_mut()
             .cast::<c_void>();
+        // SAFETY: `info` points at the static `RECORD_INFO_SENTINEL` and `data` is a
+        // freshly-leaked `TestRecord` box; both are non-null and the matched
+        // clone/destroy callbacks above know how to copy and free that payload.
         let record = unsafe {
             ComRecord::from_raw_parts(info, data, clone_test_record, destroy_test_record)
         }
@@ -1904,6 +1913,9 @@ mod tests {
     impl Drop for RegisteredRecordTypelib {
         fn drop(&mut self) {
             let libid = self.descriptor.libid.to_guid();
+            // SAFETY: UnRegisterTypeLibForUser receives a pointer to the local `libid`
+            // GUID plus the version/lcid/syskind that `create_registered_record_typelib`
+            // registered this typelib under, so it unregisters exactly that entry.
             unsafe {
                 let _ = windows_sys::Win32::System::Ole::UnRegisterTypeLibForUser(
                     &libid,
@@ -1938,12 +1950,19 @@ mod tests {
     }
 
     unsafe fn test_vtbl<T>(ptr: *mut c_void) -> &'static T {
+        // SAFETY: callers pass a live COM interface pointer whose first field is its
+        // vtable pointer; reading `*ptr` yields that vtable, and `T` is the matching
+        // `Test*Vtbl` layout for the interface, so the double deref is in bounds.
         unsafe { &**(ptr as *const *const T) }
     }
 
     unsafe fn release_test_com_ptr(ptr: *mut c_void) {
         if !ptr.is_null() {
+            // SAFETY: every COM interface begins with the IUnknown vtable, so reading
+            // the non-null `ptr`'s vtable as `TestIUnknownVtbl` exposes a valid Release slot.
             let vtbl = unsafe { test_vtbl::<TestIUnknownVtbl>(ptr) };
+            // SAFETY: `vtbl.release` is IUnknown::Release for `ptr`; calling it with
+            // `ptr` as `this` drops one reference per the IUnknown contract.
             unsafe {
                 let _ = (vtbl.release)(ptr);
             }
@@ -1982,6 +2001,8 @@ mod tests {
         ));
         let path_w = wide_path(&path);
         let mut typelib: *mut c_void = std::ptr::null_mut();
+        // SAFETY: CreateTypeLib2 reads the NUL-terminated `path_w` buffer and writes the
+        // new ICreateTypeLib2 pointer into the live `typelib` out-param.
         check_test_hr("CreateTypeLib2", unsafe {
             CreateTypeLib2(SYS_WIN64, path_w.as_ptr(), &mut typelib)
         })?;
@@ -1990,23 +2011,36 @@ mod tests {
         }
 
         let result = (|| {
+            // SAFETY: `typelib` is the non-null ICreateTypeLib2 just returned by
+            // CreateTypeLib2; its first field is the vtable laid out as
+            // `TestCreateTypeLib2Vtbl`.
             let lib_vtbl = unsafe { test_vtbl::<TestCreateTypeLib2Vtbl>(typelib) };
             let lib_name = wide("OxVbaRecordRetvalFixture");
+            // SAFETY: ICreateTypeLib2::SetGuid on `typelib` with a pointer to the local
+            // `libid` GUID, which outlives the call.
             check_test_hr("ICreateTypeLib2::SetGuid", unsafe {
                 (lib_vtbl.set_guid)(typelib, &libid)
             })?;
+            // SAFETY: ICreateTypeLib2::SetName on `typelib` with the NUL-terminated
+            // `lib_name` wide buffer.
             check_test_hr("ICreateTypeLib2::SetName", unsafe {
                 (lib_vtbl.set_name)(typelib, lib_name.as_ptr())
             })?;
+            // SAFETY: ICreateTypeLib2::SetVersion on `typelib` passes two by-value u16
+            // version components.
             check_test_hr("ICreateTypeLib2::SetVersion", unsafe {
                 (lib_vtbl.set_version)(typelib, 1, 0)
             })?;
+            // SAFETY: ICreateTypeLib2::SetLcid on `typelib` passes a by-value u32 lcid.
             check_test_hr("ICreateTypeLib2::SetLcid", unsafe {
                 (lib_vtbl.set_lcid)(typelib, 0)
             })?;
 
             let record_name = wide("RecordRetvalFixture");
             let mut create_info: *mut c_void = std::ptr::null_mut();
+            // SAFETY: ICreateTypeLib2::CreateTypeInfo on `typelib` reads the
+            // NUL-terminated `record_name` buffer and writes the new ICreateTypeInfo
+            // pointer into the live `create_info` out-param.
             check_test_hr("ICreateTypeLib2::CreateTypeInfo", unsafe {
                 (lib_vtbl.create_type_info)(
                     typelib,
@@ -2020,10 +2054,17 @@ mod tests {
             }
 
             let create_result = (|| {
+                // SAFETY: `create_info` is the non-null ICreateTypeInfo just returned by
+                // CreateTypeInfo; its first field is the vtable laid out as
+                // `TestCreateTypeInfoVtbl`.
                 let ti_vtbl = unsafe { test_vtbl::<TestCreateTypeInfoVtbl>(create_info) };
+                // SAFETY: ICreateTypeInfo::SetGuid on `create_info` with a pointer to the
+                // local `record_guid`, which outlives the call.
                 check_test_hr("ICreateTypeInfo::SetGuid", unsafe {
                     (ti_vtbl.set_guid)(create_info, &record_guid)
                 })?;
+                // SAFETY: ICreateTypeInfo::SetAlignment on `create_info` passes a by-value
+                // u16 alignment.
                 check_test_hr("ICreateTypeInfo::SetAlignment", unsafe {
                     (ti_vtbl.set_alignment)(create_info, 4)
                 })?;
@@ -2033,6 +2074,9 @@ mod tests {
                     Anonymous: VARDESC_0 { oInst: 0 },
                     elemdescVar: ELEMDESC {
                         tdesc: TYPEDESC {
+                            // SAFETY: the TYPEDESC anonymous union is a pointer/u32 union
+                            // whose all-zero bit pattern is a valid (null/0) variant, which
+                            // is what a simple VT_I4 field descriptor requires.
                             Anonymous: unsafe { std::mem::zeroed() },
                             vt: VT_I4,
                         },
@@ -2046,25 +2090,37 @@ mod tests {
                     wVarFlags: 0,
                     varkind: VAR_PERINSTANCE,
                 };
+                // SAFETY: ICreateTypeInfo::AddVarDesc on `create_info` reads the local
+                // `vardesc` (fully initialized above) at index 0; it outlives the call.
                 check_test_hr("ICreateTypeInfo::AddVarDesc", unsafe {
                     (ti_vtbl.add_var_desc)(create_info, 0, &mut vardesc)
                 })?;
                 let value_name = wide("Value");
+                // SAFETY: ICreateTypeInfo::SetVarName on `create_info` names variable 0
+                // from the NUL-terminated `value_name` wide buffer.
                 check_test_hr("ICreateTypeInfo::SetVarName", unsafe {
                     (ti_vtbl.set_var_name)(create_info, 0, value_name.as_ptr())
                 })?;
+                // SAFETY: ICreateTypeInfo::LayOut on `create_info` takes no extra args and
+                // finalizes the type we just described.
                 check_test_hr("ICreateTypeInfo::LayOut", unsafe {
                     (ti_vtbl.lay_out)(create_info)
                 })
             })();
+            // SAFETY: `create_info` is the live ICreateTypeInfo we are done with; releasing
+            // it once drops the reference CreateTypeInfo handed back.
             unsafe { release_test_com_ptr(create_info) };
             create_result?;
 
+            // SAFETY: ICreateTypeLib2::SaveAllChanges on `typelib` takes no extra args and
+            // flushes the described typelib to its backing file.
             check_test_hr("ICreateTypeLib2::SaveAllChanges", unsafe {
                 (lib_vtbl.save_all_changes)(typelib)
             })?;
             Ok::<(), String>(())
         })();
+        // SAFETY: `typelib` is the live ICreateTypeLib2 we are done with; releasing it once
+        // drops the reference CreateTypeLib2 handed back.
         unsafe { release_test_com_ptr(typelib) };
         if let Err(err) = result {
             let _ = std::fs::remove_file(&path);
@@ -2072,6 +2128,8 @@ mod tests {
         }
 
         let mut loaded: *mut c_void = std::ptr::null_mut();
+        // SAFETY: LoadTypeLib reads the NUL-terminated `path_w` (the file SaveAllChanges
+        // just wrote) and writes the ITypeLib pointer into the live `loaded` out-param.
         if let Err(err) = check_test_hr("LoadTypeLib", unsafe {
             LoadTypeLib(path_w.as_ptr(), &mut loaded)
         }) {
@@ -2082,9 +2140,13 @@ mod tests {
             let _ = std::fs::remove_file(&path);
             return Err("LoadTypeLib returned null".to_string());
         }
+        // SAFETY: RegisterTypeLibForUser receives the live `loaded` ITypeLib, the
+        // NUL-terminated `path_w` full path, and a null help-dir pointer (allowed).
         let register_result = check_test_hr("RegisterTypeLibForUser", unsafe {
             RegisterTypeLibForUser(loaded, path_w.as_ptr(), std::ptr::null())
         });
+        // SAFETY: `loaded` is the live ITypeLib we are done with; releasing it once drops
+        // the reference LoadTypeLib handed back.
         unsafe { release_test_com_ptr(loaded) };
         if let Err(err) = register_result {
             let _ = std::fs::remove_file(&path);
@@ -2496,6 +2558,9 @@ mod tests {
             TypeLibMemberInvokeKind::Method,
         );
         plan.parameter_byref_slots = vec![Some(slot)];
+        // SAFETY: `this` is the live dual-vtable fixture from `create_oxvba_dual_vtable_object`;
+        // slot 32 is the ByRef-record mutator whose signature matches `plan`, and the single
+        // arg is a record Variant, so the call dispatches through the real vtable slot.
         let result = unsafe {
             vtable_invoke_with_writebacks(
                 this,
@@ -2766,6 +2831,8 @@ mod tests {
             TypeLibMemberInvokeKind::Method,
         );
         plan.parameter_byref_slots = vec![Some(slot)];
+        // SAFETY: `this` is the live dual-vtable fixture; slot 28 is the ByRef-Long mutator
+        // whose signature matches `plan`, called here with a single Long arg.
         let result = unsafe {
             vtable_invoke_with_writebacks(
                 this,
@@ -2781,6 +2848,7 @@ mod tests {
         assert_eq!(result.writebacks.len(), 1);
         assert_eq!(result.writebacks[0].slot, slot);
         assert_eq!(result.writebacks[0].value.as_i32(), Some(1_007));
+        // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
     }
 
@@ -2831,6 +2899,9 @@ mod tests {
         .map(|(index, ty)| RuntimeByRefSlot::new(index as u32, Some(*ty)))
         .collect();
         plan.parameter_byref_slots = slots.iter().copied().map(Some).collect();
+        // SAFETY: `this` is the live dual-vtable fixture; slot 29 is the ByRef-breadth
+        // mutator whose ten ByRef scalar params match `plan`'s parameter types and the ten
+        // argument Variants supplied here.
         let result = unsafe {
             vtable_invoke_with_writebacks(
                 this,
@@ -2888,6 +2959,7 @@ mod tests {
             ))
         );
         assert_eq!(result.writebacks[9].value.as_i32(), Some(77));
+        // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
     }
 
@@ -2978,6 +3050,9 @@ mod tests {
         plan.parameter_byref_slots = slots.iter().copied().map(Some).collect();
         let mut resolver = object_resolver_for(object, this.cast::<crate::RawIDispatch>());
         let mut bind = release_and_bind();
+        // SAFETY: `this` is the live dual-vtable fixture; slot 7030 is the
+        // string/object/LongPtr/SAFEARRAY ByRef mutator whose signature matches `plan`,
+        // and `args` supplies the four matching Variants.
         let result = unsafe {
             vtable_invoke_with_writebacks(this, &plan, &args, 7030, &mut resolver, &mut bind)
         }
@@ -3006,6 +3081,7 @@ mod tests {
             array_values.iter().map(Variant::as_i32).collect::<Vec<_>>(),
             vec![Some(55), Some(89)]
         );
+        // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
     }
 
@@ -3037,6 +3113,9 @@ mod tests {
             )
             .expect("typed i4 array"),
         );
+        // SAFETY: `this` is the live dual-vtable fixture; slot 7031 is the typed
+        // SAFEARRAY(I4) ByRef mutator whose signature matches `plan`, called with the
+        // single typed-array `arg`.
         let result = unsafe {
             vtable_invoke_with_writebacks(this, &plan, &[arg], 7031, &mut resolver, &mut bind)
         }
@@ -3052,6 +3131,7 @@ mod tests {
             values.iter().map(Variant::as_i32).collect::<Vec<_>>(),
             vec![Some(144), Some(233)]
         );
+        // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
     }
 
@@ -3082,6 +3162,9 @@ mod tests {
             descriptor_record_variant(&registered_record.descriptor, DUAL_RECORD_VALUE),
             descriptor_record_variant(&registered_record.descriptor, DUAL_RECORD_VALUE),
         ]));
+        // SAFETY: `this` is the live dual-vtable fixture; slot 7032 is the typed
+        // SAFEARRAY(VT_RECORD) ByRef mutator whose signature matches `plan`, called with
+        // the single record-array `arg`.
         let result = unsafe {
             vtable_invoke_with_writebacks(this, &plan, &[arg], 7032, &mut resolver, &mut bind)
         }
@@ -3096,6 +3179,8 @@ mod tests {
             .iter()
             .map(|value| {
                 let record = value.as_com_record().expect("record element");
+                // SAFETY: each writeback element is a descriptor-backed record whose single
+                // Long field sits at offset 0, so reading the payload as i32 is in bounds.
                 unsafe { *record.record_data_ptr().cast::<i32>() }
             })
             .collect();
@@ -3103,6 +3188,7 @@ mod tests {
             decoded,
             vec![DUAL_RECORD_MUTATED_VALUE, DUAL_RECORD_RETURN_VALUE]
         );
+        // SAFETY: balances the create_* reference.
         unsafe { release_dual(this) };
     }
 
