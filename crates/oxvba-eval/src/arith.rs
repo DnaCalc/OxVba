@@ -539,10 +539,18 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
     }
     match target {
         // `CBool`: any non-zero numeric is `True`, zero is `False`. A `Boolean` source
-        // passes through; a non-numeric source raises Type mismatch via `num`.
+        // passes through; the string literals `"True"`/`"False"` are recognized (so the
+        // implicit Let-coercion `Dim b As Boolean: b = "True"` agrees with explicit
+        // `CBool` via the shared recognizer); any other non-numeric raises Type mismatch
+        // via `num`.
         NumericCoerceTarget::Boolean => {
             if v.vtype() == VarType::Boolean {
                 return Ok(v.clone());
+            }
+            if v.vtype() == VarType::String {
+                if let Some(b) = oxvba_runtime::coerce::parse_bool_text(&as_string(v)) {
+                    return Ok(Variant::from_bool(b));
+                }
             }
             Ok(Variant::from_bool(num(v)? != 0.0))
         }
@@ -622,6 +630,23 @@ pub fn coerce_fixed_string(v: &Variant, len: usize) -> R {
 mod tests {
     use super::*;
     use oxvba_runtime::safe_array::SafeArray;
+
+    /// Coercing a string to `Boolean` (the implicit `Dim b As Boolean: b = …` path)
+    /// recognizes the `"True"`/`"False"` literals like `CBool`, converts numeric
+    /// strings by non-zero-ness, and raises Type mismatch (13) on anything else.
+    #[test]
+    fn coerce_string_to_boolean_matches_cbool() {
+        let b = |s: &str| coerce_numeric(&Variant::from_string(s), NumericCoerceTarget::Boolean);
+        assert_eq!(b("True").unwrap().as_bool(), Some(true));
+        assert_eq!(b("false").unwrap().as_bool(), Some(false));
+        assert_eq!(b("tRuE").unwrap().as_bool(), Some(true));
+        assert_eq!(b("5").unwrap().as_bool(), Some(true));
+        assert_eq!(b("0").unwrap().as_bool(), Some(false));
+        assert_eq!(b("-1").unwrap().as_bool(), Some(true));
+        // Strict like live VBA: padded/non-numeric, non-literal strings are Type mismatch.
+        assert_eq!(b("  False  ").unwrap_err().code, 13);
+        assert_eq!(b("yes").unwrap_err().code, 13);
+    }
 
     /// `(Not Not arr) = 0` for an unallocated dynamic array (an `Empty` slot),
     /// and `≠ 0` for an allocated one — the VBA allocation-probe idiom.

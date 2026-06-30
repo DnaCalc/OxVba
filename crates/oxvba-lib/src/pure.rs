@@ -1342,11 +1342,11 @@ pub fn cbyte(args: &[Variant]) -> LibResult<Variant> {
 pub fn cbool(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
     if value.vtype() == VarType::String {
-        let text = as_str(value)?;
-        match text.trim().to_ascii_lowercase().as_str() {
-            "true" => return Ok(vbool(true)),
-            "false" => return Ok(vbool(false)),
-            _ => {}
+        // The `"True"`/`"False"` literals share one recognizer with the implicit Boolean
+        // Let-coercion (`arith::coerce_numeric`) so explicit `CBool` and implicit assignment
+        // agree; any other string falls through to the numeric path (non-zero → True).
+        if let Some(b) = oxvba_runtime::coerce::parse_bool_text(&as_str(value)?) {
+            return Ok(vbool(b));
         }
     }
     Ok(vbool(conv_f64(value)? != 0.0))

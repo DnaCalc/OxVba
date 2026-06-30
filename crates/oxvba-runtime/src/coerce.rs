@@ -1,6 +1,24 @@
 use crate::bstr::BStr;
 use crate::variant::{VarType, Variant};
 
+/// Recognize VBA's Boolean string literals for `CBool` and the implicit Boolean
+/// Let-coercion: exactly `"True"` or `"False"`, ASCII case-insensitive. The match is
+/// strict — surrounding whitespace is *not* tolerated (live VBA raises Type mismatch on
+/// `CBool("  False  ")` and on `Dim b As Boolean: b = "  False  "`), so a padded string
+/// returns `None` and falls through to the caller's numeric path (which then errors,
+/// matching VBA). A numeric string like `"5"` is likewise `None` here — the numeric path
+/// converts it (any non-zero is `True`). This is the single source of truth shared by the
+/// explicit (`pure::cbool`) and implicit (`arith::coerce_numeric`) paths so the two agree.
+pub fn parse_bool_text(text: &str) -> Option<bool> {
+    if text.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if text.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
     if value.vtype() == target {
         return Ok(value.clone());
@@ -398,8 +416,24 @@ pub fn write_display_text(value: &Variant) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{coerce_to, variant_to_vba_string};
+    use super::{coerce_to, parse_bool_text, variant_to_vba_string};
     use crate::{VarType, Variant};
+
+    #[test]
+    fn parse_bool_text_recognizes_true_false_case_insensitively_without_trimming() {
+        assert_eq!(parse_bool_text("True"), Some(true));
+        assert_eq!(parse_bool_text("false"), Some(false));
+        assert_eq!(parse_bool_text("tRuE"), Some(true));
+        assert_eq!(parse_bool_text("FALSE"), Some(false));
+        // Strict: padding, numeric strings, and other words are not recognized here
+        // (VBA raises Type mismatch on `CBool("  False  ")`; numeric strings go to the
+        // numeric path).
+        assert_eq!(parse_bool_text("  False  "), None);
+        assert_eq!(parse_bool_text("True "), None);
+        assert_eq!(parse_bool_text("5"), None);
+        assert_eq!(parse_bool_text("yes"), None);
+        assert_eq!(parse_bool_text(""), None);
+    }
 
     #[test]
     fn integer_to_long() {
