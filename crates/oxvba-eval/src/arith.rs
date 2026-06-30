@@ -208,7 +208,7 @@ pub fn add(l: &Variant, r: &Variant, mode: NumericMode) -> R {
 pub fn sub(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
         NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_sub(b), |a, b| a - b),
-        NumericMode::Widening => widen(l, r, rt::sub),
+        NumericMode::Widening => widening_sub(l, r),
     }
 }
 
@@ -275,7 +275,26 @@ fn widen(l: &Variant, r: &Variant, f: impl Fn(&Variant, &Variant) -> Result<Vari
     f(l, r).map_err(ArithError::from)
 }
 
-/// VBA `+`: string operands concatenate; otherwise numeric (integer-preserving).
+/// Is this operand a `Date`? `Date` arithmetic re-tags its (otherwise `Double`) result
+/// back to `Date` per live VBA (see date-arith-loses-date-type): `Date + <anything>`
+/// — including `Date + Date` — is a `Date`; in a `-`, a *single* `Date` operand keeps
+/// the result a `Date` (`Date - n`, `n - Date`), but `Date - Date` is the elapsed time
+/// as a plain `Double`. `*`, `/`, `\`, `Mod` are never `Date`.
+fn is_date(v: &Variant) -> bool {
+    v.vtype() == VarType::Date
+}
+
+/// Re-tag a numeric result as `Date` (keeping the serial value; the carrier is always a
+/// `Double` from `widen_double`/`from_f64`, so `as_f64` is `Some`).
+fn as_date(v: Variant) -> Variant {
+    match v.as_f64() {
+        Some(serial) => Variant::from_date_f64(serial),
+        None => v,
+    }
+}
+
+/// VBA `+`: string operands concatenate; otherwise numeric (integer-preserving). A
+/// `Date` operand makes the result a `Date`.
 fn widening_add(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
@@ -287,10 +306,22 @@ fn widening_add(l: &Variant, r: &Variant) -> R {
         units.extend(concat_units(r));
         return Ok(Variant::from_utf16_units(&units));
     }
-    if l.vtype() == VarType::String || r.vtype() == VarType::String {
-        return Ok(Variant::from_f64(num(l)? + num(r)?));
+    let raw = if l.vtype() == VarType::String || r.vtype() == VarType::String {
+        Variant::from_f64(num(l)? + num(r)?)
+    } else {
+        rt::add(l, r).map_err(ArithError::from)?
+    };
+    Ok(if is_date(l) || is_date(r) { as_date(raw) } else { raw })
+}
+
+/// VBA `-` in the Variant regime. A single `Date` operand keeps the result a `Date`;
+/// two `Date`s yield the elapsed time as a plain `Double` (so the `Date` tag is dropped).
+fn widening_sub(l: &Variant, r: &Variant) -> R {
+    if is_null(l) || is_null(r) {
+        return Ok(Variant::null());
     }
-    rt::add(l, r).map_err(ArithError::from)
+    let raw = rt::sub(l, r).map_err(ArithError::from)?;
+    Ok(if is_date(l) != is_date(r) { as_date(raw) } else { raw })
 }
 
 // ── Float-only operators ──────────────────────────────────────────────────────
@@ -630,6 +661,24 @@ pub fn coerce_fixed_string(v: &Variant, len: usize) -> R {
 mod tests {
     use super::*;
     use oxvba_runtime::safe_array::SafeArray;
+
+    /// Widening `+`/`-` re-tag a `Date` result per live VBA: any `Date` operand in a
+    /// `+` (incl. `Date + Date`) gives a `Date`; a single `Date` operand in a `-` gives
+    /// a `Date`, but `Date - Date` is a plain `Double`. `*` is never a `Date`.
+    #[test]
+    fn date_arithmetic_preserves_or_drops_the_date_subtype() {
+        let d = Variant::from_date_f64(36526.0); // #1/1/2000#
+        let one = Variant::from_i32(1);
+        let w = NumericMode::Widening;
+        let ty = |r: R| r.unwrap().vtype();
+        assert_eq!(ty(add(&d, &one, w)), VarType::Date);
+        assert_eq!(ty(add(&one, &d, w)), VarType::Date);
+        assert_eq!(ty(add(&d, &d, w)), VarType::Date);
+        assert_eq!(ty(sub(&d, &one, w)), VarType::Date);
+        assert_eq!(ty(sub(&one, &d, w)), VarType::Date);
+        assert_eq!(ty(sub(&d, &d, w)), VarType::Double);
+        assert_eq!(ty(mul(&d, &Variant::from_i32(2), w)), VarType::Double);
+    }
 
     /// Coercing a string to `Boolean` (the implicit `Dim b As Boolean: b = …` path)
     /// recognizes the `"True"`/`"False"` literals like `CBool`, converts numeric
