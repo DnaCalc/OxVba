@@ -786,9 +786,16 @@ impl NativeByRefStorage {
                     variant_from_ansi_c_str((*(*cell)).cast_const())
                 }
             }
+            // SAFETY: `words` is this cell's native-ABI image of a record laid out by
+            // `layout`: it was sized and staged by `vba_record_storage_from_variant`
+            // (which validated plain-native eligibility) and only mutated in place by
+            // the native callee, so it remains a live image for `clone_from_native_words`.
             Self::VbaRecordCell { layout, words } => Variant::from_vba_record(unsafe {
                 VbaRecord::clone_from_native_words(words, layout.clone())?
             }),
+            // SAFETY: `cell` is this cell's live, initialized `Box<VARIANT>`, staged by
+            // `variant_cell_storage_from_variant` and possibly written by the native
+            // callee; `variant_to_variant_value` reads that live VARIANT back.
             Self::VariantCell(cell) => unsafe {
                 oxvba_com::variant_to_variant_value(
                     cell,
@@ -817,6 +824,8 @@ impl NativeByRefStorage {
 impl Drop for NativeByRefStorage {
     fn drop(&mut self) {
         if let Self::VariantCell(cell) = self {
+            // SAFETY: `cell` is this storage's live, initialized `Box<VARIANT>`;
+            // `VariantClear` releases its owned contents exactly once at drop.
             unsafe {
                 let _ = windows_sys::Win32::System::Variant::VariantClear(&mut **cell);
             }
@@ -870,8 +879,12 @@ fn any_byref_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage,
 #[cfg(target_os = "windows")]
 fn variant_cell_storage_from_variant(value: &Variant) -> Result<NativeByRefStorage, String> {
     let mut cell: Box<windows_sys::Win32::System::Variant::VARIANT> =
+        // SAFETY: an all-zero VARIANT is a valid VT_EMPTY value (VT_EMPTY == 0).
         Box::new(unsafe { std::mem::zeroed() });
     let com_value = oxvba_com::ComValue::from_variant(value)?;
+    // SAFETY: `cell` is the freshly zeroed (VT_EMPTY), live `Box<VARIANT>` above;
+    // `set_variant_from_com_value` populates it from `com_value`, and the object
+    // callback declines (returns Err) so no VT_UNKNOWN is stored.
     unsafe {
         oxvba_com::set_variant_from_com_value(
             &mut *cell,
