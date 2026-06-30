@@ -3,7 +3,7 @@ use crate::{
     bstr::{BStr, OwnedBStrCore},
     com_record::ComRecord,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
-    safe_array::SafeArray,
+    safe_array::{SafeArray, SafeArrayBound},
     vba_record::VbaRecord,
 };
 
@@ -684,6 +684,39 @@ impl Variant {
                 index,
                 value,
             )
+        }
+    }
+
+    /// Reads one SAFEARRAY element **without cloning the whole array** — O(1) in
+    /// array length. `None` if this Variant does not hold an array. This is the
+    /// O(1) element-read counterpart to [`Self::set_safearray_element`]; reading
+    /// via [`Self::as_safearray`] deep-clones the entire backing store (O(N)) and
+    /// must not be used for per-element access in a loop.
+    pub fn safearray_element(&self, index: usize) -> Option<Result<Variant, String>> {
+        if self.vtype() != VarType::ArrayVariant {
+            return None;
+        }
+        // SAFETY: vtype was checked to be ArrayVariant, so the payload is this
+        // Variant's owned raw OxVba descriptor; the raw reader borrows it without
+        // taking ownership (leaving this Variant the owner until drop).
+        Some(unsafe {
+            SafeArray::raw_safearray_variant_element(
+                bytes_to_raw_safearray(self.data_bytes()),
+                index,
+            )
+        })
+    }
+
+    /// Reads the array's bounds and element count **without cloning the element
+    /// payload** — O(rank). `None` if this Variant does not hold an array.
+    pub fn safearray_bounds_len(&self) -> Option<(Vec<SafeArrayBound>, usize)> {
+        if self.vtype() != VarType::ArrayVariant {
+            return None;
+        }
+        // SAFETY: as in `safearray_element` — borrow the owned descriptor without
+        // taking ownership.
+        unsafe {
+            SafeArray::raw_safearray_bounds_len(bytes_to_raw_safearray(self.data_bytes()))
         }
     }
 

@@ -1248,6 +1248,12 @@ impl<'h> Vm3<'h> {
                 array,
                 indices,
             } => {
+                // Fast O(1) path: a place-resident array reads one element directly
+                // through the SAFEARRAY descriptor (no whole-array clone) → O(N) loops.
+                if let Some(value) = self.array_get_fast(array, indices)? {
+                    self.store(dst, value)?;
+                    return Ok(());
+                }
                 // `x(i…)` where `x` is a bare `Variant`/`As Object` resolves at run time: an
                 // OBJECT receiver makes the parentheses a default-member (`Item`, dispid 0) call.
                 let recv = self.operand(array)?;
@@ -1292,6 +1298,16 @@ impl<'h> Vm3<'h> {
                 indices,
                 value,
             } => {
+                let v = self.operand(value)?;
+                // Fast O(1) path: a place-resident array mutates one element in place
+                // through the SAFEARRAY descriptor (no whole-array clone-and-write-back).
+                // The element is written through the resolved (alias-resolved) location,
+                // so a ByRef-aliased array sees the change.
+                if self.array_set_fast(array, indices, &v)? {
+                    return Ok(());
+                }
+                // General path: a non-place receiver, or a run-time-resolved receiver
+                // (object default-member assignment is still a deferred residual).
                 let recv = self.read(array)?;
                 if recv.as_safearray().is_none() && recv.as_object_ref().is_some() {
                     return Err(Vm3Error::Unimplemented {
@@ -1308,10 +1324,6 @@ impl<'h> Vm3<'h> {
                 if flat >= arr.len() {
                     return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
                 }
-                let v = self.operand(value)?;
-                // Mutate the array's element, then write the (alias-resolved) place back so a
-                // ByRef-aliased array sees the change — equivalent to vm2's in-place
-                // `read_place_mut(...).set_safearray_element(...)`.
                 let mut arr_v = recv;
                 arr_v
                     .set_safearray_element(flat, &v)
@@ -2013,6 +2025,74 @@ impl<'h> Vm3<'h> {
             flat = flat * bound.count as usize + offset as usize;
         }
         Ok(flat)
+    }
+
+    /// Fast O(1) `arr(i…)` read: when the receiver is a place-resident array, read
+    /// the single element directly through the SAFEARRAY descriptor without cloning
+    /// the (possibly large) backing store — so an array loop is O(N), not O(N²).
+    /// Returns `Ok(None)` when the receiver is not a place-resident array (a `Const`,
+    /// an unwritten `Temp`, an object default-member receiver, …), so the caller runs
+    /// the general path.
+    fn array_get_fast(
+        &self,
+        array: &OxOperand,
+        indices: &[OxOperand],
+    ) -> Result<Option<Variant>, Vm3Error> {
+        let OxOperand::Use(place) = array else {
+            return Ok(None);
+        };
+        let loc = self.resolve(place);
+        let Some(arr) = self.read_loc_ref(loc)? else {
+            return Ok(None);
+        };
+        // Only an in-place array takes the fast path; objects/other receivers fall back.
+        let Some((bounds, len)) = arr.safearray_bounds_len() else {
+            return Ok(None);
+        };
+        // `flat_index` re-borrows `self` immutably to read the index operands — this
+        // coexists with the immutable `arr` borrow held here (both shared).
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= len {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let value = arr
+            .safearray_element(flat)
+            .expect("safearray_bounds_len already proved this is an array")
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        Ok(Some(value))
+    }
+
+    /// Fast O(1) `arr(i…) = v` write: when the receiver is a place-resident array,
+    /// mutate the single element through the SAFEARRAY descriptor in place — no
+    /// per-write deep-clone-and-write-back of the whole array. A ByRef-aliased array
+    /// is mutated through its resolved (aliased) location, so callers see the change.
+    /// Returns `Ok(false)` when the receiver is not a place-resident array.
+    fn array_set_fast(
+        &mut self,
+        array: &OxPlace,
+        indices: &[OxOperand],
+        value: &Variant,
+    ) -> Result<bool, Vm3Error> {
+        let loc = self.resolve(array);
+        // Bounds + flat index under an immutable borrow first (reads index operands),
+        // then take the mutable borrow to write the element in place.
+        let (bounds, len) = match self.read_loc_ref(loc)? {
+            Some(arr) => match arr.safearray_bounds_len() {
+                Some(bl) => bl,
+                None => return Ok(false),
+            },
+            None => return Ok(false),
+        };
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= len {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let arr = self
+            .read_loc_mut(loc)?
+            .expect("location borrowed immutably just above is still present");
+        arr.set_safearray_element(flat, value)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        Ok(true)
     }
 
     /// The array (SAFEARRAY) value of an operand, else type mismatch (13).
@@ -3259,6 +3339,49 @@ impl<'h> Vm3<'h> {
             }
         }
         Ok(())
+    }
+
+    /// Borrow a resolved location's `Variant` in place (no clone) — the constant-time
+    /// counterpart to [`Self::read_loc`], used by the array fast paths to read an
+    /// element without deep-cloning the whole backing store. A `Temp` that has not
+    /// been written (SSA write-before-read) has no stable slot to borrow and yields
+    /// `None`, so the caller falls back to the cloning path.
+    fn read_loc_ref(&self, loc: Loc) -> Result<Option<&Variant>, Vm3Error> {
+        match loc {
+            Loc::Global(p, g) => self.programs[p]
+                .globals
+                .get(g)
+                .map(Some)
+                .ok_or_else(|| Vm3Error::Malformed(format!("global [{p}][{g}] out of range"))),
+            Loc::Local(fi, li) => self
+                .frames
+                .get(fi)
+                .and_then(|f| f.locals.get(li))
+                .map(Some)
+                .ok_or_else(|| Vm3Error::Malformed(format!("local [{fi}][{li}] out of range"))),
+            Loc::Temp(fi, ti) => Ok(self.frames.get(fi).and_then(|f| f.temps.get(&ti))),
+        }
+    }
+
+    /// Mutably borrow a resolved location's `Variant` in place (no clone / writeback)
+    /// — the constant-time counterpart to [`Self::write_loc`], used by the array
+    /// write fast path to mutate one element through the SAFEARRAY descriptor. A
+    /// `Temp` absent from the sparse map yields `None` (caller falls back).
+    fn read_loc_mut(&mut self, loc: Loc) -> Result<Option<&mut Variant>, Vm3Error> {
+        match loc {
+            Loc::Global(p, g) => self.programs[p]
+                .globals
+                .get_mut(g)
+                .map(Some)
+                .ok_or_else(|| Vm3Error::Malformed(format!("global [{p}][{g}] out of range"))),
+            Loc::Local(fi, li) => self
+                .frames
+                .get_mut(fi)
+                .and_then(|f| f.locals.get_mut(li))
+                .map(Some)
+                .ok_or_else(|| Vm3Error::Malformed(format!("local [{fi}][{li}] out of range"))),
+            Loc::Temp(fi, ti) => Ok(self.frames.get_mut(fi).and_then(|f| f.temps.get_mut(&ti))),
+        }
     }
 
     fn store(&mut self, place: &OxPlace, v: Variant) -> Result<(), Vm3Error> {

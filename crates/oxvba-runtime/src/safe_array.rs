@@ -1345,12 +1345,63 @@ impl SafeArray {
     ) -> Result<(), String> {
         let header = NonNull::new(raw.cast::<RawSafeArray>())
             .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
+        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor, so the
+        // owner prefix precedes the header; the temporary `Self` wrapper is forgotten
+        // below, leaving ownership of `raw` with the caller's Variant.
         unsafe { validated_header_prefix(header.as_ptr()) }
             .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
         let mut borrowed = Self(header);
         let result = borrowed.set_variant_element(index, value);
         core::mem::forget(borrowed);
         result
+    }
+
+    /// Reads one element of a raw SAFEARRAY descriptor produced by this runtime
+    /// **without cloning the array** — O(1) in array length (mirrors
+    /// [`Self::set_raw_safearray_variant_element`]). This is the read primitive
+    /// that keeps `arr(i)` element access constant-time instead of deep-cloning
+    /// the whole backing store per access.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must point at a live OxVba-owned descriptor, and the caller must
+    /// have shared access to that descriptor for the duration of this call.
+    pub unsafe fn raw_safearray_variant_element(
+        raw: *mut core::ffi::c_void,
+        index: usize,
+    ) -> Result<Variant, String> {
+        let header = NonNull::new(raw.cast::<RawSafeArray>())
+            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
+        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor, so
+        // the owner prefix precedes the header; the temporary `Self` wrapper is
+        // forgotten below, leaving ownership of `raw` with the caller's Variant.
+        unsafe { validated_header_prefix(header.as_ptr()) }
+            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
+        let borrowed = Self(header);
+        let result = borrowed.variant_element(index);
+        core::mem::forget(borrowed);
+        result
+    }
+
+    /// Reads the bounds and element count of a raw SAFEARRAY descriptor **without
+    /// cloning the element payload** — O(rank). Used with
+    /// [`Self::raw_safearray_variant_element`] to bounds-check and index an array
+    /// in place.
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`Self::raw_safearray_variant_element`].
+    pub unsafe fn raw_safearray_bounds_len(
+        raw: *mut core::ffi::c_void,
+    ) -> Option<(Vec<SafeArrayBound>, usize)> {
+        let header = NonNull::new(raw.cast::<RawSafeArray>())?;
+        // SAFETY: as above — borrow the descriptor without taking ownership.
+        unsafe { validated_header_prefix(header.as_ptr()) }?;
+        let borrowed = Self(header);
+        let bounds = borrowed.bounds();
+        let len = borrowed.len();
+        core::mem::forget(borrowed);
+        bounds.map(|b| (b, len))
     }
 }
 

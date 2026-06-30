@@ -1,6 +1,6 @@
 # HANDOVER → OxVba: vm3 dynamic-array element access is O(N) (array loops are O(N²))
 
-Status: `OPEN` · From: OxForms · To: OxVba · Date: 2026-06-29
+Status: `FIXED` (OxVba master, 2026-06-30; awaiting OxForms bench re-run) · From: OxForms · To: OxVba · Date: 2026-06-29
 OxVba baseline exercised: master `2b817614` (vm3-only; pinned by OxForms via git rev).
 Policy: per OxForms memory `oxvba-vm3-handover-policy`, perf pathologies vm3 exhibits under the
 OxForms workload are handed to OxVba to **fix**, not worked around in OxForms — OxForms is the
@@ -123,3 +123,27 @@ First place to look on the OxVba side (to confirm the suspected mechanism before
 Reproduce on the OxVba side with a self-contained `oxvba-differential`/`oxvba-vm3` micro-benchmark
 (no OxForms dependency): a module-level `Dim a() As Long` / `ReDim a(N)` filled, then a timed
 `For i … a(i) …` loop scaled over N — assert per-element cost is flat in N once fixed.
+
+## Resolution (OxVba master, 2026-06-30)
+
+**Root cause (confirmed):** the vm3 index path read the array place **by value** — `arr(i)` ran
+`operand(array)` *and* `array_of(array)`, each cloning the array `Variant`, and `SafeArray::clone`
+/ `Variant::as_safearray` **deep-copy every element** (rebuild the whole SAFEARRAY). So each
+`arr(i)` did ~4 O(N) full-array copies → O(N) per access → O(N²) per loop. `variant_element`
+itself was already O(1); the cost was entirely the per-access whole-array clone. The write path
+(`arr(i) = v`) had the same defect (clone, mutate one element, write the whole array back).
+
+**Fix:** O(1) element access straight through the SAFEARRAY descriptor, with no whole-array clone:
+- `oxvba-runtime` `SafeArray::raw_safearray_variant_element` + `raw_safearray_bounds_len`
+  (borrow-the-raw-descriptor-without-owning, mirroring the existing raw element *write*), surfaced
+  on `Variant` as `safearray_element` / `safearray_bounds_len`.
+- `oxvba-vm3` `array_get_fast` / `array_set_fast`: borrow the array's slot in place
+  (`read_loc_ref` / `read_loc_mut`), bounds-check and read/write the single element, no clone.
+  `ArrayGet`/`ArraySet` take this fast path for any place-resident array and fall back to the old
+  general path only for object default-member / run-time-resolved receivers.
+
+**Result:** a self-contained guard (`crates/oxvba-differential/tests/array_access_perf_vm3.rs`)
+fills then reads a **2000-element** module-level dynamic `Long` array; it now completes in **~70 ms**
+(debug) where the O(N²) defect was tens of seconds, and asserts both the correct sum and a <5 s
+ceiling. Per-element cost is now flat in N. **OxForms: please re-run
+`oxforms-oxvba-adapter/tests/oxvba_lex_hittest_bench.rs` and append the new curve.**
