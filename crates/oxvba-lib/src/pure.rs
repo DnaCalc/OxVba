@@ -36,12 +36,29 @@ fn chars(s: &str) -> Vec<char> {
 
 /// Optional trailing compare-mode argument: 0 = binary (default), 1 = text. The
 /// front-end supplies that mode as a trailing argument here, resolved from the
-/// source's `Option Compare`.
+/// source's `Option Compare` (the binder injects `1` for `Option Compare Text`
+/// when the call omits an explicit compare).
 fn text_compare(args: &[Variant], index: usize) -> LibResult<bool> {
-    match opt(args, index) {
+    match arg_present(args, index) {
         Some(v) => Ok(as_i32(v)? == 1),
         None => Ok(false),
     }
+}
+
+/// True for the `Missing` optional-argument sentinel the VM passes for an omitted
+/// optional (`CoreArg::Omitted` → vbError `DISP_E_PARAMNOTFOUND`).
+fn missing_sentinel(v: &Variant) -> bool {
+    const MISSING_ARG: i32 = 0x8002_0004u32 as i32;
+    v.vtype() == VarType::Error && v.as_error_code() == Some(MISSING_ARG)
+}
+
+/// An optional argument that is actually present — not past the end, not `Empty`,
+/// and not the `Missing` sentinel. This lets the binder pad an omitted
+/// *intermediate* optional (so a synthesized trailing `compare` lands at the right
+/// index) without the lib mistaking the pad for a real value: an omitted optional
+/// in such a padded slot arrives as `Empty`/Missing and must read as absent.
+fn arg_present(args: &[Variant], index: usize) -> Option<&Variant> {
+    opt(args, index).filter(|v| !matches!(v.vtype(), VarType::Empty) && !missing_sentinel(v))
 }
 
 /// Text-mode normalization, ported from the legacy `normalize_for_compare`:
@@ -179,7 +196,7 @@ fn instr_rev(args: &[Variant]) -> LibResult<Variant> {
     let hay = norm_compare(as_str(need(args, 0)?)?, text);
     let needle = norm_compare(as_str(need(args, 1)?)?, text);
     let hay_units = hay.encode_utf16().count();
-    let start = match opt(args, 2) {
+    let start = match arg_present(args, 2) {
         Some(v) => as_i32(v)?,
         None => -1,
     };
@@ -283,7 +300,7 @@ pub fn filter(args: &[Variant]) -> LibResult<Variant> {
         .as_safearray()
         .ok_or_else(|| LibError::type_mismatch("Filter expects a source array"))?;
     let needle = as_str(need(args, 1)?)?;
-    let include = match opt(args, 2) {
+    let include = match arg_present(args, 2) {
         Some(v) => as_bool_lenient(v),
         None => true,
     };
@@ -1368,7 +1385,7 @@ fn rng_step(ctx: &mut LibContext) -> f64 {
 
 /// An optional numeric argument, treating an `Empty` placeholder as omitted.
 fn numeric_arg(args: &[Variant], index: usize) -> Option<&Variant> {
-    opt(args, index).filter(|v| !matches!(v.vtype(), VarType::Empty))
+    opt(args, index).filter(|v| !matches!(v.vtype(), VarType::Empty) && !missing_sentinel(v))
 }
 
 pub fn rnd(args: &[Variant], ctx: &mut LibContext) -> LibResult<Variant> {

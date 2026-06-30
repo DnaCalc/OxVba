@@ -8,7 +8,7 @@ use oxvba_bundle::coreir::{
     PtrWriteback, PtrWritebackKind,
 };
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind};
+use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind, StringCompareMode};
 use oxvba_com::{TypeLibMemberMetadata, TypeLibParamType};
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{
@@ -79,13 +79,14 @@ impl<'a> ProcLower<'a> {
                         kind: *kind,
                     },
                 });
-                let args = self.bind_extern_proc_args(
+                let mut args = self.bind_extern_proc_args(
                     arglist,
                     param_types,
                     param_names,
                     param_optional,
                     param_optional_defaults,
                 )?;
+                self.inject_option_compare(member, &mut args);
                 Ok(value_bound(
                     CoreValue::Call {
                         callee: CoreCallee::ExternProc { import },
@@ -317,6 +318,35 @@ impl<'a> ProcLower<'a> {
         }
         args.extend(extra);
         Ok(args)
+    }
+
+    /// Inject the module's `Option Compare` as the trailing `compare` argument of
+    /// the string functions that take one (`InStr`/`InStrRev`/`StrComp`/`Replace`/
+    /// `Filter`), when the call omits it and the module is `Option Compare Text`.
+    /// `Binary` is the library default, so nothing is injected there. An omitted
+    /// *intermediate* optional is padded with `Omitted` (the lib treats that
+    /// Missing sentinel as absent), so the injected `compare` lands at the right
+    /// index. `InStr` is arity-based — a 2-arg `InStr(s1,s2)` is first promoted to
+    /// `InStr(1, s1, s2)` so `compare` can occupy slot 3. (These builtins route via
+    /// `ExternMember` to the "VBA" library bundle, so this runs there.)
+    fn inject_option_compare(&self, member: &str, args: &mut Vec<CoreArg>) {
+        if self.info.compare_mode != StringCompareMode::Text {
+            return;
+        }
+        let text = || CoreArg::ByVal(CoreValue::Const(CoreConst::I32(1)));
+        match member {
+            "StrComp" => set_trailing_arg(args, 2, text()),
+            "Filter" => set_trailing_arg(args, 3, text()),
+            "InStrRev" => set_trailing_arg(args, 3, text()),
+            "Replace" => set_trailing_arg(args, 5, text()),
+            "InStr" => {
+                if args.len() == 2 {
+                    args.insert(0, CoreArg::ByVal(CoreValue::Const(CoreConst::I32(1))));
+                }
+                set_trailing_arg(args, 3, text());
+            }
+            _ => {}
+        }
     }
 
     fn bind_project_call(
@@ -2205,6 +2235,19 @@ fn paramarray_element(arg: CoreArg) -> CoreValue {
         CoreArg::Named { value, .. } => value,
         CoreArg::Omitted => CoreValue::Const(oxvba_bundle::coreir::CoreConst::Empty),
         CoreArg::ByRef(place) => CoreValue::Load(place),
+    }
+}
+
+/// Place `val` at the native-call argument `index`, unless the caller already
+/// supplied a real value there. Intermediate slots are padded with
+/// `CoreArg::Omitted` — the lib's optional readers treat that Missing sentinel as
+/// absent — so `val` lands exactly at `index` and omitted middles still default.
+fn set_trailing_arg(args: &mut Vec<CoreArg>, index: usize, val: CoreArg) {
+    while args.len() <= index {
+        args.push(CoreArg::Omitted);
+    }
+    if matches!(args[index], CoreArg::Omitted) {
+        args[index] = val;
     }
 }
 
