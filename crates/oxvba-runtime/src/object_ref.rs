@@ -972,6 +972,44 @@ impl ObjectRef {
         true
     }
 
+    /// Borrow instance field `token` IN PLACE (no clone) and run `f` against it
+    /// (`None` if the field is absent). This is the O(1) field-element-access
+    /// counterpart to [`Self::project_field_get`]: a field-held array can be indexed
+    /// without cloning the whole array. Returns `None` if this is not a project
+    /// instance. The closure must not call back into this object's fields (it holds a
+    /// shared `RefCell` borrow for its duration).
+    pub fn with_project_field<R>(&self, token: i32, f: impl FnOnce(Option<&Variant>) -> R) -> Option<R> {
+        if !self.is_project_instance() {
+            return None;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: `is_project_instance()` (a vtbl-identity check) guards that `owner` is a
+        // live `CompatObjectBase` kept alive by this `ObjectRef`'s retained reference; the
+        // `RefCell` borrow is single-threaded (`ObjectRef` is neither `Send` nor `Sync`).
+        unsafe {
+            let guard = (*owner).fields.borrow();
+            Some(f(guard.get(&token)))
+        }
+    }
+
+    /// Mutably borrow instance field `token` IN PLACE (no clone / store-back) and run
+    /// `f` against it — the write counterpart to [`Self::with_project_field`]. `None`
+    /// if this is not a project instance, or if the field is absent (it must already
+    /// hold the array — class init dimensions array fields before they are indexed).
+    pub fn with_project_field_mut<R>(
+        &self,
+        token: i32,
+        f: impl FnOnce(&mut Variant) -> R,
+    ) -> Option<R> {
+        if !self.is_project_instance() {
+            return None;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        // SAFETY: as in `with_project_field` — `owner` is a live `CompatObjectBase` held
+        // alive by this `ObjectRef`; the exclusive `RefCell` borrow is single-threaded.
+        unsafe { (*owner).fields.borrow_mut().get_mut(&token).map(f) }
+    }
+
     /// Run `f` against this instance's built-in native-`Collection` state, lazily creating an
     /// empty [`crate::collection::CollectionData`] on first use. Returns `None` if this
     /// `ObjectRef` is not one of our compat boxes (a foreign COM object has no native state).

@@ -322,6 +322,26 @@ pub enum OxInst {
         indices: Vec<OxOperand>,
         value: OxOperand,
     },
+    /// Fused read of an element of an array held in `object`'s field `field` —
+    /// `obj.field(i…)`. Reads the single element in place through the field's
+    /// SAFEARRAY descriptor, so element access into a field-held array is O(1)
+    /// instead of cloning the whole field array per access (which `FieldGet` +
+    /// `ArrayGet` would do). Falls back to materialize-then-index when the field is
+    /// not an array (e.g. an object whose default member is indexed).
+    FieldArrayGet {
+        dst: OxPlace,
+        object: OxOperand,
+        field: i32,
+        indices: Vec<OxOperand>,
+    },
+    /// Fused write of an element of an array held in `object`'s field `field` —
+    /// `obj.field(i…) = value`. The in-place counterpart to [`OxInst::FieldArrayGet`].
+    FieldArraySet {
+        object: OxOperand,
+        field: i32,
+        indices: Vec<OxOperand>,
+        value: OxOperand,
+    },
     ArrayErase {
         array: OxPlace,
         element: ArrayElementType,

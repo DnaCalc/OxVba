@@ -1971,6 +1971,22 @@ impl<'a> Lowerer<'a> {
                 Ok((OxOperand::Use(OxPlace::Global(GlobalId(g.0))), OxTy::Variant))
             }
             coreir::CorePlace::Index { array, indices } => {
+                // Fuse `obj.field(i…)`: read one element of the field-held array IN PLACE
+                // (vm3 `FieldArrayGet`) rather than `FieldGet` (which clones the whole
+                // field array into a temp) followed by `ArrayGet`. Keeps element access
+                // into a class-instance-field array O(1) instead of O(N) per access.
+                if let coreir::CorePlace::Field { object, field } = array.as_ref() {
+                    let obj = self.lower_value(object)?.0;
+                    let indices = self.lower_indices(indices)?;
+                    let t = self.new_temp();
+                    self.emit(OxInst::FieldArrayGet {
+                        dst: OxPlace::Temp(t),
+                        object: obj,
+                        field: *field,
+                        indices,
+                    });
+                    return Ok((OxOperand::temp(t), OxTy::Variant));
+                }
                 let (arr, arr_ty) = self.lower_place_load(array)?;
                 let indices = self.lower_indices(indices)?;
                 // Recover the element type from the array's static type when known.
@@ -2044,6 +2060,20 @@ impl<'a> Lowerer<'a> {
                 self.emit(OxInst::Assign { dst, value });
             }
             coreir::CorePlace::Index { array, indices } => {
+                // Fuse `obj.field(i…) = v`: mutate one element of the field-held array
+                // IN PLACE (vm3 `FieldArraySet`) instead of materialising and writing the
+                // whole field array back per access — O(1) field-array element writes.
+                if let coreir::CorePlace::Field { object, field } = array.as_ref() {
+                    let obj = self.lower_value(object)?.0;
+                    let indices = self.lower_indices(indices)?;
+                    self.emit(OxInst::FieldArraySet {
+                        object: obj,
+                        field: *field,
+                        indices,
+                        value,
+                    });
+                    return Ok(());
+                }
                 let indices = self.lower_indices(indices)?;
                 let (arr, compound) = self.mutable_base_place(array)?;
                 self.emit(OxInst::ArraySet {
