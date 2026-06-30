@@ -9,8 +9,8 @@
 //! shapes raise the same way regardless of profile, and the empty-string mode delegates to
 //! `CreateObject`. Reaching each assertion is itself the no-panic guard.
 //!
-//! NOTE: the raised `Err.Number` currently flattens to 5 for every COM fault (the
-//! `hal-errors-flattened-to-5` gap), so these assert *that* it raised, not the exact 429.
+//! The raised `Err.Number` is the live-verified one (no longer flattened to 5): the
+//! running-instance shape is 429, the file-bind shape is 432.
 
 use oxvba_differential::{Executor, RunOutcome, run};
 
@@ -29,6 +29,7 @@ fn getobject_running_instance_declines_without_native_com() {
         "running-instance GetObject should raise without native COM, got {:?}",
         outcome.result
     );
+    assert_eq!(outcome.err.number, 429, "running-instance GetObject → 429; err={:?}", outcome.err);
 }
 
 #[test]
@@ -41,6 +42,7 @@ fn getobject_file_bind_declines_without_native_com() {
         "file-bind GetObject should raise without native COM, got {:?}",
         outcome.result
     );
+    assert_eq!(outcome.err.number, 432, "file-bind GetObject → 432; err={:?}", outcome.err);
 }
 
 #[test]

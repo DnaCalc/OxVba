@@ -290,32 +290,39 @@ impl ComHal for StandardHostServices {
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             self.ensure_thread_com_apartment("get_object")?;
-            let object = match (path_text.as_deref(), class_name.as_deref()) {
+            // The VBA Err.Number a failure surfaces depends on the shape: the
+            // running-instance form is 429 ("can't create object"), the file form
+            // is 432 ("file name or class name not found") — both live-verified.
+            let (result, fail_num) = match (path_text.as_deref(), class_name.as_deref()) {
                 // `GetObject(, class)` — the currently-running registered instance.
-                (None, Some(class)) => self.com_bridge.get_active_object(class),
+                (None, Some(class)) => (self.com_bridge.get_active_object(class), 429),
                 // `GetObject(path[, class])` — bind to the object the file names.
                 (Some(path), class_opt) if !path.is_empty() => {
-                    self.com_bridge.bind_file_object(path, class_opt)
+                    (self.com_bridge.bind_file_object(path, class_opt), 432)
                 }
                 // The invalid shapes were already rejected above; defend the invariant.
                 _ => unreachable!("GetObject invalid-arg shapes are rejected before the native gate"),
-            }
-            .map_err(|message| self.com_getobject_adapter_fault(message))?;
+            };
+            let object = result.map_err(|message| self.com_getobject_adapter_fault(message, fail_num))?;
             return Ok(Variant::from_object_ref(object));
         }
 
         // Non-native (deterministic/portable) or non-Windows: the running-instance and
-        // file-bind modes have no headless equivalent, so decline honestly. NOTE: this (and
-        // the native miss/HRESULT faults) currently reaches VBA as `Err.Number = 5`, not the
-        // canonical 429 — `From<HalError> for LibError` flattens all COM faults (the known
-        // `hal-errors-flattened-to-5` gap). The HRESULT is preserved in the fault message.
-        let _ = (&path_text, &class_name);
+        // file-bind modes have no headless equivalent, so decline honestly — surfacing the
+        // same VBA Err.Number the live form would (432 for the file shape, else 429).
+        let fail_num = if path_text.as_deref().is_some_and(|p| !p.is_empty()) {
+            432
+        } else {
+            429
+        };
+        let _ = &class_name;
         Err(HalError::adapter_fault(
             self.profile,
             capability,
             "get_object",
             "GetObject cannot bind a running or file object without native COM",
-        ))
+        )
+        .with_host_error_code(fail_num))
     }
 
     unsafe fn bind_native_dispatch_object_variant(

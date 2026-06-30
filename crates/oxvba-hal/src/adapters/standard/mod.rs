@@ -1083,17 +1083,19 @@ impl StandardHostServices {
             "create_object",
             format!("{prefix} {message}"),
         )
+        // A failed `CreateObject` is VBA run-time error 429 ("ActiveX component
+        // can't create object") — live-verified.
+        .with_host_error_code(429)
     }
 
     /// `GetObject` activation fault — same HRESULT capture as
     /// [`com_createobject_adapter_fault`], labelled `get_object`. The HRESULT (e.g.
     /// `MK_E_UNAVAILABLE` for no running instance) is preserved in the fault message for
-    /// diagnostics and for a future correct `Err.Number` mapping. NOTE: it does NOT yet
-    /// reach VBA as 429/432 — `From<HalError> for LibError` currently flattens every COM
-    /// fault to `Err.Number = 5` (the `hal-errors-flattened-to-5` gap), exactly like
-    /// `CreateObject`.
+    /// diagnostics. `default_vba` is the VBA `Err.Number` this shape surfaces (live-
+    /// verified): 429 for the running-instance / create forms, 432 ("file name or class
+    /// name not found") for the `GetObject(path)` file-moniker form.
     #[cfg(target_os = "windows")]
-    fn com_getobject_adapter_fault(&self, message: String) -> HalError {
+    fn com_getobject_adapter_fault(&self, message: String, default_vba: i32) -> HalError {
         let hresult = parse_hresult_hex(&message);
         let label = map_com_hresult_label(hresult, None);
         let mut suffix = String::new();
@@ -1111,6 +1113,7 @@ impl StandardHostServices {
             "get_object",
             format!("{prefix} {message}"),
         )
+        .with_host_error_code(default_vba)
     }
 
     #[cfg(target_os = "windows")]

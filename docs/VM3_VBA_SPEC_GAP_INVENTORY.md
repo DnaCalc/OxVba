@@ -79,7 +79,7 @@ may remain unexamined.
 |☑|redim-fixed-array-reject|Med/SilentWrong|S|`ReDim` of a fixed array silently re-dimensions instead of erroring|runtime guard in `array_redim` on `is_fixed_size()` → Fault 10 *(done; 6 corpus progs fixed to valid dynamic arrays)*|
 |☑|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|bind-site element unless Variant, then `array_element_type_for_vartype(element_vartype())` *(done)*|
 |⊘|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declines (vm3 lib.rs:3046)|**DECISION (keep the honest decline for now):** it is *correct*, just unimplemented — no in-scope corpus program exercises it, and it is the only capability that would need a large UB-adjacent unsafe facility (thunk pool + reentrant `*mut Vm3` re-entered from a C trampoline mid-FFI). Intra-VBA `AddressOf`/`CallProcRef` already works. Design when a real program needs it: substitute the thunk address as the `LongPtr` arg (HAL unchanged — it marshals `LongPtr` as a pointer-sized int), copy out `self.host` so the VM is unborrowed across the FFI, re-enter via `run_proc_with_values`. Sync-only (EnumWindows-style); async (SetTimer) additionally needs a message pump + thunk outliving the call.|
-|☑|getobject-absent|Low/Absent|M|`GetObject` not bindable|catalog SpecialForm + `Native(GetObject)` route; `host::get_object` → `ComHal::get_object_variant`; HAL 3-mode dispatch (omitted→`GetActiveObject`, ""→`CreateObject`, path→`CoGetObject`); bridge `get_active_object`/`bind_file_object`. LIVE-verified (Dictionary new-instance + running Excel). *(done)* NOTE: miss surfaces as Err 5 not 429 pending `hal-errors-flattened-to-5` (HRESULT preserved in the fault message)|
+|☑|getobject-absent|Low/Absent|M|`GetObject` not bindable|catalog SpecialForm + `Native(GetObject)` route; `host::get_object` → `ComHal::get_object_variant`; HAL 3-mode dispatch (omitted→`GetActiveObject`, ""→`CreateObject`, path→`CoGetObject`); bridge `get_active_object`/`bind_file_object`. LIVE-verified (Dictionary new-instance + running Excel). *(done)* NOTE: the miss `Err.Number` is now correct (429/432) — `hal-errors-flattened-to-5` fixed|
 
 ## Tier 1 — Critical SilentWrong (data loss / everyday code)
 
@@ -128,7 +128,7 @@ coerce-null-numeric-no-94(S) · hex-oct-negative-width(M) · trim-strips-all-whi
 string-charcode-mod256(S) · val-incomplete-parse(M) · sqr-log-exp-nan-no-error(M) ·
 round-negative-digits-clamped(S) · vartype-typename-array-element(S) ·
 nothing-represented-as-empty(M) · weekday-ignores-firstdayofweek(S) ·
-now-date-time-utc-not-local(M) · hal-errors-flattened-to-5(M) · resume-0-fails-elaboration(S) ·
+now-date-time-utc-not-local(M) · ~~hal-errors-flattened-to-5(M)~~ *(DONE: `From<HalError> for LibError` now preserves `host_error_code` instead of hardcoding invalid_call(5); COM activation faults set it — `CreateObject` fail→429, `GetObject` running-instance/create→429, file-bind→432, all live-verified. The dispatch path already threaded it via `Fault::from_hal`. getobject_vm3 now asserts 429/432; golden no-drift)* · resume-0-fails-elaboration(S) ·
 sparse-default-error-message(M) · err-properties-not-writable(M) · stop-statement-fails-to-bind(S) ·
 end-statement-misparsed(M) · redim-nonconstant-lower-rejected(M) · redim-negative-lower-rejected(S) ·
 cdec-absent(M) · fixed-string-scalar-init-empty(S)

@@ -60,9 +60,15 @@ impl From<String> for LibError {
 
 impl From<HalError> for LibError {
     fn from(err: HalError) -> Self {
-        // Host failures surface as a generic invalid-call until the HAL error
-        // taxonomy is mapped onto VBA run-time codes.
-        LibError::invalid_call(format!("{err:?}"))
+        // Preserve the rich VBA `Err.Number` the HAL recovered from the host (e.g.
+        // 429/432 for a failed COM activation, or a Declare host code); only fall
+        // back to the generic invalid-call (5) when the HAL gave no host code.
+        // (The COM *dispatch* path reaches the VM via `Fault::from_hal` instead,
+        // which already threads `host_error_code`.)
+        match err.host_error_code {
+            Some(code) => LibError::new(code, err.message),
+            None => LibError::invalid_call(format!("{err:?}")),
+        }
     }
 }
 
