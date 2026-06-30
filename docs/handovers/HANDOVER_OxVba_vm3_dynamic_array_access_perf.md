@@ -1,6 +1,14 @@
 # HANDOVER → OxVba: vm3 dynamic-array element access is O(N) (array loops are O(N²))
 
-Status: `FIXED` (OxVba master, 2026-06-30; awaiting OxForms bench re-run) · From: OxForms · To: OxVba · Date: 2026-06-29
+Status: `PARTIAL — STILL OPEN` (OxVba master, 2026-06-30) · From: OxForms · To: OxVba · Date: 2026-06-29
+
+> **Update 2026-06-30 (reopened):** the first fix removed the O(N) clone for arrays
+> held in **module/local/temp slots** (those are now genuinely O(1) — ~13 µs/elem flat
+> across N), a real ~5–6× win. But OxForms' min-of-trials still shows O(N) per element,
+> and that is **confirmed**: arrays held as **class-instance fields** (`Private mX()` in a
+> `.cls`, the OxForms shape) are STILL O(N) per access — they bypass the slot fast path and
+> deep-clone the whole array on the field-load every iteration. The handover stays OPEN.
+> See "Residual" below.
 OxVba baseline exercised: master `2b817614` (vm3-only; pinned by OxForms via git rev).
 Policy: per OxForms memory `oxvba-vm3-handover-policy`, perf pathologies vm3 exhibits under the
 OxForms workload are handed to OxVba to **fix**, not worked around in OxForms — OxForms is the
@@ -142,8 +150,40 @@ itself was already O(1); the cost was entirely the per-access whole-array clone.
   `ArrayGet`/`ArraySet` take this fast path for any place-resident array and fall back to the old
   general path only for object default-member / run-time-resolved receivers.
 
-**Result:** a self-contained guard (`crates/oxvba-differential/tests/array_access_perf_vm3.rs`)
-fills then reads a **2000-element** module-level dynamic `Long` array; it now completes in **~70 ms**
-(debug) where the O(N²) defect was tens of seconds, and asserts both the correct sum and a <5 s
-ceiling. Per-element cost is now flat in N. **OxForms: please re-run
-`oxforms-oxvba-adapter/tests/oxvba_lex_hittest_bench.rs` and append the new curve.**
+**Result (slot-held arrays only):** a self-contained guard
+(`crates/oxvba-differential/tests/array_access_perf_vm3.rs`) fills then reads a **2000-element
+module-level** dynamic `Long` array; it now completes in **~70 ms** (debug) where the O(N²)
+defect was tens of seconds, and asserts both the correct sum and a <5 s ceiling. Per-element
+cost is flat in N **for module/local/temp-slot arrays**.
+
+## Residual — class-instance-field arrays are STILL O(N) (the part OxForms hits)
+
+The first fix only intercepts an array whose receiver place is a **slot** (Global/Local/Temp):
+`array_get_fast`/`array_set_fast` bail to the cloning general path for any other receiver. The
+OxForms workload reads arrays held as **class-instance fields** (`Private mX()` in
+`lex_hittest_bench_form.cls`), and that path was **not** covered — the field-held array is still
+deep-cloned on every access, so the loop stays O(N²).
+
+Confirmed by a module-vs-field scaling diagnostic
+(`crates/oxvba-differential/tests/array_perf_diagnose.rs`,
+`cargo test -p oxvba-differential --test array_perf_diagnose -- --ignored --nocapture`):
+
+| N | module-level (slot) | class-instance-field (`.cls`) |
+|---|---|---|
+| 250 | 13.1 µs/elem | 270 µs/elem |
+| 500 | 13.5 µs/elem | 486 µs/elem |
+| 1000 | 14.9 µs/elem | 961 µs/elem |
+| 2000 | 11.0 µs/elem | 1920 µs/elem |
+
+Module-level is flat (**O(1)**); class-field doubles with N (**O(N)** → loops O(N²)). This matches
+OxForms' min-of-trials.
+
+**Direction for the revisit (OxVba side):** make field-held array element access O(1) too. Trace how
+`obj.field(i)` / `Me.field(i)` lowers in OxIR (`crates/oxvba-oxir/src/elaborate/`) — almost certainly a
+record/field load that clones the whole field `Variant` before the `ArrayGet`, executed once per loop
+iteration. Options: (a) extend `array_get_fast`/`array_set_fast` to recognise a field-of-object/record
+receiver and borrow the field's array `Variant` in place (reuse the `Variant::safearray_element` /
+`safearray_bounds_len` descriptor-borrow primitives from the first fix); or (b) introduce a fused
+"index a field array" lowering that never materialises the whole field. Also check UDT-field arrays
+(`a.items(i)` where `a` is a `Type` record) — same shape, same likely fix. Re-run the diagnostic above
+(both rows should go flat) plus the OxForms bench.
