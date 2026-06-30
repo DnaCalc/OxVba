@@ -68,10 +68,14 @@ impl<'a> ProcLower<'a> {
                 let ty = radix_literal_type(&c);
                 (c, ty)
             }
-            SyntaxKind::FloatLiteral => (
-                CoreConst::F64(parse_float(tok.text)?.to_bits()),
-                builtin(BuiltinType::Double),
-            ),
+            SyntaxKind::FloatLiteral => {
+                // `@` → Currency, `!` → Single, `#`/none → Double (the trailing
+                // type-declaration character; see `CoreConst::from_float_literal`).
+                let c = CoreConst::from_float_literal(tok.text)
+                    .ok_or_else(|| BindError::Malformed(format!("float literal `{}`", tok.text)))?;
+                let ty = const_type(&c);
+                (c, ty)
+            }
             SyntaxKind::StringLiteral => (
                 CoreConst::Str(unquote(tok.text)),
                 builtin(BuiltinType::String),
@@ -628,12 +632,6 @@ fn radix_literal_type(c: &CoreConst) -> VarTypeRef {
         CoreConst::I64(_) => builtin(BuiltinType::LongLong),
         _ => builtin(BuiltinType::Long),
     }
-}
-
-fn parse_float(text: &str) -> Result<f64, BindError> {
-    text.trim_end_matches(['!', '#', '@'])
-        .parse()
-        .map_err(|_| BindError::Malformed(format!("float literal `{text}`")))
 }
 
 fn unquote(text: &str) -> String {

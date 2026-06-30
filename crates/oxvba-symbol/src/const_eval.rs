@@ -667,7 +667,7 @@ pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
                 SyntaxKind::IntLiteral => parse_int(tok.text),
                 SyntaxKind::HexLiteral => parse_radix(tok.text, 16),
                 SyntaxKind::OctLiteral => parse_radix(tok.text, 8),
-                SyntaxKind::FloatLiteral => Some(CoreConst::F64(parse_float(tok.text)?.to_bits())),
+                SyntaxKind::FloatLiteral => CoreConst::from_float_literal(tok.text),
                 SyntaxKind::StringLiteral => Some(CoreConst::Str(unquote(tok.text))),
                 SyntaxKind::KwTrue => Some(CoreConst::Bool(true)),
                 SyntaxKind::KwFalse => Some(CoreConst::Bool(false)),
@@ -704,10 +704,6 @@ fn parse_radix(text: &str, radix: u32) -> Option<CoreConst> {
     // Width-based two's-complement sign + optional `%`/`&`/`^` type character,
     // shared with the binder (MS-VBAL §3.3.2).
     CoreConst::from_vba_radix(text, radix)
-}
-
-fn parse_float(text: &str) -> Option<f64> {
-    text.trim_end_matches(['!', '#', '@']).parse().ok()
 }
 
 fn unquote(text: &str) -> String {

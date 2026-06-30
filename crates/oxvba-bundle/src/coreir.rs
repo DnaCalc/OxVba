@@ -210,6 +210,29 @@ impl CoreConst {
             Err(_) => CoreConst::I64(value),
         })
     }
+
+    /// Parse a VBA floating-point literal token into its typed constant by the
+    /// trailing type-declaration character: `@` → `Currency`, `!` → `Single`,
+    /// `#` (or none) → `Double`. Without a `@`/`!` suffix this is a plain `Double`,
+    /// so `1.5` and `1.5#` fold identically. The numeric body is parsed as `f64`;
+    /// the Currency carrier is `value * 10_000` rounded to the nearest scaled unit
+    /// (the same f64-based scaling the rest of the Currency system uses, e.g.
+    /// `CCur`/`Const … As Currency`). Returns `None` on malformed digits or when a
+    /// `Single`/`Currency` magnitude overflows its type. Used by both the binder
+    /// and `Const` folding so the two agree.
+    pub fn from_float_literal(text: &str) -> Option<CoreConst> {
+        let value: f64 = text.trim_end_matches(['!', '#', '@']).parse().ok()?;
+        match text.as_bytes().last() {
+            Some(b'@') => {
+                let scaled = (value * 10_000.0).round_ties_even();
+                (scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64)
+                    .then_some(CoreConst::Currency(scaled as i64))
+            }
+            Some(b'!') => (value.is_finite() && value.abs() <= f64::from(f32::MAX))
+                .then_some(CoreConst::F32((value as f32).to_bits())),
+            _ => value.is_finite().then_some(CoreConst::F64(value.to_bits())),
+        }
+    }
 }
 
 // ── Operators ─────────────────────────────────────────────────────────────────
