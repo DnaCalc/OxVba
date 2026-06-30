@@ -74,7 +74,6 @@ fn filter_respects_compare() {
 }
 
 #[test]
-#[ignore = "select-case-ignores-option-compare-text: separate bead — threads compare_mode into CoreCaseBlock string comparison"]
 fn select_case_respects_compare() {
     let body = "    Select Case \"a\"\n    Case \"A\"\n    r = \"match\"\n    Case Else\n    r = \"nomatch\"\n    End Select\n";
     assert_val("Binary", body, &strv("nomatch"));

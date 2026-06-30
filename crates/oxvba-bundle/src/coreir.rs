@@ -643,5 +643,8 @@ pub enum CoreStmt {
         selector: CoreValue,
         cases: Vec<CoreCaseBlock>,
         case_else: Vec<CoreStmt>,
+        /// The enclosing module's `Option Compare`, applied to string `Case`
+        /// comparisons (so `Select Case "a" / Case "A"` matches under `Text`).
+        compare_mode: StringCompareMode,
     },
 }

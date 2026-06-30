@@ -661,6 +661,7 @@ impl<'a> ProcLower<'a> {
             selector,
             cases,
             case_else,
+            compare_mode: self.info.compare_mode,
         }])
     }
 

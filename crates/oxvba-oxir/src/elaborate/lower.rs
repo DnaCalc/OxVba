@@ -608,7 +608,8 @@ impl<'a> Lowerer<'a> {
                 selector,
                 cases,
                 case_else,
-            } => self.lower_select(selector, cases, case_else, s_next),
+                compare_mode,
+            } => self.lower_select(selector, cases, case_else, *compare_mode, s_next),
             CoreStmt::Exit(kind) => {
                 let target = self.exit_target(*kind)?;
                 self.finish_to(OxTerminator::Jump(target), s_next);
@@ -1120,6 +1121,7 @@ impl<'a> Lowerer<'a> {
         selector: &CoreValue,
         cases: &[coreir::CoreCaseBlock],
         case_else: &[CoreStmt],
+        compare_mode: oxvba_bundle::StringCompareMode,
         end: BlockId,
     ) -> Result<()> {
         // The selector and every case's clause comparisons belong to the Select
@@ -1136,7 +1138,7 @@ impl<'a> Lowerer<'a> {
 
         for block in cases {
             self.cur_fault = select_pad;
-            let matched = self.lower_case_match(&sel_op, &block.clauses)?;
+            let matched = self.lower_case_match(&sel_op, &block.clauses, compare_mode)?;
             // The case-match is a Compare/Logical result that can be Null (a Null
             // selector), so coerce to a Boolean for the Branch invariant (a Null match
             // is then falsy, falling through to the next case / Case Else like vm2).
@@ -1238,10 +1240,11 @@ impl<'a> Lowerer<'a> {
         &mut self,
         sel: &OxOperand,
         clauses: &[coreir::CaseClause],
+        compare_mode: oxvba_bundle::StringCompareMode,
     ) -> Result<OxOperand> {
         let mut acc: Option<OxOperand> = None;
         for clause in clauses {
-            let clause_bool = self.lower_case_clause(sel, clause)?;
+            let clause_bool = self.lower_case_clause(sel, clause, compare_mode)?;
             acc = Some(match acc {
                 None => clause_bool,
                 Some(prev) => {
@@ -1263,8 +1266,8 @@ impl<'a> Lowerer<'a> {
         &mut self,
         sel: &OxOperand,
         clause: &coreir::CaseClause,
+        mode: oxvba_bundle::StringCompareMode,
     ) -> Result<OxOperand> {
-        let mode = oxvba_bundle::StringCompareMode::Binary;
         match clause {
             coreir::CaseClause::Value(v) => {
                 let (val, _) = self.lower_value(v)?;
@@ -2420,6 +2423,7 @@ mod tests {
                 body: vec![assign(n.clone(), CoreValue::Const(CoreConst::I32(0)))],
             }],
             case_else: Vec::new(),
+            compare_mode: oxvba_bundle::StringCompareMode::Binary,
         };
         let prog = program(sub("Main", vec![long_local("n")], vec![do_loop, select]));
         let oxp = elaborate(&prog).expect("elaborate");

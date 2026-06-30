@@ -3810,6 +3810,7 @@ mod tests {
                             body: vec![assign(x(), CoreValue::Const(CoreConst::I32(5)))],
                         }],
                         case_else: vec![assign(x(), CoreValue::Const(CoreConst::I32(9)))],
+                        compare_mode: oxvba_bundle::StringCompareMode::Binary,
                     },
                 ],
             );
