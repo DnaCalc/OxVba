@@ -729,13 +729,14 @@ fn reset_closes_all_without_error() {
 
 #[test]
 fn seek_function_reads_position_without_resetting() {
-    // The `Seek(filenumber)` FUNCTION returns the current cursor WITHOUT moving it (it used to
-    // reset the position to 0). After writing 5 bytes the cursor is at 5 (0-based).
+    // The `Seek(filenumber)` FUNCTION returns the current position WITHOUT moving it (it used to
+    // reset the position to 0). VBA's Seek is 1-based: after writing 5 bytes it reports the
+    // next-write byte position 6 (live-Excel verified: 3 bytes → Seek = 4).
     let src = "Sub Main()\n\
         Dim p As Long\n\
         Open \"f.dat\" For Binary As #1\n    Put #1, 1, \"hello\"\n    p = Seek(1)\n    Close #1\n\
     End Sub\n";
-    assert_eq!(run_main_local0_i32_std(src), Some(5));
+    assert_eq!(run_main_local0_i32_std(src), Some(6));
 }
 
 /// The args of the (single) `Main`-body `ExternProc` call into `VBA`/`FileSystem.<member>`,

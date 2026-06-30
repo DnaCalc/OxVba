@@ -166,6 +166,217 @@ fn filedatetime_reads_a_files_modification_time() {
     );
 }
 
+/// Seek/Loc are 1-based in VBA and the Seek STATEMENT is 1-based too. After
+/// writing 3 bytes to a Binary file the next-write position `Seek(f)` is 4 and
+/// the last-byte position `Loc(f)` is 3; `Seek #f, 2` then positions at the
+/// 1-based 2nd byte, so `Get` reads it ('B'=66) and `Seek(f)` advances to 3.
+/// (Live-Excel verified: bin3_seek=4 bin3_loc=3 readat2=66 ar_seek=3.)
+#[test]
+fn binary_seek_and_loc_are_one_based() {
+    let dir = unique_temp_dir("seekbin");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("b.bin");
+    let source = format!(
+        "Public sk As Long\nPublic lc As Long\nPublic lof3 As Long\n\
+         Public skAfter As Long\nPublic readByte As Long\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer, w As Byte, b As Byte\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Binary As #f\n\
+         \u{20}   w = 65: Put #f, , w\n\
+         \u{20}   w = 66: Put #f, , w\n\
+         \u{20}   w = 67: Put #f, , w\n\
+         \u{20}   sk = Seek(f)\n\
+         \u{20}   lc = Loc(f)\n\
+         \u{20}   lof3 = LOF(f)\n\
+         \u{20}   Seek #f, 2\n\
+         \u{20}   Get #f, , b\n\
+         \u{20}   readByte = b\n\
+         \u{20}   skAfter = Seek(f)\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(snap[0].as_i32(), Some(4), "Seek after 3 bytes = 4: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(3), "Loc after 3 bytes = 3: {snap:?}");
+    assert_eq!(snap[2].as_i32(), Some(3), "LOF = 3: {snap:?}");
+    assert_eq!(snap[3].as_i32(), Some(3), "Seek after reading byte 2 = 3: {snap:?}");
+    assert_eq!(snap[4].as_i32(), Some(66), "Get at 1-based byte 2 = 'B' (66): {snap:?}");
+}
+
+/// A bare `Seek #f, pos` past EOF does NOT extend the file — only a subsequent
+/// write grows it. `LOF` stays 1 and the on-disk file is still 1 byte, while the
+/// reported `Seek(f)` is the requested 1-based position (10). (Live-Excel
+/// verified: bin_seekpast_lof=1 bin_seekpast_seek=10 filelen=1.)
+#[test]
+fn seek_past_eof_does_not_extend_the_file() {
+    let dir = unique_temp_dir("seekpast");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("p.bin");
+    let source = format!(
+        "Public lofMid As Long\nPublic skMid As Long\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer, w As Byte\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Binary As #f\n\
+         \u{20}   w = 65: Put #f, , w\n\
+         \u{20}   Seek #f, 10\n\
+         \u{20}   lofMid = LOF(f)\n\
+         \u{20}   skMid = Seek(f)\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let on_disk_len = std::fs::metadata(&file).map(|m| m.len()).ok();
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(snap[0].as_i32(), Some(1), "LOF unchanged by bare seek: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(10), "Seek reports the requested position: {snap:?}");
+    assert_eq!(on_disk_len, Some(1), "on-disk file must not be extended by a bare seek");
+}
+
+/// In Random mode `Loc(f)` is the RECORD number of the last record (not a byte
+/// offset) and `Seek(f)` is the next record. After writing two 4-byte records
+/// Loc=2, Seek=3; after `Get #f, 1` Loc=1, Seek=2. (Live-Excel verified:
+/// a2_seek=3 a2_loc=2 get1=100 g1_loc=1 g1_seek=2.)
+#[test]
+fn random_loc_and_seek_are_record_numbers() {
+    let dir = unique_temp_dir("seekrnd");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("r.dat");
+    let source = format!(
+        "Public skOpen As Long\nPublic lcOpen As Long\nPublic sk2 As Long\n\
+         Public lc2 As Long\nPublic get1 As Long\nPublic lcGet As Long\nPublic skGet As Long\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer, l As Long\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Random As #f Len = 4\n\
+         \u{20}   skOpen = Seek(f)\n\
+         \u{20}   lcOpen = Loc(f)\n\
+         \u{20}   l = 100: Put #f, , l\n\
+         \u{20}   l = 200: Put #f, , l\n\
+         \u{20}   sk2 = Seek(f)\n\
+         \u{20}   lc2 = Loc(f)\n\
+         \u{20}   l = 0: Get #f, 1, l\n\
+         \u{20}   get1 = l\n\
+         \u{20}   lcGet = Loc(f)\n\
+         \u{20}   skGet = Seek(f)\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(snap[0].as_i32(), Some(1), "fresh Random Seek = record 1: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(0), "fresh Random Loc = 0: {snap:?}");
+    assert_eq!(snap[2].as_i32(), Some(3), "Seek after 2 records = 3: {snap:?}");
+    assert_eq!(snap[3].as_i32(), Some(2), "Loc after 2 records = record 2 (not byte 8): {snap:?}");
+    assert_eq!(snap[4].as_i32(), Some(100), "Get record 1 = 100: {snap:?}");
+    assert_eq!(snap[5].as_i32(), Some(1), "Loc after Get record 1 = 1: {snap:?}");
+    assert_eq!(snap[6].as_i32(), Some(2), "Seek after Get record 1 = next record 2: {snap:?}");
+}
+
+/// `Append` reports `Seek = 1` / `Loc = 0` on a fresh open even when the file is
+/// non-empty, yet writes still land at EOF — the existing content is preserved
+/// and the appended line follows it. (Live-Excel verified: app_seek=1 app_loc=0
+/// with the appended data after the original.)
+#[test]
+fn append_reports_fresh_cursor_but_writes_at_eof() {
+    let dir = unique_temp_dir("seekapp");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("a.txt");
+    let source = format!(
+        "Public skFresh As Long\nPublic lcFresh As Long\n\
+         Public firstLine As String\nPublic secondLine As String\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Print #f, \"0123456789\"\n\
+         \u{20}   Close #f\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Append As #f\n\
+         \u{20}   skFresh = Seek(f)\n\
+         \u{20}   lcFresh = Loc(f)\n\
+         \u{20}   Print #f, \"XY\"\n\
+         \u{20}   Close #f\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Input As #f\n\
+         \u{20}   Line Input #f, firstLine\n\
+         \u{20}   Line Input #f, secondLine\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(snap[0].as_i32(), Some(1), "fresh Append Seek = 1: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(0), "fresh Append Loc = 0: {snap:?}");
+    assert_eq!(
+        snap[2].as_bstr().map(|s| s.as_str().to_string()),
+        Some("0123456789".to_string()),
+        "Append must preserve the original first line: {snap:?}"
+    );
+    assert_eq!(
+        snap[3].as_bstr().map(|s| s.as_str().to_string()),
+        Some("XY".to_string()),
+        "Append must land the new line at EOF: {snap:?}"
+    );
+}
+
+/// For sequential output `Loc(f)` is `byte position \ 128`. Writing 200 bytes
+/// gives Loc=1, 400 bytes gives Loc=3 and Seek=401. (Live-Excel verified:
+/// w200_loc=1 w400_loc=3 w400_seek=401.)
+#[test]
+fn sequential_loc_is_byte_position_over_128() {
+    let dir = unique_temp_dir("seekseq");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("s.txt");
+    let source = format!(
+        "Public loc200 As Long\nPublic loc400 As Long\nPublic seek400 As Long\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer, s As String\n\
+         \u{20}   s = String(200, \"Z\")\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Print #f, s;\n\
+         \u{20}   loc200 = Loc(f)\n\
+         \u{20}   Print #f, s;\n\
+         \u{20}   loc400 = Loc(f)\n\
+         \u{20}   seek400 = Seek(f)\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(snap[0].as_i32(), Some(1), "Loc after 200 bytes = 200\\128 = 1: {snap:?}");
+    assert_eq!(snap[1].as_i32(), Some(3), "Loc after 400 bytes = 400\\128 = 3: {snap:?}");
+    assert_eq!(snap[2].as_i32(), Some(401), "Seek after 400 bytes = 401: {snap:?}");
+}
+
 #[test]
 fn chdrive_runs_against_the_current_drive() {
     // ChDrive selects a drive's current directory. Drive a path on the current

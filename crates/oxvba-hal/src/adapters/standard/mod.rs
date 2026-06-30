@@ -1963,13 +1963,16 @@ mod tests {
             .expect("variant loc");
         assert_eq!(loc, Variant::from_i32(0));
 
+        // The `Seek #n, pos` STATEMENT form (position present) repositions and yields no
+        // value — the discarded result is `Empty`. (The 1-based `Seek(f)` FUNCTION form is
+        // covered by `seek_function_reads_position_without_resetting` / the filesystem lane.)
         let seek = crate::traits::FileSystemHal::seek_variant(
             &host,
             handle_variant.clone(),
             Variant::from_i32(2),
         )
         .expect("variant seek");
-        assert_eq!(seek, Variant::from_i32(2));
+        assert_eq!(seek, Variant::empty());
 
         let lof = crate::traits::FileSystemHal::lof_variant(&host, handle_variant.clone())
             .expect("variant lof");
@@ -2178,7 +2181,8 @@ mod tests {
         )
         .expect("variant write");
         assert!(written.as_i32().unwrap_or_default() > 0);
-        host.seek_variant(Variant::from_i32(handle.as_i32().unwrap()), rv(0))
+        // Seek back to the start: VBA Seek is 1-based, so byte 1 is the file start.
+        host.seek_variant(Variant::from_i32(handle.as_i32().unwrap()), rv(1))
             .expect("seek back");
         let read = crate::traits::FileSystemHal::read_bytes_variant(&host, handle.clone(), written)
             .expect("variant read");
@@ -2197,7 +2201,7 @@ mod tests {
             Variant::from_string("world"),
         )
         .expect("variant print line");
-        host.seek_variant(Variant::from_i32(line_handle.as_i32().unwrap()), rv(0))
+        host.seek_variant(Variant::from_i32(line_handle.as_i32().unwrap()), rv(1))
             .expect("seek line");
         let line = crate::traits::FileSystemHal::line_input_variant(&host, line_handle.clone())
             .expect("variant line input");
@@ -2216,7 +2220,7 @@ mod tests {
             Variant::from_i32(42),
         )
         .expect("variant write input");
-        host.seek_variant(Variant::from_i32(input_handle.as_i32().unwrap()), rv(0))
+        host.seek_variant(Variant::from_i32(input_handle.as_i32().unwrap()), rv(1))
             .expect("seek input");
         let field = crate::traits::FileSystemHal::input_fields_variant(
             &host,
@@ -2270,8 +2274,10 @@ mod tests {
         );
         let len = expect_i32(host.lof_variant(handle.clone()).expect("lof should work"));
         assert!(len > 0);
-        host.seek_variant(handle.clone(), rv(len))
-            .expect("seek to end should work");
+        // VBA Seek is 1-based: byte `len` is the LAST byte, so EOF is reached by
+        // positioning one past it at `len + 1` (the next read would be past end).
+        host.seek_variant(handle.clone(), rv(len + 1))
+            .expect("seek past end should work");
         assert_eq!(
             host.eof_variant(handle.clone()).expect("eof should work"),
             rv(1)
@@ -3288,7 +3294,7 @@ mod tests {
     }
 
     #[test]
-    fn native_mode_filesystem_seek_can_extend_length() {
+    fn native_mode_filesystem_seek_does_not_extend_length() {
         let Some(profile) = current_native_profile() else {
             return;
         };
@@ -3296,14 +3302,17 @@ mod tests {
         let handle = host
             .open_variant(rv(31415), rv(1))
             .expect("native open should succeed");
+        // A bare `Seek` past EOF must NOT grow the file — only a subsequent write
+        // does (live-Excel verified: seek to byte 10 leaves LOF=1, file=1 byte).
         host.seek_variant(handle.clone(), rv(64))
             .expect("native seek should succeed");
-        assert!(
+        assert_eq!(
             expect_i32(
                 host.lof_variant(handle.clone())
                     .expect("native lof should succeed")
-            ) >= 64,
-            "native seek in mutation mode should extend logical length"
+            ),
+            0,
+            "a bare seek past EOF must not extend the logical length"
         );
         assert_eq!(
             host.close_variant(handle)
@@ -3743,8 +3752,9 @@ mod tests {
         let handle = host
             .open_variant(rv(token), rv(1))
             .expect("native open should succeed");
-        host.seek_variant(handle.clone(), rv(160))
-            .expect("native seek should succeed");
+        // A WRITE (not a bare seek) is what persists to the host file on close.
+        host.write_bytes_variant(handle.clone(), Variant::from_string(BStr::from("payload")))
+            .expect("native write should succeed");
         assert_eq!(
             host.close_variant(handle)
                 .expect("native close should succeed"),
@@ -3752,9 +3762,11 @@ mod tests {
         );
 
         let metadata = std::fs::metadata(&host_path).expect("host-backed file should exist");
+        let persisted = metadata.len();
+        let _ = std::fs::remove_file(&host_path);
         assert!(
-            metadata.len() >= 160,
-            "host-backed file should reflect seek growth"
+            persisted > 0,
+            "host-backed file should reflect the written payload, was {persisted} bytes"
         );
     }
 

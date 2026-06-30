@@ -118,7 +118,7 @@ may remain unexamined.
 |☑|seek-function-resets-position|High/SilentWrong|S|`Seek(n)` function resets position to 0|`seek_variant`: an omitted (Empty/Null) position READS the cursor (returns `entry.position`) without moving it; only `Seek #n, pos` repositions *(done)*|
 |☑|reset-bare-close-error-5|High/SilentWrong|S|`Reset`/bare `Close` raise spurious Err 5|`bind_file_io` pushes a literal-0 handle for a `FileClose` with no file number (the close-all convention `close_variant` understands) *(done; `Reset` already parses as `CloseStmt`)*|
 |☑|print-nonstring-truncates-to-long|High/SilentWrong|S|`Print #` non-strings truncate to Long|now routed via `print_display_text` in `assemble_print_record` *(done w/ the file-I/O cluster)*|
-|☐|seek-loc-zero-based|High/SilentWrong|M|Seek/Loc 0-based; VBA Seek 1-based, Loc mode-dependent|1-based logical position|
+|☑|seek-loc-zero-based|High/SilentWrong|M|Seek/Loc 0-based; VBA Seek 1-based, Loc mode-dependent|`seek_report`/`loc_report` helpers: Seek FUNCTION = 1-based next byte (`cursor+1`) / next record (`cursor/reclen+1`); Seek STATEMENT = 1-based→0-based (`pos-1`, or `(pos-1)*reclen` for Random), rejects `pos<1`, and no longer extends the file on a bare seek; Loc = record# (Random) / cursor (Binary) / `pos\128` (sequential); Append reports a fresh cursor (Seek=1/Loc=0) while writes stay decoupled at EOF. All five live-Excel-verified end-to-end in `filesystem_statements.rs` *(done)*|
 
 ## Tier 3 — Medium SilentWrong / common BinderReject
 

@@ -144,7 +144,8 @@ fn arr<const N: usize>(b: &[u8]) -> [u8; N] {
     out
 }
 
-/// VBA `Open` mode codes.
+/// VBA `Open` mode codes (`Input`=0, `Output`=1 are the sequential `_` cases).
+const MODE_APPEND: i32 = 2;
 const MODE_BINARY: i32 = 3;
 const MODE_RANDOM: i32 = 4;
 
@@ -238,6 +239,44 @@ pub(super) struct FileHandleState {
     /// Fixed record length from `Open … For Random … Len = N` (0 = unset; Random
     /// records then use the written value's natural size as the stride).
     pub(super) record_len: i32,
+}
+
+/// The 1-based position VBA `Seek(filenumber)` (FUNCTION form) reports: the next
+/// byte to read/write (Binary/sequential) or the next record (Random). The
+/// internal `position` is a 0-based byte cursor, so the byte form is `cursor + 1`;
+/// Random divides by the fixed record length to report a 1-based record number.
+fn seek_report(entry: &FileHandleState) -> i32 {
+    if entry.mode == MODE_RANDOM && entry.record_len > 0 {
+        entry.position / entry.record_len + 1
+    } else {
+        entry.position.saturating_add(1)
+    }
+}
+
+/// The value VBA `Loc(filenumber)` reports: the number of the last record
+/// read/written (Random); the 1-based offset of the last byte (Binary), which is
+/// exactly the 0-based next-byte cursor; or `current byte position \ 128` for the
+/// sequential modes. The sequential value is documented by Microsoft as "neither
+/// used nor required"; the `\ 128` form matches a live `Output` probe (200→1,
+/// 400→3) and the documented formula.
+fn loc_report(entry: &FileHandleState) -> i32 {
+    match entry.mode {
+        MODE_RANDOM if entry.record_len > 0 => entry.position / entry.record_len,
+        MODE_BINARY | MODE_RANDOM => entry.position,
+        _ => entry.position / 128,
+    }
+}
+
+/// The byte offset a sequential write (`Print #`/`Write #`) starts at. In
+/// `Append` mode every write lands at the current end-of-file regardless of the
+/// reported seek cursor (VBA keeps the two decoupled); the other modes write at
+/// the 0-based cursor.
+fn seq_write_offset(entry: &FileHandleState) -> usize {
+    if entry.mode == MODE_APPEND {
+        entry.len.max(0) as usize
+    } else {
+        entry.position.max(0) as usize
+    }
 }
 
 pub(super) fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -484,7 +523,11 @@ impl FileSystemHal for StandardHostServices {
                             })?;
                         let data = fs::read(host_path).unwrap_or_default();
                         let len = clamp_u64_to_i32(data.len() as u64);
-                        (data, len, len)
+                        // VBA `Append` reports `Seek = 1` / `Loc = 0` on a fresh
+                        // open even though the file is non-empty; the write cursor
+                        // is decoupled and writes always land at EOF (handled in
+                        // the sequential write paths). So the reported cursor is 0.
+                        (data, len, 0)
                     }
                     _ => {
                         OpenOptions::new()
@@ -884,91 +927,40 @@ impl FileSystemHal for StandardHostServices {
             return Err(self.unsupported(capability, "seek"));
         }
         let handle = self.variant_to_i32(&handle, capability, "seek", "handle")?;
-        // The `Seek(filenumber)` FUNCTION form omits the position — it READS the current cursor
-        // without moving it. Only the `Seek #n, pos` STATEMENT (position present) repositions.
-        // (The reported position is 0-based; the 1-based `seek-loc-zero-based` gap is separate.)
+        // The `Seek(filenumber)` FUNCTION form omits the position — it READS the
+        // current 1-based position (next byte, or next record in Random) without
+        // moving the cursor.
         if matches!(position.vtype(), VarType::Empty | VarType::Null) {
             let mut state = self.fs_lock(capability, "seek")?;
             let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
-            return Ok(Variant::from_i32(entry.position));
+            return Ok(Variant::from_i32(seek_report(entry)));
         }
+        // The `Seek #n, pos` STATEMENT repositions. `pos` is 1-based: a byte offset
+        // for Binary/sequential, a record number for Random (mapped to its byte
+        // slot via the fixed record length). VBA requires `pos >= 1`, and a bare
+        // Seek past EOF does NOT extend the file — only a subsequent write does.
         let position = self.variant_to_i32(&position, capability, "seek", "position")?;
-        if position < 0 {
+        if position < 1 {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
                 "seek",
-                format!("negative seek position: {position}"),
+                format!("bad record number for seek: {position}"),
             ));
         }
-
         let mut state = self.fs_lock(capability, "seek")?;
         self.assert_fs_invariants(&state, "seek-pre");
-        let final_position = {
+        {
             let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
-            let prior_len = entry.len;
-            let host_path = entry.host_path.clone();
-            entry.position = position;
-            if position > entry.len && entry.mode != 0 && self.policy.allow_filesystem_mutation {
-                if position as usize > entry.data.len() {
-                    entry.data.resize(position as usize, 0);
-                }
-                if let Some(host_path) = host_path.as_ref() {
-                    let file = OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .create(true)
-                        .truncate(false)
-                        .open(host_path.as_path())
-                        .map_err(|err| {
-                            HalError::adapter_fault(
-                                self.profile,
-                                capability,
-                                "seek",
-                                format!(
-                                    "failed to open host path {} for seek: {err}",
-                                    host_path.display()
-                                ),
-                            )
-                        })?;
-                    file.set_len(position as u64).map_err(|err| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "seek",
-                            format!(
-                                "failed to extend host path {} to {}: {err}",
-                                host_path.display(),
-                                position
-                            ),
-                        )
-                    })?;
-                }
-                entry.len = position;
-            }
-            hal_contract_assert!(
-                entry.position == position,
-                "op=seek did not preserve requested position {}; got {}",
-                position,
-                entry.position
-            );
-            let expected_len =
-                if position > prior_len && entry.mode != 0 && self.policy.allow_filesystem_mutation
-                {
-                    position
-                } else {
-                    prior_len
-                };
-            hal_contract_assert!(
-                entry.len == expected_len,
-                "op=seek expected len {} but found {}",
-                expected_len,
-                entry.len
-            );
-            entry.position
-        };
+            entry.position = if entry.mode == MODE_RANDOM && entry.record_len > 0 {
+                (position - 1).saturating_mul(entry.record_len)
+            } else {
+                position - 1
+            };
+        }
         self.assert_fs_invariants(&state, "seek-post");
-        Ok(Variant::from_i32(final_position))
+        // The Seek STATEMENT yields no value; the discarded result is `Empty`.
+        Ok(Variant::empty())
     }
 
     fn eof_variant(&self, handle: Variant) -> HalResult<Variant> {
@@ -1061,7 +1053,7 @@ impl FileSystemHal for StandardHostServices {
         let bytes = format!("{}\r\n", oxvba_runtime::write_display_text(&data)).into_bytes();
         let mut state = self.fs_lock(capability, "write_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
-        let pos = entry.position as usize;
+        let pos = seq_write_offset(entry);
         let end = pos + bytes.len();
         if end > entry.data.len() {
             entry.data.resize(end, 0);
@@ -1092,7 +1084,7 @@ impl FileSystemHal for StandardHostServices {
         let bytes = text.as_bytes();
         let mut state = self.fs_lock(capability, "print_line")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "print_line")?;
-        let pos = entry.position as usize;
+        let pos = seq_write_offset(entry);
         let end = pos + bytes.len();
         if end > entry.data.len() {
             entry.data.resize(end, 0);
@@ -1169,7 +1161,7 @@ impl FileSystemHal for StandardHostServices {
         let handle_id = self.variant_to_i32(&handle, capability, "loc", "handle")?;
         let mut state = self.fs_lock(capability, "loc")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
-        Ok(Variant::from_i32(entry.position))
+        Ok(Variant::from_i32(loc_report(entry)))
     }
 
     fn put_record_variant(
