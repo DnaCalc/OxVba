@@ -30,6 +30,14 @@ binary, FreeFile, Dir/Kill/attrs, conditional compilation, Enum folding, UDT lay
 
 Status legend: ☐ open · ◐ in progress · ☑ done (commit).
 
+## Performance defects (not spec-conformance — tracked here so they aren't lost)
+
+These are correctness-neutral but real vm3 defects. Queued **after** the correctness sweep.
+
+| # | id | sev | gap | fix locus |
+|---|----|-----|-----|-----------|
+|☐|vm3-dynamic-array-access-on (bead **bd-us4v**, blocked-by bd-4ktq)|High/Perf|Reading `arr(i)` of a module-level **dynamic** array inside a loop is **O(N)** in array length → array loops are **O(N²)** (100-elem loop=130ms, 400-elem=2.2s; native ~1µs). Isolated to the element read (ScanArray vs ScanPlain). From OxForms — `docs/handovers/HANDOVER_OxVba_vm3_dynamic_array_access_perf.md` (commit 9e3dbd6a)|Suspect a per-access SafeArray/array-Variant **deep-clone or descriptor walk** in the vm3 index-load path. Make element access O(1). First look: oxvba-vm3 `OxInst` array load/store + oxvba-runtime `safe_array.rs` element accessor + module-field place resolution. OxForms will re-run their bench (`oxforms-oxvba-adapter/tests/oxvba_lex_hittest_bench.rs`) after the fix|
+
 ## Critique addendum (completeness-critic redo, 2026-06-29)
 
 The redone critic re-verified every Critical/High item against live code (27/29 Confirmed; 2
