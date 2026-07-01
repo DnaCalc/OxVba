@@ -1205,11 +1205,44 @@ fn as_bool_lenient(v: &Variant) -> bool {
 
 // ── Conversion ─────────────────────────────────────────────────────────────────
 
+fn radix_digits(n: u64, radix: u32) -> String {
+    match radix {
+        16 => format!("{n:X}"),
+        8 => format!("{n:o}"),
+        _ => unreachable!("unsupported radix"),
+    }
+}
+
+fn integer_width_radix(value: &Variant, radix: u32) -> LibResult<String> {
+    let digits = match value.vtype() {
+        VarType::Boolean => {
+            let n: u16 = if value.as_bool().unwrap_or(false) {
+                u16::MAX
+            } else {
+                0
+            };
+            radix_digits(u64::from(n), radix)
+        }
+        VarType::SignedByte => radix_digits(value.as_i8().unwrap_or(0) as u8 as u64, radix),
+        VarType::Byte => radix_digits(u64::from(value.as_u8().unwrap_or(0)), radix),
+        VarType::Integer => radix_digits(value.as_i16().unwrap_or(0) as u16 as u64, radix),
+        VarType::UnsignedInteger => radix_digits(u64::from(value.as_u16().unwrap_or(0)), radix),
+        VarType::Long => radix_digits(value.as_i32().unwrap_or(0) as u32 as u64, radix),
+        VarType::UnsignedLong | VarType::UnsignedInt => {
+            radix_digits(u64::from(value.as_u32().unwrap_or(0)), radix)
+        }
+        VarType::LongLong => radix_digits(value.as_i64().unwrap_or(0) as u64, radix),
+        VarType::UnsignedLongLong => radix_digits(value.as_u64().unwrap_or(0), radix),
+        _ => radix_digits(as_i64(value)? as u64, radix),
+    };
+    Ok(digits)
+}
+
 pub fn hex(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vstr(format!("{:X}", as_i64(need(args, 0)?)?)))
+    Ok(vstr(integer_width_radix(need(args, 0)?, 16)?))
 }
 pub fn oct(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vstr(format!("{:o}", as_i64(need(args, 0)?)?)))
+    Ok(vstr(integer_width_radix(need(args, 0)?, 8)?))
 }
 pub fn cstr(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(as_str(need(args, 0)?)?))

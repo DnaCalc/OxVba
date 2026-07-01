@@ -479,3 +479,21 @@
   - `cargo test -p oxvba-lib`
   - `cargo test -p oxvba-bind string_functions_left_mid_ucase`
   - `cargo test -p oxvba-differential --test null_string_fns_vm3`
+
+## 2026-07-01 - Hex/Oct Negative Width (`bd-4ktq.14`)
+
+- Closed `hex-oct-negative-width` for vm3.
+- Reworked `Hex`/`Oct` formatting through `integer_width_radix`, preserving
+  negative fixed-width subtype lanes (Boolean/Integer/Long/LongLong and the
+  extended unsigned/signed integer carriers) before formatting two's-complement
+  digits.
+- Added `crates/oxvba-differential/tests/hex_oct_negative_width_vm3.rs` for
+  `CInt(-1)`, `CLng(-1)`, and `CLngLng(-1)` across both `Hex` and `Oct`, plus
+  positive unpadded controls.
+- Verification target:
+  - `cargo test -p oxvba-differential --test hex_oct_negative_width_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-differential --test hex_oct_literal_sign_vm3`
+  - `cargo test -p oxvba-bind numeric_conversion_intrinsics_accept_vba_radix_strings`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
