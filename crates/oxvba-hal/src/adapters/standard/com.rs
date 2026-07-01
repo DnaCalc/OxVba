@@ -484,8 +484,7 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "enumerate_object"));
         }
         if !self.native_com_enabled() {
-            // No real COM transport: the VM treats this as a non-enumerable
-            // (empty) `For Each`, matching the prior behaviour for foreign objects.
+            // No real COM transport: surface a normal host/COM enumeration fault.
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,

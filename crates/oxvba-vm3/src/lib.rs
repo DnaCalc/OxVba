@@ -1428,10 +1428,13 @@ impl<'h> Vm3<'h> {
                         Vec::new()
                     } else {
                         // A foreign COM collection: snapshot its elements through the host's
-                        // IEnumVARIANT bridge — the shared, live-tested HAL `enumerate_object`,
-                        // exactly as vm2. A host that cannot enumerate (no COM transport / no
-                        // enumerator) yields an empty iteration.
-                        self.host.com().enumerate_object(obj).unwrap_or_default()
+                        // IEnumVARIANT bridge. Enumeration failures are real VBA run-time
+                        // errors, not an empty collection.
+                        self.host
+                            .com()
+                            .enumerate_object(obj)
+                            .map_err(Fault::from_hal)
+                            .map_err(Vm3Error::Fault)?
                     }
                 } else {
                     return Err(Vm3Error::Fault(Fault::new(
@@ -3818,6 +3821,9 @@ fn inst_kind(inst: &OxInst) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
     use oxvba_bundle::coreir::{
         CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreClassMethod, CoreConst, CoreGlobal,
         CoreLocal, CoreParam, CorePlace,
@@ -3831,14 +3837,21 @@ mod tests {
     };
     use oxvba_hal::HostPolicy;
     use oxvba_hal::adapters::null::NullHostServices;
-    use oxvba_hal::error::HalResult;
-    use oxvba_hal::model::{HalDescriptor, HalProfileId};
+    use oxvba_hal::error::{HalError, HalResult};
+    use oxvba_hal::model::{CapabilityId, HalDescriptor, HalProfileId};
     use oxvba_hal::traits::{
         ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
-        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
+        TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
+    };
+    use oxvba_com::{
+        ComCallbackPayload, ComCallbackToken, ComMemberToken, ComSubscriptionToken,
     };
     use oxvba_oxir::program::{OxFunc, OxLocal, OxParamInfo};
     use oxvba_oxir::ty::OxTy;
+    use oxvba_runtime::object_ref::{
+        RUNTIME_E_NOINTERFACE, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeGuid,
+    };
     use oxvba_runtime::DynLinkSymbol;
     use oxvba_runtime::variant::VarType;
 
@@ -4522,6 +4535,187 @@ mod tests {
         }
     }
 
+    struct MockComEnumerateFailHost {
+        inner: NullHostServices,
+    }
+
+    impl MockComEnumerateFailHost {
+        fn new() -> Self {
+            Self {
+                inner: NullHostServices::new(HostPolicy::deterministic_runtime()),
+            }
+        }
+    }
+
+    impl HostServices for MockComEnumerateFailHost {
+        fn profile(&self) -> HalProfileId {
+            self.inner.profile()
+        }
+        fn descriptor(&self) -> HalDescriptor {
+            self.inner.descriptor()
+        }
+        fn policy(&self) -> &HostPolicy {
+            self.inner.policy()
+        }
+        fn console(&self) -> &dyn ConsoleHal {
+            self.inner.console()
+        }
+        fn ui(&self) -> &dyn UiInteractionHal {
+            self.inner.ui()
+        }
+        fn events(&self) -> &dyn EventPumpHal {
+            self.inner.events()
+        }
+        fn fs(&self) -> &dyn FileSystemHal {
+            self.inner.fs()
+        }
+        fn process(&self) -> &dyn ProcessEnvHal {
+            self.inner.process()
+        }
+        fn com(&self) -> &dyn ComHal {
+            self
+        }
+        fn time_locale(&self) -> &dyn TimeLocaleHal {
+            self.inner.time_locale()
+        }
+        fn dynlink(&self) -> &dyn DynamicLinkHal {
+            self.inner.dynlink()
+        }
+        fn diag(&self) -> &dyn DiagnosticsHal {
+            self.inner.diag()
+        }
+    }
+
+    impl ComHal for MockComEnumerateFailHost {
+        fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
+            Ok(Variant::from_object_ref(fake_foreign_object()))
+        }
+
+        fn describe_object(
+            &self,
+            _object: ObjectRef,
+        ) -> HalResult<Option<oxvba_com::ComObjectDescriptor>> {
+            Ok(None)
+        }
+
+        fn enumerate_object(&self, _object: ObjectRef) -> HalResult<Vec<Variant>> {
+            Err(HalError::adapter_fault(
+                HalProfileId::Windows,
+                CapabilityId::ComActivationDispatch,
+                "enumerate_object",
+                "mock IEnumVARIANT failure",
+            )
+            .with_host_error_code(438))
+        }
+
+        fn subscribe_event(
+            &self,
+            object: ObjectRef,
+            event: ComMemberToken,
+        ) -> HalResult<ComSubscriptionToken> {
+            self.inner.com().subscribe_event(object, event)
+        }
+
+        fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
+            self.inner.com().poll_event_callback()
+        }
+
+        fn event_callback_subscription(
+            &self,
+            callback: ComCallbackToken,
+        ) -> HalResult<ComSubscriptionToken> {
+            self.inner.com().event_callback_subscription(callback)
+        }
+
+        fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
+            self.inner.com().event_callback_arity(callback)
+        }
+
+        fn resolve_typelib_reference(
+            &self,
+            request: &TypeLibResolveRequest,
+        ) -> HalResult<TypeLibResolvedIdentity> {
+            self.inner.com().resolve_typelib_reference(request)
+        }
+
+        fn load_typelib_metadata(
+            &self,
+            identity: &TypeLibResolvedIdentity,
+        ) -> HalResult<TypeLibMetadataBlob> {
+            self.inner.com().load_typelib_metadata(identity)
+        }
+
+        fn invalidate_typelib_cache(
+            &self,
+            scope: TypeLibCacheScope,
+            reference_name: Option<&str>,
+        ) -> HalResult<Variant> {
+            self.inner.com().invalidate_typelib_cache(scope, reference_name)
+        }
+    }
+
+    #[repr(C)]
+    struct FakeForeignObject {
+        unknown: RawRuntimeIUnknown,
+        ref_count: AtomicU32,
+    }
+
+    static FAKE_FOREIGN_VTBL: RawRuntimeIUnknownVtbl = RawRuntimeIUnknownVtbl {
+        query_interface: fake_foreign_query_interface,
+        add_ref: fake_foreign_add_ref,
+        release: fake_foreign_release,
+    };
+
+    unsafe extern "C" fn fake_foreign_query_interface(
+        _this: *mut c_void,
+        _iid: RuntimeGuid,
+        ppv: *mut *mut c_void,
+    ) -> i32 {
+        if !ppv.is_null() {
+            // SAFETY: COM QueryInterface receives a caller-owned out pointer.
+            unsafe {
+                *ppv = std::ptr::null_mut();
+            }
+        }
+        RUNTIME_E_NOINTERFACE
+    }
+
+    unsafe extern "C" fn fake_foreign_add_ref(this: *mut c_void) -> u32 {
+        let object = this.cast::<FakeForeignObject>();
+        // SAFETY: the fake vtable is installed only on FakeForeignObject boxes.
+        unsafe { (*object).ref_count.fetch_add(1, Ordering::AcqRel) + 1 }
+    }
+
+    unsafe extern "C" fn fake_foreign_release(this: *mut c_void) -> u32 {
+        let object = this.cast::<FakeForeignObject>();
+        // SAFETY: the fake vtable is installed only on FakeForeignObject boxes.
+        let previous = unsafe { (*object).ref_count.fetch_sub(1, Ordering::AcqRel) };
+        let remaining = previous.saturating_sub(1);
+        if remaining == 0 {
+            // SAFETY: refcount reached zero for the box allocated in fake_foreign_object.
+            unsafe {
+                drop(Box::from_raw(object));
+            }
+        }
+        remaining
+    }
+
+    fn fake_foreign_object() -> ObjectRef {
+        let boxed = Box::new(FakeForeignObject {
+            unknown: RawRuntimeIUnknown {
+                vtbl: &FAKE_FOREIGN_VTBL,
+            },
+            ref_count: AtomicU32::new(1),
+        });
+        let raw = Box::into_raw(boxed);
+        // SAFETY: raw points to a live FakeForeignObject whose first field is a valid
+        // RawRuntimeIUnknown. Ownership of the initial reference moves into ObjectRef.
+        unsafe {
+            ObjectRef::from_raw_iunknown_owned(&mut (*raw).unknown as *mut RawRuntimeIUnknown)
+                .expect("fake object pointer is non-null")
+        }
+    }
+
     /// Elaborate a hand-built `CoreProgram` and run it on vm3 with a chosen host.
     fn run_core_with_host<'h>(prog: &CoreProgram, host: &'h dyn HostServices) -> Vm3<'h> {
         let oxp: &'static OxProgram =
@@ -4547,6 +4741,53 @@ mod tests {
             param_by_ref: vec![by_ref],
             return_type: None,
         }
+    }
+
+    #[test]
+    fn foreach_over_foreign_object_surfaces_enumeration_failure() {
+        let obj = || CorePlace::Local(CoreLocalId(0));
+        let item = || CorePlace::Local(CoreLocalId(1));
+        let touched = || CorePlace::Local(CoreLocalId(2));
+        let err_number = || CorePlace::Local(CoreLocalId(3));
+        let prog = main_proc(
+            vec![
+                local("obj", VarTypeRef::Variant),
+                local("item", VarTypeRef::Variant),
+                local("touched", VarTypeRef::Builtin(BuiltinType::Long)),
+                local("err_number", VarTypeRef::Builtin(BuiltinType::Long)),
+            ],
+            vec![
+                assign(
+                    obj(),
+                    CoreValue::Call {
+                        callee: CoreCallee::Native(NativeImplId::CreateObject),
+                        args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(
+                            "Probe.Object".into(),
+                        )))],
+                    },
+                ),
+                assign(touched(), CoreValue::Const(CoreConst::I32(0))),
+                CoreStmt::Error(ErrorOp::OnErrorResumeNext),
+                CoreStmt::ForEach {
+                    item: item(),
+                    source: CoreValue::Load(obj()),
+                    body: vec![assign(touched(), CoreValue::Const(CoreConst::I32(1)))],
+                },
+                assign(err_number(), CoreValue::ErrField(ErrField::Number)),
+            ],
+        );
+        let host = MockComEnumerateFailHost::new();
+        let vm = run_core_with_host(&prog, &host);
+        assert_eq!(
+            vm.slot(2).and_then(|v| v.as_i32()),
+            Some(0),
+            "the failed For Each body must not run"
+        );
+        assert_eq!(
+            vm.slot(3).and_then(|v| v.as_i32()),
+            Some(438),
+            "host enumeration failure must populate Err.Number, not become an empty loop"
+        );
     }
 
     #[test]

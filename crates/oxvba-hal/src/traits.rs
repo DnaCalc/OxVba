@@ -357,7 +357,7 @@ pub trait ComHal: Send + Sync {
     /// works against the snapshot (no live enumerator is held). Object-valued
     /// elements are bound as `ObjectRef`s like any other COM result. Adapters
     /// without a real COM transport (null/wasm/replay) return a capability error
-    /// by default, which the VM treats as "not enumerable" (empty iteration).
+    /// by default, which the VM surfaces through normal VBA error handling.
     fn enumerate_object(&self, _object: ObjectRef) -> HalResult<Vec<Variant>> {
         variant_companion_not_overridden(CapabilityId::ComActivationDispatch, "enumerate_object")
     }

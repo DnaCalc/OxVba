@@ -775,3 +775,21 @@
   - `cargo test -p oxvba-differential --test mid_start_vm3`
   - `cargo test -p oxvba-lib`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - COM `For Each` Enumeration Failures (`bd-4ktq.31`)
+
+- Closed `foreach-com-failure-swallowed` for vm3.
+- Updated the foreign COM object arm of `OxInst::ForEachInit` to propagate
+  `ComHal::enumerate_object` failures through `Fault::from_hal` instead of
+  silently treating every failure as an empty enumerator.
+- Updated HAL comments so the `enumerate_object` contract no longer claims the
+  VM converts adapter errors into empty iteration.
+- Added `foreach_over_foreign_object_surfaces_enumeration_failure`, a focused
+  vm3 unit regression with a custom host that returns a foreign-looking
+  `ObjectRef` from `CreateObject` and fails enumeration with host error 438.
+  The test proves the loop body does not run and `Err.Number` is populated.
+- Verification target:
+  - `cargo test -p oxvba-vm3 foreach_over_foreign_object_surfaces_enumeration_failure`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --test foreach_scalar_source_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
