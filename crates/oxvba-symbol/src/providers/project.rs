@@ -23,6 +23,8 @@ struct MemberEntry {
 
 #[derive(Default)]
 pub struct ProjectProvider {
+    /// Folded active project name accepted by `Project.Module.Member` lookup.
+    project_folded: String,
     /// Public module-level names across all modules → candidates.
     public: BTreeMap<String, Vec<MemberEntry>>,
     /// module(folded) → (member(folded) → candidates).
@@ -35,11 +37,15 @@ pub struct ProjectProvider {
 
 impl ProjectProvider {
     pub fn build(
+        project_name: &str,
         _symbols: &crate::model::SymbolTable,
         active: &[ModuleScan],
         referenced: &[ModuleScan],
     ) -> Self {
-        let mut provider = ProjectProvider::default();
+        let mut provider = ProjectProvider {
+            project_folded: fold_identifier(project_name),
+            ..ProjectProvider::default()
+        };
         for scan in active.iter().chain(referenced.iter()) {
             let module_key = fold_identifier(&scan.module_name);
             let module_entry = provider.modules.entry(module_key.clone()).or_default();
@@ -86,7 +92,9 @@ impl ProjectProvider {
         match parts {
             [member] => self.resolve(member),
             [owner, member] => self.resolve_public_owner_member(owner, member),
-            [_project, owner, member] => self.resolve_public_owner_member(owner, member),
+            [project, owner, member] if fold_identifier(project) == self.project_folded => {
+                self.resolve_public_owner_member(owner, member)
+            }
             _ => None,
         }
     }

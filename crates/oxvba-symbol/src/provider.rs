@@ -341,6 +341,18 @@ impl ResolutionEnvironment {
         })
     }
 
+    /// Is `name` (any case) an active or referenced VBA project name?
+    pub fn is_project_name(&self, name: &str) -> bool {
+        let target = crate::model::fold_identifier(name);
+        self.symbols.scopes().iter().any(|scope| {
+            matches!(scope.kind, ScopeKind::Project | ScopeKind::ReferencedProject)
+                && scope
+                    .name
+                    .and_then(|id| self.symbols.name(id))
+                    .is_some_and(|scope_name| scope_name.folded == target)
+        })
+    }
+
     /// The field count of UDT `name` (for record allocation).
     pub fn udt_field_count(&self, name: &str) -> Option<usize> {
         self.udt_fields
@@ -591,7 +603,8 @@ pub fn build_resolution_environment(
     // The cross-module index is the ACTIVE project only — a referenced project is
     // reached through its export-surface provider, not by flattening its modules
     // into the active name index.
-    let project_provider = ProjectProvider::build(&symbols, &active_scans, &[]);
+    let project_provider =
+        ProjectProvider::build(&manifest.project_name, &symbols, &active_scans, &[]);
 
     let mut com_providers: Vec<ComTypeLibProvider> = Vec::new();
     let mut host_blobs: Vec<oxvba_com::TypeLibMetadataBlob> = Vec::new();

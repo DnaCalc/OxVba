@@ -121,7 +121,6 @@ fn cross_module_public_qualified_matches_oracle() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.5: valid Project.Module.Member qualifier is not accepted by vm3 today"]
 fn valid_project_qualifier_should_match_oracle() {
     assert_snapshot_contains(
         run_scoping_case(&[
@@ -237,7 +236,6 @@ fn module_name_public_member_collision_should_be_rejected() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.5: wrong Project.Module.Member qualifier is still ignored today"]
 fn wrong_project_qualifier_should_be_rejected() {
     assert_compile_rejected(run_scoping_case(&[
         (

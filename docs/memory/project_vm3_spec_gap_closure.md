@@ -119,3 +119,24 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Project Qualifier Validation (`bd-4ktq.9.5`)
+
+- Closed `project-qualifier-ignored` for active-project qualified lookup.
+- `ProjectProvider` now carries the folded active project name and only resolves
+  three-part `Project.Module.Member` names when the project segment matches.
+  A wrong active-project qualifier returns no binding instead of resolving as if
+  the segment were absent.
+- `ResolutionEnvironment::is_project_name` exposes active and referenced
+  project names. The binder treats such names as namespace qualifiers, allowing
+  valid active-project `VBAProject.Module.Member` expressions to reach qualified
+  resolution.
+- Referenced-project surface resolution already validated its project segment;
+  this bead preserved that path.
+- Flipped on the oracle-backed scoping fixtures for valid
+  `VBAProject.Lib.Pub()` and invalid `WrongProject.Lib.Pub()`.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

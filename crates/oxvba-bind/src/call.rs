@@ -1757,6 +1757,7 @@ impl<'a> ProcLower<'a> {
     fn is_namespace_qualifier(&self, name: &str) -> bool {
         let folded = fold_identifier(name);
         let is_vba_namespace = folded == "vba";
+        let is_project_name = self.g.env.is_project_name(name);
         let is_proc_module = self.g.env.all_modules().any(|m| {
             fold_identifier(m.module_name) == folded
                 && m.module_kind == oxvba_symbol::manifest::ModuleKind::Procedural
@@ -1766,7 +1767,8 @@ impl<'a> ProcLower<'a> {
             .and_then(|b| b.symbol)
             .and_then(|s| self.g.env.symbols.symbol(s))
             .is_some_and(|s| s.kind == SymbolKind::Enum);
-        (is_vba_namespace || is_proc_module || is_enum) && !self.resolves_to_local_value(name)
+        (is_vba_namespace || is_project_name || is_proc_module || is_enum)
+            && !self.resolves_to_local_value(name)
     }
 
     /// True if `name` resolves to a local or parameter variable in the current scope

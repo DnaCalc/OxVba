@@ -734,6 +734,11 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
         env.resolve_qualified(&["Proj", "Module1", "Value"])
             .is_some()
     );
+    assert!(env.is_project_name("Proj"));
+    assert!(
+        env.resolve_qualified(&["WrongProj", "Module1", "Value"])
+            .is_none()
+    );
 
     // Library + intrinsic still resolve through the same source-agnostic path.
     assert!(matches!(
