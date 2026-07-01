@@ -497,3 +497,21 @@
   - `cargo test -p oxvba-bind numeric_conversion_intrinsics_accept_vba_radix_strings`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Sqr/Log/Exp Domain Errors (`bd-4ktq.15`)
+
+- Closed `sqr-log-exp-nan-no-error` for vm3.
+- Split `Sqr`, `Log`, and `Exp` out of the raw `math1` f64 wrapper so invalid
+  VBA domains surface as run-time errors instead of ordinary IEEE payloads:
+  `Sqr` of a negative value and `Log` of a non-positive value now raise error
+  5, while overflowing `Exp` raises error 6.
+- Left `Sin`, `Cos`, `Atn`, and `Tan` on the existing shared `math1` path; this
+  bead only covers the observed `Sqr`/`Log`/`Exp` gap.
+- Added `crates/oxvba-differential/tests/math_domain_errors_vm3.rs` for invalid
+  domains, overflow, and valid-value controls.
+- Verification target:
+  - `cargo test -p oxvba-differential --test math_domain_errors_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

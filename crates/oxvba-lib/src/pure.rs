@@ -650,6 +650,30 @@ pub fn math1(args: &[Variant], f: impl Fn(f64) -> f64) -> LibResult<Variant> {
     Ok(vf64(f(as_f64(need(args, 0)?)?)))
 }
 
+pub fn sqr(args: &[Variant]) -> LibResult<Variant> {
+    let x = as_f64(need(args, 0)?)?;
+    if x < 0.0 {
+        return Err(LibError::invalid_call("Sqr argument must be non-negative"));
+    }
+    Ok(vf64(x.sqrt()))
+}
+
+pub fn log(args: &[Variant]) -> LibResult<Variant> {
+    let x = as_f64(need(args, 0)?)?;
+    if x <= 0.0 {
+        return Err(LibError::invalid_call("Log argument must be positive"));
+    }
+    Ok(vf64(x.ln()))
+}
+
+pub fn exp(args: &[Variant]) -> LibResult<Variant> {
+    let value = as_f64(need(args, 0)?)?.exp();
+    if !value.is_finite() {
+        return Err(LibError::overflow("Exp overflow"));
+    }
+    Ok(vf64(value))
+}
+
 /// `Abs` / `Int` / `Fix` — the three "type-preserving" unary math functions.
 /// Unlike the transcendentals they return the argument's own numeric subtype
 /// (so `Int(CCur(3.7))` is a `Currency`, `Fix(CDate(...))` is a `Date`), and
