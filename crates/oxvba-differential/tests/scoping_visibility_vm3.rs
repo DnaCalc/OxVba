@@ -252,7 +252,6 @@ fn wrong_project_qualifier_should_be_rejected() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.6: Friend on standard modules is still accepted today"]
 fn friend_on_standard_module_should_be_rejected() {
     assert_compile_rejected(run_scoping_case(&[(
         "Main",

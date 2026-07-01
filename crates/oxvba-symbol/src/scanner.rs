@@ -136,6 +136,7 @@ pub fn scan_module(
         next_descriptor_id,
         scan: &mut scan,
         module_name: &module_name,
+        module_kind: module.module_kind,
         default_member_attrs,
         default_types,
         proc_is_static: false,
@@ -150,6 +151,7 @@ struct ScanCtx<'a> {
     next_descriptor_id: &'a mut u32,
     scan: &'a mut ModuleScan,
     module_name: &'a str,
+    module_kind: ModuleKind,
     default_member_attrs: BTreeSet<String>,
     default_types: DefaultTypeTable,
     /// Set while walking the body of a `Static Sub/Function/Property`, so every
@@ -319,6 +321,14 @@ impl ScanCtx<'_> {
                 .contains(&fold_identifier(&logical));
         // Sub/Function/Property default to Public; `Private`/`Friend` override.
         let visibility = decl_visibility(node, Visibility::Public);
+        if module_level
+            && visibility == Visibility::Friend
+            && self.module_kind == ModuleKind::Procedural
+        {
+            return Err(SymbolModelError::FriendNotValidInStandardModule {
+                name: logical,
+            });
+        }
         let sig = self
             .signatures
             .alloc(self.build_signature(node, CallShape::Ordinary));
@@ -1443,10 +1453,13 @@ mod tests {
     use crate::model::ScopeKind;
 
     /// Scan one procedural module's source and return its scanned members.
-    fn scan_members(source: &str) -> Vec<ScannedMember> {
+    fn scan_members_for_kind(
+        module_kind: ModuleKind,
+        source: &str,
+    ) -> Result<Vec<ScannedMember>, SymbolModelError> {
         let module = ModuleUnit {
             module_name: "M".into(),
-            module_kind: ModuleKind::Procedural,
+            module_kind,
             attributes: ModuleAttributes::named("M"),
             source: source.into(),
         };
@@ -1470,8 +1483,11 @@ mod tests {
             parse.syntax(),
             project,
         )
-        .unwrap()
-        .members
+        .map(|scan| scan.members)
+    }
+
+    fn scan_members(source: &str) -> Vec<ScannedMember> {
+        scan_members_for_kind(ModuleKind::Procedural, source).unwrap()
     }
 
     fn vis_of(members: &[ScannedMember], name: &str) -> Visibility {
@@ -1513,8 +1529,26 @@ mod tests {
 
     #[test]
     fn friend_is_distinct_from_public_and_private() {
-        let members = scan_members("Friend Sub Helper()\nEnd Sub\n");
+        let members =
+            scan_members_for_kind(ModuleKind::Class, "Friend Sub Helper()\nEnd Sub\n").unwrap();
         assert_eq!(vis_of(&members, "Helper"), Visibility::Friend);
+    }
+
+    #[test]
+    fn scanner_rejects_friend_in_standard_modules() {
+        let err =
+            scan_members_for_kind(ModuleKind::Procedural, "Friend Sub Helper()\nEnd Sub\n")
+                .expect_err("standard module Friend should be rejected");
+        assert_eq!(
+            err,
+            SymbolModelError::FriendNotValidInStandardModule {
+                name: "Helper".to_string()
+            }
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE"
+        );
     }
 
     /// A UDT field declared with a trailing `()` array marker must type as

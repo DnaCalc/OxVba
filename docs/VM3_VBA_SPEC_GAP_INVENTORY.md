@@ -77,7 +77,7 @@ Current-green vm3 baselines and ignored follow-on assertions live in
 |☐|partition-absent|Low/Absent|S|`Partition(number,start,stop,interval)` absent|native.rs/catalog.rs add Partition(4,4) pure body|
 |☐|getsetting-family-absent|Low/Absent|M|`GetSetting`/`SaveSetting`/`GetAllSettings`/`DeleteSetting` absent|route to a settings HAL facet (headless no-op) or HonestDecline|
 |☐|vbmodal-vbmodeless-absent|Low/Absent|S|`vbModal`(1)/`vbModeless`(0) `Show`-modality constants absent (MsgBox modal consts exist)|vba_library.rs:294-295 add the two arms|
-|☐|friend-on-standard-module|Low/SilentWrong|S|`Friend` accepted on standard-module members (VBA: class-only; compile error otherwise)|scanner.rs:641-646; reject Friend when module_kind is Procedural|
+|☑|friend-on-standard-module|Low/SilentWrong|S|DONE (bead `bd-4ktq.9.6`): scanner rejects module-level `Friend` procedures/properties in standard/procedural modules with `SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE`, while class-module `Friend` remains a distinct valid visibility. Oracle-backed vm3 fixture for standard-module `Friend Sub Helper` is active and rejects; class Friend baseline still runs. Checks: `cargo test -p oxvba-differential --test scoping_visibility_vm3`; `cargo test -p oxvba-symbol`; `cargo test -p oxvba-bind`; `cargo test -p oxvba-differential --lib vm3_golden_snapshot`.|`crates/oxvba-symbol/src/model.rs`; `crates/oxvba-symbol/src/scanner.rs`; `crates/oxvba-differential/tests/scoping_visibility_vm3.rs`|
 
 ## Tier 0 — user-named deferred beads (do first)
 

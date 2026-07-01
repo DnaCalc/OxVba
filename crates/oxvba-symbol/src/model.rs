@@ -204,6 +204,8 @@ pub enum SymbolModelError {
     UnsupportedDeclaredDecimal,
     #[error("unsupported Option Compare Database directive")]
     UnsupportedOptionCompareDatabase,
+    #[error("Friend is only valid in object modules: `{name}`")]
+    FriendNotValidInStandardModule { name: String },
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -266,6 +268,12 @@ impl SymbolModelError {
                 "Option Compare Database requires Microsoft Access database collation, which this target does not implement",
             )
             .with_help("Use Option Compare Binary or Option Compare Text, or compile with an Access collation implementation."),
+            SymbolModelError::FriendNotValidInStandardModule { name } => Diagnostic::error(
+                "SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE",
+                DiagnosticPhase::Symbol,
+                format!("Friend is only valid in object modules: {name}"),
+            )
+            .with_help("Use Public or Private in a standard module, or move the Friend member to a class/object module."),
             SymbolModelError::UnknownScope(scope) => Diagnostic::error(
                 "SYM-E-UNKNOWN-SCOPE",
                 DiagnosticPhase::Symbol,

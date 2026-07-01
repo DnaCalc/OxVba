@@ -140,3 +140,20 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Friend on Standard Modules (`bd-4ktq.9.6`)
+
+- Closed `friend-on-standard-module`.
+- The scanner now carries the module kind into declaration scanning and rejects
+  module-level `Friend` procedures/properties in `ModuleKind::Procedural`
+  modules with `SymbolModelError::FriendNotValidInStandardModule`.
+- The stable diagnostic code is `SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE`,
+  matching the live-oracle rule that `Friend` is only valid in object modules.
+- Class-module `Friend` remains valid and distinct from `Public`/`Private`.
+- Flipped on the oracle-backed vm3 fixture for standard-module
+  `Friend Sub Helper`; the class Friend baseline remains active and green.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
