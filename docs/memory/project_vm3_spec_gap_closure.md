@@ -793,3 +793,26 @@
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --test foreach_scalar_source_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `Err` Property Writes (`bd-4ktq.32`)
+
+- Closed `err-properties-not-writable` for vm3.
+- Captured live Excel/VBA 7.1 behavior in
+  `docs/evidence/conformance/vm3_err_property_writes_oracle_20260701T1442Z/`
+  using VBE Debug -> Compile VBAProject (`ID=578`) before running the probe and
+  PID-scoped UI Automation modal handling.
+- Added `ErrorOp::SetErrField` / `OxInst::ErrFieldSet`, with binder support for
+  `Err.Number`, `Err.Description`, and `Err.Source` assignments and a
+  read-only rejection for `Err.LastDllError`.
+- Updated vm3 `ErrState` with an inheritable-field bit: raised errors and
+  `Err.Description`/`Err.Source` writes make omitted `Err.Raise`
+  Source/Description inherit; `Err.Clear` resets it; `Err.Number` writes only
+  update the numeric property.
+- Added `crates/oxvba-differential/tests/err_property_writes_vm3.rs` and an
+  OxIR elaboration regression for `ErrFieldSet`.
+- Verification target:
+  - `cargo test -p oxvba-differential --test err_property_writes_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-oxir`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

@@ -276,6 +276,7 @@ struct ErrState {
     number: i32,
     description: String,
     source: String,
+    inherit_fields: bool,
 }
 
 /// A live host (COM) event subscription: which sink handler to invoke when the host delivers a
@@ -816,13 +817,13 @@ impl<'h> Vm3<'h> {
                 // state from the number plus any explicit Source/Description, then route
                 // through the statement pad so an active `On Error` can catch it (R11).
                 //
-                // MS-VBAL §9071 (oracle-confirmed): an omitted argument INHERITS the
-                // current `Err` field **when `Err` is un-cleared** (`Err.Number != 0`,
-                // regardless of whether that error came from a prior `Err.Raise` or a
-                // system fault); when `Err` is cleared, an omitted Source falls back to
-                // the project name and an omitted Description to the standard message for
-                // the number. This is per-field. (System faults never inherit — that path
-                // is `from_arith`/`route_fault`, which always builds fresh fields.)
+                // MS-VBAL §9071 (oracle-confirmed): an omitted argument inherits the
+                // current `Err` field when the Err fields are inheritable. Actual errors
+                // make them inheritable; `Err.Clear` clears that state. Direct
+                // `Err.Number = ...` writes do not make Source/Description inheritable,
+                // but `Err.Description = ...` / `Err.Source = ...` do, even when
+                // `Err.Number` is 0. This is per-field. System faults never inherit —
+                // that path is `from_arith`/`route_fault`, which always builds fresh fields.
                 OxTerminator::Raise {
                     number,
                     source,
@@ -835,8 +836,8 @@ impl<'h> Vm3<'h> {
                             let code = code_v.as_i32().unwrap_or(0);
                             // §9071 inherit applies only to `Err.Raise` (inherit=true);
                             // the legacy `Error <n>` statement (inherit=false) never
-                            // inherits — oracle-confirmed. Inherit needs an un-cleared Err.
-                            let inherit = *inherit && self.err.number != 0;
+                            // inherits — oracle-confirmed.
+                            let inherit = *inherit && self.err.inherit_fields;
                             let message = match description {
                                 Some(op) => self.operand_string(op)?,
                                 None if inherit => self.err.description.clone(),
@@ -942,6 +943,7 @@ impl<'h> Vm3<'h> {
     fn raise(&mut self, mut fault: Fault) {
         self.err.number = fault.code;
         self.err.description = fault.message.clone();
+        self.err.inherit_fields = true;
         // The source is the fault's explicit one (`Err.Raise … Source`) or, on the FIRST raise
         // of a source-less fault, the ORIGIN project's name. Persisting it back onto the fault is
         // what keeps the origin as the fault propagates: a cross-program unwind re-routes (and
@@ -1158,6 +1160,39 @@ impl<'h> Vm3<'h> {
                     ErrField::LastDllError => Variant::from_i32(self.last_dll_error),
                 };
                 self.store(dst, v)?;
+            }
+            // Write an `Err` property. `Err.LastDllError` is read-only; accepted user
+            // assignments to it should have been rejected by the binder.
+            OxInst::ErrFieldSet { field, src } => {
+                let value = self.operand(src)?;
+                match field {
+                    ErrField::Number => {
+                        let coerced = arith::coerce_numeric(
+                            &value,
+                            oxvba_bundle::NumericCoerceTarget::Long,
+                        )
+                        .map_err(Fault::from_arith)
+                        .map_err(Vm3Error::Fault)?;
+                        self.err.number = coerced.as_i32().unwrap_or(0);
+                    }
+                    ErrField::Description => {
+                        let coerced = arith::coerce_string(&value)
+                            .map_err(Fault::from_arith)
+                            .map_err(Vm3Error::Fault)?;
+                        self.err.description = arith::as_string(&coerced);
+                        self.err.inherit_fields = true;
+                    }
+                    ErrField::Source => {
+                        let coerced = arith::coerce_string(&value)
+                            .map_err(Fault::from_arith)
+                            .map_err(Vm3Error::Fault)?;
+                        self.err.source = arith::as_string(&coerced);
+                        self.err.inherit_fields = true;
+                    }
+                    ErrField::LastDllError => {
+                        return Err(Vm3Error::Malformed("Err.LastDllError is read-only".into()));
+                    }
+                }
             }
             // `Err.Clear` → reset the `Err` object.
             OxInst::ClearErr => self.err = ErrState::default(),
@@ -3810,6 +3845,7 @@ fn inst_kind(inst: &OxInst) -> &'static str {
         OxInst::RaiseEvent { .. } => "RaiseEvent",
         OxInst::Ptr { .. } => "pointer helper",
         OxInst::ErrFieldGet { .. } => "Err field read",
+        OxInst::ErrFieldSet { .. } => "Err field write",
         OxInst::SetErrorHandler(_) => "On Error",
         OxInst::AddRef { .. } | OxInst::Release { .. } => "refcount effect",
         OxInst::DrainTerminations => "DrainTerminations",

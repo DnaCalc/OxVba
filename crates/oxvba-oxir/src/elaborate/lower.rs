@@ -865,6 +865,11 @@ impl<'a> Lowerer<'a> {
                     s_next,
                 );
             }
+            ErrorOp::SetErrField { field, value } => {
+                let (src, _) = self.lower_value(value)?;
+                self.emit(OxInst::ErrFieldSet { field: *field, src });
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+            }
         }
         Ok(())
     }
@@ -2980,8 +2985,8 @@ mod tests {
         assert!(has(|i| matches!(i, OxInst::ForEachNext { .. })), "expected ForEachNext");
     }
 
-    /// `p = VarPtr(x) : n = Err.Number : f = AddressOf Main` lower to Ptr / ErrFieldGet
-    /// / LoadProcRef.
+    /// `p = VarPtr(x) : n = Err.Number : Err.Source = "s" : f = AddressOf Main`
+    /// lower to Ptr / ErrFieldGet / ErrFieldSet / LoadProcRef.
     #[test]
     fn pointers_errfields_addressof_elaborate() {
         let body = vec![
@@ -2996,6 +3001,10 @@ mod tests {
                 CorePlace::Local(CoreLocalId(2)),
                 CoreValue::ErrField(ErrField::Number),
             ),
+            CoreStmt::Error(ErrorOp::SetErrField {
+                field: ErrField::Source,
+                value: CoreValue::Const(CoreConst::Str("s".into())),
+            }),
             assign(
                 CorePlace::Local(CoreLocalId(3)),
                 CoreValue::AddressOf(CoreProcId(0)),
@@ -3013,6 +3022,7 @@ mod tests {
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
         assert!(has(|i| matches!(i, OxInst::Ptr { .. })), "expected Ptr");
         assert!(has(|i| matches!(i, OxInst::ErrFieldGet { .. })), "expected ErrFieldGet");
+        assert!(has(|i| matches!(i, OxInst::ErrFieldSet { .. })), "expected ErrFieldSet");
         assert!(has(|i| matches!(i, OxInst::LoadProcRef { .. })), "expected LoadProcRef");
     }
 

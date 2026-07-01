@@ -16,6 +16,7 @@ use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
 use crate::ProcLower;
+use crate::call::err_field;
 use crate::error::BindError;
 use crate::expr::comparison_binop;
 use crate::types;
@@ -118,6 +119,11 @@ impl<'a> ProcLower<'a> {
         // not a place store: Let → Property Let, Set → Property Set.
         let value_text = value_node.text();
         let value_label = value_text.trim();
+        if let Some(stmts) =
+            self.try_err_field_assignment(target_node, intent, val.clone(), value_label)?
+        {
+            return Ok(stmts);
+        }
         if let Some(stmts) = self.try_property_assignment(target_node, intent, &val, value_label)? {
             return Ok(stmts);
         }
@@ -137,6 +143,42 @@ impl<'a> ProcLower<'a> {
             target_name: target_node.text().trim().to_string(),
             target_type_name: types::type_name(&target_ty),
         }])
+    }
+
+    fn try_err_field_assignment(
+        &mut self,
+        target: SyntaxNode<'_>,
+        intent: AssignmentIntent,
+        mut val: crate::Bound,
+        value_label: &str,
+    ) -> Result<Option<Vec<CoreStmt>>, BindError> {
+        if target.kind() != SyntaxKind::MemberExpr {
+            return Ok(None);
+        }
+        let Some(recv) = target.member_receiver() else {
+            return Ok(None);
+        };
+        if !self.is_err_receiver(recv) {
+            return Ok(None);
+        }
+        if intent == AssignmentIntent::Set {
+            return Err(BindError::Unsupported("Set assignment to Err property".into()));
+        }
+        let member = target
+            .member_name_token()
+            .ok_or_else(|| BindError::Malformed("Err member assignment".into()))?
+            .text;
+        let Some((field, target_ty)) = err_field(member) else {
+            return Ok(None);
+        };
+        if matches!(field, oxvba_bundle::coreir::ErrField::LastDllError) {
+            return Err(BindError::Unsupported("Err.LastDllError is read-only".into()));
+        }
+        val = self.bind_default_member_value_context(val, value_label)?;
+        Ok(Some(vec![CoreStmt::Error(ErrorOp::SetErrField {
+            field,
+            value: types::coerce_store(val.value, &target_ty),
+        })]))
     }
 
     fn try_mid_assignment(

@@ -61,6 +61,7 @@ error (MS-VBAL §5.4.4 ll. 2793–2794: each invocation has its own policy, born
 | `OxTerminator::Resume` / `ResumeNext` / `ResumeLabel(BlockId)` | terminators | the three `Resume` forms (Rules R6–R8) |
 | `OxTerminator::Raise { code }` / `RaiseValue(op)` | terminators | `Err.Raise` / `Error n`; route through the block's `fault_target` so `On Error` catches them |
 | `OxInst::ErrFieldGet { dst, field }` | `Number/Description/Source/LastDllError` | read `Err` |
+| `OxInst::ErrFieldSet { field, src }` | `Number/Description/Source` | write mutable `Err` fields; `LastDllError` is read-only |
 | `OxInst::ClearErr` | — | `Err.Clear` → reset `Err` |
 | `OxTerminator::GoSub { target, ret }` / `GoSubReturn` | terminators | LIFO resumption list (Rules R12) |
 | `OxInst::StmtBoundary { stmt }` | statement index | finalization timing (M3); **not used by the error model** (resume seeds live on the pad) |
@@ -116,12 +117,15 @@ Each rule cites its MS-VBAL basis. "R*" ids are referenced from the code.
   *normal* `End Sub` / fall-off-the-end does **not**. *(§6.1.3.2.1.1 ll. 9049–9051.)*
 
 - **R11 — `Err.Raise(Number[, Source][, Description][, HelpFile][, HelpContext])`.** All
-  supplied args honoured; omitted args inherit the *un-cleared* `Err` fields; omitted
+  supplied args honoured; omitted args inherit the current inheritable `Err` fields; omitted
   `Source` defaults to the project name; omitted `Description` is mapped from `Number`
-  (else "Application-defined or object-defined error"). `Error <n>` uses the same
-  default-description mapping, but does not inherit prior un-cleared `Err` fields.
+  (else "Application-defined or object-defined error"). Raised errors and
+  `Err.Description`/`Err.Source` writes make fields inheritable; `Err.Clear` resets
+  that state; `Err.Number` writes do not create it but also do not clear it. `Error <n>`
+  uses the same default-description mapping, but does not inherit prior `Err` fields.
   *(§6.1.3.2.1.2 ll. 9055–9071; §5.4.4.3; Excel/VBA oracle in
-  `docs/evidence/conformance/vm3_default_error_message_oracle_20260701T1410Z/`.)*
+  `docs/evidence/conformance/vm3_default_error_message_oracle_20260701T1410Z/`
+  and `docs/evidence/conformance/vm3_err_property_writes_oracle_20260701T1442Z/`.)*
   **(M2-c-2/3.)**
 
 - **R12 — GoSub is a per-activation LIFO list.** `GoSub` pushes its `ret`; `Return` pops
@@ -162,7 +166,7 @@ the unwound callee.
 - `run_loop` terminator arms: `FaultDispatch` (R4/R5/R9), `Resume*` (R6/R7/R8),
   `Raise`/`RaiseValue` (route via `fault_target`, R11-runtime), `GoSub`/`GoSubReturn`
   (R12).
-- `exec`: `SetErrorHandler` (R5), `ErrFieldGet`, `ClearErr`.
+- `exec`: `SetErrorHandler` (R5), `ErrFieldGet`, `ErrFieldSet`, `ClearErr`.
 - `call_proc`/`do_return`/`propagate_fault`: save/restore `active_error` (R3) +
   per-frame `gosub_stack`.
 
@@ -203,8 +207,8 @@ Spec-silent or spec-ambiguous points to confirm against real Office before locki
    rejected or does it silently re-arm?
 3. **Default `Err.Source`** for an omitted Source — confirm it is the VBA project name;
    capture the literal.
-4. **`Err.Raise` un-cleared-field inheritance (§9071)** — a second `Raise` omitting
-   Source/Description inherits the previously-set un-cleared fields.
+4. **`Err.Raise` field inheritance (§9071)** — a second `Raise` omitting
+   Source/Description inherits current fields when Err fields are inheritable.
 5. **Re-raise inside an active `Goto` handler propagates to the caller** (confirms D1/R9).
 
 Default `Err.Description` text for the common runtime-message table has been captured in
@@ -229,7 +233,8 @@ Default `Err.Description` text for the common runtime-message table has been cap
 - **M2-c-1 (vm3 core, spec-clear, no front-end, no oracle):** `active_error` cell;
   `SetErrorHandler` (R5); `FaultDispatch` arms with demotion (R4/R9); `Resume*` with
   error-20 + Err-reset (R6/R7/R8); `Raise`/`RaiseValue` routing (R11-runtime, single-arg);
-  `ErrFieldGet`; `GoSub`/`GoSubReturn` LIFO + error 3 (R12); `Exit` Err-reset (R10).
+  `ErrFieldGet`/`ErrFieldSet`; `GoSub`/`GoSubReturn` LIFO + error 3 (R12);
+  `Exit` Err-reset (R10).
   Gate: the On-Error/Resume corpus programs run + match (vm2-bug edge cases allowlisted).
 - **M2-c-2 (richer `Err.Raise`/`Err`):** Source/Description/HelpFile/HelpContext through
   binder → OxIR → `ErrState`; §9071 inheritance; Err-property writes. **Needs oracle (§8.3–8.5).**

@@ -645,6 +645,13 @@ pub enum ErrorOp {
         description: Option<Box<CoreValue>>,
         inherit: bool,
     },
+    /// `Err.Number = ...`, `Err.Description = ...`, and `Err.Source = ...`.
+    /// `Err.LastDllError` is intentionally read-only; the binder rejects it before
+    /// this IR is produced.
+    SetErrField {
+        field: ErrField,
+        value: CoreValue,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

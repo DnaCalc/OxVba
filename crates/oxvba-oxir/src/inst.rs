@@ -404,6 +404,10 @@ pub enum OxInst {
         dst: OxPlace,
         field: ErrField,
     },
+    ErrFieldSet {
+        field: ErrField,
+        src: OxOperand,
+    },
 
     // ── Error-state setters (no control transfer) ────────────────────────────
     SetErrorHandler(ErrorHandler),

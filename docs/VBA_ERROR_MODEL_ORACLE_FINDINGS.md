@@ -93,13 +93,14 @@ for reproducibility (the harness now handles all of them automatically):
 > `err_raise_omitted_inherit` was inconclusive — its `On Error GoTo H` between the two
 > raises **resets `Err`**, so the second raise fell to defaults. The §F probes isolate
 > the rule with a single top-level `On Error Resume Next` (its implicit skip does NOT
-> clear `Err`): an omitted `Err.Raise` argument **inherits the current `Err` field
-> when `Err` is un-cleared (`Number != 0`)**, per-field, regardless of whether that
-> `Err` came from a prior `Err.Raise` or a system fault; when `Err` is cleared it falls
-> to defaults (Source = project name, Description = derived-from-Number). **System errors
-> never inherit** — they always set fresh fields. vm3 implements exactly this (the
-> inherit fallback lives in the `Err.Raise`/`Raise` terminator; the system-fault path
-> builds fresh fields).
+> clear `Err`): an omitted `Err.Raise` argument **inherits current `Err` fields
+> when those fields are inheritable**, per-field, regardless of whether that state
+> came from a prior `Err.Raise`, a system fault, or a direct Source/Description
+> property write; when `Err` is cleared it falls to defaults (Source = project name,
+> Description = derived-from-Number). **System errors never inherit prior fields** —
+> they always set fresh fields. vm3 implements exactly this (the inherit fallback
+> lives in the `Err.Raise`/`Raise` terminator; the system-fault path builds fresh
+> fields).
 
 ---
 
@@ -227,12 +228,16 @@ object** (`Number`/`Description`/`Source`/…).
    duration of the handler, so a fault after the resume is caught again). With no active
    error → **error 20**.
 4. `Err.Raise` honors all supplied args. **For an omitted Source/Description, MS-VBAL
-   §9071 inheritance applies**: if `Err` is un-cleared (`Number != 0`) the omitted field
+   §9071 inheritance applies**: if the `Err` fields are inheritable, the omitted field
    **inherits the current `Err` value** (per-field, regardless of the prior error's
    origin); if `Err` is cleared, omitted Source → project name and omitted Description →
    derived from Number ("Application-defined or object-defined error" if unmapped). A
    **system** error (not `Err.Raise`) always sets fresh fields — Number, derived
-   Description, Source = project name — and never inherits. `Err.Clear` zeroes `Err`.
+   Description, Source = project name — and never inherits prior fields. `Err.Clear`
+   zeroes `Err` and clears inheritable fields. Property-write oracle
+   `vm3_err_property_writes_oracle_20260701T1442Z` refines this: `Err.Description` and
+   `Err.Source` writes make omitted fields inheritable even when `Err.Number` is 0;
+   `Err.Number` writes neither create nor clear inheritable fields.
 5. `Err` is **not** auto-cleared by `Exit Sub`/`Exit Function`, by a normal procedure
    end, by a non-faulting statement, or by the *implicit* skip of `On Error Resume Next`.
 6. Control flow: `For` counter ends at `last+step`; a zero-iteration `For` leaves the
@@ -285,11 +290,11 @@ To reach 100% on the error corpus, vm3 gained the rich-raise model the oracle re
   or by name in the binder (HelpFile/HelpContext are accepted but not yet modelled — no
   `Err` read path surfaces them).
 - **vm3 honors the explicit fields, inherits or defaults the rest** (§9071, oracle-
-  confirmed): an explicit argument wins; an omitted one **inherits the un-cleared `Err`
-  field** (`Err.Number != 0`) else falls to the default (Source = project name via
-  `program.unit_name`; Description = the standard message for the number). The `Fault`
-  carries an optional `source`; `Vm3::raise` applies the project-name fallback. System
-  faults (the `from_arith`/`route_fault` path) always build fresh fields — they never
-  inherit — matching the oracle.
+  confirmed): an explicit argument wins; an omitted one inherits current inheritable
+  `Err` fields else falls to the default (Source = project name via `program.unit_name`;
+  Description = the standard message for the number). The `Fault` carries an optional
+  `source`; `Vm3::raise` applies the project-name fallback. System faults (the
+  `from_arith`/`route_fault` path) always build fresh fields — they never inherit
+  prior fields — matching the oracle.
 - **vm2 is deliberately left as-is** — it carries only the error number, so its
   Source/Description gap shows up as a documented §5 divergence, not a fix.
