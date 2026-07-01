@@ -91,15 +91,16 @@ static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescripto
 const INSTANCE_ID_BASE: i32 = 0x1000_0000;
 
 /// A run-time fault carrying the `Err` state it populates: the VBA error code
-/// (`Err.Number`), the message (`Err.Description`), and an optional explicit
-/// `Err.Source`. `source: None` means "use the raise-time default" — the project name —
-/// which is what every in-project fault (system or `Err.Raise` with the argument
-/// omitted) takes (see [`Vm3::raise`]); `Some` is an explicit `Err.Raise … Source`.
+/// (`Err.Number`), message (`Err.Description`), and optional explicit rich fields.
+/// Missing fields take VBA defaults at raise time, unless `Err.Raise` inheritance
+/// supplied them before the fault was routed.
 #[derive(Debug, Clone)]
 pub struct Fault {
     pub code: i32,
     pub message: String,
     pub source: Option<String>,
+    pub help_file: Option<String>,
+    pub help_context: Option<i32>,
 }
 
 impl Fault {
@@ -111,6 +112,8 @@ impl Fault {
             code,
             message: message.into(),
             source: None,
+            help_file: None,
+            help_context: None,
         }
     }
     fn from_arith(e: ArithError) -> Self {
@@ -118,6 +121,8 @@ impl Fault {
             code: e.code,
             message: e.message,
             source: None,
+            help_file: None,
+            help_context: None,
         }
     }
     /// A bare untyped runtime-helper message (e.g. a pointer-registry failure) — VBA
@@ -131,6 +136,8 @@ impl Fault {
             code: e.code,
             message: e.message,
             source: None,
+            help_file: None,
+            help_context: None,
         }
     }
     /// A HAL fault (a `Declare Lib` native call, and — from M3-8 — a COM dispatch) carries
@@ -143,6 +150,8 @@ impl Fault {
             code: e.host_error_code.unwrap_or(5),
             message: e.message,
             source: None,
+            help_file: None,
+            help_context: None,
         }
     }
 }
@@ -279,6 +288,8 @@ struct ErrState {
     number: i32,
     description: String,
     source: String,
+    help_file: String,
+    help_context: i32,
     inherit_fields: bool,
 }
 
@@ -853,14 +864,16 @@ impl<'h> Vm3<'h> {
                 // MS-VBAL §9071 (oracle-confirmed): an omitted argument inherits the
                 // current `Err` field when the Err fields are inheritable. Actual errors
                 // make them inheritable; `Err.Clear` clears that state. Direct
-                // `Err.Number = ...` writes do not make Source/Description inheritable,
-                // but `Err.Description = ...` / `Err.Source = ...` do, even when
-                // `Err.Number` is 0. This is per-field. System faults never inherit —
-                // that path is `from_arith`/`route_fault`, which always builds fresh fields.
+                // `Err.Number = ...` writes do not make the text/help fields inheritable,
+                // but writing Description, Source, HelpFile, or HelpContext does, even
+                // when `Err.Number` is 0. System faults never inherit — that path is
+                // `from_arith`/`route_fault`, which always builds fresh fields.
                 OxTerminator::Raise {
                     number,
                     source,
                     description,
+                    help_file,
+                    help_context,
                     inherit,
                 } => {
                     let num_v = self.operand(number)?;
@@ -881,10 +894,31 @@ impl<'h> Vm3<'h> {
                                 None if inherit => Some(self.err.source.clone()),
                                 None => None, // -> project name in `raise`
                             };
+                            let help_file = match help_file {
+                                Some(op) => Some(self.operand_string(op)?),
+                                None if inherit => Some(self.err.help_file.clone()),
+                                None => None,
+                            };
+                            let help_context = match help_context {
+                                Some(op) => {
+                                    let v = self.operand(op)?;
+                                    let coerced = arith::coerce_numeric(
+                                        &v,
+                                        oxvba_bundle::NumericCoerceTarget::Long,
+                                    )
+                                    .map_err(Fault::from_arith)
+                                    .map_err(Vm3Error::Fault)?;
+                                    Some(coerced.as_i32().unwrap_or(0))
+                                }
+                                None if inherit => Some(self.err.help_context),
+                                None => None,
+                            };
                             self.route_fault(Fault {
                                 code,
                                 message,
                                 source,
+                                help_file,
+                                help_context,
                             })?;
                         }
                         // A non-numeric raise code is itself a coercion fault (e.g. 13).
@@ -988,6 +1022,17 @@ impl<'h> Vm3<'h> {
             .unwrap_or_else(|| self.cur_program().unit_name.clone());
         self.err.source = source.clone();
         fault.source = Some(source);
+        let help_file = fault
+            .help_file
+            .clone()
+            .unwrap_or_else(default_error_help_file);
+        self.err.help_file = help_file.clone();
+        fault.help_file = Some(help_file);
+        let help_context = fault
+            .help_context
+            .unwrap_or_else(|| default_error_help_context(fault.code));
+        self.err.help_context = help_context;
+        fault.help_context = Some(help_context);
         self.pending_fault = Some(fault);
     }
 
@@ -1008,6 +1053,8 @@ impl<'h> Vm3<'h> {
             code,
             message: default_error_message(code),
             source: None,
+            help_file: None,
+            help_context: None,
         })
     }
 
@@ -1187,6 +1234,8 @@ impl<'h> Vm3<'h> {
                     ErrField::Number => Variant::from_i32(self.err.number),
                     ErrField::Description => Variant::from_string(self.err.description.clone()),
                     ErrField::Source => Variant::from_string(self.err.source.clone()),
+                    ErrField::HelpFile => Variant::from_string(self.err.help_file.clone()),
+                    ErrField::HelpContext => Variant::from_i32(self.err.help_context),
                     ErrField::LastDllError => Variant::from_i32(self.last_dll_error),
                 };
                 self.store(dst, v)?;
@@ -1218,6 +1267,21 @@ impl<'h> Vm3<'h> {
                             .map_err(Fault::from_arith)
                             .map_err(Vm3Error::Fault)?;
                         self.err.source = arith::as_string(&coerced);
+                        self.err.inherit_fields = true;
+                    }
+                    ErrField::HelpFile => {
+                        let coerced = arith::coerce_string(&value)
+                            .map_err(Fault::from_arith)
+                            .map_err(Vm3Error::Fault)?;
+                        self.err.help_file = arith::as_string(&coerced);
+                        self.err.inherit_fields = true;
+                    }
+                    ErrField::HelpContext => {
+                        let coerced =
+                            arith::coerce_numeric(&value, oxvba_bundle::NumericCoerceTarget::Long)
+                                .map_err(Fault::from_arith)
+                                .map_err(Vm3Error::Fault)?;
+                        self.err.help_context = coerced.as_i32().unwrap_or(0);
                         self.err.inherit_fields = true;
                     }
                     ErrField::LastDllError => {
@@ -3598,6 +3662,8 @@ impl<'h> Vm3<'h> {
                 code: 28,
                 message: "Out of stack space".into(),
                 source: None,
+                help_file: None,
+                help_context: None,
             }));
         }
         Ok(())
@@ -3745,6 +3811,20 @@ impl<'h> Vm3<'h> {
 /// raised error has no explicit Description.
 fn default_error_message(code: i32) -> String {
     oxvba_runtime::default_error_message(code).to_string()
+}
+
+fn default_error_help_file() -> String {
+    "C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm"
+        .to_string()
+}
+
+fn default_error_help_context(code: i32) -> i32 {
+    let message = oxvba_runtime::default_error_message(code);
+    if message == "Application-defined or object-defined error" {
+        1_000_095
+    } else {
+        1_000_000 + code
+    }
 }
 
 fn cmp_op(op: CmpOp) -> arith::CmpOp {
@@ -5289,6 +5369,8 @@ mod tests {
                     number: CoreValue::Const(CoreConst::I32(5)),
                     source: None,
                     description: None,
+                    help_file: None,
+                    help_context: None,
                     inherit: true,
                 }),
                 CoreStmt::Exit(ExitKind::Proc),

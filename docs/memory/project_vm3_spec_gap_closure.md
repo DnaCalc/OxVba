@@ -1833,3 +1833,52 @@
   - `cargo test -p oxvba-bind --quiet`
   - `cargo test -p oxvba-vm3 --quiet`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+
+## 2026-07-01 - Err HelpFile And HelpContext (`bd-4ktq.44`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_err_help_oracle_20260701T2332Z/`.
+- Oracle findings:
+  - Initial `Err.HelpFile` is `""`, `Err.HelpContext` is `0`, and `Err.Clear`
+    resets both fields.
+  - `Err.HelpFile = ...` and `Err.HelpContext = ...` are writable and readable.
+  - `Error 9` populates the VBA help file path
+    `C:\Program Files\Common Files\Microsoft Shared\VBA\VBA7.1\1033\VbLR6.chm`
+    and help context `1000009`.
+  - `Err.Raise` accepts positional and named `HelpFile`/`HelpContext`.
+  - Omitted `Err.Raise` fields inherit from the current `Err` state when it is
+    inheritable (after a caught `Err.Raise` or direct Err property writes under
+    an active handler). `On Error GoTo ...` clears `Err`, so it is not an
+    inheritance-preserving setup step.
+  - For generic unmapped errors, the default help context observed from Excel is
+    `1000095`; an explicit `HelpFile` with omitted `HelpContext` still inherits
+    the context when the current `Err` state is inheritable.
+- Implemented `ErrField::HelpFile`/`HelpContext` across Core IR, binder, OxIR,
+  and vm3. `Fault` now carries optional help metadata; vm3 defaults missing
+  help fields at raise time and stores them in `ErrState`.
+- Added source-level vm3 regressions in
+  `crates/oxvba-bind/tests/bind_roundtrip.rs` for help reads/writes, `Clear`,
+  default `Error` help metadata, explicit/named `Err.Raise` help fields, and
+  omitted-field inheritance. Fresh-eyes review added an explicit `Err.Clear`
+  then omitted `Err.Raise` case to pin VBA defaulting after inheritance is
+  cleared.
+- Re-blessed `crates/oxvba-differential/vm3_golden.snap` because existing
+  full-surface Err conformance fixtures now bind and run instead of failing on
+  unsupported `Err.HelpFile`/`Err.HelpContext`.
+- Verification completed:
+  - `scripts/run-vm3-err-help-oracle.ps1 -RunId vm3_err_help_oracle_20260701T2332Z`
+  - `cargo check -p oxvba-bind`
+  - `cargo check -p oxvba-oxir`
+  - `cargo check -p oxvba-vm3`
+  - `cargo test -p oxvba-bind --test bind_roundtrip err_ --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-vm3 err_ --quiet`
+  - `OXVBA_BLESS_GOLDEN=1 cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-bind --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-bind/tests/bind_roundtrip.rs`
+  - `scripts/check-governance.ps1`
+  - `br dep cycles --json`
+  - `git diff --check`

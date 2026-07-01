@@ -344,6 +344,98 @@ fn err_raise_accepts_dynamic_error_number_expression() {
     assert_eq!(run_main_local0(src), Some(7.0));
 }
 
+fn default_vba_help_file() -> &'static str {
+    "C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm"
+}
+
+#[test]
+fn err_help_fields_read_write_and_clear() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               Err.HelpFile = \"help.chm\"\n\
+               Err.HelpContext = 42\n\
+               r = Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               Err.Clear\n\
+               r = r & \";\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext) & \"|\" & CStr(Err.Number)\n\
+               End Sub\n";
+    assert_eq!(
+        run_main_local0_string(src),
+        Some("help.chm|42;|0|0".to_string())
+    );
+}
+
+#[test]
+fn err_help_defaults_for_error_statement() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               On Error Resume Next\n\
+               Error 9\n\
+               r = Err.HelpFile & \"|\" & CStr(Err.HelpContext) & \"|\" & Err.Description\n\
+               End Sub\n";
+    assert_eq!(
+        run_main_local0_string(src),
+        Some(format!(
+            "{}|1000009|Subscript out of range",
+            default_vba_help_file()
+        ))
+    );
+}
+
+#[test]
+fn err_raise_help_fields_explicit_and_named() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               On Error Resume Next\n\
+               Err.Raise 77, \"src\", \"desc\", \"help.chm\", 42\n\
+               r = CStr(Err.Number) & \"|\" & Err.Description & \"|\" & Err.Source & \"|\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               Err.Clear\n\
+               Err.Raise Number:=78, HelpContext:=43, HelpFile:=\"named.hlp\", Description:=\"desc2\", Source:=\"src2\"\n\
+               r = r & \";\" & CStr(Err.Number) & \"|\" & Err.Description & \"|\" & Err.Source & \"|\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               End Sub\n";
+    assert_eq!(
+        run_main_local0_string(src),
+        Some("77|desc|src|help.chm|42;78|desc2|src2|named.hlp|43".to_string())
+    );
+}
+
+#[test]
+fn err_raise_omitted_help_fields_inherit_when_err_state_is_inheritable() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               On Error Resume Next\n\
+               Err.Raise 5, \"prevsrc\", \"prevdesc\", \"prev.hlp\", 9\n\
+               Err.Raise 79\n\
+               r = CStr(Err.Number) & \"|\" & Err.Description & \"|\" & Err.Source & \"|\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               Err.Clear\n\
+               Err.Description = \"prevdesc\"\n\
+               Err.Source = \"prevsrc\"\n\
+               Err.HelpFile = \"prev.hlp\"\n\
+               Err.HelpContext = 9\n\
+               Err.Raise 79\n\
+               r = r & \";\" & CStr(Err.Number) & \"|\" & Err.Description & \"|\" & Err.Source & \"|\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               Err.Clear\n\
+               Err.Raise 80\n\
+               r = r & \";\" & CStr(Err.Number) & \"|\" & Err.Description & \"|\" & Err.Source & \"|\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               Err.Clear\n\
+               Err.Raise 5, \"prevsrc\", \"prevdesc\", \"prev.hlp\", 9\n\
+               Err.Raise 81, , , \"explicit.hlp\"\n\
+               r = r & \";\" & CStr(Err.Number) & \"|\" & Err.Description & \"|\" & Err.Source & \"|\" & Err.HelpFile & \"|\" & CStr(Err.HelpContext)\n\
+               End Sub\n";
+    assert_eq!(
+        run_main_local0_string(src),
+        Some(
+            format!(
+                "79|prevdesc|prevsrc|prev.hlp|9;\
+             79|prevdesc|prevsrc|prev.hlp|9;\
+             80|Application-defined or object-defined error|Proj|{}|1000095;\
+             81|prevdesc|prevsrc|explicit.hlp|9",
+                default_vba_help_file()
+            )
+            .replace("\n             ", "")
+        )
+    );
+}
+
 #[test]
 fn module_qualified_global_variable_is_read_and_written_as_place() {
     let manifest = manifest_modules(&[

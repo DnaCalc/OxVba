@@ -409,6 +409,8 @@ pub enum ErrField {
     Number,
     Description,
     Source,
+    HelpFile,
+    HelpContext,
     /// `Err.LastDllError` — the Win32 last-error code captured after the most recent
     /// `Declare Lib` call (a `Long`).
     LastDllError,
@@ -634,16 +636,16 @@ pub enum ErrorOp {
     Resume,
     ResumeLabel(LabelId),
     ClearErr,
-    /// `Err.Raise Number[, Source][, Description]` and the legacy `Error Number`.
+    /// `Err.Raise Number[, Source][, Description][, HelpFile][, HelpContext]`
+    /// and the legacy `Error Number`.
     /// `number` is folded to a `Const(I32)` when statically known, so vm2's linearizer
     /// keeps its immediate `RaiseError` path; otherwise it is a runtime operand.
-    /// `source`/`description` are the optional explicit fields; a missing one falls back
-    /// to the project name (`Source`) or the standard message for the number
-    /// (`Description`) at raise time. (HelpFile/HelpContext are accepted by the binder
-    /// but not modelled — no `Err` read path surfaces them yet.)
+    /// `source`/`description`/`help_file`/`help_context` are the optional explicit
+    /// fields; a missing one falls back to the VBA default for the number at raise
+    /// time, or inherits the current `Err` state when `inherit` applies.
     ///
     /// `inherit` selects the omitted-argument semantics. `true` for `Err.Raise`: an
-    /// omitted Source/Description inherits the un-cleared `Err` field (MS-VBAL §9071).
+    /// omitted field inherits the un-cleared `Err` field (MS-VBAL §9071).
     /// `false` for the legacy `Error <n>` statement: omitted fields ALWAYS take their
     /// defaults (project name / derived message) — `Error <n>` does NOT inherit, an
     /// oracle-confirmed divergence from §2841's "as if Err.Raise(number)".
@@ -651,9 +653,12 @@ pub enum ErrorOp {
         number: CoreValue,
         source: Option<Box<CoreValue>>,
         description: Option<Box<CoreValue>>,
+        help_file: Option<Box<CoreValue>>,
+        help_context: Option<Box<CoreValue>>,
         inherit: bool,
     },
-    /// `Err.Number = ...`, `Err.Description = ...`, and `Err.Source = ...`.
+    /// `Err.Number = ...`, `Err.Description = ...`, `Err.Source = ...`,
+    /// `Err.HelpFile = ...`, and `Err.HelpContext = ...`.
     /// `Err.LastDllError` is intentionally read-only; the binder rejects it before
     /// this IR is produced.
     SetErrField {

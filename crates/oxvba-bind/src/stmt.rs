@@ -2059,8 +2059,7 @@ impl<'a> ProcLower<'a> {
 
     fn err_raise_arg(&mut self, arglist: Option<SyntaxNode<'_>>) -> Result<ErrorOp, BindError> {
         // `Err.Raise Number, [Source], [Description], [HelpFile], [HelpContext]` —
-        // resolve each argument positionally or by name. HelpFile/HelpContext are
-        // accepted but not modelled (no `Err` read path surfaces them yet).
+        // resolve each argument positionally or by name.
         const PARAMS: [&str; 5] = ["number", "source", "description", "helpfile", "helpcontext"];
         let arglist = arglist.ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
         let mut slots: [Option<SyntaxNode<'_>>; 5] = Default::default();
@@ -2103,10 +2102,18 @@ impl<'a> ProcLower<'a> {
         let description = slots[2]
             .map(|n| self.bind_expr(n).map(|b| Box::new(b.value)))
             .transpose()?;
+        let help_file = slots[3]
+            .map(|n| self.bind_expr(n).map(|b| Box::new(b.value)))
+            .transpose()?;
+        let help_context = slots[4]
+            .map(|n| self.bind_expr(n).map(|b| Box::new(b.value)))
+            .transpose()?;
         Ok(ErrorOp::Raise {
             number,
             source,
             description,
+            help_file,
+            help_context,
             inherit: true,
         })
     }
@@ -2125,6 +2132,8 @@ impl<'a> ProcLower<'a> {
             number,
             source: None,
             description: None,
+            help_file: None,
+            help_context: None,
             inherit: false,
         })])
     }

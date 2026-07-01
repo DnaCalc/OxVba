@@ -148,6 +148,8 @@ fn boom_lib_program() -> CoreProgram {
             number: CoreValue::Const(CoreConst::I32(5)),
             source: None,
             description: None,
+            help_file: None,
+            help_context: None,
             inherit: true,
         })],
     };

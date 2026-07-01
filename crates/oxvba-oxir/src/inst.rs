@@ -547,10 +547,10 @@ pub enum OxTerminator {
     ResumeNext,
     /// `Resume <label>`.
     ResumeLabel(BlockId),
-    /// `Err.Raise Number[, Source][, Description]` / `Error <n>`. `number` is the error
-    /// code operand (a `Const` when statically known); `source`/`description` are the
-    /// optional explicit fields — a missing one falls back to the project name /
-    /// the standard message for the number at raise time.
+    /// `Err.Raise Number[, Source][, Description][, HelpFile][, HelpContext]` /
+    /// `Error <n>`. `number` is the error code operand (a `Const` when statically
+    /// known); the optional explicit fields fall back to the VBA defaults for the
+    /// number at raise time, or inherit when `inherit` applies.
     ///
     /// `inherit` selects omitted-argument semantics: `true` (`Err.Raise`) inherits the
     /// un-cleared `Err` field per MS-VBAL §9071; `false` (the legacy `Error <n>`
@@ -560,6 +560,8 @@ pub enum OxTerminator {
         number: OxOperand,
         source: Option<OxOperand>,
         description: Option<OxOperand>,
+        help_file: Option<OxOperand>,
+        help_context: Option<OxOperand>,
         inherit: bool,
     },
     /// `GoSub <label>` — push a return point and branch.

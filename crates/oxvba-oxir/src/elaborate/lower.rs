@@ -854,10 +854,12 @@ impl<'a> Lowerer<'a> {
                 number,
                 source,
                 description,
+                help_file,
+                help_context,
                 inherit,
             } => {
-                // Evaluate Number, then Source, then Description (left-to-right), then
-                // raise through the statement fault pad.
+                // Evaluate Number, Source, Description, HelpFile, and HelpContext
+                // left-to-right, then raise through the statement fault pad.
                 let (num_op, _) = self.lower_value(number)?;
                 let src_op = match source {
                     Some(s) => Some(self.lower_value(s)?.0),
@@ -867,11 +869,21 @@ impl<'a> Lowerer<'a> {
                     Some(d) => Some(self.lower_value(d)?.0),
                     None => None,
                 };
+                let help_file_op = match help_file {
+                    Some(h) => Some(self.lower_value(h)?.0),
+                    None => None,
+                };
+                let help_context_op = match help_context {
+                    Some(h) => Some(self.lower_value(h)?.0),
+                    None => None,
+                };
                 self.finish_to(
                     OxTerminator::Raise {
                         number: num_op,
                         source: src_op,
                         description: desc_op,
+                        help_file: help_file_op,
+                        help_context: help_context_op,
                         inherit: *inherit,
                     },
                     s_next,
@@ -1247,6 +1259,8 @@ impl<'a> Lowerer<'a> {
                 number: OxOperand::Const(OxConst::I32(5)),
                 source: None,
                 description: None,
+                help_file: None,
+                help_context: None,
                 inherit: false,
             },
             first_selector_check,
@@ -1447,8 +1461,10 @@ impl<'a> Lowerer<'a> {
                     field: *field,
                 });
                 let ty = match field {
-                    ErrField::Number | ErrField::LastDllError => OxTy::Long,
-                    ErrField::Description | ErrField::Source => OxTy::Str,
+                    ErrField::Number | ErrField::HelpContext | ErrField::LastDllError => {
+                        OxTy::Long
+                    }
+                    ErrField::Description | ErrField::Source | ErrField::HelpFile => OxTy::Str,
                 };
                 Ok((OxOperand::temp(t), ty))
             }
@@ -2852,6 +2868,8 @@ mod tests {
                 number: coreir::CoreValue::Const(coreir::CoreConst::I32(5)),
                 source: None,
                 description: None,
+                help_file: None,
+                help_context: None,
                 inherit: true,
             }),
             CoreStmt::Label(coreir::LabelId(0)),
