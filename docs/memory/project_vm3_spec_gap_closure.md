@@ -757,3 +757,21 @@
   - `cargo test -p oxvba-lib val_`
   - `cargo test -p oxvba-lib`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `Mid` Start Position Error (`bd-4ktq.30`)
+
+- Closed `mid-start-less-than-1-clamped` for vm3.
+- Captured live Excel/VBA 7.1 `Mid` function and statement behavior in
+  `docs/evidence/conformance/vm3_mid_start_oracle_20260701T1425Z/` using VBE
+  Debug -> Compile VBAProject (`ID=578`) before running the probe and
+  PID-scoped UI Automation modal handling.
+- Updated `oxvba-lib` `mid` and `mid_stmt` to share a one-based start validator
+  that raises runtime error 5 when `start < 1`, instead of clamping zero to the
+  first character. Positive starts, overlarge function starts, and valid
+  statement replacement are preserved.
+- Added `crates/oxvba-differential/tests/mid_start_vm3.rs` plus an oxvba-lib
+  unit test for function and statement forms.
+- Verification target:
+  - `cargo test -p oxvba-differential --test mid_start_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

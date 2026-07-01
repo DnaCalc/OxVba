@@ -147,7 +147,7 @@ input-no-date-null-parse(S) · predeclared-singleton-no-resurrection(M) · dated
 datediff-datepart-ww-ignore-firstday(M) · negative-date-serial-floor(S) · date-range-not-validated(S) ·
 date-string-parser-inconsistent(M) · cstar-null-error-13-not-94(S) · pow-negative-base-fractional-nan(S) ·
 ~~redim-multidim-count-overflow~~ *(done w/ redim bead — checked_mul → Err 7)* · object-default-member-index-get(M) · object-default-member-index-set(M) ·
-left-right-mid-index-by-char(M) · mid-start-less-than-1-clamped(S) · error-function-unsupported(M) ·
+left-right-mid-index-by-char(M) · ~~mid-start-less-than-1-clamped(S)~~ *(DONE: bead `bd-4ktq.30`; `Mid(string, start, ...)` and statement-form `Mid(target, start, ...) = value` now raise runtime error 5 for `start < 1` instead of clamping zero to the first character; positive start, overlarge function start, and valid statement replacement controls remain unchanged. Evidence: `docs/evidence/conformance/vm3_mid_start_oracle_20260701T1425Z/`; coverage: `mid_start_vm3` plus oxvba-lib unit test.)* · error-function-unsupported(M) ·
 next-multivariable-unsupported(M) · line-number-labels-no-colon(M) · lset-rset-unrecognized(L) ·
 fixed-string-udt-field-layout(L) · foreach-project-class-no-newenum(L) · paramarray-elements-byval(L) ·
 sub-in-expression-accepted(S) · redim-undeclared-rejected(M) · class-terminate-not-synchronous(L,risky) ·

@@ -117,7 +117,7 @@ pub fn right(args: &[Variant]) -> LibResult<Variant> {
 
 pub fn mid(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
-    let start = as_usize(need(args, 1)?)?.max(1);
+    let start = one_based_mid_start(need(args, 1)?)?;
     let c = chars(&s);
     let from = (start - 1).min(c.len());
     let take = match opt(args, 2) {
@@ -131,7 +131,7 @@ pub fn mid(args: &[Variant]) -> LibResult<Variant> {
 /// it back into the target slot).
 pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
     let mut c = chars(&as_str(need(args, 0)?)?);
-    let start = as_usize(need(args, 1)?)?.max(1) - 1;
+    let start = one_based_mid_start(need(args, 1)?)? - 1;
     // args = [target, start, value] or [target, start, count, value]
     let (count, value) = if args.len() >= 4 {
         (Some(as_usize(need(args, 2)?)?), as_str(need(args, 3)?)?)
@@ -146,6 +146,16 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
         }
     }
     Ok(vstr(c.into_iter().collect::<String>()))
+}
+
+fn one_based_mid_start(value: &Variant) -> LibResult<usize> {
+    let start = as_i64(value)?;
+    if start < 1 {
+        return Err(LibError::invalid_call(
+            "Mid start must be greater than or equal to 1",
+        ));
+    }
+    usize::try_from(start).map_err(|_| LibError::overflow("Mid start overflow"))
 }
 
 /// `InStr([start], string1, string2, [compare])` and
@@ -2452,6 +2462,35 @@ mod tests {
         assert_eq!(val_("1 2"), 12.0);
         assert_eq!(val_("- .5"), -0.5);
         assert_eq!(val_("$1"), 0.0);
+    }
+
+    #[test]
+    fn mid_rejects_start_less_than_one() {
+        assert_eq!(
+            mid(&[vs("abcdef"), Variant::from_i32(0), Variant::from_i32(2)])
+                .unwrap_err()
+                .code,
+            5
+        );
+        assert_eq!(
+            mid_stmt(&[
+                vs("abcdef"),
+                Variant::from_i32(0),
+                Variant::from_i32(2),
+                vs("ZZ"),
+            ])
+            .unwrap_err()
+            .code,
+            5
+        );
+        assert_eq!(
+            mid(&[vs("abcdef"), Variant::from_i32(1), Variant::from_i32(2)])
+                .unwrap()
+                .as_bstr()
+                .unwrap()
+                .as_str(),
+            "ab"
+        );
     }
 
     #[test]
