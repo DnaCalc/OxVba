@@ -292,3 +292,20 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Call Argument Binding Batch (`bd-4ktq.10`)
+
+- Closed the vm3 call argument binding batch after all four child beads landed:
+  oracle truth surface, statement-call parentheses forcing ByVal, ByRef type
+  mismatch rejection, and procedure/property arity validation.
+- The active oracle-backed vm3 call-argument fixture now has 9 active tests and
+  0 ignored tests, covering legal ByRef/ByVal/optional/ParamArray baselines and
+  compile-time rejection for parenthesized statement ByVal, ByRef type mismatch,
+  extra arguments, and missing required arguments.
+- Tier-2 inventory rows now mark `statement-call-paren-not-byval`,
+  `byref-type-mismatch-accepted`, and `no-call-arity-validation` done.
+- Batch verification:
+  - `cargo test -p oxvba-syntax`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
