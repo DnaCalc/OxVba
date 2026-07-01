@@ -39,6 +39,10 @@ Binding rules:
 
 Parity target rule:
 - OxVBA work is aimed at parity with the VBA specifications and observed VBA behavior in Excel.
+- For language compatibility work, the target includes both VBA compile-time behavior
+  and VBA runtime behavior. Existing OxVBA behavior, legacy fallbacks, or internal
+  convenience paths are not compatibility targets unless explicitly recorded as a
+  temporary gap on the way to VBA parity.
 - Where the specifications and Excel behavior diverge, or where behavior is ambiguous, the discrepancy must be documented explicitly with evidence and a stated project decision.
 - Those discrepancies do not justify using completion language for an unfinished work area unless the workset scope explicitly includes documenting and resolving that discrepancy as its end condition.
 

@@ -157,6 +157,35 @@ pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_utf16_units(&units))
 }
 
+pub fn lset_stmt(args: &[Variant]) -> LibResult<Variant> {
+    align_stmt(args, false)
+}
+
+pub fn rset_stmt(args: &[Variant]) -> LibResult<Variant> {
+    align_stmt(args, true)
+}
+
+/// `LSet s = value` / `RSet s = value` for string targets. The first argument is the
+/// target's current value; its UTF-16 length is the alignment width for variable
+/// strings, while fixed-length strings naturally carry their declared width.
+fn align_stmt(args: &[Variant], right_align: bool) -> LibResult<Variant> {
+    let width = string_units(need(args, 0)?)?.len();
+    let mut value = string_units(need(args, 1)?)?;
+    if value.len() > width {
+        value.truncate(width);
+    }
+    let pad = width.saturating_sub(value.len());
+    let mut out = Vec::with_capacity(width);
+    if right_align {
+        out.extend(std::iter::repeat(0x20).take(pad));
+        out.extend(value);
+    } else {
+        out.extend(value);
+        out.extend(std::iter::repeat(0x20).take(pad));
+    }
+    Ok(Variant::from_utf16_units(&out))
+}
+
 fn one_based_mid_start(value: &Variant) -> LibResult<usize> {
     let start = as_i64(value)?;
     if start < 1 {

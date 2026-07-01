@@ -1,0 +1,430 @@
+﻿[
+    {
+        "id":  "LSET-FIXED-SHORT",
+        "purpose":  "LSet left-aligns a short value in a fixed-length string.",
+        "ownedExcelPid":  44336,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|ab   |",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-FIXED-SHORT",
+        "purpose":  "RSet right-aligns a short value in a fixed-length string.",
+        "ownedExcelPid":  32688,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|   ab|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-FIXED-LONG",
+        "purpose":  "LSet truncates a long value assigned to a fixed-length string.",
+        "ownedExcelPid":  42572,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|abcde|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-FIXED-LONG",
+        "purpose":  "RSet truncates a long value assigned to a fixed-length string.",
+        "ownedExcelPid":  31916,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|abcde|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-VARIABLE-PRESEEDED",
+        "purpose":  "LSet behavior for a variable-length string with an existing value.",
+        "ownedExcelPid":  45816,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|ab   |",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-VARIABLE-PRESEEDED",
+        "purpose":  "RSet behavior for a variable-length string with an existing value.",
+        "ownedExcelPid":  7580,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|   ab|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-VARIABLE-EMPTY",
+        "purpose":  "LSet behavior for an empty variable-length string target.",
+        "ownedExcelPid":  40240,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:||",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-VARIABLE-EMPTY",
+        "purpose":  "RSet behavior for an empty variable-length string target.",
+        "ownedExcelPid":  44788,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:||",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-VARIABLE-LONG",
+        "purpose":  "LSet truncation uses the current variable-length string width.",
+        "ownedExcelPid":  36172,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:|abc|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-VARIABLE-LONG",
+        "purpose":  "RSet truncation uses the current variable-length string width.",
+        "ownedExcelPid":  24480,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:|abc|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-FIXED-NUMERIC",
+        "purpose":  "RSet coerces a numeric expression before fixed-length alignment.",
+        "ownedExcelPid":  9680,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|   42|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-FIXED-NULL",
+        "purpose":  "LSet Null assignment error behavior for fixed-length strings.",
+        "ownedExcelPid":  53504,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "err:94:Invalid use of Null",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-FIXED-NULL",
+        "purpose":  "RSet Null assignment error behavior for fixed-length strings.",
+        "ownedExcelPid":  50148,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "err:94:Invalid use of Null",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-LONG-TARGET",
+        "purpose":  "LSet compile/runtime behavior when the target is numeric.",
+        "ownedExcelPid":  3640,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nLSet allowed only on strings and user-defined types / Gauge",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Close",
+                              "List Properties/Methods",
+                              "List Constants",
+                              "Quick Info",
+                              "Parameter Info",
+                              "Complete Word",
+                              "Indent",
+                              "Outdent",
+                              "Toggle Breakpoint",
+                              "Comment Block",
+                              "Uncomment Block",
+                              "Toggle Bookmark",
+                              "Next Bookmark",
+                              "Previous Bookmark",
+                              "Clear All Bookmarks",
+                              "Microsoft Excel",
+                              "Save Book2",
+                              "Cut",
+                              "Copy",
+                              "Paste",
+                              "Find...",
+                              "Undo Insert Text",
+                              "Can\u0027t Redo",
+                              "Run Sub/UserForm",
+                              "Break",
+                              "Reset",
+                              "Design Mode",
+                              "Project Explorer",
+                              "Properties Window",
+                              "Object Browser",
+                              "Toolbox",
+                              "Microsoft Visual Basic for Applications Help",
+                              "Drop Down Button",
+                              "Drop Down Button",
+                              "Minimize",
+                              "Restore",
+                              "Close",
+                              "Code",
+                              "Object",
+                              "Toggle Folders",
+                              "Drop Down Button",
+                              "...",
+                              "Minimize",
+                              "Maximize",
+                              "Close"
+                          ],
+        "selectedText":  "LSet n =",
+        "selectedLine":  "LSet n = \"12\"",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  "Main.RunProbe",
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "RSET-LONG-TARGET",
+        "purpose":  "RSet compile/runtime behavior when the target is numeric.",
+        "ownedExcelPid":  32980,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nRSet allowed only on strings / Gauge",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Close",
+                              "List Properties/Methods",
+                              "List Constants",
+                              "Quick Info",
+                              "Parameter Info",
+                              "Complete Word",
+                              "Indent",
+                              "Outdent",
+                              "Toggle Breakpoint",
+                              "Comment Block",
+                              "Uncomment Block",
+                              "Toggle Bookmark",
+                              "Next Bookmark",
+                              "Previous Bookmark",
+                              "Clear All Bookmarks",
+                              "Microsoft Excel",
+                              "Save Book2",
+                              "Cut",
+                              "Copy",
+                              "Paste",
+                              "Find...",
+                              "Undo Insert Text",
+                              "Can\u0027t Redo",
+                              "Run Sub/UserForm",
+                              "Break",
+                              "Reset",
+                              "Design Mode",
+                              "Project Explorer",
+                              "Properties Window",
+                              "Object Browser",
+                              "Toolbox",
+                              "Microsoft Visual Basic for Applications Help",
+                              "Drop Down Button",
+                              "Drop Down Button",
+                              "Minimize",
+                              "Restore",
+                              "Close",
+                              "Code",
+                              "Object",
+                              "Toggle Folders",
+                              "Drop Down Button",
+                              "...",
+                              "Minimize",
+                              "Maximize",
+                              "Close"
+                          ],
+        "selectedText":  "RSet n =",
+        "selectedLine":  "RSet n = \"12\"",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  "Main.RunProbe",
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "LSET-UDT-COPY",
+        "purpose":  "Classify whether LSet over UDT records is accepted by real VBA.",
+        "ownedExcelPid":  16128,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "|xy|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]

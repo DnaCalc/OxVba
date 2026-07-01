@@ -230,7 +230,7 @@ mod tests {
     /// The migrated-id gate: `library_member()` is `Some` for exactly the by-NAME
     /// migrated set and `None` for everything else. Migrated =
     /// - the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial`
-    ///   modules, minus the name-less `MidStmt`/`Like`;
+    ///   modules, minus the name-less `MidStmt`/`LSetStmt`/`RSetStmt`/`Like`;
     /// - the `Information` by-name functions (but NOT the `IIf`/`Choose`/`Switch`
     ///   special forms);
     /// - the `Interaction` by-name functions (`Partition` plus the host functions,
@@ -325,7 +325,7 @@ mod tests {
         for &id in NativeImplId::ALL {
             let migrated = match id.module() {
                 M::Strings | M::Math | M::DateTime | M::Conversion | M::Random | M::Financial => {
-                    !matches!(id, MidStmt | Like)
+                    !matches!(id, MidStmt | LSetStmt | RSetStmt | Like)
                 }
                 M::Information => information_by_name(id),
                 M::Interaction => interaction_by_name(id),

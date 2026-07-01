@@ -712,11 +712,13 @@ impl<'a> SyntaxNode<'a> {
         specs
     }
 
-    /// `AssignStmt`/`SetStmt`/`LetStmt` target l-value (first expression child).
+    /// `AssignStmt`/`SetStmt`/`LetStmt`/`LSetStmt`/`RSetStmt` target l-value
+    /// (first expression child).
     pub fn assign_target(&self) -> Option<SyntaxNode<'a>> {
         self.expr_children().into_iter().next()
     }
-    /// `AssignStmt`/`SetStmt`/`LetStmt` assigned value (second expression child).
+    /// `AssignStmt`/`SetStmt`/`LetStmt`/`LSetStmt`/`RSetStmt` assigned value
+    /// (second expression child).
     pub fn assign_value(&self) -> Option<SyntaxNode<'a>> {
         self.expr_children().into_iter().nth(1)
     }

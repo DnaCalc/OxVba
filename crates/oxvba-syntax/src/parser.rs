@@ -1803,6 +1803,8 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwReDim => self.parse_redim_stmt(),
             SyntaxKind::KwSet => self.parse_set_stmt(),
             SyntaxKind::KwLet => self.parse_let_stmt(),
+            SyntaxKind::KwLSet => self.parse_lset_rset_stmt(SyntaxKind::LSetStmt),
+            SyntaxKind::KwRSet => self.parse_lset_rset_stmt(SyntaxKind::RSetStmt),
             SyntaxKind::KwCall => self.parse_call_stmt(),
             SyntaxKind::KwOn if self.peek_next_non_trivia_is(SyntaxKind::KwError) => {
                 self.parse_on_error_stmt()
@@ -2312,6 +2314,24 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::LetStmt);
         self.eat_trivia();
         self.bump(); // Let
+        self.eat_whitespace();
+        if self.is_expr_start() {
+            self.parse_lvalue_expr(); // target
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Eq) {
+            self.bump(); // =
+            self.eat_whitespace();
+            self.parse_required_expr("expected expression after `=`");
+        }
+        self.eat_to_statement_end();
+        self.finish_node();
+    }
+
+    fn parse_lset_rset_stmt(&mut self, node: SyntaxKind) {
+        self.start_node(node);
+        self.eat_trivia();
+        self.bump(); // LSet/RSet
         self.eat_whitespace();
         if self.is_expr_start() {
             self.parse_lvalue_expr(); // target
@@ -3415,6 +3435,14 @@ mod tests {
             has_node_kind(&p.syntax(), SyntaxKind::ErrorNode),
             "expected zero-width ErrorNode for missing Set RHS"
         );
+    }
+
+    #[test]
+    fn lset_rset_statements_are_structured_assignments() {
+        let p = parse_ok(&in_sub("LSet s = \"ab\": RSet t = \"cd\""));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LSetStmt).len(), 1);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::RSetStmt).len(), 1);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::AssignStmt).len(), 0);
     }
 
     #[test]

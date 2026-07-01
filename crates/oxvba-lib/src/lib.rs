@@ -207,7 +207,7 @@ pub(crate) fn vunit() -> Variant {
 /// The value-returning string functions that propagate `Null` → `Null` (a `Null` argument
 /// yields a `Null` result). Excludes `Format` (returns "" for `Null`), the array-returning
 /// `Split`/`Join`/`Filter`, the conversion functions (which have their own `Null` rules), and
-/// the `Mid` statement form.
+/// the `Mid`/`LSet`/`RSet` statement forms.
 fn string_fn_propagates_null(id: NativeImplId) -> bool {
     use NativeImplId::*;
     matches!(
@@ -260,6 +260,8 @@ pub fn invoke(
         Right => pure::right(args),
         Mid => pure::mid(args),
         MidStmt => pure::mid_stmt(args),
+        LSetStmt => pure::lset_stmt(args),
+        RSetStmt => pure::rset_stmt(args),
         InStr => pure::instr(args, false),
         InStrRev => pure::instr(args, true),
         LCase => pure::lcase(args),

@@ -35,6 +35,8 @@ impl<'a> ProcLower<'a> {
         match node.kind() {
             AssignStmt | LetStmt => self.bind_assign(node, AssignmentIntent::Let),
             SetStmt => self.bind_assign(node, AssignmentIntent::Set),
+            LSetStmt => self.bind_lset_rset(node, NativeImplId::LSetStmt),
+            RSetStmt => self.bind_lset_rset(node, NativeImplId::RSetStmt),
             CallStmt => self.bind_call_stmt(node),
             IfStmt => self.bind_if(node),
             ForStmt => self.bind_for(node),
@@ -139,6 +141,51 @@ impl<'a> ProcLower<'a> {
             place,
             value,
             intent,
+            target_kind: types::assignment_target_kind(&target_ty),
+            target_name: target_node.text().trim().to_string(),
+            target_type_name: types::type_name(&target_ty),
+        }])
+    }
+
+    fn bind_lset_rset(
+        &mut self,
+        node: SyntaxNode<'_>,
+        native: NativeImplId,
+    ) -> Result<Vec<CoreStmt>, BindError> {
+        let target_node = node
+            .assign_target()
+            .ok_or_else(|| BindError::Malformed("LSet/RSet target".into()))?;
+        let value_node = node
+            .assign_value()
+            .ok_or_else(|| BindError::Malformed("LSet/RSet value".into()))?;
+        let (place, target_ty) = self.bind_place(target_node)?;
+        match (&target_ty, native) {
+            (VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_), _) => {}
+            (VarTypeRef::Udt(_), NativeImplId::LSetStmt) => {
+                return Err(BindError::Unsupported(
+                    "LSet user-defined type record copy".into(),
+                ));
+            }
+            (_, NativeImplId::LSetStmt) => return Err(BindError::LSetTargetType),
+            (_, NativeImplId::RSetStmt) => return Err(BindError::RSetTargetType),
+            _ => return Err(BindError::Malformed("unknown LSet/RSet lowering".into())),
+        }
+
+        let value_text = value_node.text();
+        let value_label = value_text.trim();
+        let mut val = self.bind_expr(value_node)?;
+        val = self.bind_default_member_value_context(val, value_label)?;
+        let aligned = CoreValue::Call {
+            callee: CoreCallee::Native(native),
+            args: vec![
+                CoreArg::ByVal(CoreValue::Load(place.clone())),
+                CoreArg::ByVal(val.value),
+            ],
+        };
+        Ok(vec![CoreStmt::Assign {
+            place,
+            value: types::coerce_store(aligned, &target_ty),
+            intent: AssignmentIntent::Let,
             target_kind: types::assignment_target_kind(&target_ty),
             target_name: target_node.text().trim().to_string(),
             target_type_name: types::type_name(&target_ty),

@@ -39,6 +39,12 @@ pub enum BindError {
     /// A scalar expression or field was indexed where VBA requires an array.
     #[error("Expected array")]
     ExpectedArray { name: String },
+    /// `LSet` was used on a target whose declared type is neither String nor UDT.
+    #[error("LSet allowed only on strings and user-defined types")]
+    LSetTargetType,
+    /// `RSet` was used on a target whose declared type is not String.
+    #[error("RSet allowed only on strings")]
+    RSetTargetType,
     /// A line label is defined more than once within a single procedure — a VBA
     /// compile error ("Duplicate declaration in current scope"). Label scope is
     /// per-procedure, so the same name in a different procedure is fine.
@@ -122,6 +128,18 @@ impl BindError {
                 "Expected array",
             )
             .with_help(format!("`{name}` is not an array.")),
+            BindError::LSetTargetType => Diagnostic::error(
+                "BIND-E-LSET-TARGET-TYPE",
+                DiagnosticPhase::Bind,
+                "LSet allowed only on strings and user-defined types",
+            )
+            .with_help("Use LSet with a String target, or implement the UDT record-copy path."),
+            BindError::RSetTargetType => Diagnostic::error(
+                "BIND-E-RSET-TARGET-TYPE",
+                DiagnosticPhase::Bind,
+                "RSet allowed only on strings",
+            )
+            .with_help("Use RSet with a String target."),
             BindError::DuplicateLabel { name } => Diagnostic::error(
                 "BIND-E-DUPLICATE-LABEL",
                 DiagnosticPhase::Bind,

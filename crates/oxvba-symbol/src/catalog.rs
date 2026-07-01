@@ -88,6 +88,8 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         Right => e(Right, &["Right", "Right$"], sig(2, 2), Ordinary),
         Mid => e(Mid, &["Mid", "Mid$"], sig(2, 3), Ordinary),
         MidStmt => e(MidStmt, &[], sig(2, 3), AssignmentTarget),
+        LSetStmt => e(LSetStmt, &[], sig(2, 2), AssignmentTarget),
+        RSetStmt => e(RSetStmt, &[], sig(2, 2), AssignmentTarget),
         InStr => e(InStr, &["InStr"], sig(2, 4), Ordinary),
         InStrRev => e(InStrRev, &["InStrRev"], sig(2, 4), Ordinary),
         LCase => e(LCase, &["LCase", "LCase$"], sig(1, 1), Ordinary),

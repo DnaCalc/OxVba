@@ -71,6 +71,12 @@ fn bind_error(source: &str) -> String {
     )
 }
 
+fn bind_error_display(source: &str) -> String {
+    bind_program(&manifest(source), &NullTypeLibs)
+        .expect_err("bind should fail")
+        .to_string()
+}
+
 /// Bind + elaborate + run on vm3; read `Main`'s first local as a number.
 fn run_main_local0(source: &str) -> Option<f64> {
     let program = bind(source);
@@ -126,6 +132,33 @@ fn fixed_length_string_truncates_on_assignment() {
     assert_eq!(
         run_main_local0_string("Sub Main()\n    Dim s As String * 2\n    s = \"abcd\"\nEnd Sub\n"),
         Some("ab".to_string())
+    );
+}
+
+#[test]
+fn lset_rset_reject_non_string_targets_with_vba_messages() {
+    let lset = bind_error_display("Sub Main()\n    Dim n As Long\n    LSet n = \"12\"\nEnd Sub\n");
+    assert!(
+        lset.contains("LSet allowed only on strings and user-defined types"),
+        "expected VBA LSet target diagnostic, got {lset}"
+    );
+    let rset = bind_error_display("Sub Main()\n    Dim n As Long\n    RSet n = \"12\"\nEnd Sub\n");
+    assert!(
+        rset.contains("RSet allowed only on strings"),
+        "expected VBA RSet target diagnostic, got {rset}"
+    );
+}
+
+#[test]
+fn lset_udt_record_copy_is_classified_separately() {
+    let err = bind_error(
+        "Private Type A\n    X As String * 2\nEnd Type\n\
+         Private Type B\n    X As String * 2\nEnd Type\n\
+         Sub Main()\n    Dim a As A\n    Dim b As B\n    LSet a = b\nEnd Sub\n",
+    );
+    assert!(
+        err.contains("LSet user-defined type record copy"),
+        "expected explicit UDT split diagnostic, got {err}"
     );
 }
 

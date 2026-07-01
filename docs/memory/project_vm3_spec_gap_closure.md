@@ -1679,3 +1679,34 @@
   removes the legacy record-bag fallback, matches VBA's `Expected array` compile
   behavior for scalar field indexing, does not change fixed-array erase semantics,
   and updates the handover/inventory away from stale "UDT remains" wording.
+
+## 2026-07-01 - LSet/RSet String Alignment (`bd-4ktq.40`)
+
+- Captured live Excel/VBA 7.1 behavior with PID-scoped VBE/UI Automation modal
+  handling in
+  `docs/evidence/conformance/vm3_lset_rset_oracle_20260701T215755Z/`.
+  Important results:
+  - `LSet` fixed/variable strings left-align and right-pad to the target width.
+  - `RSet` fixed/variable strings right-align and left-pad to the target width.
+  - Variable-length string width is the target's current length: an empty target
+    stays empty, and a pre-sized `"....."` target remains length 5.
+  - Overlong RHS text truncates to the leftmost target-width UTF-16 units for
+    both `LSet` and `RSet`.
+  - `Null` RHS raises runtime error 94, and non-string targets produce the real
+    compile messages: `LSet allowed only on strings and user-defined types` /
+    `RSet allowed only on strings`.
+  - Excel accepts UDT `LSet a = b` record copy; that broader record-layout path
+    is split to `bd-4ktq.57` rather than being claimed by the string bead.
+- Implemented explicit `KwLSet`/`KwRSet` parsing into `LSetStmt`/`RSetStmt`.
+  Binder lowers string targets to name-less native statement bodies
+  `NativeImplId::LSetStmt` / `RSetStmt`, passing the target's current value plus
+  the RHS so vm3 computes dynamic-width alignment. UDT `LSet` is now an explicit
+  unsupported split, not a silent fallback.
+- Added vm3 coverage in `crates/oxvba-differential/tests/lset_rset_vm3.rs` and
+  binder syntax/diagnostic coverage in `oxvba-syntax` / `oxvba-bind`.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-lset-rset-oracle.ps1`
+  - `cargo test -p oxvba-syntax lset_rset_statements_are_structured_assignments --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip lset --quiet`
+  - `cargo test -p oxvba-bundle library_member_covers_exactly_the_migrated_ids --quiet`
+  - `cargo test -p oxvba-differential --test lset_rset_vm3 --quiet`

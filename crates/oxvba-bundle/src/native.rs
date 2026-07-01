@@ -52,6 +52,8 @@ native_impl_ids! {
     Right,
     Mid,
     MidStmt, // `Mid(s, i, n) = ...` statement form
+    LSetStmt, // `LSet s = ...` statement form
+    RSetStmt, // `RSet s = ...` statement form
     InStr,
     InStrRev,
     LCase,
@@ -256,10 +258,10 @@ impl NativeImplId {
         use LibraryModule as M;
         use NativeImplId::*;
         match self {
-            Len | LenB | Left | Right | Mid | MidStmt | InStr | InStrRev | LCase | UCase
-            | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc | ChrW
-            | AscW | Space | StringRepeat | StrReverse | StrConv | Format | FormatNumber
-            | FormatCurrency | FormatPercent | FormatDateTime | Filter => M::Strings,
+            Len | LenB | Left | Right | Mid | MidStmt | LSetStmt | RSetStmt | InStr | InStrRev
+            | LCase | UCase | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like
+            | Chr | Asc | ChrW | AscW | Space | StringRepeat | StrReverse | StrConv | Format
+            | FormatNumber | FormatCurrency | FormatPercent | FormatDateTime | Filter => M::Strings,
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
             | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DatePart
@@ -319,8 +321,8 @@ impl NativeImplId {
     ///
     /// `Some` exactly for the **migrated** ids:
     /// - the whole `Strings`, `Math`, `DateTime`, `Conversion`, `Random`,
-    ///   `Financial` modules — minus their name-less members (`MidStmt`, the
-    ///   `Mid(…) = …` statement form, and `Like`, the operator, which are not
+    ///   `Financial` modules — minus their name-less members (`MidStmt`, `LSetStmt`,
+    ///   `RSetStmt`, the statement forms, and `Like`, the operator, which are not
     ///   ordinary by-name library functions);
     /// - the `Information` by-name functions (`IsArray`/`VarType`/`TypeName`/
     ///   `IsNumeric`/`IsError`/`IsDate`/`IsObject`/`IsNull`/`IsEmpty`/`IsMissing`/
@@ -398,9 +400,9 @@ impl NativeImplId {
             FormatPercent => "FormatPercent",
             FormatDateTime => "FormatDateTime",
             Filter => "Filter",
-            // `MidStmt` (assignment form) and `Like` (operator) are name-less — not
-            // bundle members, even though their module is `Strings`.
-            MidStmt | Like => return None,
+            // Statement forms (`MidStmt`/`LSetStmt`/`RSetStmt`) and `Like` (operator)
+            // are name-less — not bundle members, even though their module is `Strings`.
+            MidStmt | LSetStmt | RSetStmt | Like => return None,
             // ── Math ──
             Abs => "Abs",
             Int => "Int",
@@ -534,8 +536,9 @@ impl NativeImplId {
             FileSetAttr => "SetAttr",
             FileCopy => "FileCopy",
             // Everything else is NOT a by-name `library_member`: the name-less
-            // `MidStmt`/`Like`; the `Information` special forms `IIf`/`Choose`/`Switch`;
-            // the `Interaction` `CreateObject` + `Com*` machinery; the name-LESS
+            // `MidStmt`/`LSetStmt`/`RSetStmt`/`Like`; the `Information` special forms
+            // `IIf`/`Choose`/`Switch`; the `Interaction` `CreateObject` + `Com*`
+            // machinery; the name-LESS
             // `FileIo` STATEMENT forms (now `library_statement_member` — parser-bound,
             // emitted as `ExternProc` from `stmt.rs`) and the name-less `FileRead`;
             // `Diagnostics` (`DebugPrint`); and the `Collection` members. The special
