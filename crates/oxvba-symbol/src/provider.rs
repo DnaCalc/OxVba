@@ -47,6 +47,12 @@ pub trait Provider {
         let _ = name;
         None
     }
+    /// True when this provider owns more than one equally viable bare-name
+    /// candidate and lookup must stop with a VBA-style ambiguous-name diagnostic.
+    fn has_ambiguous_unqualified_name(&self, name: &str) -> bool {
+        let _ = name;
+        false
+    }
     /// Resolve `recv.name` against this provider (member access).
     fn resolve_member(
         &self,
@@ -191,9 +197,23 @@ impl ResolutionEnvironment {
                 return Some(self.binding_for_symbol(symbol));
             }
         }
+        for provider in &self.providers {
+            if provider.has_ambiguous_unqualified_name(name) {
+                return None;
+            }
+            if let Some(binding) = provider.resolve(name) {
+                return Some(binding);
+            }
+        }
+        None
+    }
+
+    /// True when an ordered provider would reject `name` as ambiguous after the
+    /// source scope chain fails to resolve it.
+    pub fn has_ambiguous_unqualified_name(&self, name: &str) -> bool {
         self.providers
             .iter()
-            .find_map(|provider| provider.resolve(name))
+            .any(|provider| provider.has_ambiguous_unqualified_name(name))
     }
 
     /// The activation ProgID for a creatable COM coclass name (for `New <coclass>`).

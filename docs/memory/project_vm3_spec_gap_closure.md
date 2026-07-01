@@ -78,3 +78,25 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Duplicate Public Ambiguity (`bd-4ktq.9.3`)
+
+- Closed `ambiguous-name-not-detected` for unqualified same-project public
+  lookup.
+- `ProjectProvider` now tracks the owning module symbol for each public
+  candidate. If a bare active-project name has public candidates from multiple
+  modules, ordered provider lookup stops before lower-priority providers such as
+  the VBA library can win.
+- The binder maps unresolved bare-expression/call-target contexts with such a
+  provider ambiguity to `BindError::AmbiguousName`, whose stable diagnostic code
+  is `BIND-E-AMBIGUOUS-NAME` and whose text matches the live-oracle shape
+  `ambiguous name detected: <name>`.
+- Qualified `Module.Member` lookup remains valid for each public module owner.
+- Flipped on the oracle-backed vm3 fixture for duplicate public `Dup()` across
+  `Alpha` and `Beta`, and added a resolver regression where duplicate active
+  public `Len` declarations block fallback to the VBA library `Len`.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

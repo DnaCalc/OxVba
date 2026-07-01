@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use oxvba_bundle::ProjectMemberKind;
 
 use crate::binding::{Binding, DispatchRoute};
-use crate::model::{fold_identifier, SymbolId, SymbolKind, Visibility};
+use crate::model::{SymbolId, SymbolKind, Visibility, fold_identifier};
 use crate::provider::Provider;
 use crate::scanner::ModuleScan;
 use crate::signature::VarTypeRef;
@@ -16,6 +16,7 @@ use crate::signature::VarTypeRef;
 #[derive(Debug, Clone, Copy)]
 struct MemberEntry {
     symbol: SymbolId,
+    owner: SymbolId,
     kind: SymbolKind,
     visibility: Visibility,
 }
@@ -45,6 +46,7 @@ impl ProjectProvider {
             for member in &scan.members {
                 let entry = MemberEntry {
                     symbol: member.symbol,
+                    owner: scan.module_symbol,
                     kind: member.kind,
                     visibility: member.visibility,
                 };
@@ -119,7 +121,16 @@ impl ProjectProvider {
 impl Provider for ProjectProvider {
     fn resolve(&self, name: &str) -> Option<Binding> {
         let candidates = self.public.get(&fold_identifier(name))?;
+        if has_competing_owners(candidates) {
+            return None;
+        }
         candidates.first().map(|entry| binding_for(*entry))
+    }
+
+    fn has_ambiguous_unqualified_name(&self, name: &str) -> bool {
+        self.public
+            .get(&fold_identifier(name))
+            .is_some_and(|candidates| has_competing_owners(candidates))
     }
 
     fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
@@ -152,6 +163,16 @@ impl Provider for ProjectProvider {
 
 fn is_project_public_member(entry: MemberEntry) -> bool {
     entry.visibility == Visibility::Public && is_public_member_kind(entry.kind)
+}
+
+fn has_competing_owners(candidates: &[MemberEntry]) -> bool {
+    let Some(first) = candidates.first() else {
+        return false;
+    };
+    candidates
+        .iter()
+        .skip(1)
+        .any(|candidate| candidate.owner != first.owner)
 }
 
 fn is_public_member_kind(kind: SymbolKind) -> bool {

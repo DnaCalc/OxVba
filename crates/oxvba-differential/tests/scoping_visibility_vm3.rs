@@ -6,7 +6,7 @@
 //! oracle-backed gaps that the follow-on scoping beads are expected to unignore
 //! and satisfy as each resolver diagnostic is implemented.
 
-use oxvba_differential::{canon, run_modules, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run_modules};
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
 
@@ -33,6 +33,22 @@ fn assert_compile_rejected(outcome: RunOutcome) {
     assert!(
         outcome.unsupported.is_some() || outcome.result.is_err() || outcome.raised,
         "expected compile/bind rejection or failure, got {outcome:?}"
+    );
+}
+
+fn assert_ambiguous_compile_rejected(outcome: RunOutcome, name: &str) {
+    assert!(
+        outcome.unsupported.is_none(),
+        "expected ambiguity diagnostic, got unsupported: {:?}",
+        outcome.unsupported
+    );
+    let err = outcome
+        .result
+        .expect_err("expected duplicate-public case to fail binding");
+    let err_lower = err.to_ascii_lowercase();
+    assert!(
+        err_lower.contains("ambiguous") && err_lower.contains(&name.to_ascii_lowercase()),
+        "expected ambiguity diagnostic for {name}, got {err:?}"
     );
 }
 
@@ -158,25 +174,27 @@ fn private_cross_module_qualified_should_be_rejected() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.3: duplicate Public unqualified lookup still picks a candidate today"]
 fn duplicate_public_unqualified_should_be_ambiguous() {
-    assert_compile_rejected(run_scoping_case(&[
-        (
-            "Main",
-            Procedural,
-            "Public result As Variant\nSub Main()\n    result = Dup()\nEnd Sub\n",
-        ),
-        (
-            "Alpha",
-            Procedural,
-            "Public Function Dup() As Long\n    Dup = 1\nEnd Function\n",
-        ),
-        (
-            "Beta",
-            Procedural,
-            "Public Function Dup() As Long\n    Dup = 2\nEnd Function\n",
-        ),
-    ]));
+    assert_ambiguous_compile_rejected(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\nSub Main()\n    result = Dup()\nEnd Sub\n",
+            ),
+            (
+                "Alpha",
+                Procedural,
+                "Public Function Dup() As Long\n    Dup = 1\nEnd Function\n",
+            ),
+            (
+                "Beta",
+                Procedural,
+                "Public Function Dup() As Long\n    Dup = 2\nEnd Function\n",
+            ),
+        ]),
+        "Dup",
+    );
 }
 
 #[test]

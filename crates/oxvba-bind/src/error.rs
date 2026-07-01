@@ -15,6 +15,9 @@ pub enum BindError {
     /// A name could not be resolved in the given context.
     #[error("unresolved name `{name}` ({context})")]
     Unresolved { name: String, context: String },
+    /// A bare name resolved to multiple equally viable project-level candidates.
+    #[error("ambiguous name detected: {name}")]
+    AmbiguousName { name: String },
     /// An assignment target/intent is invalid (e.g. `Set` on a scalar).
     #[error("invalid assignment: {0}")]
     InvalidAssignment(String),
@@ -49,6 +52,14 @@ impl BindError {
                 format!("unresolved name `{name}` ({context})"),
             )
             .with_help("Check the declaration spelling, module visibility, and project references."),
+            BindError::AmbiguousName { name } => Diagnostic::error(
+                "BIND-E-AMBIGUOUS-NAME",
+                DiagnosticPhase::Bind,
+                format!("ambiguous name detected: {name}"),
+            )
+            .with_help(
+                "Qualify the member with its module name, or rename one of the public declarations.",
+            ),
             BindError::InvalidAssignment(message) => Diagnostic::error(
                 "BIND-E-INVALID-ASSIGNMENT",
                 DiagnosticPhase::Bind,
@@ -88,5 +99,15 @@ mod tests {
         }
         .to_diagnostic();
         assert_eq!(diagnostic.code.as_str(), "BIND-E-UNRESOLVED-NAME");
+    }
+
+    #[test]
+    fn ambiguous_name_has_stable_code() {
+        let diagnostic = BindError::AmbiguousName {
+            name: "Dup".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-AMBIGUOUS-NAME");
+        assert!(diagnostic.message.contains("ambiguous name detected: Dup"));
     }
 }

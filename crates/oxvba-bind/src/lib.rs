@@ -720,9 +720,21 @@ impl<'a> ProcLower<'a> {
     }
 
     fn unresolved(&self, name: &str, context: &str) -> BindError {
+        if is_unqualified_name_context(context) && self.g.env.has_ambiguous_unqualified_name(name) {
+            return BindError::AmbiguousName {
+                name: name.to_string(),
+            };
+        }
         BindError::Unresolved {
             name: name.to_string(),
             context: context.to_string(),
         }
     }
+}
+
+fn is_unqualified_name_context(context: &str) -> bool {
+    matches!(
+        context,
+        "expression" | "call statement" | "assignment target" | "place" | "AddressOf operand"
+    )
 }

@@ -763,6 +763,31 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
 }
 
 #[test]
+fn duplicate_public_unqualified_members_are_ambiguous_before_library_fallback() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module("Main", "Sub Run()\r\nEnd Sub\r\n"),
+            module("Alpha", "Public Function Len() As Long\r\nEnd Function\r\n"),
+            module("Beta", "Public Function Len() As Long\r\nEnd Function\r\n"),
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let from_global = ResolutionContext::at(env.symbols.global_scope());
+
+    assert!(env.has_ambiguous_unqualified_name("Len"));
+    assert!(env.resolve(&from_global, "Len").is_none());
+    assert!(matches!(
+        env.resolve_qualified(&["Alpha", "Len"]),
+        Some(b) if matches!(b.route, DispatchRoute::ProjectMember { .. })
+    ));
+    assert!(matches!(
+        env.resolve_qualified(&["Beta", "Len"]),
+        Some(b) if matches!(b.route, DispatchRoute::ProjectMember { .. })
+    ));
+}
+
+#[test]
 fn unrelated_class_property_does_not_shadow_vba_left_intrinsic() {
     let control = ModuleUnit {
         module_name: "ControlLike".into(),
