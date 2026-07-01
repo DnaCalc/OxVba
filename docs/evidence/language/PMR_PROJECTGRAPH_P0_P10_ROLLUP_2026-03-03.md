@@ -20,7 +20,7 @@ Implemented a deterministic ProjectGraph compile path in current executable subs
 | `P5` | `Option Private Module` module-kind legality + host-direct invocation export behavior | `compile_project_rejects_option_private_for_non_procedural_module`; `formal_pmr_project_manifest_option_private_module_preserves_host_export_entry` |
 | `P6` | Class-related PMR diagnostics remain explicit, stable, and non-silent | `project_model_*_requires_class_graph.bas`; PMR diagnostics in resolver |
 | `P7` | Host export registry for public procedural members | `compile_project_exports_public_procedures_including_option_private_modules_for_host_calls`; host `register_host_export` tests |
-| `P8` | Reference-order shadowing modeled in ProjectGraph resolution subset | `active_project_resolution_uses_reference_precedence_order_for_shadowing` |
+| `P8` | Reference-order shadowing modeled in ProjectGraph resolution subset | Historical CCT-037 oracle capture in `pmr_project_model_20260303T070427Z`; refreshed by `scoping_visibility_vm3::referenced_project_precedence_and_project_qualifier_are_explicit` in `bd-4ktq.38.2` |
 | `P9` | Conformance/evidence synchronization and PMR coverage status updates | updated PMR clause catalog + requirements CSV + coverage index |
 | `P10` | Oracle templates + deferred gate foldback notes for `CCT-037..CCT-041` | `docs/evidence/conformance/PMR_PROJECT_MODEL_ORACLE_TEMPLATES_V1.md`; updated `ODG-035..ODG-039` notes |
 

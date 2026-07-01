@@ -51,9 +51,13 @@ oracle work (`ODG-043`).
   handler-prefix/source-visibility subset. `bd-4ktq.38.5` should decide the
   exact CSV wording and keep full event lifecycle residuals under `DIV-0004`.
 - Candidate for evidence-anchor refresh while remaining partial:
-  `MODPROJ-005`, `MODPROJ-016`, `MODPROJ-017`, `MODPROJ-018`, `MODPROJ-019`,
-  and `MODPROJ-039` now have stronger vm3 scoping anchors than their older
-  notes show, but their row scopes are broader than the closed vm3 subset.
+  `MODPROJ-017`, `MODPROJ-018`, `MODPROJ-019`, and `MODPROJ-039` now have
+  stronger vm3 scoping anchors than their older notes show, but their row
+  scopes are broader than the closed vm3 subset.
+- Reconciled in `bd-4ktq.38.2`: `MODPROJ-005` and `MODPROJ-016` now point to
+  the scoped vm3 referenced-project and qualifier fixtures while staying
+  `partial` for external type-library, broken-reference, library/type-space,
+  and broader reference-boundary edges.
 - No status downgrade indicated: `MODPROJ-021`, `MODPROJ-022`, `PMR-VIS-004`,
   `PMR-CLS-001`, `PMR-CLS-002`, `CCT-037`, `CCT-038`, `ODG-035`,
   `ODG-036`, and `ODG-039` remain consistent when interpreted with the scoped

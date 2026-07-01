@@ -18,7 +18,7 @@ Scope: Workset `P9` fixture requirements
 | `WithEvents` source visibility and handler-prefix binding | `scoping_visibility_vm3::active_project_withevents_source_routes_to_handler`; `scoping_visibility_vm3::referenced_project_withevents_source_routes_to_active_project_handler`; `scoping_visibility_vm3::withevents_handler_prefix_mismatch_does_not_route`; `scoping_visibility_vm3::withevents_in_procedural_module_should_be_rejected`; `scoping_visibility_vm3::private_referenced_project_withevents_declaration_should_be_rejected`; `scoping_visibility_vm3::private_referenced_project_withevents_source_should_be_rejected`; oracle row `SCOPING-WITHEVENTS-ACTIVE` in `vm3_scoping_followup_oracle_20260701T1655Z` | vm3 differential + Excel oracle |
 | Host direct invocation with `Option Private Module` | `engine::tests::formal_pmr_project_manifest_option_private_module_preserves_host_export_entry` | host execution |
 | Visibility/module-kind legality (`Option Private Module`) | `project::tests::compile_project_rejects_option_private_for_non_procedural_module` | compiler unit |
-| Reference-order shadowing | `project::tests::active_project_resolution_uses_reference_precedence_order_for_shadowing` | host project-graph unit |
+| Reference-order shadowing | `scoping_visibility_vm3::referenced_project_precedence_and_project_qualifier_are_explicit`; historical CCT-037 oracle capture in `pmr_project_model_20260303T070427Z` | vm3 differential + Excel oracle |
 | Host export enumeration eligibility | `project::tests::compile_project_exports_public_procedures_including_option_private_modules_for_host_calls`; `project::tests::host_export_registry_exposes_public_procedural_entries` | compiler + host unit |
 
 ## Notes
