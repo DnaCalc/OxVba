@@ -1303,19 +1303,58 @@ pub fn str_fn(args: &[Variant]) -> LibResult<Variant> {
 /// FIDELITY: parses a leading numeric prefix.
 pub fn val(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
-    let trimmed = s.trim_start();
-    if let Some((value, _rest)) = parse_vba_prefixed_integer_token(trimmed, true) {
+    let compact: String = s
+        .bytes()
+        .filter(|byte| !is_val_ignored_space(*byte))
+        .map(char::from)
+        .collect();
+    let text = compact.as_str();
+    if let Some((value, _rest)) = parse_vba_prefixed_integer_token(text, true) {
         return Ok(vf64(value as f64));
     }
-    let mut end = 0;
-    for (i, c) in trimmed.char_indices() {
-        if c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E') {
-            end = i + c.len_utf8();
-        } else {
-            break;
+    Ok(vf64(val_decimal_prefix(text).unwrap_or(0.0)))
+}
+
+fn val_decimal_prefix(text: &str) -> Option<f64> {
+    let bytes = text.as_bytes();
+    let mut pos = 0usize;
+    if matches!(bytes.get(pos), Some(b'+' | b'-')) {
+        pos += 1;
+    }
+
+    let mut saw_digit = false;
+    while matches!(bytes.get(pos), Some(b'0'..=b'9')) {
+        saw_digit = true;
+        pos += 1;
+    }
+    if matches!(bytes.get(pos), Some(b'.')) {
+        pos += 1;
+        while matches!(bytes.get(pos), Some(b'0'..=b'9')) {
+            saw_digit = true;
+            pos += 1;
         }
     }
-    Ok(vf64(trimmed[..end].parse::<f64>().unwrap_or(0.0)))
+    if !saw_digit {
+        return None;
+    }
+
+    let mantissa_end = pos;
+    if matches!(bytes.get(pos), Some(b'e' | b'E' | b'd' | b'D')) {
+        pos += 1;
+        if matches!(bytes.get(pos), Some(b'+' | b'-')) {
+            pos += 1;
+        }
+        let exp_digits_start = pos;
+        while matches!(bytes.get(pos), Some(b'0'..=b'9')) {
+            pos += 1;
+        }
+        if exp_digits_start == pos {
+            pos = mantissa_end;
+        }
+    }
+
+    let token = text[..pos].replace(['d', 'D'], "E");
+    token.parse::<f64>().ok()
 }
 pub fn cdate(args: &[Variant]) -> LibResult<Variant> {
     let v = need(args, 0)?;
@@ -2398,6 +2437,21 @@ mod tests {
         assert_eq!(val_("-&O10"), -8.0);
         assert_eq!(val_("&H F F"), 255.0);
         assert_eq!(val_("&H10 trailing"), 16.0);
+    }
+
+    #[test]
+    fn val_parses_longest_complete_decimal_prefix() {
+        assert_eq!(val_("123abc"), 123.0);
+        assert_eq!(val_("12-3"), 12.0);
+        assert_eq!(val_("1.2.3"), 1.2);
+        assert_eq!(val_("1e2"), 100.0);
+        assert_eq!(val_("1e"), 1.0);
+        assert_eq!(val_("1e+"), 1.0);
+        assert_eq!(val_("1e-2"), 0.01);
+        assert_eq!(val_("1D2"), 100.0);
+        assert_eq!(val_("1 2"), 12.0);
+        assert_eq!(val_("- .5"), -0.5);
+        assert_eq!(val_("$1"), 0.0);
     }
 
     #[test]

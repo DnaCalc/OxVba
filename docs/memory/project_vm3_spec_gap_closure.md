@@ -736,3 +736,24 @@
   - `cargo test -p oxvba-differential --test default_error_messages_vm3`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `Val` Complete Prefix Parsing (`bd-4ktq.29`)
+
+- Closed `val-incomplete-parse` for vm3.
+- Captured live Excel/VBA 7.1 `Val` behavior in
+  `docs/evidence/conformance/vm3_val_oracle_20260701T1420Z/` using VBE
+  Debug -> Compile VBAProject (`ID=578`) before running the probe and
+  PID-scoped UI Automation modal handling.
+- Updated `oxvba-lib` `Val` to strip ASCII spaces/tabs/newlines before parsing,
+  preserve the already-fixed `&H`/`&O` radix-prefix path, and parse the longest
+  complete decimal token rather than letting an incomplete later continuation
+  make the whole prefix parse as zero.
+- Covered `12-3`, `1.2.3`, incomplete `1e`/`1e+`, complete `E`/`D` exponents,
+  `.5`/`-.5`, punctuation stops, whitespace stripping, and radix controls in
+  `crates/oxvba-differential/tests/val_incomplete_parse_vm3.rs` plus an
+  oxvba-lib unit test.
+- Verification target:
+  - `cargo test -p oxvba-differential --test val_incomplete_parse_vm3`
+  - `cargo test -p oxvba-lib val_`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
