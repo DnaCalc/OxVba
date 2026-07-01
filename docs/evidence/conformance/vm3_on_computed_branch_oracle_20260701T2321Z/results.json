@@ -1,0 +1,249 @@
+[
+  {
+    "id": "GOTO-IN-RANGE-1",
+    "purpose": "On 1 GoTo selects the first target.",
+    "ownedExcelPid": 28836,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "L1:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-ZERO",
+    "purpose": "On 0 GoTo behavior.",
+    "ownedExcelPid": 26500,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "fallthrough:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-NEGATIVE",
+    "purpose": "On negative GoTo behavior.",
+    "ownedExcelPid": 54228,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "err:5",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-OUT-OF-RANGE",
+    "purpose": "On selector beyond target count GoTo behavior.",
+    "ownedExcelPid": 39236,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "fallthrough:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-FRACTION-1-5",
+    "purpose": "On fractional selector 1.5 GoTo behavior.",
+    "ownedExcelPid": 36376,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "L2:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-FRACTION-2-5",
+    "purpose": "On fractional selector 2.5 GoTo behavior.",
+    "ownedExcelPid": 31404,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "L2:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-STRING-NONNUMERIC",
+    "purpose": "On nonnumeric string selector GoTo behavior.",
+    "ownedExcelPid": 48452,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "err:13",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOTO-NULL",
+    "purpose": "On Null selector GoTo behavior.",
+    "ownedExcelPid": 41244,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "err:94",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOSUB-IN-RANGE-2",
+    "purpose": "On 2 GoSub calls the second target and returns.",
+    "ownedExcelPid": 7092,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "before:S2:after:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOSUB-ZERO",
+    "purpose": "On 0 GoSub behavior.",
+    "ownedExcelPid": 53024,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "before:after:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOSUB-NEGATIVE",
+    "purpose": "On negative GoSub behavior.",
+    "ownedExcelPid": 36564,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "err:5:before",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOSUB-OUT-OF-RANGE",
+    "purpose": "On selector beyond target count GoSub behavior.",
+    "ownedExcelPid": 39664,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "before:after:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "GOSUB-FRACTION-1-5",
+    "purpose": "On fractional selector 1.5 GoSub behavior.",
+    "ownedExcelPid": 26300,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "before:S2:after:0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  }
+]
