@@ -1,7 +1,7 @@
 # HANDOVER → OxVba: vm3 dynamic-array element access is O(N) (array loops are O(N²))
 
-Status: `FIXED for the OxForms shape (slot + class-instance-field arrays)` (OxVba master,
-2026-06-30) · From: OxForms · To: OxVba · Date: 2026-06-29
+Status: `FIXED for slot, class-instance-field, and UDT fixed-array field arrays` (OxVba master,
+2026-07-01) · From: OxForms · To: OxVba · Date: 2026-06-29
 
 > **Update 2026-06-30 (round 2 — class-instance-field arrays now O(1)):** round 1 fixed
 > module/local/temp-SLOT arrays; round 2 fixes arrays held as **class-instance fields**
@@ -10,8 +10,13 @@ Status: `FIXED for the OxForms shape (slot + class-instance-field arrays)` (OxVb
 > SAFEARRAY descriptor in place instead of cloning the whole field array per access. Verified
 > by the diagnostic (both rows flat) and a correctness+perf guard
 > (`crates/oxvba-differential/tests/field_array_access_vm3.rs`). **OxForms can re-run the
-> bench — the class-field hit-test loop should now be O(N).** One narrower case remains: see
-> "Remaining" below.
+> bench — the class-field hit-test loop should now be O(N).**
+>
+> **Update 2026-07-01 (round 3 — UDT fixed-array fields now O(1)):** the remaining
+> `rec.arr(i)` shape now uses fused `RecordArrayGet`/`RecordArraySet` instructions and
+> borrowed `VbaRecord` fixed-array element helpers, so `RecordGet` no longer materializes
+> the whole inline field array per element. The diagnostic now reports flat rows for
+> module, class-field, and UDT-field arrays.
 OxVba baseline exercised: master `2b817614` (vm3-only; pinned by OxForms via git rev).
 Policy: per OxForms memory `oxvba-vm3-handover-policy`, perf pathologies vm3 exhibits under the
 OxForms workload are handed to OxVba to **fix**, not worked around in OxForms — OxForms is the
@@ -174,7 +179,7 @@ field store) and reads/writes the single SAFEARRAY element via the descriptor-bo
 materialising the whole field array. A non-array field (e.g. an object whose default member is
 indexed, `Me.coll(i)`) falls back to materialise-then-index, which is cheap for an object ref.
 
-Diagnostic after the fix (`array_perf_diagnose.rs`):
+Diagnostic after the round-2 fix (`array_perf_diagnose.rs`):
 
 | N | module-level (slot) | class-instance-field (`.cls`) |
 |---|---|---|
@@ -185,11 +190,25 @@ Diagnostic after the fix (`array_perf_diagnose.rs`):
 Both rows are now flat in N — **O(1)** element access, **O(N)** loops. (Before: class-field was
 270 → 486 → 961 µs/elem.)
 
-## Remaining — UDT-record-field arrays (`rec.arr(i)` where `rec` is a `Type` variable)
+## Round 3 — UDT fixed-array fields now O(1)
 
-Not yet fused, so still O(N) per access by the same mechanism (`RecordGet` clones the whole field
-array). This is NOT the OxForms shape (OxForms uses class fields) and is rarer. It is a deeper
-change than the object-field case: a `VbaRecord` packs its fields into a flat `Vec<u64>` buffer
-(not a `Variant` map), so an in-place element read/write must reach the raw SAFEARRAY through the
-record's field offset. Tracked in the inventory (`vm3-dynamic-array-access-on`) as the residual
-follow-up; the `array_perf_diagnose` harness can be extended with a UDT row to drive it.
+The remaining `rec.arr(i)` shape was still using `RecordGet` + `ArrayGet`, so `RecordGet`
+materialized the whole inline fixed-array field as a temporary SAFEARRAY for every element read.
+Writes had the symmetric materialize/set/write-field path.
+
+Fix: the elaborator now emits `RecordArrayGet` / `RecordArraySet` for indexed UDT record-field
+access. vm3 borrows the record payload in place and reads or writes the single inline fixed-array
+element through `VbaRecord::read_array_field_element` /
+`VbaRecord::write_array_field_element`. Non-array/legacy record bags fall back to the prior
+materialize-and-index path.
+
+Diagnostic after the round-3 fix (`array_perf_diagnose.rs`):
+
+| N | module-level (slot) | class-instance-field (`.cls`) | UDT fixed-array field |
+|---|---|---|---|
+| 250 | 12.0 µs/elem | 12.3 µs/elem | 10.4 µs/elem |
+| 500 | 10.7 µs/elem | 11.0 µs/elem | 9.3 µs/elem |
+| 1000 | 9.5 µs/elem | 10.6 µs/elem | 8.9 µs/elem |
+
+All three rows are now flat in N — **O(1)** element access and **O(N)** loops. Guards:
+`array_access_perf_vm3.rs`, `field_array_access_vm3.rs`, and `record_array_access_vm3.rs`.

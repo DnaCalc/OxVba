@@ -1,9 +1,9 @@
 //! DIAGNOSTIC (ignored): measure per-element array-access scaling to locate the
 //! residual O(N) the OxForms min-of-trials still shows after the first bd-us4v fix.
-//! Compares a module-level dynamic array (the case the `array_get_fast`/`array_set_fast`
-//! fast paths cover) against a CLASS-INSTANCE-FIELD array (the OxForms shape). If the
-//! field case scales O(N) per element while the module case is flat, the residual is
-//! field-held-array access bypassing the slot fast path.
+//! Compares a module-level dynamic array (the `array_get_fast`/`array_set_fast`
+//! shape), a CLASS-INSTANCE-FIELD array (the OxForms shape), and a UDT fixed-array
+//! field (`rec.arr(i)`). A rising per-element curve means that shape is cloning or
+//! materializing the whole array per element.
 //!
 //! Run: cargo test -p oxvba-differential --test array_perf_diagnose -- --ignored --nocapture
 
@@ -59,6 +59,26 @@ fn class_field_cls(n: usize) -> String {
     )
 }
 
+fn udt_field_src(n: usize) -> String {
+    let upper = n - 1;
+    format!(
+        "Type T\n\
+         \u{20}   arr(0 To {upper}) As Long\n\
+         End Type\n\
+         Public total As Long\n\
+         Sub Main()\n\
+         \u{20}   Dim rec As T\n\
+         \u{20}   Dim i As Long\n\
+         \u{20}   For i = 0 To {upper}\n\
+         \u{20}       rec.arr(i) = i\n\
+         \u{20}   Next i\n\
+         \u{20}   For i = 0 To {upper}\n\
+         \u{20}       total = total + rec.arr(i)\n\
+         \u{20}   Next i\n\
+         End Sub\n"
+    )
+}
+
 fn time_ms(f: impl Fn()) -> f64 {
     let mut best = f64::INFINITY;
     for _ in 0..3 {
@@ -88,16 +108,32 @@ fn array_access_scaling_module_vs_class_field() {
         ];
         let cls_ms = time_ms(|| {
             let o = run_modules(Executor::Vm3, &modules, "Bench");
-            assert!(o.unsupported.is_none(), "class run unsupported: {:?}", o.unsupported);
+            assert!(
+                o.unsupported.is_none(),
+                "class run unsupported: {:?}",
+                o.unsupported
+            );
             assert!(o.result.is_ok(), "class run failed: {:?}", o.result);
+        });
+
+        let udt_src = udt_field_src(n);
+        let udt_ms = time_ms(|| {
+            let o = run(Executor::Vm3, &udt_src);
+            assert!(
+                o.unsupported.is_none(),
+                "UDT run unsupported: {:?}",
+                o.unsupported
+            );
+            assert!(o.result.is_ok(), "UDT run failed: {:?}", o.result);
         });
 
         // 2N element-ops per run (fill + read). per-element microseconds.
         let per = |ms: f64| ms * 1000.0 / (2.0 * n as f64);
         println!(
-            "N={n:>5}  module={mod_ms:>9.3}ms ({:>7.3}us/elem)   class-field={cls_ms:>9.3}ms ({:>7.3}us/elem)",
+            "N={n:>5}  module={mod_ms:>9.3}ms ({:>7.3}us/elem)   class-field={cls_ms:>9.3}ms ({:>7.3}us/elem)   udt-field={udt_ms:>9.3}ms ({:>7.3}us/elem)",
             per(mod_ms),
             per(cls_ms),
+            per(udt_ms),
         );
     }
 }

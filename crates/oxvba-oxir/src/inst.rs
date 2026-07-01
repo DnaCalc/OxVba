@@ -285,6 +285,22 @@ pub enum OxInst {
         index: usize,
         value: OxOperand,
     },
+    /// Fused read of an element from a UDT record's array field — `rec.field(i...)`.
+    /// This avoids materializing the whole fixed-array field as a temporary SAFEARRAY
+    /// for every element access.
+    RecordArrayGet {
+        dst: OxPlace,
+        record: OxOperand,
+        index: usize,
+        indices: Vec<OxOperand>,
+    },
+    /// Fused write of an element in a UDT record's array field — `rec.field(i...) = value`.
+    RecordArraySet {
+        record: OxPlace,
+        index: usize,
+        indices: Vec<OxOperand>,
+        value: OxOperand,
+    },
 
     // ── Arrays ───────────────────────────────────────────────────────────────
     ArrayLiteral {

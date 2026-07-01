@@ -1648,3 +1648,30 @@
 - Fresh-eyes review checked for unsupported completion language, stale
   `bd-us4v` blocked wording, prose-only residual rows, and missing delivery
   paths. The stale performance-row block text was corrected before closure.
+
+## 2026-07-01 - Dynamic Array Access Performance Closure (`bd-us4v`)
+
+- Closed the remaining vm3 array-loop performance residual after the Tier 4/5
+  correctness split unblocked `bd-us4v`.
+- Added fused `RecordArrayGet` / `RecordArraySet` lowering and vm3 execution for
+  `rec.arr(i)` where `arr` is a UDT fixed-array field, so reads/writes borrow the
+  `VbaRecord` payload and touch only one inline element instead of materializing
+  the whole fixed-array field through `RecordGet`.
+- Added borrowed `VbaRecord`/`Variant` helpers for record array-field bounds and
+  element read/write. Legacy SAFEARRAY-backed record bags and non-array fields keep
+  the prior fallback path.
+- Evidence:
+  - `cargo test -p oxvba-oxir record_array_fields_elaborate_to_fused_ops --quiet`
+  - `cargo check -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --test record_array_access_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test array_access_perf_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test field_array_access_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test fixed_array_erase_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test array_perf_diagnose -- --ignored --nocapture`
+- Final diagnostic rows were flat for module, class-field, and UDT-field arrays:
+  module ~12.0 -> 9.5 us/elem, class ~12.3 -> 10.6 us/elem, UDT ~10.4 ->
+  8.9 us/elem across N=250,500,1000.
+- Fresh-eyes review checked that the change is scoped to element-level access,
+  preserves materialize-and-index fallback for legacy/non-array fields, does not
+  change fixed-array erase semantics, and updates the handover/inventory away
+  from stale "UDT remains" wording.

@@ -1557,6 +1557,20 @@ impl<'h> Vm3<'h> {
                 };
                 self.store(dst, value)?;
             }
+            OxInst::RecordArrayGet {
+                dst,
+                record,
+                index,
+                indices,
+            } => {
+                if let Some(value) = self.record_array_get_fast(record, *index, indices)? {
+                    self.store(dst, value)?;
+                } else {
+                    let source = self.operand(record)?;
+                    let field = self.record_field_value(source, *index)?;
+                    self.index_value_into(field, indices, dst)?;
+                }
+            }
             OxInst::RecordSet {
                 record,
                 index,
@@ -1579,6 +1593,22 @@ impl<'h> Vm3<'h> {
                         .write_record_field_variant(*index, &v)
                         .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 }
+                self.store(record, target)?;
+            }
+            OxInst::RecordArraySet {
+                record,
+                index,
+                indices,
+                value,
+            } => {
+                let v = self.operand(value)?;
+                if self.record_array_set_fast(record, *index, indices, &v)? {
+                    return Ok(());
+                }
+                let mut target = self.read(record)?;
+                let field = self.record_field_value(target.clone(), *index)?;
+                let updated = self.set_index_in_value(field, indices, &v)?;
+                self.write_record_field_value(&mut target, *index, &updated)?;
                 self.store(record, target)?;
             }
 
@@ -2201,6 +2231,109 @@ impl<'h> Vm3<'h> {
         arr.set_safearray_element(flat, value)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
         Ok(true)
+    }
+
+    fn record_array_get_fast(
+        &self,
+        record: &OxOperand,
+        index: usize,
+        indices: &[OxOperand],
+    ) -> Result<Option<Variant>, Vm3Error> {
+        let OxOperand::Use(place) = record else {
+            return Ok(None);
+        };
+        let loc = self.resolve(place);
+        let Some(record) = self.read_loc_ref(loc)? else {
+            return Ok(None);
+        };
+        if record.vtype() != VarType::Record {
+            return Ok(None);
+        }
+        let Some((bounds, len)) = record
+            .record_array_field_bounds_len(index)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+        else {
+            return Ok(None);
+        };
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= len {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let value = record
+            .record_array_field_element(index, flat)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+            .expect("record_array_field_bounds_len proved this is an array field");
+        Ok(Some(value))
+    }
+
+    fn record_array_set_fast(
+        &mut self,
+        record: &OxPlace,
+        index: usize,
+        indices: &[OxOperand],
+        value: &Variant,
+    ) -> Result<bool, Vm3Error> {
+        let loc = self.resolve(record);
+        let (bounds, len) = match self.read_loc_ref(loc)? {
+            Some(record) => {
+                if record.vtype() != VarType::Record {
+                    return Ok(false);
+                }
+                match record
+                    .record_array_field_bounds_len(index)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+                {
+                    Some(bl) => bl,
+                    None => return Ok(false),
+                }
+            }
+            None => return Ok(false),
+        };
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= len {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        let record = self
+            .read_loc_mut(loc)?
+            .expect("location borrowed immutably just above is still present");
+        let wrote = record
+            .set_record_array_field_element(index, flat, value)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        Ok(wrote.is_some())
+    }
+
+    fn record_field_value(&self, source: Variant, index: usize) -> Result<Variant, Vm3Error> {
+        if let Some(rec) = source.as_safearray() {
+            if index >= rec.len() {
+                return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
+            }
+            rec.variant_element(index)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+        } else {
+            source
+                .read_record_field_variant(index)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+        }
+    }
+
+    fn write_record_field_value(
+        &self,
+        target: &mut Variant,
+        index: usize,
+        value: &Variant,
+    ) -> Result<(), Vm3Error> {
+        if let Some(rec) = target.as_safearray() {
+            if index >= rec.len() {
+                return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
+            }
+            target
+                .set_safearray_element(index, value)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+        } else {
+            target
+                .write_record_field_variant(index, value)
+                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
+        }
     }
 
     /// The array (SAFEARRAY) value of an operand, else type mismatch (13).
@@ -3833,7 +3966,10 @@ fn inst_kind(inst: &OxInst) -> &'static str {
         OxInst::Predeclared { .. } | OxInst::PredeclaredExtern { .. } => "Predeclared",
         OxInst::NewRecord { .. } => "NewRecord",
         OxInst::FieldGet { .. } | OxInst::FieldSet { .. } => "object field access",
-        OxInst::RecordGet { .. } | OxInst::RecordSet { .. } => "record field access",
+        OxInst::RecordGet { .. }
+        | OxInst::RecordSet { .. }
+        | OxInst::RecordArrayGet { .. }
+        | OxInst::RecordArraySet { .. } => "record field access",
         OxInst::ArrayLiteral { .. }
         | OxInst::ArrayAppend { .. }
         | OxInst::ArrayRedim { .. }

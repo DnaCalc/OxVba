@@ -283,6 +283,110 @@ impl VbaRecord {
         unsafe { write_field_variant_at(self.field_mut_ptr(&field), &field.kind, value) }
     }
 
+    pub fn array_field_bounds_len(
+        &self,
+        index: usize,
+    ) -> Result<Option<(Vec<SafeArrayBound>, usize)>, String> {
+        let field = self
+            .layout
+            .fields()
+            .get(index)
+            .ok_or_else(|| format!("record field {index} out of range"))?;
+        match &field.kind {
+            VbaRecordFieldKind::Variant => {
+                // SAFETY: this field is a live Variant slot in this record layout.
+                let value = unsafe { &*self.field_ptr(field).cast::<Variant>() };
+                Ok(value.safearray_bounds_len())
+            }
+            VbaRecordFieldKind::FixedArray { len, .. } => Ok(Some((
+                vec![SafeArrayBound {
+                    lower: 0,
+                    count: u32::try_from(*len).map_err(
+                        |_| "fixed-array record field length exceeds SAFEARRAY capacity",
+                    )?,
+                }],
+                *len,
+            ))),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn read_array_field_element(
+        &self,
+        index: usize,
+        flat: usize,
+    ) -> Result<Option<Variant>, String> {
+        let field = self
+            .layout
+            .fields()
+            .get(index)
+            .ok_or_else(|| format!("record field {index} out of range"))?;
+        match &field.kind {
+            VbaRecordFieldKind::Variant => {
+                // SAFETY: this field is a live Variant slot in this record layout.
+                let value = unsafe { &*self.field_ptr(field).cast::<Variant>() };
+                Ok(value.safearray_element(flat).transpose()?)
+            }
+            VbaRecordFieldKind::FixedArray { element, len } => {
+                if flat >= *len {
+                    return Err("fixed-array record field index out of range".to_string());
+                }
+                let (element_size, element_align) = element.storage_shape()?;
+                let stride = align_to(element_size, element_align);
+                // SAFETY: `flat < len`; `stride` is the element storage size and
+                // `field_ptr(field)` is the fixed-array field base.
+                Ok(Some(unsafe {
+                    read_field_variant_at(self.field_ptr(field).add(flat * stride), element)?
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub fn write_array_field_element(
+        &mut self,
+        index: usize,
+        flat: usize,
+        value: &Variant,
+    ) -> Result<Option<()>, String> {
+        let field = self
+            .layout
+            .fields()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("record field {index} out of range"))?;
+        match &field.kind {
+            VbaRecordFieldKind::Variant => {
+                // SAFETY: this field is a live Variant slot and `&mut self` proves
+                // exclusive access to it.
+                let field_value = unsafe { &mut *self.field_mut_ptr(&field).cast::<Variant>() };
+                if field_value.safearray_bounds_len().is_none() {
+                    return Ok(None);
+                }
+                field_value.set_safearray_element(flat, value)?;
+                Ok(Some(()))
+            }
+            VbaRecordFieldKind::FixedArray { element, len } => {
+                if flat >= *len {
+                    return Err("fixed-array record field index out of range".to_string());
+                }
+                let (element_size, element_align) = element.storage_shape()?;
+                let stride = align_to(element_size, element_align);
+                // SAFETY: `flat < len`; `stride` is the element storage size and
+                // `field_mut_ptr(field)` is the fixed-array field base.
+                unsafe {
+                    write_field_variant_at(
+                        self.field_mut_ptr(&field).add(flat * stride),
+                        element,
+                        value,
+                    )?;
+                }
+                Ok(Some(()))
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Clone a record value from raw storage described by `layout`.
     ///
     /// # Safety

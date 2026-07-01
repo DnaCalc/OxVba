@@ -800,6 +800,44 @@ impl Variant {
             None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
         }
     }
+
+    pub fn record_array_field_bounds_len(
+        &self,
+        index: usize,
+    ) -> Result<Option<(Vec<SafeArrayBound>, usize)>, String> {
+        match self.as_record_payload() {
+            Some(RecordPayload::Vba(record)) => record.array_field_bounds_len(index),
+            Some(RecordPayload::Com(_)) => Err("COM record fields require COM metadata".into()),
+            None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
+        }
+    }
+
+    pub fn record_array_field_element(
+        &self,
+        index: usize,
+        flat: usize,
+    ) -> Result<Option<Variant>, String> {
+        match self.as_record_payload() {
+            Some(RecordPayload::Vba(record)) => record.read_array_field_element(index, flat),
+            Some(RecordPayload::Com(_)) => Err("COM record fields require COM metadata".into()),
+            None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
+        }
+    }
+
+    pub fn set_record_array_field_element(
+        &mut self,
+        index: usize,
+        flat: usize,
+        value: &Variant,
+    ) -> Result<Option<()>, String> {
+        match self.as_record_payload_mut() {
+            Some(RecordPayload::Vba(record)) => {
+                record.write_array_field_element(index, flat, value)
+            }
+            Some(RecordPayload::Com(_)) => Err("COM record fields require COM metadata".into()),
+            None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
+        }
+    }
 }
 
 impl Clone for Variant {

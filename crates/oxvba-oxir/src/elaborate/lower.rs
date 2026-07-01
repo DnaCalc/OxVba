@@ -1997,6 +1997,21 @@ impl<'a> Lowerer<'a> {
                     });
                     return Ok((OxOperand::temp(t), OxTy::Variant));
                 }
+                // Fuse `rec.field(i…)`: read one element from the inline fixed-array
+                // record field without materializing the entire field as a temporary
+                // SAFEARRAY on every access.
+                if let coreir::CorePlace::RecordField { base, index } = array.as_ref() {
+                    let rec = self.lower_place_load(base)?.0;
+                    let indices = self.lower_indices(indices)?;
+                    let t = self.new_temp();
+                    self.emit(OxInst::RecordArrayGet {
+                        dst: OxPlace::Temp(t),
+                        record: rec,
+                        index: *index,
+                        indices,
+                    });
+                    return Ok((OxOperand::temp(t), OxTy::Variant));
+                }
                 let (arr, arr_ty) = self.lower_place_load(array)?;
                 let indices = self.lower_indices(indices)?;
                 // Recover the element type from the array's static type when known.
@@ -2082,6 +2097,24 @@ impl<'a> Lowerer<'a> {
                         indices,
                         value,
                     });
+                    return Ok(());
+                }
+                // Fuse `rec.field(i…) = v`: mutate the single inline fixed-array
+                // element instead of materializing the whole field array and writing
+                // it back. Compound record bases still use the existing materialize,
+                // mutate, recursive-writeback path through `mutable_base_place`.
+                if let coreir::CorePlace::RecordField { base, index } = array.as_ref() {
+                    let indices = self.lower_indices(indices)?;
+                    let (rec, compound) = self.mutable_base_place(base)?;
+                    self.emit(OxInst::RecordArraySet {
+                        record: rec,
+                        index: *index,
+                        indices,
+                        value,
+                    });
+                    if compound {
+                        self.store_to_place(base, OxOperand::Use(rec))?;
+                    }
                     return Ok(());
                 }
                 let indices = self.lower_indices(indices)?;
@@ -2920,6 +2953,44 @@ mod tests {
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
         assert!(has(|i| matches!(i, OxInst::RecordSet { .. })), "expected RecordSet");
         assert!(has(|i| matches!(i, OxInst::RecordGet { .. })), "expected RecordGet");
+    }
+
+    #[test]
+    fn record_array_fields_elaborate_to_fused_ops() {
+        let p_arr = || CorePlace::RecordField {
+            base: Box::new(CorePlace::Local(CoreLocalId(0))),
+            index: 0,
+        };
+        let p_arr_1 = || CorePlace::Index {
+            array: Box::new(p_arr()),
+            indices: vec![CoreValue::Const(CoreConst::I32(1))],
+        };
+        let body = vec![
+            assign(p_arr_1(), CoreValue::Const(CoreConst::I32(5))),
+            assign(CorePlace::Local(CoreLocalId(1)), CoreValue::Load(p_arr_1())),
+        ];
+        let locals = vec![
+            CoreLocal {
+                name: "p".to_string(),
+                ty: VarTypeRef::Udt("mytype".to_string()),
+                array_element: None,
+            },
+            long_local("y"),
+        ];
+        let prog = program(sub("Main", locals, body));
+        let oxp = elaborate(&prog).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+
+        let f = &oxp.funcs[0];
+        let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
+        assert!(
+            has(|i| matches!(i, OxInst::RecordArraySet { .. })),
+            "expected RecordArraySet"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::RecordArrayGet { .. })),
+            "expected RecordArrayGet"
+        );
     }
 
     /// A base-library call lowers to `CallNative { Builtin }`.
