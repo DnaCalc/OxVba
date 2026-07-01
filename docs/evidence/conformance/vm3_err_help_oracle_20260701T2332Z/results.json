@@ -1,0 +1,230 @@
+[
+  {
+    "id": "ERR-INITIAL-FIELDS",
+    "purpose": "Initial Err help fields.",
+    "ownedExcelPid": 14148,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "0||||0|0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-HELP-WRITE-READ",
+    "purpose": "Err.HelpFile and Err.HelpContext writes are readable.",
+    "ownedExcelPid": 11708,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "help.chm|42",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-CLEAR-RESETS-HELP",
+    "purpose": "Err.Clear resets help fields.",
+    "ownedExcelPid": 25940,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "0||||0|0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERROR-STATEMENT-HELP-DEFAULTS",
+    "purpose": "The legacy Error statement populates default help fields.",
+    "ownedExcelPid": 43044,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "9|Subscript out of range|VBAProject|C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm|1000009|0",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-EXPLICIT-HELP",
+    "purpose": "Err.Raise explicit positional help fields.",
+    "ownedExcelPid": 35140,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "77|desc|src|help.chm|42",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-NAMED-HELP",
+    "purpose": "Err.Raise named help fields.",
+    "ownedExcelPid": 48412,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "78|desc2|src2|named.hlp|43",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-OMITTED-INHERITS-HELP",
+    "purpose": "Err.Raise omitted fields inherit un-cleared Err help fields.",
+    "ownedExcelPid": 39428,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "79|Application-defined or object-defined error|VBAProject|C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm|1000095",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-AFTER-CLEAR-DEFAULTS-HELP",
+    "purpose": "Err.Clear prevents omitted help inheritance.",
+    "ownedExcelPid": 46892,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "80|Application-defined or object-defined error|VBAProject|C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm|1000095",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-PARTIAL-HELP-INHERIT",
+    "purpose": "Explicit HelpFile with omitted HelpContext.",
+    "ownedExcelPid": 49660,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "81|Application-defined or object-defined error|VBAProject|explicit.hlp|1000095",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-RESUME-NEXT-INHERITS-ACTUAL",
+    "purpose": "Omitted Err.Raise fields after a prior caught Err.Raise.",
+    "ownedExcelPid": 23924,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "79|prevdesc|prevsrc|prev.hlp|9",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-RESUME-NEXT-DIRECT-WRITES",
+    "purpose": "Omitted Err.Raise fields after direct Err property writes.",
+    "ownedExcelPid": 46020,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "79|prevdesc|prevsrc|prev.hlp|9",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "ERR-RAISE-PARTIAL-HELP-AFTER-ACTUAL",
+    "purpose": "Explicit HelpFile with omitted HelpContext after a prior caught Err.Raise.",
+    "ownedExcelPid": 27520,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "81|prevdesc|prevsrc|explicit.hlp|9",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  }
+]
