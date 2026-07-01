@@ -50,10 +50,10 @@ impl<'a> ProcLower<'a> {
             ReturnStmt => Ok(vec![CoreStmt::GoSubReturn]),
             EndStmt => Ok(vec![CoreStmt::End]),
             LabelStmt => {
-                let name = node
+                let token = node
                     .first_significant_token()
-                    .ok_or_else(|| BindError::Malformed("label".into()))?
-                    .text;
+                    .ok_or_else(|| BindError::Malformed("label".into()))?;
+                let name = token.text;
                 let id = self.label_id(name);
                 // A label may be *referenced* any number of times, but defining it
                 // twice in one procedure is a VBA compile error ("Duplicate
@@ -63,6 +63,14 @@ impl<'a> ProcLower<'a> {
                     return Err(BindError::DuplicateLabel {
                         name: name.to_string(),
                     });
+                }
+                if token.kind == SyntaxKind::IntLiteral {
+                    let line = name
+                        .parse::<i32>()
+                        .map_err(|_| BindError::Malformed(format!("line number label `{name}`")))?;
+                    if let Some(slot) = self.label_lines.get_mut(id.0) {
+                        *slot = Some(line);
+                    }
                 }
                 Ok(vec![CoreStmt::Label(id)])
             }

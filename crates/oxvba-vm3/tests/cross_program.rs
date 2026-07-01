@@ -60,6 +60,7 @@ fn lib_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: Some(LocalId(2)),
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Local(LocalId(2)),
             CoreValue::Binary {
@@ -91,6 +92,7 @@ fn app_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Global(GlobalId(0)),
             CoreValue::Call {
@@ -141,6 +143,7 @@ fn boom_lib_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![CoreStmt::Error(ErrorOp::Raise {
             number: CoreValue::Const(CoreConst::I32(5)),
             source: None,
@@ -173,6 +176,7 @@ fn error_app_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![
             CoreStmt::Error(ErrorOp::OnErrorResumeNext),
             // Faults inside Lib; Resume Next skips this statement.
@@ -253,6 +257,7 @@ fn lib_apply_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: Some(LocalId(1)),
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Local(LocalId(1)),
             CoreValue::Call {
@@ -298,6 +303,7 @@ fn app_with_thing_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: Some(LocalId(1)),
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Local(LocalId(1)),
             CoreValue::Const(CoreConst::I32(99)),
@@ -310,6 +316,7 @@ fn app_with_thing_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Global(GlobalId(0)),
             CoreValue::Call {
@@ -386,6 +393,7 @@ fn lib_apply_global_arg_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: Some(LocalId(1)),
+        label_lines: Vec::new(),
         body: vec![
             assign(
                 CorePlace::Global(GlobalId(0)),
@@ -454,6 +462,7 @@ fn app_echo_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: Some(LocalId(2)),
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Local(LocalId(2)),
             CoreValue::Load(CorePlace::Local(LocalId(1))),
@@ -466,6 +475,7 @@ fn app_echo_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Global(GlobalId(0)),
             CoreValue::Call {
@@ -540,6 +550,7 @@ fn lib_widget_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: Some(LocalId(1)),
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Local(LocalId(1)),
             CoreValue::Const(CoreConst::I32(42)),
@@ -583,6 +594,7 @@ fn app_new_extern_program() -> CoreProgram {
             array_element: None,
         }],
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![
             // Set w = New Lib.Widget
             CoreStmt::Assign {
@@ -635,6 +647,7 @@ fn app_predeclared_extern_program() -> CoreProgram {
         params: Vec::new(),
         locals: Vec::new(),
         return_local: None,
+        label_lines: Vec::new(),
         body: vec![assign(
             CorePlace::Global(GlobalId(0)),
             CoreValue::Call {

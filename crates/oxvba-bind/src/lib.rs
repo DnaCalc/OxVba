@@ -131,14 +131,15 @@ fn bind_one(
     }
     let mut procs: Vec<CoreProc> = Vec::with_capacity(ids.procs.len());
     for (info, decl) in ids.procs.iter().zip(decls.iter()) {
-        let body = lower.bind_proc_body(info, *decl)?;
+        let bound_body = lower.bind_proc_body(info, *decl)?;
         procs.push(CoreProc {
             name: info.name.clone(),
             kind: info.kind,
             params: info.params.clone(),
             locals: info.locals.clone(),
             return_local: info.return_local,
-            body,
+            label_lines: bound_body.label_lines,
+            body: bound_body.body,
         });
     }
 
@@ -162,6 +163,7 @@ fn bind_one(
                 params: Vec::new(),
                 locals: Vec::new(),
                 return_local: None,
+                label_lines: Vec::new(),
                 body: inits,
             });
             Some(proc)
@@ -581,6 +583,9 @@ struct ProcLower<'a> {
     /// ("Duplicate declaration in current scope"). Label scope is per-procedure,
     /// so this set is fresh per [`ProcLower`].
     defined_labels: HashSet<LabelId>,
+    /// Numeric-line metadata parallel to `label_order`: `Some(n)` for a label
+    /// definition whose source token is an integer line number.
+    label_lines: Vec<Option<i32>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -771,7 +776,18 @@ impl<'a> ProcLower<'a> {
         let id = LabelId(self.label_order.len());
         self.labels.insert(key.clone(), id);
         self.label_order.push(key);
+        self.label_lines.push(None);
         id
+    }
+
+    fn validate_label_refs(&self) -> Result<(), BindError> {
+        for (idx, name) in self.label_order.iter().enumerate() {
+            let id = LabelId(idx);
+            if !self.defined_labels.contains(&id) {
+                return Err(BindError::LabelNotDefined { name: name.clone() });
+            }
+        }
+        Ok(())
     }
 
     fn unresolved(&self, name: &str, context: &str) -> BindError {

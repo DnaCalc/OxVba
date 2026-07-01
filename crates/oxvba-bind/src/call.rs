@@ -227,6 +227,13 @@ impl<'a> ProcLower<'a> {
                 ))
             }
             DispatchRoute::SpecialForm(SpecialForm::CallByName) => self.bind_callbyname(arglist),
+            DispatchRoute::SpecialForm(SpecialForm::Erl) => {
+                let items = arglist.map(|a| a.arg_items()).unwrap_or_default();
+                if !items.is_empty() {
+                    return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+                }
+                Ok(value_bound(CoreValue::Erl, builtin(BuiltinType::Long)))
+            }
             DispatchRoute::ErrMember(_) => Err(BindError::Unsupported(format!(
                 "`{name}` Err member in value context"
             ))),

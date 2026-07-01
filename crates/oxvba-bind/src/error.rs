@@ -55,6 +55,10 @@ pub enum BindError {
     /// per-procedure, so the same name in a different procedure is fine.
     #[error("duplicate label `{name}` in current scope")]
     DuplicateLabel { name: String },
+    /// A `GoTo`/`GoSub`/`On Error GoTo`/`Resume`/computed branch referenced a label
+    /// that is not defined in the same procedure.
+    #[error("Label not defined")]
+    LabelNotDefined { name: String },
     /// The CST shape was not what the construct requires.
     #[error("malformed construct: {0}")]
     Malformed(String),
@@ -157,6 +161,12 @@ impl BindError {
                 format!("duplicate label `{name}` in current scope"),
             )
             .with_help("A line label must be unique within a procedure; rename or remove the duplicate."),
+            BindError::LabelNotDefined { name } => Diagnostic::error(
+                "BIND-E-LABEL-NOT-DEFINED",
+                DiagnosticPhase::Bind,
+                "Label not defined",
+            )
+            .with_help(format!("Define `{name}` in this procedure, or fix the branch target.")),
             BindError::Malformed(message) => Diagnostic::error(
                 "BIND-E-MALFORMED-CONSTRUCT",
                 DiagnosticPhase::Bind,

@@ -11,7 +11,7 @@ use oxvba_com::{
     TypeLibWireType,
 };
 
-use crate::binding::DispatchRoute;
+use crate::binding::{DispatchRoute, SpecialForm};
 use crate::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference, SymbolProjectManifest,
 };
@@ -245,6 +245,9 @@ fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     );
     assert!(
         matches!(p.resolve("Array"), Some(b) if matches!(b.route, DispatchRoute::SpecialForm(_)))
+    );
+    assert!(
+        matches!(p.resolve("Erl"), Some(b) if matches!(b.route, DispatchRoute::SpecialForm(SpecialForm::Erl)))
     );
     assert!(
         matches!(p.resolve("Debug"), Some(b) if matches!(b.route, DispatchRoute::PredeclaredObject(_)))

@@ -1145,6 +1145,87 @@ fn colonless_line_number_labels_bind_and_branch() {
 }
 
 #[test]
+fn erl_initial_and_numeric_line_without_error_stay_zero() {
+    let initial = "Sub Main()\n    Dim r As String\n    r = CStr(Erl) & \":\" & CStr(VarType(Erl))\nEnd Sub\n";
+    assert_eq!(run_main_local0_string(initial), Some("0:3".to_string()));
+
+    let no_error = "Sub Main()\n\
+                    Dim r As String\n\
+                    Dim x As Long\n\
+10                  x = 1\n\
+                    r = CStr(Erl) & \":\" & CStr(VarType(Erl)) & \":\" & CStr(x)\n\
+                    End Sub\n";
+    assert_eq!(run_main_local0_string(no_error), Some("0:3:1".to_string()));
+}
+
+#[test]
+fn erl_records_caught_error_line_in_current_activation() {
+    let resume_next = "Sub Main()\n\
+                       Dim r As String\n\
+                       Dim x As Long\n\
+                       On Error Resume Next\n\
+10                     x = 1 / 0\n\
+                       r = CStr(Err.Number) & \":\" & CStr(Erl)\n\
+                       End Sub\n";
+    assert_eq!(
+        run_main_local0_string(resume_next),
+        Some("11:10".to_string())
+    );
+
+    let handler = "Sub Main()\n\
+                   Dim r As String\n\
+                   On Error GoTo EH\n\
+10                 Err.Raise 5\n\
+                   r = \"miss\"\n\
+                   Exit Sub\n\
+EH:\n\
+                   r = CStr(Err.Number) & \":\" & CStr(Erl)\n\
+                   End Sub\n";
+    assert_eq!(run_main_local0_string(handler), Some("5:10".to_string()));
+}
+
+#[test]
+fn erl_uses_prior_numeric_label_for_unnumbered_faults() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               Dim x As Long\n\
+               On Error GoTo EH\n\
+10             x = 1\n\
+               x = 1 / 0\n\
+               r = \"miss\"\n\
+               Exit Sub\n\
+EH:\n\
+               r = CStr(Err.Number) & \":\" & CStr(Erl)\n\
+               End Sub\n";
+    assert_eq!(run_main_local0_string(src), Some("11:10".to_string()));
+}
+
+#[test]
+fn caller_handler_reports_call_site_line_for_callee_fault() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               On Error GoTo EH\n\
+               Boom\n\
+               r = \"miss\"\n\
+               Exit Sub\n\
+EH:\n\
+               r = CStr(Err.Number) & \":\" & CStr(Erl)\n\
+               End Sub\n\
+\n\
+               Private Sub Boom()\n\
+20             Err.Raise 7\n\
+               End Sub\n";
+    assert_eq!(run_main_local0_string(src), Some("7:0".to_string()));
+}
+
+#[test]
+fn on_error_undefined_label_is_bind_error() {
+    let src = "Sub Main()\n    On Error GoTo MissingHandler\nEnd Sub\n";
+    let err = bind_error_display(src);
+    assert!(err.contains("Label not defined"), "unexpected error: {err}");
+}
+
+#[test]
 fn multivariable_next_closes_nested_for_loops() {
     let src = "Sub Main()\n\
                Dim total As Long\n\

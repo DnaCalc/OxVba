@@ -420,6 +420,9 @@ pub enum OxInst {
         dst: OxPlace,
         field: ErrField,
     },
+    ErlGet {
+        dst: OxPlace,
+    },
     ErrFieldSet {
         field: ErrField,
         src: OxOperand,
@@ -441,6 +444,9 @@ pub enum OxInst {
     /// The start of a VBA source statement (drives `Resume` granularity and
     /// finalization timing). `stmt` is the source-statement index.
     StmtBoundary { stmt: u32 },
+    /// A numeric source line label has become the active line number for this
+    /// procedure activation. A later caught error copies it into `Erl`.
+    SetLineNumber { line: i32 },
     /// Run parked `Class_Terminate`s to a fixpoint (pinned to statement boundaries
     /// / proc epilogue / the post-fault path).
     DrainTerminations,
@@ -468,9 +474,11 @@ impl OxInst {
             | OxInst::CompareObjectIs { .. }
             | OxInst::TypeOfIs { .. }
             | OxInst::ErrFieldGet { .. }
+            | OxInst::ErlGet { .. }
             | OxInst::SetErrorHandler(_)
             | OxInst::ClearErr
             | OxInst::StmtBoundary { .. }
+            | OxInst::SetLineNumber { .. }
             | OxInst::Ptr { .. }
             | OxInst::AddRef { .. }
             // `Release` only enqueues; the user code in `Class_Terminate` runs at

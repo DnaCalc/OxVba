@@ -169,6 +169,7 @@ pub enum SpecialForm {
     AddressOf,
     UBound,
     LBound,
+    Erl,
 }
 
 /// Map a typelib invoke kind to the project-member kind the binder/coreir uses.

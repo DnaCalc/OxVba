@@ -206,6 +206,7 @@ fn special_form(name: &str) -> Option<SpecialForm> {
         "addressof" => SpecialForm::AddressOf,
         "ubound" => SpecialForm::UBound,
         "lbound" => SpecialForm::LBound,
+        "erl" => SpecialForm::Erl,
         _ => return None,
     })
 }

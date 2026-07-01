@@ -97,6 +97,11 @@ pub struct CoreProc {
     pub locals: Vec<CoreLocal>,
     /// The local holding the function/property-get result (`None` for a `Sub`).
     pub return_local: Option<LocalId>,
+    /// Procedure-local label metadata. `label_lines[id.0]` is `Some(n)` for a numeric
+    /// line label (`10`, `20:`, ...), and `None` for named labels. The statement list
+    /// still carries `CoreStmt::Label(id)` as the branch target; this side table lets
+    /// the runtime update Erl's current line without changing label identity.
+    pub label_lines: Vec<Option<i32>>,
     pub body: Vec<CoreStmt>,
 }
 
@@ -471,6 +476,9 @@ pub enum CoreValue {
         value: Box<CoreValue>,
     },
     ErrField(ErrField),
+    /// The standalone VBA `Erl` function: reads the line number recorded by the most
+    /// recent trapped error in the current run (0 if none).
+    Erl,
     /// A `Variant` array materialized from element values (VBA's `Array()` and
     /// `ParamArray` boxing). `lower_bound` is the array's first index: the
     /// module's `Option Base` for `Array()`, always 0 for a `ParamArray`.

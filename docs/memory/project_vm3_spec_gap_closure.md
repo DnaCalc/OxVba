@@ -1748,3 +1748,55 @@
   - `cargo test -p oxvba-differential --test redim_negative_lower_vm3 --quiet`
   - `cargo test -p oxvba-differential --test fixed_array_erase_vm3 --quiet`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+
+## 2026-07-01 - Erl And Line-Numbered Error Flow (`bd-4ktq.42`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_erl_line_oracle_20260701T2318Z/`.
+- Oracle findings:
+  - `Erl` returns a `Long` (`VarType(Erl)=3`) and is 0 before any trapped
+    error, even after numeric line labels execute without an error.
+  - A trapped error on a numbered statement records that numeric line in
+    `Erl` for both `On Error Resume Next` and `On Error GoTo`.
+  - An unnumbered fault after a numeric label uses the prior numeric line; a
+    colon-only numeric label also becomes the active line for following
+    unnumbered statements.
+  - If a caller's handler catches a callee fault, `Erl` reports the caller's
+    call-site line state, not the callee's source line; the unnumbered caller
+    oracle returns `0`.
+  - `On Error GoTo MissingHandler` is a compile error with modal text
+    `Label not defined`; the VBE selected line is the `On Error GoTo` line.
+- Implemented `Erl` as a VM-aware special expression (`CoreValue::Erl` /
+  `OxInst::ErlGet`) rather than an ordinary pure library function.
+- Numeric label metadata is carried on `CoreProc::label_lines`; OxIR emits
+  `SetLineNumber` when a numeric label statement executes, and vm3 copies the
+  current frame line into the public `Erl` value only when an error is caught.
+- Binder label-reference validation now runs after binding each procedure body,
+  so missing `GoTo`/`GoSub`/`On Error GoTo`/`Resume` targets raise the VBA-style
+  `Label not defined` bind diagnostic before elaboration.
+- Added source-level vm3 regressions in
+  `crates/oxvba-bind/tests/bind_roundtrip.rs` plus symbol-provider coverage for
+  the `Erl` special-form route.
+- Verification completed:
+  - `scripts/run-vm3-erl-line-oracle.ps1 -RunId vm3_erl_line_oracle_20260701T2318Z`
+  - `cargo test -p oxvba-bind --test bind_roundtrip erl_ --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip label --quiet`
+  - `cargo test -p oxvba-vm3 --test cross_program --quiet`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms --quiet`
+  - `cargo test -p oxvba-bind --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `OXVBA_BLESS_GOLDEN=1 cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- `scripts/meta-check.ps1 -Fast -NoArtifacts` was attempted and reached
+  `cargo fmt --all --check`, which fails on repo-wide pre-existing formatting
+  drift outside this Erl/label parity bead. Tracked separately as
+  `bd-4ktq.58`; no broad formatter sweep was mixed into this semantic change.
+- Fresh-eyes review checked the binder, Core IR, OxIR, vm3 runtime line state,
+  Excel oracle harness, golden drift, and docs. No legacy OxVBA fallback was
+  retained for undefined labels; user-visible behavior is the VBA compile/runtime
+  behavior captured from Excel.

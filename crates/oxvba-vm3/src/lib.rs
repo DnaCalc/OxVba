@@ -258,6 +258,9 @@ struct Frame {
     dst: Option<Loc>,
     /// The local holding this function's result (`None` for a `Sub`).
     return_local: Option<LocalId>,
+    /// The most recent numeric line label executed in this procedure activation.
+    /// This is copied to the VM's public `Erl` value only when an error is caught.
+    current_line: i32,
     /// The caller's error mode, restored when this frame returns (each callee starts
     /// with no handler).
     saved_error_mode: ErrorMode,
@@ -322,6 +325,9 @@ pub struct Vm3<'h> {
     /// Gates `Resume` legality (empty ⇒ error 20) and is cleared by `Resume*`/`Exit *`.
     active_error: Option<ResumePoint>,
     err: ErrState,
+    /// The standalone VBA `Erl` value: line number of the most recent trapped error
+    /// in the catching activation, or 0 before any trapped error.
+    erl_line: i32,
     /// `Err.LastDllError` — refreshed after a `Declare Lib` call (M3); `0` until then.
     last_dll_error: i32,
     /// The fault currently being routed (set when a fallible op transfers to a pad).
@@ -456,6 +462,7 @@ impl<'h> Vm3<'h> {
             error_mode: ErrorMode::None,
             active_error: None,
             err: ErrState::default(),
+            erl_line: 0,
             last_dll_error: 0,
             pending_fault: None,
             for_each: HashMap::new(),
@@ -653,6 +660,9 @@ impl<'h> Vm3<'h> {
     pub fn err_source(&self) -> &str {
         &self.err.source
     }
+    pub fn erl(&self) -> i32 {
+        self.erl_line
+    }
     /// `Err.LastDllError` — the OS last-error captured after the most recent `Declare Lib`
     /// call (M3-7); `0` until a Declare runs.
     pub fn last_dll_error(&self) -> i32 {
@@ -680,6 +690,7 @@ impl<'h> Vm3<'h> {
             aliases: HashMap::new(),
             dst: None,
             return_local: f.return_local,
+            current_line: 0,
             saved_error_mode: ErrorMode::None,
             saved_active_error: None,
             gosub_stack: Vec::new(),
@@ -790,6 +801,7 @@ impl<'h> Vm3<'h> {
                         // the fault, continue past the faulting statement.
                         ErrorMode::ResumeNext => {
                             self.pending_fault = None;
+                            self.erl_line = self.frames[top].current_line;
                             self.active_error = Some(rp);
                             self.goto(top, *resume_next);
                         }
@@ -800,6 +812,7 @@ impl<'h> Vm3<'h> {
                         ErrorMode::Goto(handler) => {
                             self.pending_fault = None;
                             self.error_mode = ErrorMode::None;
+                            self.erl_line = self.frames[top].current_line;
                             self.active_error = Some(rp);
                             self.goto(top, handler);
                         }
@@ -1178,6 +1191,9 @@ impl<'h> Vm3<'h> {
                 };
                 self.store(dst, v)?;
             }
+            OxInst::ErlGet { dst } => {
+                self.store(dst, Variant::from_i32(self.erl_line))?;
+            }
             // Write an `Err` property. `Err.LastDllError` is read-only; accepted user
             // assignments to it should have been rejected by the binder.
             OxInst::ErrFieldSet { field, src } => {
@@ -1239,6 +1255,11 @@ impl<'h> Vm3<'h> {
                 // inbound host (COM) events (mirrors vm2's statement-boundary drain + pump).
                 self.maybe_drain();
                 self.pump_com_events();
+            }
+            OxInst::SetLineNumber { line } => {
+                if let Some(frame) = self.frames.last_mut() {
+                    frame.current_line = *line;
+                }
             }
 
             // `Let`/`Set` legality check (M3-4).
@@ -1937,6 +1958,7 @@ impl<'h> Vm3<'h> {
             aliases,
             dst: dst_loc,
             return_local,
+            current_line: 0,
             saved_error_mode: self.error_mode,
             saved_active_error: self.active_error,
             gosub_stack: Vec::new(),
@@ -3914,8 +3936,10 @@ fn inst_kind(inst: &OxInst) -> &'static str {
         OxInst::RaiseEvent { .. } => "RaiseEvent",
         OxInst::Ptr { .. } => "pointer helper",
         OxInst::ErrFieldGet { .. } => "Err field read",
+        OxInst::ErlGet { .. } => "Erl read",
         OxInst::ErrFieldSet { .. } => "Err field write",
         OxInst::SetErrorHandler(_) => "On Error",
+        OxInst::SetLineNumber { .. } => "line number label",
         OxInst::AddRef { .. } | OxInst::Release { .. } => "refcount effect",
         OxInst::DrainTerminations => "DrainTerminations",
         // The handled instructions never reach here.
@@ -3996,6 +4020,7 @@ mod tests {
                 params: Vec::new(),
                 locals,
                 return_local: None,
+                label_lines: Vec::new(),
                 body,
             }],
             entry: Some(ProcId(0)),
@@ -4028,6 +4053,7 @@ mod tests {
             params,
             locals,
             return_local,
+            label_lines: Vec::new(),
             body,
         }
     }
@@ -4202,6 +4228,7 @@ mod tests {
                 params: Vec::new(),
                 locals: Vec::new(),
                 return_local: None,
+                label_lines: Vec::new(),
                 body: vec![assign(g, CoreValue::Const(CoreConst::I32(42)))],
             }],
             globals: vec![CoreGlobal {

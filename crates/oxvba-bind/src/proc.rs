@@ -24,6 +24,7 @@ impl<'a> Lower<'a> {
             labels: HashMap::new(),
             label_order: Vec::new(),
             defined_labels: HashSet::new(),
+            label_lines: Vec::new(),
         }
     }
 
@@ -82,9 +83,9 @@ impl<'a> Lower<'a> {
         &'a self,
         info: &'a ProcInfo,
         decl: SyntaxNode<'a>,
-    ) -> Result<Vec<CoreStmt>, BindError> {
+    ) -> Result<BoundProcBody, BindError> {
         let mut pl = self.proc_lower(info);
-        match decl.body_block() {
+        let body = match decl.body_block() {
             Some(block) => {
                 // A class's `Class_Initialize` runs once per instance, before any
                 // user code: prepend the default record-init of each per-instance
@@ -98,11 +99,21 @@ impl<'a> Lower<'a> {
                 stmts.extend(pl.function_return_default_init()?);
                 stmts.extend(pl.collect_fixed_array_inits(block)?);
                 stmts.extend(pl.bind_block(block)?);
-                Ok(stmts)
+                stmts
             }
-            None => Ok(Vec::new()),
-        }
+            None => Vec::new(),
+        };
+        pl.validate_label_refs()?;
+        Ok(BoundProcBody {
+            body,
+            label_lines: pl.label_lines,
+        })
     }
+}
+
+pub(crate) struct BoundProcBody {
+    pub body: Vec<CoreStmt>,
+    pub label_lines: Vec<Option<i32>>,
 }
 
 impl<'a> ProcLower<'a> {

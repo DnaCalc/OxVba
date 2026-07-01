@@ -294,7 +294,7 @@ fn elaborate_proc(
 
     // The binding types are recovered up front (the `locals` above, via the resolver);
     // the lowerer carries the COM interner so early-bound calls intern their members.
-    let mut lo = Lowerer::new(locals, proc.params.len(), com);
+    let mut lo = Lowerer::new(locals, proc.params.len(), proc.label_lines.clone(), com);
     // Pre-assign a block to every source label so forward references resolve.
     lo.assign_labels(&proc.body)?;
     lo.lower_block(&proc.body)?;
@@ -344,6 +344,8 @@ struct Lowerer<'a> {
     /// Pre-assigned block per source label, so forward `GoTo` / `On Error GoTo` /
     /// `Resume <label>` / `GoSub` references resolve.
     labels: HashMap<CoreLabelId, BlockId>,
+    /// Numeric line metadata parallel to Core label ids.
+    label_lines: Vec<Option<i32>>,
     /// The temp holding each in-scope `With` receiver (by the binder's `With` id), so
     /// `WithTemp(id)` references read it.
     with_temps: HashMap<usize, TempId>,
@@ -353,7 +355,12 @@ struct Lowerer<'a> {
 }
 
 impl<'a> Lowerer<'a> {
-    fn new(locals: Vec<OxLocal>, param_count: usize, com: &'a mut ComInterner) -> Self {
+    fn new(
+        locals: Vec<OxLocal>,
+        param_count: usize,
+        label_lines: Vec<Option<i32>>,
+        com: &'a mut ComInterner,
+    ) -> Self {
         // Entry = block 0, epilogue = block 1; both reserved up front.
         let blocks = vec![None, None];
         Self {
@@ -369,6 +376,7 @@ impl<'a> Lowerer<'a> {
             next_temp: 0,
             loops: Vec::new(),
             labels: HashMap::new(),
+            label_lines,
             with_temps: HashMap::new(),
             com,
         }
@@ -618,9 +626,12 @@ impl<'a> Lowerer<'a> {
                 self.finish_to(OxTerminator::Jump(target), s_next);
                 Ok(())
             }
-            CoreStmt::Label(_) => {
+            CoreStmt::Label(id) => {
                 // The label's start block IS this statement's start (resolved by
                 // `stmt_start_block`); it simply falls through to the next statement.
+                if let Some(Some(line)) = self.label_lines.get(id.0) {
+                    self.emit(OxInst::SetLineNumber { line: *line });
+                }
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
@@ -1410,6 +1421,13 @@ impl<'a> Lowerer<'a> {
                     ErrField::Description | ErrField::Source => OxTy::Str,
                 };
                 Ok((OxOperand::temp(t), ty))
+            }
+            CoreValue::Erl => {
+                let t = self.new_temp();
+                self.emit(OxInst::ErlGet {
+                    dst: OxPlace::Temp(t),
+                });
+                Ok((OxOperand::temp(t), OxTy::Long))
             }
             CoreValue::AddressOf(proc) => {
                 let t = self.new_temp();
@@ -2409,6 +2427,7 @@ mod tests {
             params: Vec::new(),
             locals,
             return_local: None,
+            label_lines: Vec::new(),
             body,
         }
     }
