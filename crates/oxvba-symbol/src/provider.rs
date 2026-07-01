@@ -4,14 +4,16 @@
 //! branches on source kind.
 
 use oxvba_bundle::ProjectMemberKind;
-use oxvba_syntax::{Parse, SyntaxNode};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode};
 
 use crate::binding::{Binding, DispatchRoute};
 use crate::cond_comp;
 use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
 use crate::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
-    SymbolTable,
+    SymbolTable, Visibility,
 };
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::host::HostProvider;
@@ -145,6 +147,7 @@ const NAMESPACE_PRIORITY: &[SymbolNamespace] = &[
 /// bodies into the single bundle (cross-project references are devirtualized into
 /// one image), so it needs every CST, tagged with its origin.
 pub struct ModuleCst {
+    pub project_name: String,
     pub module_name: String,
     pub module_scope: ScopeId,
     pub parse: Parse,
@@ -185,7 +188,12 @@ pub struct ResolutionEnvironment {
     /// User-defined `Type` (UDT) field tables: folded type name → ordered
     /// `(folded field name, field type)`. The binder reads field index + type for
     /// `p.X` access and the field count for record allocation.
-    udt_fields: std::collections::HashMap<String, Vec<(String, crate::signature::VarTypeRef)>>,
+    udt_fields: HashMap<String, Vec<(String, crate::signature::VarTypeRef)>>,
+    /// Folded declared enum type names, including module/project-qualified aliases.
+    enum_types: HashSet<String>,
+    /// Folded unqualified type names that have multiple public type-space owners,
+    /// keyed by folded project name.
+    ambiguous_type_names: HashMap<String, HashSet<String>>,
 }
 
 impl ResolutionEnvironment {
@@ -330,26 +338,29 @@ impl ResolutionEnvironment {
 
     /// Is `name` (any case) a declared enum type?
     pub fn is_enum_type(&self, name: &str) -> bool {
+        self.enum_types
+            .contains(&crate::model::fold_identifier(name))
+    }
+
+    /// Is an unqualified type reference ambiguous across public type-space owners?
+    pub fn has_ambiguous_type_name(&self, name: &str) -> bool {
         let folded = crate::model::fold_identifier(name);
-        self.symbols.scopes().iter().any(|scope| {
-            self.symbols
-                .find_in_scope(scope.id, crate::model::SymbolNamespace::Type, &folded)
-                .ok()
-                .flatten()
-                .and_then(|id| self.symbols.symbol(id))
-                .is_some_and(|symbol| symbol.kind == crate::model::SymbolKind::Enum)
-        })
+        self.ambiguous_type_names
+            .values()
+            .any(|names| names.contains(&folded))
     }
 
     /// Is `name` (any case) an active or referenced VBA project name?
     pub fn is_project_name(&self, name: &str) -> bool {
         let target = crate::model::fold_identifier(name);
         self.symbols.scopes().iter().any(|scope| {
-            matches!(scope.kind, ScopeKind::Project | ScopeKind::ReferencedProject)
-                && scope
-                    .name
-                    .and_then(|id| self.symbols.name(id))
-                    .is_some_and(|scope_name| scope_name.folded == target)
+            matches!(
+                scope.kind,
+                ScopeKind::Project | ScopeKind::ReferencedProject
+            ) && scope
+                .name
+                .and_then(|id| self.symbols.name(id))
+                .is_some_and(|scope_name| scope_name.folded == target)
         })
     }
 
@@ -449,6 +460,146 @@ fn request_from(reference: &ProjectReference) -> Option<oxvba_com::TypeLibResolv
     }
 }
 
+#[derive(Default)]
+struct TypeNameIndex {
+    udt_fields: HashMap<String, Vec<(String, VarTypeRef)>>,
+    enum_types: HashSet<String>,
+    public_candidates: BTreeMap<String, BTreeMap<String, Vec<TypeNameCandidate>>>,
+}
+
+#[derive(Clone, Copy)]
+struct TypeNameCandidate {
+    owner: SymbolId,
+}
+
+impl TypeNameIndex {
+    fn add_module(
+        &mut self,
+        project_name: &str,
+        module_name: &str,
+        scan: &ModuleScan,
+        syntax: SyntaxNode<'_>,
+    ) {
+        let module_udts = scanner::collect_udt_fields(&[syntax]);
+        let module_folded = crate::model::fold_identifier(module_name);
+        let project_folded = crate::model::fold_identifier(project_name);
+        for member in &scan.members {
+            if !matches!(member.kind, SymbolKind::Type | SymbolKind::Enum) {
+                continue;
+            }
+            let name = member.name_folded.clone();
+            let aliases = [
+                name.clone(),
+                format!("{module_folded}.{name}"),
+                format!("{project_folded}.{module_folded}.{name}"),
+            ];
+            match member.kind {
+                SymbolKind::Type => {
+                    if let Some(fields) = module_udts.get(&name) {
+                        for alias in aliases {
+                            self.udt_fields
+                                .entry(alias)
+                                .or_insert_with(|| fields.clone());
+                        }
+                    }
+                }
+                SymbolKind::Enum => {
+                    for alias in aliases {
+                        self.enum_types.insert(alias);
+                    }
+                }
+                _ => {}
+            }
+            if member.visibility == Visibility::Public {
+                self.public_candidates
+                    .entry(project_folded.clone())
+                    .or_default()
+                    .entry(name)
+                    .or_default()
+                    .push(TypeNameCandidate {
+                        owner: scan.module_symbol,
+                    });
+            }
+        }
+    }
+
+    fn ambiguous_type_names(&self) -> HashMap<String, HashSet<String>> {
+        self.public_candidates
+            .iter()
+            .filter_map(|(project_name, candidates_by_name)| {
+                let names: HashSet<String> = candidates_by_name
+                    .iter()
+                    .filter_map(|(name, candidates)| {
+                        has_competing_type_owners(candidates).then(|| name.clone())
+                    })
+                    .collect();
+                (!names.is_empty()).then(|| (project_name.clone(), names))
+            })
+            .collect()
+    }
+}
+
+fn has_competing_type_owners(candidates: &[TypeNameCandidate]) -> bool {
+    let Some(first) = candidates.first() else {
+        return false;
+    };
+    candidates
+        .iter()
+        .skip(1)
+        .any(|candidate| candidate.owner != first.owner)
+}
+
+fn validate_type_refs(
+    modules: &[ModuleCst],
+    ambiguous_type_names: &HashMap<String, HashSet<String>>,
+) -> Result<(), SymbolModelError> {
+    for module in modules {
+        let project_name = crate::model::fold_identifier(&module.project_name);
+        if let Some(names) = ambiguous_type_names.get(&project_name) {
+            validate_type_refs_in(module.parse.syntax(), names)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_type_refs_in(
+    node: SyntaxNode<'_>,
+    ambiguous_type_names: &HashSet<String>,
+) -> Result<(), SymbolModelError> {
+    if node.kind() == SyntaxKind::TypeRef {
+        let name = type_ref_name(node);
+        if !name.contains('.')
+            && ambiguous_type_names.contains(&crate::model::fold_identifier(&name))
+        {
+            return Err(SymbolModelError::AmbiguousName { name });
+        }
+    }
+    for child in node.child_nodes() {
+        validate_type_refs_in(child, ambiguous_type_names)?;
+    }
+    Ok(())
+}
+
+fn type_ref_name(node: SyntaxNode<'_>) -> String {
+    let text = node.text();
+    let s = text.trim_start();
+    let name = if s
+        .get(..3)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("new"))
+        && s.get(3..)
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+    {
+        s.get(3..).unwrap_or("").trim_start()
+    } else {
+        s
+    };
+    name.split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_matches(|c| c == '[' || c == ']')
+        .to_string()
+}
+
 /// Stand up the full resolution environment: scan the active project's modules
 /// and referenced projects into the table, build the project / VBA-library /
 /// host / COM providers in chain order, resolving each COM reference's typelib
@@ -476,6 +627,7 @@ pub fn build_resolution_environment(
     // Active-project modules: parse once, scan against the parsed CST, and retain
     // the `Parse` so the binder lowers the same tree (no second parse).
     let mut module_csts: Vec<ModuleCst> = Vec::new();
+    let mut type_index = TypeNameIndex::default();
     for module in &manifest.modules {
         let source =
             cond_comp::preprocess(&module.source, &active_cc).map_err(SymbolModelError::Syntax)?;
@@ -495,7 +647,14 @@ pub fn build_resolution_environment(
             parse.syntax(),
             project_scope,
         )?;
+        type_index.add_module(
+            &manifest.project_name,
+            &scan.module_name,
+            &scan,
+            parse.syntax(),
+        );
         module_csts.push(ModuleCst {
+            project_name: manifest.project_name.clone(),
             module_name: scan.module_name.clone(),
             module_scope: scan.module_scope,
             parse,
@@ -540,7 +699,14 @@ pub fn build_resolution_environment(
                 parse.syntax(),
                 scope,
             )?;
+            type_index.add_module(
+                &referenced.project_name,
+                &scan.module_name,
+                &scan,
+                parse.syntax(),
+            );
             module_csts.push(ModuleCst {
+                project_name: referenced.project_name.clone(),
                 module_name: scan.module_name.clone(),
                 module_scope: scan.module_scope,
                 parse,
@@ -564,10 +730,9 @@ pub fn build_resolution_environment(
     // Optional-parameter defaults fold against the closure's const values.
     let optional_defaults =
         crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values);
-    // UDT field tables, for `Dim p As <Type>` field access + record allocation.
-    let udt_roots: Vec<SyntaxNode<'_>> = roots.iter().map(|(_, n)| *n).collect();
-    let udt_fields = crate::scanner::collect_udt_fields(&udt_roots);
     drop(roots);
+    let ambiguous_type_names = type_index.ambiguous_type_names();
+    validate_type_refs(&module_csts, &ambiguous_type_names)?;
 
     // Each referenced project's public surface — a referencing call binds through
     // the same COM contract a compiled component would present.
@@ -661,6 +826,8 @@ pub fn build_resolution_environment(
         surfaces,
         const_values,
         optional_defaults,
-        udt_fields,
+        udt_fields: type_index.udt_fields,
+        enum_types: type_index.enum_types,
+        ambiguous_type_names,
     })
 }

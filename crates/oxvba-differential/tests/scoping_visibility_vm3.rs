@@ -2,15 +2,12 @@
 //!
 //! Live Excel/VBA 7.1 oracle evidence is captured in:
 //! `docs/evidence/conformance/vm3_scoping_visibility_oracle_20260701T0945Z/`.
-//! The passing tests below pin legal baseline shapes. The ignored tests encode the
-//! oracle-backed gaps that the follow-on scoping beads are expected to unignore
-//! and satisfy as each resolver diagnostic is implemented.
+//! The tests below pin legal baseline shapes and oracle-backed resolver
+//! diagnostics as each follow-on scoping bead closes.
 
 use std::collections::BTreeMap;
 
-use oxvba_differential::{
-    Canon, Executor, RunOutcome, canon, run_modules, run_project_closure,
-};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run_modules, run_project_closure};
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
 use oxvba_symbol::manifest::{
@@ -451,7 +448,6 @@ fn public_const_variable_collision_keeps_project_qualified_access() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.36.3 follow-on: Public UDT/Public Enum collision diagnostic"]
 fn public_udt_enum_collision_should_be_ambiguous() {
     assert_ambiguous_compile_rejected(
         run_scoping_case(&[
@@ -472,6 +468,64 @@ fn public_udt_enum_collision_should_be_ambiguous() {
             ),
         ]),
         "Payload",
+    );
+}
+
+#[test]
+fn public_udt_enum_collision_keeps_module_qualified_udt_type() {
+    assert_snapshot_contains(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   Dim value As Types.Payload\n\
+                 \x20   value.Value = 7\n\
+                 \x20   result = value.Value\n\
+                 End Sub\n",
+            ),
+            (
+                "Types",
+                Procedural,
+                "Public Type Payload\n    Value As Long\nEnd Type\n",
+            ),
+            (
+                "Enums",
+                Procedural,
+                "Public Enum Payload\n    PayloadA = 1\nEnd Enum\n",
+            ),
+        ]),
+        canon(&Variant::from_i32(7)),
+    );
+}
+
+#[test]
+fn public_udt_enum_collision_keeps_project_qualified_udt_type() {
+    assert_snapshot_contains(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   Dim value As VBAProject.Types.Payload\n\
+                 \x20   value.Value = 8\n\
+                 \x20   result = value.Value\n\
+                 End Sub\n",
+            ),
+            (
+                "Types",
+                Procedural,
+                "Public Type Payload\n    Value As Long\nEnd Type\n",
+            ),
+            (
+                "Enums",
+                Procedural,
+                "Public Enum Payload\n    PayloadA = 1\nEnd Enum\n",
+            ),
+        ]),
+        canon(&Variant::from_i32(8)),
     );
 }
 

@@ -58,6 +58,9 @@ Current executable subset (A1/A2):
 - `public_const_variable_collision_should_be_ambiguous`
 - `public_const_variable_collision_keeps_module_qualified_access`
 - `public_const_variable_collision_keeps_project_qualified_access`
+- `public_udt_enum_collision_should_be_ambiguous`
+- `public_udt_enum_collision_keeps_module_qualified_udt_type`
+- `public_udt_enum_collision_keeps_project_qualified_udt_type`
 
 ## Lane B: Multi-module resolution
 
@@ -77,6 +80,9 @@ Current executable subset:
 - `public_const_variable_collision_should_be_ambiguous`
 - `public_const_variable_collision_keeps_module_qualified_access`
 - `public_const_variable_collision_keeps_project_qualified_access`
+- `public_udt_enum_collision_should_be_ambiguous`
+- `public_udt_enum_collision_keeps_module_qualified_udt_type`
+- `public_udt_enum_collision_keeps_project_qualified_udt_type`
 
 ## Lane C: Reference and automation bridge
 

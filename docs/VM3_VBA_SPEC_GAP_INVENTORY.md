@@ -56,7 +56,7 @@ may remain unexamined.
 multi-module visibility batch is captured in
 `docs/evidence/conformance/vm3_scoping_visibility_oracle_20260701T0945Z/` using
 VBE Debug -> Compile (`ID=578`) plus PID-scoped UI Automation modal capture.
-Current-green vm3 baselines and ignored follow-on assertions live in
+Current-green vm3 baselines and active follow-on assertions live in
 `crates/oxvba-differential/tests/scoping_visibility_vm3.rs`.
 
 **Scoping follow-up surface (bd-4ktq.36.1):** the cross-project expansion is
@@ -66,15 +66,24 @@ same modal-safe VBE compile path. The shared fixture now also covers a
 two-module active project with a referenced project, referenced module/project
 qualification, Public Const/Public variable ambiguity, referenced
 `Option Private Module` hiding, reference precedence, and WithEvents source
-visibility. Public UDT/Public Enum name collision remains open for
-`bd-4ktq.36.3`: Excel reports `Ambiguous name detected: Payload`, while vm3
-currently accepts the row.
+visibility. The Public UDT/Public Enum name collision subset is now closed for
+`bd-4ktq.36.3`: Excel reports `Ambiguous name detected: Payload`, and vm3 now
+rejects the same unqualified type reference while preserving module-qualified
+and project-qualified UDT references.
 
 **Const/variable collision subset (bd-4ktq.36.2):** the Public Const/Public
 module variable case is closed for the follow-up batch. The active fixture now
 rejects unqualified `SharedName` as ambiguous and proves `Module.SharedName`
 plus `Project.Module.SharedName` remain deterministic. Broader declaration-space
-work stays open for `bd-4ktq.36.3` and related PMR-NAME-001/002 edges.
+UDT/Enum declaration-space work is closed by `bd-4ktq.36.3`; broader
+project/module/library namespace edges remain tracked under related PMR-NAME
+rows.
+
+**UDT/Enum naming subset (bd-4ktq.36.3):** the Public UDT/Public Enum
+cross-module collision case is closed for the follow-up batch. The active
+fixture now rejects unqualified `Payload` as ambiguous and proves
+`Types.Payload` plus `VBAProject.Types.Payload` remain deterministic UDT type
+references. Broader PMR-NAME-002 namespace-conflict coverage remains partial.
 
 ### Critic-added gaps (15)
 

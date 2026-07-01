@@ -206,6 +206,8 @@ pub enum SymbolModelError {
     UnsupportedOptionCompareDatabase,
     #[error("Friend is only valid in object modules: `{name}`")]
     FriendNotValidInStandardModule { name: String },
+    #[error("ambiguous name detected: {name}")]
+    AmbiguousName { name: String },
     #[error("unknown scope {0:?}")]
     UnknownScope(ScopeId),
 }
@@ -274,6 +276,12 @@ impl SymbolModelError {
                 format!("Friend is only valid in object modules: {name}"),
             )
             .with_help("Use Public or Private in a standard module, or move the Friend member to a class/object module."),
+            SymbolModelError::AmbiguousName { name } => Diagnostic::error(
+                "SYM-E-AMBIGUOUS-NAME",
+                DiagnosticPhase::Symbol,
+                format!("ambiguous name detected: {name}"),
+            )
+            .with_help("Qualify the type name with its module name, or rename one of the public declarations."),
             SymbolModelError::UnknownScope(scope) => Diagnostic::error(
                 "SYM-E-UNKNOWN-SCOPE",
                 DiagnosticPhase::Symbol,

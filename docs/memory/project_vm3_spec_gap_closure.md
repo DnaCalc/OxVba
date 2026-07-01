@@ -52,8 +52,8 @@
   - `Friend` in a standard module: `Only valid in object module`,
   - `Friend` in a class module: compiles and runs (`19`).
 - Added `crates/oxvba-differential/tests/scoping_visibility_vm3.rs`.
-  Current-green tests cover the legal baseline shapes; ignored tests encode the
-  oracle-backed expected failures for `bd-4ktq.9.2` through `bd-4ktq.9.6`.
+  Current-green tests cover the legal baseline shapes and oracle-backed
+  expected failures for `bd-4ktq.9.2` through `bd-4ktq.9.6`.
 - Verification passed:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
@@ -206,9 +206,9 @@
   reference calls, Public Const/variable ambiguity, referenced Option Private
   hiding, reference precedence/project qualifier behavior, and a synthetic
   referenced-project WithEvents source route.
-- Left the Public UDT/Public Enum collision fixture ignored for
+- The Public UDT/Public Enum collision fixture remains the follow-on target for
   `bd-4ktq.36.3`: live Excel rejects it as `Ambiguous name detected: Payload`,
-  while vm3 currently accepts the row.
+  while vm3 currently accepts the row at this evidence point.
 - Verification target:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
@@ -235,6 +235,34 @@
 - Verification target:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Public UDT / Enum Naming Conflicts (`bd-4ktq.36.3`)
+
+- Closed the follow-up Public UDT/Public Enum cross-module naming conflict
+  subset for PMR-NAME-002.
+- Live Excel evidence for the unqualified row is in
+  `docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/`:
+  `SCOPING-UDT-ENUM-COLLISION` rejects `Dim Value As Payload` with `Ambiguous
+  name detected: Payload`.
+- `oxvba-symbol` now builds an alias-aware type-name index for each project
+  closure: UDT fields and enum type names are available through bare,
+  `Module.Type`, and `Project.Module.Type` spellings, while ambiguous
+  unqualified public type-space owners are tracked per project and rejected as a
+  symbol diagnostic before lowering.
+- `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` now has active
+  rows proving:
+  - unqualified `Payload` across `Public Type Payload` and `Public Enum Payload`
+    is rejected as ambiguous,
+  - `Types.Payload` remains a valid UDT type reference,
+  - `VBAProject.Types.Payload` remains a valid UDT type reference.
+- PMR clause docs and the fixture matrix now point to those vm3 differential
+  rows while keeping PMR-NAME-002 partial for remaining project/module/library
+  namespace conflict edges.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
 
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
