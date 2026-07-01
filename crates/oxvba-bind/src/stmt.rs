@@ -5,7 +5,7 @@
 
 use oxvba_bundle::coreir::{
     CaseClause, CoreArg, CoreBinOp, CoreBound, CoreCallee, CoreCaseBlock, CoreConst, CoreIfArm,
-    CorePlace, CoreStmt, CoreValue, ErrorOp, ExitKind, LocalId,
+    CorePlace, CoreStmt, CoreUnOp, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
@@ -1770,14 +1770,19 @@ impl<'a> ProcLower<'a> {
         oxvba_bundle::ArrayElementType::Variant
     }
 
-    /// Fold a value to a constant `i32` if possible (literals + integer
-    /// arithmetic of constants, e.g. `vbObjectError + 1` once `vbObjectError`
-    /// resolves to a library constant).
+    /// Fold a value to a constant `i32` if possible (literals, unary negation,
+    /// and integer arithmetic of constants, e.g. `vbObjectError + 1` once
+    /// `vbObjectError` resolves to a library constant).
     fn fold_const_i32(&self, value: &CoreValue) -> Option<i32> {
         match value {
             CoreValue::Const(CoreConst::I16(n)) => Some(i32::from(*n)),
             CoreValue::Const(CoreConst::I32(n)) => Some(*n),
             CoreValue::Const(CoreConst::I64(n)) => i32::try_from(*n).ok(),
+            CoreValue::Unary {
+                op: CoreUnOp::Negate,
+                expr,
+                ..
+            } => self.fold_const_i32(expr)?.checked_neg(),
             CoreValue::Binary { op, lhs, rhs, .. } => {
                 let a = self.fold_const_i32(lhs)?;
                 let b = self.fold_const_i32(rhs)?;

@@ -642,3 +642,21 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Negative Constant Array Lower Bounds (`bd-4ktq.24`)
+
+- Closed `redim-negative-lower-rejected` for vm3.
+- Extended the binder's `fold_const_i32` helper to fold unary
+  `CoreUnOp::Negate` over integer constants with checked negation.
+- Dynamic `ReDim a(-N To M)` and fixed `Dim a(-N To M)` now bind and execute,
+  while nonconstant lower bounds remain the separate open
+  `redim-nonconstant-lower-rejected` gap.
+- Added `crates/oxvba-differential/tests/redim_negative_lower_vm3.rs` for
+  dynamic and fixed arrays, checking `LBound`/`UBound` and negative-index
+  element access, plus a control that nonconstant lower bounds remain
+  rejected.
+- Verification target:
+  - `cargo test -p oxvba-differential --test redim_negative_lower_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
