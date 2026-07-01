@@ -465,3 +465,17 @@
   - `cargo test -p oxvba-differential --test string_repeat_charcode_vm3`
   - `cargo test -p oxvba-lib`
   - `cargo test -p oxvba-bind string_functions_left_mid_ucase`
+
+## 2026-07-01 - Trim Family Space-Only Stripping (`bd-4ktq.13`)
+
+- Closed `trim-strips-all-whitespace` for vm3.
+- Replaced Rust Unicode whitespace trimming in `pure::trim` with VBA-style
+  U+0020 space trimming for `Trim`, `LTrim`, and `RTrim`.
+- Added `crates/oxvba-differential/tests/trim_space_only_vm3.rs`, which strips
+  outer spaces while preserving `Chr(9)` tabs for all three Trim-family entry
+  points.
+- Verification target:
+  - `cargo test -p oxvba-differential --test trim_space_only_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind string_functions_left_mid_ucase`
+  - `cargo test -p oxvba-differential --test null_string_fns_vm3`

@@ -402,9 +402,9 @@ pub fn replace(args: &[Variant]) -> LibResult<Variant> {
 pub fn trim(args: &[Variant], left: bool, right: bool) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let t = match (left, right) {
-        (true, true) => s.trim(),
-        (true, false) => s.trim_start(),
-        (false, true) => s.trim_end(),
+        (true, true) => s.trim_matches(' '),
+        (true, false) => s.trim_start_matches(' '),
+        (false, true) => s.trim_end_matches(' '),
         (false, false) => &s,
     };
     Ok(vstr(t.to_string()))
