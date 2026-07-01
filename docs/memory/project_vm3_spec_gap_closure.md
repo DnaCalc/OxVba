@@ -581,3 +581,15 @@
   - `cargo test -p oxvba-differential --test array_bounds_unallocated_vm3`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Collection Missing Key Error Proof (`bd-4ktq.20`)
+
+- Closed stale inventory row `collection-keynotfound-error-9-not-5` for vm3
+  with regression evidence; no runtime code change was needed.
+- Added `crates/oxvba-differential/tests/collection_missing_key_vm3.rs`, which
+  proves missing keyed `Collection.Item`, default-member access, and `Remove`
+  all raise run-time error 9.
+- Verification target:
+  - `cargo test -p oxvba-differential --test collection_missing_key_vm3`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
