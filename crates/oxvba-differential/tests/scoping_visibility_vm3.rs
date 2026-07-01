@@ -52,6 +52,24 @@ fn assert_ambiguous_compile_rejected(outcome: RunOutcome, name: &str) {
     );
 }
 
+fn assert_module_name_collision_rejected(outcome: RunOutcome) {
+    assert!(
+        outcome.unsupported.is_none(),
+        "expected module-name collision diagnostic, got unsupported: {:?}",
+        outcome.unsupported
+    );
+    let err = outcome
+        .result
+        .expect_err("expected module-name collision to fail binding");
+    let err_lower = err.to_ascii_lowercase();
+    assert!(
+        (err_lower.contains("expected variable or procedure")
+            || err.contains("ExpectedVariableOrProcedureNotModule"))
+            && err_lower.contains("module"),
+        "expected module-name collision diagnostic, got {err:?}"
+    );
+}
+
 #[test]
 fn same_module_private_member_matches_oracle() {
     assert_snapshot_contains(
@@ -198,9 +216,8 @@ fn duplicate_public_unqualified_should_be_ambiguous() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.4: module/member name collision still picks a candidate today"]
 fn module_name_public_member_collision_should_be_rejected() {
-    assert_compile_rejected(run_scoping_case(&[
+    assert_module_name_collision_rejected(run_scoping_case(&[
         (
             "Main",
             Procedural,

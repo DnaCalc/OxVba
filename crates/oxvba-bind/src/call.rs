@@ -38,6 +38,9 @@ impl<'a> ProcLower<'a> {
         arglist: Option<SyntaxNode<'_>>,
     ) -> Result<Bound, BindError> {
         match &binding.route {
+            DispatchRoute::Value if self.binding_is_module(binding) => {
+                Err(self.module_as_value_error(name))
+            }
             // A folded constant literal (a referenced project's `Public Const`/`Enum`
             // member, or a `vb*` base-library constant) used in callee/index position
             // (`Call vbCrLf`, `vbReadOnly(0)`): inline the literal, ignoring any index

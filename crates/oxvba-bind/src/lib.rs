@@ -635,6 +635,19 @@ impl<'a> ProcLower<'a> {
         }
     }
 
+    fn binding_is_module(&self, binding: &Binding) -> bool {
+        binding
+            .symbol
+            .and_then(|sym| self.g.env.symbols.symbol(sym))
+            .is_some_and(|symbol| symbol.kind == SymbolKind::Module)
+    }
+
+    fn module_as_value_error(&self, name: &str) -> BindError {
+        BindError::ExpectedVariableOrProcedureNotModule {
+            name: name.to_string(),
+        }
+    }
+
     /// Member resolution against a typed receiver (`recv.name`).
     fn resolve_member(
         &self,

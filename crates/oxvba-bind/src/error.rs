@@ -18,6 +18,9 @@ pub enum BindError {
     /// A bare name resolved to multiple equally viable project-level candidates.
     #[error("ambiguous name detected: {name}")]
     AmbiguousName { name: String },
+    /// A module namespace was used where VBA requires a variable or procedure.
+    #[error("expected variable or procedure, not module: {name}")]
+    ExpectedVariableOrProcedureNotModule { name: String },
     /// An assignment target/intent is invalid (e.g. `Set` on a scalar).
     #[error("invalid assignment: {0}")]
     InvalidAssignment(String),
@@ -60,6 +63,12 @@ impl BindError {
             .with_help(
                 "Qualify the member with its module name, or rename one of the public declarations.",
             ),
+            BindError::ExpectedVariableOrProcedureNotModule { name } => Diagnostic::error(
+                "BIND-E-EXPECTED-VARIABLE-OR-PROCEDURE-NOT-MODULE",
+                DiagnosticPhase::Bind,
+                format!("expected variable or procedure, not module: {name}"),
+            )
+            .with_help("Use `Module.Member` qualification, or rename the colliding public member."),
             BindError::InvalidAssignment(message) => Diagnostic::error(
                 "BIND-E-INVALID-ASSIGNMENT",
                 DiagnosticPhase::Bind,
@@ -109,5 +118,22 @@ mod tests {
         .to_diagnostic();
         assert_eq!(diagnostic.code.as_str(), "BIND-E-AMBIGUOUS-NAME");
         assert!(diagnostic.message.contains("ambiguous name detected: Dup"));
+    }
+
+    #[test]
+    fn module_as_value_has_stable_code() {
+        let diagnostic = BindError::ExpectedVariableOrProcedureNotModule {
+            name: "Clash".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(
+            diagnostic.code.as_str(),
+            "BIND-E-EXPECTED-VARIABLE-OR-PROCEDURE-NOT-MODULE"
+        );
+        assert!(
+            diagnostic
+                .message
+                .contains("expected variable or procedure, not module: Clash")
+        );
     }
 }

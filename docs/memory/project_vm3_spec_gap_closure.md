@@ -100,3 +100,22 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Module Name / Public Member Collision (`bd-4ktq.9.4`)
+
+- Closed `module-name-public-member-collision` by making bare module namespace
+  use fail deliberately with a VBA-shaped binder diagnostic instead of falling
+  through to incidental array/place errors or a colliding public member.
+- Added `BindError::ExpectedVariableOrProcedureNotModule` with stable diagnostic
+  code `BIND-E-EXPECTED-VARIABLE-OR-PROCEDURE-NOT-MODULE` and message shape
+  `expected variable or procedure, not module: <name>`.
+- `bind_call_route`, `bind_ident`, and `bind_index_or_call` now reject
+  `SymbolKind::Module` bindings when used as values/callees. `Module.Member`
+  qualification remains handled by the namespace-qualified member path.
+- Flipped on the oracle-backed scoping fixture for module `Clash` plus public
+  function `Other.Clash()`, asserting the module diagnostic shape.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

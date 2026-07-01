@@ -200,6 +200,9 @@ impl<'a> ProcLower<'a> {
         if let Some(bound) = self.bind_predeclared_instance(name)? {
             return Ok(bound);
         }
+        if self.binding_is_module(&binding) {
+            return Err(self.module_as_value_error(name));
+        }
         // Otherwise a constant or a 0-argument call.
         self.bind_call_route(name, &binding, None)
     }
@@ -340,9 +343,13 @@ impl<'a> ProcLower<'a> {
         if base.kind() == SyntaxKind::IdentExpr
             && let Some(tok) = base.ident_name_token()
             && let Some(binding) = self.resolve_suffixed(base, tok.text)
-            && !matches!(binding.route, DispatchRoute::Value)
         {
-            return self.bind_call_route(tok.text, &binding, node.index_arg_list());
+            if self.binding_is_module(&binding) {
+                return Err(self.module_as_value_error(tok.text));
+            }
+            if !matches!(binding.route, DispatchRoute::Value) {
+                return self.bind_call_route(tok.text, &binding, node.index_arg_list());
+            }
         }
         // `obj(i)` on an Object variable is a DEFAULT-MEMBER call (`obj.Item(i)` /
         // dispid-0), not an array subscript. VBA resolves `obj(…)` for an object
