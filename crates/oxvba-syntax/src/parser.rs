@@ -1708,7 +1708,7 @@ impl<'a> Parser<'a> {
 
             // Check for terminators
             let kind = self.current_non_trivia();
-            if terminators.contains(&kind) {
+            if self.is_block_terminator(kind, terminators) {
                 break;
             }
 
@@ -1726,6 +1726,40 @@ impl<'a> Parser<'a> {
         }
 
         self.finish_node();
+    }
+
+    fn is_block_terminator(&self, kind: SyntaxKind, terminators: &[SyntaxKind]) -> bool {
+        if !terminators.contains(&kind) {
+            return false;
+        }
+        if kind != SyntaxKind::KwEnd {
+            return true;
+        }
+        matches!(
+            self.peek_next_non_trivia_before_statement_end(),
+            SyntaxKind::KwSub
+                | SyntaxKind::KwFunction
+                | SyntaxKind::KwProperty
+                | SyntaxKind::KwIf
+                | SyntaxKind::KwSelect
+                | SyntaxKind::KwWith
+                | SyntaxKind::KwType
+                | SyntaxKind::KwEnum
+        )
+    }
+
+    fn peek_next_non_trivia_before_statement_end(&self) -> SyntaxKind {
+        let mut j = self.pos + 1;
+        while j < self.tokens.len() {
+            match self.tokens[j].0 {
+                SyntaxKind::Whitespace | SyntaxKind::LineContinuation => j += 1,
+                SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Colon => {
+                    return SyntaxKind::Eof;
+                }
+                kind => return kind,
+            }
+        }
+        SyntaxKind::Eof
     }
 
     // ── Statement parsing ───────────────────────────────────
@@ -1767,6 +1801,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwError => self.parse_error_stmt(),
             SyntaxKind::KwResume => self.parse_resume_stmt(),
             SyntaxKind::KwErase => self.parse_erase_stmt(),
+            SyntaxKind::KwEnd => self.parse_end_stmt(),
             SyntaxKind::KwExit => self.parse_exit_stmt(),
             SyntaxKind::KwGoTo => self.parse_goto_stmt(),
             SyntaxKind::KwGoSub => self.parse_gosub_stmt(),
@@ -2348,6 +2383,13 @@ impl<'a> Parser<'a> {
         } else {
             self.parse_label_ref();
         }
+        self.finish_node();
+    }
+
+    fn parse_end_stmt(&mut self) {
+        self.start_node(SyntaxKind::EndStmt);
+        self.eat_trivia();
+        self.bump(); // End
         self.finish_node();
     }
 

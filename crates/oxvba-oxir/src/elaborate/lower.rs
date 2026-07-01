@@ -643,6 +643,10 @@ impl<'a> Lowerer<'a> {
                 self.finish_to(OxTerminator::GoSubReturn, s_next);
                 Ok(())
             }
+            CoreStmt::End => {
+                self.finish_to(OxTerminator::Halt, s_next);
+                Ok(())
+            }
             CoreStmt::Error(op) => self.lower_error(op, s_next),
             CoreStmt::ReDim {
                 array,

@@ -674,3 +674,21 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Bare `End` Statement (`bd-4ktq.26`)
+
+- Closed `end-statement-misparsed` for vm3.
+- Added a syntax `EndStmt` for bare `End` and made executable block parsing treat
+  `KwEnd` as a block terminator only when followed on the same statement by a
+  closure keyword such as `Sub`, `If`, `Select`, or `With`.
+- Added `CoreStmt::End`, bound bare `End` to it, and lowered it to the existing
+  OxIR/vm3 `Halt` terminator.
+- Added `crates/oxvba-differential/tests/end_statement_vm3.rs` covering direct
+  halt, halt from a callee before caller continuation, and bare `End` before a
+  later `If` keyword.
+- Verification target:
+  - `cargo test -p oxvba-differential --test end_statement_vm3`
+  - `cargo test -p oxvba-syntax`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

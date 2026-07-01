@@ -711,6 +711,8 @@ pub enum CoreStmt {
     GoSub(LabelId),
     /// `Return` from the most recent `GoSub`.
     GoSubReturn,
+    /// Bare `End`: terminate the whole program immediately.
+    End,
     /// `On <selector> GoTo L1, L2, …` / `On <selector> GoSub S1, S2, …` — the computed
     /// branch. `selector` is 1-based: `targets[selector - 1]` is taken; `0` or a value
     /// past the end falls through to the next statement. `is_gosub` distinguishes the

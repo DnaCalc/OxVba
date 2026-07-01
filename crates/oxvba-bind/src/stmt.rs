@@ -45,6 +45,7 @@ impl<'a> ProcLower<'a> {
             GoToStmt => Ok(vec![CoreStmt::Goto(self.label_ref_id(node)?)]),
             GoSubStmt => Ok(vec![CoreStmt::GoSub(self.label_ref_id(node)?)]),
             ReturnStmt => Ok(vec![CoreStmt::GoSubReturn]),
+            EndStmt => Ok(vec![CoreStmt::End]),
             LabelStmt => {
                 let name = node
                     .first_significant_token()

@@ -180,6 +180,7 @@ pub enum SyntaxKind {
     ResumeStmt,
     ReDimStmt,
     EraseStmt,
+    EndStmt, // bare `End` statement: terminate execution
     ExitStmt,
     GoToStmt,
     GoSubStmt,
