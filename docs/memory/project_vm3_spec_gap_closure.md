@@ -816,3 +816,20 @@
   - `cargo test -p oxvba-oxir`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Native Local Clock Time Facet (`bd-4ktq.33`)
+
+- Closed `now-date-time-utc-not-local` for vm3's native HAL path.
+- `StandardHostServices` now converts native time through the host local civil
+  clock for `Date`, `Time`, `Now`, and `Timer` instead of deriving the day and
+  time-of-day directly from UTC seconds.
+- The deterministic lane remains unchanged at its existing stable date/time
+  constants.
+- `FileDateTime` now uses the same local `SystemTime` -> VBA `Date` serial
+  conversion. The first focused host test exposed the old UTC helper as a
+  two-hour drift from fresh-file `Now` on the local machine, so this companion
+  fix keeps filesystem timestamps aligned with VBA's local wall-clock model.
+- Verification target:
+  - `cargo check -p oxvba-hal`
+  - `cargo test -p oxvba-hal time_`
+  - `cargo test -p oxvba-host --test filesystem_statements`

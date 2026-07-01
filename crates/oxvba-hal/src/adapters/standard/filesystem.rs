@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 #[cfg(target_os = "windows")]
 use std::{thread, time::Duration};
 
-use super::StandardHostServices;
+use super::{StandardHostServices, time::system_time_to_local_vba_serial};
 
 // VBA file-attribute bits. These are deliberately identical to the Win32
 // `FILE_ATTRIBUTE_*` values, which is what `GetAttr`/`SetAttr` expose.
@@ -87,19 +87,6 @@ fn apply_file_attributes(path: &Path, settable: i32) -> std::io::Result<()> {
         let mut perms = fs::metadata(path)?.permissions();
         perms.set_readonly(settable & VB_READONLY != 0);
         fs::set_permissions(path, perms)
-    }
-}
-
-/// Days from the VBA serial epoch (1899-12-30) to the Unix epoch (1970-01-01).
-const VBA_EPOCH_OFFSET_DAYS: f64 = 25_569.0;
-
-/// Convert a wall-clock `SystemTime` to a VBA `Date` serial (whole part = days
-/// since 1899-12-30, fractional part = time of day). Built the same UTC way as
-/// the `Now`/`Date`/`Time` time facet, so file and clock dates use one model.
-fn system_time_to_vba_serial(time: std::time::SystemTime) -> f64 {
-    match time.duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_secs_f64() / 86_400.0 + VBA_EPOCH_OFFSET_DAYS,
-        Err(e) => VBA_EPOCH_OFFSET_DAYS - e.duration().as_secs_f64() / 86_400.0,
     }
 }
 
@@ -1553,9 +1540,11 @@ impl FileSystemHal for StandardHostServices {
                     format!("modification time unavailable for {}: {err}", p.display()),
                 )
             })?;
-            // VBA `FileDateTime` returns a `Date`; the serial is built the same
-            // (UTC) way as the `Now`/`Date`/`Time` facet, for a consistent model.
-            Ok(Variant::from_date_f64(system_time_to_vba_serial(modified)))
+            // VBA `FileDateTime` reports the local wall-clock timestamp shown by
+            // the host filesystem, matching the native `Now`/`Date`/`Time` facet.
+            Ok(Variant::from_date_f64(system_time_to_local_vba_serial(
+                modified,
+            )))
         } else {
             // Deterministic lane: no real files; a stable zero serial (1899-12-30).
             Ok(Variant::from_date_f64(0.0))
