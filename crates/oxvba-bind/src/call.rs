@@ -423,16 +423,35 @@ impl<'a> ProcLower<'a> {
         if by_ref
             && !forced_by_val
             && !self.is_object_default_member_index_expr(expr)
-            && let Ok((place, _)) = self.bind_place(expr)
+            && let Ok((place, place_ty)) = self.bind_place(expr)
         {
+            if let Some(param) = param {
+                self.ensure_byref_type_compatible(&param.ty, &place_ty)?;
+            }
             return Ok(CoreArg::ByRef(place));
         }
         let bound = self.bind_expr(expr)?;
         let value = match param {
-            Some(p) if p.mode == PassingMode::ByVal => types::coerce(bound.value, &bound.ty, &p.ty),
-            _ => bound.value,
+            Some(p) => types::coerce(bound.value, &bound.ty, &p.ty),
+            None => bound.value,
         };
         Ok(CoreArg::ByVal(value))
+    }
+
+    fn ensure_byref_type_compatible(
+        &self,
+        expected: &VarTypeRef,
+        actual: &VarTypeRef,
+    ) -> Result<(), BindError> {
+        let expected = canonical_byref_type(self.g.resolve_udt_type(expected.clone()));
+        let actual = canonical_byref_type(self.g.resolve_udt_type(actual.clone()));
+        if expected == actual || byref_variant_accepts_array(&expected, &actual) {
+            return Ok(());
+        }
+        Err(BindError::ByRefTypeMismatch {
+            expected: types::type_name(&expected),
+            actual: types::type_name(&actual),
+        })
     }
 
     /// Bind one argument given an explicit by-ref flag (COM/`Declare`, where the
@@ -2229,6 +2248,25 @@ impl<'a> ProcLower<'a> {
             other => Err(BindError::Unsupported(format!("call statement {other:?}"))),
         }
     }
+}
+
+/// Canonicalize storage-equivalent declarations before enforcing exact ByRef
+/// type matching.
+fn canonical_byref_type(ty: VarTypeRef) -> VarTypeRef {
+    match ty {
+        VarTypeRef::FixedString(_) => VarTypeRef::Builtin(BuiltinType::String),
+        VarTypeRef::Array(inner) => VarTypeRef::Array(Box::new(canonical_byref_type(*inner))),
+        VarTypeRef::FixedArray { element, len } => VarTypeRef::FixedArray {
+            element: Box::new(canonical_byref_type(*element)),
+            len,
+        },
+        other => other,
+    }
+}
+
+fn byref_variant_accepts_array(expected: &VarTypeRef, actual: &VarTypeRef) -> bool {
+    matches!(expected, VarTypeRef::Variant)
+        && matches!(actual, VarTypeRef::Array(_) | VarTypeRef::FixedArray { .. })
 }
 
 /// Convert one variadic-tail argument to its array-element value for a ParamArray

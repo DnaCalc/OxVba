@@ -147,7 +147,6 @@ fn paramarray_accepts_extra_positional_arguments() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.10.3: ByRef type mismatch is still accepted today"]
 fn byref_type_mismatch_should_be_rejected() {
     assert_compile_rejected(run_call_case(
         "Public result As Variant\n\

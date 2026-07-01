@@ -1016,6 +1016,54 @@ fn call_site_byref_keeps_write_back() {
 }
 
 #[test]
+fn byref_type_mismatch_is_bind_error() {
+    let src = "Sub Main()\n    Dim x As Integer\n    TakeLong x\nEnd Sub\n\nSub TakeLong(ByRef n As Long)\n    n = 7\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ByRefTypeMismatch") && err.contains("Long") && err.contains("Integer"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn byref_variant_to_scalar_is_bind_error() {
+    let src = "Sub Main()\n    Dim x As Variant\n    x = 3\n    TakeLong x\nEnd Sub\n\nSub TakeLong(ByRef n As Long)\n    n = 7\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ByRefTypeMismatch") && err.contains("Long") && err.contains("Variant"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn byref_variant_requires_variant_lvalue() {
+    let src = "Sub Main()\n    Dim x As Long\n    Capture x\nEnd Sub\n\nSub Capture(ByRef target As Variant)\n    target = 7\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ByRefTypeMismatch") && err.contains("Variant") && err.contains("Long"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn byref_variant_lvalue_still_aliases() {
+    let src = "Sub Main()\n    Dim r As Variant\n    r = 5\n    Capture r\nEnd Sub\n\nSub Capture(ByRef target As Variant)\n    target = 7\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(7.0));
+}
+
+#[test]
+fn byref_variant_accepts_array_lvalue() {
+    let src = "Sub Main()\n    Dim bytes() As Byte\n    ReDim bytes(0 To 1)\n    Capture bytes\nEnd Sub\n\nSub Capture(ByRef target As Variant)\nEnd Sub\n";
+    bind(src);
+}
+
+#[test]
+fn parenthesized_byref_type_mismatch_uses_byval_temporary() {
+    let src = "Sub Main()\n    Dim r As Long\n    Dim x As Integer\n    x = 5\n    TakeLong (x)\n    r = x\nEnd Sub\n\nSub TakeLong(ByRef n As Long)\n    n = n + 100\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(5.0));
+}
+
+#[test]
 fn hex_literal() {
     assert_eq!(
         run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")),

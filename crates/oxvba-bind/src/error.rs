@@ -24,6 +24,9 @@ pub enum BindError {
     /// An assignment target/intent is invalid (e.g. `Set` on a scalar).
     #[error("invalid assignment: {0}")]
     InvalidAssignment(String),
+    /// A ByRef argument l-value has a different declared type than its parameter.
+    #[error("ByRef argument type mismatch: expected {expected}, got {actual}")]
+    ByRefTypeMismatch { expected: String, actual: String },
     /// A line label is defined more than once within a single procedure — a VBA
     /// compile error ("Duplicate declaration in current scope"). Label scope is
     /// per-procedure, so the same name in a different procedure is fine.
@@ -75,6 +78,14 @@ impl BindError {
                 format!("invalid assignment: {message}"),
             )
             .with_help("Check whether the target is assignable and whether Set/Let semantics match the value."),
+            BindError::ByRefTypeMismatch { expected, actual } => Diagnostic::error(
+                "BIND-E-BYREF-TYPE-MISMATCH",
+                DiagnosticPhase::Bind,
+                format!("ByRef argument type mismatch: expected {expected}, got {actual}"),
+            )
+            .with_help(
+                "Pass a variable with the exact declared type, or parenthesize the argument to pass a coerced temporary.",
+            ),
             BindError::DuplicateLabel { name } => Diagnostic::error(
                 "BIND-E-DUPLICATE-LABEL",
                 DiagnosticPhase::Bind,
@@ -134,6 +145,21 @@ mod tests {
             diagnostic
                 .message
                 .contains("expected variable or procedure, not module: Clash")
+        );
+    }
+
+    #[test]
+    fn byref_type_mismatch_has_stable_code() {
+        let diagnostic = BindError::ByRefTypeMismatch {
+            expected: "Long".to_string(),
+            actual: "Integer".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-BYREF-TYPE-MISMATCH");
+        assert!(
+            diagnostic
+                .message
+                .contains("ByRef argument type mismatch: expected Long, got Integer")
         );
     }
 }

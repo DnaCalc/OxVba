@@ -67,7 +67,7 @@ conformance/tests/array_option_base_one_bounds.bas	ok[Opaque { tag: 8204 }, Raw 
 conformance/tests/array_store_load.bas	ok[Opaque { tag: 8204 }, Raw { tag: 3, bytes: [7, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/array_zero_index.bas	ok[Opaque { tag: 8204 }, Raw { tag: 3, bytes: [3, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/assignment_set_let_basic.bas	err(VBA error 424) raised=true err=FinalErr { number: 424, source: "Main", description: "Object required: x", last_dll_error: 0 }
-conformance/tests/byref_typed_mismatch_error.bas	ok[Raw { tag: 3, bytes: [2, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
+conformance/tests/byref_typed_mismatch_error.bas	err(bind: ByRefTypeMismatch { expected: "Long", actual: "Integer" }) raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/call_coercion_mixed_variant_to_long.bas	ok[Raw { tag: 3, bytes: [5, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/class_lifecycle_initialize_fail.bas	ok[Raw { tag: 3, bytes: [1, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/class_lifecycle_resume_next_ok.bas	ok[Raw { tag: 3, bytes: [3, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }

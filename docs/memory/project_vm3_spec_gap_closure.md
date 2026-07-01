@@ -235,3 +235,29 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - ByRef Type Mismatch Rejection (`bd-4ktq.10.3`)
+
+- Closed `byref-type-mismatch-accepted`.
+- Project-procedure `bind_one_arg` now checks the declared type of an aliased
+  ByRef l-value against the declared parameter type before emitting
+  `CoreArg::ByRef`.
+- Mismatches return stable binder diagnostic
+  `BIND-E-BYREF-TYPE-MISMATCH` with message
+  `ByRef argument type mismatch: expected <type>, got <type>`.
+- Parenthesized/non-aliased arguments still pass through a ByVal temporary and
+  are coerced to the parameter type, matching the VBA rule that parentheses
+  force evaluation/coercion instead of caller-slot writeback.
+- Boundary kept explicit: exact Variant l-values remain valid for `ByRef
+  Variant`, scalar typed l-values such as `Long` are rejected for `ByRef
+  Variant`, and array l-values remain accepted for `ByRef Variant` to preserve
+  the ChibiPDF/dynamic-array idiom.
+- Golden snapshot audit: one intended line changed in
+  `conformance/tests/byref_typed_mismatch_error.bas`, from the previous wrong
+  `ok[2]` to `err(bind: ByRefTypeMismatch { expected: "Long", actual:
+  "Integer" })`; older conformance oracle/golden CSV evidence already classified
+  that fixture as an error.
+- Verification target:
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
