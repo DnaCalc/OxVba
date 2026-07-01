@@ -17,10 +17,13 @@ Landed:
 
 Landed:
 
-- Compiler diagnostics tests for class/project semantics:
-  - `compile_project_rejects_withevents_in_procedural_module`
-  - `compile_project_rejects_implements_missing_member_coverage`
-  - `compile_project_rejects_raiseevent_undeclared_event`
+- Current symbol/binder/vm3 diagnostics tests for class/project semantics:
+  - `scanner_rejects_withevents_in_standard_modules`
+  - `withevents_in_procedural_module_should_be_rejected`
+  - `scanner_rejects_implements_in_standard_modules`
+  - `implements_missing_member_is_bind_error`
+  - `raise_event_outside_class_module_is_bind_error`
+  - `raise_event_undeclared_event_is_bind_error`
 - PMR diagnostics (current post-gate compile-time subset):
   - `PMR-E-WITHEVENTS-MODULE-KIND`
   - `PMR-E-IMPLEMENTS-MODULE-KIND`
@@ -61,6 +64,7 @@ Landed:
 
 ## Residual open work (expected)
 
-- Full `WithEvents`/`Implements`/`RaiseEvent` runtime semantics remain open.
+- Full `WithEvents`/`Implements`/`RaiseEvent` runtime semantics beyond the
+  current deterministic binder/vm3 subsets remain open.
 - Project binder/runtime integration for multi-module and multi-project resolution remains open.
 - Full COM ABI parity remains deferred to HAL/interop lanes.

@@ -21,6 +21,7 @@ Scope: Workset `P9` fixture requirements
 | Visibility/export-surface legality (`Option Private Module`) | `surface::tests::source_option_private_module_is_project_private`; `scoping_visibility_vm3::option_private_module_hides_referenced_project_export`; `scoping_visibility_vm3::option_private_module_hides_referenced_project_qualified_export` | symbol surface + vm3 differential |
 | Reference-order shadowing | `scoping_visibility_vm3::referenced_project_precedence_and_project_qualifier_are_explicit`; historical CCT-037 oracle capture in `pmr_project_model_20260303T070427Z` | vm3 differential + Excel oracle |
 | Host export enumeration eligibility | Historical CCT-038 oracle capture in `pmr_project_model_20260303T070427Z`; `surface::tests::source_option_private_module_is_project_private` for the reference/COM export-surface distinction | Excel oracle + symbol surface |
+| Class event and interface diagnostics | `scanner::tests::scanner_rejects_implements_in_standard_modules`; `bind_roundtrip::implements_missing_member_is_bind_error`; `bind_roundtrip::raise_event_outside_class_module_is_bind_error`; `bind_roundtrip::raise_event_undeclared_event_is_bind_error`; `bind_roundtrip::withevents_raise_event_routes_to_handler` | symbol + binder |
 
 ## Notes
 
@@ -30,4 +31,6 @@ Scope: Workset `P9` fixture requirements
 - Excel/VBA parity for `CCT-037..CCT-041` has oracle evidence captured (`pmr_project_model_20260303T070427Z`):
   - `CCT-037..CCT-039` matched and closed.
   - `CCT-040` original baseline divergence is closed locally after project-aware Implements compile/runtime closure; refreshed multi-interface oracle edge capture remains queued in `ODG-038`.
-  - `CCT-041` remains open as recorded divergence (`DIV-0004`) for true instance-level reassignment/subscription semantics.
+  - `CCT-041` deterministic subset is closed through current vm3/binder anchors;
+    full instance-level lifecycle, cleanup, and COM event parity remain tracked
+    under `DIV-0004`.
