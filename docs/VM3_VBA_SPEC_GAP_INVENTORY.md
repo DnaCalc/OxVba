@@ -85,6 +85,13 @@ fixture now rejects unqualified `Payload` as ambiguous and proves
 `Types.Payload` plus `VBAProject.Types.Payload` remain deterministic UDT type
 references. Broader PMR-NAME-002 namespace-conflict coverage remains partial.
 
+**Option Private cross-project subset (bd-4ktq.36.4):** the referenced
+`Option Private Module` visibility case is closed for the follow-up batch. The
+active fixture rejects unqualified and project-qualified external calls into
+`LibProj.HiddenTools.HiddenValue`, proves the same module remains callable
+inside its defining project, and proves a normal public referenced module in
+the same project remains visible.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

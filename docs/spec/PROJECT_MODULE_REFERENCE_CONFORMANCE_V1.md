@@ -61,6 +61,10 @@ Current executable subset (A1/A2):
 - `public_udt_enum_collision_should_be_ambiguous`
 - `public_udt_enum_collision_keeps_module_qualified_udt_type`
 - `public_udt_enum_collision_keeps_project_qualified_udt_type`
+- `option_private_module_hides_referenced_project_export`
+- `option_private_module_hides_referenced_project_qualified_export`
+- `option_private_module_allows_same_project_access`
+- `option_private_module_keeps_public_referenced_module_visible`
 
 ## Lane B: Multi-module resolution
 
@@ -83,6 +87,10 @@ Current executable subset:
 - `public_udt_enum_collision_should_be_ambiguous`
 - `public_udt_enum_collision_keeps_module_qualified_udt_type`
 - `public_udt_enum_collision_keeps_project_qualified_udt_type`
+- `option_private_module_hides_referenced_project_export`
+- `option_private_module_hides_referenced_project_qualified_export`
+- `option_private_module_allows_same_project_access`
+- `option_private_module_keeps_public_referenced_module_visible`
 
 ## Lane C: Reference and automation bridge
 
@@ -102,6 +110,9 @@ Current executable subset (C1):
 - `type_library_resolution_binds_unique_importlib_entry`
 - `type_library_resolution_requires_importlib_hint`
 - `type_library_resolution_reports_ambiguous_importlib`
+- `option_private_module_hides_referenced_project_export`
+- `option_private_module_hides_referenced_project_qualified_export`
+- `option_private_module_keeps_public_referenced_module_visible`
 
 ## Lane D: Class/event integration
 

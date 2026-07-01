@@ -264,6 +264,32 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
 
+## 2026-07-01 - Option Private Cross-Project Visibility (`bd-4ktq.36.4`)
+
+- Closed the follow-up referenced-project `Option Private Module` visibility
+  subset for PMR-VIS-004.
+- Live Excel evidence for the external hidden-module row is in
+  `docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/`:
+  `SCOPING-OPTION-PRIVATE-XREF` rejects `HiddenValue()` with `Sub or Function
+  not defined`, selected token `HiddenValue`.
+- `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` now has active
+  rows proving:
+  - a referenced `Option Private Module` public procedure is not callable
+    unqualified from an external project,
+  - `LibProj.HiddenTools.HiddenValue()` is also not externally callable,
+  - the same `Option Private Module` procedure remains callable inside its
+    defining project,
+  - a non-private public module in the same referenced project remains visible
+    through both unqualified and project-qualified calls.
+- No production resolver change was needed in this cycle; the export-surface
+  synthesis already omits `Option Private Module` types from referenced-project
+  surfaces while preserving same-project source scope resolution.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
 - Closed the `Val("&H...")`/`Val("&O...")` radix-prefix gap.

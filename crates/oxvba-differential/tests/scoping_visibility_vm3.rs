@@ -557,6 +557,80 @@ fn option_private_module_hides_referenced_project_export() {
 }
 
 #[test]
+fn option_private_module_allows_same_project_access() {
+    assert_snapshot_contains(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\nSub Main()\n    result = HiddenValue()\nEnd Sub\n",
+            ),
+            (
+                "HiddenTools",
+                Procedural,
+                "Option Private Module\n\
+                 Public Function HiddenValue() As Long\n    HiddenValue = 77\nEnd Function\n",
+            ),
+        ]),
+        canon(&Variant::from_i32(77)),
+    );
+}
+
+#[test]
+fn option_private_module_keeps_public_referenced_module_visible() {
+    let lib_modules = || {
+        vec![
+            option_private_proc_module(
+                "HiddenTools",
+                "Option Private Module\n\
+                 Public Function HiddenValue() As Long\n    HiddenValue = 77\nEnd Function\n",
+            ),
+            proc_module(
+                "VisibleTools",
+                "Public Function VisibleValue() As Long\n    VisibleValue = 22\nEnd Function\n",
+            ),
+        ]
+    };
+    let lib = project("LibProj", lib_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![proc_module(
+            "Main",
+            "Public result As Variant\n\
+             Sub Main()\n\
+             \x20   result = VisibleValue() + LibProj.VisibleTools.VisibleValue()\n\
+             End Sub\n",
+        )],
+        vec![referenced("LibProj", lib_modules())],
+    );
+    assert_project_closure_contains(&[lib, app], canon(&Variant::from_i32(44)));
+}
+
+#[test]
+fn option_private_module_hides_referenced_project_qualified_export() {
+    let hidden = || {
+        option_private_proc_module(
+            "HiddenTools",
+            "Option Private Module\n\
+             Public Function HiddenValue() As Long\n    HiddenValue = 77\nEnd Function\n",
+        )
+    };
+    let lib = project("LibProj", vec![hidden()], vec![]);
+    let app = project(
+        "AppProj",
+        vec![proc_module(
+            "Main",
+            "Public result As Variant\n\
+             Sub Main()\n\
+             \x20   result = LibProj.HiddenTools.HiddenValue()\n\
+             End Sub\n",
+        )],
+        vec![referenced("LibProj", vec![hidden()])],
+    );
+    assert_compile_rejected(run_scoping_closure(&[lib, app]));
+}
+
+#[test]
 fn referenced_project_precedence_and_project_qualifier_are_explicit() {
     let lib_a_modules = || {
         vec![proc_module(
