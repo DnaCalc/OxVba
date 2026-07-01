@@ -515,3 +515,21 @@
   - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Round Negative Decimal Places (`bd-4ktq.16`)
+
+- Closed `round-negative-digits-clamped` for vm3.
+- Changed `Round(number, numdecimalplaces)` to preserve negative
+  `numdecimalplaces` instead of clamping them to zero, so VBA-style rounding to
+  tens/hundreds/etc. works.
+- Kept the existing banker's rounding path; the only change is that the scale
+  factor may now be `10^-n`.
+- Added `crates/oxvba-differential/tests/round_negative_digits_vm3.rs` for
+  `Round(19, -1)`, negative-place half-even controls, and default/positive
+  digit controls.
+- Verification target:
+  - `cargo test -p oxvba-differential --test round_negative_digits_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

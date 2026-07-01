@@ -842,10 +842,10 @@ fn math1_typed(v: &Variant, op: Math1Op) -> LibResult<Variant> {
 pub fn round(args: &[Variant]) -> LibResult<Variant> {
     let x = as_f64(need(args, 0)?)?;
     let digits = match opt(args, 1) {
-        Some(v) => as_i32(v)?.max(0) as u32,
+        Some(v) => as_i32(v)?,
         None => 0,
     };
-    let factor = 10f64.powi(digits as i32);
+    let factor = 10f64.powi(digits);
     let scaled = x * factor;
     let rounded = scaled.round_ties_even();
     Ok(vf64(rounded / factor))
